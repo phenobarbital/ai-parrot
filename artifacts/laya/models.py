@@ -170,6 +170,9 @@ class SampleResult(_Record):
     predicted: str | None = None
     status: Literal["ok", "error"]
     error_code: str | None = None
+    error_message: str | None = None
+    answers: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    split: Literal["calibration", "evaluation"] | None = None
     timings_ms: dict[str, float | None] = Field(default_factory=dict)
     decision: RouteDecision | None = None
     requested_model: str | None = None

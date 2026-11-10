@@ -9,7 +9,7 @@ projects: [ai-parrot, ai-parrot-client-jev]
 tags: [laya, classification, model-routing, guardrails, evaluation]
 proposal: sdd/proposals/laya-adoption.proposal.md
 created: 2026-09-21
-updated: 2026-09-21
+updated: 2026-11-10
 ---
 
 # Feature Specification: Laya CPU Evaluation
@@ -526,8 +526,10 @@ commit and built-in local courtesy fast-forward; only this spec is staged for th
 - [x] U3 success criteria — requester: “3. yes, exploratory report”. No production numerical gates.
 - [x] U4 grounded classification — requester: “4. agree.” Refers to document categorization with
   known labels and an insufficient-evidence outcome, as proposed in the preceding clarification.
-- [ ] Runtime readiness — implementation owner verifies isolated Laya 0.3.5 compatibility, snapshot
-  identity and overflow preflight before M2 completion. No adoption result is presumed.
+- [x] Runtime readiness — verified 2026-11-10 with isolated Laya 0.3.5, real CPU inference on
+  checkpoint `85cc74ddae6109077ebe2853a9b3077fb6606a78`, and actual-tokenizer overflow preflight.
+  See `artifacts/laya/README.md` for results and reproducible commands. Live-provider evidence
+  remains separate; no production adoption result is inferred.
 
 ## 9. Design Research Cross-Check
 
@@ -549,3 +551,4 @@ Summary: 4 confirmed, 1 rejected, 0 newly escalated design choices; runtime inpu
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-21 | Codex | Initial review specification incorporating requester decisions and verified contracts |
+| 0.2 | 2026-11-10 | Codex | Completed SDK adapter, verified real CPU capability evaluation and token budgets; retained explicit live-provider prerequisites |

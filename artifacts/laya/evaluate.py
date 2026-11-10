@@ -132,12 +132,15 @@ def build_live_agent(config: EvaluationConfig) -> Any:
     )
 
 
-async def run_evaluation(config: EvaluationConfig, cases: list[EvaluationCase]) -> EvaluationReport:
+async def run_evaluation(
+    config: EvaluationConfig, cases: list[EvaluationCase], fixtures: Path = DEFAULT_FIXTURES
+) -> EvaluationReport:
     """Run local scenarios and optional paired live routing calls.
 
     Args:
         config: Validated evaluation configuration.
         cases: Validated cases for every requested scenario.
+        fixtures: Fixture directory containing the live-routing rubrics.
 
     Returns:
         An evaluation report, including incomplete operational evidence.
@@ -157,12 +160,15 @@ async def run_evaluation(config: EvaluationConfig, cases: list[EvaluationCase]) 
             for scenario in wanted:
                 local, first = await run_local_scenario(worker, by_scenario[scenario], config)
                 samples.extend(local)
-                if any(sample.error_code in ("inference_timeout", "worker_failed") for sample in local):
+                if any(sample.status != "ok" for sample in local):
                     status = "incomplete"
                 if scenario == "injection":
                     metrics["regex_baseline"] = run_regex_baseline(by_scenario[scenario])
                 if scenario == "routing":
                     decisions = route_decisions_for(first, config)
+                    for sample in local:
+                        if sample.repeat == 0:
+                            sample.decision = decisions[sample.case_id]
                     metrics["route_decisions"] = {key: value.model_dump() for key, value in decisions.items()}
                     if config.live:
                         from artifacts.laya.live import LiveCallBudget, load_rubrics, run_live_routing_pairs
@@ -175,7 +181,7 @@ async def run_evaluation(config: EvaluationConfig, cases: list[EvaluationCase]) 
                             decisions,
                             config,
                             LiveCallBudget(config.max_live_calls),
-                            load_rubrics(DEFAULT_FIXTURES / "routing_rubrics.json"),
+                            load_rubrics(fixtures / "routing_rubrics.json"),
                         )
                         samples.extend(live_samples)
                         if any(
@@ -226,8 +232,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     from artifacts.laya.reporting import write_report
 
+    # Parrot imports install the project's event-loop policy. Complete them before
+    # asyncio.run creates a loop, otherwise subprocesses can lose their child watcher.
+    from artifacts.laya import routing, scenarios  # noqa: F401
+
     try:
-        report = asyncio.run(run_evaluation(config, cases))
+        report = asyncio.run(run_evaluation(config, cases, fixtures))
     except Exception as exc:
         logger.exception("evaluation failed")
         report = EvaluationReport(
