@@ -1,0 +1,165 @@
+{
+  "feature": "bookstore-pymupdf-layout",
+  "feature_id": "FEAT-875",
+  "spec": "sdd/specs/bookstore-pymupdf-layout.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-10T15:30:00Z",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/knowledge/pageindex/test_pdf_layout_backend.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_pdf_backend_integration.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_pdf_to_markdown.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_pdf_page_images.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_builder_layout.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_layout_integration.py",
+          "packages/ai-parrot/tests/knowledge/bookstore/test_pdf_backend.py",
+          "packages/ai-parrot/tests/knowledge/bookstore/test_cli.py",
+          "packages/ai-parrot/tests/knowledge/bookstore/test_library.py",
+          "packages/ai-parrot/tests/sdd/test_techwiki_check.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:c9afd53cf9de8e2fb0c5c0faa1a35505eba7eac079f8358d6fdcf3b22a9bc4d5"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5469",
+      "slug": "layout-dependency-compatibility",
+      "title": "PyMuPDF Layout dependency compatibility gate",
+      "feature_id": "FEAT-875",
+      "feature": "bookstore-pymupdf-layout",
+      "spec": "sdd/specs/bookstore-pymupdf-layout.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "exclusive: edits packages/ai-parrot/pyproject.toml and regenerates uv.lock (shared dependency manifest/lockfile); runs package experiments in an isolated environment",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5469-layout-dependency-compatibility.md"
+    },
+    {
+      "id": "TASK-5470",
+      "slug": "pdf-layout-backend-adapter",
+      "title": "Isolated PyMuPDF Layout extraction adapter",
+      "feature_id": "FEAT-875",
+      "feature": "bookstore-pymupdf-layout",
+      "spec": "sdd/specs/bookstore-pymupdf-layout.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-5469"
+      ],
+      "parallel": true,
+      "parallelism_notes": "consumes the verified activation/OCR-disable/page-identity API from TASK-5469 (sdd/state/FEAT-875/layout-compatibility.md) and its installed bookstore-layout extra (pyproject.toml)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5470-pdf-layout-backend-adapter.md"
+    },
+    {
+      "id": "TASK-5471",
+      "slug": "pageindex-pdf-backend-routing",
+      "title": "PageIndex pdf_backend option and extraction routing",
+      "feature_id": "FEAT-875",
+      "feature": "bookstore-pymupdf-layout",
+      "spec": "sdd/specs/bookstore-pymupdf-layout.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5470"
+      ],
+      "parallel": true,
+      "parallelism_notes": "imports extract_layout_pages from TASK-5470 (pageindex/pdf_layout_backend.py) in _layout_pages' Layout branch",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5471-pageindex-pdf-backend-routing.md"
+    },
+    {
+      "id": "TASK-5472",
+      "slug": "bookstore-pdf-backend-wiring",
+      "title": "Bookstore API and CLI --pdf-backend wiring",
+      "feature_id": "FEAT-875",
+      "feature": "bookstore-pymupdf-layout",
+      "spec": "sdd/specs/bookstore-pymupdf-layout.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5471"
+      ],
+      "parallel": true,
+      "parallelism_notes": "calls PageIndexToolkit.import_pdf(pdf_backend=...) keyword created by TASK-5471 (pageindex/toolkit.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5472-bookstore-pdf-backend-wiring.md"
+    },
+    {
+      "id": "TASK-5473",
+      "slug": "pdf-backend-integration-tests",
+      "title": "Native PDF backend integration tests",
+      "feature_id": "FEAT-875",
+      "feature": "bookstore-pymupdf-layout",
+      "spec": "sdd/specs/bookstore-pymupdf-layout.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-5470",
+        "TASK-5471",
+        "TASK-5472"
+      ],
+      "parallel": true,
+      "parallelism_notes": "tests extract_layout_pages from TASK-5470 (pdf_layout_backend.py), build_page_index pdf_backend option from TASK-5471 (builder.py), and Bookstore.add_book(pdf_backend=) from TASK-5472 (library.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5473-pdf-backend-integration-tests.md"
+    },
+    {
+      "id": "TASK-5474",
+      "slug": "pymupdf-layout-documentation",
+      "title": "Documentation — bookstore-pymupdf-layout.md, pageindex-layout-structure.md",
+      "feature_id": "FEAT-875",
+      "feature": "bookstore-pymupdf-layout",
+      "spec": "sdd/specs/bookstore-pymupdf-layout.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5469",
+        "TASK-5470",
+        "TASK-5471",
+        "TASK-5472"
+      ],
+      "parallel": true,
+      "parallelism_notes": "documents the verified tuple from TASK-5469 (layout-compatibility.md), pdf_layout_backend API from TASK-5470, build_page_index/import_pdf pdf_backend from TASK-5471, and the --pdf-backend CLI from TASK-5472 (cli.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5474-pymupdf-layout-documentation.md"
+    }
+  ]
+}
