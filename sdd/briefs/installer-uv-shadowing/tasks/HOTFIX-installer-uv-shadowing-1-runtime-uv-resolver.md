@@ -655,10 +655,8 @@ def test_migrate_keeps_files_when_nothing_is_compatible(home: Path) -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (seat gpt-5.6-terra, backend codex, 1 attempt, 419s)
+**Date**: 2026-11-10
+**Notes**: Added parrot/self_/uv.py (range constants, resolve_uv, record/migrate helpers); bundled_uv delegates to it; RUNTIME_DIRS gains libexec; update_runtime migrates first; doctor _check_uv uses the range and new informational _check_uv_layout. Merge-tier validation: 75 passed. Review: no corrections (review feedback id coder-review:e459a12432d08965706d86fb).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

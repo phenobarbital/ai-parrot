@@ -16,7 +16,7 @@
       "feature_id": "BRIEF-installer-uv-shadowing",
       "feature": "installer-uv-shadowing",
       "spec": "sdd/briefs/installer-uv-shadowing.brief.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,7 +24,7 @@
       "parallelism_notes": "Tasks 2 and 3 import parrot.self_.uv in their parity tests.",
       "assigned_to": null,
       "started_at": "2026-11-10T00:25:41+00:00",
-      "completed_at": null,
+      "completed_at": "2026-11-10T00:38:25+00:00",
       "file": "sdd/briefs/installer-uv-shadowing/tasks/HOTFIX-installer-uv-shadowing-1-runtime-uv-resolver.md"
     },
     {
