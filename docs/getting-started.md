@@ -173,11 +173,13 @@ script, then run `bash install-parrot.sh --global`. Add `--dry-run` to print the
 powershell -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm https://raw.githubusercontent.com/phenobarbital/ai-parrot/main/scripts/install/install-parrot.ps1))) -Global"
 ```
 
-**Downloads:** the script above and, from GitHub, the pinned `uv 0.11.28` zip plus its `.sha256` file, then
-`ai-parrot` and `ai-parrot-tools` from PyPI.
-**Writes:** `~\.parrot\bin`, `~\.parrot\venv` and `~\.parrot\python`, and adds `~\.parrot\bin` to your
+**Downloads:** the script above and, only when no compatible system `uv` is available, the pinned `uv 0.11.28` zip
+plus its `.sha256` file, then `ai-parrot` and `ai-parrot-tools` from PyPI. A system `uv` in `>=0.11.28,<0.12` is
+recorded and reused; all other system uv installations are left as is.
+**Writes:** `~\.parrot\bin`, `~\.parrot\libexec`, `~\.parrot\venv` and `~\.parrot\python`, and adds `~\.parrot\bin` to your
 USER PATH (never the Machine PATH); reopen the terminal afterwards. If they are missing, it also writes
 `~\.parrot\env\.env` (readable only by you, every key commented out) and an empty `~\.parrot\etc\config.ini`.
+Your own `uv` is never modified, moved or removed; a pinned fallback lives under `~\.parrot\libexec`, never on PATH.
 **Verified by:** the uv checksum (`Get-FileHash`), then `parrot self doctor --runtime-only`; a failure
 removes only what the run created.
 **Without piping:** `Invoke-WebRequest` both `install-parrot.ps1` and `SHA256SUMS` from the same folder,
