@@ -298,7 +298,6 @@ COMMON: dict[str, str] = {
     "<TASK-ID>": "TASK-001",
     "$TASK_ID": "TASK-001",
     "<feature-slug>": SLUG,
-    "<suggested_slug>": SLUG,
     "<feature-name>": SLUG,
     "<slug>": SLUG,
     "$FEATURE_SLUG": SLUG,
