@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-869 — Review Producers Write the Canonical Index Slug That `finalize_task` Requires
 **Spec**: `sdd/specs/sdd-coder-engine-tech-debt.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -304,10 +304,23 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: /sdd-fix session (Claude, agent:sdd-fix:f3822408)
+**Date**: 2026-11-10
+**Notes**: Implemented spec §2 A + B in commit `b445f2ae9a`. `review_checkpoint._require_index` rejects a
+`--feature` that contains a path separator or names no index (`resolve_index_path(...).is_file()`), as
+`invalid_input` / exit 2; `_run_record` runs it through `asyncio.to_thread` right after the HEAD read, so a git
+failure in a directory without an index still reports `operation_error` / exit 1. `engine._index_slug` inverts
+`resolve_index_path` (file stem for `sdd/tasks/index/<slug>.json`, name minus `.index.json` for
+`sdd/briefs/<slug>.index.json`); `record_review` stores `feature_slug=_index_slug(ctx.index_path)`. Evidence:
+- before the source change (tests only): 7 fail — the three `test_record_rejects_feature_without_index` cases
+  (exit 0 instead of 2), `test_record_review_writes_index_file_slug` (stored `demo`, not `FEAT-549-demo`) and the
+  three `test_index_slug_inverts_resolve_index_path` cases (no helper); `test_record_accepts_brief_index_slug` and
+  the two extended `feature_slug` assertions already passed (regression guards).
+- after: both Validation Commands pass (53 tests); `ruff check` clean and `black --check -l 120` clean on the four
+  files; the 10 other test files that reference `record_review` / `review_checkpoint` pass (94 tests) except
+  `test_wheel_only_foreign_repo.py::test_install_then_every_documented_helper_invocation`, which fails on base
+  `2cd9516bee` before reaching `record` (unmapped `<id>`/`<review>` placeholders, `issue:4e0a0d2635aa`, fixed by
+  FEAT-870 commit `8b683bbc3b`, not yet on `dev`). With that commit's test change applied temporarily on top of
+  this branch, the test passes, so the new index check does not break the documented `record` invocation.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**:
+**Deviations from spec**: none
