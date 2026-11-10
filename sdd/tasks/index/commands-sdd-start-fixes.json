@@ -36,14 +36,15 @@
       "feature_id": "FEAT-870",
       "feature": "commands-sdd-start-fixes",
       "spec": "sdd/specs/commands-sdd-start-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "single task: modifies test_wheel_only_foreign_repo.py only; no other task in this feature",
       "assigned_to": "sdd-fix session (Claude, agent:sdd-fix:88be2347)",
-      "file": "sdd/tasks/active/TASK-5462-review-record-test-placeholders.md"
+      "file": "sdd/tasks/active/TASK-5462-review-record-test-placeholders.md",
+      "started_at": "2026-11-10T00:03:25+00:00"
     }
   ]
 }
