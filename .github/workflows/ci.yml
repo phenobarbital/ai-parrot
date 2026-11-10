@@ -351,7 +351,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Sync workspace with ontology extra
-        run: uv sync --all-packages --extra ontology
+        run: uv sync --all-packages --extra ontology-store
 
       - name: Scaffold NavConfig environment
         run: mkdir -p env/dev && touch env/dev/.env

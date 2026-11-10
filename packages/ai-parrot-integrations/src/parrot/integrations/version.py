@@ -5,7 +5,7 @@ __description__ = (
     "Messaging channel integrations for AI-Parrot "
     "(Slack, Telegram, MS Teams, WhatsApp, Matrix, Voice)."
 )
-__version__ = "2.1.2"
+__version__ = "2.1.3"
 __author__ = "Jesus Lara"
 __author_email__ = "jesuslara@phenobarbital.info"
 __license__ = "MIT"

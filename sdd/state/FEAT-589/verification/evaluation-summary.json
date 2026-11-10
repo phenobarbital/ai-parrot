@@ -1,0 +1,481 @@
+{
+  "feature_id": "FEAT-589",
+  "verified_on": "2026-11-10",
+  "scope": "Exploratory CPU classification and paid Google Agent execution; no production adoption or savings claim.",
+  "runs": [
+    {
+      "source_report": "artifacts/laya/reports/completion-verified/results.json",
+      "source_sha256": "89f36d692e5b4f2536e442cfcb15a5b4517c0601b3e1073db71922f68520a153",
+      "status": "incomplete",
+      "limitations": [
+        "smoke datasets: not representative production accuracy estimates (spec \u00a74)",
+        "live routing not executed: --live not requested (local routing inference did run)"
+      ],
+      "config": {
+        "provider": null,
+        "primary_label": "anthropic:opus-5",
+        "primary_api_model": null,
+        "cheap_api_model": null,
+        "max_live_calls": 0,
+        "max_output_tokens": 256,
+        "routing_threshold": 0.8,
+        "checkpoint_revision": "85cc74ddae6109077ebe2853a9b3077fb6606a78",
+        "warmup": 1,
+        "repeats": 3
+      },
+      "local_samples": 102,
+      "live_calls": 0,
+      "successful_live_calls": 0,
+      "verified_model_calls": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "actual_models": [],
+      "fixture_sha256": {
+        "injection": "31caf6d4ce8c95b5c367fc2cf7bad16a9eef53f5dbdcb659aa354345391b749b",
+        "routing": "8440e3c35b31386fadbbd8b3a8a389cf2f223a9e68170de7d3d9367ff94ea0f4",
+        "grounded": "06719aa31d951d7135df786f1a9029500bb64d3909e8e53d81a521a51612baaa"
+      },
+      "scenario_metrics": {
+        "injection": {
+          "n_cases": 16,
+          "n_ok": 16,
+          "n_error": 0,
+          "errors_by_code": {},
+          "accuracy": 0.9375,
+          "confusion_matrix": {
+            "injection": {
+              "injection": 8,
+              "clean": 1,
+              "__error__": 0
+            },
+            "clean": {
+              "injection": 0,
+              "clean": 7,
+              "__error__": 0
+            }
+          },
+          "abstentions": 0,
+          "prediction_flips": 0,
+          "timings": {
+            "inference_ms": {
+              "n": 48,
+              "p50_ms": 263.2776800019201,
+              "p95_ms": 368.4635840036208
+            },
+            "roundtrip_ms": {
+              "n": 48,
+              "p50_ms": 263.4875549993012,
+              "p95_ms": 368.6757409959682
+            },
+            "end_to_end_ms": {
+              "n": 48,
+              "p50_ms": 263.570492999861,
+              "p95_ms": 368.7678170026629
+            }
+          },
+          "n_repeats_observed": 3
+        },
+        "routing": {
+          "n_cases": 8,
+          "n_ok": 8,
+          "n_error": 0,
+          "errors_by_code": {},
+          "accuracy": 0.375,
+          "confusion_matrix": {
+            "primary": {
+              "primary": 3,
+              "cheap": 0,
+              "abstain": 0,
+              "__error__": 0
+            },
+            "cheap": {
+              "primary": 2,
+              "cheap": 0,
+              "abstain": 1,
+              "__error__": 0
+            },
+            "abstain": {
+              "primary": 2,
+              "cheap": 0,
+              "abstain": 0,
+              "__error__": 0
+            }
+          },
+          "abstentions": 1,
+          "prediction_flips": 0,
+          "timings": {
+            "inference_ms": {
+              "n": 24,
+              "p50_ms": 304.29441099840915,
+              "p95_ms": 329.6174099959899
+            },
+            "roundtrip_ms": {
+              "n": 24,
+              "p50_ms": 304.5195849990705,
+              "p95_ms": 329.8460360019817
+            },
+            "end_to_end_ms": {
+              "n": 24,
+              "p50_ms": 304.6374490004382,
+              "p95_ms": 329.9392000044463
+            }
+          },
+          "n_repeats_observed": 3,
+          "routing": {
+            "proportions": {
+              "primary": 8,
+              "cheap": 0,
+              "abstain": 0
+            },
+            "arms": {}
+          }
+        },
+        "grounded": {
+          "n_cases": 10,
+          "n_ok": 10,
+          "n_error": 0,
+          "errors_by_code": {},
+          "accuracy": 0.8,
+          "confusion_matrix": {
+            "billing": {
+              "billing": 2,
+              "technical": 0,
+              "sales": 0,
+              "other": 0,
+              "insufficient_evidence": 0,
+              "__error__": 0
+            },
+            "technical": {
+              "billing": 0,
+              "technical": 2,
+              "sales": 0,
+              "other": 0,
+              "insufficient_evidence": 0,
+              "__error__": 0
+            },
+            "sales": {
+              "billing": 0,
+              "technical": 0,
+              "sales": 2,
+              "other": 0,
+              "insufficient_evidence": 0,
+              "__error__": 0
+            },
+            "other": {
+              "billing": 1,
+              "technical": 0,
+              "sales": 0,
+              "other": 1,
+              "insufficient_evidence": 0,
+              "__error__": 0
+            },
+            "insufficient_evidence": {
+              "billing": 0,
+              "technical": 0,
+              "sales": 0,
+              "other": 1,
+              "insufficient_evidence": 1,
+              "__error__": 0
+            }
+          },
+          "abstentions": 1,
+          "prediction_flips": 0,
+          "timings": {
+            "inference_ms": {
+              "n": 30,
+              "p50_ms": 297.54833400511416,
+              "p95_ms": 335.01005000289297
+            },
+            "roundtrip_ms": {
+              "n": 30,
+              "p50_ms": 297.74843100312864,
+              "p95_ms": 335.21028499671957
+            },
+            "end_to_end_ms": {
+              "n": 30,
+              "p50_ms": 297.85606099903816,
+              "p95_ms": 335.32505099719856
+            }
+          },
+          "n_repeats_observed": 3
+        }
+      }
+    },
+    {
+      "source_report": "artifacts/laya/reports/google-live-verified/results.json",
+      "source_sha256": "5b62a97afaadce02283216c1d2e47b78460a4744caa9bada35dbb80ba2425d69",
+      "status": "incomplete",
+      "limitations": [
+        "smoke datasets: not representative production accuracy estimates (spec \u00a74)",
+        "live routing incomplete: call, provider, or model-verification failure"
+      ],
+      "config": {
+        "provider": "google",
+        "primary_label": "google:gemini-3.5-flash",
+        "primary_api_model": "gemini-3.5-flash",
+        "cheap_api_model": "gemini-3.1-flash-lite",
+        "max_live_calls": 16,
+        "max_output_tokens": 1024,
+        "routing_threshold": 0.8,
+        "checkpoint_revision": "85cc74ddae6109077ebe2853a9b3077fb6606a78",
+        "warmup": 1,
+        "repeats": 1
+      },
+      "local_samples": 8,
+      "live_calls": 16,
+      "successful_live_calls": 16,
+      "verified_model_calls": 0,
+      "prompt_tokens": 264,
+      "completion_tokens": 3308,
+      "actual_models": [],
+      "fixture_sha256": {
+        "routing": "8440e3c35b31386fadbbd8b3a8a389cf2f223a9e68170de7d3d9367ff94ea0f4"
+      },
+      "scenario_metrics": {
+        "routing": {
+          "n_cases": 8,
+          "n_ok": 8,
+          "n_error": 0,
+          "errors_by_code": {},
+          "accuracy": 0.375,
+          "confusion_matrix": {
+            "primary": {
+              "primary": 3,
+              "cheap": 0,
+              "abstain": 0,
+              "__error__": 0
+            },
+            "cheap": {
+              "primary": 2,
+              "cheap": 0,
+              "abstain": 1,
+              "__error__": 0
+            },
+            "abstain": {
+              "primary": 2,
+              "cheap": 0,
+              "abstain": 0,
+              "__error__": 0
+            }
+          },
+          "abstentions": 1,
+          "prediction_flips": 0,
+          "timings": {
+            "inference_ms": {
+              "n": 8,
+              "p50_ms": 318.456373999652,
+              "p95_ms": 356.67495900270296
+            },
+            "roundtrip_ms": {
+              "n": 8,
+              "p50_ms": 318.66506400547223,
+              "p95_ms": 356.8960730044637
+            },
+            "end_to_end_ms": {
+              "n": 8,
+              "p50_ms": 318.7587069987785,
+              "p95_ms": 357.0204420029768
+            }
+          },
+          "n_repeats_observed": 1,
+          "routing": {
+            "proportions": {
+              "primary": 8,
+              "cheap": 0,
+              "abstain": 0
+            },
+            "arms": {
+              "primary": {
+                "n": 8,
+                "rubric_pass_rate": 0.0,
+                "timings": {
+                  "n": 8,
+                  "p50_ms": 895.1674819982145,
+                  "p95_ms": 3747.752084003878
+                },
+                "usage": {
+                  "prompt_tokens": 132,
+                  "completion_tokens": 1662
+                },
+                "cost": null,
+                "fallback_samples": [],
+                "unverified_model_samples": [
+                  "route-simple-01",
+                  "route-simple-02",
+                  "route-simple-03",
+                  "route-complex-01",
+                  "route-complex-02",
+                  "route-complex-03",
+                  "route-ambiguous-01",
+                  "route-ambiguous-02"
+                ]
+              },
+              "routed": {
+                "n": 8,
+                "rubric_pass_rate": 0.0,
+                "timings": {
+                  "n": 8,
+                  "p50_ms": 1203.6226139971404,
+                  "p95_ms": 3394.115918999887
+                },
+                "usage": {
+                  "prompt_tokens": 132,
+                  "completion_tokens": 1646
+                },
+                "cost": null,
+                "fallback_samples": [],
+                "unverified_model_samples": [
+                  "route-simple-01",
+                  "route-simple-02",
+                  "route-simple-03",
+                  "route-complex-01",
+                  "route-complex-02",
+                  "route-complex-03",
+                  "route-ambiguous-01",
+                  "route-ambiguous-02"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "source_report": "artifacts/laya/reports/google-live-confirmed/results.json",
+      "source_sha256": "efaf548b55edfaf5009c6b873e5e7b3dc7242ed6389c10e8c0996773d6c693f8",
+      "status": "complete",
+      "limitations": [
+        "smoke datasets: not representative production accuracy estimates (spec \u00a74)"
+      ],
+      "config": {
+        "provider": "google",
+        "primary_label": "google:gemini-3.5-flash",
+        "primary_api_model": "gemini-3.5-flash",
+        "cheap_api_model": "gemini-3.1-flash-lite",
+        "max_live_calls": 2,
+        "max_output_tokens": 1024,
+        "routing_threshold": 0.8,
+        "checkpoint_revision": "85cc74ddae6109077ebe2853a9b3077fb6606a78",
+        "warmup": 1,
+        "repeats": 1
+      },
+      "local_samples": 1,
+      "live_calls": 2,
+      "successful_live_calls": 2,
+      "verified_model_calls": 2,
+      "prompt_tokens": 28,
+      "completion_tokens": 14,
+      "actual_models": [
+        "gemini-3.6-flash"
+      ],
+      "fixture_sha256": {
+        "routing": "23a3a932e224a963149a6e2cd2de7f7edb76ee3ce240fbb741b9cea03286df73"
+      },
+      "scenario_metrics": {
+        "routing": {
+          "n_cases": 1,
+          "n_ok": 1,
+          "n_error": 0,
+          "errors_by_code": {},
+          "accuracy": 0.0,
+          "confusion_matrix": {
+            "primary": {
+              "primary": 0,
+              "cheap": 0,
+              "abstain": 0,
+              "__error__": 0
+            },
+            "cheap": {
+              "primary": 0,
+              "cheap": 0,
+              "abstain": 1,
+              "__error__": 0
+            },
+            "abstain": {
+              "primary": 0,
+              "cheap": 0,
+              "abstain": 0,
+              "__error__": 0
+            }
+          },
+          "abstentions": 1,
+          "prediction_flips": 0,
+          "timings": {
+            "inference_ms": {
+              "n": 1,
+              "p50_ms": 287.5859810010297,
+              "p95_ms": 287.5859810010297
+            },
+            "roundtrip_ms": {
+              "n": 1,
+              "p50_ms": 287.7800299975206,
+              "p95_ms": 287.7800299975206
+            },
+            "end_to_end_ms": {
+              "n": 1,
+              "p50_ms": 287.89084500022,
+              "p95_ms": 287.89084500022
+            }
+          },
+          "n_repeats_observed": 1,
+          "routing": {
+            "proportions": {
+              "primary": 1,
+              "cheap": 0,
+              "abstain": 0
+            },
+            "arms": {
+              "primary": {
+                "n": 1,
+                "rubric_pass_rate": 0.0,
+                "timings": {
+                  "n": 1,
+                  "p50_ms": 822.5588059940492,
+                  "p95_ms": 822.5588059940492
+                },
+                "usage": {
+                  "prompt_tokens": 14,
+                  "completion_tokens": 7
+                },
+                "cost": null,
+                "fallback_samples": [],
+                "unverified_model_samples": []
+              },
+              "routed": {
+                "n": 1,
+                "rubric_pass_rate": 0.0,
+                "timings": {
+                  "n": 1,
+                  "p50_ms": 587.5621930026682,
+                  "p95_ms": 587.5621930026682
+                },
+                "usage": {
+                  "prompt_tokens": 14,
+                  "completion_tokens": 7
+                },
+                "cost": null,
+                "fallback_samples": [],
+                "unverified_model_samples": []
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "validation": {
+    "offline_suite": "109 passed, 2 skipped before final provider-alias correction",
+    "final_affected_tests": "29 passed, 2 skipped after correction",
+    "real_cpu_suite": "106 passed, 1 skipped in CPU completion",
+    "lint": "passed",
+    "format": "passed",
+    "paid_confirmation": "CLI exit 0; both arms have actual model versions and usage"
+  },
+  "interpretation": [
+    "First 16 paid responses lack retained provider model-version evidence; their incomplete status is preserved.",
+    "Two additional confirmation calls requested gemini-3.5-flash; provider returned gemini-3.6-flash.",
+    "All Laya routing decisions retained primary; gemini-3.1-flash-lite was not exercised.",
+    "Literal answer rubrics are not semantic accuracy measures; no post-run rubric tuning.",
+    "No price table was supplied; costs and savings are unverified."
+  ]
+}

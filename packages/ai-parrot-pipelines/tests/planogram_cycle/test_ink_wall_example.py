@@ -19,6 +19,14 @@ from parrot_pipelines.planogram.contracts import (
 
 _EXAMPLE_DIR = Path(__file__).resolve().parents[4] / "examples" / "planogram" / "pipelines"
 
+_HAS_BUILDER = (_EXAMPLE_DIR / "ink_wall_definition.py").exists()
+_HAS_RUNNER = (_EXAMPLE_DIR / "run_ink_wall.py").exists()
+
+pytestmark = pytest.mark.skipif(
+    not (_HAS_BUILDER and _HAS_RUNNER),
+    reason="examples/planogram/pipelines/ scripts not present (local-only, gitignored by default)",
+)
+
 
 def _load(name: str):
     """Load one example script as a module (nothing in examples/ is a package)."""

@@ -11,12 +11,12 @@ PageIndex can build a PDF's tree structure from the PDF itself, without calling 
 
 ## Public API
 
-- [`analyze_layout`](ref:parrot.knowledge.pageindex.layout.analyze_layout) — one pass over span data: body size, heading sizes, running lines, bold lines, bookmarks
-- [`LayoutHeaders`](ref:parrot.knowledge.pageindex.layout.LayoutHeaders) — pymupdf4llm `hdr_info` header detector driven by the profile
-- [`build_structure`](ref:parrot.knowledge.pageindex.layout_structure.build_structure) — scores the bookmarks and layout candidates and returns the chosen structure
-- [`page_structure`](ref:parrot.knowledge.pageindex.layout_structure.page_structure) — one node per page fallback
-- [`StructureReport`](ref:parrot.knowledge.pageindex.layout_structure.StructureReport) — what `import_pdf` returns as `structure_report`
-- [`layout_eval`](ref:parrot.knowledge.pageindex.layout_eval.main) — the evaluation CLI
+- `analyze_layout` — one pass over span data: body size, heading sizes, running lines, bold lines, bookmarks
+- `LayoutHeaders` — pymupdf4llm `hdr_info` header detector driven by the profile
+- `build_structure` — scores the bookmarks and layout candidates and returns the chosen structure
+- `page_structure` — one node per page fallback
+- `StructureReport` — what `import_pdf` returns as `structure_report`
+- `layout_eval` — the evaluation CLI
 
 ## How structure is chosen
 

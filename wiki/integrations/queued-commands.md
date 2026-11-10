@@ -16,14 +16,14 @@ are scoped to the requesting user.
 
 ## Public API
 
-- [`queued_command`](ref:parrot.integrations.core.queued.queued_command) marks
+- `queued_command` marks
   an agent method as a queued command without wrapping direct Python calls.
-- [`QueuedCommandService`](ref:parrot.integrations.core.queued.QueuedCommandService)
+- `QueuedCommandService`
   performs local admission, preparation, execution, progress reporting, and
   delivery for one platform wrapper.
-- [`report_command_progress`](ref:parrot.integrations.core.queued.report_command_progress)
+- `report_command_progress`
   updates the running job's requester-visible progress text.
-- [`JobManager`](ref:parrot.jobs.JobManager) stores the job lifecycle; use its
+- `JobManager` stores the job lifecycle; use its
   `cancel_job(job_id, reason)` method for non-destructive cancellation.
 
 Declare an async agent method with a stable canonical command name. A prepare

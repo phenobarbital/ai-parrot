@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# AI-Parrot installer — automates the AI-Parrot getting-started guide (FEAT-586).
+# AI-Parrot installer — automates the AI-Parrot getting-started guide.
 # Never destructive; every privileged/network command is announced before it runs.
 #
 # Usage:
@@ -164,7 +164,7 @@ resolve_extras() {
 print_plan() {  # C14a — first output of global mode; no side effects; printed under --dry-run too
   case "$UV_MODE" in
     download)
-      echo "This installer will download pinned uv $UV_VERSION from $1 and verify it against $1.sha256 into"
+      echo "This installer will download pinned uv $UV_VERSION from $1 and verify it against the SHA-256 pinned in this script, into"
       echo "$PARROT_HOME/libexec (never on PATH)."
       [ -z "$SYS_UV" ] || echo "Your uv $SYS_UV_VER at $SYS_UV is outside >=$UV_MIN,<$UV_MAX and is left as is."
       ;;
@@ -248,8 +248,21 @@ fetch() {  # fetch <url> <dest> — the network check; failure aborts before any
   elif command -v wget >/dev/null 2>&1; then wget -q -O "$2" "$1"
   else echo "--global needs curl or wget" >&2; return 1; fi
 }
-verify_sha256() {  # verify_sha256 <file> <file.sha256>
-  local want got; want="$(awk '{print $1}' "$2")"
+uv_pinned_sha256() {  # uv_pinned_sha256 <asset> — SHA-256 of uv $UV_VERSION release assets, pinned in this script
+  # (itself covered by SHA256SUMS), so a tampered release or a MITM cannot swap archive and checksum together.
+  # PARROT_UV_SHA256 overrides it (offline mirrors, tests); it is read from the local environment only.
+  if [ -n "${PARROT_UV_SHA256:-}" ]; then printf '%s' "$PARROT_UV_SHA256"; return 0; fi
+  [ "$UV_VERSION" = "0.11.28" ] || { echo "no pinned checksum for uv $UV_VERSION" >&2; return 1; }
+  case "$1" in
+    uv-x86_64-unknown-linux-gnu.tar.gz) echo e490a6464492183c5d4534a5527fb4440f7f2bb2f228162ad7e4afe076dc0224 ;;
+    uv-aarch64-unknown-linux-gnu.tar.gz) echo 03e9fe0a81b0718d0bc84625de3885df6cc3f89a8b6af6121d6b9f6113fb6533 ;;
+    uv-x86_64-apple-darwin.tar.gz) echo 2ad79983127ffca7d77b77ce6a24278d7e4f7b817a1acf72fea5f8124b4aac5e ;;
+    uv-aarch64-apple-darwin.tar.gz) echo 33540eb7c883ab857eff79bd5ac2aa31fe27b595abecb4a9c003a2c998447232 ;;
+    *) echo "no pinned checksum for $1" >&2; return 1 ;;
+  esac
+}
+verify_sha256() {  # verify_sha256 <file> <asset> — fails closed when no pin exists
+  local want got; want="$(uv_pinned_sha256 "$2")" || return 1
   if command -v sha256sum >/dev/null 2>&1; then got="$(sha256sum "$1" | awk '{print $1}')"
   else got="$(shasum -a 256 "$1" | awk '{print $1}')"; fi
   [ "$want" = "$got" ] || { echo "checksum mismatch for $1" >&2; return 1; }
@@ -320,8 +333,7 @@ legacy_compat_uv() {
   fi
   if [ ! -d "$dl" ]; then dl="$(mktemp -d "$dl")"; CREATED+=("$dl"); fi
   fetch "$url" "$dl/$asset"
-  fetch "$url.sha256" "$dl/$asset.sha256"
-  verify_sha256 "$dl/$asset" "$dl/$asset.sha256"
+  verify_sha256 "$dl/$asset" "$asset"
   tar -xzf "$dl/$asset" -C "$dl"
   install_uv_bins "$dl" "$target" "$PARROT_HOME/bin"
 }
@@ -349,6 +361,7 @@ global_install() {
   local target asset url spec tools dl uv s c failed=0 _comps
   if [ "$VENV_SET" -eq 1 ]; then echo "--global cannot be combined with --venv: the managed venv lives at \$PARROT_HOME/venv" >&2; exit 1; fi
   if [ "$WITH_WIKI" -eq 1 ]; then echo "--global cannot be combined with --with-wiki: there is no project to build a wiki for" >&2; exit 1; fi
+  if [ "$INSTALL_CLI" -eq 1 ]; then echo "--global cannot be combined with --install-cli: the managed runtime installs no host CLIs; run the installer again without --global for them" >&2; exit 1; fi
   if [ "$SYSTEM_DEPS" -eq 1 ]; then echo "--global cannot be combined with --system-deps: uv supplies the Python runtime" >&2; exit 1; fi
   PARROT_HOME="${PARROT_HOME:-$HOME/.parrot}"; [ "$PYTHON_SET" -eq 1 ] || PYTHON="3.12"; resolve_extras
   check_components
@@ -369,8 +382,7 @@ global_install() {
       if [ "$DRY_RUN" -eq 0 ]; then dl="$(mktemp -d "$dl")"; CREATED+=("$dl"); mkdir_tracked "$PARROT_HOME/libexec"; fi
       printf '\xe2\x86\x92 create a scratch download dir: mktemp -d %s\n' "$dl"
       run "download pinned uv $UV_VERSION ($target)" fetch "$url" "$dl/$asset"
-      run "download the uv checksum" fetch "$url.sha256" "$dl/$asset.sha256"
-      run "verify the uv checksum" verify_sha256 "$dl/$asset" "$dl/$asset.sha256"
+      run "verify the uv checksum against the pinned SHA-256" verify_sha256 "$dl/$asset" "$asset"
       run "extract uv" tar -xzf "$dl/$asset" -C "$dl"
       run "install uv $UV_VERSION into $PARROT_HOME/libexec (not on PATH; your own uv is never touched)" \
         install_uv_bins "$dl" "$target" "$PARROT_HOME/libexec"
