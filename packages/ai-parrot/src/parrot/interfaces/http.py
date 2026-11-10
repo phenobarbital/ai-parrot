@@ -46,12 +46,15 @@ import httpx
 from bs4 import BeautifulSoup as bs
 from lxml import html, etree
 from navconfig.logging import logging
-from proxylists.proxies import (
-    FreeProxy,
-    Oxylabs,
-    Decodo,
-    Geonode
-)
+try:
+    from proxylists.proxies import (
+        FreeProxy,
+        Oxylabs,
+        Decodo,
+        Geonode
+    )
+except ImportError:  # proxylists needs uvloop, which ships no Windows wheels
+    FreeProxy = Oxylabs = Decodo = Geonode = None
 from ..utils import cPrint, SafeDict
 
 from ..conf import (
@@ -217,6 +220,10 @@ class HTTPService(CredentialsInterface, PandasDataframe):
         Asynchronously retrieves a list of free proxies.
         TODO: SELECT or rotate the free/paid proxies.
         """
+        if FreeProxy is None:
+            # proxylists is not installed on Windows (see pyproject marker)
+            self.logger.warning("proxylists is unavailable on this platform; proxy list is empty")
+            return []
         if self._free_proxy is True:
             return await FreeProxy().get_list()
         else:

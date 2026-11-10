@@ -128,7 +128,11 @@ dependencies = [
     # against. Floor at 3.2.2 (loose upper bound) so a stray resolver run
     # can never drop back to a 2.x that has no `navigator.utils.file` at all
     # (that downgrade broke `parrot.tools.pythonrepl` imports on 2026-09-03).
-    "navigator-api[uvloop,locale,google]>=3.2.2",
+    # uvloop and google are gated off Windows and macOS: uvloop ships no Windows
+    # wheels, and navigator-api[google] has no usable wheels on macOS, so the
+    # smoke install on those platforms failed to resolve (2.1.3 release run).
+    "navigator-api[locale]>=3.2.2",
+    "navigator-api[uvloop,google]>=3.2.2; sys_platform != 'win32' and sys_platform != 'darwin'",
     # Async DB — base only (asyncpg, aiosqlite, pandas, pgvector)
     "asyncdb>=2.16.2",
     # AgentsFlow state checkpointing (FEAT-399) — binary checkpoint encoding,
@@ -149,11 +153,11 @@ dependencies = [
     "aiohttp-cors>=0.8.1",
     "brotli==1.2.1",
     "urllib3==2.8.0",
-    # parrot.interfaces.http imports proxylists.proxies unconditionally at
-    # module level, so HTTPService (the base of most HTTP toolkits) cannot be
-    # imported without it. It was previously undeclared — a bare install of
-    # ai-parrot could not `import parrot.interfaces.http`.
-    "proxylists>=0.12.0",
+    # parrot.interfaces.http imports proxylists.proxies at module level, which
+    # is guarded (proxies become empty on Windows). proxylists pulls uvloop
+    # unconditionally, and uvloop ships no Windows wheels, so it is gated off
+    # Windows. A bare install of ai-parrot on Linux/macOS still gets it.
+    "proxylists>=0.12.0; sys_platform != 'win32'",
     # aioquic and pylsqpack moved to ai-parrot-server[mcp] extra in FEAT-203
     # API / OpenAPI tools
     "prance>=25.4.8.0",

@@ -974,7 +974,8 @@ requires-dist = [
     { name = "msgraph-sdk", marker = "extra == 'agents'", specifier = ">=1.8.0" },
     { name = "msgraph-sdk", marker = "extra == 'msgraph'", specifier = ">=1.8.0" },
     { name = "navconfig", extras = ["default"], specifier = ">=2.5.2" },
-    { name = "navigator-api", extras = ["google", "locale", "uvloop"], specifier = ">=3.2.2" },
+    { name = "navigator-api", extras = ["google", "uvloop"], marker = "sys_platform != 'darwin' and sys_platform != 'win32'", specifier = ">=3.2.2" },
+    { name = "navigator-api", extras = ["locale"], specifier = ">=3.2.2" },
     { name = "navigator-auth", specifier = ">=0.28.8" },
     { name = "navigator-eventbus", specifier = ">=0.4.0" },
     { name = "navigator-eventbus", extras = ["grpc"], marker = "extra == 'grpc'" },
@@ -1019,7 +1020,7 @@ requires-dist = [
     { name = "prometheus-client", marker = "extra == 'observability-prometheus'", specifier = ">=0.20,<1.0" },
     { name = "prompt-toolkit", specifier = ">=3.0" },
     { name = "prophet", marker = "extra == 'agents'", specifier = "==1.2.1" },
-    { name = "proxylists", specifier = ">=0.12.0" },
+    { name = "proxylists", marker = "sys_platform != 'win32'", specifier = ">=0.12.0" },
     { name = "psutil", specifier = ">=5.9" },
     { name = "psycopg-binary", marker = "extra == 'db'", specifier = ">=3.2.12" },
     { name = "py-spy", marker = "extra == 'dev'", specifier = ">=0.4" },
@@ -1145,7 +1146,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-amazon"
-version = "1.1.2"
+version = "1.1.3"
 source = { editable = "packages/ai-parrot-client-amazon" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1160,7 +1161,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-anthropic"
-version = "1.1.2"
+version = "1.1.3"
 source = { editable = "packages/ai-parrot-client-anthropic" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1177,7 +1178,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-gemma4"
-version = "1.1.2"
+version = "1.1.3"
 source = { editable = "packages/ai-parrot-client-gemma4" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1192,7 +1193,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-google"
-version = "1.1.2"
+version = "1.1.3"
 source = { editable = "packages/ai-parrot-client-google" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1207,7 +1208,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-grok"
-version = "1.1.2"
+version = "1.1.3"
 source = { editable = "packages/ai-parrot-client-grok" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1222,7 +1223,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-groq"
-version = "1.1.2"
+version = "1.1.3"
 source = { editable = "packages/ai-parrot-client-groq" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1237,7 +1238,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-hf"
-version = "1.1.2"
+version = "1.1.3"
 source = { editable = "packages/ai-parrot-client-hf" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1252,7 +1253,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-jev"
-version = "1.1.2"
+version = "1.1.3"
 source = { editable = "packages/ai-parrot-client-jev" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1263,7 +1264,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-local"
-version = "1.1.2"
+version = "1.1.3"
 source = { editable = "packages/ai-parrot-client-local" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1274,7 +1275,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-meta"
-version = "1.1.2"
+version = "1.1.3"
 source = { editable = "packages/ai-parrot-client-meta" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1285,7 +1286,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-moonshot"
-version = "1.1.2"
+version = "1.1.3"
 source = { editable = "packages/ai-parrot-client-moonshot" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1296,7 +1297,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-nvidia"
-version = "1.1.2"
+version = "1.1.3"
 source = { editable = "packages/ai-parrot-client-nvidia" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1307,7 +1308,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-openai"
-version = "1.1.2"
+version = "1.1.3"
 source = { editable = "packages/ai-parrot-client-openai" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1333,7 +1334,7 @@ provides-extras = ["bridge"]
 
 [[package]]
 name = "ai-parrot-client-openrouter"
-version = "1.1.2"
+version = "1.1.3"
 source = { editable = "packages/ai-parrot-client-openrouter" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1344,7 +1345,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-vllm"
-version = "1.1.2"
+version = "1.1.3"
 source = { editable = "packages/ai-parrot-client-vllm" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1359,7 +1360,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-zai"
-version = "1.1.2"
+version = "1.1.3"
 source = { editable = "packages/ai-parrot-client-zai" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1823,7 +1824,7 @@ provides-extras = ["youtube", "audio", "pdf", "images", "web", "ebook", "documen
 
 [[package]]
 name = "ai-parrot-openlit-bridge"
-version = "1.1.2"
+version = "1.1.3"
 source = { editable = "packages/ai-parrot-openlit-bridge" }
 dependencies = [
     { name = "aiohttp" },
@@ -10027,7 +10028,7 @@ wheels = [
 
 [[package]]
 name = "navrules"
-version = "2.1.2"
+version = "2.1.3"
 source = { editable = "packages/navrules" }
 
 [package.optional-dependencies]
