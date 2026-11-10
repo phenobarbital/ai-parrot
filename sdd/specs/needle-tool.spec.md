@@ -14,7 +14,7 @@ docs:
 **Feature ID**: FEAT-874
 **Date**: 2026-11-10
 **Author**: Jesus Lara / Codex
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
 ## 1. Motivation & Business Requirements
@@ -28,7 +28,8 @@ automatically; callers must not redeclare functions using a provider decorator.
 
 FEAT-590 already provides a plan-node `NeedleDelegate` using `cactus-needle==3.0.4`.
 It proposes one call, is not an AbstractClient, and deliberately returns None for extraction.
-This feature adds the two requested entry points without changing that legacy contract.
+That code is development precedent, not a production compatibility contract. This is a new
+product: no legacy API, dependency, behavior or coinstallation compatibility is required.
 
 ### Goals
 
@@ -51,7 +52,7 @@ Structured output guarantees a validated representation, not semantic correctnes
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:e11dc2cd43ac4fd36cf12c01d067b2330af4d88e99ea8f28b36e02db67d80f72 evaluation_digest=sha256:58ae82db917190339d5aac4106b2fb7414207fdd04dc7e5cedd2cc6add53b6e4 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:e25a47365e2ae0038d1aea6c6d3ff005d9b69fcbfa9a5050a1d5141ed693a2db evaluation_digest=sha256:76c6bc73778992e55cc365819d1e309a00646c8f015d608f450b84190965aed7 rules_version=1 status=pass -->
 
 ## 2. Architectural Design
 
@@ -63,10 +64,14 @@ evaluation is a valid research outcome but does not complete this integration fe
 
 The proposed new distribution is `ai-parrot-client-needle`, contributing
 `parrot.clients.needle:NeedleClient` through the existing `parrot.clients` entry-point group.
-The new runtime targets the current `cactus-compute` API (`import cactus`), using Needle 3
-weights. This is a draft design assumption, not a recorded user selection. The existing
-`ai-parrot[needle]` extra and FEAT-590 backend remain unchanged. M0 must prove that the
-two distributions can coexist; do not silently upgrade their pins or migrate callers.
+The runtime targets only `cactus-compute==4.1.0` (`import cactus`), using Needle 3 weights.
+This is the latest published release verified on 2026-11-10 against
+[PyPI release metadata](https://pypi.org/project/cactus-compute/4.1.0/) (released 2026-11-07).
+The user explicitly selected the current API without legacy compatibility. M0 evaluates
+this exact pin; M4 uses the same pin and replaces the old `cactus-needle==3.0.4` extra entry.
+Do not add legacy adapters, dual SDK selection or compatibility tests. If a newer stable
+release appears before M0 begins, refresh and record the exact pin before freezing the run;
+any upgrade after measurements requires rerunning M0, never an unbounded dependency range.
 
 Only the client's runtime boundary calls the native SDK. It calls `complete()`, never
 `run()`, and never passes executable Python tools to Cactus. The host owns selection,
@@ -167,7 +172,7 @@ existing Agent --> ToolManager.delegate_tool_call --> orchestration <--+
 | ToolManager | Add one opt-in method | Existing execute_tool remains sole dispatcher |
 | AbstractTool / ToolDefinition | Schema readers | No provider decorators or base-schema mutation |
 | AIMessage / InvokeResult / ToolResult | Reuse envelopes | Structured output and guard statuses preserved |
-| FEAT-590 | Compatibility regression | Existing backend and plan semantics unchanged |
+| FEAT-590 | Research precedent only | No legacy API or behavior compatibility gate |
 
 ### Data Models
 
@@ -197,7 +202,7 @@ Permission denials retain the existing ToolResult status rather than becoming no
 | M1 schemas/models | yes, after M0 | Strict conversion subset and typed envelopes | — |
 | M2 process runtime/client | no | Process isolation and AbstractClient methods | Version/platform compatibility must first be measured |
 | M3 manager orchestration | yes, after M0 | Two inference stages, existing dispatch only | — |
-| M4 packaging/docs/regressions | yes, after M0 | Entry point and enumerated docs/tests | Dependency pin comes from M0 |
+| M4 packaging/docs/regressions | yes, after M0 | Current API only, exact 4.1.0 pin, entry point and docs/tests | — |
 
 ### Module 0: First evaluation and adoption decision
 
@@ -352,16 +357,19 @@ def search_tool(manager: ToolManager, query: str, allowed_tools: Sequence[str]) 
     """Search the allowed registered catalogue, returning at most five positive lexical matches."""
 ```
 
-### Module 4: Packaging, documentation and compatibility
+### Module 4: Packaging, documentation and current API installation
 
 Paths: satellite `pyproject.toml`, `README.md`, `tests/test_entry_points.py`, and
-`wiki/clients/needle.md`. Depends on M0–M3. Namespace packages follow the existing local
+`wiki/clients/needle.md`; modify `packages/ai-parrot/pyproject.toml` to replace the obsolete
+Needle extra dependency with `cactus-compute==4.1.0` and update its comment. Depends on M0–M3.
+Namespace packages follow the existing local
 client satellite. Workspace membership is already `packages/*`; no root manifest edit is
 needed. Installation is explicit (`uv pip install -e packages/ai-parrot-client-needle` in
-an activated environment); do not change the legacy `needle` extra or add to `all`.
+an activated environment); update the `needle` runtime extra to the current pin, without adding to `all`.
 If workspace lock regeneration is required, M4 owns `uv.lock` exclusively; retain unrelated
-resolutions and verify the old extra can still resolve. The package pins the exact compatible
-runtime measured by M0. No runtime/model download at import, factory discovery or installation.
+resolutions outside this feature. Both manifests pin `cactus-compute==4.1.0`, matching M0;
+there is no old-extra resolution or legacy SDK compatibility requirement.
+No runtime/model download at import, factory discovery or installation.
 
 ```python
 # New satellite __init__.py public export and packaging contract:
@@ -452,7 +460,8 @@ observations, limitations and the tested package pin. Never synthesize performan
 Stub native IPC responses but use real NeedleClient orchestration and real ToolManager with
 fake tools. Test the Agent-supplied manager path, extraction model instance identity, permission
 denial before side effect, 100-tool catalogue selection, and cancellation before dispatch.
-Existing full-result and legacy delegate tests guard compatibility. Native M0 evaluation
+Existing full-result tests guard the manager execution contract. Legacy delegate tests are
+not an acceptance gate for this new product. Native M0 evaluation
 is separate measured evidence, not a mock-based CI claim.
 
 ### Validation Contract
@@ -461,7 +470,6 @@ tests:
 - packages/ai-parrot/tests/unit/test_needle_evaluation.py
 - packages/ai-parrot/tests/tools/test_needle_delegation.py
 - packages/ai-parrot/tests/tools/test_toolmanager_full_result.py
-- packages/ai-parrot/tests/bots/flows/plan/test_needle_delegate.py
 - packages/ai-parrot-client-needle/tests/test_schema.py
 - packages/ai-parrot-client-needle/tests/test_runtime.py
 - packages/ai-parrot-client-needle/tests/test_client.py
@@ -483,7 +491,8 @@ evaluation-only gate first and must not execute later missing test operands befo
 - [ ] Suppressed, invalid, disallowed, ungrounded or rejected proposals cause zero tool executions.
 - [ ] Tool outputs remain structured; optional result validation failures never trigger duplicate side effects.
 - [ ] Native inference does not block the event loop; timeout/cancellation/close leave no orphan worker.
-- [ ] FEAT-590 behavior and existing manager guards/results remain unchanged; declared CI tests pass.
+- [ ] Current API and exact evaluated dependency pin are used; no legacy compatibility layer is introduced.
+- [ ] Existing manager guards/results remain unchanged; declared CI tests pass.
 - [ ] Documentation covers capability limits, installation, evaluation results and reproducible examples.
 
 ## 6. Codebase Contract
@@ -524,7 +533,8 @@ tasks must verify their exact imports from base.py before implementation. New sy
 - No universal AbstractTool.output_schema contract was found; use the explicit result_models map.
 - No `parrot.models.invoke` module: InvokeResult is in `parrot.models.responses`.
 - FEAT-590's extraction method does not implement native extraction; do not treat it as usable extraction.
-- Current Cactus SDK compatibility and exact version pin are unverified locally until M0.
+- `cactus-compute==4.1.0` is verified as the latest published release; local platform/runtime
+  suitability remains unmeasured until M0.
 
 ### User-Provided Examples and Upstream Evidence
 
@@ -540,7 +550,7 @@ documents complete/reset and states Needle 3 has no retrieval head. The
 top-five retrieval above five tools. Treat this as conflicting documentation, not a verified
 runtime invariant. The [extraction guide](https://cactuscompute.com/blog/structured-extraction-with-needle)
 documents recovery from suppressed calls; this feature deliberately declines those records.
-M0 records observed behavior and pins it; no vendor benchmark substitutes for measurements.
+M0 records observed behavior for the exact 4.1.0 pin; no vendor benchmark substitutes for measurements.
 
 ### Edit Sites (Blueprint Anchors)
 
@@ -550,6 +560,7 @@ The CREATE groups below enumerate each file; the grouping only shortens repeated
 | File | Action | Verbatim anchor | Verified at | Occurrences |
 |---|---|---|---|---|
 | `packages/ai-parrot/src/parrot/tools/manager.py` | MODIFY | `    async def execute_tool(` | :1799 | 1 |
+| `packages/ai-parrot/pyproject.toml` | MODIFY | `needle = [` | :791 | 1 |
 | `uv.lock` | MODIFY (M4 resolution) | `version = 1` | `uv.lock:1` | 1 |
 | `packages/ai-parrot/src/parrot/tools/needle_models.py` | CREATE | — | — | — |
 | `packages/ai-parrot/src/parrot/tools/needle_delegation.py` | CREATE | — | — | — |
@@ -590,15 +601,15 @@ Do not treat schema correctness as truth, and do not bypass guards because confi
 
 | Dependency | Version / policy | Purpose |
 |---|---|---|
-| cactus-compute | Exact pin measured in isolated M0; not yet introduced | Current Needle 3 runtime |
-| cactus-needle | Existing 3.0.4 optional extra, unchanged | Legacy FEAT-590 compatibility |
+| cactus-compute | `==4.1.0`; latest published release verified 2026-11-10; evaluated first in M0 | Current Needle 3 runtime |
+| cactus-needle | Remove existing 3.0.4 declaration from the Needle extra in M4 | Obsolete development dependency; no compatibility obligation |
 | Pydantic | Existing workspace v2 dependency | Schemas and final validation |
 | jsonschema | Existing >=4.20, verified `packages/ai-parrot/pyproject.toml:97` | Visible argument validation |
 | Python standard library | Existing supported interpreter | Processes, IPC, hashing, metrics |
 
-M0 must verify wheel/platform availability, model licensing, offline cache behavior and
-coinstallation before packaging. Dependencies absent from manifests require explicit review
-before introduction; this spec authorizes design, not an unmeasured pin. Do not install
+M0 must verify wheel/platform availability, model licensing and offline cache behavior before
+packaging. The user authorizes the latest current runtime pin; evaluation must still establish
+its suitability before production implementation. Do not install
 training, GPU or embedding libraries merely to run tool inference.
 
 ### Known Risks / Gotchas
@@ -614,7 +625,7 @@ be rolled back automatically. No benchmark report is proof of production safety.
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:e11dc2cd43ac4fd36cf12c01d067b2330af4d88e99ea8f28b36e02db67d80f72 evaluation_digest=sha256:58ae82db917190339d5aac4106b2fb7414207fdd04dc7e5cedd2cc6add53b6e4 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:e25a47365e2ae0038d1aea6c6d3ff005d9b69fcbfa9a5050a1d5141ed693a2db evaluation_digest=sha256:76c6bc73778992e55cc365819d1e309a00646c8f015d608f450b84190965aed7 rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -667,10 +678,10 @@ Coverage:
       "path": "/home/jesuslara/proyectos/ai-parrot/sdd/specs/needle-tool.spec.md"
     }
   ],
-  "evaluation_digest": "sha256:58ae82db917190339d5aac4106b2fb7414207fdd04dc7e5cedd2cc6add53b6e4",
+  "evaluation_digest": "sha256:76c6bc73778992e55cc365819d1e309a00646c8f015d608f450b84190965aed7",
   "exit_code": 0,
   "findings": [],
-  "input_digest": "sha256:e11dc2cd43ac4fd36cf12c01d067b2330af4d88e99ea8f28b36e02db67d80f72",
+  "input_digest": "sha256:e25a47365e2ae0038d1aea6c6d3ff005d9b69fcbfa9a5050a1d5141ed693a2db",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
@@ -697,9 +708,9 @@ Coverage:
 
 - [x] Scope — user requested both a tool-first client and internal ToolManager delegation.
 - [x] Evaluation ordering — user requested a first Needle 3 efficiency evaluation like FEAT-589.
-- [ ] Current Cactus API versus legacy compatibility — draft targets current API for the new satellite;
-  legacy backend stays intact. Owner: spec reviewer; confirm before production tasks.
-- [ ] Exact runtime pin, target platform viability and coinstallation — owner: M0; required gate evidence.
+- [x] Current API versus legacy compatibility — resolved by user: new product, no legacy compatibility;
+  use the latest published exact pin, `cactus-compute==4.1.0` as verified 2026-11-10.
+- [ ] Target platform viability on the pinned current runtime — owner: M0; required gate evidence.
 - [ ] Are the draft quality/latency/RSS targets suitable for the deployment CPU? Owner: spec reviewer;
   freeze any changes before held-out inference.
 - [ ] Optional cloud comparison provider/model/budget — owner: evaluation operator; omit comparison when unset.
@@ -716,7 +727,7 @@ independent design review.
 - Policy: required.
 - Create `wiki/clients/needle.md`: installation, supported schemas, extraction and Agent
   delegation examples, structured refusals/errors, catalogue recall limits, permissions,
-  process cleanup, offline setup, legacy compatibility, and links to M0 results/limitations.
+  process cleanup, offline setup, the current API/version requirement, and links to M0 results/limitations.
 - Create satellite README with minimal setup and explicit capability matrix.
 - Create evaluation README with exact reproducible command, pinned environment, fixture provenance,
   budgets, metrics and go/no-go interpretation.
@@ -725,7 +736,7 @@ independent design review.
 ## Worktree Strategy
 
 Isolation: per-spec — one FEAT-874 worktree; task-level sub-worktrees managed by SDD.
-M0 is first. All production modules depend on its passing evidence and settled API choice.
+M0 is first. All production modules depend on its passing evidence; the current-only API choice is settled.
 M1 -> M0; M2 -> M1; M3 -> M1 and M2 (uses NeedleClient.propose_calls and shared models);
 M4 -> M0, M1, M2 and M3 (packages and documents the implemented public interfaces).
 Independent test/schema fixture work may run concurrently within these actual dependencies.
@@ -739,3 +750,4 @@ no unmerged cross-feature dependency is required.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-11-10 | Jesus Lara / Codex | Draft; evaluation-first gate, client and guarded manager delegation |
+| 0.2 | 2026-11-10 | Jesus Lara / Codex | User approved current API only; pin cactus-compute 4.1.0 and remove legacy compatibility gates |
