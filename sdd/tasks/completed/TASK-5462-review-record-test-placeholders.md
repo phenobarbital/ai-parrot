@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-870 — Wheel-Only Foreign-Repo Test Maps the `task review record` Placeholders
 **Spec**: `sdd/specs/commands-sdd-start-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -168,10 +168,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: /sdd-fix session (Claude, agent:sdd-fix:88be2347)
+**Date**: 2026-11-10
+**Notes**: Implemented spec §2 in commit `8b683bbc3b`: `SCENARIOS["review_checkpoint"]` now carries
+`placeholders={"<id>": "TASK-001", "<review>": "demo review"}`; `prepare=_seed_worktree` and
+`expect_exit=(0, 1, 2, 3)` are unchanged, and `COMMON` and the four `sdd-start` copies are untouched. Evidence:
+- before the edit: `test_install_then_every_documented_helper_invocation` fails with
+  `review_checkpoint: unresolved placeholder(s) ['<id>', '<review>']` (1 failed, 47.7s).
+- after: the whole Validation Command file passes (6 passed, 63.3s); no unresolved-placeholder assertion remains.
+- `ruff check` on the file reports one finding, F601 (`"<suggested_slug>"` repeated in `COMMON`, :301 and :314).
+  It is already on `dev` @ `9757980ca8` (same result on the base file) and not from this edit; filed as
+  `issue:c8ed7787fb01` (low, tech_debt).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**:
+**Deviations from spec**: AC-4's "`ruff check` clean" holds for the changed lines only; the file keeps the
+pre-existing F601 above, left out of scope.
