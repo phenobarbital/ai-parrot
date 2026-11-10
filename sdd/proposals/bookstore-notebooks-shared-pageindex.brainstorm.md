@@ -12,7 +12,7 @@ tags: [bookstore, pageindex, mcp, local-toolkits, notebooks, catalog, ingest]
 
 **Date**: 2026-11-10
 **Author**: Jesus Lara (with Claude)
-**Status**: exploration
+**Status**: accepted
 **Recommended Option**: A
 
 ---
