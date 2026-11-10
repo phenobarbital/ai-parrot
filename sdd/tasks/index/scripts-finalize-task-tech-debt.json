@@ -1,0 +1,54 @@
+{
+  "feature": "scripts-finalize-task-tech-debt",
+  "feature_id": "FEAT-867",
+  "spec": "sdd/specs/scripts-finalize-task-tech-debt.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-09T23:44:12+00:00",
+  "completed_at": "2026-11-09T23:52:43+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_finalize_task.py",
+          "packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_optimization_workflow_contracts.py::test_stale_fix_and_full_compatibility"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:b3271e797bdcd8ae59ac2e3b2ee812f72f331ec7be563d69ba0c2b88e089adc5"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5459",
+      "slug": "finalize-review-artifact-binding",
+      "title": "finalize binds the ReviewArtifact to feature, branch history and fix commits",
+      "feature_id": "FEAT-867",
+      "feature": "scripts-finalize-task-tech-debt",
+      "spec": "sdd/specs/scripts-finalize-task-tech-debt.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "single task; no dependencies; touches only finalize_task.py and test_finalize_task.py",
+      "assigned_to": "claude-opus-5-5 (sdd-fix agent:sdd-fix:c445f42d)",
+      "started_at": "2026-11-09T23:45:07+00:00",
+      "completed_at": "2026-11-09T23:47:19+00:00",
+      "file": "sdd/tasks/completed/TASK-5459-finalize-review-artifact-binding.md",
+      "discovered_from": "issue:2d1816987583",
+      "verification": "verified"
+    }
+  ]
+}

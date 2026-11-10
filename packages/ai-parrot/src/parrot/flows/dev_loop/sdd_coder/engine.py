@@ -55,7 +55,12 @@ from parrot.flows.dev_loop.models import (  # verified: models/base.py:412, :763
     TaskScopedBrief,
 )
 from parrot.flows.dev_loop.session_state import DispatchCompleted  # verified: session_state.py:476
-from parrot.flows.dev_loop.task_scheduler import TaskScheduler, iter_index_files  # verified: task_scheduler.py:53
+from parrot.flows.dev_loop.task_scheduler import (  # verified: task_scheduler.py:53
+    BRIEF_INDEX_DIR,
+    BRIEF_INDEX_SUFFIX,
+    TaskScheduler,
+    iter_index_files,
+)
 from parrot.flows.dev_loop.worktree_manager import (  # verified: worktree_manager.py:75, :41
     SubWorktreeManager,
     SubWorktreeMergeError,
@@ -96,7 +101,9 @@ from parrot.flows.dev_loop.test_scope.runners.registry import load_registry
 from parrot.flows.dev_loop.sdd_coder.optimization_models import (
     BackgroundRegistration,
     BackgroundStatus,
+    CoderReviewReceipt,
     EvidenceRef,
+    ReviewArtifact,
     WorkflowEvent,
 )
 from parrot.flows.dev_loop.sdd_coder.evidence import (
@@ -176,6 +183,25 @@ _GATE_WAIT_MARGIN_S = 5
 
 #: Highest sub-worktree attempt number `_free_attempt` hands out for one task+execution.
 _MAX_ATTEMPT_NUMBER = 20
+
+
+def _index_slug(index_path: str) -> str:
+    """The slug ``resolve_index_path`` maps to ``index_path`` (its inverse).
+
+    A per-spec index ``sdd/tasks/index/<slug>.json`` yields its file stem; a brief index
+    ``sdd/briefs/<slug>.index.json`` yields its name minus ``.index.json``. This, not the index header's
+    ``feature``, is the slug ``finalize_task`` matches a ``ReviewArtifact`` against (issue:b9ff30bf709e).
+
+    Args:
+        index_path: Path of a per-spec or brief index.
+
+    Returns:
+        The index slug.
+    """
+    path = Path(index_path)
+    if path.parent.name == BRIEF_INDEX_DIR.name and path.name.endswith(BRIEF_INDEX_SUFFIX):
+        return path.name[: -len(BRIEF_INDEX_SUFFIX)]
+    return path.stem
 
 
 async def _git(*args: str, cwd: str) -> Tuple[int, str, str]:
@@ -1739,7 +1765,7 @@ class SddCoderEngine:
 
         try:
             return await inspection.task_context(
-                feature=Path(ctx.index_path).stem,
+                feature=_index_slug(ctx.index_path),
                 worktree=Path(ctx.worktree),
                 task_id=task_id,
                 execution_id=execution_id,
@@ -1791,7 +1817,7 @@ class SddCoderEngine:
 
         try:
             return await inspection.delivery_report(
-                feature=Path(ctx.index_path).stem,
+                feature=_index_slug(ctx.index_path),
                 worktree=Path(ctx.worktree),
                 task_id=task_id,
                 execution_id=execution_id,
@@ -2739,7 +2765,7 @@ class SddCoderEngine:
 
     async def record_review(
         self, feature: str, worktree: str, review: CoderReview, execution_id: Optional[str] = None
-    ) -> CoderFeedbackReceipt:
+    ) -> CoderReviewReceipt:
         """Measure a reviewed delivery and validate its review-fix commits.
 
         FEAT-559: when `execution_id` is given, it is attached to `review` (rejecting a
@@ -2768,6 +2794,39 @@ class SddCoderEngine:
                 raise CoderFailure(
                     "invalid_arguments", f"{sha} must be a reachable fix(...) {review.task_id} review fixes commit"
                 )
+        review_ref = None
+        if execution_id is not None:
+            if self._evidence_store is None:
+                raise CoderFailure(
+                    "evidence_persistence_failed", "durable evidence store is unavailable; review was not recorded"
+                )
+            rc, head_sha, error = await _git("rev-parse", "HEAD", cwd=ctx.worktree)
+            if rc:
+                raise CoderFailure(
+                    "evidence_persistence_failed", f"could not read feature worktree HEAD: {error.strip()}"
+                )
+            try:
+                artifact = ReviewArtifact(
+                    source="coder_review",
+                    feature_slug=_index_slug(ctx.index_path),
+                    task_id=review.task_id,
+                    execution_id=execution_id,
+                    summary=review.review_evidence,
+                    fix_commits=review.fix_commits,
+                    head_sha=head_sha.strip(),
+                    recorded_at=datetime.now(timezone.utc),
+                    attempt_uid=review.attempt_uid,
+                    backend=review.backend,
+                    model=review.model,
+                )
+            except PydanticValidationError as exc:
+                raise CoderFailure(
+                    "invalid_arguments", f"review cannot be recorded as durable evidence: {exc}"
+                ) from exc
+            try:
+                review_ref = await self._evidence_store.put_artifact(execution_id, artifact)
+            except (ValueError, OSError, EvidenceCorruptionError) as exc:
+                raise CoderFailure("evidence_persistence_failed", str(exc)) from exc
         context = self._feedback_contexts.get(review.attempt_uid, "Feedback unavailable")
         exposure = (
             "unavailable"
@@ -2778,7 +2837,8 @@ class SddCoderEngine:
             **review.model_dump(), exposure=exposure, feedback_tokens=estimate_tokens(context)
         )
         store = await asyncio.to_thread(CoderFeedbackStore.from_root, Path(ctx.worktree))
-        return await CoderReviewStore(store.log).record(measurement)
+        ledger_receipt = await CoderReviewStore(store.log).record(measurement)
+        return CoderReviewReceipt(feedback_id=ledger_receipt.feedback_id, review_ref=review_ref)
 
     async def feedback_report(self, feature: str, worktree: str) -> CoderReviewReport:
         """Return repository-wide review-fix rates by model and exposure cohort."""

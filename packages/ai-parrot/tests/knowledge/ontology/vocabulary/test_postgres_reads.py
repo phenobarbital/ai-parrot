@@ -68,9 +68,9 @@ async def test_get(store_with_data: tuple[PostgresOntologyStore, PostgresOntolog
     store, _ = store_with_data
 
     # Test getting a concept that exists
-    concept = await store.get("test", "https://ontology.parrot.dev/legal_es/Normativa")
+    concept = await store.get("test", "https://ontology.parrot.dev/legal_es/LegalEntity")
     assert concept is not None
-    assert concept.iri == "https://ontology.parrot.dev/legal_es/Normativa"
+    assert concept.iri == "https://ontology.parrot.dev/legal_es/LegalEntity"
     assert concept.ontology_id == "test"
     assert concept.version == 1
 
@@ -79,13 +79,13 @@ async def test_get(store_with_data: tuple[PostgresOntologyStore, PostgresOntolog
     assert concept is None
 
     # Test as_of parameter
-    concept = await store.get("test", "https://ontology.parrot.dev/legal_es/Normativa", as_of=1)
+    concept = await store.get("test", "https://ontology.parrot.dev/legal_es/LegalEntity", as_of=1)
     assert concept is not None
     assert concept.version == 1
 
     # Test invalid as_of raises OntologyVersionNotFound
     with pytest.raises(OntologyVersionNotFound):
-        await store.get("test", "https://ontology.parrot.dev/legal_es/Normativa", as_of=99)
+        await store.get("test", "https://ontology.parrot.dev/legal_es/LegalEntity", as_of=99)
 
 
 @pytest.mark.asyncio
@@ -96,14 +96,14 @@ async def test_resolve_exact_then_trgm(
     store, _ = store_with_data
 
     # Test exact match
-    results = await store.resolve("test", "Normativa")
+    results = await store.resolve("test", "Persona")
     assert len(results) > 0
     # First result should be exact match
     assert results[0].matched_by == "exact"
     assert results[0].score > 0
 
     # Test trigram similarity with misspelling
-    results = await store.resolve("test", "Normtiva")  # Misspelled
+    results = await store.resolve("test", "Persna")  # Misspelled
     assert len(results) > 0
     # Should have trigram matches
     trgm_matches = [r for r in results if r.matched_by == "trgm"]
@@ -134,7 +134,7 @@ async def test_expand_down_up_reflexive(
     store, _ = store_with_data
 
     # Test reflexive property - input IRIs are always included
-    input_iris = ["https://ontology.parrot.dev/legal_es/Normativa"]
+    input_iris = ["https://ontology.parrot.dev/legal_es/LegalEntity"]
     expanded = await store.expand("test", input_iris, direction="down")
     assert set(input_iris).issubset(expanded)
 
@@ -171,13 +171,13 @@ async def test_as_of_unknown_raises(store_with_data: tuple[PostgresOntologyStore
 
     # Test various methods with invalid as_of
     with pytest.raises(OntologyVersionNotFound):
-        await store.get("test", "https://ontology.parrot.dev/legal_es/Normativa", as_of=99)
+        await store.get("test", "https://ontology.parrot.dev/legal_es/LegalEntity", as_of=99)
 
     with pytest.raises(OntologyVersionNotFound):
-        await store.expand("test", ["https://ontology.parrot.dev/legal_es/Normativa"], as_of=99)
+        await store.expand("test", ["https://ontology.parrot.dev/legal_es/LegalEntity"], as_of=99)
 
     with pytest.raises(OntologyVersionNotFound):
-        await store.neighbors("test", "https://ontology.parrot.dev/legal_es/Normativa", as_of=99)
+        await store.neighbors("test", "https://ontology.parrot.dev/legal_es/LegalEntity", as_of=99)
 
     with pytest.raises(OntologyVersionNotFound):
         await store.export("test", as_of=99)
@@ -231,7 +231,7 @@ async def test_neighbors(store_with_data: tuple[PostgresOntologyStore, PostgresO
     store, _ = store_with_data
 
     # Get neighbors for a concept
-    neighbors = await store.neighbors("test", "https://ontology.parrot.dev/legal_es/Normativa")
+    neighbors = await store.neighbors("test", "https://ontology.parrot.dev/legal_es/LegalEntity")
     # Should return list of (predicate, object_iri) tuples
     assert isinstance(neighbors, list)
     for neighbor in neighbors:

@@ -5,7 +5,7 @@ This module provides async-based Redis persistence for AgentsCrew definitions, a
 ## Overview
 
 The `CrewRedis` class enables you to:
-- Save crew definitions to Redis with key format `crew:{name}`
+- Save tenant-scoped crew definitions with key format `crew:{tenant}:{name}`
 - Load crew definitions by name or crew_id
 - List all available crews
 - Update crew metadata
@@ -14,11 +14,7 @@ The `CrewRedis` class enables you to:
 
 ## Installation
 
-The Redis persistence layer requires the `redis` package with async support:
-
-```bash
-pip install redis
-```
+The workspace already declares the `redis` package with async support. This feature adds no dependency.
 
 ## Configuration
 
@@ -79,14 +75,14 @@ crew_def = CrewDefinition(
     metadata={"version": "1.0", "author": "content_team"}
 )
 
-# Save to Redis (key: crew:blog_writing_team)
+# Save to Redis (key: crew:global:blog_writing_team when tenant is absent)
 success = await crew_redis.save_crew(crew_def)
 ```
 
 ### Load a Crew Definition
 
 ```python
-# Load by name (key: crew:blog_writing_team)
+# Load by name (checks crew:global:blog_writing_team, then its legacy global key)
 crew = await crew_redis.load_crew("blog_writing_team")
 
 if crew:
@@ -160,11 +156,32 @@ await crew_redis.close()
 
 ## Key Format
 
-The CrewRedis class uses the following key formats in Redis:
+New writes use tenant-scoped Redis keys:
 
-- **Crew Definition**: `crew:{name}` - Stores the full CrewDefinition as JSON
-- **Crew List**: `crew:list` - Set of all crew names
-- **ID Mapping**: `crew:id:{crew_id}` - Maps crew_id to crew name for lookup by ID
+- **Crew Definition**: `crew:{tenant}:{name}` — full `CrewDefinition` JSON
+- **Crew List**: `crew:{tenant}:list` — names for one tenant
+- **ID Mapping**: `crew:{tenant}:id:{crew_id}` — tenant-scoped ID lookup
+- **Tenant List**: `crew:tenants` — known tenants
+
+An absent tenant normalizes to `global`. Global reads retain compatibility with legacy `crew:{name}`, `crew:list`,
+and `crew:id:{crew_id}` keys. If both a global namespaced value and its legacy value exist but differ, strict
+snapshotting reports a conflict and preserves both.
+
+## Migration source safety
+
+In Redis-only mode, public `CrewRedis` methods preserve their historical best-effort behavior: errors commonly return
+`False`, `None`, or an empty list. In PostgreSQL mode, Redis is a read-only migration/fallback source; PostgreSQL is
+the write authority and failures must not be converted into successful Redis writes.
+
+Migration uses `list_all_crews_strict()` and `snapshot_crew()` so inventory and parse failures propagate. Cleanup
+uses `delete_snapshot()` to compare the captured namespaced and legacy raw values, including expected absence, in one
+atomic Lua operation. If any source changed, no key or index is modified. ID mappings are removed only when they
+still point to the captured name.
+
+Do not use `delete_crew()` or `clear_all_crews()` for migration cleanup. Conflicts, unreadable payloads, concurrent
+changes, and cleanup errors must remain in Redis for operator reconciliation. Tombstone-suppressed sources may be
+cleaned only after authoritative verification. Conditional cleanup supports single-instance Redis only; Redis
+Cluster cross-slot operation is rejected.
 
 ## Advanced Usage
 
@@ -223,9 +240,7 @@ sequential_crews = [
     if crew.execution_mode == ExecutionMode.SEQUENTIAL
 ]
 
-# Clear all crews (use with caution!)
-deleted_count = await crew_redis.clear_all_crews()
-print(f"Deleted {deleted_count} crews")
+# Migration cleanup is intentionally not a bulk operation; use verified snapshots.
 ```
 
 ## Integration with BotManager
@@ -359,7 +374,6 @@ See `/examples/crew/redis_persistence_example.py` for comprehensive examples inc
 - `update_crew_metadata(name: str, metadata: Dict[str, Any]) -> bool`
 - `ping() -> bool`
 - `close() -> None`
-- `clear_all_crews() -> int`
 
 ## License
 

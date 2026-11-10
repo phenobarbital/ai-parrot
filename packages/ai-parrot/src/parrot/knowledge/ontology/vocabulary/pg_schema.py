@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any
+from typing import Any, Sequence
 
 import asyncpg
 
@@ -104,6 +104,22 @@ CREATE INDEX IF NOT EXISTS closure_by_ancestor ON {s}.closure (ontology_id, vers
 """
 
 
+def vector_literal(embedding: Sequence[float]) -> str:
+    """Return the pgvector text form (``[1,2,3]``) of an embedding.
+
+    Bind it as ``$n::text::vector``: the parameter type is then ``text``, so the statement works
+    whether or not the pool registered the pgvector codec (a ``$n::vector`` parameter routes a
+    str through the codec's encoder, which rejects it).
+
+    Args:
+        embedding: The embedding values.
+
+    Returns:
+        The pgvector text literal.
+    """
+    return "[" + ",".join(repr(float(value)) for value in embedding) + "]"
+
+
 async def _ensure_extensions(conn: asyncpg.Connection) -> None:
     """Create the extensions required by the vocabulary schema.
 
@@ -147,8 +163,10 @@ async def ensure_schema(
 
     ann_options = "" if kind == "hnsw" else " WITH (lists = 100)"
     async with pool.acquire() as conn:
-        await _ensure_extensions(conn)
         async with conn.transaction():
+            # Serialise concurrent first-time callers: CREATE EXTENSION/TABLE ... IF NOT EXISTS is not race-safe.
+            await conn.execute("SELECT pg_advisory_xact_lock(hashtext($1))", f"parrot-ontology-schema:{schema}")
+            await _ensure_extensions(conn)
             await conn.execute(_ddl(schema, dim))
             await conn.execute(
                 f"CREATE INDEX IF NOT EXISTS concept_embedding_ann ON {schema}.concept "

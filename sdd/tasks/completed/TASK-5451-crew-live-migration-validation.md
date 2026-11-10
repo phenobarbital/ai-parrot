@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-860 — Postgres CrewDefinition Storage
 **Spec**: `sdd/specs/postgres-crew-storage.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-5448
@@ -209,4 +209,16 @@ move the task, stamp completion, or run legacy task-close helpers.
 
 ## Completion Note
 
-Pending; populated by the task finalizer after implementation and validation.
+
+- Task: TASK-5451
+- Feature: postgres-crew-storage
+- Implementation SHA: 9a799325a70488e63d95359a50a938298a477118
+- Closed at (UTC): 2026-11-09T21:52:53+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| live_validation | NOT RUN: 5 skipped, NAVIGATOR_PG_DSN and CREW_MIGRATION_TEST_REDIS_URL were not set in the worker sandbox. The live PG constraints, Lua atomicity and migration races are unproven until these modules are run against disposable Postgres and Redis. |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 379.778s · Tokens: n/a |

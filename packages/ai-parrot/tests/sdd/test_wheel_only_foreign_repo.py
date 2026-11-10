@@ -298,7 +298,6 @@ COMMON: dict[str, str] = {
     "<TASK-ID>": "TASK-001",
     "$TASK_ID": "TASK-001",
     "<feature-slug>": SLUG,
-    "<suggested_slug>": SLUG,
     "<feature-name>": SLUG,
     "<slug>": SLUG,
     "$FEATURE_SLUG": SLUG,
@@ -402,7 +401,11 @@ SCENARIOS: dict[str, Scenario] = {
         placeholders={"<feature-slug>": "new-feature", "<suggested_slug>": "new-feature", "<feature-name>": "new-feature"},
     ),
     # a minimal fixture has no per-feature settlement index: exit 3 is the helper's controlled refusal
-    "review_checkpoint": Scenario(prepare=_seed_worktree, expect_exit=(0, 1, 2, 3)),
+    "review_checkpoint": Scenario(
+        prepare=_seed_worktree,
+        expect_exit=(0, 1, 2, 3),
+        placeholders={"<id>": "TASK-001", "<review>": "demo review"},  # sdd-start's `task review record` line
+    ),
     # no `.parrot/sdd_hooks.toml` in the fixture: every event runs zero hooks; --record/--finalize need prior state
     "run_closeout_hooks": Scenario(
         prepare=_seed_hook_context,

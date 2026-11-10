@@ -139,3 +139,32 @@ def test_main_json_status(
     assert json.loads(capsys.readouterr().out)["message"] == "protected"
     assert protection.main(["disable", str(feature), "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["protected"] is False
+
+
+def test_disable_refuses_common_pushurl(repo: tuple[Path, Path, Path]) -> None:
+    """A common push URL (e.g. from `git remote set-url --push`) refuses disable and writes nothing."""
+    primary, feature, _sibling = repo
+    assert protection.enable(feature) == "push protection enabled"
+    common = primary / ".git" / "config"
+    _run(feature, "remote", "set-url", "--push", "origin", protection.NO_PUSH)
+    assert _run(primary, "config", "--file", str(common), "--get-all", "remote.origin.pushurl").stdout.strip() == "no_push"
+
+    with pytest.raises(worktree_sync.SyncError) as raised:
+        protection.disable(feature)
+
+    assert raised.value.exit_code == worktree_sync.EXIT_TARGET
+    assert "--unset-all remote.origin.pushurl" in str(raised.value)
+    assert _run(feature, "config", "--worktree", "--get-all", "remote.origin.pushurl").stdout.strip() == "no_push"
+
+
+def test_status_reports_common_pushurl(
+    repo: tuple[Path, Path, Path], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Status names a common push URL and the command that removes it."""
+    primary, feature, _sibling = repo
+    monkeypatch.setattr(protection, "resolve_target", lambda target: Path(target).resolve())
+    _run(primary, "config", "remote.origin.pushurl", protection.NO_PUSH)
+
+    assert protection.main(["status", str(feature), "--json"]) == worktree_sync.EXIT_OK
+    message = json.loads(capsys.readouterr().out)["message"]
+    assert "common remote.origin.pushurl is set" in message

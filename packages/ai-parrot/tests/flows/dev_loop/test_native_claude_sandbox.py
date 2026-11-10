@@ -19,6 +19,7 @@ def scratch_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Keep the scratch root inside tmp_path."""
     root = tmp_path / "claude-scratch"
     monkeypatch.setattr(policy, "CLAUDE_SCRATCH_ROOT", root)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     return root
 
 
@@ -364,6 +365,42 @@ def test_launch_worker_uses_requested_cwd_and_final_prompt(
     command = calls[1][1]
     assert command[-1] == "run FEAT-768"
     assert command[-2] == "--verbose"
+
+
+def test_prepare_shell_prefix_writes_policy_and_launcher(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The launcher records every hook and MCP command in an immutable session policy."""
+    feature, _main = linked
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    settings = {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "launch-stop"}]}]}}
+    claude = feature / ".claude"
+    (claude / "agents").mkdir(parents=True)
+    (claude / "settings.json").write_text(json.dumps({"hooks": {"PreToolUse": [{"command": "project"}]}}))
+    (claude / "settings.local.json").write_text(json.dumps({"hooks": {"Stop": [{"command": "local"}]}}))
+    (claude / "agents" / "sdd-worker.md").write_text("---\nhooks:\n  Stop:\n    command: 'agent-stop'\n---\n")
+    (feature / ".mcp.json").write_text(json.dumps({"mcpServers": {"tool": {"command": "mcp", "args": ["x"]}}}))
+
+    environment = native.prepare_shell_prefix(feature, settings, "legacy", rtk=False)
+
+    policy_path = Path(environment["PARROT_SDD_SHELL_PREFIX_POLICY"])
+    prefix_path = Path(environment["CLAUDE_CODE_SHELL_PREFIX"])
+    policy_document = json.loads(policy_path.read_text())
+    assert policy_document["hook_commands"] == ["launch-stop", "project", "local", "agent-stop"]
+    assert policy_document["mcp_argv"] == [["mcp", "x"]]
+    assert policy_document["worktree"] == str(feature.resolve())
+    assert policy_path.stat().st_mode & 0o777 == 0o400
+    assert prefix_path.stat().st_mode & 0o777 == 0o500
+    assert prefix_path.parent.stat().st_mode & 0o777 == 0o700
+
+
+def test_prepare_shell_prefix_refuses_writable_root(linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    """A policy beneath any session-writable root is rejected before launch."""
+    feature, _main = linked
+    monkeypatch.setenv("XDG_STATE_HOME", str(feature))
+
+    with pytest.raises(RuntimeError, match="writable by the session"):
+        native.prepare_shell_prefix(feature, {}, "legacy", rtk=False)
 
 
 _SECRET = "ghp_SECRET_TOKEN_VALUE"

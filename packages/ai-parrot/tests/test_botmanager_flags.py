@@ -176,20 +176,72 @@ async def test_enable_database_bots_true_calls_db(mock_app):
 
 def test_enable_crews_false_no_crew_redis():
     """crew_redis is None when enable_crews=False."""
-    with patch("parrot.manager.manager.CrewRedis") as mock_crew_redis, \
-         patch("parrot.manager.manager.agent_registry"):
+    with (
+        patch("parrot.manager.manager.CrewRedis") as mock_crew_redis,
+        patch("parrot.manager.manager.CrewPostgres") as mock_postgres,
+        patch("parrot.manager.manager.agent_registry"),
+    ):
         bm = BotManager(enable_crews=False)
     assert bm.crew_redis is None
+    assert bm.crew_storage is None
     mock_crew_redis.assert_not_called()
+    mock_postgres.assert_not_called()
 
 
 def test_enable_crews_true_creates_crew_redis():
     """crew_redis is a CrewRedis instance when enable_crews=True."""
-    with patch("parrot.manager.manager.CrewRedis") as mock_crew_redis, \
-         patch("parrot.manager.manager.agent_registry"):
-        bm = BotManager(enable_crews=True)
+    with (
+        patch("parrot.manager.manager.CrewRedis") as mock_crew_redis,
+        patch("parrot.manager.manager.CrewPostgres") as mock_postgres,
+        patch("parrot.manager.manager.agent_registry"),
+    ):
+        bm = BotManager(enable_crews=True, crew_storage_backend="redis")
     assert bm.crew_redis is mock_crew_redis.return_value
+    assert bm.crew_storage.redis is mock_crew_redis.return_value
+    assert bm.crew_storage.postgres is None
     mock_crew_redis.assert_called_once()
+    mock_postgres.assert_not_called()
+
+
+def test_postgres_crew_storage_constructs_postgres_store():
+    """An explicit PostgreSQL backend composes both stores."""
+    with (
+        patch("parrot.manager.manager.CrewRedis") as mock_crew_redis,
+        patch("parrot.manager.manager.CrewPostgres") as mock_postgres,
+        patch("parrot.manager.manager.agent_registry"),
+    ):
+        bm = BotManager(enable_crews=True, crew_storage_backend="postgres", crew_migration=True)
+    assert bm.crew_storage.redis is mock_crew_redis.return_value
+    assert bm.crew_storage.postgres is mock_postgres.return_value
+    assert bm.crew_storage.migration is True
+
+
+def test_unknown_crew_storage_backend_warns_and_uses_redis(caplog):
+    """Unknown configured backends retain the Redis compatibility path."""
+    with (
+        patch("parrot.manager.manager.CrewRedis"),
+        patch("parrot.manager.manager.CrewPostgres") as mock_postgres,
+        patch("parrot.manager.manager.agent_registry"),
+    ):
+        bm = BotManager(enable_crews=True, crew_storage_backend="unknown")
+    assert bm.crew_storage_backend == "redis"
+    assert "Unknown crew definition storage backend" in caplog.text
+    mock_postgres.assert_not_called()
+
+
+def test_crew_storage_kwargs_override_config_defaults():
+    """Explicit storage kwargs take precedence over module configuration defaults."""
+    with (
+        patch("parrot.manager.manager.CREW_DEFINITION_STORAGE", "postgres"),
+        patch("parrot.manager.manager.CREW_DEFINITION_MIGRATION", True),
+        patch("parrot.manager.manager.CrewRedis"),
+        patch("parrot.manager.manager.CrewPostgres") as mock_postgres,
+        patch("parrot.manager.manager.agent_registry"),
+    ):
+        bm = BotManager(enable_crews=True, crew_storage_backend="redis", crew_migration=False)
+    assert bm.crew_storage_backend == "redis"
+    assert bm.crew_storage.migration is False
+    mock_postgres.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

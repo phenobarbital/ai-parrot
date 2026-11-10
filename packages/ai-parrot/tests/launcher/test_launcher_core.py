@@ -1,6 +1,7 @@
 """Unit tests for parrot.launcher resolution (FEAT-633 M1, TASK-4071)."""
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -221,3 +222,32 @@ def test_loop_guard_is_consumed_not_inherited(tmp_path, monkeypatch):
     monkeypatch.setenv(launcher.LOOP_GUARD_ENV, "1")
     assert launcher._resolved_target("wikitoolkit", []) is None
     assert launcher.LOOP_GUARD_ENV not in launcher.os.environ
+
+
+def test_trust_gate_reads_git_errors_in_c_locale(tmp_path, monkeypatch):
+    """git localizes "not a git repository"; the gate runs it with LC_ALL=C (issue:91d60a249533, issue:a0b7a0210abc)."""
+    home, proj = tmp_path / "home", tmp_path / "proj"
+    make_venv(home / "venv", "wikitoolkit")
+    (proj / ".git").mkdir(parents=True)  # a .git entry git rejects as a repository
+    make_venv(proj / ".venv", "wikitoolkit")
+    monkeypatch.setenv("LC_ALL", "es_ES.UTF-8")
+    monkeypatch.setenv("LANGUAGE", "es")
+    real_run = subprocess.run
+    calls: list[dict[str, str]] = []
+
+    def fake_run(cmd, *args, **kwargs):
+        if "ls-files" not in cmd:
+            return real_run(cmd, *args, **kwargs)
+        child_env = kwargs.get("env") or dict(launcher.os.environ)
+        calls.append(child_env)
+        # like git: the message language follows LC_ALL, and LANGUAGE is ignored under the C locale
+        if child_env.get("LC_ALL") == "C":
+            stderr = b"fatal: not a git repository (or any of the parent directories): .git\n"
+        else:
+            stderr = "fatal: no es un repositorio git (ni ninguno de los directorios superiores): .git\n".encode()
+        return subprocess.CompletedProcess(cmd, 128, b"", stderr)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    env = {"PARROT_HOME": str(home)}
+    assert launcher.resolve_venv("wikitoolkit", argv=[], env=env, cwd=proj) == (proj / ".venv", "project")
+    assert calls and calls[0]["LC_ALL"] == "C" and "LANGUAGE" not in calls[0]
