@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-875 — Optional PyMuPDF Layout for Bookstore PDF Ingestion
 **Spec**: `sdd/specs/bookstore-pymupdf-layout.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: none
@@ -232,8 +232,18 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: claude (sdd-start, Sonnet 5.5)
+**Date**: 2026-11-10
+**Notes**: Compatibility experiments done in an isolated venv + PYTHONPATH overlay; report at
+`sdd/state/FEAT-875/layout-compatibility.md`. Tuple pymupdf 1.27.1 / pymupdf4llm 0.2.9 / pymupdf-layout 1.27.1 installs,
+activates (`import pymupdf.layout`), keeps physical pages (`metadata.page_number`), accepts `use_ocr=False`, and legacy
+suites pass 8/8 with Layout absent and present. Closed `partial`: the `bookstore-layout` extra was NOT added, and
+`pyproject.toml` / `uv.lock` are untouched.
 
-**Deviations from spec**: none | describe if any
+Blocking findings: (1) `pdf4llm==0.0.27` in the `agents` extra requires `pymupdf4llm==0.0.27`, so the extra cannot resolve
+without a maintainer decision; (2) `pymupdf-layout` is Polyform Noncommercial; (3) native headings are flat and one fixture
+heading was dropped; `hdr_info` is silently ignored; (4) `pymupdf4llm` picks legacy vs Layout at import time and
+`pageindex/__init__.py:17` imports it first, so the spec's `python -m ...pdf_layout_backend` worker would silently run legacy.
+
+**Deviations from spec**: none in scope; spec M2's `-m` entry point needs `import pymupdf.layout` + `importlib.reload(pymupdf4llm)`
+(or a standalone script) — to be handled in TASK-5470.

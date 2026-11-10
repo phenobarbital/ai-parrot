@@ -23,10 +23,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-try:
-    import pymupdf
-except ImportError:  # pragma: no cover — pyproject pins pymupdf.
-    pymupdf = None  # type: ignore[assignment]
+from ._pymupdf import pymupdf
 
 try:
     import pymupdf4llm

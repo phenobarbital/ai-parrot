@@ -20,10 +20,7 @@ try:
 except ImportError:
     PyPDF2 = None  # type: ignore[assignment]
 
-try:
-    import pymupdf
-except ImportError:
-    pymupdf = None  # type: ignore[assignment]
+from ._pymupdf import pymupdf
 
 logger = logging.getLogger("parrot.knowledge.pageindex.utils")
 
