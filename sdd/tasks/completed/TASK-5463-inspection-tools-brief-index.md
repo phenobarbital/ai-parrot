@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-871 — `coder_task_context` and `coder_delivery_report` Find Brief Indexes
 **Spec**: `sdd/specs/sdd-coder-engine-fixes-5.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -211,10 +211,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: /sdd-fix session (Claude, agent:sdd-fix:9824d687)
+**Date**: 2026-11-10
+**Notes**: Implemented spec §2, Module 1 in commit `1e9012a4cb`. `SddCoderEngine.task_context` and
+`.delivery_report` now pass `feature=_index_slug(ctx.index_path)` to `inspection` instead of
+`Path(ctx.index_path).stem`; no `.stem` call on `ctx.index_path` remains in `engine.py`. Evidence:
+- before the source change (tests only): both new tests fail with
+  `CoderFailure: per-spec index unreadable or missing for feature 'demo.index'` (`index_unreadable`).
+- after: both new tests pass; both Validation Commands pass (`test_brief_index_resolution.py` 10, `test_feedback.py`
+  36); `ruff check` and `black --check -l 120` are clean on both files; the other files covering these tools
+  (`test_inspection_reports.py`, `test_toolkit.py`, `test_toolkit_exclusive.py`, `test_mcp_local.py`,
+  `test_worker_prompt_orchestrator.py`) pass (66 tests).
+- The per-spec path is unchanged: `_index_slug` returns the stem there (`test_index_slug_inverts_resolve_index_path`).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**:
+**Deviations from spec**: none
