@@ -1,6 +1,6 @@
 <#
-AI-Parrot installer (Windows) — automates the AI-Parrot getting-started guide
-(FEAT-586). Never destructive; announces every privileged/network command
+AI-Parrot installer (Windows) — automates the AI-Parrot getting-started guide.
+Never destructive; announces every privileged/network command
 before it runs.
 
 .PARAMETER Provider
@@ -15,7 +15,8 @@ before it runs.
     Virtualenv directory. Default: .venv.
 
 .PARAMETER Python
-    Python interpreter to use. Default: python.
+    Python interpreter to use. Default: python, or the `py -3` launcher when
+    python is not on PATH.
 
 .PARAMETER WithWiki
     Run `wikitoolkit build` after install.
@@ -118,6 +119,26 @@ $UvMin = '0.11.28'; $UvMax = '0.12'
 $MinFreeKB = 2097152   # C14b gate: 2 GiB free under PARROT_HOME (managed CPython + venv + wheel cache)
 $RawBase = 'https://raw.githubusercontent.com/phenobarbital/ai-parrot/main/scripts/install'   # C14a non-piped alternative
 
+function Get-UvPinnedSha256([string]$Asset) {
+  # SHA-256 of uv $UvVersion release assets, pinned in this script (itself covered by SHA256SUMS), so a tampered
+  # release or a MITM cannot swap archive and checksum together. $env:PARROT_UV_SHA256 overrides it (offline
+  # mirrors, tests). Fails closed for an unknown asset.
+  if ($env:PARROT_UV_SHA256) { return $env:PARROT_UV_SHA256 }
+  $pins = @{
+    '0.11.28/uv-x86_64-pc-windows-msvc.zip'  = '0a23463216d09c6a72ff80ef5dc5a795f07dc1575cb84d24596c2f124a441b7b'
+    '0.11.28/uv-aarch64-pc-windows-msvc.zip' = '3248109afad3ec59baad299d324ff53de17e2d9a3b3e21580ffd26744b11e036'
+  }
+  $k = "$UvVersion/$Asset"
+  if (-not $pins.ContainsKey($k)) { throw "no pinned checksum for uv $UvVersion $Asset" }
+  return $pins[$k]
+}
+
+function Test-UvArchive([string]$Path, [string]$Asset) {
+  $want = Get-UvPinnedSha256 $Asset
+  $got = (Get-FileHash -Algorithm SHA256 $Path).Hash
+  if ($want -ine $got) { throw "checksum mismatch for $Asset" }
+}
+
 function ConvertTo-UvVersion([string]$V) {
   if ($V -notmatch '^\d+(\.\d+){0,3}') { return $null }
   $parts = @($Matches[0] -split '\.'); while ($parts.Count -lt 3) { $parts += '0' }
@@ -164,7 +185,7 @@ function Select-Uv([string]$Home_) {
 function Write-Plan([string]$Url, [string]$Spec, [string]$Home_, [string]$Py, [string]$Mode) {  # C14a — first output; no side effects
   switch ($Mode) {
     'download' {
-      Write-Host "This installer will download pinned uv $UvVersion from $Url and verify it against $Url.sha256 into"
+      Write-Host "This installer will download pinned uv $UvVersion from $Url and verify it against the SHA-256 pinned in this script, into"
       Write-Host "$Home_\libexec (never on PATH)."
       if ($script:SysUv) { Write-Host "Your uv $script:SysUvVer at $script:SysUv is outside >=$UvMin,<$UvMax and is left as is." }
     }
@@ -268,12 +289,7 @@ function Install-Global {
         if (-not (Test-Path $libexec)) { Run -Why "create $libexec" -Cmd { New-Item -ItemType Directory -Path $libexec | Out-Null }; if (-not $DryRun) { $Created.Add($libexec) } }
         Run -Why 'create a scratch download dir' -Cmd { New-Item -ItemType Directory -Force -Path $dl | Out-Null }
         Run -Why "download pinned uv $UvVersion ($target)" -Cmd { Invoke-WebRequest -Uri $url -OutFile (Join-Path $dl $asset) -UseBasicParsing }
-        Run -Why 'download the uv checksum' -Cmd { Invoke-WebRequest -Uri "$url.sha256" -OutFile (Join-Path $dl "$asset.sha256") -UseBasicParsing }
-        Run -Why 'verify the uv checksum' -Cmd {
-          $want = ((Get-Content (Join-Path $dl "$asset.sha256") -Raw).Trim() -split '\s+')[0]
-          $got = (Get-FileHash -Algorithm SHA256 (Join-Path $dl $asset)).Hash
-          if ($want -ine $got) { throw "checksum mismatch for $asset" }
-        }
+        Run -Why 'verify the uv checksum against the pinned SHA-256' -Cmd { Test-UvArchive (Join-Path $dl $asset) $asset }
         Run -Why 'extract uv' -Cmd { Expand-Archive -Path (Join-Path $dl $asset) -DestinationPath $dl -Force }
         Run -Why "place uv $UvVersion in $libexec (not on PATH)" -Cmd {
           $f = Get-ChildItem -Path $dl -Filter 'uv.exe' -Recurse -File | Select-Object -First 1
@@ -302,8 +318,14 @@ function Install-Global {
     }
     Run -Why "install $spec $tools into the managed venv" -Cmd { & $uv pip install --python (Join-Path $venv 'Scripts\python.exe') $spec $tools }
     if (-not $DryRun) {
-      & (Join-Path $venv 'Scripts\python.exe') -c 'import parrot.self_.uv' 2>$null
-      if ($LASTEXITCODE) {
+      # PS 5.1 turns native stderr under 2>$null into a NativeCommandError, which 'Stop' would make fatal:
+      # any failure of the probe means "older ai-parrot", never an aborted install.
+      $probeOk = $false
+      $eap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+      try { & (Join-Path $venv 'Scripts\python.exe') -c 'import parrot.self_.uv' 2>$null; $probeOk = ($LASTEXITCODE -eq 0) }
+      catch { $probeOk = $false }
+      finally { $ErrorActionPreference = $eap }
+      if (-not $probeOk) {
         $script:UvLegacyCompat = $true
         Write-Warning "this ai-parrot release predates the libexec uv layout: its doctor needs uv $UvVersion in $bin, which shadows any uv on your PATH"
         Run -Why "place uv $UvVersion in $bin for this older ai-parrot" -Cmd {
@@ -314,10 +336,7 @@ function Install-Global {
           } else {
             if (-not (Test-Path $dl)) { New-Item -ItemType Directory -Force -Path $dl | Out-Null }
             Invoke-WebRequest -Uri $url -OutFile (Join-Path $dl $asset) -UseBasicParsing
-            Invoke-WebRequest -Uri "$url.sha256" -OutFile (Join-Path $dl "$asset.sha256") -UseBasicParsing
-            $want = ((Get-Content (Join-Path $dl "$asset.sha256") -Raw).Trim() -split '\s+')[0]
-            $got = (Get-FileHash -Algorithm SHA256 (Join-Path $dl $asset)).Hash
-            if ($want -ine $got) { throw "checksum mismatch for $asset" }
+            Test-UvArchive (Join-Path $dl $asset) $asset
             Expand-Archive -Path (Join-Path $dl $asset) -DestinationPath $dl -Force
             $f = Get-ChildItem -Path $dl -Filter 'uv.exe' -Recurse -File | Select-Object -First 1
             if (-not $f) { throw "uv.exe not found in $asset" }
@@ -381,10 +400,16 @@ if ($With -or $Version) {
   Write-Error '-With and -Version only apply to -Global (the managed runtime); add -Global or drop them'; exit 1
 }
 
+# Default interpreter: `python`, else the Python Launcher (`py -3`) when only it is on PATH.
+$PythonArgs = @()
+if (-not $script:PythonSet -and -not (Get-Command $Python -ErrorAction SilentlyContinue) -and (Get-Command 'py' -ErrorAction SilentlyContinue)) {
+  $Python = 'py'; $PythonArgs = @('-3')
+}
+
 # Python guard (AC10) — refuse anything outside >=3.11,<3.14 BEFORE any
 # other step (including -DryRun), same as the POSIX installer.
 try {
-  $pyver = (& $Python -c 'import sys;print("%d.%d"%sys.version_info[:2])' 2>$null).Trim()
+  $pyver = (& $Python @PythonArgs -c 'import sys;print("%d.%d"%sys.version_info[:2])' 2>$null).Trim()
 } catch {
   Write-Error "unsupported Python: could not execute '$Python'"
   exit 1
@@ -403,7 +428,7 @@ if ($SystemDeps) {
 if (Test-Path $Venv) {
   Write-Host "Reusing existing virtualenv at $Venv"
 } else {
-  Run -Why 'create the virtualenv' -Cmd { & $Python -m venv $Venv }
+  Run -Why 'create the virtualenv' -Cmd { & $Python @PythonArgs -m venv $Venv }
 }
 $VenvPip = Join-Path $Venv 'Scripts\pip.exe'
 $VenvBin = Join-Path $Venv 'Scripts'
