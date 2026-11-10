@@ -1,0 +1,53 @@
+{
+  "feature": "sdd-coder-engine-tech-debt",
+  "feature_id": "FEAT-869",
+  "spec": "sdd/specs/sdd-coder-engine-tech-debt.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-10T00:02:44+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_review_checkpoint.py",
+          "packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_feedback.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:5d624b6504bf93608f069b55106105b88b607ee160f4e31c9898a63acae97914"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5461",
+      "slug": "review-producers-canonical-slug",
+      "title": "Review producers write the canonical index slug that finalize_task requires",
+      "feature_id": "FEAT-869",
+      "feature": "sdd-coder-engine-tech-debt",
+      "spec": "sdd/specs/sdd-coder-engine-tech-debt.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "single task; no dependencies; touches only review_checkpoint.py, engine.py and their two test files",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5461-review-producers-canonical-slug.md",
+      "discovered_from": "issue:b9ff30bf709e"
+    }
+  ]
+}
