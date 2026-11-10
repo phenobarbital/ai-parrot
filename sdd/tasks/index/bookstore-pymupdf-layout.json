@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-10T15:30:00Z",
-  "completed_at": null,
+  "completed_at": "2026-11-10T15:38:37+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,7 +16,7 @@
       "feature_id": "FEAT-875",
       "feature": "bookstore-pymupdf-layout",
       "spec": "sdd/specs/bookstore-pymupdf-layout.spec.md",
-      "status": "done",
+      "status": "done-with-issues",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
