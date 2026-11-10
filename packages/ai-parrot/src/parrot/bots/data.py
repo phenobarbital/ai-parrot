@@ -457,6 +457,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         output_routing: bool = False,
         output_routing_config: Optional[IntentRouterConfig] = None,
         python_repl_execution_mode: Optional[str] = None,
+        python_repl_executor_max_workers: Optional[int] = None,
         **kwargs,
     ):
         """
@@ -492,11 +493,17 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 (fallback ``"worker"``) — so a subclass or caller can pin a
                 mode per-agent, per-instance, without touching the deployment
                 environment.
+            python_repl_executor_max_workers: Forwarded to the internal
+                ``PythonPandasTool`` as ``executor_max_workers``. ``None`` (the
+                default) auto-sizes the REPL thread pool to the ``WorkerPool``
+                capacity (max workers + prewarm), avoiding the "shared executor
+                undersized" warning.
             **kwargs: Additional configuration
         """
         self._output_routing_enabled = output_routing
         self._output_routing_config = output_routing_config
         self._python_repl_execution_mode = python_repl_execution_mode
+        self._python_repl_executor_max_workers = python_repl_executor_max_workers
         self._queries = query or self.queries
         self._capabilities = capabilities
         self._generate_eda = generate_eda
@@ -630,6 +637,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             # before. Only a caller passing `python_repl_execution_mode=` to
             # PandasAgent.__init__ changes behaviour.
             execution_mode=self._python_repl_execution_mode,
+            executor_max_workers=self._python_repl_executor_max_workers,
         )
 
         # Prophet forecasting tool
