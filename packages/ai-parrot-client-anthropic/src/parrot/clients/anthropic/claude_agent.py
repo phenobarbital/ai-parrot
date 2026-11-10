@@ -310,9 +310,11 @@ def detect_claude_code_session() -> bool:
     Returns:
         Whether the session's own auth should be preferred over the API key.
     """
-    if not any(os.environ.get(name) for name in _CLAUDE_CODE_SESSION_MARKERS):
+    if not any(_env_flag(name, False) for name in _CLAUDE_CODE_SESSION_MARKERS):
         return False
-    if any(os.environ.get(name) for name in _SESSION_AUTH_ENV):
+    if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") or any(
+        _env_flag(name, False) for name in ("CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_BEDROCK")
+    ):
         return True
     config_dir = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
     if (config_dir / ".credentials.json").is_file():

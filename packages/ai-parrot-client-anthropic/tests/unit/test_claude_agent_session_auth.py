@@ -73,3 +73,10 @@ def test_build_options_carries_blank_key(clean_env: pytest.MonkeyPatch) -> None:
     clean_env.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
     options = _client()._build_options(prompt="hi")
     assert options.env["ANTHROPIC_API_KEY"] == ""
+
+
+@pytest.mark.parametrize("value", ["0", "false"])
+def test_vertex_switch_off_is_not_session_auth(clean_env: pytest.MonkeyPatch, value: str) -> None:
+    clean_env.setenv("CLAUDECODE", "1")
+    clean_env.setenv("CLAUDE_CODE_USE_VERTEX", value)
+    assert mod.detect_claude_code_session() is False
