@@ -48,7 +48,7 @@ The issue contract (`issue:d08792fd4747`) states:
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:219fc5d2e85f66524c45090da77aa6b84fe6bc49dc5bffaf896840f6037bb43b evaluation_digest=sha256:5371c74072cf42c4256a5fac2e667222d7c58f28865eb89527b9df22a4eee6f5 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:b4d1136d6962bed81615478e219e3dc2f7e345875754223cc10556c463929684 evaluation_digest=sha256:073023b5091129b67b8577acc124c880da311bd8c072bbb737f372c3304a0c1c rules_version=1 status=pass -->
 
 ## 2. Architectural Design
 
@@ -114,8 +114,6 @@ Two functions in `packages/ai-parrot/src/parrot/self_/uv.py` are updated:
 tests:
 - packages/ai-parrot/tests/self_/test_uv.py
 markers: none
-
----
 
 ## 5. Acceptance Criteria
 
@@ -186,7 +184,7 @@ Single feature worktree (`feat-FEAT-872-self--uv-fixes`), single task.
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:219fc5d2e85f66524c45090da77aa6b84fe6bc49dc5bffaf896840f6037bb43b evaluation_digest=sha256:5371c74072cf42c4256a5fac2e667222d7c58f28865eb89527b9df22a4eee6f5 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:b4d1136d6962bed81615478e219e3dc2f7e345875754223cc10556c463929684 evaluation_digest=sha256:073023b5091129b67b8577acc124c880da311bd8c072bbb737f372c3304a0c1c rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -239,10 +237,10 @@ Coverage:
       "path": "/home/jesuslara/proyectos/ai-parrot/sdd/specs/self--uv-fixes.spec.md"
     }
   ],
-  "evaluation_digest": "sha256:5371c74072cf42c4256a5fac2e667222d7c58f28865eb89527b9df22a4eee6f5",
+  "evaluation_digest": "sha256:073023b5091129b67b8577acc124c880da311bd8c072bbb737f372c3304a0c1c",
   "exit_code": 0,
   "findings": [],
-  "input_digest": "sha256:219fc5d2e85f66524c45090da77aa6b84fe6bc49dc5bffaf896840f6037bb43b",
+  "input_digest": "sha256:b4d1136d6962bed81615478e219e3dc2f7e345875754223cc10556c463929684",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
