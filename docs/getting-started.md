@@ -133,7 +133,7 @@ section.
 <!-- verify: flag=self doctor:--runtime-only -->
 Instead of a per-project venv you can install AI-Parrot once per machine. One command puts `parrot`,
 `wikitoolkit` and `bookstore` on your PATH, backed by a managed runtime under `~/.parrot` (or
-`$PARROT_HOME`): a pinned `uv`, a uv-managed Python 3.12 and a venv holding `ai-parrot` together with
+`$PARROT_HOME`): a compatible system `uv` or a private pinned `uv`, a uv-managed Python 3.12 and a venv holding `ai-parrot` together with
 `ai-parrot-tools` at the same version (`wikitoolkit mcp` needs it). It needs no system Python.
 
 > **Supported platforms.** The global install is officially supported on **Linux x86_64** only. Linux aarch64 (ARM
@@ -150,13 +150,15 @@ Instead of a per-project venv you can install AI-Parrot once per machine. One co
 curl -fsSL https://raw.githubusercontent.com/phenobarbital/ai-parrot/main/scripts/install/install-parrot.sh | bash -s -- --global
 ```
 
-**Downloads:** the script above and, from GitHub, the pinned `uv 0.11.28` archive plus its `.sha256` file
+**Downloads:** the script above and, only when no compatible system `uv` is available, the pinned `uv 0.11.28` archive plus its `.sha256` file
 (`https://github.com/astral-sh/uv/releases/download/0.11.28/uv-<target>.tar.gz`), then `ai-parrot` and
-`ai-parrot-tools` from PyPI. A uv already on your PATH is never used or modified.
-**Writes:** `~/.parrot/bin`, `~/.parrot/venv` and `~/.parrot/python`, plus a `# >>> parrot >>>` PATH block
+`ai-parrot-tools` from PyPI. A system `uv` in `>=0.11.28,<0.12` is recorded and reused; all other system uv
+installations are left as is.
+**Writes:** `~/.parrot/bin`, `~/.parrot/libexec`, `~/.parrot/venv` and `~/.parrot/python`, plus a `# >>> parrot >>>` PATH block
 in your shell profile. If they are missing, it also writes the credentials file `~/.parrot/env/.env` (mode 0600,
 every key commented out) and an empty `~/.parrot/etc/config.ini` for navconfig. Existing `~/.parrot` data (wikis,
-library, skills, brains, `parrot.db`, an existing `env/.env`) is never touched.
+library, skills, brains, `parrot.db`, an existing `env/.env`) is never touched. Your own `uv` is never modified,
+moved or removed; a pinned fallback lives under `~/.parrot/libexec`, never on PATH.
 **Verified by:** the uv archive checksum, then `parrot self doctor --runtime-only`; a failure removes only
 what the run created. Before writing anything the script checks the platform, `curl`/`wget`, `sha256sum`,
 `git`, 2 GiB of free space under `PARROT_HOME` and that GitHub and PyPI are reachable, and prints a plan first.
