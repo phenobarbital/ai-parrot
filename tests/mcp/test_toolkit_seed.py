@@ -38,6 +38,7 @@ def test_available_templates_lists_packaged_names():
         "browsing",
         "lsp",
         "memory",
+        "pageindex",
     }
 
 
