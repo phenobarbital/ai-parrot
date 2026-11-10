@@ -54,7 +54,7 @@
       "feature_id": "BRIEF-installer-uv-shadowing",
       "feature": "installer-uv-shadowing",
       "spec": "sdd/briefs/installer-uv-shadowing.brief.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -64,7 +64,7 @@
       "parallelism_notes": "Runs after task 2: same SHA256SUMS and docs page.",
       "assigned_to": null,
       "started_at": "2026-11-10T00:25:41+00:00",
-      "completed_at": null,
+      "completed_at": "2026-11-10T00:56:39+00:00",
       "file": "sdd/briefs/installer-uv-shadowing/tasks/HOTFIX-installer-uv-shadowing-3-powershell-installer.md"
     }
   ]

@@ -280,10 +280,8 @@ def test_skew_guard_follows_pip_and_cleanup_follows_doctor() -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (seat gpt-5.6-terra, backend codex, 1 attempt, 464s)
+**Date**: 2026-11-10
+**Notes**: PowerShell installer mirrors the POSIX uv model (Select-Uv managed/system/download, libexec\uv.exe, uv-path record, version-skew legacy fallback, legacy bin uv.exe/uvx.exe removal after success). Plan text, tests, SHA256SUMS and docs updated. Merge-tier validation: 16 passed, 6 skipped (pwsh not installed, so the pwsh harness did not run). No review corrections.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
