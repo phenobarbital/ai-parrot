@@ -372,8 +372,8 @@ class TestFetchDatasetFailures:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (sequential fallback — the coder engine rejected the `HOTFIX-` task id: SuspensionRecord.task_id only matches `^TASK-\d{1,5}$`, so nothing was dispatched)
+**Date**: 2026-11-11
+**Notes**: Classifier + terminal error dict + entry-level short-circuit implemented in tool.py. The terminal kind is kept in a private `DatasetEntry._unavailable_kind` next to `unavailable_reason` (which stores the underlying error text); `activate()` clears both. Tests: 12 new pass; test_policy_filtering (27) and infographic_recipes/test_runner (31) pass; ruff clean.
 
-**Deviations from spec**: none
+**Deviations from spec**: private `_unavailable_kind` attribute added on DatasetEntry (needed to rebuild the terminal dict in the short-circuit).
