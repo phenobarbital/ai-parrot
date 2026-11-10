@@ -149,3 +149,38 @@ def test_relation_judgement_confidence_bounds():
 def test_rel_weights_cover_every_relation_kind():
     for kind in get_args(RelationKind):
         assert kind in REL_WEIGHTS
+
+
+def test_book_card_defaults_kind_book():
+    card = _card()
+    assert card.kind == "book"
+    assert card.notes_for is None
+    with pytest.raises(ValidationError):
+        _card(kind="journal")
+
+
+def test_relation_origin_manual_and_source_format_tree():
+    notes = _card(book_id="clean-code--notes", tree_name="clean-code--notes", source_format="tree",
+                  kind="notes", notes_for="clean-code")
+    assert notes.kind == "notes"
+    assert notes.notes_for == "clean-code"
+    rel = BookRelation(
+        src_book_id="a",
+        dst_book_id="b",
+        rel="same_author",
+        origin="manual",
+        computed_at="2026-11-11T00:00:00+00:00",
+    )
+    assert rel.origin == "manual"
+
+
+def test_notebook_models_defaults():
+    from parrot.knowledge.bookstore.models import Anchor, Annotation, SectorDraft
+
+    anchor = Anchor(book_id="clean-code")
+    assert anchor.scope == "project" and anchor.node_id is None
+    note = Annotation(note_tree="clean-code--notes", node_id="0001", title="t", body="b")
+    assert (note.note_kind, note.origin, note.anchor_status) == ("note", "human", "current")
+    draft = SectorDraft(code="S1", title="Craft", books=[anchor])
+    assert draft.rationale == "" and draft.books[0].book_id == "clean-code"
+    assert SectorDraft(code="S2", title="x").books == []
