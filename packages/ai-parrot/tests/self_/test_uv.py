@@ -138,3 +138,45 @@ def test_migrate_unlinks_symlink_without_moving_user_uv(home: Path, tmp_path: Pa
     assert user_uv.is_file() and (user_uv.read_bytes(), user_uv.stat().st_mtime_ns) == before
     assert uv.read_recorded_uv() == user_uv.resolve()
     assert any("removed legacy" in entry for entry in log)
+
+
+@posix_only
+def test_migrate_preserves_package_manager_symlink(home: Path, tmp_path: Path) -> None:
+    """The recorded path continues to work after a package manager upgrades uv."""
+    first = _fake_uv(tmp_path / "cellar" / "0.11.30" / "uv", "0.11.30")
+    stable = tmp_path / "brew-bin" / "uv"
+    stable.parent.mkdir()
+    stable.symlink_to(first)
+    legacy = home / "bin" / "uv"
+    legacy.parent.mkdir()
+    legacy.symlink_to(stable)
+
+    uv.migrate_legacy_uv()
+
+    assert uv.read_recorded_uv() == stable
+    assert not legacy.is_symlink()
+    second = _fake_uv(tmp_path / "cellar" / "0.11.31" / "uv", "0.11.31")
+    stable.unlink()
+    stable.symlink_to(second)
+    first.unlink()
+    assert uv.resolve_uv() == uv.UvResolution(path=stable, version="0.11.31", source="recorded")
+
+
+@posix_only
+def test_migrate_rejects_target_depending_on_legacy_uvx(home: Path, tmp_path: Path) -> None:
+    """An external link through a legacy entry cannot survive cleanup."""
+    real = _fake_uv(tmp_path / "user-bin" / "uv", "0.11.30")
+    legacy = home / "bin" / "uv"
+    legacy.parent.mkdir()
+    legacy_uvx = home / "bin" / "uvx"
+    legacy_uvx.symlink_to(real)
+    external = tmp_path / "external" / "uv"
+    external.parent.mkdir()
+    external.symlink_to(legacy_uvx)
+    legacy.symlink_to(external)
+
+    log = uv.migrate_legacy_uv()
+
+    assert log[0].startswith("warning:")
+    assert legacy.is_symlink() and legacy_uvx.is_symlink()
+    assert uv.read_recorded_uv() is None

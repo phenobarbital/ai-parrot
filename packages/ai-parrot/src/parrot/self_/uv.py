@@ -176,11 +176,25 @@ def _symlink_target_uv(link: Path) -> Path | None:
     if not link.is_symlink():
         return None
     try:
-        target = link.resolve(strict=True)
+        target = Path(os.readlink(link))
+        if not target.is_absolute():
+            target = link.parent / target
+        target = target.parent.resolve(strict=True) / target.name
+        current = target
+        seen: set[Path] = set()
+        own = {_resolved(parrot_home() / "bin"), _resolved(libexec_dir())}
+        while True:
+            if _resolved(current.parent) in own or current in seen:
+                return None
+            seen.add(current)
+            if not current.is_symlink():
+                break
+            destination = Path(os.readlink(current))
+            if not destination.is_absolute():
+                destination = current.parent / destination
+            current = destination.parent.resolve(strict=True) / destination.name
+        current.resolve(strict=True)
     except (OSError, RuntimeError):
-        return None
-    own = {_resolved(parrot_home() / "bin"), _resolved(libexec_dir())}
-    if target.parent and _resolved(target.parent) in own:
         return None
     return target if _compatible(target) else None
 
