@@ -14,7 +14,7 @@ docs:
 **Feature ID**: FEAT-877
 **Date**: 2026-11-10
 **Author**: Jesus Lara / Claude
-**Status**: draft
+**Status**: approved
 **Target version**: 0.30.x
 
 ---
