@@ -63,9 +63,9 @@ def uv_path_file() -> Path:
 
 
 def legacy_uv_files() -> list[Path]:
-    """Return legacy uv and uvx files under ``parrot_home()/bin``."""
+    """Return legacy uv and uvx files or symlinks under ``parrot_home()/bin``."""
     bin_dir = parrot_home() / "bin"
-    return [path for path in (bin_dir / _exe("uv"), bin_dir / _exe("uvx")) if path.is_file()]
+    return [path for path in (bin_dir / _exe("uv"), bin_dir / _exe("uvx")) if path.is_symlink() or path.is_file()]
 
 
 def parse_version(text: str) -> tuple[int, ...] | None:
@@ -171,6 +171,34 @@ def resolve_uv() -> UvResolution:
     raise FileNotFoundError(f"no uv in >={UV_MIN_VERSION},<{UV_MAX_VERSION}{checked} — re-run install-parrot --global")
 
 
+def _symlink_target_uv(link: Path) -> Path | None:
+    """Return a compatible external uv target for a legacy ``bin/uv`` symlink, if any."""
+    if not link.is_symlink():
+        return None
+    try:
+        target = Path(os.readlink(link))
+        if not target.is_absolute():
+            target = link.parent / target
+        target = target.parent.resolve(strict=True) / target.name
+        current = target
+        seen: set[Path] = set()
+        own = {_resolved(parrot_home() / "bin"), _resolved(libexec_dir())}
+        while True:
+            if _resolved(current.parent) in own or current in seen:
+                return None
+            seen.add(current)
+            if not current.is_symlink():
+                break
+            destination = Path(os.readlink(current))
+            if not destination.is_absolute():
+                destination = current.parent / destination
+            current = destination.parent.resolve(strict=True) / destination.name
+        current.resolve(strict=True)
+    except (OSError, RuntimeError):
+        return None
+    return target if _compatible(target) else None
+
+
 def migrate_legacy_uv() -> list[str]:
     """Move a legacy bin uv layout into libexec or record a compatible system uv."""
     legacy = legacy_uv_files()
@@ -183,7 +211,10 @@ def migrate_legacy_uv() -> list[str]:
     elif (system := find_path_uv()) is not None and _compatible(system):
         record_system_uv(system)
         log.append(f"using your uv at {system}: recorded in {uv_path_file()}")
-    elif bin_uv in legacy and _compatible(bin_uv):
+    elif bin_uv in legacy and (target := _symlink_target_uv(bin_uv)) is not None:
+        record_system_uv(target)
+        log.append(f"using your uv at {target}: recorded in {uv_path_file()}")
+    elif bin_uv in legacy and not bin_uv.is_symlink() and _compatible(bin_uv):
         libexec_dir().mkdir(parents=True, exist_ok=True)
         os.replace(bin_uv, managed_uv())
         log.append(f"moved {bin_uv} to {managed_uv()} (off PATH)")
@@ -194,7 +225,7 @@ def migrate_legacy_uv() -> list[str]:
         )
         return log
     for path in legacy:
-        if path.exists():
+        if path.is_symlink() or path.exists():
             path.unlink()
             log.append(f"removed legacy {path} (it shadowed the uv on your PATH)")
     return log

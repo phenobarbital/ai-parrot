@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-872 — Guard `migrate_legacy_uv` Against Symlinked Legacy `bin/uv`
 **Spec**: `sdd/specs/self--uv-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -252,10 +252,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: /sdd-fix session (agent:sdd-fix:3a25996f)
+**Date**: 2026-11-10
+**Notes**: Guarded `legacy_uv_files()` and `migrate_legacy_uv()` in `packages/ai-parrot/src/parrot/self_/uv.py` against symlinks: `legacy_uv_files()` now includes `path.is_symlink() or path.is_file()`, `_symlink_target_uv()` resolves a compatible external user `uv` target for a legacy `bin/uv` symlink and records it via `record_system_uv`, `os.replace(bin_uv, managed_uv())` is guarded with `not bin_uv.is_symlink()`, and the cleanup loop unlinks symlinks with `if path.is_symlink() or path.exists(): path.unlink()`. Added `test_migrate_unlinks_symlink_without_moving_user_uv` in `packages/ai-parrot/tests/self_/test_uv.py` (16/16 passed).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
