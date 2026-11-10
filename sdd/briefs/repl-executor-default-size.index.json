@@ -16,14 +16,14 @@
       "feature_id": "BRIEF-repl-executor-default-size",
       "feature": "repl-executor-default-size",
       "spec": "sdd/briefs/repl-executor-default-size.brief.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-10T23:31:07+00:00",
       "completed_at": null,
       "file": "sdd/briefs/repl-executor-default-size/tasks/HOTFIX-repl-executor-default-size-1-auto-size-repl-executor.md"
     }
