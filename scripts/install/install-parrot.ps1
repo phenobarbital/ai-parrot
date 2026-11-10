@@ -376,7 +376,7 @@ function Install-Global {
       foreach ($n in @('uv.exe', 'uvx.exe')) {
         $p = Join-Path $bin $n; if (Test-Path $p) {
           try { Run -Why "remove the legacy $p (an older installer put it on PATH, shadowing your uv)" -Cmd { Remove-Item -Force -LiteralPath $p } }
-          catch { Write-Warning "could not remove $p: $($_.Exception.Message)" }
+          catch { Write-Warning "could not remove ${p}: $($_.Exception.Message)" }
         }
       }
     }
