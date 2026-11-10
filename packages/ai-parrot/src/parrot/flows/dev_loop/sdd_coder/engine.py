@@ -1765,7 +1765,7 @@ class SddCoderEngine:
 
         try:
             return await inspection.task_context(
-                feature=Path(ctx.index_path).stem,
+                feature=_index_slug(ctx.index_path),
                 worktree=Path(ctx.worktree),
                 task_id=task_id,
                 execution_id=execution_id,
@@ -1817,7 +1817,7 @@ class SddCoderEngine:
 
         try:
             return await inspection.delivery_report(
-                feature=Path(ctx.index_path).stem,
+                feature=_index_slug(ctx.index_path),
                 worktree=Path(ctx.worktree),
                 task_id=task_id,
                 execution_id=execution_id,
