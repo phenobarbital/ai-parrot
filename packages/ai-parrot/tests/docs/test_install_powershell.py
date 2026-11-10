@@ -11,6 +11,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
+from parrot.self_ import uv as uv_mod
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SCRIPT = REPO_ROOT / "scripts" / "install" / "install-parrot.ps1"
@@ -98,7 +99,7 @@ def test_global_rejects_unknown_component(tmp_path: Path) -> None:
     )
     assert result.returncode != 0
     assert "unknown component 'sdd' for -With" in _flat(result.stdout + result.stderr)
-    assert "never used or modified" not in _flat(result.stdout)
+    assert "never modified, moved or removed" not in _flat(result.stdout)
     assert not home.exists()
 
 
@@ -113,6 +114,30 @@ def test_global_pins_and_verifies_uv() -> None:
     assert "Get-FileHash" in _TEXT
     assert "'User'" in _TEXT
     assert "'Machine'" not in _TEXT
+
+
+def test_uv_constants_match_runtime() -> None:
+    """PowerShell uv constants remain aligned with the runtime resolver."""
+    found = {key: re.search(rf"\${key} = '([^']+)'", _TEXT).group(1) for key in ("UvVersion", "UvMin", "UvMax")}
+    assert found == {
+        "UvVersion": uv_mod.PINNED_UV_VERSION,
+        "UvMin": uv_mod.UV_MIN_VERSION,
+        "UvMax": uv_mod.UV_MAX_VERSION,
+    }
+
+
+def test_uv_goes_to_libexec_and_uvx_is_not_installed() -> None:
+    """The ordinary install places only uv.exe in libexec, never the PATH bin."""
+    body = _TEXT[_TEXT.index("function Install-Global") :]
+    assert "'libexec'" in body
+    assert "@('uv.exe', 'uvx.exe')" not in body.split("legacy")[0]
+
+
+def test_skew_guard_follows_pip_and_cleanup_follows_doctor() -> None:
+    """Compatibility fallback happens after pip; legacy cleanup follows the doctor."""
+    body = _TEXT[_TEXT.index("function Install-Global") :]
+    assert body.index("pip install") < body.index("import parrot.self_.uv")
+    assert body.index("self doctor --runtime-only") < body.index("remove the legacy")
 
 
 def test_preflight_gate_precedes_first_write() -> None:
@@ -224,7 +249,7 @@ def test_global_dry_run(tmp_path: Path) -> None:
     assert "ai-parrot-tools==9.9.9" in result.stdout      # rev 0.5 C20: same version pin as ai-parrot
     assert not home.exists()
     # C14a/C14b: plan paragraph and gate summary precede the first "->" announcement
-    assert "never used or modified" in _flat(result.stdout) and "SHA256SUMS" in result.stdout
+    assert "never modified, moved or removed" in _flat(result.stdout) and "SHA256SUMS" in result.stdout
     assert result.stdout.index("preflight: network checks skipped") < result.stdout.index("->")
 
 
