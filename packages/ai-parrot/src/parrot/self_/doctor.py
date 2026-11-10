@@ -21,11 +21,10 @@ from pydantic import BaseModel
 
 from parrot.launcher import InstallRoot, MANAGED_PYTHON, parrot_home, script_path  # TASK-4071, TASK-5184
 from parrot.self_.components import managed_venv  # TASK-4079
+from parrot.self_.uv import UV_MAX_VERSION, UV_MIN_VERSION, legacy_uv_files, resolve_uv
 
 logger = logging.getLogger(__name__)
 
-#: Kept in sync with the pin in scripts/install/install-parrot.{sh,ps1} (--global mode).
-PINNED_UV_VERSION: str = "0.11.28"
 DoctorScope = Literal["full", "runtime-only", "sdd"]
 RUNTIME_ENTRYPOINTS: tuple[str, ...] = ("parrot", "wikitoolkit", "bookstore")
 HOST_CLIS: dict[str, str] = {"claude": "claude", "codex": "codex", "google": "agy"}
@@ -63,22 +62,32 @@ def installed_version(venv: Path) -> str | None:
 
 
 def _check_uv() -> DoctorCheck:
-    """Pinned uv present under ~/.parrot/bin and at PINNED_UV_VERSION."""
-    bundled = parrot_home() / "bin" / ("uv.exe" if os.name == "nt" else "uv")
-    fix = "re-run install-parrot --global"
-    if not bundled.is_file():
-        return DoctorCheck(name="uv", ok=False, detail=f"pinned uv not found at {bundled}", fix=fix)
+    """Check that a compatible uv resolves from one of the supported locations."""
     try:
-        result = subprocess.run([str(bundled), "--version"], capture_output=True, text=True, check=False)
-    except OSError as exc:
-        return DoctorCheck(name="uv", ok=False, detail=f"cannot run {bundled}: {exc}", fix=fix)
-    tokens = result.stdout.split()
-    version = tokens[1] if result.returncode == 0 and len(tokens) > 1 else ""
-    if version != PINNED_UV_VERSION:
-        return DoctorCheck(
-            name="uv", ok=False, detail=f"uv {version or 'unknown'} at {bundled}, expected {PINNED_UV_VERSION}", fix=fix
-        )
-    return DoctorCheck(name="uv", ok=True, detail=f"uv {version} at {bundled}")
+        found = resolve_uv()
+    except FileNotFoundError as exc:
+        return DoctorCheck(name="uv", ok=False, detail=str(exc), fix="re-run install-parrot --global")
+    return DoctorCheck(
+        name="uv",
+        ok=True,
+        detail=(
+            f"uv {found.version} at {found.path} ({found.source}; compatible " f">={UV_MIN_VERSION},<{UV_MAX_VERSION})"
+        ),
+    )
+
+
+def _check_uv_layout() -> DoctorCheck:
+    """Report legacy uv files that still shadow the user's PATH uv."""
+    legacy = legacy_uv_files()
+    if not legacy:
+        return DoctorCheck(name="uv layout", ok=True, informational=True, detail="no uv in ~/.parrot/bin")
+    return DoctorCheck(
+        name="uv layout",
+        ok=False,
+        informational=True,
+        detail=f"legacy {', '.join(str(path) for path in legacy)} shadow any uv on your PATH",
+        fix="parrot self update (or re-run install-parrot --global)",
+    )
 
 
 def _check_python() -> DoctorCheck:
@@ -766,8 +775,15 @@ def run_doctor(
     and the ai-parrot / ai-parrot-tools version lockstep (rev 0.5 C20, TASK-5117); "full" adds host configs, toolkits and — iff ``root/sdd`` exists — the C15 SDD readiness checks;
     "sdd" forces the latter.
     """
-    checks = [_check_uv(), _check_python(), _check_entrypoints(), _check_path(), _check_tools_wiki(),
-              _check_runtime_lockstep()]
+    checks = [
+        _check_uv(),
+        _check_uv_layout(),
+        _check_python(),
+        _check_entrypoints(),
+        _check_path(),
+        _check_tools_wiki(),
+        _check_runtime_lockstep(),
+    ]
     if scope == "runtime-only":
         return checks
     if install_root is not None:
