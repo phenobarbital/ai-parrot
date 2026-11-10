@@ -3,7 +3,7 @@
 A runnable CPU evaluation of prompt-injection detection, model-routing decisions and
 classification grounded in a supplied document. The CLI produces JSON evidence and a
 Markdown report. It uses real Laya 0.3.5 inference in an isolated subprocess; optional
-paired Anthropic Agent calls measure downstream routing outcomes.
+paired Anthropic or Google Agent calls measure downstream routing outcomes.
 
 The scope is English smoke evaluation, not production Jev replacement, PII redaction,
 multilingual benchmarking or a production guardrail. Laya's checkpoint selection and
@@ -73,7 +73,7 @@ Set `ANTHROPIC_API_KEY` in the environment. Eight default routing fixtures requi
 calls for one pair per fixture. `--max-output-tokens` defaults to 256. SDK retries can produce
 more HTTP attempts; the logical-call cap is not a monetary cap. No live calls occur by default.
 
-Both IDs use the same direct Anthropic client. Selection is request-local and leaves the
+Both IDs use the provider selected by `--provider anthropic|google` (default: Anthropic). Selection is request-local and leaves the
 client's default model untouched. Invalid predictions, abstention and confidence below
 `--routing-threshold` (default 0.8) retain the primary model. The client fallback model is an
 availability fallback, not proof of a cheaper model; supply the model pair explicitly.
@@ -126,7 +126,7 @@ Regression validation: **106 passed, 1 skipped** (the paid-provider test), inclu
 integration; exact tokenizer boundary checks passed. Formatting and focused Ruff checks passed.
 Environments, weights, generated reports and logs stay untracked. The older 2026-09-22
 review had no real inference evidence; its unresolved adapter placeholders are now implemented.
-Paid provider calls have not been executed in this completion run.
+The CPU completion run did not execute paid calls; see the Google verification follow-up below.
 
 ## Validation
 
@@ -142,3 +142,49 @@ and `LAYA_EVAL_REVISION` to the interpreter, snapshot and revision above. For pa
 also set `LAYA_EVAL_LIVE=1`, `LAYA_EVAL_PRIMARY_API_MODEL`, `LAYA_EVAL_CHEAP_API_MODEL`,
 `LAYA_EVAL_MAX_LIVE_CALLS` and `ANTHROPIC_API_KEY`. Skipped tests are not live evidence.
 Completion logs are in `artifacts/logs/laya_completion_*.log`.
+
+## Google paid verification
+
+Use the same interpreter/checkpoint flags from the CPU command, with:
+
+```text
+--scenario routing --live --provider google
+--primary-label google:gemini-3.5-flash --primary-api-model gemini-3.5-flash
+--cheap-api-model gemini-3.1-flash-lite --max-live-calls 16 --max-output-tokens 1024
+```
+
+The comparison model is the existing Google client's fallback. Credentials use `GOOGLE_API_KEY`
+through the same environment/project configuration as that client. Google evidence uses raw
+`model_version` (or `modelVersion`), never the requested `AIMessage.model`. If Google resolves
+an alias to another version, both identifiers remain visible. These calls still use AI-Parrot
+Agent dispatch, not a direct SDK invocation. The default routing threshold remains 0.8.
+
+For the opt-in integration test, set `LAYA_EVAL_PROVIDER=google`, `GOOGLE_API_KEY` and the
+existing `LAYA_EVAL_*` model, call-cap and worker variables. Optional
+`LAYA_EVAL_MAX_OUTPUT_TOKENS` defaults to 1024 for that integration test.
+
+### Paid run results (2026-11-10)
+
+- Eight fixtures × two arms: **16 successful paid Agent responses**, 264 prompt tokens and
+  3,308 completion tokens. The original report remains `incomplete`: its extractor omitted
+  the real client's `google_genai` provider tag, so actual-model evidence was not retained.
+  Evidence: `reports/google-live-verified/results.json` (the directory name does not imply a pass).
+- After adding and regression-testing that tag, a separate one-fixture, two-call confirmation
+  completed with **both provider model versions verified**, 28 prompt tokens and 14 completion
+  tokens. Evidence: `reports/google-live-confirmed/results.json` and `report.md`; CLI exit 0.
+- Requested **`gemini-3.5-flash`**, provider returned **`gemini-3.6-flash`** in both confirmed calls.
+  This confirms actual paid execution through the requested ID, not execution of a 3.5 checkpoint.
+- All decisions retained primary at the unchanged 0.8 routing threshold. The configured fallback
+  `gemini-3.1-flash-lite` was not selected or exercised. No savings claim is supported.
+- Total: **18 successful paid logical calls**. No price table was supplied; cost remains null.
+  The earlier sandbox attempt failed DNS before receiving a provider response and was stopped.
+- Literal rubric pass rate was 0 in the eight-case run: even “The capital of France is Paris.”
+  fails an exact `Paris` rubric. Treat this as a rubric limitation, not semantic answer accuracy.
+  No rubric or threshold was tuned after observing the paid answers.
+
+Validation: broader offline suite 109 passed / 2 skipped before the provider-tag correction;
+final affected tests 29 passed / 2 skipped (real tests intentionally opt-in), plus the verified
+paid CLI confirmation and passing Ruff/format checks. Logs: `artifacts/logs/laya_google_*.log`.
+
+Committed evidence summary (including original report hashes):
+`sdd/state/FEAT-589/verification/evaluation-summary.json`. Generated reports and logs remain local.

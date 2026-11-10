@@ -102,6 +102,7 @@ class EvaluationConfig(_Record):
     checkpoint_revision: str = Field(min_length=1)
     scenario: Literal["all", "injection", "routing", "grounded"] = "all"
     live: bool = False
+    provider: Literal["anthropic", "google"] = "anthropic"
     primary_label: str = "anthropic:opus-5"
     primary_api_model: str | None = None
     cheap_api_model: str | None = None

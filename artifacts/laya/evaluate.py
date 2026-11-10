@@ -40,6 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--checkpoint-revision", required=True)
     parser.add_argument("--scenario", choices=("all", *SCENARIOS), default="all")
     parser.add_argument("--live", action="store_true")
+    parser.add_argument("--provider", choices=("anthropic", "google"), default="anthropic")
     parser.add_argument("--primary-label", default="anthropic:opus-5")
     parser.add_argument("--primary-api-model", default=None)
     parser.add_argument("--cheap-api-model", default=None)
@@ -118,12 +119,17 @@ def collect_environment(worker: Any | None) -> dict[str, Any]:
 
 
 def build_live_agent(config: EvaluationConfig) -> Any:
-    """Build the one direct Anthropic client and routing agent for a live run."""
-    from parrot.clients.anthropic import AnthropicClient
-
+    """Build one provider client and a request-local routing agent for a live run."""
     from artifacts.laya.routing import LayaEvaluationAgent
 
-    client = AnthropicClient(backend="direct", model=config.primary_api_model)
+    if config.provider == "google":
+        from parrot.clients.google import GoogleGenAIClient
+
+        client = GoogleGenAIClient(model=config.primary_api_model, vertexai=False)
+    else:
+        from parrot.clients.anthropic import AnthropicClient
+
+        client = AnthropicClient(backend="direct", model=config.primary_api_model)
     return LayaEvaluationAgent(
         name="laya-routing-eval",
         llm=client,
