@@ -15,11 +15,12 @@ from typing import Any
 
 from parrot.launcher import find_project_root, parrot_home, script_path  # TASK-4071
 from parrot.mcp.toolkit_seed import load_template  # verified: mcp/toolkit_seed.py:63
+from parrot.self_.uv import migrate_legacy_uv, resolve_uv
 
 logger = logging.getLogger(__name__)
 
 #: Only these children of ``parrot_home()`` belong to the runtime (spec §7).
-RUNTIME_DIRS: tuple[str, ...] = ("bin", "venv", "python")
+RUNTIME_DIRS: tuple[str, ...] = ("bin", "libexec", "venv", "python")
 #: Distribution upgraded by ``update_runtime``.
 CORE_DIST: str = "ai-parrot"
 #: Spec rev 0.5 C20 — part of the base runtime, always at the same version pin as CORE_DIST.
@@ -153,22 +154,12 @@ def ensure_navconfig_ini() -> tuple[Path, bool]:
 
 
 def bundled_uv() -> Path:
-    """Return the pinned uv placed by the ``--global`` bootstrap.
-
-    ``parrot_home()/'bin'/'uv'`` (``uv.exe`` on Windows). Falls back to ``shutil.which('uv')``
-    with a logged warning so dev setups without the bootstrap still work.
+    """Return the uv selected by ``parrot.self_.uv.resolve_uv``.
 
     Raises:
-        FileNotFoundError: neither the bundled uv nor a PATH uv exists.
+        FileNotFoundError: No compatible uv is available.
     """
-    bundled = parrot_home() / "bin" / ("uv.exe" if os.name == "nt" else "uv")
-    if bundled.is_file():
-        return bundled
-    found = shutil.which("uv")
-    if found:
-        logger.warning("bundled uv missing at %s; falling back to %s", bundled, found)
-        return Path(found)
-    raise FileNotFoundError(f"uv not found at {bundled} nor on PATH — run install-parrot --global")
+    return resolve_uv().path
 
 
 def _venv_python(venv: Path) -> Path:
@@ -246,8 +237,8 @@ def update_runtime(version: str | None = None) -> list[str]:
     (``parrot self doctor`` reports it as ``runtime lockstep``).
     """
     python = _venv_python(managed_venv())
+    log: list[str] = migrate_legacy_uv()
     uv = str(bundled_uv())
-    log: list[str] = []
     install = [uv, "pip", "install", "--python", str(python)]
     # No state file exists and uv keeps already-installed extras, so a plain `--upgrade` suffices (spec §1, §7).
     if version:
@@ -299,7 +290,7 @@ def _installed_version(python: Path, dist: str) -> str:
 
 
 def uninstall_runtime(*, yes: bool) -> list[str]:
-    """Remove the managed runtime (``bin/``, ``venv/``, ``python/``) — never user data.
+    """Remove the managed runtime (``bin/``, ``libexec/``, ``venv/``, ``python/``) — never user data.
 
     Raises:
         PermissionError: ``yes`` is False (the CLI confirms before calling with ``yes=True``).

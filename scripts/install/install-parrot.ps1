@@ -114,16 +114,68 @@ function Resolve-Extras {
   }
 }
 $UvVersion = '0.11.28'
+$UvMin = '0.11.28'; $UvMax = '0.12'
 $MinFreeKB = 2097152   # C14b gate: 2 GiB free under PARROT_HOME (managed CPython + venv + wheel cache)
 $RawBase = 'https://raw.githubusercontent.com/phenobarbital/ai-parrot/main/scripts/install'   # C14a non-piped alternative
 
-function Write-Plan([string]$Url, [string]$Spec, [string]$Home_, [string]$Py) {  # C14a — first output; no side effects
+function ConvertTo-UvVersion([string]$V) {
+  if ($V -notmatch '^\d+(\.\d+){0,3}') { return $null }
+  $parts = @($Matches[0] -split '\.'); while ($parts.Count -lt 3) { $parts += '0' }
+  return [version]($parts -join '.')
+}
+
+function Get-UvVersion([string]$Exe) {
+  try { $out = (& $Exe --version 2>$null) -join ' ' } catch { return $null }
+  if ($LASTEXITCODE -or -not $out) { return $null }
+  foreach ($tok in ($out -split '\s+')) { if ($tok -match '^\d+(\.\d+)*') { return $Matches[0] } }
+  return $null
+}
+
+function Test-UvInRange([string]$V) {
+  $v_ = ConvertTo-UvVersion $V; if ($null -eq $v_) { return $false }
+  return ($v_ -ge (ConvertTo-UvVersion $UvMin)) -and ($v_ -lt (ConvertTo-UvVersion $UvMax))
+}
+
+function Find-SystemUv([string]$Home_) {
+  $excluded = @((Join-Path $Home_ 'bin'), (Join-Path $Home_ 'libexec')) | ForEach-Object {
+    if (Test-Path $_) { (Resolve-Path $_).Path.TrimEnd('\\') } else { $_.TrimEnd('\\') }
+  }
+  foreach ($candidate in (Get-Command uv.exe -All -CommandType Application -ErrorAction SilentlyContinue)) {
+    $directory = Split-Path -Parent $candidate.Source
+    if (Test-Path $directory) { $directory = (Resolve-Path $directory).Path }
+    if ($excluded | Where-Object { $directory.TrimEnd('\\') -ieq $_ }) { continue }
+    return $candidate.Source
+  }
+  return $null
+}
+
+function Select-Uv([string]$Home_) {
+  $managed = Join-Path $Home_ 'libexec\uv.exe'
+  $script:SysUv = Find-SystemUv $Home_; $script:SysUvVer = if ($script:SysUv) { Get-UvVersion $script:SysUv } else { $null }
+  if ((Test-Path $managed) -and (Test-UvInRange (Get-UvVersion $managed))) {
+    $script:UvMode = 'managed'; $script:UvBin = $managed
+  } elseif ($script:SysUv -and (Test-UvInRange $script:SysUvVer)) {
+    $script:UvMode = 'system'; $script:UvBin = $script:SysUv
+  } else {
+    $script:UvMode = 'download'; $script:UvBin = $managed
+  }
+}
+
+function Write-Plan([string]$Url, [string]$Spec, [string]$Home_, [string]$Py, [string]$Mode) {  # C14a — first output; no side effects
+  switch ($Mode) {
+    'download' {
+      Write-Host "This installer will download pinned uv $UvVersion from $Url and verify it against $Url.sha256 into"
+      Write-Host "$Home_\libexec (never on PATH)."
+      if ($script:SysUv) { Write-Host "Your uv $script:SysUvVer at $script:SysUv is outside >=$UvMin,<$UvMax and is left as is." }
+    }
+    'system' { Write-Host "This installer will use your uv $script:SysUvVer at $script:SysUv (inside >=$UvMin,<$UvMax) and record its path in $Home_\libexec\uv-path; no uv is downloaded." }
+    'managed' { Write-Host "This installer will reuse uv at $Home_\libexec\uv.exe." }
+  }
   Write-Host @"
-This installer will download uv $UvVersion from $Url and verify it against $Url.sha256,
 create $Home_\{bin,venv,python} (a uv-managed Python $Py and a venv with $Spec),
 and add $Home_\bin to your USER PATH (never Machine).
 If missing, it writes a commented-out credentials file $Home_\env\.env and an empty $Home_\etc\config.ini.
-A uv already on your PATH is never used or modified. Existing $Home_ data is never touched.
+Your own uv is never modified, moved or removed; uv.exe/uvx.exe that an older parrot installer left in $Home_\bin are removed after a successful install. Existing $Home_ data is never touched.
 Prefer not to pipe a download into PowerShell? Invoke-WebRequest $RawBase/install-parrot.ps1 and
 $RawBase/SHA256SUMS, compare (Get-FileHash install-parrot.ps1).Hash with the SHA256SUMS line, read
 the script, then run it.
@@ -200,32 +252,46 @@ function Install-Global {
   $spec = "ai-parrot[$AllExtras]"; if ($Version) { $spec = "$spec==$Version" }
   # rev 0.5 C20 — ai-parrot-tools at the same version pin (wikitoolkit mcp's wiki tools live in parrot_tools.wiki)
   $tools = 'ai-parrot-tools'; if ($Version) { $tools = "$tools==$Version" }
-  $bin = Join-Path $home_ 'bin'; $venv = Join-Path $home_ 'venv'; $uv = Join-Path $bin 'uv.exe'
+  $bin = Join-Path $home_ 'bin'; $venv = Join-Path $home_ 'venv'; $libexec = Join-Path $home_ 'libexec'
   $dl = Join-Path ([IO.Path]::GetTempPath()) "parrot-uv-$PID"
-  Write-Plan $url "$spec $tools" $home_ $py      # C14a — before anything else
+  Select-Uv $home_
+  $uv = $script:UvBin
+  Write-Plan $url "$spec $tools" $home_ $py $script:UvMode      # C14a — before anything else
   Test-Preflight $home_                 # C14b — exits 1 on any failed gate; nothing written yet
   $script:Created = [System.Collections.Generic.List[string]]::new()
   try {
     foreach ($d in @($home_, $bin)) {
       if (-not (Test-Path $d)) { Run -Why "create $d" -Cmd { New-Item -ItemType Directory -Path $d | Out-Null }; if (-not $DryRun) { $Created.Add($d) } }
     }
-    Run -Why 'create a scratch download dir' -Cmd { New-Item -ItemType Directory -Force -Path $dl | Out-Null }
-    Run -Why "download pinned uv $UvVersion ($target)" -Cmd { Invoke-WebRequest -Uri $url -OutFile (Join-Path $dl $asset) -UseBasicParsing }
-    Run -Why 'download the uv checksum' -Cmd { Invoke-WebRequest -Uri "$url.sha256" -OutFile (Join-Path $dl "$asset.sha256") -UseBasicParsing }
-    Run -Why 'verify the uv checksum' -Cmd {
-      $want = ((Get-Content (Join-Path $dl "$asset.sha256") -Raw).Trim() -split '\s+')[0]
-      $got = (Get-FileHash -Algorithm SHA256 (Join-Path $dl $asset)).Hash
-      if ($want -ine $got) { throw "checksum mismatch for $asset" }
-    }
-    Run -Why 'extract uv' -Cmd { Expand-Archive -Path (Join-Path $dl $asset) -DestinationPath $dl -Force }
-    Run -Why 'place uv in the managed bin dir' -Cmd {
-      foreach ($n in @('uv.exe', 'uvx.exe')) {
-        $f = Get-ChildItem -Path $dl -Filter $n -Recurse -File | Select-Object -First 1
-        if (-not $f) { if ($n -eq 'uv.exe') { throw "uv.exe not found in $asset" } else { continue } }
-        $dst = Join-Path $bin $n
-        if (-not (Test-Path $dst)) { $script:Created.Add($dst) }
-        Copy-Item $f.FullName "$dst.tmp" -Force; Move-Item "$dst.tmp" $dst -Force
+    switch ($script:UvMode) {
+      'download' {
+        if (-not (Test-Path $libexec)) { Run -Why "create $libexec" -Cmd { New-Item -ItemType Directory -Path $libexec | Out-Null }; if (-not $DryRun) { $Created.Add($libexec) } }
+        Run -Why 'create a scratch download dir' -Cmd { New-Item -ItemType Directory -Force -Path $dl | Out-Null }
+        Run -Why "download pinned uv $UvVersion ($target)" -Cmd { Invoke-WebRequest -Uri $url -OutFile (Join-Path $dl $asset) -UseBasicParsing }
+        Run -Why 'download the uv checksum' -Cmd { Invoke-WebRequest -Uri "$url.sha256" -OutFile (Join-Path $dl "$asset.sha256") -UseBasicParsing }
+        Run -Why 'verify the uv checksum' -Cmd {
+          $want = ((Get-Content (Join-Path $dl "$asset.sha256") -Raw).Trim() -split '\s+')[0]
+          $got = (Get-FileHash -Algorithm SHA256 (Join-Path $dl $asset)).Hash
+          if ($want -ine $got) { throw "checksum mismatch for $asset" }
+        }
+        Run -Why 'extract uv' -Cmd { Expand-Archive -Path (Join-Path $dl $asset) -DestinationPath $dl -Force }
+        Run -Why "place uv $UvVersion in $libexec (not on PATH)" -Cmd {
+          $f = Get-ChildItem -Path $dl -Filter 'uv.exe' -Recurse -File | Select-Object -First 1
+          if (-not $f) { throw "uv.exe not found in $asset" }
+          if (-not (Test-Path $uv)) { $script:Created.Add($uv) }
+          Copy-Item $f.FullName "$uv.tmp" -Force; Move-Item "$uv.tmp" $uv -Force
+        }
       }
+      'system' {
+        if (-not (Test-Path $libexec)) { Run -Why "create $libexec" -Cmd { New-Item -ItemType Directory -Path $libexec | Out-Null }; if (-not $DryRun) { $Created.Add($libexec) } }
+        $uvPath = Join-Path $libexec 'uv-path'
+        Run -Why "record your uv $($script:SysUvVer) ($($script:SysUv)) in $libexec\uv-path" -Cmd {
+          if (-not (Test-Path $uvPath)) { $script:Created.Add($uvPath) }
+          [IO.File]::WriteAllText("$uvPath.tmp", "$($script:SysUv)`n", (New-Object Text.UTF8Encoding $false))
+          Move-Item "$uvPath.tmp" $uvPath -Force
+        }
+      }
+      'managed' { Write-Host "Reusing uv at $uv" }
     }
     $pyDir = Join-Path $home_ 'python'
     if (-not $DryRun -and -not (Test-Path $pyDir)) { $Created.Add($pyDir) }
@@ -235,6 +301,32 @@ function Install-Global {
       Run -Why "create the managed venv (Python $py)" -Cmd { & $uv venv $venv --python $py --python-preference only-managed }
     }
     Run -Why "install $spec $tools into the managed venv" -Cmd { & $uv pip install --python (Join-Path $venv 'Scripts\python.exe') $spec $tools }
+    if (-not $DryRun) {
+      & (Join-Path $venv 'Scripts\python.exe') -c 'import parrot.self_.uv' 2>$null
+      if ($LASTEXITCODE) {
+        $script:UvLegacyCompat = $true
+        Write-Warning "this ai-parrot release predates the libexec uv layout: its doctor needs uv $UvVersion in $bin, which shadows any uv on your PATH"
+        Run -Why "place uv $UvVersion in $bin for this older ai-parrot" -Cmd {
+          $legacyUv = Join-Path $bin 'uv.exe'
+          if ((Test-Path $uv) -and ((Get-UvVersion $uv) -eq $UvVersion)) {
+            if (-not (Test-Path $legacyUv)) { $script:Created.Add($legacyUv) }
+            Copy-Item $uv "$legacyUv.tmp" -Force; Move-Item "$legacyUv.tmp" $legacyUv -Force
+          } else {
+            if (-not (Test-Path $dl)) { New-Item -ItemType Directory -Force -Path $dl | Out-Null }
+            Invoke-WebRequest -Uri $url -OutFile (Join-Path $dl $asset) -UseBasicParsing
+            Invoke-WebRequest -Uri "$url.sha256" -OutFile (Join-Path $dl "$asset.sha256") -UseBasicParsing
+            $want = ((Get-Content (Join-Path $dl "$asset.sha256") -Raw).Trim() -split '\s+')[0]
+            $got = (Get-FileHash -Algorithm SHA256 (Join-Path $dl $asset)).Hash
+            if ($want -ine $got) { throw "checksum mismatch for $asset" }
+            Expand-Archive -Path (Join-Path $dl $asset) -DestinationPath $dl -Force
+            $f = Get-ChildItem -Path $dl -Filter 'uv.exe' -Recurse -File | Select-Object -First 1
+            if (-not $f) { throw "uv.exe not found in $asset" }
+            if (-not (Test-Path $legacyUv)) { $script:Created.Add($legacyUv) }
+            Copy-Item $f.FullName "$legacyUv.tmp" -Force; Move-Item "$legacyUv.tmp" $legacyUv -Force
+          }
+        }
+      }
+    }
     foreach ($s in @('parrot', 'wikitoolkit', 'bookstore')) {
       $src = Join-Path $venv "Scripts\$s.exe"; $dst = Join-Path $bin "$s.exe"
       Run -Why "expose $s" -Cmd {
@@ -261,6 +353,14 @@ function Install-Global {
       }
     }
     catch { Write-Warning "no credentials file was created: $($_.Exception.Message) (needs an ai-parrot release with 'parrot self env --init'; after 'parrot self update', run 'parrot self env --init')" }
+    if (-not $script:UvLegacyCompat) {
+      foreach ($n in @('uv.exe', 'uvx.exe')) {
+        $p = Join-Path $bin $n; if (Test-Path $p) {
+          try { Run -Why "remove the legacy $p (an older installer put it on PATH, shadowing your uv)" -Cmd { Remove-Item -Force -LiteralPath $p } }
+          catch { Write-Warning "could not remove $p: $($_.Exception.Message)" }
+        }
+      }
+    }
     # The base runtime is verified: a failing component warns and exits non-zero, never rolls it back (as install-parrot.sh).
     foreach ($c in ($With -split ',' | Where-Object { $_ })) {
       try { Run -Why "add component $c (parrot self add $c)" -Cmd { & (Join-Path $bin 'parrot.exe') self add $c } }
