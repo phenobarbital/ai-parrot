@@ -1,0 +1,30 @@
+- **The book is evidence; the notebook is interpretation.** A book tree is
+  immutable from the outside and re-indexable from its source. Notes,
+  footnotes, relation sheets and classification live in separate trees
+  that re-index never touches.
+- **One storage directory per scope.** Notebooks are ordinary PageIndex
+  trees inside the same `<library>/trees/` so one `PageIndexToolkit` (the
+  Bookstore-internal one or an MCP server) sees books and notebooks alike.
+  No second directory to point anything at.
+- **Dependency direction stays `bookstore → pageindex`.** PageIndex must
+  not import Bookstore. Whatever enforces the catalog's write policy lives
+  in `parrot.knowledge.bookstore`, with at most a generic, policy-free hook
+  in `PageIndexToolkit`.
+- **No change to the generic MCP machinery.** `mcp/toolkit_server.py`,
+  `toolkit_seed.py`, `toolkit_install.py` and `hosts.py` stay as they are
+  (FEAT-842 non-goal, still binding). A new template file is allowed.
+- **No-LLM mode keeps working.** Writing notes, anchoring footnotes, the
+  two-step sector retrieval and `add --import` are deterministic. Only the
+  *drafting* of a classification uses a model, and it degrades to the
+  existing deterministic communities when none is configured.
+- **Bookstore MCP stays read-only** (FEAT-533 §4, "no write tool over
+  MCP"). Writes go through the PageIndex MCP over the library; Bookstore's
+  MCP only gains read tools that understand notebooks.
+- **The Dewey sectors are authoritative.** When a sector answers "which
+  books treat X", that answer comes first and is labelled as the
+  librarian's classification; FTS over cards and the automatic Leiden
+  communities remain as fallback/suggestion, never as the source of
+  membership.
+- **Stdout purity** of both stdio servers is unchanged.
+
+---

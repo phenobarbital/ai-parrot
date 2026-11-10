@@ -1,0 +1,13 @@
+packages/ai-parrot/src/parrot/mcp/_toolkit_templates/pageindex.yaml
+packages/ai-parrot/src/parrot/knowledge/bookstore/catalog.py
+packages/ai-parrot/src/parrot/knowledge/bookstore/config.py
+packages/ai-parrot/src/parrot/knowledge/bookstore/library.py
+packages/ai-parrot/src/parrot/knowledge/bookstore/mcp_server.py
+packages/ai-parrot/src/parrot/knowledge/bookstore/models.py
+packages/ai-parrot/src/parrot/knowledge/bookstore/toolkit.py
+packages/ai-parrot/src/parrot/knowledge/pageindex/content_store.py
+packages/ai-parrot/src/parrot/knowledge/pageindex/schemas.py
+packages/ai-parrot/src/parrot/knowledge/pageindex/segment_store.py
+packages/ai-parrot/src/parrot/knowledge/pageindex/toolkit.py
+packages/ai-parrot/src/parrot/mcp/toolkit_seed.py
+packages/ai-parrot/src/parrot/mcp/toolkit_server.py

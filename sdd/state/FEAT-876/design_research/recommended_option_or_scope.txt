@@ -1,0 +1,112 @@
+**Option A** is recommended because it is the only one that keeps all
+four properties the conversation settled on at once: notebooks are
+PageIndex trees (so every PageIndex tool applies), they survive re-index
+by construction, evidence and interpretation are separated at the tree
+level (so citations stay honest), and the write policy sits in Bookstore
+next to the catalog it protects without PageIndex learning about
+Bookstore. Option B trades a merge problem we already know is fragile for
+a slightly simpler read path; Option C solves the policy problem by
+abandoning the requirement.
+
+---
+
+Two kinds of tree share `<library>/trees/`, distinguished by a new catalog
+column `kind` (`book` | `notes`):
+
+- **Book notebook** — one per book, `<slug>_notes` (tree names must match
+  `^[A-Za-z0-9_-]{1,128}$`, `content_store.py:41`, so no dots; a single
+  `_` also avoids the reserved `--staging-` marker, `library.py:73`),
+  created empty on first write (or at ingest). Nodes are reading notes and *virtual
+  footnotes*: a footnote is a notebook node whose metadata (set with the
+  existing `tag_node(metadata=...)`) carries one or more **anchors**
+  `{book_id, node_id, doc_id, revision}` into the book tree.
+- **Library notebook** — one per scope, `_library_notes`. Its nodes are
+  **sectors** in a Dewey-like hierarchy (`100 Philosophy › 170 Ethics ›
+  171 Ethical theories`). A sector node anchors the *books* that belong to
+  it **and the ToC entries** where each book treats the subject
+  (`{book_id, node_id}`). Relation sheets between books live here too and
+  may be projected into the existing relation graph with a new
+  `origin: "manual"`.
+
+Writes are governed by a **`LibraryPageIndexToolkit(AbstractToolkit)`**
+in `parrot.knowledge.bookstore`: a *facade over `Bookstore`* that serves
+the same tool surface and names as `PageIndexToolkit` (`tool_prefix =
+"pageindex"`) and routes every call to the per-scope toolkit Bookstore
+already holds (`Bookstore._toolkit(scope)`), so **one MCP server serves
+the project and the global library** (resolved with `resolve_locations`,
+exactly as the Bookstore MCP does). A tree is routed by the catalog (books
+and registered notebooks carry a scope); an uncatalogued name resolves
+project-first, then global; `create_tree` takes an optional `scope`
+(default `project`); `list_trees` merges both scopes and annotates each
+entry. Before dispatching, the facade enforces, per call:
+
+| Target tree | Structural ops (`delete_tree`, `rename_tree`, `insert_*`, `import_*`, `vacuum_tree`, `optimize --apply`) | Node ops (`add_node`, `update_node*`, `delete_node`, `tag_node`) |
+|---|---|---|
+| catalogued `kind=book` | **denied** | **denied** (books are evidence) |
+| catalogued `kind=notes` | `rename_tree` / `delete_tree` **denied** (use `bookstore remove` / `--import --force`); the rest allowed | allowed |
+| not in the catalog | allowed | allowed |
+
+`PageIndexToolkit` gains only a generic hook — a class-level
+`write_tools: frozenset[str]` (sibling of `llm_dependent_tools`) and an
+`_authorize_write(tree_name, op)` method that defaults to allow — so any
+subclass or facade can refuse with a clear error and so a `read_only=True`
+constructor flag can hide/refuse every write tool uniformly. PageIndex
+stays single-`storage_dir`; the multi-scope routing lives in the Bookstore
+facade (my call: a facade over the per-scope toolkits Bookstore already
+owns is far smaller than teaching `PageIndexToolkit` several directories,
+and keeps the dependency direction). A second packaged template,
+`pageindex-library.yaml`, points `class:` at the facade; it needs no
+`storage_dir` (locations are resolved from the server's working
+directory, `<repo_root>` passed as `project_root` for determinism).
+
+**Notebook registration is lazy, by naming convention.** A tree named
+`<slug>_notes` (where `<slug>` is a catalogued book) or `_library_notes`
+*is* a notebook the moment it exists on disk; Bookstore registers the
+`kind=notes` row the first time it reads it (`notebook_for`,
+`library_notebook`, `annotations_for`, `find_books`, `list --notes`,
+`doctor`). The facade never writes `library.db`; it only reads it for the
+deny decision. A row whose tree vanished is reported by `doctor`, not
+deleted silently.
+
+Bookstore reads become notebook-aware: `read_section` returns the
+section **plus** `annotations: [...]` anchored to that node;
+`get_toc` marks entries that have footnotes; a new read tool
+`find_books(query)` implements the two-step retrieval over sectors.
+`bookstore add --import <tree>` adopts an existing tree as a book or as a
+notebook (see Feature Description). Re-index never rebuilds a notebook;
+after a book is `"updated"`, anchors are remapped by `(doc_id, section
+title)` and the rest flagged `stale_anchor` rather than dropped.
+
+✅ **Pros:**
+- Notebooks survive re-index by construction (never rebuilt).
+- Evidence/interpretation separation is structural: a citation of a
+  footnote names the notebook, never the book's pages.
+- Zero new storage: the same `trees/` dir, the same PageIndex tools the
+  user already wants to use, the same locks and generation reload.
+- Write policy lives in Bookstore, next to the catalog it protects; the
+  PageIndex hook is generic and reusable (`read_only` is a free by-product).
+- `--import` and notebooks are the same mechanism: a free tree created via
+  the MCP is exactly what `--import` adopts.
+
+❌ **Cons:**
+- Catalog schema migration (`kind`, `notes_for`) and a second template to
+  maintain.
+- Anchors are soft references; remapping after re-index is best-effort.
+- Two servers (`parrot-bookstore` read, `parrot-pageindex-library` write)
+  for one library — by design, but the operator has to install both.
+
+📊 **Effort:** Medium
+
+📦 **Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| `bm25s` | sector search without an LLM (already a Bookstore extra) | present via `ai-parrot[bookstore]` |
+
+🔗 **Existing Code to Reuse:**
+- `knowledge/pageindex/toolkit.py` — `tag_node(metadata=...)` for anchors; `llm_dependent_tools` pattern for `write_tools`.
+- `knowledge/bookstore/library.py` — `_toolkit()`, `add_book()`, `read_section()`, `_draft_card()`, `optimize_book()`.
+- `knowledge/bookstore/catalog.py` — `books` DDL + FTS; `upsert_relations`.
+- `knowledge/bookstore/relations.py` — `origin` field on `BookRelation`; `detect_communities` as the no-LLM drafting source.
+- `mcp/_toolkit_templates/pageindex.yaml` — template shape; `toolkit_server.py:325-374` include/exclude/llm-dependent filtering (unchanged).
+
+---
