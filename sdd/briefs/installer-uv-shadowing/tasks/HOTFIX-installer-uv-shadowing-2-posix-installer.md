@@ -420,10 +420,8 @@ def test_offline_install_old_ai_parrot_keeps_legacy_layout(tmp_path: Path) -> No
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (seat gpt-5.6-terra, backend codex, 1 attempt, 417s)
+**Date**: 2026-11-10
+**Notes**: POSIX installer now picks a managed/system/downloaded uv (range >=0.11.28,<0.12), keeps the pinned uv in libexec off PATH, records system uv in libexec/uv-path, falls back to the legacy bin layout when the installed ai-parrot lacks parrot.self_.uv, and removes legacy bin/uv|uvx after the doctor passes. Plan text, tests, SHA256SUMS and docs/getting-started.md updated. Merge-tier validation: 44 passed. No review corrections.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

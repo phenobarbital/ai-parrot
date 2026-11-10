@@ -34,7 +34,7 @@
       "feature_id": "BRIEF-installer-uv-shadowing",
       "feature": "installer-uv-shadowing",
       "spec": "sdd/briefs/installer-uv-shadowing.brief.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -44,7 +44,7 @@
       "parallelism_notes": "Rewrites SHA256SUMS and docs/getting-started.md, which task 3 also edits.",
       "assigned_to": null,
       "started_at": "2026-11-10T00:25:41+00:00",
-      "completed_at": null,
+      "completed_at": "2026-11-10T00:47:13+00:00",
       "file": "sdd/briefs/installer-uv-shadowing/tasks/HOTFIX-installer-uv-shadowing-2-posix-installer.md"
     },
     {
