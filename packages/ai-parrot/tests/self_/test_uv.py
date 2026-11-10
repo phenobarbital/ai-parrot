@@ -122,3 +122,20 @@ def test_migrate_keeps_files_when_nothing_is_compatible(home: Path) -> None:
     _fake_uv(home / "bin" / "uv", "0.10.0")
     log = uv.migrate_legacy_uv()
     assert (home / "bin" / "uv").exists() and log[0].startswith("warning:")
+
+
+@posix_only
+def test_migrate_unlinks_symlink_without_moving_user_uv(home: Path, tmp_path: Path) -> None:
+    """A legacy bin/uv symlink to the user's uv is unlinked without moving the target into libexec."""
+    user_uv = _fake_uv(tmp_path / "user-bin" / "uv", "0.11.30")
+    before = (user_uv.read_bytes(), user_uv.stat().st_mtime_ns)
+    link = home / "bin" / "uv"
+    link.parent.mkdir(parents=True, exist_ok=True)
+    link.symlink_to(user_uv)
+    log = uv.migrate_legacy_uv()
+    assert not link.exists() and not link.is_symlink()
+    assert not uv.managed_uv().exists()
+    assert user_uv.is_file() and (user_uv.read_bytes(), user_uv.stat().st_mtime_ns) == before
+    assert uv.read_recorded_uv() == user_uv.resolve()
+    assert any("removed legacy" in entry for entry in log)
+
