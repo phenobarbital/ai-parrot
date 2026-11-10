@@ -9,21 +9,24 @@ from unittest import mock
 import pytest
 
 from parrot.self_ import components
-
+from parrot.self_.uv import UvResolution
 
 @pytest.fixture
 def fake_managed_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """~/.parrot-like tree: bin/uv + venv with an interpreter stub + live data; sets PARROT_HOME."""
+    """~/.parrot-like tree with libexec uv, a venv stub, and live data; sets PARROT_HOME."""
     home = tmp_path / "parrot-home"
     bindir = "Scripts" if os.name == "nt" else "bin"
     exe = ".exe" if os.name == "nt" else ""
     (home / "bin").mkdir(parents=True)
-    (home / "bin" / f"uv{exe}").write_text("", encoding="utf-8")
+    (home / "libexec").mkdir()
+    (home / "libexec" / f"uv{exe}").write_text("", encoding="utf-8")
     (home / "venv" / bindir).mkdir(parents=True)
     (home / "venv" / bindir / f"python{exe}").write_text("", encoding="utf-8")
     (home / "wikis.json").write_text("{}", encoding="utf-8")
     (home / "library").mkdir()
     monkeypatch.setenv("PARROT_HOME", str(home))
+    monkeypatch.setattr(components, "bundled_uv", lambda: home / "libexec" / f"uv{exe}")
+    monkeypatch.setattr(components, "migrate_legacy_uv", list)
     return home
 
 
@@ -69,20 +72,27 @@ def test_unknown_component_raises_keyerror(fake_managed_home: Path) -> None:
         components.install_component("no-such-toolkit", venv=fake_managed_home / "venv")
 
 
-def test_bundled_uv_falls_back_to_path_with_warning(tmp_path: Path, monkeypatch, caplog) -> None:
-    home = tmp_path / "empty-home"
-    home.mkdir()
-    monkeypatch.setenv("PARROT_HOME", str(home))
-    monkeypatch.setattr(components.shutil, "which", lambda name: "/usr/bin/uv")
-    with caplog.at_level("WARNING"):
-        assert components.bundled_uv() == Path("/usr/bin/uv")
-    assert "falling back" in caplog.text
+def test_bundled_uv_delegates_to_resolve_uv(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    expected = tmp_path / "uv"
+    monkeypatch.setattr(
+        components,
+        "resolve_uv",
+        lambda: UvResolution(path=expected, version="0.11.28", source="managed"),
+    )
+    assert components.bundled_uv() == expected
 
 
 def test_update_runtime_pins_version(fake_managed_home: Path) -> None:
     with mock.patch.object(components.subprocess, "run") as run:
         components.update_runtime("9.9.9")
     assert run.call_args.args[0][-2:] == ["ai-parrot==9.9.9", "ai-parrot-tools==9.9.9"]  # rev 0.5 C20: same pin
+
+
+def test_update_runtime_migrates_first(fake_managed_home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(components, "migrate_legacy_uv", lambda: ["moved x"])
+    with mock.patch.object(components.subprocess, "run"):
+        log = components.update_runtime("9.9.9")
+    assert log[0] == "moved x"
 
 
 def test_update_runtime_unpinned_keeps_lockstep(fake_managed_home: Path) -> None:
@@ -129,6 +139,7 @@ def test_version_sort_key_orders_numerically(a: str, b: str, lower: str) -> None
 def test_uninstall_keeps_user_data(fake_managed_home: Path) -> None:
     components.uninstall_runtime(yes=True)
     assert not (fake_managed_home / "venv").exists() and not (fake_managed_home / "bin").exists()
+    assert not (fake_managed_home / "libexec").exists()
     assert (fake_managed_home / "wikis.json").exists() and (fake_managed_home / "library").is_dir()
 
 
