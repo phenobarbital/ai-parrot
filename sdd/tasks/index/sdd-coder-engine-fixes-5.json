@@ -4,7 +4,7 @@
   "spec": "sdd/specs/sdd-coder-engine-fixes-5.spec.md",
   "type": "feature",
   "base_branch": "dev",
-  "created_at": "2026-11-10T00:30:00+00:00",
+  "created_at": "2026-11-10T00:21:20+00:00",
   "completed_at": null,
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
