@@ -18,7 +18,7 @@ docs:
 **Feature ID**: FEAT-875
 **Date**: 2026-11-10
 **Author**: Jesus Lara / Codex
-**Status**: draft
+**Status**: approved
 **Target version**: next feature release (unassigned)
 
 ## 1. Motivation & Business Requirements
