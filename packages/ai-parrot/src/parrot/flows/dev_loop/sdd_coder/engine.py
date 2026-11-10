@@ -55,7 +55,12 @@ from parrot.flows.dev_loop.models import (  # verified: models/base.py:412, :763
     TaskScopedBrief,
 )
 from parrot.flows.dev_loop.session_state import DispatchCompleted  # verified: session_state.py:476
-from parrot.flows.dev_loop.task_scheduler import TaskScheduler, iter_index_files  # verified: task_scheduler.py:53
+from parrot.flows.dev_loop.task_scheduler import (  # verified: task_scheduler.py:53
+    BRIEF_INDEX_DIR,
+    BRIEF_INDEX_SUFFIX,
+    TaskScheduler,
+    iter_index_files,
+)
 from parrot.flows.dev_loop.worktree_manager import (  # verified: worktree_manager.py:75, :41
     SubWorktreeManager,
     SubWorktreeMergeError,
@@ -178,6 +183,25 @@ _GATE_WAIT_MARGIN_S = 5
 
 #: Highest sub-worktree attempt number `_free_attempt` hands out for one task+execution.
 _MAX_ATTEMPT_NUMBER = 20
+
+
+def _index_slug(index_path: str) -> str:
+    """The slug ``resolve_index_path`` maps to ``index_path`` (its inverse).
+
+    A per-spec index ``sdd/tasks/index/<slug>.json`` yields its file stem; a brief index
+    ``sdd/briefs/<slug>.index.json`` yields its name minus ``.index.json``. This, not the index header's
+    ``feature``, is the slug ``finalize_task`` matches a ``ReviewArtifact`` against (issue:b9ff30bf709e).
+
+    Args:
+        index_path: Path of a per-spec or brief index.
+
+    Returns:
+        The index slug.
+    """
+    path = Path(index_path)
+    if path.parent.name == BRIEF_INDEX_DIR.name and path.name.endswith(BRIEF_INDEX_SUFFIX):
+        return path.name[: -len(BRIEF_INDEX_SUFFIX)]
+    return path.stem
 
 
 async def _git(*args: str, cwd: str) -> Tuple[int, str, str]:
@@ -2784,7 +2808,7 @@ class SddCoderEngine:
             try:
                 artifact = ReviewArtifact(
                     source="coder_review",
-                    feature_slug=ctx.feature,
+                    feature_slug=_index_slug(ctx.index_path),
                     task_id=review.task_id,
                     execution_id=execution_id,
                     summary=review.review_evidence,

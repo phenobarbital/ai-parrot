@@ -309,6 +309,58 @@ async def test_record_review_publishes_review_artifact(git_sandbox_feature: tupl
     assert artifact.task_id == prep.task_id
     assert artifact.execution_id == execution_id
     assert artifact.head_sha == head_sha.strip()
+    assert artifact.feature_slug == "demo"
+
+
+@pytest.mark.parametrize(
+    ("index_path", "slug"),
+    [
+        ("/wt/sdd/tasks/index/FEAT-156.json", "FEAT-156"),
+        ("/wt/sdd/tasks/index/lyria-toolkit.json", "lyria-toolkit"),
+        ("/wt/sdd/briefs/agy-permission-hook.index.json", "agy-permission-hook"),
+    ],
+)
+def test_index_slug_inverts_resolve_index_path(index_path: str, slug: str) -> None:
+    """Per-spec indexes yield their file stem, brief indexes their name minus `.index.json`."""
+    from parrot.flows.dev_loop.sdd_coder.engine import _index_slug
+
+    assert _index_slug(index_path) == slug
+
+
+async def test_record_review_writes_index_file_slug(git_sandbox_feature: tuple, noop_probe: object) -> None:
+    """The stored feature_slug is the index file's slug, not its header `feature` (issue:b9ff30bf709e).
+
+    Legacy indexes such as FEAT-213-telegram-voice-reply-tts.json carry a header `feature` without the FEAT
+    prefix; finalize_task opens sdd/tasks/index/<feature_slug>.json, so only the file slug can finalize.
+    """
+    from .conftest import _run_git
+
+    worktree, _branch, base_path, _index = git_sandbox_feature
+    await _run_git("mv", "sdd/tasks/index/demo.json", "sdd/tasks/index/FEAT-549-demo.json", cwd=worktree)
+    await _run_git("commit", "-m", "rename index to a legacy file name", cwd=worktree)
+    engine = SddCoderEngine(
+        roster=RosterConfig(seats=[RosterSeat(label="h", kind="native")], feedback={"enabled": False}),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+    )
+    execution_id = "550e0000-0000-4000-8000-000000000075"
+    await engine.begin_execution("demo", str(worktree), execution_id)
+    prep = await engine.prepare_native("demo", str(worktree), "TASK-0001", execution_id)
+    review = CoderReview(
+        task_id=prep.task_id,
+        attempt_uid=prep.attempt_uid,
+        backend="native",
+        model=prep.model,
+        fix_commits=[],
+        review_evidence="Semantic review completed; task validation passed.",
+    )
+
+    receipt = await engine.record_review("demo", str(worktree), review, execution_id)
+
+    assert receipt.review_ref is not None
+    assert engine._evidence_store is not None
+    encoded = (engine._evidence_store.root / receipt.review_ref.relative_path).read_bytes()
+    assert ReviewArtifact.model_validate_json(encoded).feature_slug == "FEAT-549-demo"
 
 
 async def test_record_review_without_store_fails_before_ledger_write(
