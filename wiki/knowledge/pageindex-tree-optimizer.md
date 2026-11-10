@@ -33,19 +33,19 @@ Tokens are always counted over the segments a node **owns** (its `owned` ranges)
 
 ## Public API
 
-- [`OptimizerSettings`](ref:parrot.knowledge.pageindex.optimizer.OptimizerSettings) — the tuning knobs
-- [`OptimizeReport`](ref:parrot.knowledge.pageindex.optimizer.OptimizeReport) — what `optimize` returns (as a dict)
-- [`KeyItem`](ref:parrot.knowledge.pageindex.optimizer.KeyItem) — an anchored label on a node
-- [`plan_deterministic`](ref:parrot.knowledge.pageindex.optimizer.plan_deterministic) — the model-free planner
-- [`validate_candidate`](ref:parrot.knowledge.pageindex.optimizer.validate_candidate) — ownership, anchor and protected-node checks
-- [`reconcile_key_items`](ref:parrot.knowledge.pageindex.optimizer.reconcile_key_items) — re-homes or drops key items whose anchor left their node
-- [`is_heading_text`](ref:parrot.knowledge.pageindex.optimizer.is_heading_text) — the "reads like a printed heading" rule
-- [`pseudo_heading_segments`](ref:parrot.knowledge.pageindex.optimizer.pseudo_heading_segments) — bold/upper-case title lines used when a leaf has no heading segment
-- [`window_reads`](ref:parrot.knowledge.pageindex.optimizer_llm.window_reads) — splits a node's segments into windows under `LLM_INPUT_BUDGET_TOKENS`
-- [`run_llm_passes`](ref:parrot.knowledge.pageindex.optimizer_llm.run_llm_passes) — heading, key-item and summary passes
-- [`describe_document`](ref:parrot.knowledge.pageindex.optimizer_llm.describe_document) — framed document description on optimized imports
-- [`evaluate_corpus`](ref:parrot.knowledge.pageindex.optimizer_eval.evaluate_corpus) — the evaluation harness
-- [`tuned_target`](ref:parrot.knowledge.pageindex.optimizer_eval.tuned_target) — clamps the harness suggestion to a safe range
+- `OptimizerSettings` — the tuning knobs
+- `OptimizeReport` — what `optimize` returns (as a dict)
+- `KeyItem` — an anchored label on a node
+- `plan_deterministic` — the model-free planner
+- `validate_candidate` — ownership, anchor and protected-node checks
+- `reconcile_key_items` — re-homes or drops key items whose anchor left their node
+- `is_heading_text` — the "reads like a printed heading" rule
+- `pseudo_heading_segments` — bold/upper-case title lines used when a leaf has no heading segment
+- `window_reads` — splits a node's segments into windows under `LLM_INPUT_BUDGET_TOKENS`
+- `run_llm_passes` — heading, key-item and summary passes
+- `describe_document` — framed document description on optimized imports
+- `evaluate_corpus` — the evaluation harness
+- `tuned_target` — clamps the harness suggestion to a safe range
 - [`PageIndexToolkit`](ref:parrot.knowledge.pageindex.toolkit) — `optimize()`, `optimize_on_import`, `optimizer_settings`
 
 ## The passes, in order

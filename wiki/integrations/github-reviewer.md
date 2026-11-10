@@ -15,9 +15,9 @@ requesting chat.
 
 ## Public API
 
-- [`GitHubReviewer`](ref:parrot.bots.github_reviewer.GitHubReviewer) provides
+- `GitHubReviewer` provides
   `review_pr`, `pr_review`, and `full_review_pull_request`.
-- [`JobManager`](ref:parrot.jobs.JobManager) supplies the lifecycle behind the
+- `JobManager` supplies the lifecycle behind the
   queued commands; see [Queued chat commands](queued-commands.md) for platform
   controls and delivery behavior.
 
