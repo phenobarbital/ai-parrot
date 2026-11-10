@@ -169,7 +169,8 @@ def test_global_dry_run_prints_plan_and_gate(tmp_path: Path) -> None:
     """C14a/C14b: the plan paragraph and the gate summary precede any `→` announcement."""
     result = _run_global(tmp_path)
     assert result.returncode == 0, result.stderr
-    assert "0.11.28" in result.stdout and ".sha256" in result.stdout and "SHA256SUMS" in result.stdout
+    assert "0.11.28" in result.stdout and "SHA-256 pinned" in result.stdout and "SHA256SUMS" in result.stdout
+    assert ".sha256" not in result.stdout  # the checksum is pinned, never fetched from the release
     assert "never modified, moved or removed" in result.stdout
     assert result.stdout.index("preflight: network checks skipped") < result.stdout.index("→")
 
@@ -291,6 +292,7 @@ def _run_offline_install(
     system_uv: str | None = None,
     legacy: bool = False,
     old_ai_parrot: bool = False,
+    tamper: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     """C14b harness: a real non-dry-run `--global` with fakes — never touches the network or the real HOME."""
     fixtures = tmp_path / "fixtures"
@@ -319,6 +321,8 @@ def _run_offline_install(
         "SHELL": "/bin/bash",
         "TMPDIR": str(scratch),
         "PATH": path,
+        # the fixture tarball is not the real uv release: pin its digest (or a wrong one) instead
+        "PARROT_UV_SHA256": "0" * 64 if tamper else digest,
     }
     if legacy:
         bin_dir = tmp_path / "home" / ".parrot" / "bin"
@@ -502,3 +506,32 @@ def test_global_dry_run_warns_when_python3_is_missing(tmp_path: Path, with_pytho
     )
     assert result.returncode == 0, result.stderr
     assert ("warning: python3 not found" in result.stderr) is (not with_python3)
+
+
+def test_tampered_uv_archive_aborts_and_rolls_back(tmp_path: Path) -> None:
+    """issue:6e31d9355edc — an archive whose hash differs from the pin aborts before installing uv."""
+    result = _run_offline_install(tmp_path, fake_parrot="#!/bin/sh\nexit 0\n", tamper=True)
+    assert result.returncode != 0
+    assert "checksum mismatch" in result.stderr
+    assert not (tmp_path / "home" / ".parrot" / "libexec" / "uv").exists()
+
+
+def test_uv_sha256_pins_cover_every_target() -> None:
+    """Every uv_target the POSIX script can select has a pinned SHA-256; no .sha256 is downloaded."""
+    text = SCRIPT.read_text(encoding="utf-8")
+    assert 'fetch "$url.sha256"' not in text
+    for target in ("x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "aarch64-apple-darwin"):
+        assert f"uv-{target}.tar.gz) echo " in text
+
+
+def test_global_rejects_install_cli(tmp_path: Path) -> None:
+    """issue:73295db52ee4 — --global --install-cli is refused instead of silently dropped."""
+    result = _run_global(tmp_path, "--install-cli")
+    assert result.returncode == 1
+    assert "--global cannot be combined with --install-cli" in result.stderr
+
+
+def test_no_internal_feature_breadcrumb() -> None:
+    """issue:3b2432011ac9 — the public installers carry no internal FEAT-<NNN> id."""
+    for name in ("install-parrot.sh", "install-parrot.ps1"):
+        assert "FEAT-586" not in (SCRIPT.parent / name).read_text(encoding="utf-8")

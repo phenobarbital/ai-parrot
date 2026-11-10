@@ -184,8 +184,7 @@ def _run_offline_install(tmp_path: Path, *, fake_parrot: str) -> subprocess.Comp
     stub = (
         "function Invoke-WebRequest { param($Uri, $OutFile, $Method, [switch]$UseBasicParsing) "
         "if ($Method -eq 'Head') { return }; "
-        f"if ($Uri -like '*.sha256') {{ Copy-Item '{fixtures / 'uv.zip.sha256'}' $OutFile }} "
-        f"else {{ Copy-Item '{zip_path}' $OutFile }} }}; "
+        f"Copy-Item '{zip_path}' $OutFile }}; "
         f"& '{SCRIPT}' -Global"
     )
     env = {
@@ -193,6 +192,7 @@ def _run_offline_install(tmp_path: Path, *, fake_parrot: str) -> subprocess.Comp
         "HOME": str(home),
         "PARROT_HOME": str(home / ".parrot"),
         "FAKE_PARROT_BODY": fake_parrot,
+        "PARROT_UV_SHA256": digest,  # the fixture zip is not the real uv release
     }
     return subprocess.run(
         ["pwsh", "-NoProfile", "-Command", stub], capture_output=True, text=True, check=False, env=env
@@ -310,3 +310,23 @@ def test_preflight_warns_when_python_is_missing() -> None:
     gate = gate[: gate.index("\n}\n")]
     assert "Get-Command python3" in gate and "Get-Command python " in gate
     assert "Write-Warning 'python3 not found" in gate
+
+
+def test_uv_checksum_is_pinned_not_fetched() -> None:
+    """issue:6e31d9355edc — no .sha256 download; both Windows assets carry a pinned SHA-256."""
+    assert '"$url.sha256"' not in _TEXT
+    assert "'0.11.28/uv-x86_64-pc-windows-msvc.zip'" in _TEXT and "'0.11.28/uv-aarch64-pc-windows-msvc.zip'" in _TEXT
+    assert "Test-UvArchive" in _TEXT
+
+
+def test_import_probe_cannot_abort_under_stop() -> None:
+    """issue:2e35462be4bb — the parrot.self_.uv probe runs under Continue inside try/catch."""
+    i = _TEXT.index("import parrot.self_.uv")
+    window = _TEXT[i - 400 : i + 200]
+    assert "$ErrorActionPreference = 'Continue'" in window and "try {" in window and "catch" in window
+
+
+def test_python_defaults_fall_back_to_py_launcher() -> None:
+    """issue:a786fec203e1 — with no -Python and no python on PATH, the py launcher is used."""
+    assert "$Python = 'py'; $PythonArgs = @('-3')" in _TEXT
+    assert "& $Python @PythonArgs -m venv $Venv" in _TEXT
