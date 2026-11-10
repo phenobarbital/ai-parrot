@@ -65,11 +65,7 @@ def uv_path_file() -> Path:
 def legacy_uv_files() -> list[Path]:
     """Return legacy uv and uvx files or symlinks under ``parrot_home()/bin``."""
     bin_dir = parrot_home() / "bin"
-    return [
-        path
-        for path in (bin_dir / _exe("uv"), bin_dir / _exe("uvx"))
-        if path.is_symlink() or path.is_file()
-    ]
+    return [path for path in (bin_dir / _exe("uv"), bin_dir / _exe("uvx")) if path.is_symlink() or path.is_file()]
 
 
 def parse_version(text: str) -> tuple[int, ...] | None:

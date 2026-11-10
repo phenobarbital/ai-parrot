@@ -138,4 +138,3 @@ def test_migrate_unlinks_symlink_without_moving_user_uv(home: Path, tmp_path: Pa
     assert user_uv.is_file() and (user_uv.read_bytes(), user_uv.stat().st_mtime_ns) == before
     assert uv.read_recorded_uv() == user_uv.resolve()
     assert any("removed legacy" in entry for entry in log)
-
