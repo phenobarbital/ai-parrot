@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from parrot.self_ import doctor
+from parrot.self_.uv import UvResolution
 
 
 @pytest.fixture
@@ -18,6 +19,54 @@ def isolated_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("PARROT_HOME", str(tmp_path / "parrot-home"))
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     return tmp_path
+
+
+def test_uv_check_uses_recorded_resolution(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A compatible recorded system uv satisfies the runtime doctor check."""
+    recorded = tmp_path / "uv"
+    monkeypatch.setattr(
+        doctor,
+        "resolve_uv",
+        lambda: UvResolution(path=recorded, version="0.11.30", source="recorded"),
+    )
+    check = doctor._check_uv()
+    assert check.ok and "recorded" in check.detail and "0.11.30" in check.detail
+
+
+def test_uv_check_reports_resolution_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An unresolved uv supplies the installer recovery instruction."""
+    monkeypatch.setattr(
+        doctor,
+        "resolve_uv",
+        lambda: (_ for _ in ()).throw(FileNotFoundError("no compatible uv")),
+    )
+    check = doctor._check_uv()
+    assert not check.ok and check.detail == "no compatible uv" and check.fix == "re-run install-parrot --global"
+
+
+def test_uv_layout_check_is_informational(isolated_home: Path) -> None:
+    """Legacy bin uv is informational because doctor remains read-only."""
+    home = isolated_home / "parrot-home"
+    path = home / "bin" / ("uv.exe" if os.name == "nt" else "uv")
+    path.parent.mkdir(parents=True)
+    path.write_text("", encoding="utf-8")
+    check = doctor._check_uv_layout()
+    assert not check.ok and check.informational and str(path) in check.detail
+    path.unlink()
+    clean = doctor._check_uv_layout()
+    assert clean.ok and clean.informational
+
+
+def test_runtime_only_includes_uv_layout(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Runtime-only doctor output includes the legacy layout diagnostic."""
+    monkeypatch.setattr(doctor, "_check_uv", lambda: doctor.DoctorCheck(name="uv", ok=True))
+    monkeypatch.setattr(doctor, "_check_uv_layout", lambda: doctor.DoctorCheck(name="uv layout", ok=True))
+    monkeypatch.setattr(doctor, "_check_python", lambda: doctor.DoctorCheck(name="python", ok=True))
+    monkeypatch.setattr(doctor, "_check_entrypoints", lambda: doctor.DoctorCheck(name="entrypoints", ok=True))
+    monkeypatch.setattr(doctor, "_check_path", lambda: doctor.DoctorCheck(name="PATH", ok=True))
+    monkeypatch.setattr(doctor, "_check_tools_wiki", lambda: doctor.DoctorCheck(name="tools", ok=True))
+    monkeypatch.setattr(doctor, "_check_runtime_lockstep", lambda: doctor.DoctorCheck(name="lockstep", ok=True))
+    assert "uv layout" in [check.name for check in doctor.run_doctor(tmp_path, scope="runtime-only")]
 
 
 def test_doctor_flags_broken_host_config(isolated_home: Path, tmp_path: Path) -> None:
