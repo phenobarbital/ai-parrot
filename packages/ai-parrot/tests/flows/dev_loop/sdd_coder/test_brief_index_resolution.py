@@ -128,3 +128,45 @@ def test_background_resolve_feature_id_returns_brief_id(tmp_path: Path) -> None:
     _brief(tmp_path)
     assert ValidationSupervisor._resolve_feature_id(tmp_path, "demo-fix") == "BRIEF-cs-224"
     assert ValidationSupervisor._resolve_feature_id(tmp_path, "BRIEF-cs-224") == "BRIEF-cs-224"
+
+
+async def _engine_on_brief_index(git_sandbox_feature: tuple, noop_probe, execution_id: str) -> tuple:
+    """Move the sandbox index to ``sdd/briefs/demo.index.json``, commit, and start an execution on it."""
+    from .conftest import _run_git
+
+    worktree, _branch, base_path, _index = git_sandbox_feature
+    (worktree / "sdd" / "briefs").mkdir(parents=True, exist_ok=True)
+    await _run_git("mv", "sdd/tasks/index/demo.json", "sdd/briefs/demo.index.json", cwd=worktree)
+    await _run_git("commit", "-m", "move the index to a brief index", cwd=worktree)
+    engine = SddCoderEngine(
+        roster=RosterConfig(seats=[RosterSeat(label="h", kind="native")], feedback={"enabled": False}),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+    )
+    await engine.begin_execution("demo", str(worktree), execution_id)
+    return engine, worktree
+
+
+async def test_engine_task_context_reads_brief_index(git_sandbox_feature: tuple, noop_probe) -> None:
+    """`coder_task_context` resolves a brief index, not '<slug>.index' (issue:36d572b7feae)."""
+    execution_id = "550e0000-0000-4000-8000-000000000081"
+    engine, worktree = await _engine_on_brief_index(git_sandbox_feature, noop_probe, execution_id)
+
+    snapshot = await engine.task_context("demo", str(worktree), "TASK-0001", execution_id)
+
+    assert snapshot["feature"] == "demo"
+    assert snapshot["index_path"] == "sdd/briefs/demo.index.json"
+    assert snapshot["status"] == "pending"
+
+
+async def test_engine_delivery_report_reads_brief_index(git_sandbox_feature: tuple, noop_probe) -> None:
+    """`coder_delivery_report` resolves a brief index and reports the execution's attempt (issue:36d572b7feae)."""
+    execution_id = "550e0000-0000-4000-8000-000000000082"
+    engine, worktree = await _engine_on_brief_index(git_sandbox_feature, noop_probe, execution_id)
+    prep = await engine.prepare_native("demo", str(worktree), "TASK-0001", execution_id)
+
+    report = await engine.delivery_report("demo", str(worktree), "TASK-0001", execution_id)
+
+    assert report["feature"] == "demo"
+    assert report["task_id"] == "TASK-0001"
+    assert report["branch"] == prep.branch
