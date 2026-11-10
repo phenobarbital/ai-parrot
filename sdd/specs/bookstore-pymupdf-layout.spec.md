@@ -307,7 +307,10 @@ tests:
 - packages/ai-parrot/tests/knowledge/bookstore/test_pdf_backend.py
 - packages/ai-parrot/tests/knowledge/bookstore/test_cli.py
 - packages/ai-parrot/tests/knowledge/bookstore/test_library.py
+- packages/ai-parrot/tests/sdd/test_techwiki_check.py
 markers: none
+
+### Validation Requirements
 
 New test paths are declared deliverables, not existing files. Native tests may skip only in the base installation job; feature validation requires a Layout-enabled job with zero native-test skips plus a base-install job proving optionality. No network/LLM calls in deterministic tests. Collect cold and warm extraction duration and peak child memory for both backends; report measurements without inventing an unsupported performance target. Logs belong in `artifacts/logs/`.
 
