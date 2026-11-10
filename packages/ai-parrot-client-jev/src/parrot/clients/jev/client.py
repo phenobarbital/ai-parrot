@@ -155,6 +155,7 @@ class JevClient(AbstractClient):
 
     client_type: str = "jev"
     client_name: str = "jev"
+    supports_tool_loop: bool = False  # FEAT-848: ask() warns and ignores tools; no tool loop
     # env vars holding the server-side API key (read by ``has_server_credentials``; never returned to callers)
     credential_env = ('TYPESAFE_API_KEY',)
     #: Provider label stamped on every ``AIMessage`` / ``InvokeResult``.

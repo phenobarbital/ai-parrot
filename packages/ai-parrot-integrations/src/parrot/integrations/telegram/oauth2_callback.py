@@ -9,6 +9,15 @@ import html as html_mod
 
 from aiohttp import web
 from navconfig.logging import logging
+from parrot.integrations.telegram.browser_login import (
+    BROWSER_LOGIN_APP_KEY,
+    TELEGRAM_WRAPPERS_APP_KEY,
+    BrowserVerificationError,
+    BrowserVerifierUnavailableError,
+    is_browser_state,
+    render_browser_error,
+    render_browser_success,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -135,11 +144,78 @@ def _json_escape(value: str) -> str:
     )
 
 
+def _browser_html(page: str, status: int) -> web.Response:
+    """Return a browser-mode HTML response with the requested status."""
+    return web.Response(text=page, content_type="text/html", status=status)
+
+
+async def _browser_oauth2_callback(request: web.Request, state: str) -> web.Response:
+    """Complete a browser-mode OAuth2 login server-side (FEAT-854). No sendData involved."""
+    registry = request.app.get(BROWSER_LOGIN_APP_KEY)
+    entry = registry.consume(state) if registry is not None else None
+    if entry is None:
+        logger.warning("Browser OAuth2 callback with unknown or expired state %s...", state[:8])
+        return _browser_html(
+            render_browser_error(
+                "This sign-in link has expired or was already used. Send /login in Telegram to start again."
+            ),
+            410,
+        )
+
+    code = request.query.get("code")
+    if request.query.get("error") or not code:
+        logger.warning("Browser OAuth2 callback without a code (provider error or cancel)")
+        return _browser_html(
+            render_browser_error("Sign-in was cancelled or failed. Send /login in Telegram to try again."),
+            400,
+        )
+
+    wrappers = request.app.get(TELEGRAM_WRAPPERS_APP_KEY, {})
+    wrapper = wrappers.get(entry.bot_id)
+    if wrapper is None:
+        logger.warning("Browser OAuth2 callback has no wrapper for bot %s", entry.bot_id)
+        return _browser_html(
+            render_browser_error("The bot is temporarily unavailable. Please try again later."),
+            503,
+        )
+
+    try:
+        completed = await wrapper._complete_auth_payload(
+            {"auth_method": "oauth2", "code": code, "state": state},
+            telegram_id=entry.telegram_id,
+            chat_id=entry.chat_id,
+            browser_entry=entry,
+        )
+    except BrowserVerificationError:
+        logger.warning("Browser OAuth2 callback failed identity verification")
+        return _browser_html(
+            render_browser_error("Sign-in could not be verified. Send /login in Telegram to try again."),
+            401,
+        )
+    except BrowserVerifierUnavailableError:
+        logger.warning("Browser OAuth2 callback verifier is unavailable")
+        return _browser_html(
+            render_browser_error("The bot is temporarily unavailable. Please try again later."),
+            503,
+        )
+
+    if not completed:
+        return _browser_html(
+            render_browser_error("Sign-in could not be verified. Send /login in Telegram to try again."),
+            401,
+        )
+
+    session = wrapper._user_sessions.get(entry.telegram_id)
+    display_name = session.display_name if session is not None and session.authenticated else ""
+    return _browser_html(render_browser_success(entry.bot_username, display_name), 200)
+
+
 async def oauth2_callback_handler(request: web.Request) -> web.Response:
     """Handle OAuth2 provider redirect with authorization code.
 
     Extracts ``code`` and ``state`` from query parameters and returns
     an HTML page that passes them back to Telegram via WebApp.sendData().
+    Browser-namespace states complete server-side; all other states retain the legacy page.
 
     Args:
         request: The aiohttp request from the OAuth2 provider redirect.
@@ -147,6 +223,11 @@ async def oauth2_callback_handler(request: web.Request) -> web.Response:
     Returns:
         HTML response with Telegram WebApp integration script.
     """
+    # FEAT-854: route by the browser-state namespace BEFORE any legacy rendering.
+    browser_state = request.query.get("state")
+    if is_browser_state(browser_state):
+        return await _browser_oauth2_callback(request, browser_state)
+
     code = request.query.get("code")
     state = request.query.get("state")
     provider = request.query.get("provider", "google")

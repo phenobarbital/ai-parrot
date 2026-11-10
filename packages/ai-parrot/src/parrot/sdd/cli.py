@@ -102,6 +102,11 @@ def sdd() -> None:
     is_flag=True,
     help="Do not register the sdd-coder and bounded-source MCP toolkits.",
 )
+@click.option(
+    "--no-agy-permissions",
+    is_flag=True,
+    help="Do not register the Antigravity (agy) permission hook and rules for the google host.",
+)
 @_dry_run_option
 def install(
     path_: Path | None,
@@ -114,6 +119,7 @@ def install(
     hotfix_base: str | None,
     no_dangerous_guard: bool,
     no_sdd_coder: bool,
+    no_agy_permissions: bool,
     dry_run: bool,
 ) -> None:
     """Deploy the packaged SDD assets into the repository, replacing older or edited copies (seeds are kept)."""
@@ -132,6 +138,7 @@ def install(
                 hotfix_base=hotfix_base,
                 dangerous_guard=not no_dangerous_guard,
                 sdd_coder=not no_sdd_coder,
+                agy_permissions=not no_agy_permissions,
             )
         )
     except (ValueError, RuntimeError) as exc:
@@ -271,7 +278,7 @@ VERBS: dict[str, dict[str, tuple[str, tuple[str, ...], str]]] = {
         "heal": ("heal_orphans", (), "Re-attach orphaned task files to their per-spec index."),
         "graph": ("check_task_graph", (), "Validate a per-spec index task graph."),
         "state": ("check_task_state", (), "Read-only backstop for stalled task files."),
-        "review": ("review_checkpoint", (), "Review checkpoint: prepare | validate."),
+        "review": ("review_checkpoint", (), "Review: prepare | validate | record."),
     },
     "ids": {
         "reserve": ("reserve_ids", (), "Reserve TASK/FEAT ids on the git-native ledger."),
@@ -320,6 +327,11 @@ VERBS: dict[str, dict[str, tuple[str, tuple[str, ...], str]]] = {
     "hooks": {
         "install": ("install_hooks", (), "Install the SDD git hooks."),
         "dangerous-actions": ("dangerous_actions", (), "Serve the PreToolUse dangerous-actions guard (--hook)."),
+        "agy-permissions": (
+            "agy_permissions",
+            (),
+            "Serve the Antigravity (agy) PreToolUse permission policy (--hook).",
+        ),
     },
 }
 #: Packaged modules with a main() that are deliberately NOT mounted (C22: /sdd-insight does not ship).

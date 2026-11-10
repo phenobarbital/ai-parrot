@@ -17,6 +17,7 @@ The BM25 index is rebuilt lazily — every mutation calls ``mark_dirty``,
 and the next ``search`` rebuilds before scoring.  The embedding matrix
 uses the same dirty / invalidate pattern via :class:`NodeEmbeddingStore`.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -28,7 +29,7 @@ import numpy as np
 from parrot._imports import lazy_import
 from .llm_adapter import PageIndexLLMAdapter
 from .retriever import PageIndexRetriever
-from .utils import find_node_by_id, get_nodes
+from .utils import find_node_by_id, get_nodes, structure_to_list
 
 if TYPE_CHECKING:
     from .embedding_store import NodeEmbeddingStore
@@ -40,13 +41,17 @@ logger = logging.getLogger("parrot.knowledge.pageindex.hybrid_search")
 # DEBUG/INFO/WARNING messages about TPU/CUDA backend probing and every
 # jit compilation. None of that is actionable for PageIndex users, so we
 # pin the ``jax`` logger tree to WARNING at import time.
-for _jax_logger in ("jax", "jax._src", "jax._src.xla_bridge",
-                    "jax._src.interpreters.pxla"):
+for _jax_logger in ("jax", "jax._src", "jax._src.xla_bridge", "jax._src.interpreters.pxla"):
     logging.getLogger(_jax_logger).setLevel(logging.WARNING)
 
 _RRF_K = 60
 _RERANK_TEXT_LIMIT = 2000
 _BM25_TEXT_LIMIT = 4000
+
+
+def key_item_text(node: dict) -> str:
+    """Space-joined ``key_items`` labels of ``node`` or ``""``."""
+    return " ".join(str(item.get("label", "")) for item in (node.get("key_items") or []) if item.get("label"))
 
 
 class HybridPageIndexSearch:
@@ -176,7 +181,7 @@ class HybridPageIndexSearch:
                 body = self._load_body(node_id)[:_BM25_TEXT_LIMIT]
             else:
                 body = node.get("text") or ""
-            texts.append(f"{title} {summary} {body}".strip())
+            texts.append(f"{title} {summary} {key_item_text(node)} {body}".strip())
             ids.append(node_id)
         return ids, texts
 
@@ -208,11 +213,7 @@ class HybridPageIndexSearch:
             row_iter = row.tolist()
         except AttributeError:
             row_iter = list(row)
-        return [
-            self._corpus_node_ids[int(i)]
-            for i in row_iter
-            if 0 <= int(i) < len(self._corpus_node_ids)
-        ]
+        return [self._corpus_node_ids[int(i)] for i in row_iter if 0 <= int(i) < len(self._corpus_node_ids)]
 
     # ---- Dense vector ranking ------------------------------------------
 
@@ -299,7 +300,7 @@ class HybridPageIndexSearch:
     def _rrf_fuse(rankings: list[list[str]], k: int = _RRF_K) -> list[tuple[str, float]]:
         scores: dict[str, float] = {}
         for ranking in rankings:
-            for rank, node_id in enumerate(ranking):
+            for rank, node_id in enumerate(dict.fromkeys(ranking)):
                 if not node_id:
                     continue
                 scores[node_id] = scores.get(node_id, 0.0) + 1.0 / (k + rank + 1)
@@ -313,7 +314,7 @@ class HybridPageIndexSearch:
         top_k: int = 10,
         use_bm25: bool = True,
         use_llm_walk: bool = True,
-        use_vec: bool = False,
+        use_vec: Optional[bool] = None,
         use_embedding_walk: Optional[bool] = None,
         rerank: bool = False,
     ) -> list[dict[str, Any]]:
@@ -341,18 +342,14 @@ class HybridPageIndexSearch:
         Raises:
             ValueError: When all signals are disabled.
         """
+        if top_k <= 0:
+            return []
+        use_vec = self._use_vec_rank if use_vec is None else use_vec
         # Resolve Phase B flag: per-call override wins over constructor default.
-        _use_beam = (
-            use_embedding_walk
-            if use_embedding_walk is not None
-            else self._use_embedding_walk
-        )
+        _use_beam = use_embedding_walk if use_embedding_walk is not None else self._use_embedding_walk
 
         if not (use_bm25 or use_llm_walk or use_vec or _use_beam):
-            raise ValueError(
-                "At least one of use_bm25 / use_llm_walk / use_vec / use_embedding_walk"
-                " must be True"
-            )
+            raise ValueError("At least one of use_bm25 / use_llm_walk / use_vec / use_embedding_walk must be True")
 
         bm25_ranking: list[str] = []
         llm_ranking: list[str] = []
@@ -368,6 +365,7 @@ class HybridPageIndexSearch:
             vec_ranking = await asyncio.to_thread(self._vec_rank, query, top_k)
         if _use_beam and self._embedding_store is not None and self._embed_fn is not None:
             from .vector_walk import embedding_tree_walk
+
             try:
                 q_vecs = await asyncio.to_thread(self._embed_fn, [query])
                 q_vec = np.asarray(q_vecs[0], dtype=np.float32)
@@ -376,6 +374,8 @@ class HybridPageIndexSearch:
                     query_vec=q_vec,
                     store=self._embedding_store,
                     embed_fn=self._embed_fn,
+                    tree_name=self._index_name(),
+                    generation_id=self._generation_id,
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.warning("embedding_tree_walk failed: %s", exc)
@@ -411,19 +411,26 @@ class HybridPageIndexSearch:
         if not fused:
             return []
 
-        structure = self._structure()
+        nodes_by_id = {node.get("node_id"): node for node in structure_to_list(self._structure())}
         results: list[dict[str, Any]] = []
+        seen: set[str] = set()
         for node_id, score in fused:
-            node = find_node_by_id(structure, node_id)
+            if node_id in seen:
+                continue
+            seen.add(node_id)
+            node = nodes_by_id.get(node_id)
             if not node:
                 continue
-            results.append({
+            entry: dict[str, Any] = {
                 "node_id": node_id,
                 "title": node.get("title", ""),
                 "summary": node.get("summary") or node.get("prefix_summary") or "",
                 "score": score,
                 "source": source,
-            })
+            }
+            if node.get("key_items"):
+                entry["key_items"] = node["key_items"]
+            results.append(entry)
 
         if rerank and self._reranker is not None and results:
             results = await self._apply_reranker(query, results, top_k)
@@ -452,15 +459,15 @@ class HybridPageIndexSearch:
                 body = self._load_body(cand["node_id"])[:_RERANK_TEXT_LIMIT]
             else:
                 body = (node.get("text") or "")[:_RERANK_TEXT_LIMIT]
-            content = "\n".join(
-                part for part in (cand.get("title"), cand.get("summary"), body) if part
+            content = "\n".join(part for part in (cand.get("title"), cand.get("summary"), body) if part)
+            docs.append(
+                SearchResult(
+                    id=cand["node_id"],
+                    content=content,
+                    metadata={"node_id": cand["node_id"]},
+                    score=float(cand["score"]),
+                )
             )
-            docs.append(SearchResult(
-                id=cand["node_id"],
-                content=content,
-                metadata={"node_id": cand["node_id"]},
-                score=float(cand["score"]),
-            ))
 
         try:
             reranked = await self._reranker.rerank(query, docs, top_n=top_k)

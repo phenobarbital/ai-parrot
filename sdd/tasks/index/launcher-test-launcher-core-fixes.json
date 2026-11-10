@@ -1,0 +1,53 @@
+{
+  "feature": "launcher-test-launcher-core-fixes",
+  "feature_id": "FEAT-862",
+  "spec": "sdd/specs/launcher-test-launcher-core-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-09T23:06:15+00:00",
+  "completed_at": "2026-11-09T23:10:45+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/launcher/test_launcher_core.py",
+          "packages/ai-parrot/tests/launcher/test_launcher_reexec.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:61a2749f490502a894fd28b567dece3e8c3311931587401162cd2afb8cfe0752"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5453",
+      "slug": "launcher-git-c-locale",
+      "title": "Run the launcher trust gate's git call in the C locale",
+      "feature_id": "FEAT-862",
+      "feature": "launcher-test-launcher-core-fixes",
+      "spec": "sdd/specs/launcher-test-launcher-core-fixes.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "single task: modifies launcher.py + test_launcher_core.py only; no other task in this feature",
+      "assigned_to": "sdd-fix session (Claude, agent:sdd-fix:88be2347)",
+      "started_at": "2026-11-09T23:06:48+00:00",
+      "completed_at": "2026-11-09T23:08:39+00:00",
+      "file": "sdd/tasks/completed/TASK-5453-launcher-git-c-locale.md",
+      "verification": "verified"
+    }
+  ]
+}

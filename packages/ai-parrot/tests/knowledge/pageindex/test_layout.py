@@ -13,13 +13,21 @@ pymupdf4llm = pytest.importorskip("pymupdf4llm")
 from parrot.knowledge.pageindex.layout import (  # noqa: E402
     Bookmark,
     BoldLine,
+    EnumeratedLine,
     LayoutHeaders,
     LayoutProfile,
     RunningLine,
     UnreadablePDFError,
+    _bookmark_prefix_match,
+    _collect_enumerated_lines,
+    _is_enumerated_row,
+    _keep_page_order,
     _read_bookmarks,
+    _visual_rows,
     analyze_layout,
+    running_key,
 )
+from parrot.knowledge.pageindex.segments import normalize_title  # noqa: E402
 
 FILLER = "body text line with plenty of ordinary words for the statistics"
 Item = tuple[float, float, str, float, str]
@@ -116,11 +124,57 @@ def test_bold_standalone_lines(tmp_path: Path) -> None:
 
 def test_bookmarks_usable_and_levels_normalized() -> None:
     """Invalid bookmark entries are skipped and level jumps are normalized."""
-    bookmarks, rejection = _read_bookmarks([[1, "A", 1], [3, "B", 2], [1, "C", 9], [1, "  ", 2], [2, "D", 3]], 4)
+    bookmarks, rejection, dropped = _read_bookmarks(
+        [[1, "A", 1], [3, "B", 2], [1, "C", 9], [1, "  ", 2], [2, "D", 3]], 4
+    )
     assert [bookmark.title for bookmark in bookmarks] == ["A", "B", "D"]
     assert [bookmark.level for bookmark in bookmarks] == [1, 2, 2]
     assert [bookmark.page for bookmark in bookmarks] == [1, 2, 3]
     assert rejection is None
+    assert dropped == 0
+
+
+def test_keep_page_order_longest_subsequence() -> None:
+    """The kept indices form one longest non-decreasing page subsequence."""
+    assert _keep_page_order([1, 5, 2, 3, 4]) == [0, 2, 3, 4]
+    assert _keep_page_order([]) == []
+    assert _keep_page_order([1, 1, 2, 3]) == [0, 1, 2, 3]
+    assert _keep_page_order([3, 1, 2]) == [1, 2]
+
+
+def test_bookmarks_out_of_order_entry_dropped() -> None:
+    """A single mis-filed entry in a long outline is dropped instead of rejecting the outline."""
+    toc = [[1 if number % 5 == 1 else 2, f"Section {number}", number] for number in range(1, 41)]
+    toc.insert(30, [2, "Stray", 3])
+    bookmarks, rejection, dropped = _read_bookmarks(toc, 200)
+    assert rejection is None
+    assert dropped == 1
+    assert len(bookmarks) == 40
+    assert "Stray" not in [bookmark.title for bookmark in bookmarks]
+    assert [bookmark.page for bookmark in bookmarks] == sorted(bookmark.page for bookmark in bookmarks)
+
+
+def test_bookmarks_too_many_out_of_order_rejected() -> None:
+    """More out-of-order entries than the tolerated share keep today's non-monotonic rejection."""
+    toc = [[1, f"Section {number}", number] for number in range(1, 21)]
+    toc.insert(10, [1, "Stray A", 2])
+    toc.insert(15, [1, "Stray B", 3])
+    bookmarks, rejection, dropped = _read_bookmarks(toc, 200)
+    assert rejection is not None
+    assert rejection.startswith("non-monotonic: page decreases at entry")
+    assert dropped == 0
+    assert len(bookmarks) == 22
+
+
+def test_bookmarks_dropped_recorded_in_profile(tmp_path: Path) -> None:
+    """The profile records how many out-of-order entries were dropped."""
+    toc = [[1 if number % 5 == 1 else 2, f"Section {number}", number] for number in range(1, 21)]
+    toc.insert(10, [2, "Stray", 2])
+    pdf = _write_pdf(tmp_path / "stray.pdf", [_body(100, 3) for _ in range(30)], toc)
+    profile = analyze_layout(str(pdf))
+    assert profile.bookmark_rejection is None
+    assert profile.bookmarks_dropped == 1
+    assert len(profile.bookmarks) == 20
 
 
 def test_bookmarks_rejected_non_monotonic(tmp_path: Path) -> None:
@@ -250,3 +304,283 @@ def test_running_lines_never_headings(tmp_path: Path) -> None:
     assert not any("ACME Manual" in line or "Page " in line for line in heading_lines)
     assert all("ACME Manual" in text for text in text_by_page)
     assert any(line.startswith("# ") and "Chapter" in line for line in heading_lines)
+
+
+def _all_bold_texts(profile: LayoutProfile) -> list[str]:
+    """Return every recorded bold-row text in page order."""
+    return [line.text for page in sorted(profile.bold_lines) for line in profile.bold_lines[page]]
+
+
+def test_visual_rows_groups_same_baseline_lines() -> None:
+    """Lines on one baseline share a row; a line below starts the next row."""
+    lines = [
+        {"bbox": (72, 100, 100, 112), "spans": [], "text": "AC-2"},
+        {"bbox": (108, 100, 250, 112), "spans": [], "text": "ACCOUNT MANAGEMENT"},
+        {"bbox": (72, 120, 250, 132), "spans": [], "text": "Control:"},
+    ]
+    rows = _visual_rows(lines)
+    assert [[line["text"] for line in row] for row in rows] == [["AC-2", "ACCOUNT MANAGEMENT"], ["Control:"]]
+    assert _visual_rows([]) == []
+
+
+def test_secondary_text_size_bold_rows(tmp_path: Path) -> None:
+    """A standalone bold line at a larger body-text size is a bold row with its own size."""
+    prose_12 = [(72, 630 + index * 16, FILLER, 12, "helv") for index in range(8)]
+    pages = [[(72, 100, "Revisions In This Version", 12, "hebo"), *_body(200, 30), *prose_12]]
+    path = _write_pdf(tmp_path / "secondary.pdf", pages)
+
+    profile = analyze_layout(str(path))
+
+    assert profile.body_size == 10
+    assert 12 not in profile.heading_sizes
+    assert profile.bold_sizes == [12, 10]
+    rows = profile.bold_lines[1]
+    assert [(line.text, line.size) for line in rows] == [("revisions in this version", 12)]
+    chunks = pymupdf4llm.to_markdown(str(path), page_chunks=True, hdr_info=LayoutHeaders(profile))
+    heading_lines = [line for line in chunks[0]["text"].splitlines() if line.startswith("#")]
+    assert len(heading_lines) == 1
+    assert "Revisions In This Version" in heading_lines[0]
+
+
+def test_split_row_heading(tmp_path: Path) -> None:
+    """A code cell and a title cell printed on one baseline form one bold row and one heading line."""
+    code_width = pymupdf.get_text_length("AC-2", fontname="hebo", fontsize=10)
+    pages = [
+        [(72, 100, "AC-2", 10, "hebo"), (72 + code_width + 14, 100, "ACCOUNT MANAGEMENT", 10, "hebo"), *_body(150, 30)]
+    ]
+    path = _write_pdf(tmp_path / "split.pdf", pages)
+
+    profile = analyze_layout(str(path))
+
+    assert _all_bold_texts(profile) == ["ac-2 account management"]
+    chunks = pymupdf4llm.to_markdown(str(path), page_chunks=True, hdr_info=LayoutHeaders(profile))
+    heading_lines = [line for line in chunks[0]["text"].splitlines() if line.startswith("#")]
+    assert len(heading_lines) == 1
+    assert "AC-2" in heading_lines[0] and "ACCOUNT MANAGEMENT" in heading_lines[0]
+
+
+def test_bold_row_guards(tmp_path: Path) -> None:
+    """List items, lowercase-start rows and rows repeated on three pages are not bold rows."""
+    first_page = [
+        (72, 100, "(a) Have expired;", 10, "hebo"),
+        (72, 140, "Monitor changes to roles; and", 10, "hebo"),
+        (72, 180, "adequate security", 10, "hebo"),
+        (72, 220, "Important Notes", 10, "hebo"),
+        (72, 260, "Release information only if:", 10, "hebo"),
+    ]
+    pages = [
+        [*(first_page if number == 0 else []), (72, 320, "DATE TYPE REVISION", 10, "hebo"), *_body(360, 20)]
+        for number in range(3)
+    ]
+    profile = analyze_layout(str(_write_pdf(tmp_path / "guards.pdf", pages)))
+
+    assert _all_bold_texts(profile) == ["important notes"]
+
+
+def test_header_prefix_levels_with_secondary_size() -> None:
+    """Each bold size gets its own level below every size-ranked heading, larger size first."""
+    profile = LayoutProfile(
+        page_count=1,
+        body_size=10,
+        heading_sizes=[16, 14],
+        bold_sizes=[12, 10],
+        bold_lines={
+            1: [
+                BoldLine(text="revisions", bbox=(72.0, 90.0, 200.0, 104.0), size=12),
+                BoldLine(text="important notes", bbox=(72.0, 190.0, 200.0, 204.0), size=10),
+            ]
+        },
+    )
+    headers = LayoutHeaders(profile)
+
+    assert headers.get_header_id(_span("Revisions", 12, (72.0, 92.0, 150.0, 103.0), bold=True), page=_page(0)) == "### "
+    assert (
+        headers.get_header_id(_span("Important", 10, (72.0, 192.0, 150.0, 203.0), bold=True), page=_page(0)) == "#### "
+    )
+    assert headers.get_header_id(_span("Revisions", 12, (72.0, 300.0, 150.0, 311.0), bold=True), page=_page(0)) == ""
+    assert headers.get_header_id(_span("Chapter", 16, (72.0, 400.0, 150.0, 416.0)), page=_page(0)) == "# "
+
+
+@pytest.mark.parametrize(
+    ("text", "title", "expected"),
+    [
+        ("AC-7", "AC-7 UNSUCCESSFUL LOGON ATTEMPTS", True),
+        ("attempts.", "AC-7 UNSUCCESSFUL LOGON ATTEMPTS", False),
+        ("information", "SI-7 SOFTWARE, FIRMWARE, AND INFORMATION INTEGRITY", False),
+        ("requirement", "2.1   REQUIREMENTS AND CONTROLS", False),
+        ("REQUIREMENTS", "2.1   REQUIREMENTS AND CONTROLS", True),
+        ("2.1", "2.1   REQUIREMENTS AND CONTROLS", False),
+        ("AC-2 ACCOUNT MANAGEMENT Control", "AC-2 ACCOUNT MANAGEMENT", True),
+        ("Getting Started", "2 Getting Started", True),
+        ("", "2 Getting Started", False),
+    ],
+)
+def test_bookmark_prefix_match(text: str, title: str, expected: bool) -> None:
+    """Only equal, word-boundary-prefix or whole-title-prefix spans match a bookmark title."""
+    assert _bookmark_prefix_match(text, title) is expected
+
+
+def test_bookmark_match_prefix_only() -> None:
+    """The bookmark rule ignores mid-title words and non-bold prose at a body-text size."""
+    profile = LayoutProfile(
+        page_count=1,
+        body_size=10,
+        heading_sizes=[16, 14],
+        bold_sizes=[11, 10],
+        bookmarks=[Bookmark(level=3, title="AC-7 UNSUCCESSFUL LOGON ATTEMPTS", page=1)],
+    )
+    headers = LayoutHeaders(profile)
+
+    assert headers.get_header_id(_span("AC-7", 10, (72.0, 300.0, 100.0, 312.0), bold=True), page=_page(0)) == "### "
+    assert headers.get_header_id(_span("attempts.", 10, (72.0, 320.0, 120.0, 332.0), bold=True), page=_page(0)) == ""
+    prose = _span("AC-7 UNSUCCESSFUL LOGON ATTEMPTS are counted", 11, (72.0, 340.0, 300.0, 352.0))
+    assert headers.get_header_id(prose, page=_page(0)) == ""
+    larger = _span("AC-7 UNSUCCESSFUL LOGON ATTEMPTS", 13, (72.0, 360.0, 300.0, 374.0))
+    assert headers.get_header_id(larger, page=_page(0)) == "### "
+
+
+TITLE = "ACCOUNT MANAGEMENT | DISABLE ACCOUNTS"
+
+
+def _line(page: int, block: int, y: float, *spans: tuple[str, float, bool], x: float = 72.0) -> dict:
+    """Build an analyze_layout-shaped line dict from (text, size, bold) spans."""
+    span_dicts = [
+        {"text": text, "size": size, "flags": 16 if bold else 0, "font": "Helvetica-Bold" if bold else "Helvetica"}
+        for text, size, bold in spans
+    ]
+    text = "".join(span["text"] for span in span_dicts).strip()
+    return {
+        "page": page,
+        "block": block,
+        "index": 0,
+        "block_lines": 1,
+        "spans": span_dicts,
+        "text": text,
+        "bbox": (x, y, x + 300.0, y + 10.0),
+        "band": None,
+        "key": running_key(text),
+    }
+
+
+def _enumerated_pdf(tmp_path: Path) -> Path:
+    """Write one page: a bold enumerator + 9 pt caps title on one baseline, a bold list item, a caps row without |."""
+    marker_width = pymupdf.get_text_length("(1)", fontname="hebo", fontsize=10)
+    doc = pymupdf.open()
+    try:
+        page = doc.new_page()
+        page.insert_text((72, 100), "(1)", fontsize=10, fontname="hebo")
+        page.insert_text((72 + marker_width + 4, 100), TITLE, fontsize=9, fontname="helv")
+        page.insert_text((72, 140), "(a) Have expired;", fontsize=10, fontname="hebo")
+        page.insert_text((72, 180), "(2)", fontsize=10, fontname="hebo")
+        page.insert_text((72 + marker_width + 4, 180), "PLAIN CAPS TITLE", fontsize=9, fontname="helv")
+        for x, y, text, size, font in _body(220, 30):
+            page.insert_text((x, y), text, fontsize=size, fontname=font)
+        path = tmp_path / "enumerated.pdf"
+        doc.save(str(path))
+    finally:
+        doc.close()
+    return path
+
+
+def test_enumerated_row_detection() -> None:
+    """A bold enumerator followed by caps text with a separator opens an enumerated title; nothing else does."""
+    assert _is_enumerated_row([_line(1, 0, 100, ("(1)", 10, True), (TITLE, 9, False))])
+    assert not _is_enumerated_row([_line(1, 0, 100, ("(1)", 10, True), ("ACCOUNT MANAGEMENT", 9, False))])
+    assert not _is_enumerated_row([_line(1, 0, 100, ("(1)", 10, True), ("Account management | Disable", 9, False))])
+    assert not _is_enumerated_row([_line(1, 0, 100, ("(1)", 10, False), (TITLE, 9, False))])
+    assert not _is_enumerated_row([_line(1, 0, 100, ("(1) " + TITLE, 10, True))])
+
+
+def test_enumerated_lines_in_profile(tmp_path: Path) -> None:
+    """analyze_layout records the enumerated title and ignores the list item and the caps row without a separator."""
+    profile = analyze_layout(str(_enumerated_pdf(tmp_path)))
+
+    assert [line.text for line in profile.enumerated_lines[1]] == [normalize_title("(1) " + TITLE)]
+    assert sum(len(lines) for lines in profile.enumerated_lines.values()) == 1
+
+
+def test_enumerated_title_continuations() -> None:
+    """Wrapped titles keep caps continuation rows from their block or the next block; nothing else is joined."""
+    lines = [
+        _line(1, 0, 100, ("(3)", 10, True), ("ACCESS CONTROL | USE OF STORAGE DEVICES WITH NO", 9, False)),
+        _line(1, 0, 111, ("IDENTIFIABLE OWNER", 9, False), x=90.0),
+        _line(1, 1, 150, ("(5)", 10, True), ("IA | INDIVIDUAL AUTHENTICATION", 9, False)),
+        _line(1, 2, 161, ("WITH GROUP AUTHENTICATION", 9, False), x=90.0),
+        _line(1, 3, 172, ("Mixed case body text follows.", 10, False)),
+        _line(1, 4, 300, ("(6)", 10, True), ("IA | FAR AWAY", 9, False)),
+        _line(1, 5, 500, ("NOT A CONTINUATION", 9, False)),
+        _line(1, 6, 600, ("(7)", 10, True), ("IA | WITH BODY", 9, False)),
+        _line(1, 6, 611, ("Then body text in mixed case.", 10, False)),
+    ]
+
+    texts = [line.text for line in _collect_enumerated_lines(lines, set())[1]]
+
+    assert texts == [
+        normalize_title("(3) ACCESS CONTROL | USE OF STORAGE DEVICES WITH NO IDENTIFIABLE OWNER"),
+        normalize_title("(5) IA | INDIVIDUAL AUTHENTICATION WITH GROUP AUTHENTICATION"),
+        normalize_title("(6) IA | FAR AWAY"),
+        normalize_title("(7) IA | WITH BODY"),
+    ]
+
+
+def test_enumerated_repeat_filter() -> None:
+    """The same enumerated title on three pages is a running label, not a heading."""
+    lines = [_line(page, 0, 100, ("(1)", 10, True), (TITLE, 9, False)) for page in (1, 2, 3)]
+
+    assert _collect_enumerated_lines(lines, set()) == {}
+    assert len(_collect_enumerated_lines(lines[:2], set())) == 2
+
+
+def test_enumerated_prefix_level() -> None:
+    """Enumerated spans get one level below the lowest bold size, capped at six."""
+    enumerated = {1: [EnumeratedLine(text="t", bbox=(72.0, 90.0, 400.0, 104.0))]}
+    profile = LayoutProfile(
+        page_count=1, body_size=10, heading_sizes=[16, 14], bold_sizes=[12, 10], enumerated_lines=enumerated
+    )
+    headers = LayoutHeaders(profile)
+
+    assert headers.get_header_id(_span("ACCOUNT", 9, (100.0, 92.0, 200.0, 103.0)), page=_page(0)) == "##### "
+    assert headers.get_header_id(_span("(1)", 10, (72.0, 91.0, 90.0, 103.0), bold=True), page=_page(0)) == "##### "
+    assert headers.get_header_id(_span("ACCOUNT", 9, (100.0, 200.0, 200.0, 211.0)), page=_page(0)) == ""
+    capped = LayoutHeaders(profile.model_copy(update={"heading_sizes": [26, 16, 14, 13], "bold_sizes": [11, 10]}))
+    assert capped.get_header_id(_span("ACCOUNT", 9, (100.0, 92.0, 200.0, 103.0)), page=_page(0)) == "###### "
+
+
+def test_enumerated_heading_markdown(tmp_path: Path) -> None:
+    """The enumerated row renders as exactly one heading line holding the marker and both names."""
+    path = _enumerated_pdf(tmp_path)
+    chunks = pymupdf4llm.to_markdown(str(path), page_chunks=True, hdr_info=LayoutHeaders(analyze_layout(str(path))))
+    heading_lines = [line for line in chunks[0]["text"].splitlines() if line.startswith("#")]
+
+    assert len(heading_lines) == 1
+    assert "(1)" in heading_lines[0]
+    assert "ACCOUNT MANAGEMENT" in heading_lines[0] and "DISABLE ACCOUNTS" in heading_lines[0]
+
+
+def test_enumerated_wrapped_heading_markdown(tmp_path: Path) -> None:
+    """A title wrapped onto a second caps line renders as one heading line holding both lines."""
+    marker_width = pymupdf.get_text_length("(3)", fontname="hebo", fontsize=10)
+    doc = pymupdf.open()
+    try:
+        page = doc.new_page()
+        page.insert_text((72, 100), "(3)", fontsize=10, fontname="hebo")
+        page.insert_text(
+            (72 + marker_width + 4, 100), "ACCESS CONTROL | USE OF DEVICES WITH NO", fontsize=9, fontname="helv"
+        )
+        page.insert_text((90, 111), "IDENTIFIABLE OWNER", fontsize=9, fontname="helv")
+        for x, y, text, size, font in _body(150, 30):
+            page.insert_text((x, y), text, fontsize=size, fontname=font)
+        path = tmp_path / "wrapped.pdf"
+        doc.save(str(path))
+    finally:
+        doc.close()
+
+    profile = analyze_layout(str(path))
+    chunks = pymupdf4llm.to_markdown(str(path), page_chunks=True, hdr_info=LayoutHeaders(profile))
+    heading_lines = [line for line in chunks[0]["text"].splitlines() if line.startswith("#")]
+
+    assert [line.text for line in profile.enumerated_lines[1]] == [
+        normalize_title("(3) ACCESS CONTROL | USE OF DEVICES WITH NO IDENTIFIABLE OWNER")
+    ]
+    assert len(heading_lines) == 1
+    assert "WITH NO" in heading_lines[0] and "IDENTIFIABLE OWNER" in heading_lines[0]

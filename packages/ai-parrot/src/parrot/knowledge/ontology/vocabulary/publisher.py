@@ -23,7 +23,7 @@ from parrot.knowledge.ontology.vocabulary.contracts import (
     PublishResult,
 )
 from parrot.knowledge.ontology.vocabulary.exceptions import OntologyNotFound, OntologyValidationError, PublishConflict
-from parrot.knowledge.ontology.vocabulary.pg_schema import validate_schema_name
+from parrot.knowledge.ontology.vocabulary.pg_schema import validate_schema_name, vector_literal
 from parrot.knowledge.ontology.vocabulary.settings import resolve_ontology_settings
 from parrot.knowledge.ontology.vocabulary.turtle import (
     canonical_ntriples,
@@ -277,7 +277,7 @@ class PostgresOntologyPublisher:
             await conn.execute(
                 f"INSERT INTO {self._schema}.concept "
                 "(ontology_id, iri, kind, pref_label, definition, deprecated, replaced_by, since_version, embedding, extra) "
-                "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)",
+                "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::text::vector, $10::jsonb)",
                 ontology_id,
                 concept.iri,
                 concept.kind,
@@ -286,7 +286,7 @@ class PostgresOntologyPublisher:
                 concept.deprecated,
                 concept.replaced_by,
                 version,
-                embeddings.get(concept.iri),
+                None if (vector := embeddings.get(concept.iri)) is None else vector_literal(vector),
                 json.dumps(concept.extra),
             )
         await self._reconcile_labels(conn, ontology_id, version, content.labels, base.labels if base else [])

@@ -32,6 +32,7 @@ def test_available_templates_lists_packaged_names():
         "bounded-source",
         "targeted-writer",
         "querysource",
+        "pageindex",
         "database-query",
         "scraping",
         "browsing",

@@ -51,6 +51,8 @@ def discover_telegram_commands(agent: Any) -> List[Dict[str, Any]]:
         attr: Optional[Callable] = getattr(agent, attr_name, None)
         if attr is None or not callable(attr):
             continue
+        if getattr(attr, "_queued_command", None) is not None:
+            continue
         meta = getattr(attr, "_telegram_command", None)
         if not isinstance(meta, dict):
             continue

@@ -56,7 +56,7 @@ def _flat_id(node: dict[str, Any]) -> Optional[str]:
     if not isinstance(concept_id, str) or not concept_id:
         return None
     flat = flatten_concept_id_for_filename(concept_id)
-    return flat if _NODE_ID_RE.match(flat) else None
+    return flat if _NODE_ID_RE.fullmatch(flat) else None
 
 
 def _atomic_write(path: Path, text: str) -> None:
@@ -109,12 +109,12 @@ class NodeContentStore:
 
     @staticmethod
     def _validate_tree_name(tree_name: str) -> None:
-        if not isinstance(tree_name, str) or not _TREE_NAME_RE.match(tree_name):
+        if not isinstance(tree_name, str) or not _TREE_NAME_RE.fullmatch(tree_name):
             raise ValueError(f"Invalid tree_name {tree_name!r}; " "expected 1-128 chars from [A-Za-z0-9_-].")
 
     @staticmethod
     def _validate_node_id(node_id: str) -> None:
-        if not isinstance(node_id, str) or not _NODE_ID_RE.match(node_id):
+        if not isinstance(node_id, str) or not _NODE_ID_RE.fullmatch(node_id):
             raise ValueError(f"Invalid node_id {node_id!r}; " "expected 1-64 chars from [A-Za-z0-9_-].")
 
     def _tree_dir(self, tree_name: str) -> Path:
@@ -165,7 +165,7 @@ class NodeContentStore:
 
     def body_path(self, tree_name: str, key: str) -> Path:
         """Return the path of blob ``key``; raise ``ValueError`` for a malformed key."""
-        if not isinstance(key, str) or not _BODY_KEY_RE.match(key):
+        if not isinstance(key, str) or not _BODY_KEY_RE.fullmatch(key):
             raise ValueError(f"invalid body key {key!r}")
         return self.bodies_dir(tree_name) / f"{key}.md"
 
@@ -252,7 +252,7 @@ class NodeContentStore:
         by_id: dict[str, str] = {}
         for node in _tree_nodes(data):
             ref = node.get("body_ref")
-            if not isinstance(ref, str) or not _BODY_KEY_RE.match(ref):
+            if not isinstance(ref, str) or not _BODY_KEY_RE.fullmatch(ref):
                 continue
             flat = _flat_id(node)
             if flat:
@@ -303,10 +303,10 @@ class NodeContentStore:
             return 0
         paths: list[Path] = []
         for key in body_keys:
-            if isinstance(key, str) and _BODY_KEY_RE.match(key):
+            if isinstance(key, str) and _BODY_KEY_RE.fullmatch(key):
                 paths.append(self.bodies_dir(tree_name) / f"{key}.md")
         for node_id in node_ids:
-            if isinstance(node_id, str) and _NODE_ID_RE.match(node_id):
+            if isinstance(node_id, str) and _NODE_ID_RE.fullmatch(node_id):
                 paths.append(tree_dir / f"{node_id}.md")
         touched = 0
         for path in paths:
@@ -353,13 +353,13 @@ class NodeContentStore:
             for entry in bodies.iterdir():
                 if not entry.is_file() or entry.suffix != ".md":
                     continue
-                if not _BODY_KEY_RE.match(entry.stem) or entry.stem in live_refs:
+                if not _BODY_KEY_RE.fullmatch(entry.stem) or entry.stem in live_refs:
                     continue
                 if _remove(entry):
                     self._cache_evict((tree_name, f"bodies/{entry.stem}"))
                     count += 1
         for node_id in superseded:
-            if not _NODE_ID_RE.match(node_id):
+            if not _NODE_ID_RE.fullmatch(node_id):
                 continue
             entry = tree_dir / f"{node_id}.md"
             if entry.is_file() and _remove(entry):
@@ -461,7 +461,7 @@ class NodeContentStore:
         ids = [
             entry.stem
             for entry in tree_dir.iterdir()
-            if entry.is_file() and entry.suffix == ".md" and _NODE_ID_RE.match(entry.stem)
+            if entry.is_file() and entry.suffix == ".md" and _NODE_ID_RE.fullmatch(entry.stem)
         ]
         return sorted(ids)
 

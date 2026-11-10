@@ -890,13 +890,17 @@ async def test_sweep_vacuums_live_reserved_target(store: Bookstore, monkeypatch:
 
 
 @pytest.mark.asyncio
-async def test_all_taken_slugs_ignores_reserved_names(store: Bookstore, book_md: Path) -> None:
-    """Ignore staging and replacement names."""
+async def test_all_taken_slugs_reserves_staging_but_ignores_replacements(store: Bookstore, book_md: Path) -> None:
+    """A staging tree reserves its slug for other processes; a replacement copy does not."""
     toolkit = store._toolkit("project")
-    await toolkit.create_tree(f"book{_STAGING_MARKER}deadbeef")
-    await toolkit.create_tree(f"book{REPLACED_MARKER}deadbeef")
+    await toolkit.create_tree(f"staged{_STAGING_MARKER}deadbeef")
+    await toolkit.create_tree(f"replaced{REPLACED_MARKER}deadbeef")
 
-    assert "book" not in store._all_taken_slugs()
+    taken = store._all_taken_slugs()
+
+    assert "staged" in taken
+    assert "replaced" not in taken
+    assert not any(_STAGING_MARKER in name or REPLACED_MARKER in name for name in taken)
 
 
 @pytest.mark.asyncio
@@ -906,7 +910,10 @@ async def test_reindex_roundtrip_markdown(store: Bookstore, book_md: Path) -> No
     book_md.write_text(
         SAMPLE_MARKDOWN + "\n## Replacement Chapter\n"
         "Atomic swap roundtrip phrase with plenty of descriptive content to clear the "
-        "thinning threshold of the markdown parser and keep this node visible.\n",
+        "thinning threshold of the markdown parser and keep this node visible. "
+        + "The optimizer keeps a section as its own node only when it clears the minimum leaf size, "
+        "so this chapter carries enough descriptive prose about swapping a book revision atomically "
+        "while readers keep searching the previous revision until the new one is published. " * 4 + "\n",
         encoding="utf-8",
     )
 

@@ -18,6 +18,7 @@ import logging
 from typing import Any, Optional, TYPE_CHECKING
 
 from parrot.integrations.utils import parse_kwargs
+from parrot.integrations.core.queued import queued_spec_of
 
 if TYPE_CHECKING:
     from parrot.integrations.msteams.commands import MSTeamsCommandRouter
@@ -181,8 +182,12 @@ class AgentCommandHandler:
             )
             return
 
-        await self.wrapper.send_typing(turn_context)
         method = getattr(self.agent, method_name)
+        spec = queued_spec_of(method)
+        if isinstance(getattr(spec, "command", None), str):
+            await self.wrapper.send_text(f"Use /{spec.command} — it runs in the background.", turn_context)
+            return
+        await self.wrapper.send_typing(turn_context)
         kwargs = parse_kwargs(args_text)
         self.logger.info("/function %s(%s)", method_name, kwargs)
 
@@ -221,8 +226,12 @@ class AgentCommandHandler:
             )
             return
 
-        await self.wrapper.send_typing(turn_context)
         method = getattr(self.agent, method_name)
+        spec = queued_spec_of(method)
+        if isinstance(getattr(spec, "command", None), str):
+            await self.wrapper.send_text(f"Use /{spec.command} — it runs in the background.", turn_context)
+            return
+        await self.wrapper.send_typing(turn_context)
         args = args_text.split() if args_text else []
         self.logger.info("/call %s(%s)", method_name, args)
 
@@ -324,7 +333,7 @@ class AgentCommandHandler:
 
         try:
             if skill_def is not None:
-                setattr(self.agent, "_active_skill", skill_def)
+                self.agent._active_skill = skill_def
                 try:
                     response = await self.agent.ask(
                         question,

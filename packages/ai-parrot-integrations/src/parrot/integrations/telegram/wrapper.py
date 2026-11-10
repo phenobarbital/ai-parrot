@@ -34,6 +34,7 @@ from aiogram.types import (
     CallbackQuery,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
+    ReplyParameters,
 )
 from aiogram.filters import CommandStart, Command
 from parrot.integrations.core.state import IntegrationStateManager
@@ -43,6 +44,17 @@ from .callbacks import CallbackRegistry, CallbackContext, CallbackResult
 from .suggestion_buttons import SUGGESTION_PREFIX, SuggestionButtonStore, build_suggestion_keyboard
 from .context import telegram_chat_scope
 from .models import TelegramAgentConfig
+from .browser_login import (
+    TELEGRAM_WRAPPERS_APP_KEY,
+    PAGE_AUTH_METHODS,
+    BrowserLoginEntry,
+    BrowserVerificationError,
+    BrowserVerifierUnavailableError,
+    get_or_create_browser_login_registry,
+    get_browser_identity_verifier,
+    new_browser_state,
+)
+from .browser_verifiers import ensure_navigator_browser_verifiers
 from .auth import (
     TelegramUserSession,
     AbstractAuthStrategy,
@@ -278,6 +290,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
         # Register message handlers
         self._register_handlers()
+        # FEAT-854: browser-mode login wiring (no-op in webview mode).
+        self._setup_browser_mode()
 
     def _register_handlers(self) -> None:
         """Register aiogram message handlers on the router."""
@@ -335,6 +349,14 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
         # Register agent-declared commands (@telegram_command decorator)
         self._register_agent_commands()
+
+        from parrot.integrations.core.queued import discover_queued_commands
+        from .queued_commands import TelegramQueuedCommands
+
+        commands = discover_queued_commands(self.agent)
+        self._queued_commands = TelegramQueuedCommands(self, commands) if commands else None
+        if self._queued_commands:
+            self._add_platform_commands(self._queued_commands.register(self.router))
 
         # ─── Knowledge upload (FEAT-647) — before generic text/document handlers ───
         self._knowledge_upload = None
@@ -2411,6 +2433,12 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         if not callable(method):
             await message.answer(f"❌ `{method_name}` is not callable.")
             return
+        from parrot.integrations.core.queued import queued_spec_of
+
+        spec = queued_spec_of(method)
+        if spec is not None:
+            await message.answer(f"Use /{spec.command} — it runs in the background.")
+            return
 
         typing_task = asyncio.create_task(self._typing_indicator(chat_id))
         try:
@@ -2482,6 +2510,63 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         finally:
             typing_task.cancel()
 
+    def _enabled_auth_methods(self) -> set:
+        """Names of the auth methods this bot's strategy actually serves."""
+        strategy = self._auth_strategy
+        if strategy is None:
+            return set()
+        if isinstance(strategy, CompositeAuthStrategy):
+            return set(strategy.strategies)
+        return {strategy.name}
+
+    def _setup_browser_mode(self) -> None:
+        """Validate and wire browser-mode login at construction (FEAT-854).
+
+        Raises:
+            ValueError: browser mode is configured but cannot work.
+        """
+        if getattr(self.config, "auth_open_mode", "webview") != "browser" or self._auth_strategy is None:
+            return
+        name = getattr(self.config, "name", "?")
+        if self.app is None:
+            raise ValueError(
+                f"Agent '{name}': auth_open_mode='browser' requires the shared aiohttp app "
+                "(the completion endpoints and the bot must run in the same server)."
+            )
+        if not self._bot_id:
+            raise ValueError(f"Agent '{name}': auth_open_mode='browser' could not resolve the bot id.")
+        bot_id = str(self._bot_id)
+        get_or_create_browser_login_registry(self.app)
+        page_methods = sorted(self._enabled_auth_methods() & PAGE_AUTH_METHODS)
+        missing = ensure_navigator_browser_verifiers(
+            self.app, bot_id=bot_id, methods=page_methods, tenant_id=self.config.tenant
+        )
+        if missing:
+            methods = ", ".join(missing)
+            raise ValueError(
+                f"Agent '{name}': browser mode requires identity verifiers for: {methods}. "
+                f"Register a verifier under app['telegram_browser_identity_verifiers']['{bot_id}']"
+                "[<method>] before startup, or configure AUTH_SECRET_KEY / OAUTH_JWT_KEYS "
+                "shared with the Navigator issuer."
+            )
+        self.app.setdefault(TELEGRAM_WRAPPERS_APP_KEY, {})[bot_id] = self
+        self.logger.info(
+            "Browser-mode login enabled for bot %s (methods: %s)", bot_id, sorted(self._enabled_auth_methods())
+        )
+
+    async def _get_bot_username(self) -> Optional[str]:
+        """Return the bot's @username (cached after the first success), or None."""
+        cached = getattr(self, "_bot_username", None)
+        if cached:
+            return cached
+        try:
+            me = await self.bot.get_me()
+        except Exception:  # noqa: BLE001 - deep link is optional
+            self.logger.debug("get_me() failed; browser success page will omit the deep link", exc_info=True)
+            return None
+        self._bot_username = getattr(me, "username", None)
+        return self._bot_username
+
     async def handle_login(self, message: Message) -> None:
         """Handle /login — show login WebApp button via configured strategy."""
         chat_id = message.chat.id
@@ -2506,12 +2591,30 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             await message.answer("❌ Authentication is not configured for this bot.")
             return
 
-        # Generate CSRF state and delegate keyboard to strategy
-        state = secrets.token_urlsafe(32)
+        # Generate CSRF state and delegate keyboard to strategy.
+        browser_mode = getattr(self.config, "auth_open_mode", "webview") == "browser"
+        registry = None
+        if browser_mode:
+            state = new_browser_state()
+            registry = get_or_create_browser_login_registry(self.app)
+            registry.register(
+                BrowserLoginEntry(
+                    state=state,
+                    telegram_id=session.telegram_id,
+                    chat_id=chat_id,
+                    bot_id=str(self._bot_id or ""),
+                    bot_username=await self._get_bot_username(),
+                    created_at=time.monotonic(),
+                )
+            )
+        else:
+            state = secrets.token_urlsafe(32)
 
         try:
             keyboard = await self._auth_strategy.build_login_keyboard(self.config, state)
         except ValueError as exc:
+            if registry is not None:
+                registry.consume(state)
             await message.answer(f"❌ Login configuration error: {exc}")
             return
 
@@ -2536,6 +2639,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 "🔐 *Navigator Authentication*\n\n" "Tap the button below to sign in with your Navigator credentials."
             )
 
+        if browser_mode:
+            prompt_text += "\n\nThe link opens in your browser. Come back here when you are done."
         await message.answer(prompt_text, reply_markup=keyboard, parse_mode="Markdown")
 
     async def handle_logout(self, message: Message) -> None:
@@ -2581,34 +2686,30 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         )
 
     async def handle_web_app_data(self, message: Message) -> None:
-        """Handle data returned from the login WebApp.
-
-        Delegates to the configured auth strategy to process the primary
-        callback. Configured secondary providers are started only after that
-        callback has produced a validated pending candidate.
-        """
+        """Webview adapter that delegates primary authentication to the shared core."""
         if not message.web_app_data or not message.from_user:
             return
-
         if not self._auth_strategy:
             return
-
         try:
             data = json.loads(message.web_app_data.data)
         except (json.JSONDecodeError, TypeError):
             await message.answer("❌ Invalid login response data.")
             return
-
         session = self._get_user_session(message)
-
+        self._user_sessions.setdefault(session.telegram_id, session)
         if getattr(self.config, "post_auth_actions", None) or self._is_combined_payload(data):
             await self._handle_combined_auth(message, data, session)
             return
-
-        # Standard (single-step) auth flow.
-        success = await self._auth_strategy.handle_callback(data, session)
-
+        success = await self._complete_auth_payload(
+            data,
+            telegram_id=session.telegram_id,
+            chat_id=message.chat.id,
+            notify=False,
+            run_post_success=False,
+        )
         if success:
+            session = self._user_sessions.get(session.telegram_id, session)
             await message.answer(
                 f"✅ Authenticated as *{session.display_name}* "
                 f"(`{session.nav_user_id}`).\n\n"
@@ -2617,12 +2718,171 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 reply_markup=ReplyKeyboardRemove(),
             )
             await self._persist_principal_link(session)
-            # Eagerly build per-user agent/tool state so the first
-            # question does not pay the post_login cost. A typing
-            # indicator covers any noticeable delay.
             await self._initialize_user_context(session, message=message)
         else:
             await message.answer("❌ Login failed. Please try again with /login.")
+
+    async def _complete_auth_payload(
+        self,
+        data: Dict[str, Any],
+        *,
+        telegram_id: int,
+        chat_id: int,
+        notify: bool = True,
+        browser_entry: Optional[BrowserLoginEntry] = None,
+        run_post_success: bool = True,
+    ) -> bool:
+        """Run primary authentication and its post-success pipeline.
+
+        Browser page-method credentials are authenticated through a registered
+        server-side verifier. Webview and OAuth2 payloads retain their strategy
+        callback path. When ``run_post_success`` is False the caller owns
+        principal-link persistence and user-context initialization (the webview
+        adapter replies first, preserving its pre-FEAT-854 ordering).
+
+        Raises:
+            BrowserVerificationError: The browser credential or identity is invalid.
+            BrowserVerifierUnavailableError: No verifier can complete browser authentication.
+        """
+        if not self._auth_strategy:
+            return False
+        session = self._user_sessions.get(telegram_id) or TelegramUserSession(telegram_id=telegram_id)
+        staged = bool(getattr(self.config, "post_auth_actions", None) or self._is_combined_payload(data))
+        target = self._new_login_candidate(session) if staged else session
+        try:
+            method = self._resolve_browser_auth_method(data) if browser_entry is not None else None
+            if browser_entry is not None and method in PAGE_AUTH_METHODS:
+                await self._authenticate_browser_identity(data, method, target, browser_entry)
+                ok = True
+            else:
+                ok = await self._auth_strategy.handle_callback(data, target)
+        except (BrowserVerificationError, BrowserVerifierUnavailableError):
+            if notify:
+                await self._notify_login_failed(chat_id)
+            raise
+        if not ok or not target.authenticated or not target.nav_user_id:
+            if notify:
+                await self._notify_login_failed(chat_id)
+            return False
+        if staged:
+            if not target.nav_session_token:
+                if notify:
+                    await self._notify_login_failed(chat_id)
+                return False
+            await self._begin_login_attempt(target, chat_id=chat_id, send=self._chat_sender(chat_id))
+            return True
+        self._user_sessions[telegram_id] = target
+        if notify:
+            await self.bot.send_message(
+                chat_id=chat_id,
+                text=f"✅ Authenticated as *{target.display_name}* (`{target.nav_user_id}`).\n\n"
+                "Your identity will be used for all interactions.",
+                parse_mode="Markdown",
+            )
+        if not run_post_success:
+            return True
+        await self._persist_principal_link(target)
+        typing_task = asyncio.create_task(self._typing_indicator(chat_id))
+        try:
+            await self._initialize_user_context(target)
+        finally:
+            typing_task.cancel()
+        return True
+
+    def _new_login_candidate(self, session: TelegramUserSession) -> TelegramUserSession:
+        """Return an unauthenticated candidate retaining Telegram identity fields."""
+        return TelegramUserSession(
+            telegram_id=session.telegram_id,
+            telegram_username=session.telegram_username,
+            telegram_first_name=session.telegram_first_name,
+            telegram_last_name=session.telegram_last_name,
+        )
+
+    def _resolve_browser_auth_method(self, data: Dict[str, Any]) -> str:
+        """Return the enabled method targeted by a browser payload.
+
+        Raises:
+            BrowserVerificationError: The payload selects no valid configured method.
+        """
+        supplied = data.get("auth_method")
+        if isinstance(self._auth_strategy, CompositeAuthStrategy):
+            if not isinstance(supplied, str) or supplied not in self._auth_strategy.strategies:
+                raise BrowserVerificationError("Browser payload selected an unavailable authentication method")
+            return supplied
+        method = self._auth_strategy.name
+        if supplied is None and method == "basic":
+            return method
+        if supplied != method:
+            raise BrowserVerificationError("Browser payload selected an unavailable authentication method")
+        return method
+
+    async def _authenticate_browser_identity(
+        self,
+        data: Dict[str, Any],
+        method: str,
+        target: TelegramUserSession,
+        browser_entry: BrowserLoginEntry,
+    ) -> None:
+        """Authenticate a target exclusively from a verifier-proven identity.
+
+        Raises:
+            BrowserVerificationError: Credential or supplied identity claims are invalid.
+            BrowserVerifierUnavailableError: No verifier is configured for this bot and method.
+        """
+        token = data.get("token")
+        if not isinstance(token, str) or not token:
+            raise BrowserVerificationError("Browser payload did not include a credential")
+        verifier = get_browser_identity_verifier(
+            self.app,
+            bot_id=browser_entry.bot_id,
+            auth_method=method,
+        )
+        if verifier is None:
+            raise BrowserVerifierUnavailableError("Browser identity verifier is unavailable")
+        try:
+            identity = await verifier.verify(
+                token,
+                auth_method=method,
+                bot_id=browser_entry.bot_id,
+                tenant_id=self.config.tenant,
+            )
+        except (BrowserVerificationError, BrowserVerifierUnavailableError):
+            raise
+        except Exception as exc:
+            self.logger.warning("Browser identity verifier failed for method %s: %s", method, exc)
+            raise BrowserVerifierUnavailableError("Browser identity verifier is unavailable") from exc
+        for field in ("user_id", "display_name", "email"):
+            supplied = data.get(field)
+            verified = getattr(identity, field)
+            if supplied and verified is not None and str(supplied) != str(verified):
+                raise BrowserVerificationError("Browser payload identity does not match the verified identity")
+        target.set_authenticated(
+            nav_user_id=identity.user_id,
+            session_token=token,
+            display_name=identity.display_name,
+            email=identity.email,
+        )
+        if isinstance(self._auth_strategy, CompositeAuthStrategy):
+            target.metadata["auth_method"] = method
+
+    def _chat_sender(self, chat_id: int) -> Callable[..., Awaitable[Any]]:
+        """Return a sender bound to one Telegram chat without requiring a Message."""
+
+        async def send(text: str, **kwargs: Any) -> Any:
+            return await self.bot.send_message(chat_id=chat_id, text=text, **kwargs)
+
+        return send
+
+    async def _notify_login_failed(self, chat_id: int) -> None:
+        """Tell the chat authentication failed without masking the original error."""
+        try:
+            await self.bot.send_message(
+                chat_id=chat_id,
+                text="❌ Login failed. Please try again with /login.",
+                parse_mode=None,
+            )
+        except Exception:  # noqa: BLE001 - notification is best effort
+            self.logger.warning("Could not send login-failure notice to chat %s", chat_id, exc_info=True)
 
     async def _handle_combined_auth(
         self,
@@ -2650,7 +2910,17 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         await self._start_login_attempt(message, candidate)
 
     async def _start_login_attempt(self, message: Message, candidate: TelegramUserSession) -> None:
-        """Create the pending attempt and send secondary Connect buttons."""
+        """Webview adapter over ``_begin_login_attempt``."""
+        await self._begin_login_attempt(candidate, chat_id=message.chat.id, send=message.answer)
+
+    async def _begin_login_attempt(
+        self,
+        candidate: TelegramUserSession,
+        *,
+        chat_id: int,
+        send: Callable[..., Awaitable[Any]],
+    ) -> None:
+        """Create a pending attempt and send secondary Connect buttons."""
         from parrot.auth.principal import Principal
 
         actions = list(getattr(self.config, "post_auth_actions", None) or [])
@@ -2662,7 +2932,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         )
         attempt = self._login_coordinator.create(
             telegram_id=candidate.telegram_id,
-            chat_id=message.chat.id,
+            chat_id=chat_id,
             bot_id=str(self._bot_id or ""),
             principal=principal,
             permission_context=self._connection_permission_context(candidate, principal),
@@ -2698,7 +2968,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             keyboard = InlineKeyboardMarkup(
                 inline_keyboard=[[InlineKeyboardButton(text=f"Connect {action.provider}", url=url)]]
             )
-            await message.answer(
+            await send(
                 f"Authorize {action.provider} to finish login.",
                 reply_markup=keyboard,
                 parse_mode=None,
@@ -2756,6 +3026,12 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         method = getattr(self.agent, method_name)
         if not callable(method):
             await message.answer(f"❌ '{method_name}' is not callable.")
+            return
+        from parrot.integrations.core.queued import queued_spec_of
+
+        spec = queued_spec_of(method)
+        if spec is not None:
+            await message.answer(f"Use /{spec.command} — it runs in the background.")
             return
 
         # Start typing indicator
@@ -3281,28 +3557,223 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                         exc_info=True,
                     )
 
-    async def _send_url_photos(self, chat_id: int, urls: List[str]) -> None:
+    @staticmethod
+    def _routing_kwargs(
+        message_thread_id: Optional[int] = None,
+        reply_to_message_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Build the Bot API destination kwargs for a topic/reply-routed send.
+
+        Only the keys that are set are returned, so callers that pass no
+        routing information issue exactly the same Bot API calls as before.
+
+        Args:
+            message_thread_id: Forum topic id to post into, if any.
+            reply_to_message_id: Message id to reply to, if any.
+
+        Returns:
+            A dict with ``message_thread_id`` and/or ``reply_parameters``.
+            ``allow_sending_without_reply=True`` keeps the send (and therefore
+            the topic) working when the original message has been deleted.
+        """
+        kwargs: Dict[str, Any] = {}
+        if message_thread_id is not None:
+            kwargs["message_thread_id"] = message_thread_id
+        if reply_to_message_id is not None:
+            kwargs["reply_parameters"] = ReplyParameters(
+                message_id=reply_to_message_id,
+                allow_sending_without_reply=True,
+            )
+        return kwargs
+
+    @staticmethod
+    def _split_text_chunks(text: str, max_length: int = 4096) -> List[str]:
+        """Split text into line-aligned chunks of at most ``max_length`` characters.
+
+        Mirrors the splitting used by ``_send_long_message``; a single line
+        longer than ``max_length`` is hard-split so no chunk exceeds the limit.
+
+        Args:
+            text: Text to split.
+            max_length: Maximum chunk length.
+
+        Returns:
+            Ordered list of non-empty chunks.
+        """
+        if len(text) <= max_length:
+            return [text]
+        chunks: List[str] = []
+        current = ""
+        for line in text.split("\n"):
+            while len(line) > max_length:
+                if current:
+                    chunks.append(current)
+                    current = ""
+                chunks.append(line[:max_length])
+                line = line[max_length:]
+            if len(current) + len(line) + 1 > max_length:
+                if current:
+                    chunks.append(current)
+                current = line
+            else:
+                current += ("\n" if current else "") + line
+        if current:
+            chunks.append(current)
+        return chunks
+
+    def _build_parsed_text(self, parsed: ParsedResponse, prefix: str = "") -> str:
+        """Render the text portion (prefix, text, code, table) of a ParsedResponse.
+
+        Args:
+            parsed: Parsed agent response.
+            prefix: Optional leading text.
+
+        Returns:
+            The formatted text in the configured parse mode (may be empty).
+        """
+        text_parts: List[str] = []
+        if prefix:
+            text_parts.append(prefix)
+        if parsed.text:
+            if self.config.use_html:
+                text_parts.append(self._markdown_to_html(parsed.text))
+            else:
+                text_parts.append(self._convert_headers_to_bold(parsed.text))
+        if parsed.has_code:
+            lang = parsed.code_language or ""
+            if self.config.use_html:
+                text_parts.append(f'<pre><code class="language-{lang}">\n{parsed.code}\n</code></pre>')
+            else:
+                text_parts.append(f"```{lang}\n{parsed.code}\n```")
+        if parsed.has_table and parsed.table_markdown:
+            if self.config.use_html:
+                text_parts.append(f"<pre>\n{parsed.table_markdown}\n</pre>")
+            else:
+                text_parts.append(f"```\n{parsed.table_markdown}\n```")
+        return "\n\n".join(text_parts)
+
+    async def _send_routed_text(
+        self,
+        chat_id: int,
+        text: str,
+        parse_mode: Optional[str],
+        routing: Dict[str, Any],
+    ) -> None:
+        """Send one text message to a captured destination with plain-text fallback.
+
+        Args:
+            chat_id: Target chat.
+            text: Text to send (truncated to 4096 by ``_try_send_message``).
+            parse_mode: Telegram parse mode, or None for plain text.
+            routing: Destination kwargs from ``_routing_kwargs``; reused on
+                every retry so fallbacks stay in the same topic/reply.
+        """
+
+        async def _send(txt: str, mode: Optional[str]) -> None:
+            await self.bot.send_message(chat_id=chat_id, text=txt, parse_mode=mode, **routing)
+
+        await self._try_send_message(_send, text, parse_mode)
+
+    async def send_parsed_to_chat(
+        self,
+        chat_id: int,
+        parsed: ParsedResponse,
+        *,
+        message_thread_id: Optional[int] = None,
+        reply_to_message_id: Optional[int] = None,
+        prefix: str = "",
+    ) -> None:
+        """Deliver text and all attachments to a captured chat/topic/reply target.
+
+        Used when no aiogram ``Message`` is available (e.g. a background job
+        finishing after the command message was handled or deleted). Text is
+        sent in <=4096-character chunks with the same Markdown -> plain-text
+        fallback as ``_send_long_message``; every chunk, retry and attachment
+        carries the same forum topic and ``ReplyParameters``.
+
+        Args:
+            chat_id: Target chat.
+            parsed: Parsed agent response.
+            message_thread_id: Forum topic id, if the command came from a topic.
+            reply_to_message_id: Original command message id to reply to.
+            prefix: Optional leading text.
+        """
+        routing = self._routing_kwargs(message_thread_id, reply_to_message_id)
+        full_text = self._build_parsed_text(parsed, prefix)
+        parse_mode = "HTML" if self.config.use_html else "Markdown"
+
+        if full_text.strip():
+            for chunk in self._split_text_chunks(full_text, 4096):
+                await self._send_routed_text(chat_id, chunk, parse_mode, routing)
+                await asyncio.sleep(0.3)  # Rate limiting
+
+        await self._send_attachments(
+            chat_id,
+            parsed,
+            message_thread_id=message_thread_id,
+            reply_to_message_id=reply_to_message_id,
+        )
+
+        # Remote media URLs are delivered as text links (no send_video by URL).
+        media_urls = list(getattr(parsed, "media_urls", []) or [])
+        if media_urls:
+            try:
+                await self.bot.send_message(
+                    chat_id=chat_id,
+                    text="\n".join(f"🎬 {url}" for url in media_urls),
+                    **routing,
+                )
+            except Exception as e:  # noqa: BLE001 — a failed attachment must not abort the reply
+                self.logger.error("Failed to send media URL links: %s", e)
+
+    async def _send_url_photos(
+        self,
+        chat_id: int,
+        urls: List[str],
+        *,
+        message_thread_id: Optional[int] = None,
+        reply_to_message_id: Optional[int] = None,
+    ) -> None:
         """Download each remote image URL (bounded, allowlisted) and send it as a photo.
 
         Args:
             chat_id: Target chat.
             urls: http(s) image URLs from ``ParsedResponse.image_urls``.
+            message_thread_id: Optional forum topic to post into.
+            reply_to_message_id: Optional message id to reply to.
         """
+        routing = self._routing_kwargs(message_thread_id, reply_to_message_id)
         hosts = allowed_media_hosts()
         total = len(urls)
         for idx, url in enumerate(urls, start=1):
             try:
                 async with temp_download(url, allowed_hosts=hosts) as path:
                     caption = f"Figure {idx}" if total > 1 else None
-                    await self.bot.send_photo(chat_id=chat_id, photo=FSInputFile(path), caption=caption)
+                    await self.bot.send_photo(chat_id=chat_id, photo=FSInputFile(path), caption=caption, **routing)
                 await asyncio.sleep(0.3)
             except MediaDownloadRefused as exc:
                 self.logger.warning("Refused image URL %s: %s", url, exc)
             except Exception as exc:  # noqa: BLE001 — a failed attachment must not abort the reply
                 self.logger.error("Failed to send image URL %s: %s", url, exc)
 
-    async def _send_attachments(self, chat_id: int, parsed: ParsedResponse) -> None:
-        """Send attachments (images, documents, media, charts) to a chat."""
+    async def _send_attachments(
+        self,
+        chat_id: int,
+        parsed: ParsedResponse,
+        *,
+        message_thread_id: Optional[int] = None,
+        reply_to_message_id: Optional[int] = None,
+    ) -> None:
+        """Send attachments (images, documents, media, charts) to a chat.
+
+        Args:
+            chat_id: Target chat.
+            parsed: Parsed agent response.
+            message_thread_id: Optional forum topic to post into.
+            reply_to_message_id: Optional message id to reply to; every send
+                uses ``allow_sending_without_reply=True``.
+        """
+        routing = self._routing_kwargs(message_thread_id, reply_to_message_id)
         # Send charts
         if hasattr(parsed, "charts") and parsed.charts:
             for chart in parsed.charts:
@@ -3323,13 +3794,19 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                             chat_id=chat_id,
                             photo=FSInputFile(image_path),
                             caption=caption[:200],
+                            **routing,
                         )
                         await asyncio.sleep(0.3)
                 except Exception as e:
                     self.logger.error("Failed to send chart '%s': %s", chart.title, e)
 
         # Remote image URLs (FEAT-601 M12)
-        await self._send_url_photos(chat_id, list(getattr(parsed, "image_urls", []) or []))
+        await self._send_url_photos(
+            chat_id,
+            list(getattr(parsed, "image_urls", []) or []),
+            message_thread_id=message_thread_id,
+            reply_to_message_id=reply_to_message_id,
+        )
 
         # Send images
         for image_path in parsed.images:
@@ -3338,6 +3815,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                     chat_id=chat_id,
                     photo=FSInputFile(image_path),
                     caption=image_path.name[:200] if len(parsed.images) > 1 else None,
+                    **routing,
                 )
                 await asyncio.sleep(0.3)
             except Exception as e:
@@ -3350,6 +3828,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                     chat_id=chat_id,
                     document=FSInputFile(doc_path),
                     caption=doc_path.name[:200],
+                    **routing,
                 )
                 await asyncio.sleep(0.3)
             except Exception as e:
@@ -3364,15 +3843,17 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                         chat_id=chat_id,
                         video=FSInputFile(media_path),
                         caption=media_path.name[:200],
+                        **routing,
                     )
                 elif suffix in (".mp3", ".wav", ".ogg", ".m4a"):
                     await self.bot.send_audio(
                         chat_id=chat_id,
                         audio=FSInputFile(media_path),
                         caption=media_path.name[:200],
+                        **routing,
                     )
                 else:
-                    await self.bot.send_document(chat_id=chat_id, document=FSInputFile(media_path))
+                    await self.bot.send_document(chat_id=chat_id, document=FSInputFile(media_path), **routing)
                 await asyncio.sleep(0.3)
             except Exception as e:
                 self.logger.error("Failed to send media %s: %s", media_path, e)
@@ -3614,6 +4095,12 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
     async def close(self) -> None:
         """Release resources held by the wrapper (call on shutdown)."""
+        # Queued jobs first, and every step isolated: one failing close must not skip the rest.
+        if getattr(self, "_queued_commands", None) is not None:
+            try:
+                await self._queued_commands.shutdown()
+            except Exception:  # noqa: BLE001
+                self.logger.warning("Queued-command shutdown failed", exc_info=True)
         if self._bot_id:
             try:
                 from parrot.tools.reminder import unregister_telegram_bot
@@ -3622,15 +4109,24 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             except Exception:  # noqa: BLE001 - reminders are optional
                 pass
         if self._transcriber is not None:
-            await self._transcriber.close()
+            try:
+                await self._transcriber.close()
+            except Exception:  # noqa: BLE001
+                self.logger.warning("Transcriber close failed", exc_info=True)
             self._transcriber = None
         # FEAT-213: also close the TTS synthesizer if it was created
         if self._synthesizer is not None:
-            await self._synthesizer.close()
+            try:
+                await self._synthesizer.close()
+            except Exception:  # noqa: BLE001
+                self.logger.warning("Synthesizer close failed", exc_info=True)
             self._synthesizer = None
         # FEAT-647: cancel running knowledge-upload jobs (their finally deletes staged files)
         if getattr(self, "_knowledge_upload", None) is not None:
-            await self._knowledge_upload.shutdown()
+            try:
+                await self._knowledge_upload.shutdown()
+            except Exception:  # noqa: BLE001
+                self.logger.warning("Knowledge-upload shutdown failed", exc_info=True)
 
     async def handle_voice(self, message: Message) -> None:
         """Handle voice note (ContentType.VOICE) and audio file (ContentType.AUDIO).

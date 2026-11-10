@@ -34,7 +34,7 @@ class JSONTreeStore:
 
     @staticmethod
     def _validate_name(tree_name: str) -> None:
-        if not isinstance(tree_name, str) or not _TREE_NAME_RE.match(tree_name):
+        if not isinstance(tree_name, str) or not _TREE_NAME_RE.fullmatch(tree_name):
             raise ValueError(f"Invalid tree_name {tree_name!r}; expected 1-128 chars from [A-Za-z0-9_-].")
 
     def _path_for(self, tree_name: str) -> Path:
@@ -47,7 +47,7 @@ class JSONTreeStore:
         for entry in self._dir.iterdir():
             if entry.is_file() and entry.suffix == ".json":
                 stem = entry.stem
-                if _TREE_NAME_RE.match(stem):
+                if _TREE_NAME_RE.fullmatch(stem):
                     names.append(stem)
         return sorted(names)
 

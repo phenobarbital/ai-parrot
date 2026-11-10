@@ -1,0 +1,71 @@
+{
+  "feature": "review-evidence-producer",
+  "feature_id": "BRIEF-review-evidence-producer",
+  "spec": "sdd/briefs/review-evidence-producer.brief.md",
+  "type": "brief",
+  "base_branch": "dev",
+  "created_at": "2026-11-09",
+  "completed_at": "2026-11-09T23:14:08Z",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "HOTFIX-review-evidence-producer-1",
+      "slug": "record-review-publishes-ref",
+      "title": "coder_record_review publishes the review and returns its EvidenceRef",
+      "feature_id": "BRIEF-review-evidence-producer",
+      "feature": "review-evidence-producer",
+      "spec": "sdd/briefs/review-evidence-producer.brief.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "creates ReviewArtifact/CoderReviewReceipt in optimization_models.py; tasks 2 and 3 import ReviewArtifact",
+      "assigned_to": null,
+      "started_at": "2026-11-09T21:48:30+00:00",
+      "completed_at": "2026-11-09T22:56:50+00:00",
+      "file": "sdd/briefs/review-evidence-producer/tasks/HOTFIX-review-evidence-producer-1-record-review-publishes-ref.md"
+    },
+    {
+      "id": "HOTFIX-review-evidence-producer-2",
+      "slug": "finalize-checks-review-artifact",
+      "title": "finalize requires a review artifact for the same task",
+      "feature_id": "BRIEF-review-evidence-producer",
+      "feature": "review-evidence-producer",
+      "spec": "sdd/briefs/review-evidence-producer.brief.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "HOTFIX-review-evidence-producer-1"
+      ],
+      "parallel": true,
+      "parallelism_notes": "touches only finalize_task.py and its test; disjoint from task 3",
+      "assigned_to": null,
+      "started_at": "2026-11-09T21:48:30+00:00",
+      "completed_at": "2026-11-09T23:14:08+00:00",
+      "file": "sdd/briefs/review-evidence-producer/tasks/HOTFIX-review-evidence-producer-2-finalize-checks-review-artifact.md"
+    },
+    {
+      "id": "HOTFIX-review-evidence-producer-3",
+      "slug": "review-record-cli",
+      "title": "parrot sdd task review record for the manual /sdd-start path",
+      "feature_id": "BRIEF-review-evidence-producer",
+      "feature": "review-evidence-producer",
+      "spec": "sdd/briefs/review-evidence-producer.brief.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "HOTFIX-review-evidence-producer-1"
+      ],
+      "parallel": true,
+      "parallelism_notes": "touches review_checkpoint.py, cli.py and the sdd-start prompts; disjoint from task 2",
+      "assigned_to": null,
+      "started_at": "2026-11-09T21:48:30+00:00",
+      "completed_at": "2026-11-09T23:14:08+00:00",
+      "file": "sdd/briefs/review-evidence-producer/tasks/HOTFIX-review-evidence-producer-3-review-record-cli.md"
+    }
+  ]
+}

@@ -33,6 +33,7 @@ class CandidateScore(BaseModel):
     entries: int
     anchored: int
     rejected: Optional[str] = None
+    dropped: int = 0  # out-of-order bookmarks removed before scoring (bookmarks candidate only)
 
 
 class StructureReport(BaseModel):
@@ -98,7 +99,15 @@ def score_bookmarks(profile: LayoutProfile, segments: Sequence[Segment]) -> tupl
     usable = list(profile.bookmarks)
     if profile.bookmark_rejection or not usable:
         reason = profile.bookmark_rejection or "no usable bookmarks"
-        return CandidateScore(source="bookmarks", confidence=0.0, entries=len(usable), anchored=0, rejected=reason), []
+        score = CandidateScore(
+            source="bookmarks",
+            confidence=0.0,
+            entries=len(usable),
+            anchored=0,
+            rejected=reason,
+            dropped=profile.bookmarks_dropped,
+        )
+        return score, []
     by_page = _segments_by_page(segments)
     used: set[tuple[int, int]] = set()
     items: list[dict] = []
@@ -127,7 +136,14 @@ def score_bookmarks(profile: LayoutProfile, segments: Sequence[Segment]) -> tupl
         )
     confidence = round(found / len(usable), 3)
     logger.debug("bookmarks: %d usable, %d found, %d anchored -> %.3f", len(usable), found, anchored, confidence)
-    return CandidateScore(source="bookmarks", confidence=confidence, entries=len(usable), anchored=anchored), items
+    score = CandidateScore(
+        source="bookmarks",
+        confidence=confidence,
+        entries=len(usable),
+        anchored=anchored,
+        dropped=profile.bookmarks_dropped,
+    )
+    return score, items
 
 
 def score_layout(profile: LayoutProfile, segments: Sequence[Segment]) -> tuple[CandidateScore, list[dict]]:
@@ -194,11 +210,30 @@ def page_structure(page_count: int, doc_name: str) -> list[dict]:
 
 
 def _level_to_depth(anchored: Sequence[dict]) -> dict[int, int]:
-    """Map heading levels to their most common anchored bookmark depths."""
+    """Map heading levels to their most common anchored bookmark depths, strictly increasing with the level.
+
+    The majority vote picks, per level, the most common depth (ties to the shallower one). Levels are then visited
+    in ascending order and kept only when their depth is greater than the depth kept for the nearest shallower
+    level; ``_placed_depth`` places the headings of a dropped level from the nearest shallower mapped level. A
+    single anchor at a deep level (NIST 800-53's 10 pt ``PL-10`` control) therefore cannot pull every heading of
+    that level up to its depth.
+
+    Args:
+        anchored: Bookmark items anchored to a heading segment, each with ``level`` and ``depth``.
+
+    Returns:
+        The level-to-depth map, strictly increasing in depth.
+    """
     counts: dict[int, Counter] = {}
     for item in anchored:
         counts.setdefault(int(item["level"]), Counter())[int(item["depth"])] += 1
-    return {level: min(count, key=lambda depth: (-count[depth], depth)) for level, count in counts.items()}
+    majority = {level: min(count, key=lambda depth: (-count[depth], depth)) for level, count in counts.items()}
+    mapping: dict[int, int] = {}
+    for level in sorted(majority):
+        if mapping and majority[level] <= mapping[max(mapping)]:
+            continue
+        mapping[level] = majority[level]
+    return mapping
 
 
 def _placed_depth(level: Optional[int], mapping: dict[int, int]) -> Optional[int]:

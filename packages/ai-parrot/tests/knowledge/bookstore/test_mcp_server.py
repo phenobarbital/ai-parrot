@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
+
 import pytest
 
 from parrot.knowledge.bookstore.config import LibraryLocation
@@ -33,6 +37,7 @@ def test_server_registers_expected_tools(seeded_locations, capsys):
     assert server.config.name == "bookstore"
     assert "1 book(s)" in server.config.description
     assert "no LLM configured" in server.config.description
+    assert "agentic retrieval remains visible" in server.config.description
     # stdout purity: nothing may leak into the JSON-RPC channel during
     # construction.
     captured = capsys.readouterr()
@@ -42,36 +47,54 @@ def test_server_registers_expected_tools(seeded_locations, capsys):
 def test_server_description_with_llm(seeded_locations, fake_adapter, capsys):
     server = create_bookstore_mcp_server(seeded_locations, adapter=fake_adapter)
     assert "no LLM configured" not in server.config.description
+    assert "bookstore_agentic_retrieve" in server.config.description
     assert capsys.readouterr().out == ""
 
 
-def test_mcp_tools_list_has_thirteen_tools(seeded_locations):
-    server = create_bookstore_mcp_server(seeded_locations)
-    assert len(server.tools) == 13
+@pytest.mark.parametrize("with_model", [False, True])
+def test_mcp_tools_list_has_fourteen_tools(seeded_locations, fake_adapter, with_model):
+    adapter = fake_adapter if with_model else None
+    server = create_bookstore_mcp_server(seeded_locations, adapter=adapter)
+    assert len(server.tools) == 14
+    assert set(server.tools) == EXPECTED_TOOLS
     assert all(name.startswith("bookstore_") for name in server.tools)
 
 
+@pytest.mark.asyncio
+async def test_no_model_agentic_invocation_returns_explanatory_error(seeded_locations):
+    server = create_bookstore_mcp_server(seeded_locations)
+    result = await server.handle_tools_call(
+        {
+            "name": "bookstore_agentic_retrieve",
+            "arguments": {"book_id": "synthetic-handbook", "query": "How does vector search work?"},
+        }
+    )
+
+    assert result["isError"] is True
+    assert "agentic retrieval requires an LLM" in result["content"][0]["text"]
+
+
 def test_mcp_server_does_not_import_wiki(seeded_locations):
-    """Regression guard (FEAT-533 TASK-2919): the MCP path must never
-    import ``parrot.knowledge.wiki`` — only ``export_wiki``/``wiki_export``
-    (CLI-only) do.
+    """Verify MCP construction does not import wiki in a fresh interpreter."""
+    script = """
+import sys
+from pathlib import Path
+from parrot.knowledge.bookstore.config import LibraryLocation
+from parrot.knowledge.bookstore.mcp_server import create_bookstore_mcp_server
 
-    Pops any ``parrot.knowledge.wiki*`` modules a *previous* test in this
-    session already imported (e.g. ``test_export_wiki.py``, which
-    legitimately imports it) before the check, and restores them
-    afterwards — otherwise this test's pass/fail would depend on test
-    collection order rather than on what ``create_bookstore_mcp_server``
-    itself imports.
-    """
-    import sys
+create_bookstore_mcp_server([LibraryLocation(scope="project", root=Path(sys.argv[1]))])
+imported = any(name == "parrot.knowledge.wiki" or name.startswith("parrot.knowledge.wiki.") for name in sys.modules)
+print(f"WIKI_IMPORTED={int(imported)}")
+"""
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join(sys.path)
 
-    wiki_modules = {
-        name: sys.modules.pop(name)
-        for name in list(sys.modules)
-        if name == "parrot.knowledge.wiki" or name.startswith("parrot.knowledge.wiki.")
-    }
-    try:
-        create_bookstore_mcp_server(seeded_locations)
-        assert "parrot.knowledge.wiki" not in sys.modules
-    finally:
-        sys.modules.update(wiki_modules)
+    result = subprocess.run(
+        [sys.executable, "-c", script, str(seeded_locations[0].root)],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert "WIKI_IMPORTED=0" in result.stdout.splitlines()

@@ -22,6 +22,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 from importlib import metadata, resources
 from importlib.resources.abc import Traversable
 from pathlib import Path
@@ -159,6 +160,8 @@ PlanAction = Literal[
     "base-branch",
     "dangerous-guard",
     "dangerous-guard-remove",
+    "agy-permissions",
+    "agy-permissions-remove",
     "toolkits",
     "toolkits-remove",
     "remove",
@@ -487,6 +490,376 @@ def _dangerous_guard_report(root: Path) -> dict[str, Any]:
     return {"form": None, "command": None}
 
 
+# --------------------------------------------------------------------------
+# brief agy-permission-hook — Antigravity (agy) permission hook and rules (google host)
+# --------------------------------------------------------------------------
+
+#: The agy PreToolUse hook command (bare form) and the named hook that owns it in ``.agents/hooks.json``.
+AGY_HOOK_LINE = "parrot sdd hooks agy-permissions --hook"
+_AGY_SUFFIX = " sdd hooks agy-permissions --hook"
+AGY_HOOKS_PATH = Path(".agents/hooks.json")
+AGY_HOOK_NAME = "parrot-sdd-permissions"
+_AGY_MATCHER = "run_command|write_file|edit_file"
+_AGY_LEGACY_MATCHER = "run_command"
+#: ai-parrot's own tracked hook runs this repository launcher (fails to force_ask); install keeps that form
+_AGY_LAUNCHER = "scripts/sdd/agy_hook.sh"
+#: agy settings files relative to the home directory: the official install, then the snap build.
+_AGY_SETTINGS = (
+    Path(".gemini/antigravity-cli/settings.json"),
+    Path("snap/antigravity-cli/common/.gemini/antigravity-cli/settings.json"),
+)
+
+
+def agy_hook_command(*, portable: bool | None) -> tuple[str, Literal["bare", "baked"]]:
+    """Return the agy hook command and its form; same bare/baked rule as :func:`guard_hook_command`."""
+    guard, form = guard_hook_command(portable=portable)
+    if form == "bare":
+        return AGY_HOOK_LINE, "bare"
+    return guard.removesuffix(_GUARD_HOOK_SUFFIX) + _AGY_SUFFIX, "baked"
+
+
+#: machine-local record kept next to each agy ``settings.json``: the rules parrot added there and the
+#: repositories that rely on them (never committed, so it is right for this user and this machine only)
+AGY_OWNERSHIP_NAME = "parrot-sdd-rules.json"
+
+
+def _agy_candidates() -> list[Path]:
+    return [Path.home() / relative for relative in _AGY_SETTINGS]
+
+
+def agy_settings_paths() -> list[Path]:
+    """The user's agy ``settings.json`` files: every one that exists, else every one whose agy directory exists.
+
+    agy auto-approves a command only through ``permissions.allow`` rules in these files (a hook cannot), so
+    the managed SDD rules have to live here rather than in the repository. An empty list means agy has not
+    run for this user yet; nothing is created then.
+    """
+    candidates = _agy_candidates()
+    existing = [path for path in candidates if path.is_file()]
+    return existing or [path for path in candidates if path.parent.is_dir()]
+
+
+def _ownership_path(settings_path: Path) -> Path:
+    return settings_path.with_name(AGY_OWNERSHIP_NAME)
+
+
+def _repo_id(root: Path) -> str:
+    return str(root.resolve())
+
+
+def _display_home(path: Path) -> str:
+    try:
+        return "~/" + path.relative_to(Path.home()).as_posix()
+    except ValueError:
+        return str(path)
+
+
+def _read_json_object(path: Path) -> dict[str, Any] | None:
+    """``{}`` for a missing file, the object for a valid one, ``None`` for anything else (never clobbered)."""
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _write_json_object(path: Path, data: dict[str, Any]) -> None:
+    """Write atomically, keeping non-ASCII text and the file's permission bits.
+
+    The temporary file is created with ``mkstemp`` (random name, ``O_EXCL``), so a pre-planted symlink can
+    neither redirect the write nor be moved onto ``path``.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".parrot-tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+        if path.is_file():
+            os.chmod(tmp_name, path.stat().st_mode & 0o777)
+        os.replace(tmp_name, path)
+    except BaseException:
+        Path(tmp_name).unlink(missing_ok=True)
+        raise
+
+
+def _agy_hook_entry(command: str) -> dict[str, Any]:
+    """Managed PreToolUse entry for the agy permission hook (matcher _AGY_MATCHER)."""
+    return {
+        "PreToolUse": [{"matcher": _AGY_MATCHER, "hooks": [{"type": "command", "command": command, "timeout": 10}]}]
+    }
+
+
+def _agy_allow_list(settings: dict[str, Any]) -> list[Any] | None:
+    """``permissions.allow`` of an agy settings object; ``[]`` when absent, ``None`` when malformed."""
+    permissions = settings.get("permissions", {})
+    if not isinstance(permissions, dict):
+        return None
+    allow = permissions.get("allow", [])
+    return allow if isinstance(allow, list) else None
+
+
+def _ownership(path: Path) -> dict[str, list[str]] | None:
+    """The ownership record ``{"rules": [...], "repos": [...]}`` (empty when absent); None when malformed."""
+    data = _read_json_object(path)
+    if data is None:
+        return None
+    rules, repos = data.get("rules", []), data.get("repos", [])
+    if not isinstance(rules, list) or not isinstance(repos, list):
+        return None
+    return {"rules": [r for r in rules if isinstance(r, str)], "repos": [r for r in repos if isinstance(r, str)]}
+
+
+def _agy_owned_by(root: Path) -> bool:
+    """Whether any agy ownership record lists this repository."""
+    repo = _repo_id(root)
+    for settings_path in _agy_candidates():
+        owners = _ownership(_ownership_path(settings_path)) if _ownership_path(settings_path).is_file() else None
+        if owners and repo in owners["repos"]:
+            return True
+    return False
+
+
+def _hooks_file_inside(root: Path, path: Path) -> bool:
+    return not path.is_symlink() and _under(Path(os.path.realpath(path)), Path(os.path.realpath(root)))
+
+
+def _widen_legacy_matcher(path: Path, data: dict[str, Any]) -> None:
+    """Widen our named hook's first legacy ``run_command`` group to ``_AGY_MATCHER`` in place and write the file.
+
+    Only the matcher changes; the group's command and timeout are kept.
+    """
+    for group in data[AGY_HOOK_NAME]["PreToolUse"]:
+        if isinstance(group, dict) and group.get("matcher") == _AGY_LEGACY_MATCHER:
+            group["matcher"] = _AGY_MATCHER
+            break
+    _write_json_object(path, data)
+
+
+def _install_agy_hook(root: Path, receipt: dict[str, Any], *, portable: bool | None) -> tuple[bool, list[str]]:
+    """Write the named agy hook into ``.agents/hooks.json``, keeping every other named hook.
+
+    Returns:
+        Whether the hook is registered afterwards, and the action lines.
+    """
+    path = root / AGY_HOOKS_PATH
+    if not _hooks_file_inside(root, path):
+        return False, [f"warning: {AGY_HOOKS_PATH} — resolves outside the repository (symlink); agy hook skipped"]
+    data = _read_json_object(path)
+    if data is None:
+        return False, [f"warning: {AGY_HOOKS_PATH} — not a JSON object; agy hook skipped (fix the file and re-run)"]
+    command, form = agy_hook_command(portable=portable)
+    entry = _agy_hook_entry(command)
+    previous = data.get(AGY_HOOK_NAME)
+    owned = "agy-permissions" in receipt.get("settings_hooks", [])
+    recorded = receipt.setdefault("settings_hooks", [])
+    if "agy-permissions" not in recorded:
+        recorded.append("agy-permissions")
+    if previous == entry:
+        return True, [f"{AGY_HOOKS_PATH} — agy permission hook already registered"]
+    active = _agy_active_hook(data)
+    matcher = _agy_hook_matcher(data)
+    widened = f"{AGY_HOOKS_PATH} — agy permission hook matcher widened to {_AGY_MATCHER}"
+    if active is not None and _AGY_LAUNCHER in active:
+        if matcher == _AGY_LEGACY_MATCHER and owned:
+            _widen_legacy_matcher(path, data)
+            return True, [f"{widened} (repository launcher kept)"]
+        return True, [f"{AGY_HOOKS_PATH} — agy permission hook already registered (repository launcher kept)"]
+    if matcher == _AGY_LEGACY_MATCHER:
+        if owned:
+            _widen_legacy_matcher(path, data)
+            return True, [widened]
+        return True, [
+            f"note: {AGY_HOOKS_PATH} — stale matcher 'run_command' (not owned by this install); widen it by hand"
+        ]
+    if matcher is not None and matcher != _AGY_MATCHER:
+        return True, [f"warning: {AGY_HOOKS_PATH} — user-edited matcher '{matcher}'; keeping it"]
+    data[AGY_HOOK_NAME] = entry
+    _write_json_object(path, data)
+    verb = "updated" if previous is not None else "registered"
+    return True, [f"{AGY_HOOKS_PATH} — agy permission hook {verb} ({form})"]
+
+
+def _install_agy_rules(root: Path) -> list[str]:
+    """Append the missing managed rules to every agy settings file and record ownership next to it.
+
+    The ownership record is written first, so a failed settings write never leaves an unowned rule behind; a
+    rule the user already had is never recorded, so uninstall never removes it.
+    """
+    from parrot.sdd.scripts.agy_permissions import SDD_ALLOW_RULES  # lazy: only for the google host
+
+    paths = agy_settings_paths()
+    if not paths:
+        return [
+            "note: agy settings not found (run agy once, then re-run `parrot sdd install --host google`); "
+            "agy rules skipped"
+        ]
+    repo = _repo_id(root)
+    lines: list[str] = []
+    for path in paths:
+        shown = _display_home(path)
+        settings = _read_json_object(path)
+        allow = _agy_allow_list(settings) if settings is not None else None
+        owner_path = _ownership_path(path)
+        owners = _ownership(owner_path)
+        if settings is None or allow is None or owners is None:
+            lines.append(f"warning: {shown} — not a valid agy settings or ownership file; agy rules skipped")
+            continue
+        missing = [rule for rule in SDD_ALLOW_RULES if rule not in allow]
+        owners["rules"] = sorted(set(owners["rules"]) | set(missing))
+        if repo not in owners["repos"]:
+            owners["repos"].append(repo)
+        _write_json_object(owner_path, owners)
+        if missing:
+            settings.setdefault("permissions", {})["allow"] = [*allow, *missing]
+            _write_json_object(path, settings)
+            lines.append(f"{shown} — {len(missing)} agy rule(s) added")
+        else:
+            lines.append(f"{shown} — agy rules present")
+    return lines
+
+
+def _install_agy_permissions(root: Path, receipt: dict[str, Any], *, portable: bool | None) -> list[str]:
+    """Brief agy-permission-hook: register the agy hook in the repository and the rules in the user's settings.
+
+    The rules are broad by design and safe only together with the narrowing hook, so they are skipped when the
+    hook could not be registered.
+    """
+    registered, lines = _install_agy_hook(root, receipt, portable=portable)
+    if not registered:
+        return [*lines, "warning: agy rules skipped — they are installed only together with the agy permission hook"]
+    return [*lines, *_install_agy_rules(root)]
+
+
+def _remove_agy_rules(root: Path) -> list[str]:
+    """Release this repository's claim on the managed rules; remove them once no repository uses them."""
+    repo = _repo_id(root)
+    lines: list[str] = []
+    for path in _agy_candidates():
+        owner_path = _ownership_path(path)
+        if not owner_path.is_file():
+            continue
+        shown = _display_home(path)
+        owners = _ownership(owner_path)
+        if owners is None:
+            lines.append(f"warning: {_display_home(owner_path)} — not a valid ownership file; agy rules kept")
+            continue
+        if repo not in owners["repos"]:
+            continue
+        remaining = [r for r in owners["repos"] if r != repo]
+        if remaining:
+            owners["repos"] = remaining
+            _write_json_object(owner_path, owners)
+            lines.append(f"{shown} — agy rules kept (still used by {len(remaining)} other repository/ies)")
+            continue
+        settings = _read_json_object(path)
+        allow = _agy_allow_list(settings) if settings is not None else None
+        if settings is None or allow is None:
+            lines.append(f"warning: {shown} — not a valid agy settings object; agy rules kept")
+            continue
+        owned = set(owners["rules"])
+        kept = [rule for rule in allow if rule not in owned]
+        if len(kept) != len(allow):
+            permissions = settings["permissions"]
+            if kept:
+                permissions["allow"] = kept
+            else:
+                permissions.pop("allow")
+                if not permissions:
+                    settings.pop("permissions")
+            _write_json_object(path, settings)
+        owner_path.unlink()
+        lines.append(f"{shown} — {len(allow) - len(kept)} agy rule(s) removed")
+    return lines
+
+
+def _remove_agy_permissions(root: Path, receipt: dict[str, Any]) -> list[str]:
+    """Drop the named agy hook and this repository's claim on the managed rules.
+
+    The receipt marker is cleared only once the hook is really gone, so a failed removal can be retried.
+    """
+    lines: list[str] = []
+    path = root / AGY_HOOKS_PATH
+    cleared = True
+    if path.exists() or path.is_symlink():
+        data = _read_json_object(path) if _hooks_file_inside(root, path) else None
+        if data is None:
+            cleared = False
+            lines.append(f"warning: {AGY_HOOKS_PATH} — not a JSON object or outside the repository; agy hook kept")
+        elif AGY_HOOK_NAME in data:
+            data.pop(AGY_HOOK_NAME)
+            if data:
+                _write_json_object(path, data)
+            else:
+                path.unlink()
+                _prune_empty_parents(root, path)
+            lines.append(f"{AGY_HOOKS_PATH} — agy permission hook removed")
+    if cleared:
+        receipt["settings_hooks"] = [h for h in receipt.get("settings_hooks", []) if h != "agy-permissions"]
+    return [*lines, *_remove_agy_rules(root)]
+
+
+def _agy_active_hook(data: dict[str, Any]) -> str | None:
+    """The command of our named hook when it is wired as an active PreToolUse command hook."""
+    entry = data.get(AGY_HOOK_NAME)
+    groups = entry.get("PreToolUse") if isinstance(entry, dict) and entry.get("enabled", True) is not False else None
+    for group in groups if isinstance(groups, list) else []:
+        if not isinstance(group, dict) or group.get("matcher") not in (_AGY_LEGACY_MATCHER, _AGY_MATCHER):
+            continue
+        for hook in group.get("hooks", []) if isinstance(group.get("hooks"), list) else []:
+            if not isinstance(hook, dict) or hook.get("type", "command") != "command":
+                continue
+            command = hook.get("command")
+            if isinstance(command, str) and (
+                command.rstrip().endswith(_AGY_SUFFIX.strip()) or _AGY_LAUNCHER in command
+            ):
+                return command
+    return None
+
+
+def _agy_hook_matcher(data: dict[str, Any]) -> str | None:
+    """The matcher of the group holding our command (any matcher value), else None."""
+    entry = data.get(AGY_HOOK_NAME)
+    groups = entry.get("PreToolUse") if isinstance(entry, dict) and entry.get("enabled", True) is not False else None
+    for group in groups if isinstance(groups, list) else []:
+        if not isinstance(group, dict):
+            continue
+        for hook in group.get("hooks", []) if isinstance(group.get("hooks"), list) else []:
+            if not isinstance(hook, dict) or hook.get("type", "command") != "command":
+                continue
+            command = hook.get("command")
+            if isinstance(command, str) and (
+                command.rstrip().endswith(_AGY_SUFFIX.strip()) or _AGY_LAUNCHER in command
+            ):
+                return group.get("matcher")
+    return None
+
+
+def _agy_permissions_report(root: Path) -> dict[str, Any]:
+    """Status: the active hook's form/command and, per agy settings file, how many managed rules are missing."""
+    from parrot.sdd.scripts.agy_permissions import SDD_ALLOW_RULES
+
+    hooks_data = _read_json_object(root / AGY_HOOKS_PATH) or {}
+    command = _agy_active_hook(hooks_data)
+    matcher = _agy_hook_matcher(hooks_data) if command is not None else None
+    settings: list[dict[str, Any]] = []
+    for path in agy_settings_paths():
+        allow = _agy_allow_list(_read_json_object(path) or {}) or []
+        settings.append({"path": str(path), "missing_rules": sum(rule not in allow for rule in SDD_ALLOW_RULES)})
+    form = None
+    if command is not None:
+        form = "launcher" if _AGY_LAUNCHER in command else ("bare" if command == AGY_HOOK_LINE else "baked")
+    return {
+        "form": form,
+        "command": command,
+        "matcher": matcher,
+        "stale": matcher is not None and matcher != _AGY_MATCHER,
+        "settings": settings,
+        "missing_rules": max((s["missing_rules"] for s in settings), default=len(SDD_ALLOW_RULES)),
+    }
+
+
 def _rendered_payload(entry: dict[str, Any], hook: str) -> bytes:
     """Packaged bytes of ``entry`` with the guard-hook line replaced by ``hook`` (YAML single-quote escaped)."""
     payload = (_assets_root() / entry["source"]).read_bytes()
@@ -529,6 +902,7 @@ def plan_install(
     base_branch: str | None = None,
     dangerous_guard: bool = True,
     sdd_coder: bool = True,
+    agy_permissions: bool = True,
 ) -> list[PlannedAction]:
     """Pure: the ordered plan for ``install`` (assets, seeds, gitignore, ledger, config). No I/O writes."""
     receipt = load_receipt(root)
@@ -567,6 +941,10 @@ def plan_install(
     plan.append(PlannedAction(action="base-branch", target=base, note=_base_branch_state(root, base)))  # C31
     if dangerous_guard and "claude" in _validate_hosts(hosts):
         plan.append(PlannedAction(action="dangerous-guard", target=SETTINGS_PATH.as_posix()))  # C32
+    if agy_permissions and "google" in _validate_hosts(hosts):  # brief agy-permission-hook
+        rules_in = ", ".join(_display_home(p) for p in agy_settings_paths())
+        note = f"+ rules in {rules_in}" if rules_in else "agy settings not found: rules skipped"
+        plan.append(PlannedAction(action="agy-permissions", target=AGY_HOOKS_PATH.as_posix(), note=note))
     if sdd_coder:
         plan.append(PlannedAction(action="toolkits", target=", ".join(SDD_TOOLKITS)))  # C34
     return plan
@@ -744,6 +1122,8 @@ def plan_uninstall(root: Path, hosts: Sequence[str], *, keep_edits: bool = False
             removed.add(target)
     if "claude" in selected_hosts and "dangerous-actions" in receipt.get("settings_hooks", []):
         plan.append(PlannedAction(action="dangerous-guard-remove", target=SETTINGS_PATH.as_posix()))  # C32
+    if "google" in selected_hosts and ("agy-permissions" in receipt.get("settings_hooks", []) or _agy_owned_by(root)):
+        plan.append(PlannedAction(action="agy-permissions-remove", target=AGY_HOOKS_PATH.as_posix()))
     if receipt.get("toolkits"):
         plan.append(PlannedAction(action="toolkits-remove", target=", ".join(receipt["toolkits"])))  # C34
     if set(receipt["files"]) - removed:
@@ -1144,6 +1524,7 @@ def install_sdd_integration(
     hotfix_base: str | None = None,
     dangerous_guard: bool = True,
     sdd_coder: bool = True,
+    agy_permissions: bool = True,
 ) -> list[str]:
     """Deploy packaged SDD assets for ``hosts`` into ``root``, replacing older or hand-edited copies.
 
@@ -1163,6 +1544,10 @@ def install_sdd_integration(
             (claude host); ``False`` skips it.
         sdd_coder: C34 — register the ``sdd-coder`` and ``bounded-source`` MCP toolkits (``.parrot/mcp-toolkits.yaml``
             plus the host MCP config) and report the usable roster; ``False`` skips all of it.
+        agy_permissions: Brief agy-permission-hook (google host) — register the agy PreToolUse permission
+            hook in ``.agents/hooks.json`` and merge the managed ``permissions.allow`` rules into the user's agy
+            ``settings.json`` (additive; ownership is recorded per user next to that file, so uninstall removes
+            only rules parrot added, once no repository uses them); ``False`` skips both.
         push_base: C31 — also ``git push -u origin <base_branch>`` when origin lacks it.
         hotfix_base: C31 — seed ``sdd/config.json`` with this hotfix branch (when absent). Needed when
             ``base_branch`` is ``main`` (the default hotfix branch): the two must differ.
@@ -1208,6 +1593,7 @@ def install_sdd_integration(
         base_branch=config.base_branch,
         dangerous_guard=dangerous_guard,
         sdd_coder=sdd_coder,
+        agy_permissions=agy_permissions,
     )
     if dry_run:
         return [str(step) for step in plan]
@@ -1231,6 +1617,8 @@ def install_sdd_integration(
             actions.extend(_base_branch_step(root, config, push=push_base, receipt=receipt))
         elif step.action == "dangerous-guard":
             actions.extend(_install_dangerous_guard(root, receipt, portable=portable))
+        elif step.action == "agy-permissions":
+            actions.extend(_install_agy_permissions(root, receipt, portable=portable))
         elif step.action == "toolkits":
             actions.extend(_install_toolkits_step(root, hosts, receipt, portable=portable))
     _save_receipt(root, receipt)
@@ -1511,12 +1899,17 @@ def uninstall_sdd_integration(
             actions.append(f"git ledger hooks — kept (keep-ledger-hooks: {step.note})")
         elif step.action == "dangerous-guard-remove":
             actions.extend(_remove_dangerous_guard(root, receipt))
+        elif step.action == "agy-permissions-remove":
+            actions.extend(_remove_agy_permissions(root, receipt))
         elif step.action == "toolkits-remove":
             actions.extend(_remove_toolkits(root, hosts, receipt))
         elif step.action == "receipt-remove":
             drop_receipt = True
     if receipt.get("base_branch_created"):
         actions.append(f"note: base branch {receipt['base_branch_created']} was created by install; it is kept")
+    if drop_receipt and "agy-permissions" in receipt.get("settings_hooks", []):
+        drop_receipt = False  # the agy hook could not be removed: keep the marker so a re-run can retry
+        actions.append(f"warning: {RECEIPT_PATH} — kept so the agy hook removal can be retried")
     if drop_receipt:
         (root / RECEIPT_PATH).unlink(missing_ok=True)
         _prune_empty_parents(root, root / RECEIPT_PATH)
@@ -1675,6 +2068,7 @@ def sdd_status(root: Path) -> dict[str, Any]:
         "ledger_hooks": _ledger_hooks_present(root),
         "guard_hook": guard,
         "dangerous_guard": _dangerous_guard_report(root),
+        "agy_permissions": _agy_permissions_report(root),
         "toolkits": _toolkits_report(root),
         "stale": _stale_report(root),
         "stale_mcp": _stale_mcp_report(root),

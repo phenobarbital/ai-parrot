@@ -217,6 +217,10 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
 
             self._knowledge_upload = register_knowledge_upload_commands(self._command_router, self)
 
+        from .commands.queued_commands import register_queued_commands
+
+        self._queued_commands = register_queued_commands(self._command_router, self)
+
         # FEAT-729: user authentication lane (opt-in via config.auth_required)
         self._session_store = MSTeamsSessionStore(agent_name=config.name, store=getattr(self, "_state_store", None))
         if config.auth_required and not config.navigator_auth_url:
@@ -1421,6 +1425,11 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         if self._voice_transcriber:
             await self._voice_transcriber.close()
             self._voice_transcriber = None
+
+    async def close_queued_commands(self) -> None:
+        """Stop queued commands if this wrapper registered any."""
+        if self._queued_commands is not None:
+            await self._queued_commands.shutdown()
 
     def _extract_adaptive_card_json(self, text: str) -> Optional[Dict[str, Any]]:
         """

@@ -281,7 +281,7 @@ class SlackSocketHandler:
         response_url = payload.get("response_url")
 
         # Check channel + user authorization (FEAT-555: parity with the webhook path).
-        if channel and not self.wrapper._is_authorized(channel, user):
+        if not channel or not self.wrapper._is_authorized(channel, user):
             if response_url:
                 await self._send_response(
                     response_url,

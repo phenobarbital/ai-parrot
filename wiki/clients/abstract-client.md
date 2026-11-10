@@ -129,6 +129,31 @@ default emits `{"role": ..., "content": [{"type": "text", "text": ...}]}` per me
 Overrides exist in the Google client (SDK content objects), the Bedrock Converse base
 (`{"role", "content": [{"text": ...}]}`) and `JevClient`.
 
+### Tool-loop capability (`supports_tool_loop`)
+
+The class attribute `supports_tool_loop` declares whether the client's text `ask()` executes tool calls.
+When `True` (the default), `ask()` runs the tool loop: it executes enabled, registered tools and feeds
+their results back before returning, either in-process or through an agent bridge, within existing loop limits.
+The attribute is declarative — `ask()` never reads it.
+
+Clients that declare `supports_tool_loop = False` are:
+- `TransformersClient` (`hf` / `transformers` provider keys)
+- `JevClient` (`jev` / `typesafe` provider keys)
+- `GeminiLiveClient` (`gemini-live` provider key)
+
+`OpenAICodexClient` and `ClaudeAgentClient` run the tool loop through their respective agent bridges
+(`CodexToolBridge` and `ClaudeAgentToolBridge`). These bridges expose only tools registered in
+`client.tool_manager`; inline `tools=` arguments to `ask()` are ignored.
+
+Readers of this flag include:
+- **PageIndex agentic retrieval** — calls `require_tool_loop(client)` before candidate search; raises
+  `ValueError` on a `False` client.
+- **AbstractBot** — warns once per real `configure()` run if the client lacks the capability; it never
+  refuses the client.
+
+There is **no streaming capability flag**. `ask_stream()` may skip the tool loop that `ask()` runs.
+Known gaps are tracked as ledger issues (Groq, Grok, Meta Responses API).
+
 ## Configuration & Parameters
 
 Constructor: `AbstractClient.__init__(preset=None, tools=None, use_tools=False, debug=True, tool_manager=None, **kwargs)`.
@@ -248,6 +273,11 @@ distribution's `pyproject.toml`, the same way the satellite packages do.
 - **Empty registry without satellites.** `LLMFactory.create("openai")` raises `ImportError` if
   `ai-parrot-client-openai` is not installed.
 - **Never modify `parrot/clients/base.py` casually.** It is the foundation of every provider.
+- **A `supports_tool_loop = False` client ignores offered tools.** `TransformersClient` logs nothing when
+  tools arrive through `tool_manager`; check the flag first. An agent-mode `AbstractBot` logs one warning at
+  `configure()` and never refuses the client.
+- **There is no streaming capability flag.** `ask_stream()` may skip the tool loop `ask()` runs — Groq,
+  Grok and Meta's Responses path today, tracked as ledger issues.
 
 ## Related
 

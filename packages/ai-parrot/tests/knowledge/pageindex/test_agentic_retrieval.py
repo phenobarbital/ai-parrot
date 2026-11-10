@@ -15,6 +15,7 @@ from parrot.knowledge.pageindex.agentic import (
     clip_read_result,
     clone_for_tools,
 )
+from parrot.knowledge.pageindex.read_ledger import ReadLedger
 from parrot.knowledge.pageindex.llm_adapter import PageIndexLLMAdapter
 from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
 from parrot.models.basic import CompletionUsage
@@ -530,3 +531,144 @@ async def test_timeout_during_stage_one_search(agentic_toolkit, monkeypatch) -> 
 
     assert bundle["stopped"] == "timeout"
     assert bundle["candidates"] == []
+
+
+class _FailsAfterReadClient(ScriptedToolLoopClient):
+    """Provider-shaped client that performs its scripted reads and then fails the provider call."""
+
+    async def ask(self, prompt: str, model: str | None = None, **kwargs: Any) -> AIMessage:
+        """Run the scripted reads, then raise as a provider would."""
+        if not kwargs.get("use_tools"):
+            return await super().ask(prompt, model, **kwargs)
+        for name, parameters in self.calls:
+            await self.tool_manager.execute_tool(name, parameters)
+        raise RuntimeError("boom")
+
+
+@pytest.mark.asyncio
+async def test_null_max_chars_is_a_recoverable_tool_error() -> None:
+    """Every real read tool annotates ``max_chars: int``, so ``None`` is refused by the args schema.
+
+    The refusal is a tool error the provider can recover from — it never reaches the ledger and
+    never aborts the request. Validation runs before the wrapper's admission, so the refused call
+    is not even charged against ``max_tool_calls``. This pins the boundary that makes the
+    wrapper's coercion defensive rather than load-bearing.
+    """
+    client = ScriptedToolLoopClient(
+        [("read_segments", {"max_chars": None})],
+        '```json\n{"answer": "grounded", "citations": []}\n```',
+    )
+
+    bundle = await _run(client)
+
+    assert bundle.chars_read == 0
+    assert bundle.reads == []
+    assert bundle.tool_calls == 0
+    # No call was admitted, so the loop reports no_tool_calls rather than a crash.
+    assert bundle.stopped == "no_tool_calls"
+
+
+@pytest.mark.asyncio
+async def test_wrapper_coerces_falsy_max_chars_to_the_default() -> None:
+    """Below the args schema, a falsy max_chars charges the 12000 default instead of raising."""
+    retriever = _retriever(ScriptedToolLoopClient([], ""))
+    for value in (None, 0):
+        ledger = ReadLedger(budget_chars=100, max_reads=3)
+        wrapped = retriever._wrap(
+            _read_tool(),
+            ledger,
+            _ToolCallController(4),
+            asyncio.Lock(),
+            {"budget": False},
+        )
+
+        result = await wrapped.bound_method(max_chars=value)
+
+        # 12000 is requested, the 100-char budget caps the grant, and the read is charged.
+        assert ledger.chars_read == 100, value
+        assert result["segments"][0]["end"] == 100, value
+
+
+@pytest.mark.asyncio
+async def test_read_tool_honours_positive_max_chars() -> None:
+    """A positive max_chars is still charged exactly, so the coercion only touches falsy values."""
+    client = ScriptedToolLoopClient(
+        [("read_segments", {"max_chars": 50})],
+        '```json\n{"answer": "grounded", "citations": []}\n```',
+    )
+
+    bundle = await _run(client)
+
+    assert bundle.chars_read == 50
+    assert bundle.reads[0].ranges == [(0, 50)]
+
+
+@pytest.mark.asyncio
+async def test_provider_exception_returns_partial_bundle() -> None:
+    """A provider failure is reported as provider_error with the reads it already paid for."""
+    client = _FailsAfterReadClient(
+        [("read_segments", {})],
+        '```json\n{"answer": "never returned", "citations": []}\n```',
+    )
+
+    bundle = await _run(client)
+
+    assert bundle.stopped == "provider_error"
+    assert bundle.answer is None
+    assert bundle.grounded is False
+    assert bundle.citations == []
+    assert bundle.chars_read == 100
+    assert bundle.reads[0].ranges == [(0, 100)]
+    assert client.repairs == 0  # no repair round-trip is spent on a provider failure
+    assert client.tool_manager.list_tools() == []
+
+
+class NoLoopClient(StubClient):
+    """Client declaring that its text ask() runs no tool loop; counts ask() calls (FEAT-848)."""
+
+    supports_tool_loop = False
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.ask_calls = 0
+
+    async def ask(self, prompt: str, model: str | None = None, **kwargs: Any) -> Any:
+        """Count the call; the fail-fast path must never reach it."""
+        self.ask_calls += 1
+        raise AssertionError("ask() must not be called on a client without a tool loop")
+
+
+def test_agentic_retriever_rejects_no_loop_client() -> None:
+    """Direct construction raises, naming the class and client_type."""
+    with pytest.raises(ValueError, match=r"NoLoopClient \(stub\) declares supports_tool_loop=False"):
+        AgenticRetriever(
+            client=NoLoopClient(),
+            model="stub",
+            read_tools=[_read_tool()],
+            load_revision=lambda *_: None,
+        )
+
+
+@pytest.mark.asyncio
+async def test_agentic_retrieve_fails_fast_without_tool_loop(agentic_toolkit, monkeypatch) -> None:
+    """On a real tree, agentic_retrieve raises before candidate search and before any ask()."""
+    toolkit, _, _ = agentic_toolkit
+    client = NoLoopClient()
+    toolkit._agentic_client_override = client
+    monkeypatch.setattr(toolkit, "_agentic_search", lambda *_: pytest.fail("candidate search reached"))
+
+    with pytest.raises(ValueError, match="NoLoopClient"):
+        await toolkit.agentic_retrieve("t", "question")
+
+    assert client.ask_calls == 0
+
+
+def test_agentic_client_clone_rejects_no_loop_adapter_client(tmp_path: Path) -> None:
+    """The clone path (adapter client copied by clone_for_tools) is checked too."""
+    toolkit = PageIndexToolkit(
+        storage_dir=tmp_path,
+        adapter=PageIndexLLMAdapter(client=NoLoopClient(), model="stub"),
+    )
+
+    with pytest.raises(ValueError, match="supports_tool_loop=False"):
+        toolkit._agentic_client()

@@ -5,10 +5,11 @@ description: Start and complete a single SDD task from a per-spec index, impleme
 
 # SDD Start
 
-## Full procedure and Codex adaptations
+## Full procedure and host adaptations
 
 Before executing, read the [full sdd-start procedure](../../../.claude/commands/sdd-start.md)
-and the [Codex adaptation contract](../../../docs/sdd/CODEX.md#codex-adaptation-contract).
+and your host's adaptation contract: the [Codex adaptation contract](../../../docs/sdd/CODEX.md#codex-adaptation-contract)
+on Codex, or the [Antigravity adaptation contract](../../../docs/sdd/AGY.md#antigravity-adaptation-contract) on Google Antigravity (`agy`).
 Follow the full procedure for details omitted from this summary. The adaptation
 contract and the Codex-specific instructions below override Claude runtime syntax
 and legacy shell examples; retain all workflow gates and evidence requirements.
@@ -129,6 +130,7 @@ implement the task yourself — the normal route is the default.
     - verify cached names
     - commit `feat(<feature-slug>): TASK-NNN - <title>`
 11. Close task:
+    - after the semantic review, run `parrot sdd task review record --feature <slug> --task <id> --worktree <path> --summary "<review>"` and use the printed `review_ref` as `review_evidence`; never write into the evidence store by hand
     - create the `TaskCompletionEvidence` JSON (fields `feature_slug`, `task_id`,
       `implementation_sha`, `validation_refs`, `review_evidence`, `fix_commits`,
       `completion_facts`) with the task ID, feature slug, exact implementation

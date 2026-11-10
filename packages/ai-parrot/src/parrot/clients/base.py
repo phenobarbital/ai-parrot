@@ -321,6 +321,12 @@ class AbstractClient(EventEmitterMixin, ABC):
     # inherited budget fails with BudgetUnsupported BEFORE the implementation runs.
     budget_supported_methods: FrozenSet[str] = frozenset()
 
+    # FEAT-848: whether text ask() executes enabled, registered tools and feeds results back
+    # before returning (in-process or through an agent bridge, subject to existing limits).
+    # No claim about ask_stream() or inline tools registration. AgenticRetriever fails fast
+    # on False instead of reading tool_calls == 0 after a wasted call.
+    supports_tool_loop: bool = True
+
     def __init_subclass__(cls, **kwargs: Any) -> None:
         """Install the budget entry adapter once on each concrete public text method (FEAT-550 §2.1)."""
         super().__init_subclass__(**kwargs)

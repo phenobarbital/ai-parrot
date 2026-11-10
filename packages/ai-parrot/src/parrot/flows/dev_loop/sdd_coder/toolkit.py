@@ -387,6 +387,8 @@ class SddCoderToolkit(AbstractToolkit):
         SHAs of all fix(...) TASK-N review fixes commits, [] when none), and
         review_evidence. Exclude engine lint commits. The engine attaches actual
         feedback exposure so before/after rates include clean deliveries too.
+        The result's review_ref is the EvidenceRef to pass as
+        TaskCompletionEvidence.review_evidence to `parrot sdd task finalize`.
         """
         from parrot.knowledge.wiki.ledger.coder_reviews import CoderReview
 

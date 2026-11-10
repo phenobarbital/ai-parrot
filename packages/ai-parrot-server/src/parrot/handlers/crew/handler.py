@@ -16,6 +16,7 @@ from navigator.types import WebApp  # pylint: disable=E0611,E0401
 from navigator.applications.base import BaseApplication  # pylint: disable=E0611,E0401
 from navigator_auth.decorators import is_authenticated, user_session
 from navconfig.logging import logging
+from .definition_storage import CrewStorageConflict, CrewStorageUnavailable
 from .models import CrewDefinition, ExecutionMode
 from ._tenancy import resolve_session_tenant
 from parrot.bots.flows.crew import AgentCrew
@@ -335,8 +336,9 @@ class CrewHandler(BaseView):
                 crew_def.created_at = existing_def.created_at  # Preserve creation time
                 crew_def.updated_at = None  # Will be set on save
 
-                # Remove old crew
-                await self.bot_manager.remove_crew(url_crew_id, tenant=tenant)
+                if self.bot_manager.crew_storage_backend != "postgres":
+                    # Preserve Redis mode's historic remove-and-recreate update.
+                    await self.bot_manager.remove_crew(url_crew_id, tenant=tenant)
 
                 self.logger.info("Updating crew '%s'", url_crew_id)
 
@@ -346,8 +348,12 @@ class CrewHandler(BaseView):
 
                 crew_key = url_crew_id or crew_def.name
 
-                # Register crew in bot manager
-                await self.bot_manager.add_crew(crew_key, crew, crew_def)
+                # PostgreSQL updates persist the replacement before changing
+                # the cache. Redis mode retains its historic add behaviour.
+                if url_crew_id and self.bot_manager.crew_storage_backend == "postgres":
+                    await self.bot_manager.persist_crew_update(url_crew_id, crew, crew_def)
+                else:
+                    await self.bot_manager.add_crew(crew_key, crew, crew_def)
 
                 action = "updated" if url_crew_id else "created"
                 status_code = 202 if url_crew_id else 201
@@ -367,9 +373,17 @@ class CrewHandler(BaseView):
                     status=status_code,
                 )
 
+            except CrewStorageUnavailable:
+                return self.error(response={"message": "Crew storage is unavailable"}, status=503)
+            except CrewStorageConflict:
+                return self.error(response={"message": "Crew storage conflict"}, status=409)
             except Exception as e:
                 self.logger.error("Error creating crew: %s", e, exc_info=True)
                 return self.error(response={"message": f"Error creating crew: {str(e)}"}, status=400)
+        except CrewStorageUnavailable:
+            return self.error(response={"message": "Crew storage is unavailable"}, status=503)
+        except CrewStorageConflict:
+            return self.error(response={"message": "Crew storage conflict"}, status=409)
         except web.HTTPError:
             raise
         except Exception as e:
@@ -463,6 +477,10 @@ class CrewHandler(BaseView):
             )
 
             return self.json_response({"crews": crew_list, "total": len(crew_list)})
+        except CrewStorageUnavailable:
+            return self.error(response={"message": "Crew storage is unavailable"}, status=503)
+        except CrewStorageConflict:
+            return self.error(response={"message": "Crew storage conflict"}, status=409)
         except web.HTTPError:
             raise
         except Exception as e:
@@ -504,18 +522,26 @@ class CrewHandler(BaseView):
 
             identifier = crew_name or crew_id
 
-            # Check if exists first. get_crew() returns the truthy tuple
-            # (None, None) on a miss, so validate the resolved definition
-            # rather than relying on `not crew_data`.
-            crew_data = await self.bot_manager.get_crew(identifier, tenant=tenant)
-            if not crew_data or crew_data[1] is None:
-                return self.error(response={"message": f"Crew '{identifier}' not found"}, status=404)
+            if self.bot_manager.crew_storage_backend == "postgres":
+                removed = await self.bot_manager.remove_crew(identifier, tenant=tenant)
+                if not removed:
+                    return self.error(response={"message": f"Crew '{identifier}' not found"}, status=404)
+            else:
+                # Check if exists first. get_crew() returns the truthy tuple
+                # (None, None) on a miss, so validate the resolved definition
+                # rather than relying on `not crew_data`.
+                crew_data = await self.bot_manager.get_crew(identifier, tenant=tenant)
+                if not crew_data or crew_data[1] is None:
+                    return self.error(response={"message": f"Crew '{identifier}' not found"}, status=404)
 
-            # Remove crew
-            await self.bot_manager.remove_crew(identifier, tenant=tenant)
+                await self.bot_manager.remove_crew(identifier, tenant=tenant)
 
             return self.json_response({"message": f"Crew '{identifier}' deleted successfully"})
 
+        except CrewStorageUnavailable:
+            return self.error(response={"message": "Crew storage is unavailable"}, status=503)
+        except CrewStorageConflict:
+            return self.error(response={"message": "Crew storage conflict"}, status=409)
         except web.HTTPError:
             raise
         except Exception as e:

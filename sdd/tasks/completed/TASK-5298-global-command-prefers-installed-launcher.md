@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-838 — Google installer prefers the installed managed launcher
 **Spec**: `sdd/specs/google-installer-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -207,4 +207,12 @@ See spec §4 table; the scaffold is in the blueprint above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Opus 5.5 via /sdd-fix (agent:sdd-fix:fb77bf80)
+**Date**: 2026-11-07
+**Notes**: Added rule 1b (shim + managed venv script on disk → bare `parrot`) after the unchanged PATH
+rule, plus `_is_inside()` and a WARNING when rule 2 reuses an absolute command outside `root`. 5 new
+tests; contract suites (`test_google_portable.py`, `test_portable_mode_parity.py`) and adjacent installer
+suites pass (100 tests total). Resolves `issue:e92e5f160cdd`.
+
+**Deviations from spec**: none (spec §2 amended before tasking to keep rule 1, because existing tests put
+only the shim on PATH). `guard_hook_command` / `managed_launcher_on_path` left PATH-order only (spec Non-Goals).

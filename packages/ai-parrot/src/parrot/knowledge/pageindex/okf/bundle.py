@@ -39,7 +39,6 @@ from parrot.knowledge.pageindex.okf.graph import parse_markdown_links
 from parrot.knowledge.pageindex.okf.ontology import (
     ConceptType,
     RelationType,
-    RelatesTo,
 )
 from parrot.knowledge.pageindex.okf.projection import (
     flatten_concept_id_for_filename,
@@ -51,9 +50,7 @@ from parrot.knowledge.pageindex.utils import structure_to_list
 logger = logging.getLogger(__name__)
 
 # Pattern for pageindex:// URIs — captures tree name and concept_id
-_PAGEINDEX_URI_RE = re.compile(
-    r"pageindex://([^/\s\"'()]+)/([^\s\"'()]+)"
-)
+_PAGEINDEX_URI_RE = re.compile(r"pageindex://([^/\s\"'()]+)/([^\s\"'()]+)")
 
 
 # ---------------------------------------------------------------------------
@@ -185,7 +182,7 @@ def _rewrite_pageindex_uris(
     return rewritten, count
 
 
-def _export_frontmatter(node: dict, tree_name: str) -> str:
+def _export_frontmatter(node: dict, tree_name: str, alias_to_concept: Optional[dict[str, str]] = None) -> str:
     """Produce OKF v0.1 compliant YAML frontmatter (strips node_id, resource).
 
     Only includes OKF-standard fields: ``type``, ``title``, ``id``, ``tags``,
@@ -194,10 +191,14 @@ def _export_frontmatter(node: dict, tree_name: str) -> str:
     Args:
         node: OKF-enriched PageIndex node dict.
         tree_name: Tree name (unused here — included for future extension).
+        alias_to_concept: Optional mapping of absorbed ``concept_id`` (alias)
+            to the absorbing ``concept_id``; ``relates_to`` targets naming an
+            alias are exported as the absorber's id.
 
     Returns:
         YAML frontmatter string delimited by ``---\\n``.
     """
+    aliases = alias_to_concept or {}
     d: dict = {
         "type": node.get("type", ConceptType.SECTION.value),
         "title": node.get("title", ""),
@@ -206,7 +207,10 @@ def _export_frontmatter(node: dict, tree_name: str) -> str:
         "timestamp": str(node.get("timestamp", "")),
         "summary": node.get("summary", "") or "",
         "relates_to": [
-            {"concept": r.get("concept", ""), "rel": r.get("rel", "references")}
+            {
+                "concept": aliases.get(r.get("concept", ""), r.get("concept", "")),
+                "rel": r.get("rel", "references"),
+            }
             for r in (node.get("relates_to") or [])
         ],
     }
@@ -245,7 +249,7 @@ def _strip_frontmatter(content: str) -> str:
         if content.endswith("\n---"):
             return ""  # frontmatter fills entire content; no body
         return content
-    return content[second + 5:].lstrip("\n")
+    return content[second + 5 :].lstrip("\n")
 
 
 # ---------------------------------------------------------------------------
@@ -294,6 +298,16 @@ def export_okf_bundle(
         if cid:
             concept_file_map[cid] = _build_export_path(cid, concept_type_val)
 
+    # Aliases (concept_ids absorbed by a merge) map to the absorber's file and
+    # concept_id.  A live concept_id always wins over an equal alias.
+    alias_to_concept: dict[str, str] = {}
+    for node in nodes:
+        cid = node.get("concept_id", "")
+        for alias in node.get("aliases") or []:
+            if cid and alias and alias not in concept_file_map:
+                concept_file_map[alias] = concept_file_map[cid]
+                alias_to_concept[alias] = cid
+
     total_uris = 0
 
     for node in nodes:
@@ -308,9 +322,7 @@ def export_okf_bundle(
         # Guard against concept_ids that could escape output_dir (e.g. "..--evil")
         try:
             if not abs_path.resolve().is_relative_to(output_dir_resolved):
-                logger.warning(
-                    "Skipping concept_id %r: resolved path escapes output_dir", cid
-                )
+                logger.warning("Skipping concept_id %r: resolved path escapes output_dir", cid)
                 continue
         except ValueError:
             logger.warning("Skipping concept_id %r: could not verify path containment", cid)
@@ -320,8 +332,7 @@ def export_okf_bundle(
         abs_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Load sidecar body
-        flat_key = flatten_concept_id_for_filename(cid)
-        raw_body = content_store.load(tree_name, flat_key) or ""
+        raw_body = content_store.load_node(tree_name, node) or ""
         body = _strip_frontmatter(raw_body)
 
         # Rewrite pageindex:// URIs in body
@@ -329,7 +340,7 @@ def export_okf_bundle(
         total_uris += uri_count
 
         # Build OKF frontmatter (without node_id / resource)
-        frontmatter = _export_frontmatter(node, tree_name)
+        frontmatter = _export_frontmatter(node, tree_name, alias_to_concept)
 
         # Write the file
         abs_path.write_text(f"{frontmatter}\n{body}", encoding="utf-8")
@@ -516,12 +527,14 @@ def import_okf_bundle(
 
         # relates_to: from frontmatter YAML (first) + markdown links in body
         fm_relates: list[dict] = []
-        for r in (fm_data.get("relates_to") or []):
+        for r in fm_data.get("relates_to") or []:
             if isinstance(r, dict) and r.get("concept"):
-                fm_relates.append({
-                    "concept": str(r["concept"]),
-                    "rel": str(r.get("rel", RelationType.REFERENCES.value)),
-                })
+                fm_relates.append(
+                    {
+                        "concept": str(r["concept"]),
+                        "rel": str(r.get("rel", RelationType.REFERENCES.value)),
+                    }
+                )
 
         # Resolve markdown links from body → additional edges
         link_relates: list[dict] = []
@@ -535,10 +548,12 @@ def import_okf_bundle(
                 stem = link_path.stem if link_path.suffix.lower() == ".md" else link_path.name
                 target_cid = stem_to_cid.get(stem)
                 if target_cid and target_cid not in existing_targets:
-                    link_relates.append({
-                        "concept": target_cid,
-                        "rel": RelationType.REFERENCES.value,
-                    })
+                    link_relates.append(
+                        {
+                            "concept": target_cid,
+                            "rel": RelationType.REFERENCES.value,
+                        }
+                    )
                     existing_targets.add(target_cid)
 
         all_relates = fm_relates + link_relates
