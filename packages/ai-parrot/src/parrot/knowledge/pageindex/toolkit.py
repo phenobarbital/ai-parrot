@@ -30,7 +30,7 @@ from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, AsyncIterator, Awaitable, Callable, Optional, TypeVar
+from typing import Any, AsyncIterator, Awaitable, Callable, Optional, Sequence, TypeVar
 
 from parrot.clients.base import AbstractClient
 from parrot.tools.toolkit import AbstractToolkit, ToolkitTool
@@ -109,20 +109,79 @@ def _subtract_children(start: int, end: int, children: list[dict]) -> list[list[
     return [residual for residual in residuals if residual[0] < residual[1]]
 
 
-def _restore_merged_ownership(node: dict, original_spans: dict[Any, list[int]]) -> None:
-    """Restore the ranges a node absorbed during normalization, recovered from its stable aliases."""
+def _spans_intersect(a: Sequence[int], b: Sequence[int]) -> bool:
+    """Return whether two half-open ``[start, end)`` spans share at least one segment."""
+    return int(a[0]) < int(b[1]) and int(b[0]) < int(a[1])
+
+
+def _original_spans(nodes: list[dict]) -> dict[Any, list[int]]:
+    """Map each unambiguous ``concept_id`` to its span; ids shared by several nodes are dropped.
+
+    A duplicated concept id (e.g. an LLM-generated TOC with repeated titles over the same pages) cannot tell
+    which span an alias refers to, so restoring it would hand one node's range to another.
+    """
+    spans: dict[Any, list[int]] = {}
+    ambiguous: set[Any] = set()
+    for node in structure_to_list(nodes):
+        concept_id = node.get("concept_id")
+        if not concept_id or not node.get("span"):
+            continue
+        if concept_id in spans:
+            ambiguous.add(concept_id)
+        spans[concept_id] = list(node["span"])
+    for concept_id in ambiguous:
+        spans.pop(concept_id, None)
+    return spans
+
+
+def _restore_merged_ownership(
+    node: dict,
+    original_spans: dict[Any, list[int]],
+    blocked: Sequence[Sequence[int]] = (),
+) -> None:
+    """Restore the ranges a node absorbed during normalization, recovered from its stable aliases.
+
+    Args:
+        node: Node whose subtree is restored in place.
+        original_spans: Pre-optimization span of each unambiguous concept id.
+        blocked: Spans owned by nodes outside ``node`` (siblings and ancestors' siblings). An alias range is
+            restored only when the resulting span stays clear of them, so a restore never overlaps a sibling.
+    """
     children = node.get("nodes") or []
-    for child in children:
-        _restore_merged_ownership(child, original_spans)
+    for index, child in enumerate(children):
+        others = [list(other["span"]) for pos, other in enumerate(children) if pos != index and other.get("span")]
+        _restore_merged_ownership(child, original_spans, [*blocked, *others])
     spans = [list(node["span"])] if node.get("span") else []
-    spans.extend(original_spans[alias] for alias in node.get("aliases") or [] if alias in original_spans)
     spans.extend(list(child["span"]) for child in children if child.get("span"))
+    for alias in node.get("aliases") or []:
+        alias_span = original_spans.get(alias)
+        if not alias_span:
+            continue
+        hull = [min(int(s[0]) for s in [*spans, alias_span]), max(int(s[1]) for s in [*spans, alias_span])]
+        if any(_spans_intersect(hull, other) for other in blocked):
+            continue
+        spans.append(list(alias_span))
     if not spans:
         return
     start = min(int(span[0]) for span in spans)
     end = max(int(span[1]) for span in spans)
     node["span"] = [start, end]
     node["owned"] = _subtract_children(start, end, children)
+
+
+def _restore_roots(roots: list[dict], original_spans: dict[Any, list[int]], only: Optional[set[int]] = None) -> None:
+    """Restore merged ownership for each root, keeping sibling roots' spans off limits.
+
+    Args:
+        roots: Top-level nodes of one candidate.
+        original_spans: Output of :func:`_original_spans`.
+        only: ``id()`` of the roots to restore; ``None`` restores all of them.
+    """
+    for index, root in enumerate(roots):
+        if only is not None and id(root) not in only:
+            continue
+        others = [list(other["span"]) for pos, other in enumerate(roots) if pos != index and other.get("span")]
+        _restore_merged_ownership(root, original_spans, others)
 
 
 def _assign_concept_ids(nodes: list[dict], parent_path: str = "", frozen: Optional[set[int]] = None) -> None:
@@ -1515,14 +1574,17 @@ class PageIndexToolkit(AbstractToolkit):
             optimized = plan_deterministic(base_tree, revisions, settings, tree_name=tree_name, node_id=node_id)
             optimized.llm_cache = llm_cache
 
-            original_spans = {
-                node.get("concept_id"): list(node["span"])
-                for node in structure_to_list(base_tree["nodes"])
-                if node.get("concept_id") and node.get("span")
-            }
-            for root in optimized.candidate.get("nodes") or []:
-                if any(id(node) in optimized.mutable for node in structure_to_list([root])):
-                    _restore_merged_ownership(root, original_spans)
+            original_spans = _original_spans(base_tree["nodes"])
+            candidate_roots = optimized.candidate.get("nodes") or []
+            _restore_roots(
+                candidate_roots,
+                original_spans,
+                only={
+                    id(root)
+                    for root in candidate_roots
+                    if any(id(node) in optimized.mutable for node in structure_to_list([root]))
+                },
+            )
             await run_llm_passes(optimized, revisions, self._adapter, settings)
 
             base_by_node_id = {
@@ -2383,11 +2445,7 @@ class PageIndexToolkit(AbstractToolkit):
         revisions = self._revisions_for(txn.tree_name, roots)
         revisions[(revision.doc_id, revision.revision)] = revision
         base_tree = {"nodes": roots}
-        original_spans = {
-            node.get("concept_id"): list(node["span"])
-            for node in structure_to_list(roots)
-            if node.get("concept_id") and node.get("span")
-        }
+        original_spans = _original_spans(roots)
         plan = plan_deterministic(
             base_tree,
             revisions,
@@ -2395,8 +2453,7 @@ class PageIndexToolkit(AbstractToolkit):
             tree_name=txn.tree_name,
         )
 
-        for root in plan.candidate.get("nodes") or []:
-            _restore_merged_ownership(root, original_spans)
+        _restore_roots(plan.candidate.get("nodes") or [], original_spans)
         await run_llm_passes(
             plan,
             revisions,
