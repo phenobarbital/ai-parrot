@@ -2,7 +2,7 @@
 
 **Feature**: repl-executor-default-size (brief)
 **Spec**: `sdd/briefs/repl-executor-default-size.brief.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S
 **Depends-on**: none
@@ -65,4 +65,4 @@ PandasAgent-forwarding cases (PandasAgent case may monkeypatch `PythonPandasTool
 Implement exactly the scope above; run validation with `PYTHONPATH=packages/ai-parrot/src`.
 
 ## Completion Note
-_(fill on close)_
+Implemented as specified: `executor_max_workers: Optional[int] = None` auto-sizes to `WorkerPool._effective_ceiling(cfg) + cfg.prewarm_pool_size`; `PandasAgent(python_repl_executor_max_workers=)` forwards it. Tests: 5 new/updated pass (auto-size, worker_config size 3, no 'shared executor has' warning, PandasAgent forwarding). Pre-existing env failures remain in tests using `tmp_path` as report_dir (`output_dir escapes allowed directories`: /tmp is outside STATIC_DIR here) — unrelated to this change. Pre-existing ruff findings (F541/F841/E721) in pythonrepl.py untouched. Implemented sequentially by the worker (task too small for chunk dispatch).
