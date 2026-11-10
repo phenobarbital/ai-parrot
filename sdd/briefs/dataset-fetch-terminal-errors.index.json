@@ -16,14 +16,14 @@
       "feature_id": "BRIEF-dataset-fetch-terminal-errors",
       "feature": "dataset-fetch-terminal-errors",
       "spec": "sdd/briefs/dataset-fetch-terminal-errors.brief.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Single task; edits dataset_manager/tool.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-10T23:30:09+00:00",
       "completed_at": null,
       "file": "sdd/briefs/dataset-fetch-terminal-errors/tasks/HOTFIX-dataset-fetch-terminal-errors-1-classify-fetch-failures.md"
     }
