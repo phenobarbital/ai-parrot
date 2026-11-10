@@ -21,7 +21,7 @@ from pydantic import BaseModel
 
 from parrot.launcher import InstallRoot, MANAGED_PYTHON, parrot_home, script_path  # TASK-4071, TASK-5184
 from parrot.self_.components import managed_venv  # TASK-4079
-from parrot.self_.uv import PINNED_UV_VERSION, UV_MAX_VERSION, UV_MIN_VERSION, legacy_uv_files, resolve_uv
+from parrot.self_.uv import UV_MAX_VERSION, UV_MIN_VERSION, legacy_uv_files, resolve_uv
 
 logger = logging.getLogger(__name__)
 
@@ -71,8 +71,7 @@ def _check_uv() -> DoctorCheck:
         name="uv",
         ok=True,
         detail=(
-            f"uv {found.version} at {found.path} ({found.source}; compatible "
-            f">={UV_MIN_VERSION},<{UV_MAX_VERSION})"
+            f"uv {found.version} at {found.path} ({found.source}; compatible " f">={UV_MIN_VERSION},<{UV_MAX_VERSION})"
         ),
     )
 
@@ -776,8 +775,15 @@ def run_doctor(
     and the ai-parrot / ai-parrot-tools version lockstep (rev 0.5 C20, TASK-5117); "full" adds host configs, toolkits and — iff ``root/sdd`` exists — the C15 SDD readiness checks;
     "sdd" forces the latter.
     """
-    checks = [_check_uv(), _check_uv_layout(), _check_python(), _check_entrypoints(), _check_path(), _check_tools_wiki(),
-              _check_runtime_lockstep()]
+    checks = [
+        _check_uv(),
+        _check_uv_layout(),
+        _check_python(),
+        _check_entrypoints(),
+        _check_path(),
+        _check_tools_wiki(),
+        _check_runtime_lockstep(),
+    ]
     if scope == "runtime-only":
         return checks
     if install_root is not None:

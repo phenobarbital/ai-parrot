@@ -105,7 +105,9 @@ def probe_version(path: Path) -> str | None:
 def find_path_uv() -> Path | None:
     """Return the first PATH uv outside the Parrot bin and libexec directories."""
     own = {_resolved(parrot_home() / "bin"), _resolved(libexec_dir())}
-    entries = [entry for entry in os.environ.get("PATH", "").split(os.pathsep) if entry and _resolved(Path(entry)) not in own]
+    entries = [
+        entry for entry in os.environ.get("PATH", "").split(os.pathsep) if entry and _resolved(Path(entry)) not in own
+    ]
     found = shutil.which("uv", path=os.pathsep.join(entries)) if entries else None
     return Path(found).absolute() if found else None
 

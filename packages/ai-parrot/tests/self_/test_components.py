@@ -11,7 +11,6 @@ import pytest
 from parrot.self_ import components
 from parrot.self_.uv import UvResolution
 
-
 @pytest.fixture
 def fake_managed_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """~/.parrot-like tree with libexec uv, a venv stub, and live data; sets PARROT_HOME."""
@@ -27,7 +26,7 @@ def fake_managed_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (home / "library").mkdir()
     monkeypatch.setenv("PARROT_HOME", str(home))
     monkeypatch.setattr(components, "bundled_uv", lambda: home / "libexec" / f"uv{exe}")
-    monkeypatch.setattr(components, "migrate_legacy_uv", lambda: [])
+    monkeypatch.setattr(components, "migrate_legacy_uv", list)
     return home
 
 

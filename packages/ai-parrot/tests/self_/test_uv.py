@@ -32,7 +32,15 @@ def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 @pytest.mark.parametrize(
     ("version", "ok"),
-    [("0.11.27", False), ("0.11.28", True), ("0.11.99", True), ("0.12.0", False), ("0.13.7", False), ("garbage", False), (None, False)],
+    [
+        ("0.11.27", False),
+        ("0.11.28", True),
+        ("0.11.99", True),
+        ("0.12.0", False),
+        ("0.13.7", False),
+        ("garbage", False),
+        (None, False),
+    ],
 )
 def test_in_range(version: str | None, ok: bool) -> None:
     """The supported 0.11 uv range excludes both adjacent versions."""

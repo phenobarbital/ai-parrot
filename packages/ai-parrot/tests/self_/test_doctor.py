@@ -12,7 +12,6 @@ import pytest
 from parrot.self_ import doctor
 from parrot.self_.uv import UvResolution
 
-
 @pytest.fixture
 def isolated_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """PARROT_HOME + fake HOME so the Google user-global config is a tmp file."""
