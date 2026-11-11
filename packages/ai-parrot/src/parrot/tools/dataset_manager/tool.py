@@ -705,6 +705,9 @@ class DatasetManager(AbstractToolkit):
 
         if isinstance(source, InMemorySource):
             return source
+        if source.self_governed:
+            # Self-governed sources enforce PBAC/RLS/masking themselves (FEAT-880).
+            return source
         from .sources.authorizing import AuthorizingDataSource
 
         return AuthorizingDataSource(
@@ -3522,6 +3525,9 @@ class DatasetManager(AbstractToolkit):
             # These sources do not accept sql or conditions — ignore them
             # to prevent the LLM from accidentally injecting invalid QS conditions.
             pass
+        elif entry.source.self_governed:
+            # FEAT-880: `conditions` carries the source's query (e.g. semantic fields); sql is ignored.
+            params = dict(conditions or {})
         elif isinstance(entry.source, TableSource):
             # TableSource requires sql — reject calls without an explicit SQL
             # so the LLM is forced to write targeted queries (GROUP BY, WHERE,
@@ -3678,6 +3684,15 @@ class DatasetManager(AbstractToolkit):
             df = await self.materialize(name, force_refresh=force_refresh, **params)
         except Exception as exc:
             self.logger.error("fetch_dataset '%s' failed: %s", name, exc)
+            if entry.source.self_governed:
+                # A denial is per subject: never mark the shared entry unavailable.
+                message = f"Error fetching dataset '{name}': {exc}"
+                return {
+                    "status": "error",
+                    "success": False,
+                    "result": None,
+                    "error": message,
+                }
             kind = _classify_fetch_failure(exc, getattr(entry.source, "table", None))
             if kind is not None:
                 if kind in ("missing_table", "permission_denied"):
@@ -4302,6 +4317,13 @@ class DatasetManager(AbstractToolkit):
         entry = self._datasets.get(resolved)
         if entry is None:
             raise ValueError(f"Dataset '{name}' not found. Available: {list(self._datasets.keys())}")
+
+        if entry.source.self_governed:
+            # FEAT-880: rows are query- and subject-specific — always re-fetch, never cache.
+            df = await entry.materialize(force=True, **params)
+            if self.generate_guide:
+                self.df_guide = self._generate_dataframe_guide()
+            return df
 
         # Already in memory and no refresh needed
         if entry.loaded and not force_refresh:
