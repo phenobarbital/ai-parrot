@@ -2420,6 +2420,10 @@ class BotManager:
         # FEAT-108 VaultTokenSync, Jira OAuth state, etc.) finds one. If a
         # prior component already set the key, respect it.
         self._register_shared_redis()
+        # FEAT-878: validate user-store switches (fail closed) + Redis diagnostics/cleanup hooks.
+        from parrot.userstore.checks import install_user_store_hooks
+
+        install_user_store_hooks(self.app)
         # Add Manager to main Application:
         self.app["bot_manager"] = self
         # Register OAuth2 providers after startup (FEAT-144)
@@ -3156,6 +3160,9 @@ Available documentation UIs:
         from .studio_runtime import add_studio_runtime_hooks
 
         add_studio_runtime_hooks(app)
+        from parrot.userstore.checks import install_user_store_hooks
+
+        install_user_store_hooks(app)
 
     async def _registry_only_startup(self, app: web.Application) -> None:
         """registry.setup(app) (+ opt-in imports), then start the legacy expiry loop."""
