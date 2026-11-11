@@ -90,6 +90,8 @@ def notebook_tree_name(book_id: Optional[str]) -> str:
         ``"<book_id>_notes"`` or ``"_library_notes"``.
     """
     return LIBRARY_NOTEBOOK if book_id is None else f"{book_id}{NOTEBOOK_SUFFIX}"
+
+
 _STAGING_MAX_AGE_S = 3600
 
 

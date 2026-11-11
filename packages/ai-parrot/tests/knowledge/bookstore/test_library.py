@@ -980,7 +980,9 @@ async def test_draft_card_samples_live_bodies_not_stale_legacy(
 # ----------------------------------------------------------------------
 # Notebooks (FEAT-876 TASK-5477)
 # ----------------------------------------------------------------------
-async def _anchor_note(store: Bookstore, book_id: str, node_id: str, *, title: str = "A footnote", body: str = "") -> str:
+async def _anchor_note(
+    store: Bookstore, book_id: str, node_id: str, *, title: str = "A footnote", body: str = ""
+) -> str:
     """Add one note anchored to ``(book_id, node_id)`` in the book's notebook; return its node id."""
     notebook = await store.ensure_notebook(book_id)
     toolkit = await store._ready_toolkit(notebook.scope)
@@ -1094,7 +1096,9 @@ async def test_annotations_resolve_by_scope_and_id(tmp_path, fake_adapter):
     toolkit = await global_store._ready_toolkit("global")
     wrong = await toolkit.add_node(notebook.tree_name, title="Wrong scope")
     await toolkit.tag_node(
-        notebook.tree_name, wrong["node_id"], metadata={"anchors": [{"book_id": global_card.book_id, "node_id": node_id}]}
+        notebook.tree_name,
+        wrong["node_id"],
+        metadata={"anchors": [{"book_id": global_card.book_id, "node_id": node_id}]},
     )
     right = await toolkit.add_node(notebook.tree_name, title="Global note")
     await toolkit.tag_node(
