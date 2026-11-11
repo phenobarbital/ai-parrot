@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-878 — Redis user stores (MongoDB-free local installs)
 **Spec**: `sdd/specs/redis-user-stores.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5496
@@ -42,6 +42,9 @@ store, makes the dispatch honour the resolved switch (fail closed for unregister
 | `packages/ai-parrot/src/parrot/security/vault_utils.py` | MODIFY | Protocol, dispatch, two new helpers |
 | `packages/ai-parrot/src/parrot/security/__init__.py` | MODIFY | export the new helpers |
 | `packages/ai-parrot/tests/security/test_vault_store_redis.py` | CREATE | tests |
+| `packages/ai-parrot-server/tests/studio/test_integration.py` | MODIFY | BYOK fake DocumentDB fixture selects the documentdb backend |
+| `packages/ai-parrot-server/tests/studio/test_byok.py` | MODIFY | BYOK fake DocumentDB fixture selects the documentdb backend |
+| `packages/ai-parrot-server/tests/studio/storage/test_vault_store.py` | MODIFY | default-documentdb test selects the documentdb backend |
 
 ---
 
@@ -352,10 +355,15 @@ async def test_list_skips_undecryptable(redis_vault): ...                 # writ
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-5497
+- Feature: redis-user-stores
+- Implementation SHA: 4499e5d7141c96a0145660c68962efd625dcf331
+- Closed at (UTC): 2026-11-11T01:36:53+00:00
+- Fix commits: 4499e5d7141c96a0145660c68962efd625dcf331
 
-**Deviations from spec**: none
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 1 |
+| seat_summary | Seat: gpt-5.6-terra/gpt-5.6-sol · Backend: codex · Model: gpt-5.6-sol (attempt 3) · Attempts: 3 · Duration: 682s · Tokens: n/a. Feedback: coder-feedback:283ec67de15c0452ec5d1f02 |

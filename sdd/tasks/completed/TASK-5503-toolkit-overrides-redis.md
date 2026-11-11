@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-878 — Redis user stores (MongoDB-free local installs)
 **Spec**: `sdd/specs/redis-user-stores.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5496
@@ -38,6 +38,11 @@ task adds a Redis store and an `_active_override_store()` dispatch so `TOOLKIT_O
 | `packages/ai-parrot-server/src/parrot/handlers/toolkit_persistence_redis.py` | CREATE | `RedisToolkitOverrideStore` |
 | `packages/ai-parrot-server/src/parrot/handlers/toolkit_persistence.py` | MODIFY | `_active_override_store()` dispatch |
 | `packages/ai-parrot-server/tests/unit/test_toolkit_overrides_redis.py` | CREATE | Redis tests |
+| `packages/ai-parrot-server/tests/studio/test_tooling_identity.py` | MODIFY | DocumentDB-mocking purge tests select `TOOLKIT_OVERRIDES_STORE=documentdb` |
+| `packages/ai-parrot-server/tests/studio/storage/test_overrides_store.py` | MODIFY | default-documentdb test selects the documentdb backend explicitly |
+| `packages/ai-parrot-server/tests/studio/test_integration.py` | MODIFY | shared wave fix (see TASK-5497): BYOK fixture selects documentdb |
+| `packages/ai-parrot-server/tests/studio/test_byok.py` | MODIFY | shared wave fix (see TASK-5497) |
+| `packages/ai-parrot-server/tests/studio/storage/test_vault_store.py` | MODIFY | shared wave fix (see TASK-5497) |
 
 ---
 
@@ -264,10 +269,15 @@ async def test_postgres_unregistered_fails_closed(monkeypatch): ...  # TOOLKIT_O
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-5503
+- Feature: redis-user-stores
+- Implementation SHA: 4499e5d7141c96a0145660c68962efd625dcf331
+- Closed at (UTC): 2026-11-11T01:37:07+00:00
+- Fix commits: d9a1ca51ac46db7b07843ee5414ec1d349903b71
 
-**Deviations from spec**: none
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 1 |
+| seat_summary | Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1 · Duration: 85s · Tokens: n/a. Feedback: coder-feedback:8b43ad6e1cdb482f4b9d9e35 |

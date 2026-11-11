@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-878 — Redis user stores (MongoDB-free local installs)
 **Spec**: `sdd/specs/redis-user-stores.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5496
@@ -40,6 +40,9 @@ The Studio handler side is TASK-5502.
 | `packages/ai-parrot/src/parrot/auth/broker/byok.py` | MODIFY | resolver dispatch to any registered/Redis store |
 | `packages/ai-parrot/tests/auth/test_byok_store_redis.py` | CREATE | Redis store + resolver tests |
 | `packages/ai-parrot/tests/unit/test_user_llm_key_resolver.py` | MODIFY | autouse pin `BYOK_STORE=documentdb` |
+| `packages/ai-parrot-server/tests/studio/test_integration.py` | MODIFY | shared wave fix (see TASK-5497): BYOK fixture selects documentdb |
+| `packages/ai-parrot-server/tests/studio/test_byok.py` | MODIFY | shared wave fix (see TASK-5497) |
+| `packages/ai-parrot-server/tests/studio/storage/test_vault_store.py` | MODIFY | shared wave fix (see TASK-5497) |
 
 ---
 
@@ -309,10 +312,15 @@ async def test_invalid_setting_fails_closed(monkeypatch): ...  # BYOK_STORE=bogu
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-5501
+- Feature: redis-user-stores
+- Implementation SHA: 4499e5d7141c96a0145660c68962efd625dcf331
+- Closed at (UTC): 2026-11-11T01:37:06+00:00
+- Fix commits: none
 
-**Deviations from spec**: none
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-luna · Backend: codex · Model: gpt-5.6-luna · Attempts: 2 · Duration: 223s · Tokens: n/a |

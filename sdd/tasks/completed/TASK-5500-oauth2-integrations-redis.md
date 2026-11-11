@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-878 — Redis user stores (MongoDB-free local installs)
 **Spec**: `sdd/specs/redis-user-stores.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5496
@@ -43,6 +43,9 @@ Spec §3 Module 5. `AgentTalk` hydrates OAuth toolkits on every call through
 | `packages/ai-parrot/tests/unit/auth/test_users_integrations_model.py` | MODIFY | pin `INTEGRATIONS_STORE=documentdb` |
 | `tests/integration/oauth2/helpers.py` | MODIFY | pin inside the helper's DocumentDb patch context |
 | `tests/integration/oauth2/test_e2e_web_connect.py` | MODIFY | pin alongside its DocumentDb patch |
+| `packages/ai-parrot-server/tests/studio/test_integration.py` | MODIFY | shared wave fix (see TASK-5497): BYOK fixture selects documentdb |
+| `packages/ai-parrot-server/tests/studio/test_byok.py` | MODIFY | shared wave fix (see TASK-5497) |
+| `packages/ai-parrot-server/tests/studio/storage/test_vault_store.py` | MODIFY | shared wave fix (see TASK-5497) |
 
 ---
 
@@ -281,10 +284,15 @@ async def test_invalid_document_skipped(redis_integrations): ...  # write a doc 
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-5500
+- Feature: redis-user-stores
+- Implementation SHA: 4499e5d7141c96a0145660c68962efd625dcf331
+- Closed at (UTC): 2026-11-11T01:37:05+00:00
+- Fix commits: none
 
-**Deviations from spec**: none
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-sol · Backend: codex · Model: gpt-5.6-sol · Attempts: 1 · Duration: 190s · Tokens: n/a |
