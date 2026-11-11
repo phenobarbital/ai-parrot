@@ -19,7 +19,7 @@ Usage::
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List
 
 from navconfig.logging import logging
 
@@ -45,6 +45,7 @@ def _redis_store():
 
         _REDIS_STORE = RedisMCPConfigStore()
     return _REDIS_STORE
+
 
 logger = logging.getLogger(__name__)
 
