@@ -104,7 +104,7 @@
       "feature_id": "FEAT-880",
       "feature": "datasetmanager-semantic-source",
       "spec": "sdd/specs/datasetmanager-semantic-source.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -114,8 +114,9 @@
       "parallelism_notes": "uses DataSource.self_governed/current_owner from TASK-5515; serialized after TASK-5517 because both modify tool.py and the core test file",
       "assigned_to": null,
       "started_at": "2026-11-11T23:45:56+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5518-datasetentry-per-subject-frames.md"
+      "completed_at": "2026-11-11T23:56:10+00:00",
+      "file": "sdd/tasks/completed/TASK-5518-datasetentry-per-subject-frames.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5519",
