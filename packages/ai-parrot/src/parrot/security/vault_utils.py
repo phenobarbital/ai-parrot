@@ -253,9 +253,7 @@ async def list_vault_credentials(user_id: str) -> Dict[str, Dict[str, Any]]:
     for document in documents:
         name = document["name"]
         try:
-            credentials[name] = decrypt_credential(
-                document["credential"], credential_context(user_id, name), keyring
-            )
+            credentials[name] = decrypt_credential(document["credential"], credential_context(user_id, name), keyring)
         except Exception as exc:  # noqa: BLE001 - one invalid credential must not hide valid entries
             logger.warning("Skipping undecryptable credential '%s': %s", name, type(exc).__name__)
     return credentials

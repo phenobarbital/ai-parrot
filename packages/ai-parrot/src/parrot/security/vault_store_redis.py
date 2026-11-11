@@ -42,9 +42,7 @@ class RedisVaultCredentialStore:
         document = await self._docs.get({"user_id": user_id, "name": vault_name})
         if document is None:
             raise KeyError(f"Vault credential '{vault_name}' not found for user '{user_id}'")
-        return decrypt_credential(
-            document["credential"], credential_context(user_id, vault_name), get_vault_keyring()
-        )
+        return decrypt_credential(document["credential"], credential_context(user_id, vault_name), get_vault_keyring())
 
     async def delete(self, user_id: Any, vault_name: str) -> None:
         """Delete a stored credential when present."""
