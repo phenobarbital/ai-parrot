@@ -1,4 +1,5 @@
 """FEAT-878 docs facts: the page operators are pointed to names every switch and both guard fixes."""
+
 from pathlib import Path
 
 from parrot.userstore import GLOBAL_SWITCH, SWITCHES
