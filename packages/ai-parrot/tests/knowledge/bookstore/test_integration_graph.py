@@ -133,7 +133,7 @@ async def test_mcp_related_books_roundtrip(library_five_books, tmp_path):
 
         resp = await send({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
         names = {t["name"] for t in resp["result"]["tools"]}
-        assert len(names) == 14
+        assert len(names) == 15
         assert {"bookstore_related_books", "bookstore_agentic_retrieve"} <= names
 
         resp = await send(
