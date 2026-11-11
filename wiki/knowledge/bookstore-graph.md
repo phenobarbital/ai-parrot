@@ -41,6 +41,30 @@ Deterministic relations (Stage 1) run with **no LLM**, over every
 visible book, and are always recomputed from scratch for any book
 touched by a `bookstore relate` run — stale edges never linger.
 
+### Manual edges from notebook relation sheets (FEAT-876)
+
+A fourth origin, `manual`, holds hand-authored edges. They come from
+**relation sheets**: notebook nodes (in `_library_notes` or a
+`<book_id>_notes`) whose `metadata.anchors` point at two or more
+distinct catalogued books. `metadata.rel` picks any of the `rel` kinds
+above (default `parallels`); for the directed kinds the first anchored
+book is the source. Librarian sectors are never projected into edges.
+See [Bookstore notebooks](bookstore-notebooks.md).
+
+- `bookstore relate --from-notes` writes the sheets as `origin="manual"`
+  edges (`weight` 1.0, the sheet body as `rationale`), in the scope DB
+  that owns each edge's source book. It runs alone, or first when
+  combined with `--all` / `BOOK_ID`s.
+- **Manual edges survive.** A computed edge (`deterministic`, `llm`,
+  `community`) never overwrites a `manual` edge with the same
+  `(src, dst, rel)` key, and neither the Stage-1 recompute of
+  `bookstore relate --all` nor a re-index (`bookstore add` returning
+  `updated`, which invalidates only the computed origins) deletes them.
+- **Manual edges are only ever upserted, never pruned.** Deleting or
+  editing a sheet does not remove the edge it produced, and
+  `bookstore remove` invalidates only the computed origins, so a manual
+  edge to a removed book stays in `book_relations`.
+
 ## The `relate` cost model and the judgement log
 
 Conceptual relations (`influenced_by`/`responds_to`/`parallels`/
@@ -160,7 +184,7 @@ For per-book cited answers rather than book-to-book relations, see
 
 ```bash
 bookstore relate [BOOK_ID...] [--all] [--no-llm] [--communities-only] \
-                  [--force] [--resolution F] [--llm SPEC]
+                  [--force] [--resolution F] [--llm SPEC] [--from-notes]
 bookstore related BOOK_ID [--rel REL] [--depth N] [--json]
 bookstore communities [--json]
 bookstore export-wiki [--out DIR] [--global] [--no-register]
@@ -168,5 +192,5 @@ bookstore add FILE --relate            # relate the new book after ingest
 bookstore add-folder DIR --relate      # relate each file, communities once at the end
 bookstore list --by-community          # group the inventory by community
 bookstore ask BOOK_ID QUERY [--llm SPEC] [--budget-chars N] [--max-reads N] [--timeout S] [--json]
-bookstore doctor [--global] [--repair] [--relate] [--no-llm] [--llm SPEC] [--json]
+bookstore doctor [--global] [--repair] [--relate] [--no-llm] [--llm SPEC] [--json] [--notes]
 ```

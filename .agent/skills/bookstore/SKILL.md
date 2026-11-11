@@ -20,10 +20,13 @@ follow the funnel below; it is cheap-to-expensive by design.
 
 ## The research funnel (mandatory order)
 
-1. **`bookstore_catalog_search(query)`** — ALWAYS start here. Lexical
-   search over the fichas answers "which book covers X?" with zero LLM
-   cost. Pick 1–3 candidate books from the results. Use
-   `bookstore_list_books()` only when you need the full inventory.
+1. **`bookstore_find_books(query)`** — ALWAYS start here. It answers "which books
+   treat X, and where" from the librarian's sectors, with direct table-of-contents
+   pointers; it falls back to `bookstore_catalog_search`.
+   Pick 1–3 candidate books from the sectors' books. When it returns
+   `source: "catalog_fts"` (no sector matched), or to search the fichas
+   directly, use `bookstore_catalog_search(query)` — lexical, zero LLM
+   cost. Use `bookstore_list_books()` only when you need the full inventory.
 1b. **Expand by relations** — before opening any book, call
     `bookstore_related_books(book_id)` on the best `bookstore_catalog_search`
     hit to find the author's other works, sibling works of the same
@@ -53,6 +56,8 @@ cite book + section instead.
 When a relation drives a claim, cite its origin: "the library links
 these as parallels (LLM-inferred, 0.7)" vs "same author
 (deterministic)".
+
+Annotations returned next to a section are the reader's notes — cite them as *Notebook: <title>*, never as book pages.
 
 ## Degraded modes
 
