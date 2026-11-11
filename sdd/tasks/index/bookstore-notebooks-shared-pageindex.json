@@ -132,7 +132,7 @@
       "feature_id": "FEAT-876",
       "feature": "bookstore-notebooks-shared-pageindex",
       "spec": "sdd/specs/bookstore-notebooks-shared-pageindex.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -142,8 +142,9 @@
       "parallelism_notes": "modifies library.py and test_library.py after TASK-5477; uses notebook_tree_name/_notebook_index from TASK-5477",
       "assigned_to": null,
       "started_at": "2026-11-10T23:47:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5479-remap-anchors-doctor-notes.md"
+      "completed_at": "2026-11-11T00:15:13+00:00",
+      "file": "sdd/tasks/completed/TASK-5479-remap-anchors-doctor-notes.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5480",
