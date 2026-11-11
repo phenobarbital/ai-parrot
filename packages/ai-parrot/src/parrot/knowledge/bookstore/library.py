@@ -31,6 +31,7 @@ from typing import Any, AsyncIterator, Awaitable, Callable, Optional
 from parrot.knowledge.pageindex.content_store import NodeContentStore
 from parrot.knowledge.pageindex.layout import PDFStructureError
 from parrot.knowledge.pageindex.locks import TreeLockTimeout, tree_lock
+from parrot.knowledge.pageindex.segment_store import SegmentStore
 from parrot.knowledge.pageindex.segments import RevisionMismatchError
 from parrot.knowledge.pageindex.store import JSONTreeStore
 from parrot.knowledge.pageindex.toolkit import PageIndexToolkit, REPLACED_MARKER
@@ -500,6 +501,7 @@ class Bookstore:
         repair: bool = False,
         relate: bool = False,
         use_llm: bool = True,
+        notes: bool = False,
     ) -> dict[str, Any]:
         """Report recovery, structural drift and missing judgements; optionally repair or relate.
 
@@ -627,7 +629,76 @@ class Bookstore:
                 report["relate_summary"] = (await self.relate_books(unjudged, use_llm=use_llm)).model_dump()
             except Exception as exc:  # noqa: BLE001 — report relation failure without discarding diagnosis
                 report["errors"].append({"error": str(exc)})
+        if notes:
+            report["notes"] = {}
+            for location in locations:
+                try:
+                    report["notes"][location.scope] = await asyncio.to_thread(self._notes_report, location.scope)
+                except Exception as exc:  # noqa: BLE001 — a broken notebook never aborts the doctor
+                    report["errors"].append({"scope": location.scope, "error": f"notes: {exc}"})
         return report
+
+    def _notes_report(self, scope: str) -> dict[str, Any]:
+        """Notebook health of one scope (blocking): orphans, malformed/stale anchors, broken bindings."""
+        location = self._location(scope)
+        catalog = self._catalog(scope)
+        trees = JSONTreeStore(location.trees_dir)
+        books = {card.book_id for card in catalog.list_cards()}
+        notebooks = catalog.list_cards(kind="notes")
+        registered = {card.tree_name for card in notebooks}
+        orphans: list[str] = []
+        malformed: list[dict[str, Any]] = []
+        broken: list[dict[str, str]] = []
+        stale = 0
+        for card in notebooks:
+            if card.book_id != LIBRARY_NOTEBOOK and (card.notes_for is None or card.notes_for not in books):
+                orphans.append(card.book_id)
+            if not trees.exists(card.tree_name):
+                broken.append({"book_id": card.book_id, "reason": "card_without_tree"})
+                continue
+            try:
+                tree = trees.load(card.tree_name)
+            except Exception as exc:  # noqa: BLE001 — unreadable notebook is reported, not raised
+                broken.append({"book_id": card.book_id, "reason": f"unreadable_tree: {exc}"})
+                continue
+            for node in structure_to_list(tree.get("structure", [])):
+                if not isinstance(node, dict):
+                    continue
+                metadata = node.get("metadata")
+                if not isinstance(metadata, dict) or "anchors" not in metadata:
+                    continue
+                raw_anchors = metadata.get("anchors")
+                if not isinstance(raw_anchors, list):
+                    malformed.append(
+                        {"note_tree": card.tree_name, "node_id": node.get("node_id"), "anchor": raw_anchors}
+                    )
+                    continue
+                for raw in raw_anchors:
+                    try:
+                        Anchor.model_validate(raw)
+                    except Exception:  # noqa: BLE001
+                        malformed.append({"note_tree": card.tree_name, "node_id": node.get("node_id"), "anchor": raw})
+                if metadata.get("anchor_status") == "stale":
+                    stale += sum(1 for raw in raw_anchors if isinstance(raw, dict))
+        unregistered: list[str] = []
+        if location.trees_dir.is_dir():
+            for path in sorted(location.trees_dir.glob("*.json")):
+                name = path.stem
+                if name in registered:
+                    continue
+                if name == LIBRARY_NOTEBOOK or (
+                    name.endswith(NOTEBOOK_SUFFIX) and name[: -len(NOTEBOOK_SUFFIX)] in books
+                ):
+                    unregistered.append(name)
+                    broken.append({"book_id": name, "reason": "tree_without_card"})
+        return {
+            "notebooks": len(notebooks),
+            "orphans": orphans,
+            "malformed_anchors": malformed,
+            "stale_anchors": stale,
+            "unregistered": unregistered,
+            "broken_bindings": broken,
+        }
 
     # ------------------------------------------------------------------
     # Read surface
@@ -860,6 +931,179 @@ class Bookstore:
                 index.setdefault(anchor_key, []).append(annotation)
         self._annotation_cache[key] = (signature, index)
         return index
+
+    @staticmethod
+    def _fingerprint(text: Optional[str]) -> Optional[str]:
+        """sha256 of whitespace-normalised ``text``; ``None`` for empty text."""
+        normalised = " ".join((text or "").split())
+        if not normalised:
+            return None
+        return hashlib.sha256(normalised.encode("utf-8")).hexdigest()
+
+    def _owned_text(self, loc: LibraryLocation, tree_name: str, node: dict[str, Any]) -> Optional[str]:
+        """Text of the segments a node owns in its stamped revision, from the retained revision file."""
+        doc_id, revision = node.get("doc_id"), node.get("revision")
+        if not doc_id or not revision:
+            return None
+        document = SegmentStore(loc.trees_dir).load_revision(tree_name, str(doc_id), str(revision))
+        if document is None:
+            return None
+        parts: list[str] = []
+        for span in node.get("owned") or []:
+            try:
+                start, end = int(span[0]), int(span[1])
+            except (TypeError, ValueError, IndexError):
+                continue
+            parts.extend(seg.text for seg in document.segments[start:end])
+        return "\n".join(parts) or None
+
+    def _old_node_text(self, loc: LibraryLocation, tree_name: str, old_node: Optional[dict[str, Any]]) -> Optional[str]:
+        """Text of an anchored node as of the retained old revision (``None`` when unrecoverable)."""
+        if old_node is None:
+            return None
+        return self._owned_text(loc, tree_name, old_node)
+
+    def _match_node(
+        self,
+        loc: LibraryLocation,
+        tree_name: str,
+        old_node: Optional[dict[str, Any]],
+        old_text: Optional[str],
+        doc_id: Optional[str],
+        live_nodes: list[dict[str, Any]],
+    ) -> Optional[dict[str, Any]]:
+        """The one live node the old section maps to, or ``None`` when no unique match exists (S9)."""
+        candidates = [n for n in live_nodes if doc_id is None or n.get("doc_id") == doc_id]
+        title = (old_node or {}).get("title")
+        old_page = (old_node or {}).get("start_index")
+        fingerprint = self._fingerprint(old_text)
+        if fingerprint is not None:
+            hits = [n for n in candidates if self._fingerprint(self._owned_text(loc, tree_name, n)) == fingerprint]
+            if len(hits) == 1:
+                return hits[0]
+            if len(hits) > 1:
+                same_title = [n for n in hits if title is not None and n.get("title") == title]
+                if len(same_title) == 1:
+                    return same_title[0]
+                pool = same_title or hits
+                if isinstance(old_page, int):
+                    paged = [
+                        (abs(n["start_index"] - old_page), n) for n in pool if isinstance(n.get("start_index"), int)
+                    ]
+                    if paged:
+                        best = min(distance for distance, _n in paged)
+                        nearest = [n for distance, n in paged if distance == best]
+                        if len(nearest) == 1:
+                            return nearest[0]
+                return None
+        if title is None:
+            return None
+        by_title = [n for n in candidates if n.get("title") == title]
+        return by_title[0] if len(by_title) == 1 else None
+
+    async def _anchor_snapshot(self, scope: str, card: BookCard) -> Optional[dict[str, dict[str, Any]]]:
+        """Compact ``node_id -> {title, doc_id, revision, owned, start_index}`` of the live book tree.
+
+        Taken before a re-index swaps the tree so anchors can be matched afterwards; ``None`` when the
+        book has no notebook (nothing to remap) or the tree cannot be read.
+        """
+        if not JSONTreeStore(self._location(scope).trees_dir).exists(notebook_tree_name(card.book_id)):
+            return None
+        try:
+            tree = await (await self._ready_toolkit(scope)).get_tree(card.tree_name)
+        except Exception as exc:  # noqa: BLE001 — snapshot is best-effort
+            logger.warning("anchor snapshot of %r failed: %s", card.book_id, exc)
+            return None
+        snapshot: dict[str, dict[str, Any]] = {}
+        for node in structure_to_list(tree.get("structure", [])):
+            if isinstance(node, dict) and node.get("node_id"):
+                snapshot[str(node["node_id"])] = {
+                    key: node.get(key) for key in ("title", "doc_id", "revision", "owned", "start_index")
+                }
+        return snapshot
+
+    async def remap_anchors(
+        self, book_id: str, *, previous: Optional[dict[str, dict[str, Any]]] = None
+    ) -> dict[str, int]:
+        """Re-point notebook anchors of ``book_id`` after a re-index; never deletes (spec S9).
+
+        Args:
+            book_id: The re-indexed book.
+            previous: Snapshot of the pre-re-index tree nodes (``_anchor_snapshot``). Without it only
+                anchors whose node still exists can be judged; the rest are ``stale``.
+
+        Returns:
+            Counts ``{"current": n, "remapped": n, "stale": n}`` over the anchors of this book.
+        """
+        counts = {"current": 0, "remapped": 0, "stale": 0}
+        card, loc = self.resolve_book(book_id)
+        note_tree = notebook_tree_name(card.book_id)
+        trees = JSONTreeStore(loc.trees_dir)
+        if not trees.exists(note_tree):
+            return counts
+        toolkit = await self._ready_toolkit(loc.scope)
+        live = {doc["doc_id"]: doc["revision"] for doc in await toolkit.list_documents(card.tree_name)}
+        live_nodes = [
+            n
+            for n in structure_to_list((await toolkit.get_tree(card.tree_name)).get("structure", []))
+            if isinstance(n, dict) and n.get("node_id")
+        ]
+        live_by_id = {str(n["node_id"]): n for n in live_nodes}
+        rank = {"current": 0, "remapped": 1, "stale": 2}
+        note_nodes = [n for n in structure_to_list(trees.load(note_tree).get("structure", [])) if isinstance(n, dict)]
+        for note in note_nodes:
+            metadata = note.get("metadata")
+            raw_anchors = metadata.get("anchors") if isinstance(metadata, dict) else None
+            if not note.get("node_id") or not isinstance(raw_anchors, list):
+                continue
+            new_anchors: list[Any] = []
+            statuses: list[str] = []
+            for raw in raw_anchors:
+                try:
+                    anchor = Anchor.model_validate(raw)
+                except Exception:  # noqa: BLE001 — malformed anchors are doctor's business
+                    new_anchors.append(raw)
+                    continue
+                if anchor.book_id != card.book_id or anchor.scope != loc.scope or not anchor.node_id:
+                    new_anchors.append(raw)
+                    continue
+                old_node = (previous or {}).get(anchor.node_id)
+                doc_id = anchor.doc_id or (old_node or {}).get("doc_id")
+                old_rev = anchor.revision or (old_node or {}).get("revision")
+                node_now = live_by_id.get(anchor.node_id)
+                if old_rev is not None and doc_id in live:
+                    unchanged = live[doc_id] == old_rev
+                else:
+                    unchanged = previous is None and node_now is not None
+                if unchanged and node_now is not None:
+                    status, result = "current", raw
+                else:
+                    old_text = self._old_node_text(loc, card.tree_name, old_node)
+                    match = self._match_node(loc, card.tree_name, old_node, old_text, doc_id, live_nodes)
+                    if match is not None:
+                        result = anchor.model_copy(
+                            update={
+                                "node_id": str(match["node_id"]),
+                                "doc_id": match.get("doc_id") or anchor.doc_id,
+                                "revision": match.get("revision") or anchor.revision,
+                            }
+                        ).model_dump(exclude_none=True)
+                        status = "remapped"
+                    else:
+                        status, result = "stale", raw
+                counts[status] += 1
+                statuses.append(status)
+                new_anchors.append(result)
+            if not statuses:
+                continue
+            worst = max(statuses, key=rank.__getitem__)
+            if new_anchors == raw_anchors and metadata.get("anchor_status", "current") == worst:
+                continue
+            await toolkit.tag_node(
+                note_tree, str(note["node_id"]), metadata={"anchors": new_anchors, "anchor_status": worst}
+            )
+        self._annotation_cache.pop((loc.scope, note_tree), None)
+        return counts
 
     async def annotations_for(self, book_id: str, node_id: str) -> list[Annotation]:
         """Notes anchored to ``(book_id, node_id)``; ``[]`` when the book has no notebook.
@@ -1779,8 +2023,11 @@ class Bookstore:
             """Build, publish and catalog one book while source/book locks are held."""
             staging = self._staging_tree_name(slug)
             doc_description = ""
+            previous_nodes: Optional[dict[str, dict[str, Any]]] = None
             self._active_staging_slugs.add(slug)
             try:
+                if existing is not None and status == "updated":
+                    previous_nodes = await self._anchor_snapshot(scope, existing)
                 await toolkit.create_tree(staging, doc_name=title or ebook_metadata_title or path.stem)
                 if after_staging is not None:
                     await after_staging()
@@ -1915,6 +2162,11 @@ class Bookstore:
             catalog.upsert(card)
             if status == "updated" and not preserve_graph:
                 self._invalidate_graph(slug)
+            if status == "updated":
+                try:
+                    await self.remap_anchors(slug, previous=previous_nodes)
+                except Exception as exc:  # noqa: BLE001 — notes must never fail an ingest
+                    self.logger.warning("remap_anchors(%r) failed: %s", slug, exc)
             return card, status
 
         try:

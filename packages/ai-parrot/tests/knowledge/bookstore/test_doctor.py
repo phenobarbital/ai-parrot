@@ -97,3 +97,44 @@ async def test_judgements_and_empty_targets(tmp_path: Path, monkeypatch: pytest.
     assert catalog.judgement_count(second.book_id) == 1
     assert report["unjudged_book_ids"] == []
     relate_books.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_doctor_notes_reports_orphans_and_malformed(tmp_path: Path) -> None:
+    """``notes=True`` reports orphan notebooks, malformed/stale anchors and broken bindings."""
+    source = tmp_path / "book.md"
+    source.write_text(SAMPLE_MARKDOWN, encoding="utf-8")
+    bookstore = Bookstore(_locations(tmp_path))
+    card, _status = await bookstore.add_book(source)
+    plain = await bookstore.doctor()
+    assert "notes" not in plain
+
+    notebook = await bookstore.ensure_notebook(card.book_id)
+    toolkit = await bookstore._ready_toolkit("project")
+    good = await toolkit.add_node(notebook.tree_name, title="good")
+    await toolkit.tag_node(
+        notebook.tree_name,
+        good["node_id"],
+        metadata={"anchors": [{"book_id": card.book_id, "node_id": "0001"}], "anchor_status": "stale"},
+    )
+    bad = await toolkit.add_node(notebook.tree_name, title="bad")
+    await toolkit.tag_node(notebook.tree_name, bad["node_id"], metadata={"anchors": [{"node_id": "x"}]})
+
+    # An orphan notebook (its book has no card) and an unregistered conventional tree.
+    await toolkit.create_tree("ghost_notes")
+    catalog = bookstore._catalog("project")
+    ghost = notebook.model_copy(update={"book_id": "ghost_notes", "tree_name": "ghost_notes", "notes_for": "ghost"})
+    catalog.upsert(ghost)
+    await toolkit.create_tree("lost_notes")  # no card, but `lost` is not a book: not flagged
+    await toolkit.create_tree(f"{card.book_id}2_notes")
+    # Card whose tree vanished.
+    broken = notebook.model_copy(update={"book_id": "gone_notes", "tree_name": "gone_notes", "notes_for": card.book_id})
+    catalog.upsert(broken)
+
+    report = await bookstore.doctor(notes=True)
+    notes = report["notes"]["project"]
+    assert notes["notebooks"] == 3
+    assert "ghost_notes" in notes["orphans"]
+    assert len(notes["malformed_anchors"]) == 1
+    assert notes["stale_anchors"] == 1
+    assert {"book_id": "gone_notes", "reason": "card_without_tree"} in notes["broken_bindings"]
