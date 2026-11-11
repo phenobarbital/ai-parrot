@@ -1,4 +1,5 @@
 """Tests for user-store backend settings."""
+
 import asyncio
 import os
 
@@ -128,6 +129,7 @@ def test_redis_url_override_and_key_prefix(monkeypatch):
 
 def test_client_per_event_loop():
     """Clients are reused per loop and closed without connecting to Redis."""
+
     async def create_and_close():
         client = get_user_store_redis()
         assert get_user_store_redis() is client

@@ -1,4 +1,5 @@
 """User store backend selection and Redis client primitives."""
+
 from __future__ import annotations
 
 import asyncio

@@ -1,4 +1,5 @@
 """FEAT-878 user stores: backend selection and Redis primitives."""
+
 from .settings import (
     DEFAULT_BACKEND,
     GLOBAL_SWITCH,
