@@ -238,3 +238,134 @@ def test_semantic_runtime_query_guidance() -> None:
     assert "call fetch_dataset again with new ``conditions``" in doc
     for field in ("metrics", "dimensions", "time_dimensions", "filters", "order_by", "limit", "offset", "saved_query"):
         assert field in doc
+
+
+# ── M7: per-subject frame slots on DatasetEntry (TASK-5518) ────────────────
+
+from parrot.tools.dataset_manager import DatasetEntry  # noqa: E402
+from parrot.tools.dataset_manager.tool import GOVERNED_FRAME_SLOTS  # noqa: E402
+
+
+class _OwnerColumnSource(_GovernedSource):
+    """Self-governed double whose frame has a column named after the fetching subject."""
+
+    async def fetch(self, **params) -> pd.DataFrame:
+        self.calls.append(dict(params))
+        return pd.DataFrame({f"secret_{self.owner}": [len(self.calls)]})
+
+
+@pytest.mark.asyncio
+async def test_entry_frames_are_per_subject() -> None:
+    source = _GovernedSource(owner="a")
+    entry = DatasetEntry(name="governed", source=source)
+    frame_a = await entry.materialize()
+    assert entry.loaded and entry._df is frame_a
+    assert entry.column_types is not None
+    source.owner = "b"
+    assert not entry.loaded
+    assert entry._df is None and entry.column_types is None
+    frame_b = await entry.materialize()
+    assert frame_b is not frame_a
+    source.owner = "a"
+    assert entry._df is frame_a
+
+
+@pytest.mark.asyncio
+async def test_entry_no_owner_reads_unloaded_and_stores_nothing() -> None:
+    source = _GovernedSource(owner=None)
+    entry = DatasetEntry(name="governed", source=source)
+    frame = await entry.materialize()
+    assert isinstance(frame, pd.DataFrame) and len(frame) == 1
+    assert not entry.loaded
+    assert entry._column_types is None
+    assert len(entry._frame_slots) == 0
+    entry._column_types = {"n": "integer"}
+    assert len(entry._frame_slots) == 0
+
+
+@pytest.mark.asyncio
+async def test_entry_slot_bound_lru() -> None:
+    source = _GovernedSource(owner="s0")
+    entry = DatasetEntry(name="governed", source=source)
+    await entry.materialize()
+    for i in range(1, GOVERNED_FRAME_SLOTS):
+        source.owner = f"s{i}"
+        await entry.materialize()
+    # Touch s0 so it becomes most recently used; s1 is now the LRU slot.
+    source.owner = "s0"
+    assert entry.loaded
+    source.owner = "overflow"
+    await entry.materialize()
+    assert len(entry._frame_slots) == GOVERNED_FRAME_SLOTS
+    source.owner = "s1"
+    assert not entry.loaded
+    source.owner = "s0"
+    assert entry.loaded
+
+
+@pytest.mark.asyncio
+async def test_entry_evict_only_callers_slot() -> None:
+    source = _GovernedSource(owner="a")
+    entry = DatasetEntry(name="governed", source=source)
+    await entry.materialize()
+    source.owner = "b"
+    await entry.materialize()
+    entry.evict()
+    assert not entry.loaded
+    source.owner = "a"
+    assert entry.loaded
+    assert entry.column_types is not None
+
+
+@pytest.mark.asyncio
+async def test_ordinary_entry_single_frame_unchanged() -> None:
+    df = pd.DataFrame({"a": [1, 2]})
+    entry = DatasetEntry(name="plain", df=df)
+    assert entry._df is df
+    assert entry.loaded and entry.column_types is not None
+    assert len(entry._frame_slots) == 0
+    replacement = pd.DataFrame({"b": [3]})
+    entry._df = replacement
+    assert entry._df is replacement and entry._frame is replacement
+    entry.evict()
+    assert not entry.loaded and entry._column_types is None
+    returned = await entry.materialize()
+    assert entry._df is returned
+
+
+@pytest.mark.asyncio
+async def test_manager_accessors_hide_other_subjects_frames() -> None:
+    dm = DatasetManager(generate_guide=True)
+    source = _OwnerColumnSource(owner="a")
+    dm.add_source(source)
+    await dm.materialize("governed")
+    assert "governed" in dm.get_active_dataframes()
+    assert "secret_a" in dm._generate_dataframe_guide()
+    source.owner = "b"
+    assert "governed" not in dm.get_active_dataframes()
+    result = await dm.get_dataframe("governed")
+    assert result["loaded"] is False
+    assert "secret_a" not in dm._generate_dataframe_guide()
+
+
+@pytest.mark.asyncio
+async def test_pandas_sync_has_no_foreign_governed_frame() -> None:
+    from parrot.tools.pythonpandas import PythonPandasTool
+
+    dm = DatasetManager()
+    source = _OwnerColumnSource(owner="a")
+    dm.add_source(source)
+    tool = PythonPandasTool(dataset_manager=dm)
+    await dm.materialize("governed")
+    tool.sync_from_manager()
+    assert "governed" in tool.dataframes
+    assert "secret_a" in tool.df_locals["governed"].columns
+    source.owner = "b"
+    tool.sync_from_manager()
+    assert "governed" not in tool.dataframes
+    for value in tool.df_locals.values():
+        if isinstance(value, pd.DataFrame):
+            assert "secret_a" not in value.columns
+    for value in list(tool.locals.values()) + list(tool.globals.values()):
+        if isinstance(value, pd.DataFrame):
+            assert "secret_a" not in value.columns

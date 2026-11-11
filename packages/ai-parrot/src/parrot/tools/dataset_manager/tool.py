@@ -13,6 +13,7 @@ from __future__ import annotations
 import io
 import re
 import warnings
+from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Awaitable, Callable, Dict, List, Literal, Optional, Any, Sequence, Set, Tuple, Union, TYPE_CHECKING
@@ -205,6 +206,9 @@ class DatasetInfo(BaseModel):
     )
 
 
+GOVERNED_FRAME_SLOTS: int = 32  # FEAT-880: max subjects whose governed frames one entry keeps (LRU)
+
+
 class DatasetEntry:
     """Lifecycle wrapper around a DataSource.
 
@@ -275,14 +279,81 @@ class DatasetEntry:
         self._computed_columns: List[Any] = list(computed_columns) if computed_columns else []
 
         # Internal state
-        self._df: Optional[pd.DataFrame] = df  # pre-load when df provided directly
-        self._column_types: Optional[Dict[str, str]] = None
+        self._frame: Optional[pd.DataFrame] = None
+        self._frame_types: Optional[Dict[str, str]] = None
+        self._frame_slots: "OrderedDict[str, tuple[Optional[pd.DataFrame], Optional[Dict[str, str]]]]" = OrderedDict()
+        self._df = df  # pre-load when df provided directly (routes through the property)
+        self._column_types = None
         if df is not None:
             # Apply computed columns before type detection
             if self._computed_columns:
                 self._apply_computed_columns()
-            if auto_detect_types:
+            if auto_detect_types and self._df is not None:
                 self._column_types = DatasetManager.categorize_columns(self._df)
+
+    # ─────────────────────────────────────────────────────────────
+    # FEAT-880: per-subject storage for self-governed sources
+    # ─────────────────────────────────────────────────────────────
+
+    def _governed(self) -> bool:
+        """Return True when the entry's source is self-governed (frames are per subject)."""
+        source = getattr(self, "source", None)
+        return bool(source is not None and getattr(source, "self_governed", False))
+
+    def _owner(self) -> Optional[str]:
+        """Return the subject that owns the current request (``source.current_owner()``)."""
+        return self.source.current_owner()
+
+    @property
+    def _df(self) -> Optional[pd.DataFrame]:
+        """Loaded frame: the single frame for ordinary sources, the caller's slot for governed ones."""
+        if not self._governed():
+            return self._frame
+        owner = self._owner()
+        if owner is None or owner not in self._frame_slots:
+            return None
+        self._frame_slots.move_to_end(owner)
+        return self._frame_slots[owner][0]
+
+    @_df.setter
+    def _df(self, value: Optional[pd.DataFrame]) -> None:
+        if not self._governed():
+            self._frame = value
+            return
+        owner = self._owner()
+        if owner is None:
+            # No subject → nothing is ever stored for a governed source.
+            return
+        if value is None:
+            self._frame_slots.pop(owner, None)
+            return
+        previous = self._frame_slots.get(owner)
+        types = previous[1] if previous is not None else None
+        self._frame_slots[owner] = (value, types)
+        self._frame_slots.move_to_end(owner)
+        while len(self._frame_slots) > GOVERNED_FRAME_SLOTS:
+            self._frame_slots.popitem(last=False)
+
+    @property
+    def _column_types(self) -> Optional[Dict[str, str]]:
+        """Column types: single value for ordinary sources, the caller's slot for governed ones."""
+        if not self._governed():
+            return self._frame_types
+        owner = self._owner()
+        if owner is None or owner not in self._frame_slots:
+            return None
+        return self._frame_slots[owner][1]
+
+    @_column_types.setter
+    def _column_types(self, value: Optional[Dict[str, str]]) -> None:
+        if not self._governed():
+            self._frame_types = value
+            return
+        owner = self._owner()
+        if owner is None or owner not in self._frame_slots:
+            # Never create a slot that has no frame.
+            return
+        self._frame_slots[owner] = (self._frame_slots[owner][0], value)
 
     # ─────────────────────────────────────────────────────────────
     # Computed columns
@@ -301,7 +372,17 @@ class DatasetEntry:
         """
         if self._df is None or not self._computed_columns:
             return
+        self._df = self._compute_columns_on(self._df)
 
+    def _compute_columns_on(self, frame: pd.DataFrame) -> pd.DataFrame:
+        """Apply all registered computed columns to ``frame`` and return the result.
+
+        Args:
+            frame: The DataFrame to extend.
+
+        Returns:
+            The DataFrame with every resolvable computed column applied.
+        """
         from .computed import get_computed_function
 
         for col_def in self._computed_columns:
@@ -315,8 +396,8 @@ class DatasetEntry:
                 )
                 continue
             try:
-                self._df = fn(
-                    self._df,
+                frame = fn(
+                    frame,
                     col_def.name,
                     col_def.columns,
                     **col_def.kwargs,
@@ -329,6 +410,7 @@ class DatasetEntry:
                     col_def.func,
                     exc,
                 )
+        return frame
 
     # ─────────────────────────────────────────────────────────────
     # Source-based lifecycle
@@ -348,11 +430,15 @@ class DatasetEntry:
             The loaded DataFrame.
         """
         if self._df is None or force:
-            self._df = await self.source.fetch(**params)
-            if self._df is not None and self._computed_columns:
-                self._apply_computed_columns()
-            if self.auto_detect_types and self._df is not None:
-                self._column_types = DatasetManager.categorize_columns(self._df)
+            frame = await self.source.fetch(**params)
+            self._df = frame
+            if frame is not None and self._computed_columns:
+                frame = self._compute_columns_on(frame)
+                self._df = frame
+            if self.auto_detect_types and frame is not None:
+                self._column_types = DatasetManager.categorize_columns(frame)
+            # FEAT-880: return the fetched frame — a governed source with no owner stores nothing.
+            return frame
         return self._df
 
     def evict(self) -> None:
