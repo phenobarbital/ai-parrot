@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-
 REPO = Path(__file__).resolve().parents[4]
 ALLOWED = {
     "packages/ai-parrot/src/parrot/security/vault_utils.py",

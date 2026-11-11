@@ -31,13 +31,12 @@ async def test_copy_then_read_through_services(monkeypatch: pytest.MonkeyPatch) 
     """Copy one valid keyed document for each registered collection and read it back."""
     monkeypatch.setattr(copy_mod, "DocumentDb", FakeDocumentDb)
     FakeDocumentDb.collections = {
-        name: [{field: f"{name}-{field}" for field in spec.key_fields}]
-        for name, spec in USER_STORE_COLLECTIONS.items()
+        name: [{field: f"{name}-{field}" for field in spec.key_fields}] for name, spec in USER_STORE_COLLECTIONS.items()
     }
     async with redis_test_settings(monkeypatch):
         report = await copy_mod.copy_to_redis()
-        assert report.failed == {name: 0 for name in USER_STORE_COLLECTIONS}
-        assert report.copied == {name: 1 for name in USER_STORE_COLLECTIONS}
+        assert report.failed == dict.fromkeys(USER_STORE_COLLECTIONS, 0)
+        assert report.copied == dict.fromkeys(USER_STORE_COLLECTIONS, 1)
         for name, spec in USER_STORE_COLLECTIONS.items():
             source = FakeDocumentDb.collections[name][0]
             assert await RedisDocumentStore(spec).get(source) == source
