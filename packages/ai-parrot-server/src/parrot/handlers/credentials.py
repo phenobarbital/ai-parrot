@@ -17,7 +17,6 @@ Routes (registered by :func:`setup_credentials_routes`):
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any
 
 from aiohttp import web
@@ -26,18 +25,11 @@ from navigator.views import BaseView
 from navigator_auth.decorators import is_authenticated, user_session
 from pydantic import ValidationError
 
-from parrot.interfaces.documentdb import DocumentDb
 from parrot.handlers.models.credentials import (
-    CredentialDocument,
     CredentialPayload,
     CredentialResponse,
 )
-from parrot.handlers.credentials_utils import (
-    credential_context,
-    decrypt_credential,
-    encrypt_credential,
-)
-from parrot.security.vault_utils import get_vault_keyring
+from parrot.security import vault_utils
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +43,7 @@ def _vault_keyring():
     Raises:
         RuntimeError: If vault keys are not configured/available.
     """
-    return get_vault_keyring()
+    return vault_utils.get_vault_keyring()
 
 
 @is_authenticated()
@@ -171,56 +163,30 @@ class CredentialsHandler(BaseView):
         name: str | None = self.request.match_info.get('name')
 
         try:
-            keyring = _vault_keyring()
+            _vault_keyring()
         except RuntimeError as exc:
             self.logger.error("Vault key loading failed: %s", exc)
             return self.error("Encryption service unavailable.", status=500)
 
-        async with DocumentDb() as db:
-            if name:
-                # --- Single credential ---
-                doc = await db.read_one(
-                    self.COLLECTION,
-                    {"user_id": user_id, "name": name},
+        if name:
+            try:
+                cred_dict = await vault_utils.retrieve_vault_credential(user_id, name)
+            except KeyError:
+                return self.error(f"Credential '{name}' not found.", status=404)
+            except Exception as exc:  # pylint: disable=broad-except
+                self.logger.error(
+                    "Failed to decrypt credential '%s' for user %s: %s", name, user_id, type(exc).__name__
                 )
-                if doc is None:
-                    return self.error(
-                        f"Credential '{name}' not found.", status=404
-                    )
-                try:
-                    cred_dict = decrypt_credential(
-                        doc["credential"], credential_context(user_id, name), keyring
-                    )
-                except Exception as exc:
-                    self.logger.error(
-                        "Failed to decrypt credential '%s' for user %s: %s",
-                        name, user_id, exc,
-                    )
-                    return self.error("Failed to decrypt credential.", status=500)
+                return self.error("Failed to decrypt credential.", status=500)
+            return self.json_response(CredentialResponse(name=name, **cred_dict).model_dump())
 
-                response = CredentialResponse(name=name, **cred_dict)
-                return self.json_response(response.model_dump())
-            else:
-                # --- All credentials ---
-                docs = await db.read(
-                    self.COLLECTION,
-                    {"user_id": user_id},
-                )
-                result: dict[str, Any] = {}
-                for doc in docs:
-                    cname = doc["name"]
-                    try:
-                        cred_dict = decrypt_credential(
-                            doc["credential"], credential_context(user_id, cname), keyring
-                        )
-                        resp = CredentialResponse(name=cname, **cred_dict)
-                        result[cname] = resp.model_dump()
-                    except Exception as exc:
-                        self.logger.warning(
-                            "Skipping undecryptable credential '%s': %s",
-                            cname, exc,
-                        )
-                return self.json_response(result)
+        result: dict[str, Any] = {}
+        for cname, cred_dict in (await vault_utils.list_vault_credentials(user_id)).items():
+            try:
+                result[cname] = CredentialResponse(name=cname, **cred_dict).model_dump()
+            except Exception as exc:  # pylint: disable=broad-except
+                self.logger.warning("Skipping undecryptable credential '%s': %s", cname, type(exc).__name__)
+        return self.json_response(result)
 
     # ------------------------------------------------------------------
     # POST  /api/v1/users/credentials
@@ -257,25 +223,14 @@ class CredentialsHandler(BaseView):
             return self.error(exc.errors(), status=400)
 
         try:
-            keyring = _vault_keyring()
+            _vault_keyring()
         except RuntimeError as exc:
             self.logger.error("Vault key loading failed: %s", exc)
             return self.error("Encryption service unavailable.", status=500)
 
-        db = DocumentDb()
         try:
-            await db.documentdb_connect()
-
-            # Check for duplicate
-            existing = await db.read_one(
-                self.COLLECTION,
-                {"user_id": user_id, "name": payload.name},
-            )
-            if existing is not None:
-                await db.close()
-                return self.error(
-                    f"Credential '{payload.name}' already exists.", status=409
-                )
+            if await vault_utils.vault_credential_exists(user_id, payload.name):
+                return self.error(f"Credential '{payload.name}' already exists.", status=409)
 
             # Save to session vault immediately
             credential_dict = {"driver": payload.driver, "params": payload.params}
@@ -285,31 +240,11 @@ class CredentialsHandler(BaseView):
                 payload.name, user_id,
             )
 
-            # Build encrypted document
-            now = datetime.now(timezone.utc)
-            encrypted = encrypt_credential(
-                credential_dict, credential_context(user_id, payload.name), keyring
-            )
-            doc = CredentialDocument(
-                user_id=user_id,
-                name=payload.name,
-                credential=encrypted,
-                created_at=now,
-                updated_at=now,
-            )
-
-            # Fire-and-forget persist to DocumentDB
-            db.save_background(
-                self.COLLECTION,
-                doc.model_dump(mode="json"),
-                on_error=lambda e: self.logger.warning(
-                    "Background save failed for credential '%s' (user=%s): %s",
-                    payload.name, user_id, e,
-                ),
-            )
+            await vault_utils.store_vault_credential(user_id, payload.name, credential_dict)
             self.logger.info(
-                "Scheduled background save for credential '%s' (user=%s)",
-                payload.name, user_id,
+                "Stored credential '%s' (user=%s)",
+                payload.name,
+                user_id,
             )
 
         except Exception as exc:
@@ -361,25 +296,14 @@ class CredentialsHandler(BaseView):
             return self.error(exc.errors(), status=400)
 
         try:
-            keyring = _vault_keyring()
+            _vault_keyring()
         except RuntimeError as exc:
             self.logger.error("Vault key loading failed: %s", exc)
             return self.error("Encryption service unavailable.", status=500)
 
-        db = DocumentDb()
         try:
-            await db.documentdb_connect()
-
-            # Verify credential exists
-            existing = await db.read_one(
-                self.COLLECTION,
-                {"user_id": user_id, "name": name},
-            )
-            if existing is None:
-                await db.close()
-                return self.error(
-                    f"Credential '{name}' not found.", status=404
-                )
+            if not await vault_utils.vault_credential_exists(user_id, name):
+                return self.error(f"Credential '{name}' not found.", status=404)
 
             # Update session vault
             credential_dict = {"driver": payload.driver, "params": payload.params}
@@ -389,33 +313,11 @@ class CredentialsHandler(BaseView):
                 name, user_id,
             )
 
-            # Build updated encrypted document
-            now = datetime.now(timezone.utc)
-            created_at = existing.get("created_at", now)
-            encrypted = encrypt_credential(
-                credential_dict, credential_context(user_id, name), keyring
-            )
-            doc = CredentialDocument(
-                user_id=user_id,
-                name=name,
-                credential=encrypted,
-                created_at=created_at,
-                updated_at=now,
-            )
-
-            # Fire-and-forget upsert to DocumentDB
-            # Use update_one with upsert to avoid duplicate key errors
-            db.save_background(
-                self.COLLECTION,
-                doc.model_dump(mode="json"),
-                on_error=lambda e: self.logger.warning(
-                    "Background update failed for credential '%s' (user=%s): %s",
-                    name, user_id, e,
-                ),
-            )
+            await vault_utils.store_vault_credential(user_id, name, credential_dict)
             self.logger.info(
-                "Scheduled background update for credential '%s' (user=%s)",
-                name, user_id,
+                "Stored updated credential '%s' (user=%s)",
+                name,
+                user_id,
             )
 
         except Exception as exc:
@@ -455,40 +357,19 @@ class CredentialsHandler(BaseView):
         if not name:
             return self.error("Credential name is required in the URL.", status=400)
 
-        async with DocumentDb() as db:
-            # Verify credential exists
-            existing = await db.read_one(
-                self.COLLECTION,
-                {"user_id": user_id, "name": name},
-            )
-            if existing is None:
-                return self.error(
-                    f"Credential '{name}' not found.", status=404
-                )
-
-            # Remove from session vault
+        try:
+            if not await vault_utils.vault_credential_exists(user_id, name):
+                return self.error(f"Credential '{name}' not found.", status=404)
             self._remove_session_credential(name)
             self.logger.info(
                 "Removed credential '%s' from session vault for user %s",
                 name, user_id,
             )
-
-            # Delete from DocumentDB
-            try:
-                await db.delete(
-                    self.COLLECTION,
-                    {"user_id": user_id, "name": name},
-                )
-                self.logger.info(
-                    "Deleted credential '%s' from DocumentDB for user %s",
-                    name, user_id,
-                )
-            except Exception as exc:
-                self.logger.error(
-                    "Failed to delete credential '%s' from DocumentDB: %s",
-                    name, exc,
-                )
-                return self.error("Failed to delete credential.", status=500)
+            await vault_utils.delete_vault_credential(user_id, name)
+            self.logger.info("Deleted credential '%s' for user %s", name, user_id)
+        except Exception as exc:  # pylint: disable=broad-except
+            self.logger.error("Failed to delete credential '%s': %s", name, type(exc).__name__)
+            return self.error("Failed to delete credential.", status=500)
 
         return self.json_response(
             {"message": f"Credential '{name}' deleted successfully."}
