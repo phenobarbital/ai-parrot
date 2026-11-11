@@ -243,7 +243,8 @@ class CredentialsHandler(BaseView):
             await vault_utils.store_vault_credential(user_id, payload.name, credential_dict)
             self.logger.info(
                 "Stored credential '%s' (user=%s)",
-                payload.name, user_id,
+                payload.name,
+                user_id,
             )
 
         except Exception as exc:
@@ -315,7 +316,8 @@ class CredentialsHandler(BaseView):
             await vault_utils.store_vault_credential(user_id, name, credential_dict)
             self.logger.info(
                 "Stored updated credential '%s' (user=%s)",
-                name, user_id,
+                name,
+                user_id,
             )
 
         except Exception as exc:

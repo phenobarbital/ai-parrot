@@ -1,4 +1,5 @@
 """Credentials handler vault-store dispatch coverage."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
@@ -11,7 +12,6 @@ from parrot.handlers.credentials import CredentialsHandler
 from parrot.handlers.studio.storage.vault_store import PgVaultCredentialStore
 from parrot.security import vault_utils
 from parrot.userstore.testing import redis_test_settings
-
 
 KEYRING = KeyRing({1: b"1" * 32}, 1)
 
@@ -69,7 +69,14 @@ async def test_credentials_put_no_duplicate(redis_vault) -> None:
 
 async def test_pg_vault_list_and_exists(monkeypatch: pytest.MonkeyPatch) -> None:
     """Postgres listing decrypts rows and existence probes the configured key."""
-    rows = [{"name": "pg", "credential": vault_utils.encrypt_credential({"driver": "pg", "params": {}}, vault_utils.credential_context("u1", "pg"), KEYRING)}]
+    rows = [
+        {
+            "name": "pg",
+            "credential": vault_utils.encrypt_credential(
+                {"driver": "pg", "params": {}}, vault_utils.credential_context("u1", "pg"), KEYRING
+            ),
+        }
+    ]
     conn = MagicMock()
     conn.fetch_all = AsyncMock(return_value=rows)
     conn.fetch_one = AsyncMock(return_value=rows[0])

@@ -25,6 +25,7 @@ def _make_encrypted(cred_dict: dict) -> str:
     import base64 as b64
 
     import orjson
+
     # Use a fake static ciphertext (2B key_id + 12B nonce + payload)
     raw = b"\x00\x01" + b"\x00" * 12 + orjson.dumps(cred_dict)
     return b64.b64encode(raw).decode("ascii")
@@ -175,8 +176,10 @@ class TestPost:
         mock_db.read_one = AsyncMock(return_value=None)  # no duplicate
         mock_db.save_background = MagicMock()
 
-        with patch("parrot.security.vault_utils.DocumentDb", return_value=mock_db), \
-             patch("parrot.handlers.credentials._vault_keyring", return_value=keyring):
+        with (
+            patch("parrot.security.vault_utils.DocumentDb", return_value=mock_db),
+            patch("parrot.handlers.credentials._vault_keyring", return_value=keyring),
+        ):
             response = await handler.post()
 
         assert response.status == 201
@@ -195,8 +198,10 @@ class TestPost:
         mock_db.read_one = AsyncMock(return_value={"name": "my-postgres"})  # duplicate
         mock_db.close = AsyncMock()
 
-        with patch("parrot.security.vault_utils.DocumentDb", return_value=mock_db), \
-             patch("parrot.handlers.credentials._vault_keyring", return_value=keyring):
+        with (
+            patch("parrot.security.vault_utils.DocumentDb", return_value=mock_db),
+            patch("parrot.handlers.credentials._vault_keyring", return_value=keyring),
+        ):
             response = await handler.post()
 
         assert response.status == 409
@@ -233,9 +238,7 @@ class TestPost:
         assert response.status == 500
 
     @pytest.mark.asyncio
-    async def test_post_uses_durable_vault_write(
-        self, sample_credential, user_id, master_key, master_keys, keyring
-    ):
+    async def test_post_uses_durable_vault_write(self, sample_credential, user_id, master_key, master_keys, keyring):
         """POST uses vault-utils' durable DocumentDB write."""
         handler = _make_handler(user_id)
         handler.request.json = AsyncMock(return_value=sample_credential)
@@ -247,8 +250,10 @@ class TestPost:
         mock_db.read_one = AsyncMock(return_value=None)
         mock_db.save_background = MagicMock(return_value=MagicMock())
 
-        with patch("parrot.security.vault_utils.DocumentDb", return_value=mock_db), \
-             patch("parrot.handlers.credentials._vault_keyring", return_value=keyring):
+        with (
+            patch("parrot.security.vault_utils.DocumentDb", return_value=mock_db),
+            patch("parrot.handlers.credentials._vault_keyring", return_value=keyring),
+        ):
             await handler.post()
 
         mock_db.write.assert_called_once()
@@ -277,9 +282,11 @@ class TestGet:
             {"name": "mysql-cred", "credential": enc2},
         ])
 
-        with patch("parrot.security.vault_utils.DocumentDb", return_value=mock_db_cm), \
-             patch("parrot.handlers.credentials._vault_keyring", return_value=keyring), \
-             patch("parrot.security.vault_utils.get_vault_keyring", return_value=keyring):
+        with (
+            patch("parrot.security.vault_utils.DocumentDb", return_value=mock_db_cm),
+            patch("parrot.handlers.credentials._vault_keyring", return_value=keyring),
+            patch("parrot.security.vault_utils.get_vault_keyring", return_value=keyring),
+        ):
             response = await handler.get()
 
         assert response.status == 200
@@ -303,9 +310,11 @@ class TestGet:
         mock_db_cm.__aexit__ = AsyncMock(return_value=False)
         mock_db_cm.read_one = AsyncMock(return_value={"name": "my-pg", "credential": enc})
 
-        with patch("parrot.security.vault_utils.DocumentDb", return_value=mock_db_cm), \
-             patch("parrot.handlers.credentials._vault_keyring", return_value=keyring), \
-             patch("parrot.security.vault_utils.get_vault_keyring", return_value=keyring):
+        with (
+            patch("parrot.security.vault_utils.DocumentDb", return_value=mock_db_cm),
+            patch("parrot.handlers.credentials._vault_keyring", return_value=keyring),
+            patch("parrot.security.vault_utils.get_vault_keyring", return_value=keyring),
+        ):
             response = await handler.get()
 
         assert response.status == 200
@@ -321,8 +330,10 @@ class TestGet:
         mock_db_cm.__aexit__ = AsyncMock(return_value=False)
         mock_db_cm.read_one = AsyncMock(return_value=None)
 
-        with patch("parrot.security.vault_utils.DocumentDb", return_value=mock_db_cm), \
-             patch("parrot.handlers.credentials._vault_keyring", return_value=keyring):
+        with (
+            patch("parrot.security.vault_utils.DocumentDb", return_value=mock_db_cm),
+            patch("parrot.handlers.credentials._vault_keyring", return_value=keyring),
+        ):
             response = await handler.get()
 
         assert response.status == 404
@@ -347,8 +358,10 @@ class TestPut:
         mock_db.read_one = AsyncMock(return_value={"name": sample_credential["name"], "created_at": datetime.now(timezone.utc)})
         mock_db.save_background = MagicMock()
 
-        with patch("parrot.security.vault_utils.DocumentDb", return_value=mock_db), \
-             patch("parrot.handlers.credentials._vault_keyring", return_value=keyring):
+        with (
+            patch("parrot.security.vault_utils.DocumentDb", return_value=mock_db),
+            patch("parrot.handlers.credentials._vault_keyring", return_value=keyring),
+        ):
             response = await handler.put()
 
         assert response.status == 200
@@ -366,8 +379,10 @@ class TestPut:
         mock_db.read_one = AsyncMock(return_value=None)
         mock_db.close = AsyncMock()
 
-        with patch("parrot.security.vault_utils.DocumentDb", return_value=mock_db), \
-             patch("parrot.handlers.credentials._vault_keyring", return_value=keyring):
+        with (
+            patch("parrot.security.vault_utils.DocumentDb", return_value=mock_db),
+            patch("parrot.handlers.credentials._vault_keyring", return_value=keyring),
+        ):
             response = await handler.put()
 
         assert response.status == 404
