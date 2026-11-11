@@ -16,7 +16,12 @@ import yaml
 from pydantic import BaseModel, Field
 
 from parrot.mcp.hosts import HostEntryState, HostKind, detect_hosts, get_adapter
-from parrot.mcp.toolkit_config import AGENT_TOOLKIT_CLASS_PATH, agent_section_name, is_agent_section, load_toolkits_config
+from parrot.mcp.toolkit_config import (
+    AGENT_TOOLKIT_CLASS_PATH,
+    agent_section_name,
+    is_agent_section,
+    load_toolkits_config,
+)
 from parrot.mcp.toolkit_seed import (
     REPO_ROOT_PLACEHOLDER,
     available_templates,
@@ -28,7 +33,6 @@ from parrot.mcp.toolkit_seed import (
     set_section_enabled,
     template_drift,
 )
-
 
 class ToolkitState(str, Enum):
     NOT_INSTALLED = "not_installed"
@@ -224,10 +228,10 @@ def install_agent_toolkits(
     report = ActionReport()
     seed_result = seed_agent_sections(root, sections)
     tools = {agent_section_name(agent.name): ", ".join(_tool_names(agent.methods, agent.name)) for agent in resolved}
-    report.actions.extend(f"{sections[section]} — seeded as {section} (tools: {tools[section]})" for section in seed_result.added)
-    report.warnings.extend(
-        f"{sections[section]} — already installed as {section}" for section in seed_result.skipped
+    report.actions.extend(
+        f"{sections[section]} — seeded as {section} (tools: {tools[section]})" for section in seed_result.added
     )
+    report.warnings.extend(f"{sections[section]} — already installed as {section}" for section in seed_result.skipped)
     resolved_hosts = list(hosts)
     _reconcile_all(root, resolved_hosts, report, portable=portable)
 
@@ -241,7 +245,11 @@ def install_agent_toolkits(
 
 def agent_inventory(root: Path, hosts: Sequence[HostKind] | None = None) -> list[ToolkitRow]:
     """Return one row per exposable agent and per orphaned installed agent section."""
-    from parrot.mcp.agent_toolkit import AgentExposureError, list_exposable_agents, resolve_exposable_agent  # noqa: PLC0415
+    from parrot.mcp.agent_toolkit import (
+        AgentExposureError,
+        list_exposable_agents,
+        resolve_exposable_agent,
+    )  # noqa: PLC0415
 
     root = Path(root)
     resolved_hosts = _resolve_hosts(root, hosts)

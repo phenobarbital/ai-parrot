@@ -20,7 +20,6 @@ from parrot.mcp.toolkit_install import (
 from parrot.mcp.toolkit_seed import seed_agent_sections, seed_toolkit_sections
 from parrot.registry.registry import AgentRegistry
 
-
 def _config(root: Path) -> Path:
     return root / ".parrot" / "mcp-toolkits.yaml"
 
