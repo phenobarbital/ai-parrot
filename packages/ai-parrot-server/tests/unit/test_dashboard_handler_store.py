@@ -61,9 +61,7 @@ async def test_dashboard_duplicate_create_409(client) -> None:
 
 async def test_tab_crud_and_order(client) -> None:
     """Tabs use store ordering and return conflicts without replacing the original tab."""
-    assert (
-        await client.post("/api/v1/dashboards", json={"dashboard_id": "d1", "title": "Sales"})
-    ).status == 201
+    assert (await client.post("/api/v1/dashboards", json={"dashboard_id": "d1", "title": "Sales"})).status == 201
     assert (
         await client.post(
             "/api/v1/dashboards/d1/tabs",

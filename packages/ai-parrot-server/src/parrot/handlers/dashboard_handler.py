@@ -29,7 +29,6 @@ from navigator.views import BaseView
 
 from .dashboard_store import get_dashboard_store
 
-
 async def _ensure_dashboard_indexes(app: web.Application) -> None:
     """Create indexes on dashboards and dashboard_tabs collections.
 
