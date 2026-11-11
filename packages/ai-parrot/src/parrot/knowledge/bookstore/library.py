@@ -1196,9 +1196,7 @@ class Bookstore:
                 )
                 node_ids, title_only = [], True
             sectors.extend(
-                await asyncio.to_thread(
-                    self._sector_hits, location.scope, tree, node_ids, terms, query, title_only
-                )
+                await asyncio.to_thread(self._sector_hits, location.scope, tree, node_ids, terms, query, title_only)
             )
         if sectors:
             return {"source": "sectors", "sectors": sectors[:top_k], **({"hint": degraded} if degraded else {})}
@@ -1226,8 +1224,10 @@ class Bookstore:
         if title_only:
             for node in nodes:
                 title = str(node.get("title") or "").casefold()
-                if _sector_code(node) is not None and needle and (
-                    needle in title or any(term in title for term in terms)
+                if (
+                    _sector_code(node) is not None
+                    and needle
+                    and (needle in title or any(term in title for term in terms))
                 ):
                     selected.append(node)
         else:

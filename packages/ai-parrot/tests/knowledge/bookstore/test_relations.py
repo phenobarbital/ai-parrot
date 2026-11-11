@@ -500,10 +500,14 @@ async def test_relate_books_keeps_manual_edges(store_llm):
         ("B answers A", {"rel": "responds_to"}),
     ):
         node = await toolkit.add_node(notebook.tree_name, title=title, body=f"{title} — reader's note.")
-        anchors = [{"book_id": "b"}, {"book_id": "a"}] if metadata.get("rel") == "responds_to" else [
-            {"book_id": "a"},
-            {"book_id": "b"},
-        ]
+        anchors = (
+            [{"book_id": "b"}, {"book_id": "a"}]
+            if metadata.get("rel") == "responds_to"
+            else [
+                {"book_id": "a"},
+                {"book_id": "b"},
+            ]
+        )
         await toolkit.tag_node(notebook.tree_name, node["node_id"], metadata={"anchors": anchors, **metadata})
 
     assert await apply_relation_sheets(store_llm) == 3

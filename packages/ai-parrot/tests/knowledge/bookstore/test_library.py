@@ -1300,9 +1300,7 @@ async def test_reindex_preserves_notebook_end_to_end(store, book_md):
 # ----------------------------------------------------------------------
 # find_books (FEAT-876 TASK-5480)
 # ----------------------------------------------------------------------
-async def _sector(
-    store: Bookstore, scope: str, code: str, title: str, anchors: list, *, body: str = ""
-) -> str:
+async def _sector(store: Bookstore, scope: str, code: str, title: str, anchors: list, *, body: str = "") -> str:
     """Add one sector node to ``scope``'s library notebook; return its node id."""
     notebook = await store.ensure_notebook(None, scope=scope)
     toolkit = await store._ready_toolkit(scope)
@@ -1394,7 +1392,9 @@ async def test_find_books_merges_scopes_project_first(tmp_path, fake_adapter):
     project_card, _ = await store.add_book(other, title="Project Book")
 
     # Global sector first on disk, project sector second: project still wins the order.
-    await _sector(store, "global", "100", "Stoic ethics (global)", [{"book_id": global_card.book_id, "scope": "global"}])
+    await _sector(
+        store, "global", "100", "Stoic ethics (global)", [{"book_id": global_card.book_id, "scope": "global"}]
+    )
     await _sector(store, "project", "170", "Stoic ethics (project)", [{"book_id": project_card.book_id}])
     # Anchors resolve through (scope, book_id): a global book anchored with the default
     # project scope is skipped, so this sector has no books and is dropped.
