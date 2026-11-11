@@ -1163,3 +1163,131 @@ async def test_resolve_book_refuses_notebook(store, book_md):
     assert notebook.book_id not in [c.book_id for c in store.list_books()]
     assert all(c.kind == "book" for c in store.catalog_search("Notes"))
     assert all(c.kind == "book" for c in store.catalog_search(card.title))
+
+
+# ----------------------------------------------------------------------
+# remap_anchors (FEAT-876 TASK-5479)
+# ----------------------------------------------------------------------
+def _long(word: str) -> str:
+    """A body long enough that the markdown parser keeps its section as its own node."""
+    return (f"{word} content of the section, repeated at length. ") * 20
+
+
+def _chapters(*sections: tuple[str, str]) -> str:
+    """Markdown book with an intro and one ``##`` section per ``(title, word)``."""
+    parts = ["# Remap Book\n\n" + _long("intro")]
+    parts += [f"## {title}\n{_long(word)}" for title, word in sections]
+    return "\n\n".join(parts) + "\n"
+
+
+def _node_id_by_title(toc, title: str) -> str:
+    return next(entry.node_id for entry in toc if entry.title == title)
+
+
+async def _note_anchors(store: Bookstore, card, note_id: str) -> tuple[list, str]:
+    """``(anchors, anchor_status)`` of one notebook node, read from the live notebook tree."""
+    toolkit = await store._ready_toolkit(card.scope)
+    tree = await toolkit.get_tree(notebook_tree_name(card.book_id))
+    from parrot.knowledge.pageindex.utils import structure_to_list
+
+    node = next(n for n in structure_to_list(tree["structure"]) if n["node_id"] == note_id)
+    meta = node.get("metadata") or {}
+    return meta["anchors"], meta.get("anchor_status", "current")
+
+
+@pytest.mark.asyncio
+async def test_remap_anchors_after_update(store, book_md):
+    book_md.write_text(_chapters(("Chapter One", "alpha"), ("Chapter Two", "beta")), encoding="utf-8")
+    card, _ = await store.add_book(book_md)
+    ch2 = _node_id_by_title(card.toc, "Chapter Two")
+    note_id = await _anchor_note(store, card.book_id, ch2)
+    before = {n["node_id"] for n in (await (await store._ready_toolkit("project")).get_tree(
+        notebook_tree_name(card.book_id)))["structure"]}
+
+    # A new chapter inserted before Chapter Two shifts its node id; text is unchanged.
+    book_md.write_text(
+        _chapters(("Chapter One", "alpha"), ("Bridge", "gamma"), ("Chapter Two", "beta")), encoding="utf-8"
+    )
+    updated, status = await store.add_book(book_md)
+    assert status == "updated"
+    new_ch2 = _node_id_by_title(updated.toc, "Chapter Two")
+    assert new_ch2 != ch2
+
+    anchors, anchor_status = await _note_anchors(store, updated, note_id)
+    assert anchor_status == "remapped"
+    assert anchors[0]["node_id"] == new_ch2
+    assert anchors[0]["revision"]
+    after = {n["node_id"] for n in (await (await store._ready_toolkit("project")).get_tree(
+        notebook_tree_name(card.book_id)))["structure"]}
+    assert before <= after  # never deletes
+    notes = await store.annotations_for(card.book_id, new_ch2)
+    assert [n.node_id for n in notes] == [note_id]
+    assert notes[0].anchor_status == "remapped"
+
+    # Idempotent: a second pass finds everything current.
+    assert await store.remap_anchors(card.book_id) == {"current": 1, "remapped": 0, "stale": 0}
+
+
+@pytest.mark.asyncio
+async def test_remap_repeated_titles_and_moved_sections(store, tmp_path):
+    path = tmp_path / "dupes.md"
+    path.write_text(_chapters(("Notes", "alpha"), ("Notes", "beta"), ("Moving", "gamma")), encoding="utf-8")
+    card, _ = await store.add_book(path)
+    first_notes = [e.node_id for e in card.toc if e.title == "Notes"][0]
+    moving = _node_id_by_title(card.toc, "Moving")
+    n_first = await _anchor_note(store, card.book_id, first_notes, title="n1")
+    n_moving = await _anchor_note(store, card.book_id, moving, title="n2")
+
+    # Both "Notes" bodies change (no fingerprint match, duplicate title); "Moving" moves up unchanged.
+    path.write_text(_chapters(("Moving", "gamma"), ("Notes", "delta"), ("Notes", "epsilon")), encoding="utf-8")
+    updated, status = await store.add_book(path)
+    assert status == "updated"
+    new_moving = _node_id_by_title(updated.toc, "Moving")
+    assert new_moving != moving
+
+    anchors, anchor_status = await _note_anchors(store, updated, n_first)
+    assert anchor_status == "stale"
+    assert anchors[0]["node_id"] == first_notes  # kept as is
+    anchors, anchor_status = await _note_anchors(store, updated, n_moving)
+    assert anchor_status == "remapped"
+    assert anchors[0]["node_id"] == new_moving
+
+
+@pytest.mark.asyncio
+async def test_add_book_survives_remap_failure(store, book_md, monkeypatch):
+    book_md.write_text(_chapters(("Chapter One", "alpha")), encoding="utf-8")
+    card, _ = await store.add_book(book_md)
+    await _anchor_note(store, card.book_id, _node_id_by_title(card.toc, "Chapter One"))
+
+    async def boom(*args, **kwargs):
+        raise RuntimeError("remap exploded")
+
+    monkeypatch.setattr(store, "remap_anchors", boom)
+    book_md.write_text(_chapters(("Chapter One", "alpha"), ("Chapter Three", "zeta")), encoding="utf-8")
+    updated, status = await store.add_book(book_md)
+    assert status == "updated"
+    assert updated.book_id == card.book_id
+
+
+@pytest.mark.asyncio
+async def test_reindex_preserves_notebook_end_to_end(store, book_md):
+    book_md.write_text(_chapters(("Chapter One", "alpha"), ("Chapter Two", "beta")), encoding="utf-8")
+    card, _ = await store.add_book(book_md)
+    ch1 = _node_id_by_title(card.toc, "Chapter One")
+    ch2 = _node_id_by_title(card.toc, "Chapter Two")
+    n1 = await _anchor_note(store, card.book_id, ch1, title="one", body="note one")
+    n2 = await _anchor_note(store, card.book_id, ch2, title="two", body="note two")
+
+    book_md.write_text(_chapters(("Chapter One", "alpha"), ("Chapter Two", "omega")), encoding="utf-8")
+    updated, status = await store.add_book(book_md)
+    assert status == "updated"
+
+    for note_id in (n1, n2):
+        anchors, anchor_status = await _note_anchors(store, updated, note_id)
+        assert anchor_status in {"current", "remapped", "stale"}
+        assert anchors and anchors[0]["book_id"] == card.book_id
+    # Chapter One is untouched, still readable with its note attached.
+    section = store.read_section(card.book_id, ch1)
+    assert any(a["node_id"] == n1 for a in section["annotations"])
+    bodies = (await (await store._ready_toolkit("project")).get_tree(notebook_tree_name(card.book_id)))["structure"]
+    assert len(bodies) == 2
