@@ -312,7 +312,7 @@
       "feature_id": "FEAT-878",
       "feature": "redis-user-stores",
       "spec": "sdd/specs/redis-user-stores.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -322,8 +322,9 @@
       "parallelism_notes": "RedisDashboardStore uses RedisDocumentStore.create + DASHBOARDS/DASHBOARD_TABS from TASK-5496.",
       "assigned_to": null,
       "started_at": "2026-11-11T00:26:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5506-dashboard-store.md"
+      "completed_at": "2026-11-11T02:09:02+00:00",
+      "file": "sdd/tasks/completed/TASK-5506-dashboard-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5507",
@@ -373,7 +374,7 @@
       "feature_id": "FEAT-878",
       "feature": "redis-user-stores",
       "spec": "sdd/specs/redis-user-stores.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -383,8 +384,9 @@
       "parallelism_notes": "Writes through RedisDocumentStore and iterates USER_STORE_COLLECTIONS from TASK-5496.",
       "assigned_to": null,
       "started_at": "2026-11-11T00:26:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5509-userstore-copy-cli.md"
+      "completed_at": "2026-11-11T02:09:03+00:00",
+      "file": "sdd/tasks/completed/TASK-5509-userstore-copy-cli.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5510",
