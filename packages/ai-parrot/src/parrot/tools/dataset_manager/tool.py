@@ -616,7 +616,11 @@ class DatasetManager(AbstractToolkit):
         "1. **Loaded DataFrames are ready now.** Datasets shown as *loaded* already "
         "exist in the `python_repl_pandas` environment under their name and `dfN` "
         "alias — use them directly (e.g. `df1.groupby(...)`). Never re-fetch a "
-        "loaded dataset.\n"
+        "loaded dataset. Exception — **semantic datasets** hold the result of ONE "
+        "semantic query: call `fetch_dataset` again with new `conditions` whenever the "
+        "metrics, dimensions, grain, filters, ordering, limit, offset or saved query "
+        "change, and aggregate through semantic metrics — not raw SQL and not by "
+        "re-aggregating a previous result in pandas.\n"
         "2. **Aggregate tables in SQL, not pandas.** For a count / sum / ranking / "
         "filter over an *unloaded* table, call `fetch_dataset` with a SQL query that "
         "does the work in the database (`GROUP BY` / `WHERE` / `LIMIT`). Do NOT pull "
@@ -3479,6 +3483,15 @@ class DatasetManager(AbstractToolkit):
                 the question involves summaries, averages, or rankings.
                 NEVER fetch all rows to aggregate in pandas.
             conditions: Dict of {param: value} pairs for SQLQuerySource templates.
+                For a semantic dataset, ``conditions`` IS the semantic query:
+                ``metrics``, ``dimensions``, ``time_dimensions``, ``filters``,
+                ``order_by``, ``limit``, ``offset`` and ``saved_query`` (``sql``
+                is ignored). A semantic dataset holds the result of ONE query —
+                call fetch_dataset again with new ``conditions`` whenever any of
+                those fields change, instead of re-aggregating the previous
+                result in pandas. When the response has ``semantic.truncated``
+                set, the policy row limit was reached: aggregate further in the
+                semantic query.
             force_refresh: If True, bypass caches and re-fetch from source.
 
         Returns:
@@ -3682,6 +3695,7 @@ class DatasetManager(AbstractToolkit):
 
         try:
             df = await self.materialize(name, force_refresh=force_refresh, **params)
+            semantic_meta = dict(df.attrs.get("semantic") or {})
         except Exception as exc:
             self.logger.error("fetch_dataset '%s' failed: %s", name, exc)
             if entry.source.self_governed:
@@ -3830,11 +3844,18 @@ class DatasetManager(AbstractToolkit):
             result["eda_summary"] = self._generate_eda_summary(df)
             result["sample_rows"] = data_records
             result["complete"] = False
-            result["note"] = (
-                f"Dataset has {n_rows:,} rows — only {sample_size} shown here as preview. "
-                f"The FULL dataset ({n_rows:,} rows) is loaded in memory as "
-                f"`{resolved}` (or `{alias}`)."
-            )
+            if semantic_meta:
+                result["note"] = (
+                    f"Dataset has {n_rows:,} rows — only {sample_size} shown here as preview. "
+                    f"The materialized result ({n_rows:,} rows) is loaded in memory as "
+                    f"`{resolved}` (or `{alias}`)."
+                )
+            else:
+                result["note"] = (
+                    f"Dataset has {n_rows:,} rows — only {sample_size} shown here as preview. "
+                    f"The FULL dataset ({n_rows:,} rows) is loaded in memory as "
+                    f"`{resolved}` (or `{alias}`)."
+                )
             result["action_required"] = (
                 f"DO NOT print or repeat all {n_rows:,} rows in your response. "
                 f"Instead, set data_variable='{resolved}' in your structured output "
@@ -3844,6 +3865,17 @@ class DatasetManager(AbstractToolkit):
                 f"and set data_variable to that variable name."
             )
 
+        if semantic_meta:
+            semantic = {k: semantic_meta.get(k) for k in ("model", "audit_id", "truncated", "row_count")}
+            result["semantic"] = semantic
+            result["inline_complete"] = bool(return_all)
+            result["complete"] = bool(return_all) and not bool(semantic["truncated"])
+            if semantic["truncated"]:
+                nan_warnings = list(nan_warnings or [])
+                nan_warnings.append(
+                    f"- Dataset '{resolved}' is a TRUNCATED semantic result: the policy row limit was reached "
+                    f"({semantic['row_count']} rows materialized). Aggregate further in the semantic query."
+                )
         if nan_warnings:
             result["warnings"] = nan_warnings
         return result
