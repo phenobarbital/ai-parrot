@@ -1169,7 +1169,7 @@ class AgentRegistry:
         Args:
             config: Fully- or partially-populated agent configuration to
                 persist.
-            category: Sub-directory under ``AGENTS_DIR/agents/`` to write
+            category: Sub-directory under this registry's ``agents/`` directory to write
                 into.
 
         Returns:
@@ -1177,14 +1177,14 @@ class AgentRegistry:
 
         Raises:
             ValueError: ``category`` (or the config's name) would resolve
-                the write target outside ``AGENTS_DIR/agents/`` — path
+                the write target outside this registry's ``agents/`` directory — path
                 traversal guard (defense in depth; HTTP callers validate
                 the slug shape upstream too).
         """
         # SECURITY (adversarial-review fix): `category` is a caller-supplied
         # path segment — resolve and containment-check it so "../../.."
-        # can never write the YAML outside AGENTS_DIR/agents/.
-        definitions_root = AGENTS_DIR.joinpath("agents").resolve()
+        # can never write the YAML outside this registry's agents directory.
+        definitions_root = self.agents_dir.joinpath("agents").resolve()
         base_dir = definitions_root.joinpath(category).resolve()
         if base_dir != definitions_root and definitions_root not in base_dir.parents:
             raise ValueError(f"Invalid category {category!r}: resolves outside the agents definitions directory.")
