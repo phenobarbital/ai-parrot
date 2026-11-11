@@ -146,7 +146,6 @@ async def test_relation_sheets_without_notebooks(store, tmp_path):
     assert await apply_relation_sheets(store) == 0
 
 
-
 # ----------------------------------------------------------------------
 # Drafting (TASK-5481)
 # ----------------------------------------------------------------------
