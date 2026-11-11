@@ -143,13 +143,15 @@ class Main(AppHandler):
         self.bot_manager = BotManager(enable_database_bots=True)
         self.bot_manager.setup(self.app)
 
-        ## Jira OAuth Manager setup (reuses app['redis'] published by BotManager):
-        JiraOAuthManager(
-            client_id=JIRA_CLIENT_ID,
-            client_secret=JIRA_CLIENT_SECRET,
-            redirect_uri=JIRA_REDIRECT_URI,
-            app=self.app,
-        ).setup()
+        ## Jira OAuth Manager: BotManager.setup() already builds and registers it
+        ## when JIRA_CLIENT_ID is set; only create one here if it did not.
+        if self.app.get("jira_oauth_manager") is None:
+            JiraOAuthManager(
+                client_id=JIRA_CLIENT_ID,
+                client_secret=JIRA_CLIENT_SECRET,
+                redirect_uri=JIRA_REDIRECT_URI,
+                app=self.app,
+            ).setup()
         setup_combined_auth_routes(self.app)
 
         ## End of Jira OAuth setup.
