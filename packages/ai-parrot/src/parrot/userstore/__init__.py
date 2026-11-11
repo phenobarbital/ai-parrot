@@ -1,5 +1,7 @@
 """FEAT-878 user stores: backend selection and Redis primitives."""
 
+from .collections import COLLECTION_SWITCH, USER_STORE_COLLECTIONS, CollectionSpec
+from .redis_documents import RedisDocumentStore
 from .settings import (
     DEFAULT_BACKEND,
     GLOBAL_SWITCH,
@@ -20,9 +22,13 @@ from .settings import (
 )
 
 __all__ = [
+    "COLLECTION_SWITCH",
     "DEFAULT_BACKEND",
     "GLOBAL_SWITCH",
     "SWITCHES",
+    "USER_STORE_COLLECTIONS",
+    "CollectionSpec",
+    "RedisDocumentStore",
     "StoreBackend",
     "StoreSwitch",
     "UserStoreMisconfigured",
