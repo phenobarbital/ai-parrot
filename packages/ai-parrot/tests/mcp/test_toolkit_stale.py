@@ -337,3 +337,66 @@ def test_codex_unremovable_layout_reported_not_claimed(repo: Path, gemini: Path)
 
     assert config.read_text(encoding="utf-8") == original
     assert any(line.startswith("warning:") and "not changed" in line for line in lines)
+
+
+_AGENT_SECTION = (
+    "  agent-finance:\n"
+    "    class: parrot.mcp.agent_toolkit.AgentToolkit\n"
+    "    kwargs:\n"
+    "      agent: finance\n"
+    "    env: {}\n"
+)
+
+
+def _add_agent_section(root: Path) -> None:
+    """Append an agent section the way seed_agent_sections lays it out."""
+    path = root / ".parrot" / "mcp-toolkits.yaml"
+    path.write_text(path.read_text(encoding="utf-8") + _AGENT_SECTION, encoding="utf-8")
+
+
+def test_agent_section_not_retired(repo: Path, gemini: Path) -> None:
+    _add_agent_section(repo)
+    config = str(repo / ".parrot" / "mcp-toolkits.yaml")
+    _write_servers(repo / ".mcp.json", {"parrot-agent-finance": _entry("agent-finance", config)})
+
+    assert find_stale_mcp_entries(repo, ("claude",), gemini_config=gemini) == []
+
+
+def test_unreadable_config_keeps_agent_entries(repo: Path, gemini: Path) -> None:
+    (repo / ".parrot" / "mcp-toolkits.yaml").write_text("toolkits: [", encoding="utf-8")
+    config = str(repo / ".parrot" / "mcp-toolkits.yaml")
+    _write_servers(
+        repo / ".mcp.json",
+        {
+            "parrot-agent-finance": _entry("agent-finance", config),
+            "parrot-oldkit": _entry("oldkit", config),
+        },
+    )
+
+    found = find_stale_mcp_entries(repo, ("claude",), gemini_config=gemini)
+
+    assert [(entry.key, entry.reason) for entry in found] == [("parrot-oldkit", "retired-toolkit")]
+
+
+def test_removed_agent_section_is_retired(repo: Path, gemini: Path) -> None:
+    config = str(repo / ".parrot" / "mcp-toolkits.yaml")
+    _write_servers(repo / ".mcp.json", {"parrot-agent-finance": _entry("agent-finance", config)})
+
+    found = find_stale_mcp_entries(repo, ("claude",), gemini_config=gemini)
+
+    assert [(entry.key, entry.reason) for entry in found] == [("parrot-agent-finance", "retired-toolkit")]
+
+
+def test_global_agent_entry_from_other_repo_not_retired(repo: Path, gemini: Path, tmp_path: Path) -> None:
+    other = tmp_path / "other"
+    (other / ".parrot").mkdir(parents=True)
+    other_config = str(other / ".parrot" / "mcp-toolkits.yaml")
+    _write_servers(gemini, {"parrot-agent-hr": _entry("agent-hr", other_config)})
+
+    assert find_stale_mcp_entries(repo, ("google",), gemini_config=gemini) == []
+
+    deleted_config = str(tmp_path / "deleted" / ".parrot" / "mcp-toolkits.yaml")
+    _write_servers(gemini, {"parrot-agent-hr": _entry("agent-hr", deleted_config)})
+    found = find_stale_mcp_entries(repo, ("google",), gemini_config=gemini)
+
+    assert [(entry.key, entry.reason) for entry in found] == [("parrot-agent-hr", "missing-repo")]
