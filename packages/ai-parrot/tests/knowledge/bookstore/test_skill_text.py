@@ -27,7 +27,7 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parents[5]
 
 FUNNEL_STEP_1 = (
-    "1. **`bookstore_find_books(query)`** — ALWAYS start here. It answers \"which books\n"
+    '1. **`bookstore_find_books(query)`** — ALWAYS start here. It answers "which books\n'
     "   treat X, and where\" from the librarian's sectors, with direct table-of-contents\n"
     "   pointers; it falls back to `bookstore_catalog_search`."
 )
