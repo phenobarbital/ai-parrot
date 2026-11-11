@@ -145,7 +145,7 @@
       "feature_id": "FEAT-880",
       "feature": "datasetmanager-semantic-source",
       "spec": "sdd/specs/datasetmanager-semantic-source.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -155,8 +155,9 @@
       "parallelism_notes": "overrides DataSource.self_governed/current_owner from TASK-5515 (sources/base.py); only ai-parrot-semantic files",
       "assigned_to": null,
       "started_at": "2026-11-11T23:45:56+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5520-semantic-datasource.md"
+      "completed_at": "2026-11-11T23:53:05+00:00",
+      "file": "sdd/tasks/completed/TASK-5520-semantic-datasource.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5521",
