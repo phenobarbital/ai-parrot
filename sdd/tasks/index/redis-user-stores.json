@@ -385,7 +385,7 @@
       "feature_id": "FEAT-878",
       "feature": "redis-user-stores",
       "spec": "sdd/specs/redis-user-stores.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -395,8 +395,9 @@
       "parallelism_notes": "Exclusive: edits packages/ai-parrot/pyproject.toml (entry points). RedisDocumentTarget does I/O through RedisDocumentStore from TASK-5496.",
       "assigned_to": null,
       "started_at": "2026-11-11T00:26:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5510-redis-vault-targets.md"
+      "completed_at": "2026-11-11T01:14:36+00:00",
+      "file": "sdd/tasks/completed/TASK-5510-redis-vault-targets.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5511",
