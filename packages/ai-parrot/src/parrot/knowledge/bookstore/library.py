@@ -32,7 +32,9 @@ from parrot.knowledge.pageindex.content_store import NodeContentStore
 from parrot.knowledge.pageindex.layout import PDFStructureError
 from parrot.knowledge.pageindex.locks import TreeLockTimeout, tree_lock
 from parrot.knowledge.pageindex.segments import RevisionMismatchError
+from parrot.knowledge.pageindex.store import JSONTreeStore
 from parrot.knowledge.pageindex.toolkit import PageIndexToolkit, REPLACED_MARKER
+from parrot.knowledge.pageindex.utils import structure_to_list
 
 from .carding import (
     derive_toc,
@@ -45,7 +47,7 @@ from .carding import (
 )
 from .catalog import CatalogStore, merged_cards, merged_communities, merged_relations, merged_search
 from .config import LibraryLocation
-from .models import REL_WEIGHTS, BookCard, BookCommunity, BookRelation, CardDraft, RelateSummary
+from .models import REL_WEIGHTS, Anchor, Annotation, BookCard, BookCommunity, BookRelation, CardDraft, RelateSummary
 from .relations import (
     candidate_pairs,
     communities_from_result,
@@ -71,6 +73,23 @@ _FORMAT_BY_SUFFIX = {
 }
 
 _STAGING_MARKER = "--staging-"
+#: Per-scope library notebook tree (Dewey-like sectors) and the per-book notebook suffix (FEAT-876).
+LIBRARY_NOTEBOOK = "_library_notes"
+NOTEBOOK_SUFFIX = "_notes"
+#: Relation origins recomputed by ``relate_books``; ``manual`` edges are never invalidated (S10).
+_COMPUTED_RELATION_ORIGINS = ("deterministic", "llm", "community")
+
+
+def notebook_tree_name(book_id: Optional[str]) -> str:
+    """Tree name of a book's notebook, or of the scope's library notebook when ``book_id`` is ``None``.
+
+    Args:
+        book_id: The annotated book's id, or ``None`` for the scope-wide library notebook.
+
+    Returns:
+        ``"<book_id>_notes"`` or ``"_library_notes"``.
+    """
+    return LIBRARY_NOTEBOOK if book_id is None else f"{book_id}{NOTEBOOK_SUFFIX}"
 _STAGING_MAX_AGE_S = 3600
 
 
@@ -308,6 +327,7 @@ class Bookstore:
         self._ready_scopes: set[str] = set()
         self._ready_locks: dict[tuple[str, asyncio.AbstractEventLoop], asyncio.Lock] = {}
         self._active_staging_slugs: set[str] = set()
+        self._annotation_cache: dict[tuple[str, str], tuple[tuple[int, int], dict[str, list[Annotation]]]] = {}
 
     @property
     def has_llm(self) -> bool:
@@ -626,7 +646,7 @@ class Bookstore:
         """
         for loc in self.locations:
             card = self._catalog(loc.scope).get(book_id)
-            if card is not None:
+            if card is not None and card.kind != "notes":
                 return card.model_copy(update={"scope": loc.scope}), loc
         raise BookstoreError(f"Unknown book {book_id!r} — use catalog_search/list_books first")
 
@@ -637,12 +657,20 @@ class Bookstore:
 
     def get_toc(self, book_id: str) -> dict[str, Any]:
         """Structured table of contents with node ids and page ranges."""
-        card, _ = self.resolve_book(book_id)
+        card, loc = self.resolve_book(book_id)
+        try:
+            index = self._notebook_index(loc.scope, notebook_tree_name(card.book_id))
+        except Exception as exc:  # noqa: BLE001 — a broken notebook must never break a book read
+            logger.warning("notebook for %r unreadable: %s", card.book_id, exc)
+            index = {}
         return {
             "book_id": card.book_id,
             "title": card.title,
             "toc_digest": card.toc_digest,
-            "entries": [entry.model_dump() for entry in card.toc],
+            "entries": [
+                {**entry.model_dump(), "has_notes": bool(index.get(f"{card.book_id}#{entry.node_id}"))}
+                for entry in card.toc
+            ],
         }
 
     async def search_book(self, book_id: str, query: str, top_k: int = 8) -> list[dict[str, Any]]:
@@ -682,7 +710,176 @@ class Bookstore:
             "start_page": entry.start_page if entry else None,
             "end_page": entry.end_page if entry else None,
             "content": body or "",
+            "annotations": [note.model_dump() for note in self._annotations_sync(card, loc.scope, node_id)],
         }
+
+    # ------------------------------------------------------------------
+    # Notebooks (FEAT-876)
+    # ------------------------------------------------------------------
+    def notebook_for(self, book_id: str) -> Optional[BookCard]:
+        """Registered or on-disk ``<book_id>_notes`` in the book's scope (lazy ``kind='notes'`` upsert).
+
+        Args:
+            book_id: The annotated book.
+
+        Returns:
+            The notebook card (scope stamped), or ``None`` when no notebook tree exists.
+        """
+        card, loc = self.resolve_book(book_id)
+        return self._registered_notebook(loc.scope, notebook_tree_name(card.book_id), card)
+
+    def library_notebook(self, scope: str) -> Optional[BookCard]:
+        """Registered or on-disk ``_library_notes`` of ``scope``.
+
+        Args:
+            scope: Library scope (``"project"`` or ``"global"``).
+
+        Returns:
+            The library notebook card, or ``None`` when its tree does not exist.
+        """
+        return self._registered_notebook(scope, LIBRARY_NOTEBOOK, None)
+
+    def _registered_notebook(self, scope: str, tree_name: str, book: Optional[BookCard]) -> Optional[BookCard]:
+        """Return the notebook row, lazily registering an on-disk conventional tree."""
+        catalog = self._catalog(scope)
+        existing = catalog.get(tree_name)
+        if existing is not None and existing.kind == "notes":
+            return existing.model_copy(update={"scope": scope})
+        if existing is not None:
+            logger.warning("%r is a book, not a notebook — not registering it as notes", tree_name)
+            return None
+        trees = JSONTreeStore(self._location(scope).trees_dir)
+        if not trees.exists(tree_name):
+            return None
+        card = BookCard(
+            book_id=tree_name,
+            title=f"Notes — {book.title}" if book is not None else f"Library notebook ({scope})",
+            tree_name=tree_name,
+            scope=scope,
+            source_path=str(trees._path_for(tree_name)),
+            source_sha256="",
+            source_format="tree",
+            added_at=datetime.now(timezone.utc).isoformat(),
+            card_origin="fallback",
+            kind="notes",
+            notes_for=book.book_id if book is not None else None,
+        )
+        catalog.upsert(card)
+        logger.info("registered notebook %r (%s)", tree_name, scope)
+        return card.model_copy(update={"scope": scope})
+
+    async def ensure_notebook(self, book_id: Optional[str], scope: str = "project") -> BookCard:
+        """Create the conventional notebook tree when missing and register it.
+
+        Args:
+            book_id: Book to annotate, or ``None`` for the scope's library notebook.
+            scope: Scope of the library notebook; ignored for a book notebook, which
+                always lives in the book's own scope.
+
+        Returns:
+            The registered ``kind='notes'`` card.
+        """
+        book: Optional[BookCard] = None
+        if book_id is not None:
+            book, loc = self.resolve_book(book_id)
+            scope = loc.scope
+        name = notebook_tree_name(book.book_id if book is not None else None)
+        toolkit = await self._ready_toolkit(scope)
+        if not JSONTreeStore(self._location(scope).trees_dir).exists(name):
+            try:
+                await toolkit.create_tree(name)
+            except ValueError:
+                # A concurrent creator won the race; the tree exists now.
+                if not JSONTreeStore(self._location(scope).trees_dir).exists(name):
+                    raise
+        notebook = self._registered_notebook(scope, name, book)
+        if notebook is None:
+            raise BookstoreError(f"Could not register notebook {name!r} in the {scope} library")
+        return notebook
+
+    def _notebook_index(self, scope: str, tree_name: str) -> dict[str, list[Annotation]]:
+        """``{node_id_or_book_key: [Annotation]}`` for one notebook, cached by tree file signature.
+
+        Keys are ``f"{book_id}#{node_id}"`` for anchors into a node and ``f"{book_id}#"`` for
+        whole-book anchors. Anchors pointing into another scope are ignored (S11).
+        """
+        path = JSONTreeStore(self._location(scope).trees_dir)._path_for(tree_name)
+        key = (scope, tree_name)
+        try:
+            stat = path.stat()
+        except FileNotFoundError:
+            self._annotation_cache.pop(key, None)
+            return {}
+        signature = (stat.st_mtime_ns, stat.st_size)
+        cached = self._annotation_cache.get(key)
+        if cached is not None and cached[0] == signature:
+            return cached[1]
+        tree = JSONTreeStore(self._location(scope).trees_dir).load(tree_name)
+        content = self._content_store(scope)
+        index: dict[str, list[Annotation]] = {}
+        for node in structure_to_list(tree.get("structure", [])):
+            if not isinstance(node, dict) or not node.get("node_id"):
+                continue
+            metadata = node.get("metadata") or {}
+            if not isinstance(metadata, dict):
+                continue
+            raw_anchors = metadata.get("anchors") or []
+            if not isinstance(raw_anchors, list):
+                logger.debug("notebook %r node %r: anchors is not a list", tree_name, node["node_id"])
+                continue
+            keys: list[str] = []
+            for raw in raw_anchors:
+                try:
+                    anchor = Anchor.model_validate(raw)
+                except Exception as exc:  # noqa: BLE001 — malformed anchors are reported by doctor --notes
+                    logger.debug("notebook %r node %r: malformed anchor %r: %s", tree_name, node["node_id"], raw, exc)
+                    continue
+                if anchor.scope != scope:
+                    continue
+                anchor_key = f"{anchor.book_id}#{anchor.node_id or ''}"
+                if anchor_key not in keys:
+                    keys.append(anchor_key)
+            if not keys:
+                continue
+            try:
+                annotation = Annotation(
+                    note_tree=tree_name,
+                    node_id=str(node["node_id"]),
+                    title=str(node.get("title") or ""),
+                    body=content.load_current(tree_name, str(node["node_id"])) or "",
+                    note_kind=metadata.get("note_kind", "note"),
+                    origin=metadata.get("origin", "human"),
+                    anchor_status=metadata.get("anchor_status", "current"),
+                )
+            except Exception as exc:  # noqa: BLE001 — an invalid note never hides the others
+                logger.debug("notebook %r node %r: invalid annotation: %s", tree_name, node["node_id"], exc)
+                continue
+            for anchor_key in keys:
+                index.setdefault(anchor_key, []).append(annotation)
+        self._annotation_cache[key] = (signature, index)
+        return index
+
+    async def annotations_for(self, book_id: str, node_id: str) -> list[Annotation]:
+        """Notes anchored to ``(book_id, node_id)``; ``[]`` when the book has no notebook.
+
+        Args:
+            book_id: The annotated book.
+            node_id: Node of the book the notes point at.
+
+        Returns:
+            The anchored notebook nodes, in tree order.
+        """
+        card, loc = self.resolve_book(book_id)
+        return self._annotations_sync(card, loc.scope, node_id)
+
+    def _annotations_sync(self, card: BookCard, scope: str, node_id: str) -> list[Annotation]:
+        """Synchronous annotation lookup used by the sync read surface."""
+        try:
+            index = self._notebook_index(scope, notebook_tree_name(card.book_id))
+        except Exception as exc:  # noqa: BLE001 — a broken notebook must never break a book read
+            logger.warning("notebook for %r unreadable: %s", card.book_id, exc)
+            return []
+        return list(index.get(f"{card.book_id}#{node_id}", []))
 
     async def _document_of(self, card: Any, toolkit: PageIndexToolkit) -> dict[str, Any]:
         """The single imported document of a book's tree."""
@@ -1966,11 +2163,12 @@ class Bookstore:
         invalidates the whole partition; the next ``relate_books`` recomputes it.
         """
         for _scope, store in self._stores():
-            store.delete_relations(book_id=book_id)
+            for origin in _COMPUTED_RELATION_ORIGINS:
+                store.delete_relations(book_id=book_id, origin=origin)
             store.delete_judgements(book_id)
         self._clear_communities()
 
-    async def remove_book(self, book_id: str) -> bool:
+    async def remove_book(self, book_id: str, *, with_notes: bool = False) -> bool:
         """Remove a book — catalog row, PageIndex tree, and graph edges.
 
         Edges touching ``book_id`` may live in either scope's DB (the
@@ -1985,6 +2183,17 @@ class Bookstore:
         successful ``relate_books(communities=True)`` recomputes it;
         until then, ``communities()``/``get_community()`` correctly
         report nothing rather than a book that no longer exists.
+
+        The book's notebook (``<book_id>_notes``) is kept by default as an
+        orphan (row kept, ``notes_for`` cleared); ``with_notes=True`` also
+        deletes the notebook tree and its row.
+
+        Args:
+            book_id: The book to remove.
+            with_notes: Also delete the book's notebook.
+
+        Returns:
+            Whether the catalog row was removed.
         """
         card, loc = self.resolve_book(book_id)
         toolkit = await self._ready_toolkit(loc.scope)
@@ -1994,7 +2203,19 @@ class Bookstore:
                     await toolkit.delete_tree(card.tree_name)
                 except Exception:  # noqa: BLE001 — the tree may already be gone
                     logger.warning("Tree %r missing while removing book %r", card.tree_name, book_id)
-                removed = self._catalog(loc.scope).remove(book_id)
+                catalog = self._catalog(loc.scope)
+                notebook = self._registered_notebook(loc.scope, notebook_tree_name(card.book_id), card)
+                removed = catalog.remove(book_id)
+                if notebook is not None:
+                    if with_notes:
+                        try:
+                            await toolkit.delete_tree(notebook.tree_name)
+                        except Exception:  # noqa: BLE001 — the notebook tree may already be gone
+                            logger.warning("Notebook tree %r missing while removing %r", notebook.tree_name, book_id)
+                        catalog.remove(notebook.book_id)
+                        self._annotation_cache.pop((loc.scope, notebook.tree_name), None)
+                    else:
+                        catalog.upsert(notebook.model_copy(update={"notes_for": None}))
                 self._invalidate_graph(book_id)
         except TreeLockTimeout as exc:
             raise BookstoreError(f"Re-index already in progress for {card.tree_name!r}") from exc

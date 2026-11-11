@@ -13,11 +13,14 @@ import pytest
 from parrot.knowledge.bookstore.carding import disambiguate_title
 from parrot.knowledge.bookstore.config import LibraryLocation
 from parrot.knowledge.bookstore.library import (
+    LIBRARY_NOTEBOOK,
+    NOTEBOOK_SUFFIX,
     REPLACED_MARKER,
     _STAGING_MARKER,
     _STAGING_MAX_AGE_S,
     Bookstore,
     BookstoreError,
+    notebook_tree_name,
 )
 from parrot.knowledge.bookstore.models import (
     BookCommunity,
@@ -972,3 +975,187 @@ async def test_draft_card_samples_live_bodies_not_stale_legacy(
     assert captured, "generate_card_fields was never reached"
     joined = "\n".join(captured[0])
     assert "STALE LEGACY BODY" not in joined, "carding sampled a stale legacy sidecar instead of the live body"
+
+
+# ----------------------------------------------------------------------
+# Notebooks (FEAT-876 TASK-5477)
+# ----------------------------------------------------------------------
+async def _anchor_note(store: Bookstore, book_id: str, node_id: str, *, title: str = "A footnote", body: str = "") -> str:
+    """Add one note anchored to ``(book_id, node_id)`` in the book's notebook; return its node id."""
+    notebook = await store.ensure_notebook(book_id)
+    toolkit = await store._ready_toolkit(notebook.scope)
+    added = await toolkit.add_node(notebook.tree_name, title=title, body=body)
+    await toolkit.tag_node(
+        notebook.tree_name,
+        added["node_id"],
+        metadata={"anchors": [{"book_id": book_id, "node_id": node_id}], "note_kind": "footnote"},
+    )
+    return added["node_id"]
+
+
+@pytest.mark.asyncio
+async def test_notebook_lazy_registration(store, book_md):
+    card, _ = await store.add_book(book_md)
+    books_before = [c.book_id for c in store.list_books()]
+    assert store.notebook_for(card.book_id) is None
+
+    toolkit = await store._ready_toolkit("project")
+    await toolkit.create_tree(notebook_tree_name(card.book_id))
+
+    first = store.notebook_for(card.book_id)
+    second = store.notebook_for(card.book_id)
+    assert first is not None and second is not None
+    assert first.book_id == first.tree_name == f"{card.book_id}{NOTEBOOK_SUFFIX}"
+    assert first.kind == "notes" and first.notes_for == card.book_id
+    assert first.source_format == "tree" and first.card_origin == "fallback"
+    assert first.title == f"Notes — {card.title}"
+    catalog = store._catalog("project")
+    assert [c.book_id for c in catalog.list_cards(kind="notes")] == [first.book_id]
+    assert [c.book_id for c in store.list_books()] == books_before
+    assert all(c.kind == "book" for c in store.catalog_search("Notes"))
+
+    # Library notebook: absent → None; ensure_notebook creates and registers it.
+    assert store.library_notebook("project") is None
+    library = await store.ensure_notebook(None, scope="project")
+    assert library.book_id == LIBRARY_NOTEBOOK and library.notes_for is None
+    assert store.library_notebook("project").book_id == LIBRARY_NOTEBOOK
+
+
+@pytest.mark.asyncio
+async def test_read_section_carries_annotations(store, book_md):
+    card, _ = await store.add_book(book_md)
+    assert len(card.toc) >= 2
+    target, other = card.toc[0].node_id, card.toc[1].node_id
+    assert store.read_section(card.book_id, target)["annotations"] == []
+
+    note_id = await _anchor_note(store, card.book_id, target, body="Remember the event loop.")
+
+    section = store.read_section(card.book_id, target)
+    assert section["content"]  # existing keys unchanged
+    assert len(section["annotations"]) == 1
+    note = section["annotations"][0]
+    assert note["node_id"] == note_id
+    assert note["note_tree"] == notebook_tree_name(card.book_id)
+    assert note["body"] == "Remember the event loop."
+    assert note["note_kind"] == "footnote"
+    assert note["anchor_status"] == "current"
+    assert store.read_section(card.book_id, other)["annotations"] == []
+    async_notes = await store.annotations_for(card.book_id, target)
+    assert [n.node_id for n in async_notes] == [note_id]
+
+
+@pytest.mark.asyncio
+async def test_read_section_survives_corrupt_notebook(store, book_md, locations):
+    card, _ = await store.add_book(book_md)
+    (locations[0].trees_dir / f"{notebook_tree_name(card.book_id)}.json").write_text("{not json", encoding="utf-8")
+    section = store.read_section(card.book_id, card.toc[0].node_id)
+    assert section["annotations"] == []
+    assert all(entry["has_notes"] is False for entry in store.get_toc(card.book_id)["entries"])
+
+
+@pytest.mark.asyncio
+async def test_get_toc_has_notes(store, book_md):
+    card, _ = await store.add_book(book_md)
+    before = store.get_toc(card.book_id)
+    assert all(entry["has_notes"] is False for entry in before["entries"])
+    target = card.toc[0].node_id
+    await _anchor_note(store, card.book_id, target)
+
+    toc = store.get_toc(card.book_id)
+    assert set(toc) == {"book_id", "title", "toc_digest", "entries"}
+    for entry, original in zip(toc["entries"], card.toc, strict=True):
+        assert {k: v for k, v in entry.items() if k != "has_notes"} == original.model_dump()
+        assert entry["has_notes"] is (entry["node_id"] == target)
+
+
+@pytest.mark.asyncio
+async def test_annotations_resolve_by_scope_and_id(tmp_path, fake_adapter):
+    project = LibraryLocation(scope="project", root=tmp_path / "proj" / "library")
+    glob = LibraryLocation(scope="global", root=tmp_path / "glob" / "library")
+    book = tmp_path / "synthetic-handbook.md"
+    book.write_text(SAMPLE_MARKDOWN, encoding="utf-8")
+
+    # The same book id in each scope, each with its own notebook.
+    global_store = Bookstore([glob], adapter=fake_adapter)
+    global_card, _ = await global_store.add_book(book, scope="global")
+    project_store = Bookstore([project], adapter=fake_adapter)
+    project_card, _ = await project_store.add_book(book)
+    assert global_card.book_id == project_card.book_id
+    node_id = project_card.toc[0].node_id
+    project_note = await _anchor_note(project_store, project_card.book_id, node_id, title="Project note")
+
+    # The global book never sees the project notebook (identity is (scope, book_id)).
+    assert global_store.read_section(global_card.book_id, node_id)["annotations"] == []
+
+    # A global notebook node anchored with the default (project) scope is ignored there;
+    # an explicit global anchor is honoured.
+    notebook = await global_store.ensure_notebook(global_card.book_id)
+    assert notebook.scope == "global"
+    toolkit = await global_store._ready_toolkit("global")
+    wrong = await toolkit.add_node(notebook.tree_name, title="Wrong scope")
+    await toolkit.tag_node(
+        notebook.tree_name, wrong["node_id"], metadata={"anchors": [{"book_id": global_card.book_id, "node_id": node_id}]}
+    )
+    right = await toolkit.add_node(notebook.tree_name, title="Global note")
+    await toolkit.tag_node(
+        notebook.tree_name,
+        right["node_id"],
+        metadata={"anchors": [{"book_id": global_card.book_id, "node_id": node_id, "scope": "global"}]},
+    )
+    global_notes = global_store.read_section(global_card.book_id, node_id)["annotations"]
+    assert [n["title"] for n in global_notes] == ["Global note"]
+    project_notes = project_store.read_section(project_card.book_id, node_id)["annotations"]
+    assert [n["node_id"] for n in project_notes] == [project_note]
+
+
+@pytest.mark.asyncio
+async def test_annotations_skip_malformed_anchors(store, book_md):
+    card, _ = await store.add_book(book_md)
+    target = card.toc[0].node_id
+    notebook = await store.ensure_notebook(card.book_id)
+    toolkit = await store._ready_toolkit("project")
+    added = await toolkit.add_node(notebook.tree_name, title="Mixed anchors")
+    await toolkit.tag_node(
+        notebook.tree_name,
+        added["node_id"],
+        metadata={"anchors": [{"node_id": target}, "garbage", {"book_id": card.book_id, "node_id": target}]},
+    )
+    notes = store.read_section(card.book_id, target)["annotations"]
+    assert [n["node_id"] for n in notes] == [added["node_id"]]
+
+
+@pytest.mark.asyncio
+async def test_remove_book_keeps_notebook_by_default(store, book_md, locations):
+    card, _ = await store.add_book(book_md)
+    await _anchor_note(store, card.book_id, card.toc[0].node_id)
+    name = notebook_tree_name(card.book_id)
+    tree_path = locations[0].trees_dir / f"{name}.json"
+
+    assert await store.remove_book(card.book_id) is True
+    catalog = store._catalog("project")
+    orphan = catalog.get(name)
+    assert orphan is not None and orphan.kind == "notes" and orphan.notes_for is None
+    assert tree_path.is_file()
+    assert store.list_books() == []
+
+
+@pytest.mark.asyncio
+async def test_remove_book_with_notes_deletes_notebook(store, book_md, locations):
+    card, _ = await store.add_book(book_md)
+    await _anchor_note(store, card.book_id, card.toc[0].node_id)
+    name = notebook_tree_name(card.book_id)
+
+    assert await store.remove_book(card.book_id, with_notes=True) is True
+    assert store._catalog("project").get(name) is None
+    assert not (locations[0].trees_dir / f"{name}.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_resolve_book_refuses_notebook(store, book_md):
+    card, _ = await store.add_book(book_md)
+    notebook = await store.ensure_notebook(card.book_id)
+    with pytest.raises(BookstoreError):
+        store.resolve_book(notebook.book_id)
+    assert notebook.book_id not in [c.book_id for c in store.list_books()]
+    assert all(c.kind == "book" for c in store.catalog_search("Notes"))
+    assert all(c.kind == "book" for c in store.catalog_search(card.title))
