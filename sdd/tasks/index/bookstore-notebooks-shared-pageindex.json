@@ -217,7 +217,7 @@
       "feature_id": "FEAT-876",
       "feature": "bookstore-notebooks-shared-pageindex",
       "spec": "sdd/specs/bookstore-notebooks-shared-pageindex.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -230,8 +230,9 @@
       "parallelism_notes": "calls doctor(notes=) from TASK-5479, apply_relation_sheets from TASK-5480, draft_* from TASK-5481, import_tree from TASK-5482",
       "assigned_to": null,
       "started_at": "2026-11-10T23:47:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5483-bookstore-cli-notebooks.md"
+      "completed_at": "2026-11-11T00:44:23+00:00",
+      "file": "sdd/tasks/completed/TASK-5483-bookstore-cli-notebooks.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5484",
