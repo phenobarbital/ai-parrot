@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-878 — Redis user stores (MongoDB-free local installs)
 **Spec**: `sdd/specs/redis-user-stores.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5497, TASK-5498, TASK-5499, TASK-5500, TASK-5501, TASK-5503, TASK-5504, TASK-5505, TASK-5506, TASK-5509
@@ -255,10 +255,15 @@ See the three blueprint blocks above; every test asserts the behaviour named in 
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-5512
+- Feature: redis-user-stores
+- Implementation SHA: da59e54d120eac6390f353024473cc4209fcaa13
+- Closed at (UTC): 2026-11-11T02:21:02+00:00
+- Fix commits: none
 
-**Deviations from spec**: none
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-sol · Backend: codex · Model: gpt-5.6-sol · Attempts: 1 · Duration: 156s · Tokens: n/a |

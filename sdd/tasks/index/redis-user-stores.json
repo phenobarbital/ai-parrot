@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-11T00:12:32.886231+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-11T02:21:03+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -333,7 +333,7 @@
       "feature_id": "FEAT-878",
       "feature": "redis-user-stores",
       "spec": "sdd/specs/redis-user-stores.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -343,8 +343,9 @@
       "parallelism_notes": "Handlers call get_dashboard_store() created by TASK-5506 (parrot/handlers/dashboard_store.py).",
       "assigned_to": null,
       "started_at": "2026-11-11T00:26:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5507-dashboard-handler-store.md"
+      "completed_at": "2026-11-11T02:21:00+00:00",
+      "file": "sdd/tasks/completed/TASK-5507-dashboard-handler-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5508",
@@ -437,7 +438,7 @@
       "feature_id": "FEAT-878",
       "feature": "redis-user-stores",
       "spec": "sdd/specs/redis-user-stores.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -456,8 +457,9 @@
       "parallelism_notes": "Exercises the services changed by TASK-5497/5498/5499/5500/5501/5503/5504/5505, get_dashboard_store from TASK-5506 and copy_to_redis from TASK-5509; the AC5 grep test needs TASK-5498/5499's import removals.",
       "assigned_to": null,
       "started_at": "2026-11-11T00:26:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5512-userstore-integration-tests.md"
+      "completed_at": "2026-11-11T02:21:02+00:00",
+      "file": "sdd/tasks/completed/TASK-5512-userstore-integration-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5513",
@@ -466,7 +468,7 @@
       "feature_id": "FEAT-878",
       "feature": "redis-user-stores",
       "spec": "sdd/specs/redis-user-stores.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -482,8 +484,9 @@
       "parallelism_notes": "Documents symbols created by TASK-5495 (switch registry; the docs test imports SWITCHES), TASK-5496 (Redis layout), TASK-5497 (vault dispatch + fail-closed postgres), TASK-5508 (startup guard/diagnostics), TASK-5509 (copy CLI), TASK-5510 (rotation targets), TASK-5511 (crew default).",
       "assigned_to": null,
       "started_at": "2026-11-11T00:26:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5513-userstore-documentation.md"
+      "completed_at": "2026-11-11T02:21:03+00:00",
+      "file": "sdd/tasks/completed/TASK-5513-userstore-documentation.md",
+      "verification": "verified"
     }
   ]
 }

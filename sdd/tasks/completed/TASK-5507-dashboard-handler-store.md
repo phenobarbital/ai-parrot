@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-878 — Redis user stores (MongoDB-free local installs)
 **Spec**: `sdd/specs/redis-user-stores.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5506
@@ -217,10 +217,15 @@ async def test_ensure_indexes_no_documentdb(monkeypatch): ...  # DocumentDb patc
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-5507
+- Feature: redis-user-stores
+- Implementation SHA: da59e54d120eac6390f353024473cc4209fcaa13
+- Closed at (UTC): 2026-11-11T02:21:00+00:00
+- Fix commits: none
 
-**Deviations from spec**: none
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 2 · Duration: 526s · Tokens: n/a |

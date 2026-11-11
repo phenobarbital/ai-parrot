@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-878 — Redis user stores (MongoDB-free local installs)
 **Spec**: `sdd/specs/redis-user-stores.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5495, TASK-5496, TASK-5497, TASK-5508, TASK-5509, TASK-5510, TASK-5511
@@ -193,10 +193,15 @@ See the docs test block above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-5513
+- Feature: redis-user-stores
+- Implementation SHA: da59e54d120eac6390f353024473cc4209fcaa13
+- Closed at (UTC): 2026-11-11T02:21:03+00:00
+- Fix commits: none
 
-**Deviations from spec**: none
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: kimi · Backend: nova · Model: moonshotai.kimi-k2.5 · Attempts: 1 · Duration: 107s · Tokens: 643029/4528 |
