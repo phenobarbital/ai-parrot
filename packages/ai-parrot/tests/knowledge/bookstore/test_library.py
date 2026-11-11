@@ -1201,8 +1201,10 @@ async def test_remap_anchors_after_update(store, book_md):
     card, _ = await store.add_book(book_md)
     ch2 = _node_id_by_title(card.toc, "Chapter Two")
     note_id = await _anchor_note(store, card.book_id, ch2)
-    before = {n["node_id"] for n in (await (await store._ready_toolkit("project")).get_tree(
-        notebook_tree_name(card.book_id)))["structure"]}
+    before = {
+        n["node_id"]
+        for n in (await (await store._ready_toolkit("project")).get_tree(notebook_tree_name(card.book_id)))["structure"]
+    }
 
     # A new chapter inserted before Chapter Two shifts its node id; text is unchanged.
     book_md.write_text(
@@ -1217,8 +1219,10 @@ async def test_remap_anchors_after_update(store, book_md):
     assert anchor_status == "remapped"
     assert anchors[0]["node_id"] == new_ch2
     assert anchors[0]["revision"]
-    after = {n["node_id"] for n in (await (await store._ready_toolkit("project")).get_tree(
-        notebook_tree_name(card.book_id)))["structure"]}
+    after = {
+        n["node_id"]
+        for n in (await (await store._ready_toolkit("project")).get_tree(notebook_tree_name(card.book_id)))["structure"]
+    }
     assert before <= after  # never deletes
     notes = await store.annotations_for(card.book_id, new_ch2)
     assert [n.node_id for n in notes] == [note_id]

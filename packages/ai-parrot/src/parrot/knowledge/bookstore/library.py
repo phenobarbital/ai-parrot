@@ -669,7 +669,9 @@ class Bookstore:
                     continue
                 raw_anchors = metadata.get("anchors")
                 if not isinstance(raw_anchors, list):
-                    malformed.append({"note_tree": card.tree_name, "node_id": node.get("node_id"), "anchor": raw_anchors})
+                    malformed.append(
+                        {"note_tree": card.tree_name, "node_id": node.get("node_id"), "anchor": raw_anchors}
+                    )
                     continue
                 for raw in raw_anchors:
                     try:
@@ -955,9 +957,7 @@ class Bookstore:
             parts.extend(seg.text for seg in document.segments[start:end])
         return "\n".join(parts) or None
 
-    def _old_node_text(
-        self, loc: LibraryLocation, tree_name: str, old_node: Optional[dict[str, Any]]
-    ) -> Optional[str]:
+    def _old_node_text(self, loc: LibraryLocation, tree_name: str, old_node: Optional[dict[str, Any]]) -> Optional[str]:
         """Text of an anchored node as of the retained old revision (``None`` when unrecoverable)."""
         if old_node is None:
             return None
@@ -987,7 +987,9 @@ class Bookstore:
                     return same_title[0]
                 pool = same_title or hits
                 if isinstance(old_page, int):
-                    paged = [(abs(n["start_index"] - old_page), n) for n in pool if isinstance(n.get("start_index"), int)]
+                    paged = [
+                        (abs(n["start_index"] - old_page), n) for n in pool if isinstance(n.get("start_index"), int)
+                    ]
                     if paged:
                         best = min(distance for distance, _n in paged)
                         nearest = [n for distance, n in paged if distance == best]
