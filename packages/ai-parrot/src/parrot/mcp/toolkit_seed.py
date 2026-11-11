@@ -9,7 +9,7 @@ import shlex
 import tempfile
 from importlib.resources import files
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 import yaml
 from pydantic import BaseModel, Field
@@ -419,6 +419,71 @@ def seed_toolkit_sections(root: Path, names: Sequence[str]) -> SeedResult:
         _atomic_write(path, "".join(pieces))
 
     # Re-load with load_toolkits_config(root) and raise ValueError if seeded names are not all present
+    if result.added:
+        try:
+            config = load_toolkits_config(root_path)
+            missing = set(result.added) - set(config.toolkits.keys())
+            if missing:
+                raise ValueError(f"Failed to load seeded sections {missing} from {path}")
+        except Exception as e:
+            raise ValueError(f"Failed to re-load seeded config from {path}: {e}") from e
+
+    if result.added or result.skipped:
+        logger.info("seeded %s: added=%s skipped=%s drift=%s", path, result.added, result.skipped, result.drift)
+    return result
+
+
+def seed_agent_sections(root: Path, agents: Mapping[str, str]) -> SeedResult:
+    """Create/extend `<root>/.parrot/mcp-toolkits.yaml` with one AgentToolkit section per item (FEAT-877).
+
+    Args:
+        root: Project root.
+        agents: Section name (``agent-<slug>``) to registry agent name.
+
+    Returns:
+        SeedResult naming the added and skipped (already installed) sections.
+
+    Raises:
+        ValueError: An existing section of that name serves another agent or class, the
+            existing file is malformed, or the written file fails to re-load.
+    """
+    from parrot.mcp.toolkit_config import AGENT_TOOLKIT_CLASS_PATH, load_toolkits_config  # noqa: PLC0415
+
+    root_path = Path(root)
+    path = _config_path(root_path)
+    result = SeedResult(created_file=not path.exists())
+    content = ""
+    existing: dict[str, Any] = {}
+    if path.exists():
+        content = path.read_text(encoding="utf-8")
+        existing = load_toolkits_config(root_path).toolkits
+
+    pending: list[tuple[str, str]] = []
+    for section_name, agent_name in agents.items():
+        section = existing.get(section_name)
+        if section is None:
+            pending.append((section_name, agent_name))
+        elif section.class_path == AGENT_TOOLKIT_CLASS_PATH and section.kwargs.get("agent") == agent_name:
+            result.skipped.append(section_name)
+        else:
+            raise ValueError(
+                f"Section {section_name!r} already serves class {section.class_path!r} "
+                f"with agent {section.kwargs.get('agent')!r}"
+            )
+
+    if pending:
+        pieces = [content]
+        if not path.exists() or "toolkits:" not in content:
+            pieces.append("toolkits:\n")
+        elif content and not content.endswith("\n"):
+            pieces.append("\n")
+        for section_name, agent_name in pending:
+            body = {"class": AGENT_TOOLKIT_CLASS_PATH, "kwargs": {"agent": agent_name}, "env": {}}
+            rendered = yaml.safe_dump({section_name: body}, sort_keys=False, default_flow_style=False)
+            pieces.append("".join(f"  {line}\n" for line in rendered.splitlines()))
+            result.added.append(section_name)
+        _atomic_write(path, "".join(pieces))
+
     if result.added:
         try:
             config = load_toolkits_config(root_path)
