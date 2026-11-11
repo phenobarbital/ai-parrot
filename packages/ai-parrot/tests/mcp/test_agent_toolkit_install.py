@@ -2,13 +2,23 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
+from parrot.bots.agent import Agent
+from parrot.mcp.hosts import HostKind
 from parrot.mcp.toolkit_config import AGENT_TOOLKIT_CLASS_PATH, load_toolkits_config
+from parrot.mcp.toolkit_install import (
+    ToolkitState,
+    agent_inventory,
+    install_agent_toolkits,
+    set_toolkits_enabled,
+    uninstall_toolkits,
+)
 from parrot.mcp.toolkit_seed import seed_agent_sections, seed_toolkit_sections
-
+from parrot.registry.registry import AgentRegistry
 
 def _config(root: Path) -> Path:
     return root / ".parrot" / "mcp-toolkits.yaml"
@@ -66,3 +76,75 @@ def test_seed_agent_section_malformed_file(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         seed_agent_sections(tmp_path, {"agent-finance": "finance"})
     assert path.read_bytes() == original
+
+
+class FinanceAgent(Agent):
+    """Test agent with one locally exposable method."""
+
+    async def forecast(self, months: int) -> dict:
+        """Forecast cash for the next ``months`` months."""
+        return {"months": months}
+
+
+@pytest.fixture
+def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Return a project root with an isolated registry containing ``finance``."""
+    registry = AgentRegistry(agents_dir=tmp_path / "agents")
+    registry.register_bot_decorator(name="finance", mcp_local=True)(FinanceAgent)
+    monkeypatch.setattr("parrot.mcp.agent_toolkit.agent_registry", registry)
+    root = tmp_path / "repo"
+    root.mkdir()
+    return root
+
+
+def test_install_agent_all_or_nothing(repo: Path) -> None:
+    with pytest.raises(ValueError, match="nope"):
+        install_agent_toolkits(repo, ["finance", "nope"], [HostKind.CLAUDE])
+
+    assert not _config(repo).exists()
+    assert not (repo / ".mcp.json").exists()
+
+
+def test_install_agent_reconciles_hosts(repo: Path) -> None:
+    report = install_agent_toolkits(repo, ["finance"], [HostKind.CLAUDE])
+    assert "finance — seeded as agent-finance (tools: forecast)" in report.actions
+
+    host_config = json.loads((repo / ".mcp.json").read_text(encoding="utf-8"))
+    args = host_config["mcpServers"]["parrot-agent-finance"]["args"]
+    assert "mcp-local" in args
+    assert "agent-finance" in args
+
+    repeated = install_agent_toolkits(repo, ["finance"], [HostKind.CLAUDE])
+    assert "finance — already installed as agent-finance" in repeated.warnings
+
+
+def test_agent_inventory_rows(repo: Path) -> None:
+    before = {row.name: row for row in agent_inventory(repo, hosts=[])}
+    assert before["agent-finance"].state is ToolkitState.NOT_INSTALLED
+    assert before["agent-finance"].summary == "agent finance: forecast"
+
+    install_agent_toolkits(repo, ["finance"], [])
+    after = {row.name: row for row in agent_inventory(repo, hosts=[])}
+    assert after["agent-finance"].state is ToolkitState.ENABLED
+
+    seed_agent_sections(repo, {"agent-ghost": "ghost"})
+    with_orphan = {row.name: row for row in agent_inventory(repo, hosts=[])}
+    assert with_orphan["agent-ghost"].drift[0].startswith("agent not exposable: ")
+
+
+def test_uninstall_and_disable_agent_section(repo: Path) -> None:
+    install_agent_toolkits(repo, ["finance"], [HostKind.CLAUDE])
+
+    set_toolkits_enabled(repo, ["agent-finance"], False, [HostKind.CLAUDE])
+    assert "parrot-agent-finance" not in json.loads((repo / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]
+    disabled = load_toolkits_config(repo).toolkits["agent-finance"]
+    assert disabled.enabled is False
+
+    set_toolkits_enabled(repo, ["agent-finance"], True, [HostKind.CLAUDE])
+    enabled_host = json.loads((repo / ".mcp.json").read_text(encoding="utf-8"))
+    assert "parrot-agent-finance" in enabled_host["mcpServers"]
+
+    uninstall_toolkits(repo, ["agent-finance"], [HostKind.CLAUDE])
+    assert "agent-finance" not in load_toolkits_config(repo).toolkits
+    uninstalled_host = json.loads((repo / ".mcp.json").read_text(encoding="utf-8"))
+    assert "parrot-agent-finance" not in uninstalled_host["mcpServers"]
