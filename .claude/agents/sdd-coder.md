@@ -18,7 +18,7 @@ hooks:
     - matcher: "Bash|Write|Edit|MultiEdit|NotebookEdit"
       hooks:
         - type: command
-          command: '/home/jesuslara/proyectos/ai-parrot/.venv/bin/parrot sdd worktree guard --hook || exit 2'
+          command: 'parrot sdd worktree guard --hook || exit 2'
           timeout: 10
 ---
 

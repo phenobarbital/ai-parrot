@@ -204,14 +204,30 @@ def _agent(exe: str) -> str:
 
 
 @pytest.mark.parametrize("exe", _BAKED_EXES)
-def test_baked_guard_hook_source_ships_bare(mini_repo: Path, exe: str) -> None:
-    """A repo agent baked by a local `parrot sdd install` is packaged with the bare guard line, and --check is clean."""
+def test_baked_guard_hook_source_ships_bare(mini_repo: Path, capsys: pytest.CaptureFixture[str], exe: str) -> None:
+    """A repo agent baked by a local `parrot sdd install` is packaged with the bare guard line, but --check still
+    fails on the tracked source (it reaches every collaborator through git) — reported once, never as diverged."""
     rel = ".claude/agents/sdd-coder.md"
     (mini_repo / rel).parent.mkdir(parents=True, exist_ok=True)
     (mini_repo / rel).write_text(_agent(exe), encoding="utf-8")
     subprocess.run(["git", "add", "-A"], cwd=mini_repo, check=True)
     assert _run(mini_repo, "--write") == 0
     assert (mini_repo / "assets/claude/agents/sdd-coder.md").read_text() == _agent("parrot")
+    capsys.readouterr()
+    assert _run(mini_repo, "--check") == 1
+    err = capsys.readouterr().err
+    problems = [line for line in err.splitlines() if ": " in line and not line.startswith(("Guard hook", "SDD assets"))]
+    assert len(problems) == 1 and problems[0].startswith(f"baked-source: {rel}:4:")
+    assert "parrot sdd install --portable" in err and "SDD assets out of sync" not in err
+
+
+def test_bare_guard_hook_source_passes_check(mini_repo: Path) -> None:
+    """The bare guard line in a tracked repo agent is not a baked-source problem."""
+    rel = ".claude/agents/sdd-coder.md"
+    (mini_repo / rel).parent.mkdir(parents=True, exist_ok=True)
+    (mini_repo / rel).write_text(_agent("parrot"), encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=mini_repo, check=True)
+    assert _run(mini_repo, "--write") == 0
     assert _run(mini_repo, "--check") == 0
 
 
