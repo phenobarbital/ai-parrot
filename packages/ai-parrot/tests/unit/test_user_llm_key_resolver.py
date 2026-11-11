@@ -53,6 +53,12 @@ def patch_vault_keys(monkeypatch):
     )
 
 
+@pytest.fixture(autouse=True)
+def _pin_documentdb(monkeypatch):
+    """These tests fake DocumentDB; Redis is the FEAT-878 default."""
+    monkeypatch.setenv("BYOK_STORE", "documentdb")
+
+
 @pytest.fixture
 def fake_db(monkeypatch):
     _FakeDocumentDb.docs = []
@@ -172,7 +178,7 @@ class TestPostgresStoreSelection:
     async def test_default_setting_ignores_registered_store(self, monkeypatch):
         import parrot.auth.broker as broker_module
 
-        monkeypatch.delenv("BYOK_STORE", raising=False)
+        monkeypatch.setenv("BYOK_STORE", "documentdb")
         broker_module.set_user_llm_key_store(_RecordingStore({("user-1", "anthropic"): "sk-from-postgres"}))
         assert await _UserLLMKeyResolver().resolve("anthropic", "user-1") == "sk-from-documentdb"
 
