@@ -17,6 +17,7 @@ from parrot.mcp.toolkit_stale import (
     remove_stale_mcp_entries,
 )
 
+
 def _entry(name: str, config: str) -> dict[str, object]:
     return {"command": "/venv/bin/parrot", "args": ["mcp-local", name, "--config", config]}
 

@@ -115,9 +115,7 @@ class BotMetadata:
         For singleton bots, the same instance is returned on subsequent calls.
         """
         if self.kind != AgentKind.LOCAL:
-            raise RemoteAgentNotInstantiable(
-                f"{self.name} is a {self.kind.value} agent; use the protocol client"
-            )
+            raise RemoteAgentNotInstantiable(f"{self.name} is a {self.kind.value} agent; use the protocol client")
         # Singleton path
         if self.singleton and self._instance is not None:
             return self._instance
@@ -326,6 +324,7 @@ class BotConfig(BaseModel):
         elif not self.endpoint:
             raise ValueError(f"endpoint is required for {self.kind.value} agent {self.name!r}")
         return self
+
     roost: Optional[RoostAgentConfig] = Field(default=None)  # FEAT-747
 
 
@@ -936,9 +935,7 @@ class AgentRegistry:
         Handles the translation from declarative config to AbstractBot arguments.
         """
         if config.kind != AgentKind.LOCAL:
-            raise RemoteAgentNotInstantiable(
-                f"{config.name} is a {config.kind.value} agent; use the protocol client"
-            )
+            raise RemoteAgentNotInstantiable(f"{config.name} is a {config.kind.value} agent; use the protocol client")
         # Import module and class dynamically
         try:
             module = importlib.import_module(config.module)

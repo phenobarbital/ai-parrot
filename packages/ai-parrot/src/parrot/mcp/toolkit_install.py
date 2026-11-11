@@ -34,6 +34,7 @@ from parrot.mcp.toolkit_seed import (
     template_drift,
 )
 
+
 class ToolkitState(str, Enum):
     NOT_INSTALLED = "not_installed"
     ENABLED = "enabled"
