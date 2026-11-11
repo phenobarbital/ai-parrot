@@ -9,7 +9,7 @@ import shlex
 import tempfile
 from importlib.resources import files
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 import yaml
 from pydantic import BaseModel, Field
@@ -332,6 +332,24 @@ def remove_section(root: Path, name: str) -> bool:
     return True
 
 
+def _toolkits_root_state(content: str) -> tuple[str, bool]:
+    """Normalise the ``toolkits:`` root of an existing file and report whether it must be added.
+
+    A line-anchored match (not a substring test) so a comment or value that merely mentions
+    ``toolkits:`` is not mistaken for the root; an empty flow mapping (``toolkits: {}``) is
+    rewritten to the block form so sections can be appended beneath it.
+
+    Args:
+        content: Current text of the toolkits config file ("" when absent).
+
+    Returns:
+        The possibly normalised text and True when a ``toolkits:`` root line must still be appended.
+    """
+    normalised = re.sub(r"(?m)^toolkits:[ \t]*\{\s*\}[ \t]*(#.*)?$", "toolkits:", content)
+    has_root = re.search(r"(?m)^toolkits:[ \t]*(#.*)?$", normalised) is not None
+    return normalised, not has_root
+
+
 def seed_toolkit_sections(root: Path, names: Sequence[str]) -> SeedResult:
     """Create/extend `<root>/.parrot/mcp-toolkits.yaml` with the named sections.
 
@@ -393,7 +411,7 @@ def seed_toolkit_sections(root: Path, names: Sequence[str]) -> SeedResult:
             sections_to_add.append(name)
 
     # If file doesn't exist or doesn't have toolkits root, create/add it
-    needs_toolkits_root = not path.exists() or "toolkits:" not in content
+    content, needs_toolkits_root = _toolkits_root_state(content)
     # A hand-edited file missing a trailing newline would otherwise have the
     # first appended section's key concatenated onto its last line (e.g.
     # "enabled: true  bounded-source:") — corrupting the file.
@@ -419,6 +437,81 @@ def seed_toolkit_sections(root: Path, names: Sequence[str]) -> SeedResult:
         _atomic_write(path, "".join(pieces))
 
     # Re-load with load_toolkits_config(root) and raise ValueError if seeded names are not all present
+    if result.added:
+        try:
+            config = load_toolkits_config(root_path)
+            missing = set(result.added) - set(config.toolkits.keys())
+            if missing:
+                raise ValueError(f"Failed to load seeded sections {missing} from {path}")
+        except Exception as e:
+            raise ValueError(f"Failed to re-load seeded config from {path}: {e}") from e
+
+    if result.added or result.skipped:
+        logger.info("seeded %s: added=%s skipped=%s drift=%s", path, result.added, result.skipped, result.drift)
+    return result
+
+
+def seed_agent_sections(root: Path, agents: Mapping[str, str]) -> SeedResult:
+    """Create/extend `<root>/.parrot/mcp-toolkits.yaml` with one AgentToolkit section per item (FEAT-877).
+
+    Args:
+        root: Project root.
+        agents: Section name (``agent-<slug>``) to registry agent name.
+
+    Returns:
+        SeedResult naming the added and skipped (already installed) sections.
+
+    Raises:
+        ValueError: An existing section of that name serves another agent or class, the
+            existing file is malformed, or the written file fails to re-load.
+    """
+    from parrot.mcp.toolkit_config import AGENT_TOOLKIT_CLASS_PATH, load_toolkits_config  # noqa: PLC0415
+
+    root_path = Path(root)
+    path = _config_path(root_path)
+    result = SeedResult(created_file=not path.exists())
+    content = ""
+    existing: dict[str, Any] = {}
+    if path.exists():
+        content = path.read_text(encoding="utf-8")
+        existing = load_toolkits_config(root_path).toolkits
+
+    pending: list[tuple[str, str]] = []
+    for section_name, agent_name in agents.items():
+        section = existing.get(section_name)
+        if section is None:
+            pending.append((section_name, agent_name))
+        elif section.class_path == AGENT_TOOLKIT_CLASS_PATH and section.kwargs.get("agent") == agent_name:
+            result.skipped.append(section_name)
+        else:
+            raise ValueError(
+                f"Section {section_name!r} already serves class {section.class_path!r} "
+                f"with agent {section.kwargs.get('agent')!r}"
+            )
+
+    content, needs_root = _toolkits_root_state(content)
+    if pending:
+        pieces = [content]
+        if needs_root:
+            pieces.append("toolkits:\n")
+        elif content and not content.endswith("\n"):
+            pieces.append("\n")
+        for section_name, agent_name in pending:
+            body = {"class": AGENT_TOOLKIT_CLASS_PATH, "kwargs": {"agent": agent_name}, "env": {}}
+            rendered = yaml.safe_dump({section_name: body}, sort_keys=False, default_flow_style=False)
+            pieces.append("".join(f"  {line}\n" for line in rendered.splitlines()))
+            result.added.append(section_name)
+        text = "".join(pieces)
+        try:
+            parsed = (yaml.safe_load(text) or {}).get("toolkits") or {}
+        except (yaml.YAMLError, AttributeError) as exc:
+            raise ValueError(f"Refusing to write {path}: the result is not valid YAML ({exc})") from exc
+        if not set(result.added) <= set(parsed):
+            raise ValueError(
+                f"Refusing to write {path}: sections {sorted(set(result.added) - set(parsed))} would not load"
+            )
+        _atomic_write(path, text)
+
     if result.added:
         try:
             config = load_toolkits_config(root_path)

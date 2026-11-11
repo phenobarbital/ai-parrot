@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-10T23:56:44Z",
-  "completed_at": null,
+  "completed_at": "2026-11-11T02:02:01+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -51,16 +51,17 @@
       "feature_id": "FEAT-877",
       "feature": "agent-local-mcp",
       "spec": "sdd/specs/agent-local-mcp.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Leaf: modifies only registry.py and creates its own test file; no symbol from another task.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5485-mcp-local-exposure-registry.md"
+      "started_at": "2026-11-11T00:03:26+00:00",
+      "completed_at": "2026-11-11T00:14:25+00:00",
+      "file": "sdd/tasks/completed/TASK-5485-mcp-local-exposure-registry.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5486",
@@ -69,16 +70,17 @@
       "feature_id": "FEAT-877",
       "feature": "agent-local-mcp",
       "spec": "sdd/specs/agent-local-mcp.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Leaf: adds constants/helpers to toolkit_config.py only; imports nothing new from the feature. Non-edge to TASK-5487: agent_toolkit.py appears only as the string constant AGENT_TOOLKIT_CLASS_PATH and a Does-NOT-Exist note, never imported.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5486-agent-section-config-helpers.md"
+      "started_at": "2026-11-11T00:03:26+00:00",
+      "completed_at": "2026-11-11T00:14:26+00:00",
+      "file": "sdd/tasks/completed/TASK-5486-agent-section-config-helpers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5487",
@@ -87,7 +89,7 @@
       "feature_id": "FEAT-877",
       "feature": "agent-local-mcp",
       "spec": "sdd/specs/agent-local-mcp.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -96,9 +98,10 @@
       "parallel": true,
       "parallelism_notes": "Imports MCPLocalExposure from TASK-5485 (registry/registry.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5487-agent-own-class-method-rule.md"
+      "started_at": "2026-11-11T00:03:26+00:00",
+      "completed_at": "2026-11-11T00:21:00+00:00",
+      "file": "sdd/tasks/completed/TASK-5487-agent-own-class-method-rule.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5488",
@@ -107,7 +110,7 @@
       "feature_id": "FEAT-877",
       "feature": "agent-local-mcp",
       "spec": "sdd/specs/agent-local-mcp.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -118,9 +121,10 @@
       "parallel": true,
       "parallelism_notes": "Modifies agent_toolkit.py and test_agent_toolkit.py created by TASK-5487 and calls its exposed_methods/AgentExposureError; calls load_modules_sync and reads BotConfig.mcp_local from TASK-5485 (registry.py); imports agent_section_name from TASK-5486 (toolkit_config.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5488-agent-exposure-resolution.md"
+      "started_at": "2026-11-11T00:03:26+00:00",
+      "completed_at": "2026-11-11T00:28:07+00:00",
+      "file": "sdd/tasks/completed/TASK-5488-agent-exposure-resolution.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5489",
@@ -129,7 +133,7 @@
       "feature_id": "FEAT-877",
       "feature": "agent-local-mcp",
       "spec": "sdd/specs/agent-local-mcp.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -138,9 +142,10 @@
       "parallel": true,
       "parallelism_notes": "Modifies agent_toolkit.py/test_agent_toolkit.py after TASK-5488 and calls its discover_agents, resolve_exposable_agent, _tool_names, ResolvedAgent.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5489-agent-toolkit-class.md"
+      "started_at": "2026-11-11T00:03:26+00:00",
+      "completed_at": "2026-11-11T00:36:00+00:00",
+      "file": "sdd/tasks/completed/TASK-5489-agent-toolkit-class.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5490",
@@ -149,7 +154,7 @@
       "feature_id": "FEAT-877",
       "feature": "agent-local-mcp",
       "spec": "sdd/specs/agent-local-mcp.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -158,9 +163,10 @@
       "parallel": true,
       "parallelism_notes": "Imports AGENT_TOOLKIT_CLASS_PATH from TASK-5486 (toolkit_config.py). Non-edge to TASK-5487: agent_toolkit.py appears only as the class-path string written into the section, never imported.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5490-seed-agent-sections.md"
+      "started_at": "2026-11-11T00:03:26+00:00",
+      "completed_at": "2026-11-11T00:21:02+00:00",
+      "file": "sdd/tasks/completed/TASK-5490-seed-agent-sections.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5491",
@@ -169,7 +175,7 @@
       "feature_id": "FEAT-877",
       "feature": "agent-local-mcp",
       "spec": "sdd/specs/agent-local-mcp.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -180,9 +186,10 @@
       "parallel": true,
       "parallelism_notes": "Calls seed_agent_sections from TASK-5490 (toolkit_seed.py) and appends to its test_agent_toolkit_install.py; calls resolve_exposable_agent/list_exposable_agents/_tool_names from TASK-5488 (agent_toolkit.py); imports agent_section_name/is_agent_section/AGENT_TOOLKIT_CLASS_PATH from TASK-5486.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5491-install-agent-toolkits.md"
+      "started_at": "2026-11-11T00:03:26+00:00",
+      "completed_at": "2026-11-11T00:37:27+00:00",
+      "file": "sdd/tasks/completed/TASK-5491-install-agent-toolkits.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5492",
@@ -191,7 +198,7 @@
       "feature_id": "FEAT-877",
       "feature": "agent-local-mcp",
       "spec": "sdd/specs/agent-local-mcp.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -200,9 +207,10 @@
       "parallel": true,
       "parallelism_notes": "Imports is_agent_section and AGENT_SECTION_PREFIX from TASK-5486 (toolkit_config.py); tests write the agent section as text, so no edge to TASK-5490. Non-edge to TASK-5487: agent_toolkit.py appears only as the class string in test YAML and a Does-NOT-Exist note, never imported.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5492-stale-agent-sections.md"
+      "started_at": "2026-11-11T00:03:26+00:00",
+      "completed_at": "2026-11-11T00:21:03+00:00",
+      "file": "sdd/tasks/completed/TASK-5492-stale-agent-sections.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5493",
@@ -211,7 +219,7 @@
       "feature_id": "FEAT-877",
       "feature": "agent-local-mcp",
       "spec": "sdd/specs/agent-local-mcp.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -220,9 +228,10 @@
       "parallel": true,
       "parallelism_notes": "Calls install_agent_toolkits and agent_inventory from TASK-5491 (toolkit_install.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5493-toolkits-cli-agent-options.md"
+      "started_at": "2026-11-11T00:03:26+00:00",
+      "completed_at": "2026-11-11T00:43:55+00:00",
+      "file": "sdd/tasks/completed/TASK-5493-toolkits-cli-agent-options.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5494",
@@ -231,7 +240,7 @@
       "feature_id": "FEAT-877",
       "feature": "agent-local-mcp",
       "spec": "sdd/specs/agent-local-mcp.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -242,9 +251,10 @@
       "parallel": true,
       "parallelism_notes": "Documents shipped messages of AgentToolkit (TASK-5489), install_agent_toolkits/agent_inventory (TASK-5491) and the CLI options (TASK-5493); appends to test_toolkits_cli_agent.py created by TASK-5493.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5494-agent-local-mcp-docs.md"
+      "started_at": "2026-11-11T00:03:26+00:00",
+      "completed_at": "2026-11-11T00:49:31+00:00",
+      "file": "sdd/tasks/completed/TASK-5494-agent-local-mcp-docs.md",
+      "verification": "verified"
     }
   ]
 }

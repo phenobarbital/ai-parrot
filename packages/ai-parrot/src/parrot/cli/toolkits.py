@@ -129,7 +129,10 @@ def _render(report) -> None:
 
 @toolkits.command("list")
 @host_option
-def list_(hosts_: tuple[str, ...]) -> None:
+@click.option(
+    "--agents", "agents_", is_flag=True, default=False, help="Also list agents declared for local MCP exposure."
+)
+def list_(hosts_: tuple[str, ...], agents_: bool = False) -> None:
     """Show every available toolkit with its state, hosts, drift and dependencies."""
     from rich.console import Console
     from rich.table import Table
@@ -139,6 +142,11 @@ def list_(hosts_: tuple[str, ...]) -> None:
     root = _root(write=False)
     hosts = _resolve_hosts(root, hosts_)
     rows = inventory(root, hosts)
+    if agents_:
+        from parrot.mcp.toolkit_install import agent_inventory  # lazy: discovery imports agent modules
+
+        click.echo("  ℹ discovering agents imports every agent module under AGENTS_DIR")
+        rows = [*rows, *agent_inventory(root, hosts)]
 
     table = Table()
     table.add_column("Name")
@@ -196,38 +204,55 @@ def status(hosts_: tuple[str, ...]) -> None:
     default=None,
     help="Bare launcher commands or baked paths; default keeps form then follows the launcher.",
 )
+@click.option("--agent", "agents", multiple=True, help="Registered agent to expose (repeatable); see `list --agents`.")
 def install(
-    names: tuple[str, ...], hosts_: tuple[str, ...], yes: bool, path_: Path | None, portable: bool | None
+    names: tuple[str, ...],
+    hosts_: tuple[str, ...],
+    yes: bool,
+    path_: Path | None,
+    portable: bool | None,
+    agents: tuple[str, ...] = (),
 ) -> None:
-    """Seed selected toolkits at the resolved target using the selected command form."""
+    """Seed selected toolkits and registered agents at the resolved target."""
     root = _root(path_, write=True)
-    from parrot.mcp.toolkit_install import install_toolkits
+    from parrot.mcp.toolkit_install import install_agent_toolkits, install_toolkits
 
     hosts = _resolve_hosts(root, hosts_)
-    selected = _resolve_names(root, names, hosts)
-    if not selected:
+    selected = _resolve_names(root, names, hosts) if (names or not agents) else []
+    if not selected and not agents:
         click.echo("Nothing selected.")
         return
     for warning in _warn_user_global(root, hosts):
         click.secho(f"  ⚠ {warning}", fg="yellow")
-    if not yes and not click.confirm(f"Install {', '.join(selected)} into {[h.value for h in hosts]}?"):
-        return
-    try:
-        report = install_toolkits(root, selected, hosts, portable=portable)
-    except ValueError as exc:
-        raise click.ClickException(str(exc)) from exc
-    _render(report)
-    click.echo("  ℹ Start a new session for the MCP servers to appear.")
-    from parrot.mcp.toolkit_install import dist_available, load_template  # lazy, patched at call time
+    if selected and not yes and not click.confirm(f"Install {', '.join(selected)} into {[h.value for h in hosts]}?"):
+        # Declining the template install must not silently drop the separately confirmed agents.
+        click.echo("Skipped toolkits.")
+        selected = []
+    if selected:
+        try:
+            report = install_toolkits(root, selected, hosts, portable=portable)
+        except ValueError as exc:
+            raise click.ClickException(str(exc)) from exc
+        _render(report)
+        from parrot.mcp.toolkit_install import dist_available, load_template  # lazy, patched at call time
 
-    for name in selected:
-        template = load_template(name)
-        if template.requires_dist and not dist_available(template.requires_dist):
-            click.secho(
-                f"  ℹ {name}: distribution missing — {_self_add_hint(name)} "
-                f"(or `parrot self add {name} --here` for the project venv)",
-                fg="yellow",
-            )
+        for name in selected:
+            template = load_template(name)
+            if template.requires_dist and not dist_available(template.requires_dist):
+                click.secho(
+                    f"  ℹ {name}: distribution missing — {_self_add_hint(name)} "
+                    f"(or `parrot self add {name} --here` for the project venv)",
+                    fg="yellow",
+                )
+    if agents:
+        if not yes and not click.confirm(f"Install agents {', '.join(agents)} into {[h.value for h in hosts]}?"):
+            return
+        try:
+            report = install_agent_toolkits(root, list(agents), hosts, portable=portable)
+        except ValueError as exc:
+            raise click.ClickException(str(exc)) from exc
+        _render(report)
+    click.echo("  ℹ Start a new session for the MCP servers to appear.")
 
 
 @toolkits.command()

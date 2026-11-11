@@ -160,6 +160,21 @@ importable.
 
 ---
 
+## Exposing an agent
+
+A registered agent's own async methods can be served the same way, without writing a toolkit:
+
+1. Declare it: top-level `mcp_local: true` (or `mcp_local: {allow: [...]}`) in its YAML definition, or
+   `mcp_local=True` on `@register_agent`.
+2. Install it: `parrot toolkits install --agent <name>` seeds an `agent-<slug>` section and registers it
+   with every selected host.
+3. The host runs `parrot mcp-local agent-<slug>`, which creates the agent on the first tool call.
+
+See [Agent as a Local MCP Server](../mcp/agent-local-mcp.md) for the own-class rule, `allow`, the
+`ask` exclusion, the error messages and troubleshooting.
+
+---
+
 ## Exposing your own toolkit
 
 1. Write (or reuse) an `AbstractToolkit` subclass anywhere importable from
