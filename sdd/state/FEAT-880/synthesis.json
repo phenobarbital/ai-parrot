@@ -1,0 +1,634 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-880",
+  "mode": "enrichment",
+  "summary_oneline": "add_semantic for DatasetManager is feasible as a governed-per-fetch DataSource shipped from ai-parrot-semantic; the DuckDB store is a separate feature.",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/sources/base.py",
+      "symbol": "DataSource",
+      "lines": "23-132",
+      "role": "abstract source contract: fetch(**params) -> DataFrame, describe(), cache_key, optional prefetch_schema / has_builtin_cache",
+      "evidence": [
+        "F001",
+        "F013"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/tool.py",
+      "symbol": "DatasetManager.add_source",
+      "lines": "1433-1481",
+      "role": "generic registration of any pre-built DataSource - the plug-in point that needs no new machinery",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/tool.py",
+      "symbol": "DatasetManager.add_query",
+      "lines": "1483-1534",
+      "role": "pattern every add_* follows (lazy import, build source, _make_source, DatasetEntry)",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/tool.py",
+      "symbol": "DatasetManager._make_source",
+      "lines": "682-714",
+      "role": "wraps every non-memory source in AuthorizingDataSource when a data-plane guard is configured",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/tool.py",
+      "symbol": "DatasetEntry.materialize",
+      "lines": "337-365",
+      "role": "first fetch fills the in-memory pandas DataFrame held in entry._df",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/tool.py",
+      "symbol": "DatasetManager.materialize",
+      "lines": "4270-4335",
+      "role": "manager-level materialize with the Redis Parquet cache keyed by source.cache_key",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/tool.py",
+      "symbol": "DatasetManager._cache_df",
+      "lines": "4244-4263",
+      "role": "writes the shared (subject-less) Redis Parquet cache entry",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/sources/sql.py",
+      "symbol": "SQLQuerySource.fetch",
+      "lines": "181-231",
+      "role": "DatasetManager's own SQL execution: AsyncDB(driver) -> pandas, str.format placeholder interpolation",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/sources/authorizing.py",
+      "symbol": "AuthorizingDataSource.fetch",
+      "lines": "103-150",
+      "role": "DatasetManager-side PBAC + RLS wrapper; isinstance dispatch, fail-open without context, sensitive-driver rule",
+      "evidence": [
+        "F006",
+        "F015"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/sources/resolver.py",
+      "symbol": "resolve_physical_resources",
+      "lines": "120-188",
+      "role": "maps a source class to physical resources; unknown classes fall to the opaque resolver (no RLS)",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/sources/dialects.py",
+      "symbol": "_DRIVER_DIALECT_MAP",
+      "lines": "23-38",
+      "role": "DatasetManager driver -> sqlglot dialect map (asyncdb-canonical names such as pg)",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/sources/composite.py",
+      "symbol": "CompositeDataSource",
+      "lines": "1-30",
+      "role": "precedent: definition-driven source with has_builtin_cache = True and its own add_composite_dataset",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/engines/__init__.py",
+      "symbol": "compile",
+      "lines": "14-46",
+      "role": "compile-only entry point: (SemanticQuery, LoadedModel, dialect) -> CompiledQuery, pre-governance SQL",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/engines/native.py",
+      "symbol": "NativeCompiler.compile",
+      "lines": "72-90",
+      "role": "requires a full SemanticQuery, rejects saved queries / timezone, always appends the policy LIMIT",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/toolkit.py",
+      "symbol": "SemanticLayerToolkit._run_governed",
+      "lines": "289-328",
+      "role": "the only path from a SemanticQuery to rows: PBAC, rights, compile, govern, execute, audit",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/governance/pipeline.py",
+      "symbol": "GovernancePipeline.govern",
+      "lines": "152-188",
+      "role": "turns compiled SQL into governed SQL (PBAC, usage lineage, RLS push-down, masking, limit cap)",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/governance/pbac.py",
+      "symbol": "PbacGate.authorize",
+      "lines": "63-100",
+      "role": "returns early for governed: false - the only thing that flag relaxes besides the connection rule",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/handoff.py",
+      "symbol": "_validate_sink",
+      "lines": "25-71",
+      "role": "rejects any sink whose class lineage contains DatasetManager / AbstractToolkit / DataFrame",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/toolkit.py",
+      "symbol": "SemanticLayerToolkit.save_result_as_dataset",
+      "lines": "546-592",
+      "role": "existing push direction: publish an already-governed result into a per-owner GovernedDatasetSink",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-semantic/pyproject.toml",
+      "symbol": "dependencies",
+      "lines": "6-30",
+      "role": "ai-parrot-semantic depends on ai-parrot; core must not hard-import parrot.semantic",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "sdd/specs/accounting-metrics-layer.spec.md",
+      "symbol": "DuckDBRunner",
+      "lines": "119",
+      "role": "only prior art for a DuckDB in-process engine with Arrow bridge (FEAT-713, draft, no code)",
+      "evidence": [
+        "F014"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "statement": "Dependency direction: ai-parrot-semantic depends on ai-parrot; nothing in core or tools imports parrot.semantic",
+      "evidence": [
+        "F004"
+      ],
+      "implication": "the semantic source class must ship from ai-parrot-semantic and be registered through add_source(), or DatasetManager must import it lazily inside add_semantic (as it does querysource)"
+    },
+    {
+      "statement": "engines.compile output is pre-governance SQL; the toolkit never hands governed SQL to callers and _run_governed is the single path to rows",
+      "evidence": [
+        "F003",
+        "F004"
+      ],
+      "implication": "a source that stores compiled SQL in a plain SQLQuerySource skips usage rights, model RLS, masks, limits and audit - a governance bypass"
+    },
+    {
+      "statement": "The existing hand-off deliberately keeps governed rows out of a raw or shared DatasetManager (owner 4-tuple, expiry, re-authorization on every read)",
+      "evidence": [
+        "F005",
+        "F010"
+      ],
+      "implication": "a pull-direction source must not undercut M9H: governed rows may not be materialized once and served to other subjects"
+    },
+    {
+      "statement": "DatasetManager's cache is subject-less: entry._df in memory plus Redis Parquet keyed only by source.cache_key, shared across agents",
+      "evidence": [
+        "F002",
+        "F013"
+      ],
+      "implication": "a source whose rows depend on the caller must set has_builtin_cache = True (or no_cache) and must not be served from a shared entry across subjects"
+    },
+    {
+      "statement": "AuthorizingDataSource dispatches by isinstance; an unknown source class gets the opaque resolver and no RLS, a missing PermissionContext fails open, and a sensitive driver rejects every non-QuerySlugSource",
+      "evidence": [
+        "F006",
+        "F015"
+      ],
+      "implication": "a new source class must either be taught to resolver / RLS injection or own its governance and be excluded from double-wrapping; RLS from the shared (driver, table) registry must not be injected twice"
+    },
+    {
+      "statement": "A LoadedModel only exists after SemanticModelLoader(models_dir, driver).load(), which requires a policy side-file per model",
+      "evidence": [
+        "F003"
+      ],
+      "implication": "add_semantic takes a models directory (model + policy), not one stand-alone YAML file"
+    },
+    {
+      "statement": "The compiler needs a full SemanticQuery and always appends LIMIT min(query.limit or limits.default, limits.max), defaults 1000 / 10000",
+      "evidence": [
+        "F003"
+      ],
+      "implication": "a semantic dataset is a query result (metrics x dimensions x filters), never 'the whole model', and is row-capped unless the policy raises limits.max"
+    },
+    {
+      "statement": "Driver naming and execution differ: DatasetManager uses asyncdb names (pg) and AsyncDB -> DataFrame; the semantic layer uses the toolkit dialect string, PARROT_SEMANTIC_CONN_* overlays and DatabaseQueryToolkit -> row dicts with a limit+1 probe row",
+      "evidence": [
+        "F004",
+        "F001"
+      ],
+      "implication": "PBAC resource ids (<driver>:<schema.table>) only match on both sides if names are normalized; whoever executes governed SQL must drop the probe row and build the DataFrame"
+    },
+    {
+      "statement": "SQLQuerySource interpolates {param} placeholders with str.format",
+      "evidence": [
+        "F001"
+      ],
+      "implication": "compiled SQL containing literal braces cannot be passed through SQLQuerySource unchanged"
+    },
+    {
+      "statement": "No DuckDB-backed dataset store exists; nine accessors and the pandas REPL hand-over read entry._df directly; FEAT-713 (draft) already decided 'one compiler, two execution targets' with DuckDB + Arrow and lists modifying DatasetManager as a non-goal",
+      "evidence": [
+        "F002",
+        "F014"
+      ],
+      "implication": "a DuckDB-backed store is a cross-cutting DatasetManager change independent of the semantic source and must be reconciled with FEAT-713 rather than designed twice"
+    },
+    {
+      "statement": "Both areas are quiet: DatasetManager had 3 hardening commits in 45 days, the semantic package no source change since 2026-10-30, no branch combines them; FEAT-742 may later replace the compiler",
+      "evidence": [
+        "F008",
+        "F009",
+        "F012"
+      ],
+      "implication": "low collision risk; depend on engines.compile, not on NativeCompiler directly"
+    }
+  ],
+  "investigation": null,
+  "enrichment": {
+    "new": [
+      "SemanticDataSource (DataSource subclass) shipped from ai-parrot-semantic: holds models_dir + dialect + a pinned SemanticQuery, compiles through engines.compile and governs through GovernancePipeline on every fetch under the caller's PermissionContext, returns a DataFrame; has_builtin_cache = True and a cache_key that never crosses subjects",
+      "A registration entry point: DatasetManager.add_semantic(...) with a lazy import of the semantic distribution (clear error when it is not installed), or a helper in ai-parrot-semantic that calls add_source()",
+      "A small internal semantic API that returns governed SQL (or governed rows) to a trusted in-process source without going through the LLM-facing toolkit tools",
+      "Tests in packages/ai-parrot-semantic/tests (source contract, per-subject isolation, no shared cache, probe-row trimming) plus a DatasetManager registration test",
+      "Separate feature: a DuckDB-backed dataset store behind DatasetEntry (not part of the semantic source)"
+    ],
+    "modified": [
+      {
+        "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/tool.py",
+        "symbol": "DatasetManager.add_source",
+        "change": "add a sibling add_semantic registration method following the add_query shape",
+        "evidence": [
+          "F001"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/sources/resolver.py",
+        "symbol": "resolve_physical_resources",
+        "change": "recognize the semantic source (tables from CompiledQuery.tables) or mark it self-governed so AuthorizingDataSource does not re-inject RLS",
+        "evidence": [
+          "F006"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/sources/authorizing.py",
+        "symbol": "AuthorizingDataSource.fetch",
+        "change": "sensitive-driver and RLS dispatch must have a defined behavior for the new class",
+        "evidence": [
+          "F006"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-semantic/src/parrot/semantic/toolkit.py",
+        "symbol": "SemanticLayerToolkit._run_governed",
+        "change": "factor the govern-and-execute core so a source can reuse it without the tool surface (no behavior change for the toolkit)",
+        "evidence": [
+          "F004"
+        ]
+      }
+    ],
+    "untouched": [
+      "The LLM-facing semantic tools and the existing push hand-off (save_result_as_dataset, GovernedDatasetSink) keep their contract",
+      "The semantic model format, the native compiler grammar and the policy schema",
+      "parrot/clients/base.py and every other DataSource kind",
+      "Cross-connection joins / federation - still unsupported by the semantic layer",
+      "FEAT-713 accounting-metrics-layer and FEAT-742 Rust compiler"
+    ],
+    "patterns": [
+      {
+        "pattern": "One DataSource subclass per source kind plus one add_* method; add_source() already accepts any pre-built source",
+        "evidence": [
+          "F001",
+          "F011"
+        ]
+      },
+      {
+        "pattern": "CompositeDataSource: definition-driven source with has_builtin_cache = True",
+        "evidence": [
+          "F007"
+        ]
+      },
+      {
+        "pattern": "QuerySlugSource keeps a per-request principal out of the cache key",
+        "evidence": [
+          "F001"
+        ]
+      },
+      {
+        "pattern": "Lazy import of optional distributions inside add_* (querysource)",
+        "evidence": [
+          "F004"
+        ]
+      },
+      {
+        "pattern": "Reuse the sink conformance suite to assert governed data never leaks across subjects",
+        "evidence": [
+          "F010"
+        ]
+      }
+    ],
+    "risks": [
+      {
+        "risk": "Governance bypass if compiled (pre-governance) SQL is executed by a plain SQLQuerySource",
+        "impact": "masks, usage grants, model RLS, limits and audit are skipped; mitigate by governing inside fetch()",
+        "evidence": [
+          "F003",
+          "F004",
+          "F006"
+        ]
+      },
+      {
+        "risk": "Cross-subject leakage through entry._df or the Redis Parquet cache",
+        "impact": "one subject's governed rows served to another; mitigate with has_builtin_cache = True and a manager that is per session / owner, or a subject-keyed cache",
+        "evidence": [
+          "F002",
+          "F005"
+        ]
+      },
+      {
+        "risk": "Double RLS injection (semantic pipeline + AuthorizingDataSource share the (driver, table) registry)",
+        "impact": "duplicated predicates or refusals; mitigate by declaring the source self-governed",
+        "evidence": [
+          "F006",
+          "F015"
+        ]
+      },
+      {
+        "risk": "Driver-name mismatch (pg vs postgres) changes PBAC resource ids",
+        "impact": "grants silently do not match; normalize once",
+        "evidence": [
+          "F004"
+        ]
+      },
+      {
+        "risk": "Policy row cap (1000 default / 10000 max) truncates analytical datasets",
+        "impact": "silently partial DataFrame; surface truncation and let the policy raise limits.max",
+        "evidence": [
+          "F003"
+        ]
+      },
+      {
+        "risk": "DuckDB store overlaps FEAT-713's DuckDBRunner",
+        "impact": "two designs for the same engine; reconcile in one spec",
+        "evidence": [
+          "F014"
+        ]
+      }
+    ]
+  },
+  "confidence_map": [
+    {
+      "id": "C1",
+      "statement": "A new source kind needs no change to DatasetManager's registration machinery: add_source() registers any DataSource",
+      "evidence": [
+        "F001"
+      ],
+      "confidence": "high",
+      "reasoning": "add_source read directly"
+    },
+    {
+      "id": "C2",
+      "statement": "Datasets are in-memory pandas DataFrames (entry._df) with a subject-less Redis Parquet cache; DatasetManager has no DuckDB store",
+      "evidence": [
+        "F002",
+        "F013"
+      ],
+      "confidence": "high",
+      "reasoning": "materialize / _cache_df read; duckdb grep shows only dialect map and Delta/Iceberg engines"
+    },
+    {
+      "id": "C3",
+      "statement": "The semantic layer can compile without identity or connection via engines.compile, but that SQL is pre-governance",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "high",
+      "reasoning": "compile and NativeCompiler.compile read directly"
+    },
+    {
+      "id": "C4",
+      "statement": "governed: false only skips PBAC and the connection requirement; usage rights, RLS, masking and the limit guard still run",
+      "evidence": [
+        "F004"
+      ],
+      "confidence": "high",
+      "reasoning": "PbacGate.authorize and load_policy read directly"
+    },
+    {
+      "id": "C5",
+      "statement": "Executing compiled SQL through a plain SQLQuerySource would bypass masks, usage grants, model RLS, limits and audit",
+      "evidence": [
+        "F003",
+        "F004",
+        "F006"
+      ],
+      "confidence": "high",
+      "reasoning": "follows directly from C3 plus the absence of masking / member rights in AuthorizingDataSource"
+    },
+    {
+      "id": "C6",
+      "statement": "The existing hand-off is push-only and forbids a raw DatasetManager as the holder of governed rows",
+      "evidence": [
+        "F005",
+        "F010"
+      ],
+      "confidence": "high",
+      "reasoning": "_validate_sink read; TASK-4709 history"
+    },
+    {
+      "id": "C7",
+      "statement": "The source class must live in ai-parrot-semantic or be lazily imported, because core cannot depend on the semantic distribution",
+      "evidence": [
+        "F004"
+      ],
+      "confidence": "high",
+      "reasoning": "pyproject dependencies + grep for parrot.semantic imports in core/tools returned none"
+    },
+    {
+      "id": "C8",
+      "statement": "A semantic dataset must pin (or receive) a full SemanticQuery and is row-capped by the policy limits",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "high",
+      "reasoning": "compiler requirements and LIMIT clause read directly"
+    },
+    {
+      "id": "C9",
+      "statement": "A governed-per-fetch SemanticDataSource registered through add_source is implementable with existing pieces in one spec of roughly TASK-431 size plus authz integration",
+      "evidence": [
+        "F001",
+        "F004",
+        "F006",
+        "F007",
+        "F011"
+      ],
+      "confidence": "medium",
+      "reasoning": "all pieces exist, but the govern-and-execute core is currently private to the toolkit and the authz wrapper needs a defined behavior for the new class; sizing is by precedent"
+    },
+    {
+      "id": "C10",
+      "statement": "DatasetManager can execute governed SQL itself (AsyncDB -> DataFrame) provided driver names are normalized and the limit probe row is trimmed",
+      "evidence": [
+        "F001",
+        "F004"
+      ],
+      "confidence": "medium",
+      "reasoning": "credential dict shapes are compatible; not exercised end to end, and SQLQuerySource's str.format interpolation cannot be reused as-is"
+    },
+    {
+      "id": "C11",
+      "statement": "Whether one DatasetManager instance is shared across users or sessions in production hosts decides whether entry._df itself leaks across subjects",
+      "evidence": [
+        "F002",
+        "F005"
+      ],
+      "confidence": "low",
+      "reasoning": "the hand-off assumes shared managers exist; instance scoping in handlers was not researched"
+    },
+    {
+      "id": "C12",
+      "statement": "A DuckDB-backed store is a separate, cross-cutting DatasetManager feature that overlaps FEAT-713",
+      "evidence": [
+        "F002",
+        "F014"
+      ],
+      "confidence": "medium",
+      "reasoning": "nine direct _df accessors plus the pandas REPL hand-over; FEAT-713 is draft and its premise is stale"
+    },
+    {
+      "id": "C13",
+      "statement": "Collision risk is low: no in-flight work combines DatasetManager and the semantic layer",
+      "evidence": [
+        "F008",
+        "F009",
+        "F012"
+      ],
+      "confidence": "medium",
+      "reasoning": "branch search matched names only"
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Which governance posture should add_semantic have for the rows it materializes?",
+      "blocks_claims": [
+        "C5",
+        "C9"
+      ],
+      "plausible_answers": [
+        "governed per fetch: compile + GovernancePipeline under the caller's identity, never cached across subjects",
+        "ungoverned only: accept only models without masks / RLS / member grants and let DatasetManager's own authz apply",
+        "both, selected per registration"
+      ],
+      "ask_user": true,
+      "user_answer": "Governed per fetch (compile + GovernancePipeline under the caller's identity, never cached across subjects)"
+    },
+    {
+      "id": "U2",
+      "question": "Who executes the SQL: DatasetManager's own engine (AsyncDB -> DataFrame) or the semantic Executor?",
+      "blocks_claims": [
+        "C10"
+      ],
+      "plausible_answers": [
+        "DatasetManager executes the governed SQL handed over in-process",
+        "semantic Executor runs it and the source converts rows to a DataFrame"
+      ],
+      "ask_user": true,
+      "user_answer": "Semantic Executor runs the SQL; the source converts rows to a DataFrame"
+    },
+    {
+      "id": "U3",
+      "question": "Is the SemanticQuery pinned at registration or supplied per fetch?",
+      "blocks_claims": [
+        "C8"
+      ],
+      "plausible_answers": [
+        "pinned at registration",
+        "pinned, with filters / date range / limit overridable per fetch",
+        "fully dynamic per fetch"
+      ],
+      "ask_user": true,
+      "user_answer": "Dynamic per fetch: the agent supplies metrics, dimensions and filters on each fetch"
+    },
+    {
+      "id": "U4",
+      "question": "Should the DuckDB-backed store be part of this feature or its own spec, and how does it relate to FEAT-713?",
+      "blocks_claims": [
+        "C12"
+      ],
+      "plausible_answers": [
+        "separate spec after the semantic source",
+        "same spec, second phase",
+        "fold into a revised FEAT-713"
+      ],
+      "ask_user": true,
+      "user_answer": "Fold the DuckDB-backed store into a revision of FEAT-713"
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization is high-confidence and every building block exists; the only architectural fork (governance posture, executor, query pinning) is a set of owner decisions captured as U1-U3, not something more exploration would settle."
+  },
+  "overall_confidence": "medium",
+  "meta": {
+    "findings_used": [
+      "F001",
+      "F002",
+      "F003",
+      "F004",
+      "F005",
+      "F006",
+      "F007",
+      "F008",
+      "F009",
+      "F010",
+      "F011",
+      "F012",
+      "F013",
+      "F014",
+      "F015"
+    ],
+    "findings_unused": [],
+    "notes": "Follow-up queries (answerable by research, not by the user): (1) how DatasetManager instances are scoped in handlers / PandasAgent (per session vs shared) - resolves C11; (2) read sources/scoped_copy.py and the terminal-fetch-error classification from b396eccb4d so SemanticPolicyError / SemanticValidationError are terminal; (3) read tests/sink_conformance.py; (4) check whether duckdb / pyarrow are declared extras. Citation probe ran inline (87 citations, 0 stale; 2 mid-function ranges flagged by the symbol-name heuristic are valid)."
+  }
+}

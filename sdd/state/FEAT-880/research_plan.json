@@ -1,0 +1,419 @@
+{
+  "schema_version": "1.0",
+  "mode_hint": "enrichment",
+  "rationale": "Feature-shaped ('add', 'support'): extend DatasetManager with a new source kind. Named entities: DatasetManager, add_semantic, Semantic Layer YAML, DuckDB.",
+  "queries": [
+    {
+      "id": "Q001",
+      "intent": "Orient: DatasetManager lazy data sources design and spec.",
+      "type": "wiki_query",
+      "priority": 0,
+      "params": {
+        "question": "DatasetManager lazy data sources DataSource registration"
+      }
+    },
+    {
+      "id": "Q002",
+      "intent": "Read the DatasetManager design walkthrough.",
+      "type": "wiki_page",
+      "priority": 0,
+      "params": {
+        "page_id": "file:wiki/tools/datasetmanager_design.md"
+      }
+    },
+    {
+      "id": "Q003",
+      "intent": "Read the lazy data sources spec (source contract, caching, fetch lifecycle).",
+      "type": "wiki_page",
+      "priority": 0,
+      "params": {
+        "page_id": "file:sdd/specs/datasetmanager-datasources.spec.md"
+      }
+    },
+    {
+      "id": "Q004",
+      "intent": "Find any prior DuckDB-backed dataset store design or decision.",
+      "type": "wiki_query",
+      "priority": 0,
+      "params": {
+        "question": "DuckDB dataset store instead of in-memory DataFrames"
+      }
+    },
+    {
+      "id": "Q005",
+      "intent": "FEAT-713 constraints mention DatasetManager + DuckDB; read them.",
+      "type": "wiki_page",
+      "priority": 0,
+      "params": {
+        "page_id": "file:sdd/state/FEAT-713/design_research/constraints_and_goals.txt"
+      }
+    },
+    {
+      "id": "Q006",
+      "intent": "Semantic construction / hand-off contracts already researched in FEAT-769.",
+      "type": "wiki_page",
+      "priority": 0,
+      "params": {
+        "page_id": "file:sdd/state/FEAT-769/findings/F008-construction-and-surface-contracts.md"
+      }
+    },
+    {
+      "id": "Q007",
+      "intent": "Find decisions on the semantic governed hand-off into DatasetManager (M9H).",
+      "type": "wiki_query",
+      "priority": 0,
+      "params": {
+        "question": "semantic layer governed handoff DatasetManager sink decision"
+      }
+    },
+    {
+      "id": "Q008",
+      "intent": "Find DatasetManager data-plane authorization (FEAT-228) design: AuthorizingDataSource, RLS.",
+      "type": "wiki_query",
+      "priority": 0,
+      "params": {
+        "question": "DatasetManager data-plane authorization AuthorizingDataSource RLS"
+      }
+    },
+    {
+      "id": "Q009",
+      "intent": "DataSource abstract contract every source implements.",
+      "type": "read",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/sources/base.py",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q010",
+      "intent": "All add_* registration methods on DatasetManager and their line numbers.",
+      "type": "grep",
+      "priority": 1,
+      "params": {
+        "pattern": "^\\s+(async )?def add_\\w+",
+        "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/tool.py",
+        "case_sensitive": true,
+        "max_results": 40
+      }
+    },
+    {
+      "id": "Q011",
+      "intent": "SQL source: how raw SQL is executed, driver + credentials.",
+      "type": "read",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/sources/sql.py",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q012",
+      "intent": "Query-slug source: the closest non-raw-SQL source pattern.",
+      "type": "read",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/sources/query_slug.py",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q013",
+      "intent": "DatasetEntry lifecycle wrapper: lazy fetch, caching, materialization.",
+      "type": "read",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/tool.py",
+        "lines": "208-562"
+      }
+    },
+    {
+      "id": "Q014",
+      "intent": "DatasetManager constructor and state (how DataFrames are held).",
+      "type": "read",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/tool.py",
+        "lines": "582-700"
+      }
+    },
+    {
+      "id": "Q015",
+      "intent": "Semantic compile entry point (compile wrapper, cache key).",
+      "type": "read",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot-semantic/src/parrot/semantic/engines/__init__.py",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q016",
+      "intent": "NativeCompiler.compile: inputs, outputs, refusals.",
+      "type": "read",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot-semantic/src/parrot/semantic/engines/native.py",
+        "lines": "40-160"
+      }
+    },
+    {
+      "id": "Q017",
+      "intent": "GovernancePipeline.govern: what compiled SQL must pass before execution.",
+      "type": "read",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot-semantic/src/parrot/semantic/governance/pipeline.py",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q018",
+      "intent": "Existing semantic -> DatasetManager hand-off contract.",
+      "type": "read",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot-semantic/src/parrot/semantic/handoff.py",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q019",
+      "intent": "How the semantic toolkit publishes to a dataset sink and exposes compile-only SQL.",
+      "type": "grep",
+      "priority": 2,
+      "params": {
+        "pattern": "_dataset_manager_for|dataset_manager_factory|def (compile|query|explain|publish|to_dataset)\\w*|governed",
+        "path": "packages/ai-parrot-semantic/src/parrot/semantic/toolkit.py",
+        "case_sensitive": true,
+        "max_results": 40
+      }
+    },
+    {
+      "id": "Q020",
+      "intent": "Authorizing wrapper applied to registered sources (PBAC on the DatasetManager side).",
+      "type": "read",
+      "priority": 2,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/sources/authorizing.py",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q021",
+      "intent": "DatasetManager-side RLS for sources.",
+      "type": "read",
+      "priority": 2,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/sources/rls.py",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q022",
+      "intent": "Dialect mapping DatasetManager uses per driver.",
+      "type": "read",
+      "priority": 2,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/sources/dialects.py",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q023",
+      "intent": "Source resolver: how a source kind is chosen / constructed.",
+      "type": "read",
+      "priority": 2,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/sources/resolver.py",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q024",
+      "intent": "Any DuckDB usage inside DatasetManager today.",
+      "type": "grep",
+      "priority": 2,
+      "params": {
+        "pattern": "duckdb",
+        "path": "packages/ai-parrot/src/parrot/tools/dataset_manager",
+        "case_sensitive": false,
+        "max_results": 30
+      }
+    },
+    {
+      "id": "Q025",
+      "intent": "Package dependency direction between ai-parrot core and ai-parrot-semantic.",
+      "type": "grep",
+      "priority": 2,
+      "params": {
+        "pattern": "ai-parrot|parrot",
+        "path": "packages/ai-parrot-semantic/pyproject.toml",
+        "case_sensitive": false,
+        "max_results": 20
+      }
+    },
+    {
+      "id": "Q026",
+      "intent": "Does core or tools already import parrot.semantic?",
+      "type": "grep",
+      "priority": 2,
+      "params": {
+        "pattern": "parrot\\.semantic|from \\.+semantic",
+        "path": "packages/ai-parrot/src packages/ai-parrot-tools/src",
+        "case_sensitive": true,
+        "max_results": 20
+      }
+    },
+    {
+      "id": "Q027",
+      "intent": "Policy: governed flag, connection, what governed:false relaxes.",
+      "type": "read",
+      "priority": 2,
+      "params": {
+        "path": "packages/ai-parrot-semantic/src/parrot/semantic/policy.py",
+        "lines": "55-160"
+      }
+    },
+    {
+      "id": "Q028",
+      "intent": "Table source: schema prefetch + SQL generation pattern, largest source.",
+      "type": "read",
+      "priority": 3,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/sources/table.py",
+        "lines": "1-140"
+      }
+    },
+    {
+      "id": "Q029",
+      "intent": "Existing tests for DatasetManager sources.",
+      "type": "glob",
+      "priority": 3,
+      "params": {
+        "pattern": "packages/*/tests/**/test_*source*.py"
+      }
+    },
+    {
+      "id": "Q030",
+      "intent": "Where DataFrames live at runtime and how they reach the pandas REPL.",
+      "type": "grep",
+      "priority": 3,
+      "params": {
+        "pattern": "def (get_active_dataframes|materialize|fetch_dataset|_load|evict|get_dataframe)\\w*",
+        "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/tool.py",
+        "case_sensitive": true,
+        "max_results": 30
+      }
+    },
+    {
+      "id": "Q031",
+      "intent": "Composite source: precedent for a source built from other definitions.",
+      "type": "read",
+      "priority": 3,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/sources/composite.py",
+        "lines": "1-120"
+      }
+    },
+    {
+      "id": "Q032",
+      "intent": "Semantic handoff tests: what the sink contract is asserted to guarantee.",
+      "type": "grep",
+      "priority": 4,
+      "params": {
+        "pattern": "def test_",
+        "path": "packages/ai-parrot-semantic/tests/test_e2e_handoff.py packages/ai-parrot-semantic/tests/test_handoff_contract.py",
+        "case_sensitive": true,
+        "max_results": 40
+      }
+    },
+    {
+      "id": "Q033",
+      "intent": "Recent DatasetManager activity (active refactors, collisions).",
+      "type": "git_log",
+      "priority": 2,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/tools/dataset_manager",
+        "since": "45.days.ago",
+        "max_results": 25
+      }
+    },
+    {
+      "id": "Q034",
+      "intent": "Recent semantic package activity since FEAT-704/769.",
+      "type": "git_log",
+      "priority": 2,
+      "params": {
+        "path": "packages/ai-parrot-semantic",
+        "since": "45.days.ago",
+        "max_results": 25
+      }
+    },
+    {
+      "id": "Q035",
+      "intent": "History of the hand-off module (why the sink direction exists).",
+      "type": "git_log",
+      "priority": 3,
+      "params": {
+        "path": "packages/ai-parrot-semantic/src/parrot/semantic/handoff.py",
+        "since": "90.days.ago",
+        "max_results": 15
+      }
+    },
+    {
+      "id": "Q036",
+      "intent": "History of DatasetManager sources (who adds source types, how).",
+      "type": "git_log",
+      "priority": 3,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/sources",
+        "since": "120.days.ago",
+        "max_results": 20
+      }
+    },
+    {
+      "id": "Q037",
+      "intent": "Any unmerged branch already touching semantic + dataset manager.",
+      "type": "git_log",
+      "priority": 4,
+      "params": {
+        "path": "--all --grep=semantic.*dataset -i",
+        "since": "120.days.ago",
+        "max_results": 15
+      }
+    }
+  ],
+  "expected_findings": [
+    "DataSource contract and registration pattern",
+    "Lazy fetch / cache / in-memory holding of DataFrames",
+    "Semantic compile-only surface and governance pipeline entry",
+    "Existing semantic->DatasetManager sink hand-off",
+    "DatasetManager-side authz/RLS",
+    "Package dependency direction",
+    "DuckDB precedent or absence",
+    "Recent activity / collision risk"
+  ],
+  "meta": {
+    "source_signals": {
+      "named_entities": [
+        "DatasetManager",
+        "add_semantic",
+        "Semantic Layer",
+        "DuckDB"
+      ],
+      "verbs": [
+        "add",
+        "support",
+        "compile"
+      ],
+      "polarity": "positive"
+    },
+    "estimated_budget_use": {
+      "wiki_queries": 8,
+      "files_read": 16,
+      "grep_calls": 8,
+      "git_calls": 5
+    }
+  }
+}
