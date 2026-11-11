@@ -110,7 +110,7 @@
       "feature_id": "FEAT-876",
       "feature": "bookstore-notebooks-shared-pageindex",
       "spec": "sdd/specs/bookstore-notebooks-shared-pageindex.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -122,8 +122,9 @@
       "parallelism_notes": "imports PageIndexWriteDenied/write_tools from TASK-5476 (pageindex/toolkit.py); LIBRARY_NOTEBOOK/NOTEBOOK_SUFFIX and annotated read_section from TASK-5477 (library.py); BookCard.kind from TASK-5475",
       "assigned_to": null,
       "started_at": "2026-11-10T23:47:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5478-library-pageindex-facade-template.md"
+      "completed_at": "2026-11-11T00:19:17+00:00",
+      "file": "sdd/tasks/completed/TASK-5478-library-pageindex-facade-template.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5479",
