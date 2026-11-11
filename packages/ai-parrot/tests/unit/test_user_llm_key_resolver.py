@@ -53,6 +53,12 @@ def patch_vault_keys(monkeypatch):
     )
 
 
+@pytest.fixture(autouse=True)
+def _pin_documentdb(monkeypatch):
+    """These tests fake DocumentDB; Redis is the FEAT-878 default."""
+    monkeypatch.setenv("BYOK_STORE", "documentdb")
+
+
 @pytest.fixture
 def fake_db(monkeypatch):
     _FakeDocumentDb.docs = []
