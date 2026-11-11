@@ -52,6 +52,13 @@ SAMPLE_CREDENTIAL = {
 }
 
 
+@pytest.fixture(autouse=True)
+def _documentdb_vault(monkeypatch):
+    """Keep legacy integration coverage on the DocumentDB vault backend."""
+    monkeypatch.setenv("VAULT_STORE", "documentdb")
+    monkeypatch.setattr("parrot.security.vault_utils._PG_VAULT_STORE", None)
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -66,7 +73,6 @@ def _make_encrypted(cred_dict: dict, user_id: str, name: str) -> str:
 def _inject_session(request: web.Request, session: dict) -> None:
     """Inject a fake session onto the handler after dispatch."""
     # Patched into CredentialsHandler._get_user_id via session attribute
-    pass
 
 
 class _FakeDB:
@@ -112,6 +118,17 @@ class _FakeDB:
         ]
         self.delete_calls.append(query)
 
+    async def write(self, collection: str, data: dict) -> None:
+        """Insert one document for the vault-utils DocumentDB path."""
+        self._docs.append(dict(data))
+
+    async def update_one(self, collection: str, query: dict, update: dict) -> None:
+        """Apply the vault-utils DocumentDB upsert update."""
+        for document in self._docs:
+            if all(document.get(key) == value for key, value in query.items()):
+                document.update(update["$set"])
+                return
+
     def save_background(self, collection: str, data: dict, on_error=None, on_success=None):
         # Simulate synchronous upsert for testing:
         # If a document with the same user_id+name exists, replace it; else insert.
@@ -156,8 +173,9 @@ class TestCredentialsCRUDLifecycle:
         db = _FakeDB()
         session = dict(SESSION_A)
 
-        with patch("parrot.handlers.credentials.DocumentDb", return_value=db), \
-             patch("parrot.handlers.credentials._vault_keyring", return_value=_keyring()):
+        with patch("parrot.security.vault_utils.DocumentDb", return_value=db), \
+             patch("parrot.handlers.credentials._vault_keyring", return_value=_keyring()), \
+             patch("parrot.security.vault_utils.get_vault_keyring", return_value=_keyring()):
 
             # Build handler manually (bypassing aiohttp dispatch)
             from parrot.handlers.credentials import CredentialsHandler
@@ -172,8 +190,8 @@ class TestCredentialsCRUDLifecycle:
             # Session vault should have the credential
             assert "_credentials:test-pg" in session
 
-            # Background save triggered
-            assert len(db.save_background_calls) == 1
+            # Durable vault write completed before the response.
+            assert len(db._docs) == 1
 
             # --- GET (single) ---
             handler2 = _make_test_handler(session, db)
@@ -225,7 +243,7 @@ class TestCredentialsPerUserIsolation:
         session_b = dict(SESSION_B)
         cred = {"name": "shared-name", "driver": "pg", "params": {}}
 
-        with patch("parrot.handlers.credentials.DocumentDb", return_value=db), \
+        with patch("parrot.security.vault_utils.DocumentDb", return_value=db), \
              patch("parrot.handlers.credentials._vault_keyring", return_value=_keyring()):
 
             # User A creates credential
@@ -266,8 +284,9 @@ class TestCredentialsPerUserIsolation:
             "credential": _make_encrypted(cred_b, USER_B_ID, "cred-b"),
         })
 
-        with patch("parrot.handlers.credentials.DocumentDb", return_value=db), \
-             patch("parrot.handlers.credentials._vault_keyring", return_value=_keyring()):
+        with patch("parrot.security.vault_utils.DocumentDb", return_value=db), \
+             patch("parrot.handlers.credentials._vault_keyring", return_value=_keyring()), \
+             patch("parrot.security.vault_utils.get_vault_keyring", return_value=_keyring()):
 
             # User A lists credentials
             handler = _make_test_handler(dict(SESSION_A), db)
@@ -289,7 +308,7 @@ class TestCredentialsErrorCases:
         session = dict(SESSION_A)
         cred = {"name": "dup-test", "driver": "pg", "params": {}}
 
-        with patch("parrot.handlers.credentials.DocumentDb", return_value=db), \
+        with patch("parrot.security.vault_utils.DocumentDb", return_value=db), \
              patch("parrot.handlers.credentials._vault_keyring", return_value=_keyring()):
 
             # First POST — should succeed
@@ -311,7 +330,7 @@ class TestCredentialsErrorCases:
         """GET for a non-existent credential name returns 404."""
         db = _FakeDB()
 
-        with patch("parrot.handlers.credentials.DocumentDb", return_value=db), \
+        with patch("parrot.security.vault_utils.DocumentDb", return_value=db), \
              patch("parrot.handlers.credentials._vault_keyring", return_value=_keyring()):
             handler = _make_test_handler(dict(SESSION_A), db)
             handler.request.match_info.get = MagicMock(return_value="nope")
@@ -323,7 +342,7 @@ class TestCredentialsErrorCases:
         """POST without required 'driver' field returns 400 Bad Request."""
         db = _FakeDB()
 
-        with patch("parrot.handlers.credentials.DocumentDb", return_value=db), \
+        with patch("parrot.security.vault_utils.DocumentDb", return_value=db), \
              patch("parrot.handlers.credentials._vault_keyring", return_value=_keyring()):
             handler = _make_test_handler(dict(SESSION_A), db)
             handler.request.json = AsyncMock(return_value={"name": "x"})  # missing driver
@@ -336,7 +355,7 @@ class TestCredentialsErrorCases:
         """PUT on a non-existent credential returns 404."""
         db = _FakeDB()
 
-        with patch("parrot.handlers.credentials.DocumentDb", return_value=db), \
+        with patch("parrot.security.vault_utils.DocumentDb", return_value=db), \
              patch("parrot.handlers.credentials._vault_keyring", return_value=_keyring()):
             handler = _make_test_handler(dict(SESSION_A), db)
             handler.request.match_info.get = MagicMock(return_value="no-such")
@@ -349,23 +368,23 @@ class TestCredentialsErrorCases:
         """DELETE on a non-existent credential returns 404."""
         db = _FakeDB()
 
-        with patch("parrot.handlers.credentials.DocumentDb", return_value=db):
+        with patch("parrot.security.vault_utils.DocumentDb", return_value=db):
             handler = _make_test_handler(dict(SESSION_A), db)
             handler.request.match_info.get = MagicMock(return_value="no-such")
             resp = await handler.delete()
             assert resp.status == 404
 
 
-class TestFireAndForget:
-    """Verify fire-and-forget behavior: POST returns before DB write completes."""
+class TestDurableVaultWrite:
+    """Verify the POST path writes through vault_utils before responding."""
 
     @pytest.mark.asyncio
-    async def test_post_schedules_background_save(self):
-        """save_background() is called exactly once during POST."""
+    async def test_post_stores_document(self):
+        """POST creates a single persisted vault document."""
         db = _FakeDB()
         session = dict(SESSION_A)
 
-        with patch("parrot.handlers.credentials.DocumentDb", return_value=db), \
+        with patch("parrot.security.vault_utils.DocumentDb", return_value=db), \
              patch("parrot.handlers.credentials._vault_keyring", return_value=_keyring()):
             handler = _make_test_handler(session, db)
             handler.request.json = AsyncMock(return_value=SAMPLE_CREDENTIAL)
@@ -373,36 +392,7 @@ class TestFireAndForget:
             resp = await handler.post()
 
         assert resp.status == 201
-        assert len(db.save_background_calls) == 1
-
-    @pytest.mark.asyncio
-    async def test_post_returns_before_db_write_completes(self):
-        """Simulates slow DocumentDB: POST returns immediately."""
-        db = _FakeDB()
-        session = dict(SESSION_A)
-
-        # Track whether save_background was called (fire-and-forget)
-        bg_called = []
-
-        original_save_bg = db.save_background
-
-        def slow_save_background(collection, data, **kwargs):
-            bg_called.append(True)
-            return original_save_bg(collection, data, **kwargs)
-
-        db.save_background = slow_save_background
-
-        with patch("parrot.handlers.credentials.DocumentDb", return_value=db), \
-             patch("parrot.handlers.credentials._vault_keyring", return_value=_keyring()):
-            handler = _make_test_handler(session, db)
-            handler.request.json = AsyncMock(return_value=SAMPLE_CREDENTIAL)
-            handler.request.match_info.get = MagicMock(return_value=None)
-            resp = await handler.post()
-
-        # Response is available immediately (status 201)
-        assert resp.status == 201
-        # save_background was scheduled (called synchronously in our mock)
-        assert len(bg_called) == 1
+        assert len(db._docs) == 1
 
 
 # ---------------------------------------------------------------------------
