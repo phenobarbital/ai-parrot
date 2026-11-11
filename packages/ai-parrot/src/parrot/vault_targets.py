@@ -25,6 +25,7 @@ Security Note:
 from __future__ import annotations
 
 import base64
+import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Callable, Mapping, Optional
@@ -351,10 +352,14 @@ class RedisUserLlmKeysTarget(RedisDocumentTarget):
 def _redis_target(switch: str, cls: type, spec_name: str) -> Optional[RedisDocumentTarget]:
     """Target over Redis when ``switch`` resolves to redis, else None."""
     try:
-        from parrot.userstore import RedisDocumentStore, resolve_store_backend
+        from parrot.userstore import RedisDocumentStore, UserStoreMisconfigured, resolve_store_backend
         from parrot.userstore.collections import CollectionSpec, USER_CREDENTIALS, USER_LLM_KEYS
 
-        if resolve_store_backend(switch) != "redis":
+        try:
+            backend = resolve_store_backend(switch)
+        except UserStoreMisconfigured:
+            raise  # fail closed: an invalid switch must not silently skip rotation of Redis-held secrets
+        if backend != "redis":
             return None
         specs = {
             USER_CREDENTIALS.name: USER_CREDENTIALS,
@@ -367,7 +372,14 @@ def _redis_target(switch: str, cls: type, spec_name: str) -> Optional[RedisDocum
             spec.index_fields,
         )
         return cls(RedisDocumentStore(spec), RedisDocumentStore(quarantine_spec))
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        from parrot.userstore import UserStoreMisconfigured
+
+        if isinstance(exc, UserStoreMisconfigured):
+            raise
+        logging.getLogger("parrot.vault_targets").warning(
+            "Redis rotation target %s unavailable: %s", spec_name, type(exc).__name__
+        )
         return None
 
 
