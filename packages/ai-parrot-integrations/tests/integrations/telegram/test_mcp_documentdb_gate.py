@@ -27,6 +27,12 @@ _PERSISTENCE = "parrot.integrations.telegram.mcp_persistence"
 _COMMANDS = "parrot.integrations.telegram.mcp_commands"
 
 
+@pytest.fixture(autouse=True)
+def _pin_documentdb(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests exercise the USE_DOCUMENTDB opt-in; FEAT-878 made Redis the default."""
+    monkeypatch.setenv("TELEGRAM_MCP_STORE", "documentdb")
+
+
 @pytest.fixture
 def documentdb_off(monkeypatch: pytest.MonkeyPatch) -> None:
     """Force ``USE_DOCUMENTDB=False`` regardless of the local environment."""
