@@ -175,7 +175,7 @@
       "feature_id": "FEAT-876",
       "feature": "bookstore-notebooks-shared-pageindex",
       "spec": "sdd/specs/bookstore-notebooks-shared-pageindex.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -185,8 +185,9 @@
       "parallelism_notes": "extends notebooks.py and test_notebooks.py, both created by TASK-5480; uses SectorDraft (TASK-5475) and ensure_notebook (TASK-5477)",
       "assigned_to": null,
       "started_at": "2026-11-10T23:47:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5481-notebook-drafting.md"
+      "completed_at": "2026-11-11T00:37:57+00:00",
+      "file": "sdd/tasks/completed/TASK-5481-notebook-drafting.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5482",
@@ -195,7 +196,7 @@
       "feature_id": "FEAT-876",
       "feature": "bookstore-notebooks-shared-pageindex",
       "spec": "sdd/specs/bookstore-notebooks-shared-pageindex.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -205,8 +206,9 @@
       "parallelism_notes": "modifies library.py and test_library.py after TASK-5480 (same files)",
       "assigned_to": null,
       "started_at": "2026-11-10T23:47:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5482-import-tree.md"
+      "completed_at": "2026-11-11T00:37:57+00:00",
+      "file": "sdd/tasks/completed/TASK-5482-import-tree.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5483",
