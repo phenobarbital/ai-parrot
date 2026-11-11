@@ -1,4 +1,5 @@
 """FEAT-877 Module 1 — `mcp_local` exposure declaration in the registry."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -76,6 +77,7 @@ def test_yaml_mcp_local_unknown_key_rejected(isolated_registry: AgentRegistry) -
 
 def test_decorator_mcp_local_kwarg(isolated_registry: AgentRegistry) -> None:
     """Decorator declarations use the same coercion as YAML declarations."""
+
     @isolated_registry.register_bot_decorator(name="finance", mcp_local={"allow": ["forecast"]})
     class FinanceAgent(Agent):
         async def forecast(self, months: int) -> dict:
@@ -95,9 +97,7 @@ def test_decorator_mcp_local_kwarg(isolated_registry: AgentRegistry) -> None:
     assert isolated_registry.get_metadata("undeclared").bot_config.mcp_local is None
 
 
-def test_definition_roundtrip_keeps_mcp_local(
-    isolated_registry: AgentRegistry, definition_root: Path
-) -> None:
+def test_definition_roundtrip_keeps_mcp_local(isolated_registry: AgentRegistry, definition_root: Path) -> None:
     """Definition writes preserve an exposure declaration and omit absent ones."""
     config = BotConfig(
         name="finance",
