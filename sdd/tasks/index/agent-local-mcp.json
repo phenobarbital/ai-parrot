@@ -110,7 +110,7 @@
       "feature_id": "FEAT-877",
       "feature": "agent-local-mcp",
       "spec": "sdd/specs/agent-local-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -122,8 +122,9 @@
       "parallelism_notes": "Modifies agent_toolkit.py and test_agent_toolkit.py created by TASK-5487 and calls its exposed_methods/AgentExposureError; calls load_modules_sync and reads BotConfig.mcp_local from TASK-5485 (registry.py); imports agent_section_name from TASK-5486 (toolkit_config.py).",
       "assigned_to": null,
       "started_at": "2026-11-11T00:03:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5488-agent-exposure-resolution.md"
+      "completed_at": "2026-11-11T00:28:07+00:00",
+      "file": "sdd/tasks/completed/TASK-5488-agent-exposure-resolution.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5489",
