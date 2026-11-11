@@ -158,3 +158,83 @@ async def test_fetch_dataset_denial_does_not_mark_unavailable() -> None:
     assert entry.unavailable_reason is None
     await dm.fetch_dataset("governed", conditions={"metrics": ["a"]})
     assert len(source.calls) == 2
+
+
+# ── M2b: semantic metadata, completeness and runtime guidance (TASK-5517) ──
+
+
+class _SemanticSource(_GovernedSource):
+    """Self-governed double whose frames carry ``attrs["semantic"]`` metadata."""
+
+    def __init__(self, rows: int, truncated: bool) -> None:
+        super().__init__()
+        self.rows = rows
+        self.truncated = truncated
+
+    async def fetch(self, **params) -> pd.DataFrame:
+        self.calls.append(dict(params))
+        df = pd.DataFrame({"region": [f"r{i}" for i in range(self.rows)], "revenue": range(self.rows)})
+        df.attrs["semantic"] = {
+            "model": "sales",
+            "audit_id": "audit-1",
+            "truncated": self.truncated,
+            "row_count": self.rows,
+            "extra": "must-not-leak",
+        }
+        return df
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("rows", "truncated", "inline", "complete"),
+    [
+        (3, False, True, True),
+        (3, True, True, False),
+        (600, False, False, False),
+        (600, True, False, False),
+    ],
+)
+async def test_fetch_dataset_semantic_response_completeness(
+    rows: int, truncated: bool, inline: bool, complete: bool
+) -> None:
+    dm = DatasetManager(generate_guide=False)
+    dm.add_source(_SemanticSource(rows=rows, truncated=truncated))
+    result = await dm.fetch_dataset("governed", conditions={"metrics": ["revenue"]})
+    assert result["status"] == "materialized"
+    assert result["semantic"] == {
+        "model": "sales",
+        "audit_id": "audit-1",
+        "truncated": truncated,
+        "row_count": rows,
+    }
+    assert result["inline_complete"] is inline
+    assert result["complete"] is complete
+    warnings = result.get("warnings", [])
+    truncation = [w for w in warnings if "TRUNCATED semantic result" in w]
+    assert bool(truncation) is truncated
+    if not inline:
+        assert "FULL dataset" not in result["note"]
+        assert "materialized result" in result["note"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_dataset_ordinary_response_unchanged() -> None:
+    """Frames without ``attrs["semantic"]`` get no semantic keys and the usual note."""
+    dm = DatasetManager(generate_guide=False)
+    dm.add_dataframe("plain", pd.DataFrame({"a": range(600), "b": range(600)}))
+    result = await dm.fetch_dataset("plain")
+    assert "semantic" not in result
+    assert "inline_complete" not in result
+    assert result["complete"] is False
+    assert "FULL dataset" in result["note"]
+
+
+def test_semantic_runtime_query_guidance() -> None:
+    rules = DatasetManager(generate_guide=False).get_usage_rules()
+    assert "Never re-fetch a loaded dataset" in rules
+    assert "semantic datasets" in rules
+    assert "call `fetch_dataset` again with new `conditions`" in rules
+    doc = DatasetManager.fetch_dataset.__doc__
+    assert "call fetch_dataset again with new ``conditions``" in doc
+    for field in ("metrics", "dimensions", "time_dimensions", "filters", "order_by", "limit", "offset", "saved_query"):
+        assert field in doc
