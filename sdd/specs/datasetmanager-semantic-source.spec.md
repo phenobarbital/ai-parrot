@@ -65,7 +65,7 @@ context, and its cache is not subject-scoped.
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:080c47bf7dc730a3cf65519ee252788dcdda142390eeb2fb298606a143aeb15d evaluation_digest=sha256:4d09a48957f780056f2ff6d89daa64361f4cc76e28b2c96df54dc27314d21e9b rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:b3c1b394f57cdadac2bf9b5376edd0e25950dfecaa3040022a221363f1404253 evaluation_digest=sha256:20b325bdeb91bb530e8bfcff3509558104680afac65b8cefd0fc6f60f0cba32a rules_version=1 status=pass -->
 
 No eligible decisions govern subsystems: auth, bots, clients, config, flows, knowledge-graphindex, knowledge-pageindex, knowledge-wiki, memory, server, skills, tools
 
@@ -77,7 +77,8 @@ A new `SemanticDataSource` (a `DataSource` subclass shipped from `ai-parrot-sema
 semantic model of an existing `SemanticLayerToolkit`. Its `fetch(**params)` builds a
 `SemanticQuery` from the call parameters and calls `SemanticLayerToolkit.query_metrics`, which is
 already the single governed path to rows. The returned `SemanticQueryResult` is converted into a
-DataFrame; truncation and the audit id travel in `DataFrame.attrs["semantic"]`.
+DataFrame; truncation and the audit id travel in `DataFrame.attrs["semantic"]` and in the
+agent-facing `fetch_dataset` response's `semantic` object.
 
 `DatasetManager` learns one generic capability, not a semantic one: a `DataSource` may declare
 itself **`self_governed`**. For such a source the manager
@@ -87,17 +88,39 @@ itself **`self_governed`**. For such a source the manager
 2. always re-fetches and never reads or writes the Redis Parquet cache,
 3. forwards the `conditions` dict of `fetch_dataset` as the fetch parameters,
 4. never marks the entry terminally unavailable because one subject was denied,
+5. exposes semantic truncation metadata in the tool response and distinguishes inline preview
+   completeness from source-result completeness,
+6. tells agents to re-fetch when the semantic query changes, even when the dataset is loaded,
+7. keeps its loaded DataFrame in **per-subject slots**: a frame is readable only by the subject
+   that fetched it; for any other subject the dataset is simply not loaded,
 
-and the server handler that clones an agent's manager for a user never copies its DataFrame.
+and both server session-creation paths create independent, unloaded entries for these sources:
+`_clone_agent_dm` and `UserObjectsHandler.configure_dataset_manager`. Neither may share a
+governed `DatasetEntry` or copy its loaded DataFrame across sessions.
 
 `DatasetManager.add_semantic` is a thin registration method with a lazy import of
 `parrot.semantic.dataset_source`; it raises a clear `ImportError` when `ai-parrot-semantic` is not
 installed.
 
-**Identity.** The source fails closed. A fetch needs the host-bound semantic context
-(`bind_semantic_context`), and the permission context DatasetManager received for the tool call
-must equal it — the same rule `SemanticLayerToolkit._pre_execute` applies to its own tools.
-Without both, the fetch raises `SemanticAccessError("context_required")`.
+**Identity.** The source fails closed, and resolves the caller from two places:
+
+- the semantic context bound by the host (`bind_semantic_context`), and
+- the core permission context DatasetManager received for the tool call (`_pctx_var`).
+
+When both are present they must be equal, otherwise `SemanticAccessError("context_required")`.
+When only the semantic one is present it is used. When only the core one is present the source
+**bridges** it: it must be a `PermissionContext` instance, and the source binds it with
+`bind_semantic_context` for the duration of the governed call, so hosts that do not bind the
+semantic context themselves (the PandasAgent chat path today) can use the dataset. With neither,
+the fetch raises `context_required`. A bridged call carries no retention identity, so the toolkit
+retains no result handle for it.
+
+**Per-subject frames.** `DatasetEntry` stores the DataFrame of a `self_governed` source in a slot
+keyed by `source.current_owner()` — for the semantic source, the subject digest of the resolved
+context. Every existing read of the entry (`loaded`, `df`, `_df`, `column_types`) resolves to the
+calling subject's slot, so a manager shared by several users never exposes one subject's governed
+rows to another, in any host. With no resolvable subject the entry reads as not loaded and
+nothing is stored. Slots are bounded (least-recently-used eviction).
 
 **Query surface.** The agent calls the existing tool:
 
@@ -114,7 +137,18 @@ the `default_query` given at registration; with neither, it raises
 
 **Row cap.** The policy limit applies unchanged (`limits.default` / `limits.max`). A truncated
 result is flagged in `DataFrame.attrs["semantic"]["truncated"]`; raising the cap is done in the
-model's policy file.
+model's policy file. `fetch_dataset` must also return the four semantic metadata fields under
+`semantic`. For semantic results, `inline_complete` means all materialized rows are included in
+the response; `complete` is `inline_complete and not semantic.truncated`. A capped result must
+carry an explicit truncation warning even when all its rows fit inline. Preview notes must say
+"materialized result" and must not claim that a truncated frame is the full dataset. Existing
+non-semantic response behavior is unchanged.
+
+**Runtime guidance.** Loaded semantic datasets are query-specific results. Runtime usage rules
+and the `fetch_dataset` tool description must require a fresh `conditions` query when metrics,
+dimensions, grain, filters, ordering, limit, offset or saved query change. The existing
+"Never re-fetch a loaded dataset" instruction must explicitly exclude these datasets. Reuse
+within the same session for analysis of the same fetched result remains valid.
 
 ### Component Diagram
 
@@ -123,7 +157,7 @@ agent ──fetch_dataset(name, conditions)──→ DatasetManager
                                              │  self_governed source: no wrapper, no cache, always re-fetch
                                              ▼
                                    SemanticDataSource.fetch(**conditions)
-                                             │  context check (core pctx == semantic pctx)
+                                             │  resolve subject: semantic pctx, or bridged core pctx; both → must match
                                              │  SemanticQuery(model=<bound>, **conditions)
                                              ▼
                               SemanticLayerToolkit.query_metrics(query)
@@ -132,7 +166,7 @@ agent ──fetch_dataset(name, conditions)──→ DatasetManager
                                              ▼
                                    pandas.DataFrame  (+ attrs["semantic"])
                                              ▼
-                                   DatasetEntry._df  →  pandas workspace
+                                   DatasetEntry frame slot [current_owner()]  →  pandas workspace
 ```
 
 ### Integration Points
@@ -142,11 +176,16 @@ agent ──fetch_dataset(name, conditions)──→ DatasetManager
 | `DataSource` | extends | new `self_governed` property, default `False` |
 | `DatasetManager._make_source` | modified | returns a `self_governed` source unwrapped |
 | `DatasetManager.materialize` | modified | `self_governed` → always fetch, no Redis |
-| `DatasetManager.fetch_dataset` | modified | `self_governed` → `conditions` become fetch params; no terminal marking |
+| `DatasetManager.fetch_dataset` | modified | `self_governed` → `conditions` become fetch params; no terminal marking; semantic metadata and completeness in response |
+| `DatasetManager.DEFAULT_USAGE_RULES` | modified | query-specific semantic datasets are exempt from loaded-result reuse instructions |
 | `DatasetManager.add_source` | reused | `add_semantic` ends in the same registration path |
 | `_clone_agent_dm` (server handler) | modified | never copies `_df` of a `self_governed` source |
+| `UserObjectsHandler.configure_dataset_manager` | modified | creates independent unloaded governed entries instead of sharing agent entries |
 | `SemanticLayerToolkit.query_metrics` | uses | unchanged; called in-process, not as a tool |
-| `current_pctx` / `_pctx_var` | uses | fail-closed context agreement check |
+| `current_pctx` / `_pctx_var` | uses | subject resolution: agreement check when both are set, bridge when only the core one is |
+| `bind_semantic_context` | uses | binds a bridged core context around the governed call |
+| `DatasetEntry` | modified | per-subject frame slots for `self_governed` sources |
+| `subject_digest` | uses | owner key of the semantic source |
 
 ### Data Models
 
@@ -154,11 +193,14 @@ No new Pydantic model. The fetch parameters are the fields of the existing `Sema
 (`metrics`, `dimensions`, `time_dimensions`, `filters`, `order_by`, `limit`, `offset`,
 `saved_query`). `model` is bound at registration and is not accepted per fetch.
 
-`DataFrame.attrs["semantic"]`:
+`DataFrame.attrs["semantic"]` and `fetch_dataset` response `semantic` (same four fields; no SQL):
 
 ```python
 {"model": str, "audit_id": str, "truncated": bool, "row_count": int}
 ```
+
+For semantic responses, add `inline_complete: bool`; retain `complete: bool` with the stricter
+meaning above. `row_count` is the materialized row count, not an estimate of uncapped rows.
 
 ### New Public Interfaces
 
@@ -184,11 +226,12 @@ dataset_manager.add_semantic("sales", model="orders", models_dir=Path("models"),
 | Module | Eligible? | Decided patterns / exact contracts | Why not (if no) |
 |---|---|---|---|
 | M1: `self_governed` flag | yes | one property on `DataSource`, default `False` | — |
-| M2: DatasetManager honors the flag | yes | four edit sites, behavior fixed in the skeleton | — |
-| M3: clone never copies governed rows | yes | one guarded block in `_clone_agent_dm` | — |
+| M2: DatasetManager honors the flag | yes | fetch/cache/error handling, response metadata and runtime guidance contracts below | — |
+| M3: session isolation for governed rows | yes | both server creation paths create independent unloaded entries | — |
 | M4: `SemanticDataSource` | yes | signatures, accepted params and error codes fixed below | — |
 | M5: `add_semantic` + end-to-end test | yes | signature and lazy-import pattern fixed | — |
 | M6: documentation | yes | one section in an existing wiki page | — |
+| M7: per-subject frame slots | yes | storage rule, owner key, bound and read semantics fixed below | — |
 
 ### Module 1: `self_governed` source flag
 - **Path**: `packages/ai-parrot/src/parrot/tools/dataset_manager/sources/base.py`
@@ -204,14 +247,22 @@ dataset_manager.add_semantic("sales", model="orders", models_dir=Path("models"),
           """Whether this source enforces its own authorization and returns subject-scoped rows.
 
           When True, DatasetManager does not wrap the source in AuthorizingDataSource, always
-          re-fetches, never uses its Redis cache, and never copies its DataFrame to another
-          manager. Returns False by default.
+          re-fetches, never uses its Redis cache, keeps its DataFrame per calling subject
+          (see ``current_owner``) and never copies it to another manager. Returns False by default.
+          """
+
+      def current_owner(self) -> Optional[str]:
+          """Opaque, stable identifier of the subject calling right now, or None.
+
+          Only consulted for ``self_governed`` sources: DatasetEntry keys the loaded DataFrame by
+          it. Returns None by default, and None whenever no subject can be resolved.
           """
   ```
 
 ### Module 2: DatasetManager honors `self_governed`
 - **Path**: `packages/ai-parrot/src/parrot/tools/dataset_manager/tool.py`
-- **Responsibility**: the four manager behaviors listed in §2 Overview.
+- **Responsibility**: the six manager behaviors listed in §2 Overview, including response
+  completeness and LLM-facing guidance.
 - **Depends on**: Module 1 (reads `DataSource.self_governed`).
 - **Interface Skeleton** *(no signature changes — behavior added inside existing methods)*:
   ```python
@@ -233,13 +284,28 @@ dataset_manager.add_semantic("sales", model="orders", models_dir=Path("models"),
       TableSource branch, tool.py:3525): ``params = dict(conditions or {})``, ``sql`` is ignored.
       On failure the entry is never marked unavailable and ``_classify_fetch_failure``
       (tool.py:3681) is not consulted; the error text of the exception is returned as a
-      correctable error."""
+      correctable error. On success, copy only model, audit_id, truncated and row_count from
+      ``df.attrs["semantic"]`` into response ``semantic``. For semantic responses set
+      ``inline_complete`` from the existing inline/sample threshold and ``complete`` to
+      ``inline_complete and not semantic["truncated"]``. Emit a truncation warning for capped
+      results and avoid FULL-dataset claims in preview notes. Do not expose SQL.
+      Update this tool's public docstring to describe semantic ``conditions`` fields and the
+      requirement to fetch again for a changed query, even when loaded."""
   ```
 
-### Module 3: user-scoped clone never copies governed rows
-- **Path**: `packages/ai-parrot-server/src/parrot/handlers/datasets.py`
-- **Responsibility**: `_clone_agent_dm` must not hand one subject's governed DataFrame to another
-  user's manager.
+- **Runtime prompt edit**: update `DEFAULT_USAGE_RULES` (`tool.py:613`) so the loaded-data reuse
+  rule explicitly excludes changed queries on semantic datasets. Explain that their rows are
+  results of one query, and aggregate through semantic metrics rather than raw SQL or a previous
+  aggregate in pandas. Verify the text returned by `get_usage_rules()` and injected by
+  `PandasAgent._build_dataframe_info` (`bots/data.py:815-818`); no bot code change is needed.
+
+### Module 3: both server session paths isolate governed entries
+- **Paths**: `packages/ai-parrot-server/src/parrot/handlers/datasets.py`;
+  `packages/ai-parrot-server/src/parrot/handlers/user_objects.py`.
+- **Responsibility**: neither `_clone_agent_dm` nor
+  `UserObjectsHandler.configure_dataset_manager` may hand one subject's governed DataFrame or
+  mutable `DatasetEntry` to another session. The latter is the production PandasAgent chat path
+  (`handlers/agent.py:1763`) and currently shares entry references (`user_objects.py:342`).
 - **Depends on**: Module 1.
 - **Interface Skeleton**:
   ```python
@@ -248,7 +314,25 @@ dataset_manager.add_semantic("sales", model="orders", models_dir=Path("models"),
       """...existing contract... For an entry whose source is ``self_governed``, neither ``_df``
       nor ``_column_types`` is copied (guards the block at datasets.py:77): the cloned entry
       starts unloaded."""
+
+  # handlers/user_objects.py — existing method at line 282
+  async def configure_dataset_manager(self, request_session: Any, agent: "PandasAgent",
+                                      agent_name: str = None) -> DatasetManager:
+      """For each self_governed source, create a fresh DatasetEntry and a request_scoped_copy
+      of its source instead of assigning the agent's entry at line 342. Preserve registration
+      configuration (name, description, metadata, activation, type detection, cache settings,
+      computed columns, usage guidance and protected flag), but copy no loaded _df, column types
+      or per-caller failure state. Copy mutable configuration independently. Existing session
+      managers remain reusable; entries of other source kinds retain their current behavior."""
   ```
+
+- Both paths must leave the agent's entry untouched and produce distinct governed entries for
+  two new sessions. A fetch, eviction or failure in one session cannot mutate another session's
+  entry. The semantic toolkit may remain shared through `request_scoped_copy`.
+- Test the chat setup path through `configure_dataset_manager`, attachment to the PandasAgent
+  and pandas-tool session initialization: B must not receive A's rows through active-dataframe
+  access or the pandas namespace before B performs its own governed fetch. Do not rely on
+  `evict_table_sources`: it only evicts `TableSource`.
 
 ### Module 4: `SemanticDataSource`
 - **Path**: `packages/ai-parrot-semantic/src/parrot/semantic/dataset_source.py` (new);
@@ -288,6 +372,10 @@ dataset_manager.add_semantic("sales", model="orders", models_dir=Path("models"),
       def self_governed(self) -> bool:
           """Always True."""
 
+      def current_owner(self) -> str | None:
+          """``subject_digest`` of the resolved context (same resolution as ``fetch``); None when
+          no context is resolvable or the two contexts disagree. Never raises."""
+
       @property
       def has_builtin_cache(self) -> bool:
           """Always True — DatasetManager must not cache these rows."""
@@ -314,8 +402,11 @@ dataset_manager.add_semantic("sales", model="orders", models_dir=Path("models"),
               for an empty result); ``attrs["semantic"]`` = model, audit_id, truncated, row_count.
 
           Raises:
-              SemanticAccessError: ``context_required`` when no semantic context is bound or the
-                  core permission context differs from it; any denial raised by the governed path.
+              SemanticAccessError: ``context_required`` when neither the semantic nor the core
+                  permission context is set, when both are set and differ, or when the core one
+                  is not a PermissionContext instance; any denial raised by the governed path.
+                  When only the core context is set, the governed call runs inside
+                  ``bind_semantic_context(core_ctx)`` (no identity).
               SemanticValidationError: ``invalid_params`` for an unknown key or a ``model`` key;
                   ``query_required`` when no query and no default; ``invalid_query`` when
                   SemanticQuery validation fails.
@@ -362,9 +453,54 @@ dataset_manager.add_semantic("sales", model="orders", models_dir=Path("models"),
 ### Module 6: Documentation
 - **Path**: `wiki/tools/semantic-layer.md`
 - **Responsibility**: a "Semantic datasets in DatasetManager" section: registration, the
-  `conditions` query shape, identity requirement, row cap and truncation flag, what is not cached.
-- **Depends on**: Modules 4 and 5.
+  `conditions` query shape, identity resolution (bound semantic context, bridged core context,
+  fail-closed cases), per-subject frames, both session-isolation paths, row cap and
+  agent-visible truncation/completeness fields, what is not cached, and when a loaded semantic
+  dataset must be fetched again for a different query.
+- **Depends on**: Modules 2, 3, 4, 5 and 7.
 - **Interface Skeleton**: n/a (documentation).
+
+### Module 7: per-subject frame slots in `DatasetEntry`
+- **Path**: `packages/ai-parrot/src/parrot/tools/dataset_manager/tool.py`
+- **Responsibility**: a `self_governed` source's DataFrame and column types are stored per calling
+  subject, so no reader of the entry can obtain another subject's rows.
+- **Depends on**: Module 1 (`self_governed`, `current_owner`).
+- **Interface Skeleton**:
+  ```python
+  # tool.py  (modifies class DatasetEntry — verified: tool.py:208)
+  GOVERNED_FRAME_SLOTS: int = 32   # module constant: max subjects kept per entry (LRU)
+
+  class DatasetEntry:
+      @property
+      def _df(self) -> Optional[pd.DataFrame]:
+          """The loaded DataFrame. Ordinary source: the single stored frame (unchanged behavior).
+          ``self_governed`` source: the frame stored for ``self.source.current_owner()``, or None
+          when there is none or the owner is None."""
+
+      @_df.setter
+      def _df(self, value: Optional[pd.DataFrame]) -> None:
+          """Ordinary source: replace the single frame. ``self_governed`` source: set or (None)
+          drop the calling subject's slot only; with owner None nothing is stored. Evicts the
+          least-recently-used slot beyond GOVERNED_FRAME_SLOTS."""
+
+      @property
+      def _column_types(self) -> Optional[Dict[str, str]]:
+          """Same slot rule as ``_df``."""
+
+      @_column_types.setter
+      def _column_types(self, value: Optional[Dict[str, str]]) -> None:
+          """Same slot rule as ``_df``."""
+  ```
+- `_df` is assigned in `__init__` at `tool.py:278` and read or written at about twenty sites in
+  the module; turning the two attributes into properties keeps every one of them unchanged.
+  `loaded`, `df`, `shape`, `columns`, `evict()` and the manager accessors
+  (`get_active_dataframes`, `get_dataframe`, the DataFrame guide) inherit the rule.
+- `evict()` clears only the calling subject's slot of a governed entry.
+- The pandas workspace: `PythonPandasTool.sync_from_manager` reads the manager under the caller's
+  context, so it receives only the caller's frames. A variable left bound in a REPL namespace
+  shared by several subjects is outside `DatasetEntry`; M7 adds a test at the sync boundary and,
+  if it fails, unbinds governed datasets the caller does not own in
+  `PythonPandasTool.sync_from_manager` (`pythonpandas.py:371`).
 
 ---
 
@@ -379,10 +515,25 @@ dataset_manager.add_semantic("sales", model="orders", models_dir=Path("models"),
 | `test_materialize_skips_redis_for_self_governed` | M2 | `_get_cached_df` / `_cache_df` never called |
 | `test_fetch_dataset_forwards_conditions` | M2 | `conditions` reach `fetch` as keyword params; `sql` ignored |
 | `test_fetch_dataset_denial_does_not_mark_unavailable` | M2 | a denied fetch leaves `unavailable_reason` unset |
+| `test_fetch_dataset_semantic_response_completeness` | M2 | capped/uncapped × inline/preview results expose the four semantic fields, correct `inline_complete` and `complete`, and warnings without false full-dataset claims; ordinary source responses unchanged |
+| `test_semantic_runtime_query_guidance` | M2 | generated usage rules, PandasAgent prompt and fetch tool description explain semantic conditions and require re-fetch for changed queries even when loaded |
 | `test_clone_agent_dm_drops_self_governed_df` | M3 | cloned entry is unloaded; other entries still copied |
+| `test_configure_dataset_manager_isolates_self_governed_entries` | M3 | agent and two new sessions have distinct governed entries and source copies; no loaded rows, column types or failure state copied; registration settings preserved and mutable configuration independent |
+| `test_configure_dataset_manager_preserves_existing_session` | M3 | reuse the same session manager; ordinary source behavior unchanged |
 | `test_source_rejects_unknown_model` | M4 | `model_not_found` at construction |
-| `test_fetch_requires_bound_context` | M4 | no semantic context → `context_required` |
-| `test_fetch_rejects_context_mismatch` | M4 | core context ≠ semantic context → `context_required` |
+| `test_fetch_requires_some_context` | M4 | neither context set → `context_required`, no query run |
+| `test_fetch_rejects_context_mismatch` | M4 | both set and different → `context_required` |
+| `test_fetch_bridges_core_context` | M4 | only the core `PermissionContext` set → governed call runs under it; RLS of that subject applied |
+| `test_fetch_rejects_non_context_object` | M4 | core variable holds a dict → `context_required` |
+| `test_current_owner_resolution` | M4 | digest for semantic-only, core-only and equal contexts; None for none or mismatch; never raises |
+| `test_datasource_current_owner_default_none` | M1 | every existing source returns None |
+| `test_entry_frames_are_per_subject` | M7 | A's frame is None / not loaded for B; B's fetch does not replace A's |
+| `test_entry_no_owner_reads_unloaded_and_stores_nothing` | M7 | owner None → `loaded` False, assignment ignored |
+| `test_entry_slot_bound_lru` | M7 | beyond `GOVERNED_FRAME_SLOTS` the least-recently-used subject is dropped |
+| `test_entry_evict_only_callers_slot` | M7 | `evict()` under B leaves A's frame |
+| `test_ordinary_entry_single_frame_unchanged` | M7 | non-governed entries keep one shared frame |
+| `test_manager_accessors_hide_other_subjects_frames` | M7 | `get_active_dataframes`, `get_dataframe` and the guide omit frames of other subjects |
+| `test_pandas_sync_has_no_foreign_governed_frame` | M7 | after a sync under B, A's governed frame is not bound in the workspace |
 | `test_fetch_builds_query_from_params` | M4 | params map to `SemanticQuery`; `force_refresh` ignored |
 | `test_fetch_rejects_model_and_unknown_keys` | M4 | `invalid_params` |
 | `test_fetch_uses_default_query` / `test_fetch_query_required` | M4 | default applied; none → `query_required` |
@@ -395,10 +546,12 @@ dataset_manager.add_semantic("sales", model="orders", models_dir=Path("models"),
 | Test | Description |
 |---|---|
 | `test_e2e_semantic_dataset_fetch` | DuckDB warehouse fixture: `add_semantic` → `fetch_dataset` with a dynamic query returns governed rows as a DataFrame |
-| `test_e2e_semantic_dataset_rls_per_subject` | two subjects, same manager entry: each fetch returns only that subject's rows; the second never sees the first's DataFrame |
+| `test_e2e_semantic_dataset_rls_per_subject` | two subjects, same manager entry: each fetch returns only that subject's rows; before its own fetch the second reads the dataset as not loaded, and afterwards each still reads only its own frame |
+| `test_e2e_semantic_dataset_bridged_identity` | no `bind_semantic_context` by the host: `fetch_dataset` through the tool path with a `_permission_context` returns that subject's governed rows; without one it fails with `context_required` |
 | `test_e2e_semantic_dataset_masking` | a masked column arrives masked for a non-exempt role |
-| `test_e2e_semantic_dataset_truncation` | result above the policy limit sets `attrs["semantic"]["truncated"]` |
+| `test_e2e_semantic_dataset_truncation` | a narrow result capped at 100 rows sets attrs and response `semantic.truncated=True`, `inline_complete=True`, `complete=False`, and a visible warning; response audit id matches attrs |
 | `test_e2e_semantic_dataset_audited` | each fetch writes one audit entry |
+| `test_chat_session_governed_dataset_isolation` | M3 server test with fake governed source: A fetches, then B enters via `configure_dataset_manager` and pandas session setup; B has no A rows before fetching, and B's fetch/eviction leaves A's entry unchanged |
 
 ### Validation Contract
 
@@ -406,6 +559,7 @@ tests:
 - packages/ai-parrot/tests/tools/test_dataset_self_governed_source.py
 - packages/ai-parrot/tests/auth/test_authorizing_data_source.py
 - packages/ai-parrot-server/tests/handlers/test_datasets_clone.py
+- packages/ai-parrot-server/tests/handlers/test_semantic_dataset_session_isolation.py
 - packages/ai-parrot-semantic/tests/test_dataset_source.py
 - packages/ai-parrot-semantic/tests/test_e2e_dataset_source.py
 - packages/ai-parrot-semantic/tests/test_toolkit.py
@@ -413,7 +567,8 @@ tests:
 markers: none
 
 > `test_dataset_self_governed_source.py`, `test_dataset_source.py` and
-> `test_e2e_dataset_source.py` are created by M2, M4 and M5; the other four exist today.
+> `test_e2e_dataset_source.py` are created by M2, M4 and M5;
+> `test_semantic_dataset_session_isolation.py` is created by M3. The other four exist today.
 
 ### Test Data / Fixtures
 
@@ -431,16 +586,31 @@ import.
       `models_dir` + `dialect`.
 - [ ] `fetch_dataset(name, conditions={...})` on that dataset returns a DataFrame produced by
       `SemanticLayerToolkit.query_metrics`, with RLS and masks applied for the calling subject.
-- [ ] A fetch without a bound semantic context, or with a core permission context that differs
-      from it, raises `context_required` and returns no rows.
+- [ ] A fetch with neither a semantic nor a core permission context, with two that differ, or with
+      a core value that is not a `PermissionContext`, raises `context_required` and returns no rows.
+- [ ] A fetch with only the core permission context set runs the governed path under that subject
+      (bridge), without the host calling `bind_semantic_context`.
+- [ ] On one shared `DatasetManager`, a subject can never read a governed DataFrame fetched by
+      another subject through any entry or manager accessor; for that subject the dataset reads as
+      not loaded.
+- [ ] Per-subject frames are bounded by `GOVERNED_FRAME_SLOTS`; ordinary datasets keep a single
+      shared frame and their behavior is unchanged.
 - [ ] Two consecutive fetches with different queries return two different DataFrames; the manager
       never serves a previously loaded DataFrame for this source.
 - [ ] No Redis read or write happens for this source.
 - [ ] A `self_governed` source is never wrapped in `AuthorizingDataSource`.
 - [ ] `_clone_agent_dm` never copies the DataFrame of a `self_governed` source.
+- [ ] `UserObjectsHandler.configure_dataset_manager` creates independent, unloaded governed
+      entries for new sessions. A's loaded rows never enter B's active dataframes or pandas
+      namespace before B's own fetch; B's fetch/eviction cannot mutate A's entry.
 - [ ] A denied fetch never marks the dataset unavailable for later callers.
 - [ ] The dataset description contains no metric or dimension name.
 - [ ] A truncated result is flagged in `DataFrame.attrs["semantic"]["truncated"]`.
+- [ ] Semantic tool responses expose model, audit_id, truncated and row_count, distinguish
+      `inline_complete` from `complete`, and visibly warn on truncation even for inline results.
+      Capped results are never called the full dataset; ordinary responses remain unchanged.
+- [ ] Injected runtime usage rules and the fetch tool description require fresh semantic
+      `conditions` for changed queries on loaded datasets, without prohibiting same-result analysis.
 - [ ] Each fetch produces exactly one semantic audit entry.
 - [ ] `packages/ai-parrot/src` and `packages/ai-parrot-tools/src` contain no module-level import of
       `parrot.semantic`.
@@ -464,6 +634,8 @@ from parrot.tools.dataset_manager.sources import request_scoped_copy   # verifie
 from parrot.auth.context import _pctx_var                              # verified: DM/tool.py:54, SL/context.py:12
 from parrot.semantic import SemanticLayerToolkit, SemanticQuery, SemanticQueryResult  # verified: SL/__init__.py:4-7
 from parrot.semantic.context import current_pctx, bind_semantic_context  # verified: SL/context.py:44, :86
+from parrot.semantic.governance.pipeline import subject_digest          # verified: SL/governance/pipeline.py:77
+from parrot.auth import PermissionContext                               # verified: SL/context.py:11
 from parrot.semantic.errors import (                                   # verified: SL/errors.py:23-31
     SemanticAccessError, SemanticPolicyError, SemanticValidationError)
 from parrot.semantic.models import SemanticQuery, SemanticQueryResult  # verified: SL/models.py:102, :217
@@ -517,6 +689,16 @@ class AuthorizingDataSource(DataSource):                         # line 41
 # packages/ai-parrot-server/src/parrot/handlers/datasets.py
 def _clone_agent_dm(agent: object, logger: object) -> DatasetManager | None  # line 48
 
+# packages/ai-parrot-server/src/parrot/handlers/user_objects.py
+class UserObjectsHandler:
+    async def configure_dataset_manager(self, request_session: Any, agent: "PandasAgent",
+                                        agent_name: str = None) -> DatasetManager  # line 282
+    # Existing new-session loop shares DatasetEntry references at line 342; M3 changes governed entries.
+
+# packages/ai-parrot/src/parrot/bots/data.py — read-only integration anchor
+class PandasAgent:
+    def _build_dataframe_info(self) -> str                        # line 805; injects usage rules at 815-818
+
 # SL/toolkit.py
 class SemanticLayerToolkit(AbstractToolkit):                     # line 38
     def __init__(self, **kwargs: Any) -> None                    # line 43 (kwargs: models_dir, dialect, dataplane_guard,
@@ -550,13 +732,22 @@ class SemanticError(Exception):                                  # line 8
 | New Component | Connects To | Via | Verified At |
 |---|---|---|---|
 | `SemanticDataSource.fetch` | `SemanticLayerToolkit.query_metrics` | direct in-process call | `SL/toolkit.py:200` |
-| `SemanticDataSource.fetch` | `current_pctx()` and `_pctx_var` | equality check, fail closed | `SL/context.py:44`, `DM/tool.py:54` |
+| `SemanticDataSource.fetch` | `current_pctx()` and `_pctx_var` | subject resolution: equal when both set, bridge when core only, fail closed when neither | `SL/context.py:44`, `DM/tool.py:54` |
+| `SemanticDataSource.fetch` | `bind_semantic_context(core_ctx)` | wraps `query_metrics` for a bridged call | `SL/context.py:86` |
+| `SemanticDataSource.current_owner` | `subject_digest(ctx)` | owner key | `SL/governance/pipeline.py:77` |
+| `DatasetEntry._df` / `_column_types` | `DataSource.current_owner()` | slot key for `self_governed` sources | `DM/tool.py:278-279` |
+| `PythonPandasTool.sync_from_manager` | `DatasetManager.get_active_dataframes` | reads only the caller's governed frames | `packages/ai-parrot/src/parrot/tools/pythonpandas.py:371` |
 | `SemanticDataSource.__init__` | `SemanticLayerToolkit._models` | membership check (same distribution) | `SL/toolkit.py:77` |
 | `DatasetManager.add_semantic` | `DatasetEntry` + `_make_source` | same shape as `add_query` | `DM/tool.py:1521-1532` |
 | `DatasetManager.materialize` | `DataSource.self_governed` | attribute read | `DM/tool.py:4307` |
 | `_clone_agent_dm` | `DataSource.self_governed` | attribute read on `entry.source` | `handlers/datasets.py:77` |
+| `UserObjectsHandler.configure_dataset_manager` | independent `DatasetEntry` + `request_scoped_copy` | replace shared governed entries in new-session loop | `handlers/user_objects.py:337-342`; caller `handlers/agent.py:1763` |
+| `DatasetManager.fetch_dataset` response | `DataFrame.attrs["semantic"]` | copy four public fields; compute completeness and warning | `DM/tool.py:3796-3824` |
+| `DatasetManager.DEFAULT_USAGE_RULES` | PandasAgent prompt | `get_usage_rules()` → `_build_dataframe_info()` | `DM/tool.py:613,4216`; `bots/data.py:815-818` |
 
 ### Does NOT Exist (Anti-Hallucination)
+- ~~`DataSource.current_owner`~~, ~~`GOVERNED_FRAME_SLOTS`~~, ~~`DatasetEntry._df` as a property~~ — created by this feature; today `_df` and `_column_types` are plain attributes.
+- ~~An owner or subject field on `DatasetEntry`~~ — none exists.
 - ~~`DatasetManager.add_semantic`~~, ~~`DataSource.self_governed`~~, ~~`parrot.semantic.dataset_source`~~ — created by this feature.
 - ~~`parrot.semantic` imports inside `packages/ai-parrot/src` or `packages/ai-parrot-tools/src`~~ — none exist; do not add a module-level one.
 - ~~A `timezone` conversion in the compiler~~ — a query with `timezone` is rejected; do not expose it as a fetch param.
@@ -570,6 +761,9 @@ class SemanticError(Exception):                                  # line 8
 
 Verified against: `b46144886c`
 
+Review-added anchors (session creation, response formatting and runtime guidance) rechecked at
+`2a232df64f`.
+
 | File | Action | Verbatim anchor line | Verified at | Occurrences |
 |---|---|---|---|---|
 | `DM/sources/base.py` | MODIFY | `    def has_builtin_cache(self) -> bool:` | `base.py:102` | 1 |
@@ -578,11 +772,19 @@ Verified against: `b46144886c`
 | `DM/tool.py` | MODIFY | `        elif isinstance(entry.source, TableSource):` | `tool.py:3525` | 1 |
 | `DM/tool.py` | MODIFY | `            kind = _classify_fetch_failure(exc, getattr(entry.source, "table", None))` | `tool.py:3681` | 1 |
 | `DM/tool.py` | MODIFY | `    def add_query(` | `tool.py:1483` | 1 |
+| `DM/tool.py` | MODIFY | `class DatasetEntry:` | `tool.py:208` | 1 |
+| `DM/tool.py` | MODIFY | `        self._df: Optional[pd.DataFrame] = df  # pre-load when df provided directly` | `tool.py:278` | 1 |
+| `DM/tool.py` | MODIFY | `        self._column_types: Optional[Dict[str, str]] = None` | `tool.py:279` | 1 |
+| `DM/tool.py` | MODIFY | `    DEFAULT_USAGE_RULES: str = (` | `tool.py:613` | 1 |
+| `DM/tool.py` | MODIFY | `            "status": "materialized",` | `tool.py:3797` | scoped to `fetch_dataset` |
+| `DM/tool.py` | MODIFY | `            conditions: Dict of {param: value} pairs for SQLQuerySource templates.` | `tool.py:3478` | scoped to `fetch_dataset` docstring |
 | `packages/ai-parrot-server/src/parrot/handlers/datasets.py` | MODIFY | `            if entry.loaded and entry.df is not None:` | `datasets.py:77` | 1 |
+| `packages/ai-parrot-server/src/parrot/handlers/user_objects.py` | MODIFY | `                    user_dm._datasets[name] = entry` | `user_objects.py:342` | 1 |
 | `SL/__init__.py` | MODIFY | `__all__ = [` | `__init__.py:7` | 1 |
 | `SL/dataset_source.py` | CREATE | — | — | — |
 | `packages/ai-parrot/tests/tools/test_dataset_self_governed_source.py` | CREATE | — | — | — |
 | `packages/ai-parrot-server/tests/handlers/test_datasets_clone.py` | MODIFY | (append tests; file exists) | — | — |
+| `packages/ai-parrot-server/tests/handlers/test_semantic_dataset_session_isolation.py` | CREATE | — | — | — |
 | `packages/ai-parrot-semantic/tests/test_dataset_source.py` | CREATE | — | — | — |
 | `packages/ai-parrot-semantic/tests/test_e2e_dataset_source.py` | CREATE | — | — | — |
 | `wiki/tools/semantic-layer.md` | MODIFY | (append section; file exists) | — | — |
@@ -606,10 +808,19 @@ Verified against: `b46144886c`
 
 ### Known Risks / Gotchas
 - **Shared agent-level manager.** `DatasetEntry._df` is one slot per dataset. In the server,
-  managers are cloned per user session, and M3 keeps governed rows out of the clone. A manager
-  shared by several users outside those handlers still exposes the last fetched DataFrame through
-  the read accessors (`get_dataframe`, the pandas workspace). This is the existing posture for
-  identity-bearing sources such as `QuerySlugSource`; see §8.
+  creating a new manager does not currently isolate its entries: the PandasAgent chat path shares
+  them through `configure_dataset_manager`. M3 must fix that path as well as `_clone_agent_dm`,
+  keeping governed rows out of both new sessions and avoiding shared mutable entries. A manager
+  shared by several users outside those handlers is covered by M7: governed frames live in
+  per-subject slots, so the read accessors return only the caller's rows. Ordinary
+  identity-bearing sources such as `QuerySlugSource` keep their existing single-frame posture.
+- **Per-subject slots cost memory.** Up to `GOVERNED_FRAME_SLOTS` DataFrames per governed entry.
+  Each is capped by the policy row limit, and least-recently-used slots are dropped.
+- **Properties replace attributes.** `_df` and `_column_types` become properties on
+  `DatasetEntry`; `_clone_agent_dm` assigns `cloned_entry._df` directly (`datasets.py:78`) and
+  keeps working through the setter. Code that reads `entry.__dict__` would not — none was found.
+- **REPL namespace.** The slot rule protects `DatasetEntry`; a pandas REPL namespace shared by
+  several subjects is a separate holder of DataFrames (see M7).
 - **`materialize` shortcut.** `if entry.loaded and not force_refresh: return entry._df`
   (`tool.py:4307`) would return another query's rows; the `self_governed` branch must come first.
 - **`has_builtin_cache` branch passes `force_refresh` to the source** (`tool.py:4312`); the
@@ -617,13 +828,27 @@ Verified against: `b46144886c`
 - **Terminal-failure marking is per entry, not per subject.** A denial for one subject must not
   set `entry.unavailable_reason`; M2 bypasses `_classify_fetch_failure` for this source.
 - **Two context variables.** DatasetManager sets the core `_pctx_var`; the semantic layer reads
-  its own variable set by `bind_semantic_context`. A host that binds neither, or only the core
-  one, gets `context_required`. This is intended (fail closed).
+  its own variable set by `bind_semantic_context`. A host that binds neither gets
+  `context_required` (fail closed). A host that provides only the core one is bridged.
+- **Trust of the bridged context.** `ToolManager` injects `_permission_context` from the host's
+  permission context only when it is not None (`tools/manager.py:2185-2186`), and
+  `AbstractTool.execute` pops it from the call kwargs (`tools/abstract.py:940`). When the host
+  supplies none, a same-named argument produced by the model could reach `_pre_execute`; the
+  bridge therefore accepts only a `PermissionContext` instance, which a JSON tool argument
+  cannot be.
+- **`_pre_execute` overwrites the core variable** with the tool call's context, including None
+  (`tool.py:2871-2872`). Semantic-only resolution covers a host that bound the semantic context
+  but whose tool call carried none.
 - **`_clone_agent_dm` creates `DatasetManager()` with no guard** and copies sources with
   `request_scoped_copy` (shallow): the cloned `SemanticDataSource` shares the toolkit, which is
   correct — the toolkit holds no request identity.
 - **Row cap.** Default 1000, maximum 10000 unless the policy raises `limits.max`. Agents must
-  aggregate in the semantic query, not fetch rows to aggregate in pandas.
+  aggregate in the semantic query, not fetch rows to aggregate in pandas. DataFrame attrs alone
+  are invisible in the tool response; M2 must expose them and distinguish preview completeness
+  from source truncation, including results small enough to return inline.
+- **Loaded-result guidance.** The current system-prompt rule prohibits re-fetching loaded data.
+  M2 must explicitly exempt changed semantic queries; a wiki-only change cannot correct runtime
+  instructions. Same-session reuse of the same query result remains allowed.
 - **Driver naming.** Not relevant to execution here (the semantic executor resolves its own
   connection), and the DatasetManager wrapper is skipped, so `pg` vs `postgres` resource ids do
   not meet.
@@ -640,7 +865,7 @@ Verified against: `b46144886c`
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:080c47bf7dc730a3cf65519ee252788dcdda142390eeb2fb298606a143aeb15d evaluation_digest=sha256:4d09a48957f780056f2ff6d89daa64361f4cc76e28b2c96df54dc27314d21e9b rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:b3c1b394f57cdadac2bf9b5376edd0e25950dfecaa3040022a221363f1404253 evaluation_digest=sha256:20b325bdeb91bb530e8bfcff3509558104680afac65b8cefd0fc6f60f0cba32a rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -696,10 +921,10 @@ Coverage:
       "path": "/home/jesuslara/proyectos/ai-parrot/sdd/specs/datasetmanager-semantic-source.spec.md"
     }
   ],
-  "evaluation_digest": "sha256:4d09a48957f780056f2ff6d89daa64361f4cc76e28b2c96df54dc27314d21e9b",
+  "evaluation_digest": "sha256:20b325bdeb91bb530e8bfcff3509558104680afac65b8cefd0fc6f60f0cba32a",
   "exit_code": 0,
   "findings": [],
-  "input_digest": "sha256:080c47bf7dc730a3cf65519ee252788dcdda142390eeb2fb298606a143aeb15d",
+  "input_digest": "sha256:b3c1b394f57cdadac2bf9b5376edd0e25950dfecaa3040022a221363f1404253",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
@@ -725,21 +950,26 @@ Coverage:
 - [x] Is the DuckDB-backed store part of this feature? — *Resolved in proposal*: No — it is folded
   into a revision of FEAT-713 (`accounting-metrics-layer`).
 - [x] How are DatasetManager instances scoped in hosts, and how is a dynamic-query entry kept from
-  being reused for another subject or query? — *Resolved in spec research*: server handlers clone
-  a user-scoped manager per session (`_clone_agent_dm`, `handlers/datasets.py:48`); this spec
-  makes the source always re-fetch, skip Redis, and never be copied loaded into a clone.
+  being reused for another subject or query? — *Corrected in review*: M3 covers both
+  `_clone_agent_dm` (`handlers/datasets.py:48`) and the production chat path
+  `configure_dataset_manager` (`handlers/user_objects.py:282`). New sessions must receive distinct,
+  unloaded governed entries. M2 always re-fetches, skips Redis and updates runtime guidance to
+  request new semantic conditions when the query changes.
 - [x] Should `add_semantic` require a default query for `prefetch_schema()`? — *Resolved in spec*:
   no; `default_query` is optional, `prefetch_schema()` returns `{}` because visible members depend
   on the caller's role.
 - [x] Row cap for datasets — *Resolved in spec*: the policy limit applies unchanged; truncation is
-  flagged; raising it is a policy-file change.
-- [ ] A manager shared by several users outside the server handlers keeps the last fetched
+  flagged in both DataFrame attrs and the tool response, with separate inline/source completeness;
+  raising it is a policy-file change.
+- [x] A manager shared by several users outside the server handlers keeps the last fetched
   DataFrame readable through `get_dataframe` and the pandas workspace. Accept the existing posture
-  (as for `QuerySlugSource`), or add owner-stamped entries that refuse reads from another subject?
-  Spec default: accept the existing posture and document it. — *Owner: Jesus Lara*
-- [ ] Should the source accept DatasetManager's core permission context alone (bridge it into the
-  semantic context) so hosts need not call `bind_semantic_context`? Spec default: no — both must
-  be bound and equal. — *Owner: Jesus Lara*
+  or add owner-stamped entries? — *Resolved by Jesus Lara (2026-11-11)*: owner stamp. Implemented
+  as per-subject frame slots in `DatasetEntry` (M7): a governed frame is readable only by the
+  subject that fetched it.
+- [x] Should the source accept DatasetManager's core permission context alone so hosts need not
+  call `bind_semantic_context`? — *Resolved by Jesus Lara (2026-11-11)*: yes, bridge from
+  DatasetManager. When only the core `PermissionContext` is set the source binds it for the
+  governed call; both set must still be equal; neither still fails closed (M4).
 
 ---
 
@@ -751,6 +981,18 @@ Coverage:
 |---|---|---|---|---|
 
 Summary: **0** confirmed · **0** rejected · **0** escalated.
+
+### Specification review remediation (revision 0.2)
+
+The subsequent independent code-grounded review confirmed all three findings below. They are
+resolved in the specification; implementation and execution of the prescribed tests remain future
+feature work. The original design-research skip above is unchanged.
+
+| Ledger issue | Finding | Disposition | Spec changes |
+|---|---|---|---|
+| `efbd3899f28d` | Production chat sessions share governed entries | CONFIRM; applied | M3 covers both server paths; independent unloaded entries, chat/pandas isolation regression, validation scope and acceptance criteria |
+| `e705c70f5488` | Tool response hides source truncation | CONFIRM; applied | M2 copies semantic metadata, defines inline/source completeness and warnings; capped inline and preview response tests |
+| `40769f9cad7e` | Runtime guidance prohibits dynamic re-fetch | CONFIRM; applied | M2 changes injected usage rules and fetch docstring; prompt/tool guidance test; M6 documentation |
 
 ---
 
@@ -773,9 +1015,13 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
   - M3 → M1 (reads `DataSource.self_governed`).
   - M4 → M1 (overrides `DataSource.self_governed`).
   - M5 → M2 (same manager behavior it registers into) and M4 (imports `SemanticDataSource`).
-  - M6 → M4, M5 (documents their public surface).
-  - M2, M3 and M4 have no edge between them and run concurrently.
-- **Shared files**: `DM/tool.py` is modified by M2 and M5 (already ordered by the M5 → M2 edge).
+  - M7 → M1 (reads `self_governed` and `current_owner`).
+  - M5 → M7 (its two-subject end-to-end test on one manager entry needs the per-subject slots).
+  - M6 → M2, M3, M4, M5, M7 (documents responses, isolation, runtime guidance and public surface).
+  - M2, M3, M4 and M7 have no dependency edge between them; M3 and M4 run concurrently with
+    either of the other two.
+- **Shared files**: `DM/tool.py` is modified by M2, M5 and M7. M5 is already ordered after both;
+  M2 and M7 have no edge but share the file, so their tasks are serialized.
 - **Exclusive resources**: none (no extension rebuild, lockfile or migration).
 - **Cross-feature dependencies**: none. FEAT-713 revision (DuckDB store) is independent.
 
@@ -786,3 +1032,5 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-11-11 | Jesus Lara | Initial draft from the FEAT-880 research proposal |
+| 0.2 | 2026-11-11 | Codex | Resolve three review findings: both server session paths isolate governed entries; expose truncation and completeness in tool responses; correct dynamic-query runtime guidance; extend tests and acceptance criteria |
+| 0.3 | 2026-11-11 | Jesus Lara | Close both open questions: per-subject frame slots in `DatasetEntry` (new M7, `DataSource.current_owner`); identity bridge from DatasetManager's core permission context (M4) |
