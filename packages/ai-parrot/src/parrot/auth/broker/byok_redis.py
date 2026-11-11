@@ -29,9 +29,9 @@ class RedisUserLLMKeyStore:
         doc = await self._docs.get({"user_id": user_id, "provider": provider})
         if doc is None:
             return None
-        return decrypt_credential(
-            doc["api_key"], llm_key_context(user_id, provider), get_vault_keyring()
-        ).get("api_key")
+        return decrypt_credential(doc["api_key"], llm_key_context(user_id, provider), get_vault_keyring()).get(
+            "api_key"
+        )
 
     async def put(self, user_id: Any, provider: str, api_key: str) -> None:
         """Seal and upsert a key, retaining ``created_at`` on rotation."""
