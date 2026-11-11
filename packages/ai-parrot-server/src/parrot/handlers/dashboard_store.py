@@ -1,4 +1,5 @@
 """Dashboard persistence (FEAT-878): DocumentDB and Redis dashboard stores."""
+
 from __future__ import annotations
 
 import logging
