@@ -21,6 +21,7 @@ import copy
 import hashlib
 import itertools
 import logging
+import re
 import secrets
 import time
 from contextlib import AsyncExitStack, asynccontextmanager
@@ -94,6 +95,28 @@ def notebook_tree_name(book_id: Optional[str]) -> str:
 
 
 _STAGING_MAX_AGE_S = 3600
+
+#: Function words ignored when deciding whether a sector actually matches a ``find_books`` query.
+_QUERY_STOPWORDS = frozenset(
+    {
+        "a", "an", "and", "are", "as", "at", "be", "by", "de", "del", "el", "en", "for", "from", "in", "is",
+        "it", "la", "las", "los", "of", "on", "or", "the", "to", "un", "una", "what", "which", "with", "y",
+    }
+)  # fmt: skip
+
+
+def _query_terms(text: str) -> set[str]:
+    """Casefolded word terms of ``text`` minus function words (the ``find_books`` relevance gate)."""
+    return {term for term in re.findall(r"\w+", text.casefold()) if term not in _QUERY_STOPWORDS}
+
+
+def _sector_code(node: dict[str, Any]) -> Optional[str]:
+    """``metadata.sector_code`` of a library-notebook node, or ``None`` when it is not a sector."""
+    metadata = node.get("metadata")
+    if not isinstance(metadata, dict):
+        return None
+    code = metadata.get("sector_code")
+    return None if code is None or code == "" else str(code)
 
 
 def _epub_metadata_title(payload: bytes) -> str | None:
@@ -1126,6 +1149,146 @@ class Bookstore:
             logger.warning("notebook for %r unreadable: %s", card.book_id, exc)
             return []
         return list(index.get(f"{card.book_id}#{node_id}", []))
+
+    async def find_books(self, query: str, top_k: int = 5) -> dict[str, Any]:
+        """Which books treat ``query`` and where: sectors of every ``_library_notes`` first, catalog FTS fallback.
+
+        Each scope's library notebook is searched with the PageIndex hybrid search (BM25; the LLM
+        walk only when an adapter is configured), project scope first. A hit counts only when it
+        is a sector node (``metadata.sector_code``) sharing at least one query term with its code,
+        title, summary or note body; its anchors are resolved through ``(scope, book_id)`` against
+        the catalog (S11) — whole-book anchors name the book, node anchors point at ToC entries.
+        Book bodies are never read. Without ``bm25s`` the sectors are matched by title only and
+        the ``hint`` says so.
+
+        Args:
+            query: Topic or keywords.
+            top_k: Maximum sectors (or fallback books) returned.
+
+        Returns:
+            ``{"source": "sectors", "sectors": [{code, title, books: [{book_id, title, scope,
+            entries: [{node_id, title, start_page, end_page}]}]}]}`` (plus ``hint`` when degraded),
+            or ``{"source": "catalog_fts", "books": [brief...], "hint": ...}``.
+        """
+        top_k = max(1, top_k)
+        terms = _query_terms(query)
+        sectors: list[dict[str, Any]] = []
+        degraded: Optional[str] = None
+        for location in self.locations:
+            if self.library_notebook(location.scope) is None:
+                continue
+            toolkit = await self._ready_toolkit(location.scope)
+            tree = await toolkit.get_tree(LIBRARY_NOTEBOOK)
+            try:
+                hits = await toolkit.search(
+                    LIBRARY_NOTEBOOK,
+                    query,
+                    top_k=top_k * 4,
+                    use_bm25=True,
+                    use_llm_walk=self.has_llm,
+                )
+                node_ids = [str(hit["node_id"]) for hit in hits if hit.get("node_id")]
+                title_only = False
+            except ImportError:
+                degraded = (
+                    "bm25s is not installed: sectors were matched by title only "
+                    "(install the ai-parrot[bookstore] extra for ranked sector search)."
+                )
+                node_ids, title_only = [], True
+            sectors.extend(
+                await asyncio.to_thread(self._sector_hits, location.scope, tree, node_ids, terms, query, title_only)
+            )
+        if sectors:
+            return {"source": "sectors", "sectors": sectors[:top_k], **({"hint": degraded} if degraded else {})}
+        return {
+            "source": "catalog_fts",
+            "books": [card.brief() for card in self.catalog_search(query, top_k=top_k)],
+            "hint": "No librarian sector matched; draft one with `bookstore notebook draft --library`.",
+        }
+
+    def _sector_hits(
+        self,
+        scope: str,
+        tree: dict[str, Any],
+        node_ids: list[str],
+        terms: set[str],
+        query: str,
+        title_only: bool,
+    ) -> list[dict[str, Any]]:
+        """Map ranked library-notebook node ids (or a title scan) to sector payloads (blocking)."""
+        nodes = [n for n in structure_to_list(tree.get("structure", [])) if isinstance(n, dict) and n.get("node_id")]
+        by_id = {str(n["node_id"]): n for n in nodes}
+        content = self._content_store(scope)
+        needle = " ".join(query.casefold().split())
+        selected: list[dict[str, Any]] = []
+        if title_only:
+            for node in nodes:
+                title = str(node.get("title") or "").casefold()
+                if (
+                    _sector_code(node) is not None
+                    and needle
+                    and (needle in title or any(term in title for term in terms))
+                ):
+                    selected.append(node)
+        else:
+            for node_id in node_ids:
+                node = by_id.get(node_id)
+                if node is None or _sector_code(node) is None:
+                    continue
+                text = " ".join(
+                    (
+                        str(_sector_code(node)),
+                        str(node.get("title") or ""),
+                        str(node.get("summary") or node.get("prefix_summary") or ""),
+                        content.load_current(LIBRARY_NOTEBOOK, node_id) or "",
+                    )
+                )
+                if terms & _query_terms(text):
+                    selected.append(node)
+        sectors: list[dict[str, Any]] = []
+        for node in selected:
+            books = self._sector_books(node)
+            if books:
+                sectors.append({"code": _sector_code(node), "title": str(node.get("title") or ""), "books": books})
+        return sectors
+
+    def _sector_books(self, node: dict[str, Any]) -> list[dict[str, Any]]:
+        """Resolve one sector's anchors to ``[{book_id, title, scope, entries}]`` (blocking, catalog only)."""
+        metadata = node.get("metadata") or {}
+        raw_anchors = metadata.get("anchors") if isinstance(metadata, dict) else None
+        if not isinstance(raw_anchors, list):
+            return []
+        known_scopes = {location.scope for location in self.locations}
+        books: dict[tuple[str, str], dict[str, Any]] = {}
+        for raw in raw_anchors:
+            try:
+                anchor = Anchor.model_validate(raw)
+            except Exception as exc:  # noqa: BLE001 — malformed anchors are reported by doctor --notes
+                logger.debug("sector %r: malformed anchor %r: %s", node.get("node_id"), raw, exc)
+                continue
+            if anchor.scope not in known_scopes:
+                continue
+            card = self._catalog(anchor.scope).get(anchor.book_id)
+            if card is None or card.kind != "book":
+                continue
+            key = (anchor.scope, card.book_id)
+            book = books.setdefault(
+                key, {"book_id": card.book_id, "title": card.title, "scope": anchor.scope, "entries": []}
+            )
+            if anchor.node_id is None:
+                continue
+            entry = next((e for e in card.toc if e.node_id == anchor.node_id), None)
+            if entry is None or any(e["node_id"] == entry.node_id for e in book["entries"]):
+                continue
+            book["entries"].append(
+                {
+                    "node_id": entry.node_id,
+                    "title": entry.title,
+                    "start_page": entry.start_page,
+                    "end_page": entry.end_page,
+                }
+            )
+        return list(books.values())
 
     async def _document_of(self, card: Any, toolkit: PageIndexToolkit) -> dict[str, Any]:
         """The single imported document of a book's tree."""

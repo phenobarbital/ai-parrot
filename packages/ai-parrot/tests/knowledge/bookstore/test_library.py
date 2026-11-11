@@ -1295,3 +1295,138 @@ async def test_reindex_preserves_notebook_end_to_end(store, book_md):
     assert any(a["node_id"] == n1 for a in section["annotations"])
     bodies = (await (await store._ready_toolkit("project")).get_tree(notebook_tree_name(card.book_id)))["structure"]
     assert len(bodies) == 2
+
+
+# ----------------------------------------------------------------------
+# find_books (FEAT-876 TASK-5480)
+# ----------------------------------------------------------------------
+async def _sector(store: Bookstore, scope: str, code: str, title: str, anchors: list, *, body: str = "") -> str:
+    """Add one sector node to ``scope``'s library notebook; return its node id."""
+    notebook = await store.ensure_notebook(None, scope=scope)
+    toolkit = await store._ready_toolkit(scope)
+    added = await toolkit.add_node(notebook.tree_name, title=title, body=body)
+    await toolkit.tag_node(
+        notebook.tree_name,
+        added["node_id"],
+        metadata={"sector_code": code, "note_kind": "sector", "anchors": anchors},
+    )
+    return added["node_id"]
+
+
+@pytest.mark.asyncio
+async def test_find_books_sectors_first(store, book_md, monkeypatch):
+    pytest.importorskip("bm25s")
+    card, _ = await store.add_book(book_md)
+    entry = card.toc[0]
+
+    # No library notebook → catalog FTS with a hint.
+    fallback = await store.find_books("vector search")
+    assert fallback["source"] == "catalog_fts"
+    assert fallback["hint"]
+    assert [b["book_id"] for b in fallback["books"]] == [card.book_id]
+
+    await _sector(
+        store,
+        "project",
+        "025",
+        "Vector search and retrieval",
+        [{"book_id": card.book_id}, {"book_id": card.book_id, "node_id": entry.node_id}],
+    )
+    await _sector(store, "project", "171", "Ethical theories", [{"book_id": card.book_id}])
+
+    from parrot.knowledge.pageindex.content_store import NodeContentStore
+
+    read_trees: list[str] = []
+    original = NodeContentStore.load_current
+
+    def _spy(self, tree_name, node_id):
+        read_trees.append(tree_name)
+        return original(self, tree_name, node_id)
+
+    monkeypatch.setattr(NodeContentStore, "load_current", _spy)
+
+    async def _no_body(*args, **kwargs):
+        raise AssertionError("find_books must never read a book body")
+
+    monkeypatch.setattr(store, "read_section", _no_body)
+
+    result = await store.find_books("vector search")
+    assert result["source"] == "sectors"
+    assert "hint" not in result
+    assert [s["code"] for s in result["sectors"]] == ["025"]
+    sector = result["sectors"][0]
+    assert sector["title"] == "Vector search and retrieval"
+    assert sector["books"] == [
+        {
+            "book_id": card.book_id,
+            "title": card.title,
+            "scope": "project",
+            "entries": [
+                {
+                    "node_id": entry.node_id,
+                    "title": entry.title,
+                    "start_page": entry.start_page,
+                    "end_page": entry.end_page,
+                }
+            ],
+        }
+    ]
+    assert card.tree_name not in read_trees
+
+    # A query no sector shares a term with falls back to the catalog.
+    miss = await store.find_books("quantum chromodynamics")
+    assert miss["source"] == "catalog_fts" and "hint" in miss
+
+
+@pytest.mark.asyncio
+async def test_find_books_merges_scopes_project_first(tmp_path, fake_adapter):
+    pytest.importorskip("bm25s")
+    project = LibraryLocation(scope="project", root=tmp_path / "proj" / "library")
+    glob = LibraryLocation(scope="global", root=tmp_path / "glob" / "library")
+    store = Bookstore([project, glob], adapter=fake_adapter)
+    book = tmp_path / "synthetic-handbook.md"
+    book.write_text(SAMPLE_MARKDOWN, encoding="utf-8")
+    global_card, _ = await store.add_book(book, scope="global")
+    other = tmp_path / "project-book.md"
+    other.write_text(SAMPLE_MARKDOWN + "\nProject sha.\n", encoding="utf-8")
+    project_card, _ = await store.add_book(other, title="Project Book")
+
+    # Global sector first on disk, project sector second: project still wins the order.
+    await _sector(
+        store, "global", "100", "Stoic ethics (global)", [{"book_id": global_card.book_id, "scope": "global"}]
+    )
+    await _sector(store, "project", "170", "Stoic ethics (project)", [{"book_id": project_card.book_id}])
+    # Anchors resolve through (scope, book_id): a global book anchored with the default
+    # project scope is skipped, so this sector has no books and is dropped.
+    await _sector(store, "project", "171", "Stoic ethics (wrong scope)", [{"book_id": global_card.book_id}])
+
+    result = await store.find_books("stoic ethics")
+    assert result["source"] == "sectors"
+    assert [s["code"] for s in result["sectors"]] == ["170", "100"]
+    assert result["sectors"][0]["books"][0]["scope"] == "project"
+    assert result["sectors"][1]["books"][0] == {
+        "book_id": global_card.book_id,
+        "title": global_card.title,
+        "scope": "global",
+        "entries": [],
+    }
+    limited = await store.find_books("stoic ethics", top_k=1)
+    assert [s["code"] for s in limited["sectors"]] == ["170"]
+
+
+@pytest.mark.asyncio
+async def test_find_books_without_bm25s_matches_titles(store, book_md, monkeypatch):
+    card, _ = await store.add_book(book_md)
+    await _sector(store, "project", "025", "Vector search", [{"book_id": card.book_id}])
+    await _sector(store, "project", "171", "Ethics", [{"book_id": card.book_id}])
+    toolkit = await store._ready_toolkit("project")
+
+    async def _no_bm25(*args, **kwargs):
+        raise ImportError("'bm25s' is required but not installed.")
+
+    monkeypatch.setattr(toolkit, "search", _no_bm25)
+    result = await store.find_books("vector")
+    assert result["source"] == "sectors"
+    assert [s["code"] for s in result["sectors"]] == ["025"]
+    assert "bm25s" in result["hint"] and "title" in result["hint"]
+    assert (await store.find_books("astronomy"))["source"] == "catalog_fts"
