@@ -175,7 +175,7 @@
       "feature_id": "FEAT-877",
       "feature": "agent-local-mcp",
       "spec": "sdd/specs/agent-local-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -187,8 +187,9 @@
       "parallelism_notes": "Calls seed_agent_sections from TASK-5490 (toolkit_seed.py) and appends to its test_agent_toolkit_install.py; calls resolve_exposable_agent/list_exposable_agents/_tool_names from TASK-5488 (agent_toolkit.py); imports agent_section_name/is_agent_section/AGENT_TOOLKIT_CLASS_PATH from TASK-5486.",
       "assigned_to": null,
       "started_at": "2026-11-11T00:03:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5491-install-agent-toolkits.md"
+      "completed_at": "2026-11-11T00:37:27+00:00",
+      "file": "sdd/tasks/completed/TASK-5491-install-agent-toolkits.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5492",
