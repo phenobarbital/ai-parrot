@@ -204,9 +204,7 @@ def status(hosts_: tuple[str, ...]) -> None:
     default=None,
     help="Bare launcher commands or baked paths; default keeps form then follows the launcher.",
 )
-@click.option(
-    "--agent", "agents", multiple=True, help="Registered agent to expose (repeatable); see `list --agents`."
-)
+@click.option("--agent", "agents", multiple=True, help="Registered agent to expose (repeatable); see `list --agents`.")
 def install(
     names: tuple[str, ...],
     hosts_: tuple[str, ...],

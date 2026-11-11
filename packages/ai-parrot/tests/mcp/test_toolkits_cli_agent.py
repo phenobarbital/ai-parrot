@@ -59,6 +59,7 @@ def test_cli_install_agent(root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_cli_install_agent_error_exit(root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Surface an agent installation error as a Click command failure."""
+
     def fake_install(root_, agents, hosts, *, portable=None):
         raise ValueError("Unknown agent 'nope'")
 
