@@ -16,17 +16,18 @@ docs:
 # Feature Specification: Accounting Metrics Layer — chart-of-accounts rollups compiled to deterministic queries
 
 **Feature ID**: FEAT-713
-**Date**: 2026-11-11
+**Date**: 2026-11-12
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next minor after 2.1.3
 **Source**: `sdd/proposals/accounting-metrics-layer.proposal.md` (revision of 2026-11-11, U1–U4 resolved) over
 `sdd/proposals/accounting-metrics-layer.brainstorm.md` (accepted 2026-10-21, Option B)
 
-> **Revision 0.2** replaces the draft of 2026-10-21. That draft assumed FEAT-704 was paused and created the
+> **Revision 0.3** incorporates the five review resolutions below and replaces the draft of 2026-10-21. That draft assumed FEAT-704 was paused and created the
 > `ai-parrot-semantic` satellite itself. FEAT-704 has shipped the satellite (PR #1821), so this revision builds
 > `parrot.semantic.accounting` inside it, reuses its audit ledger and executor, and adds a reusable in-process
-> DuckDB engine in core. The accounting design (grammar, validation, compiler) is unchanged in substance.
+> DuckDB engine in core. Revision 0.3 retains the grammar but moves final metric arithmetic to a shared exact evaluator over SQL set
+> aggregates. Its contracts supersede revision 0.2.
 
 ---
 
@@ -84,7 +85,8 @@ produced it); and the future DuckDB-backed dataset store.
   visibility is filtered through `DatasetPolicyGuard`; every executed query appends a signed accounting entry to the
   shared semantic audit ledger.
 - **Natural calendar with cumulative periods.** `posting_date` buckets by day/week/month/quarter/year plus
-  YTD/QTD/MTD running totals over the natural calendar (client requirement).
+  YTD/QTD/MTD running totals over the natural calendar (client requirement). Weekly cumulative requests are
+  rejected in v1; non-cumulative weekly queries remain supported.
 - **Compile path importable on its own.** Model, grammar, validation and compiler import without loading the
   governed stack.
 - **Portable to the Rust compiler.** The plan is plain data, so FEAT-742 can port the accounting compiler.
@@ -115,7 +117,7 @@ produced it); and the future DuckDB-backed dataset store.
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:030e2f599662b934051f94923843d84793c3fd98f39537958a85e15ef7c3dd8c evaluation_digest=sha256:816fe7423612643231600b77bf4339960edf093ca4649cb626073d95af563f30 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:7ee631cb368c97479e2195d418b2e07d10bb28916376d7748fbd22161390ebe3 evaluation_digest=sha256:7f8e45f688bcbbf4eee6b68871988b267685a6fb53888374f616fd5eb6cbb992 rules_version=1 status=pass -->
 
 No eligible decisions govern subsystems: auth, bots, clients, config, flows, knowledge-graphindex, knowledge-pageindex, knowledge-wiki, memory, server, skills, tools
 
@@ -136,6 +138,7 @@ Pipeline:
    master), partitions time by every `valid_from`/`valid_to` boundary and checks **completeness, overlap and
    exclusions per interval**, then checks cycles, dangling references, empty sets, sign-convention consistency and
    numeric column types. Errors are collected and raised together as `ModelValidationError`.
+   Preserve resolved account natures in the model; compilation never fetches the original snapshot.
    `model_hash = sha256(canonical JSON of the resolved model + snapshot_hash)`.
 2. **Parse** — `parse_expr()` is a small Pratt parser producing a closed AST.
 3. **Plan** — `plan_metric(model, request)` validates the request, inlines metric references, deduplicates sets and
@@ -143,20 +146,24 @@ Pipeline:
 4. **Render** — `render_plan(plan, dialect)` builds one `sqlglot.exp.Select`: inner scan with one
    `COALESCE(SUM(CASE WHEN account_id IN (...) THEN <normalised amount> END), 0) AS set_<name>` per distinct set,
    `WHERE posting_date >= <from> AND posting_date < <to_exclusive>` plus dimension filters, `GROUP BY <grain
-   buckets>`; the outer `SELECT` applies the metric arithmetic (ratios through `NULLIF`) and `ORDER BY` the grain.
+   buckets>`; the outer `SELECT` returns exact set aggregates and `ORDER BY` the grain. Formulas stay in
+   `MetricPlan.columns` for shared runtime evaluation; SQL never divides metric operands.
    For `cumulative` requests the scan lower bound is widened to the start of the earliest window, every set column
-   becomes `SUM(set_x) OVER (PARTITION BY <window key>, <dimensions> ORDER BY <grain>)`, the arithmetic is applied
-   **after** the window (a YTD ratio is the ratio of YTD sums), and an outer filter drops rows before the requested
-   `from`. A **self-check pass** re-parses the rendered SQL and asserts it references only the declared journal
+   becomes `SUM(set_x) OVER (PARTITION BY <window key>, <dimensions> ORDER BY <grain>)`; the evaluator applies
+   formulas **after** the window (a YTD ratio is the ratio of YTD sums). Filter output buckets using
+   `bucket >= DATE_TRUNC(grain, output_from)` to retain a partial first bucket; the last bucket includes postings
+   only through `to`. Reject cumulative with `week` or no grain before rendering. A **self-check pass**
+   re-parses the rendered SQL and asserts it references only the declared journal
    table and declared columns. `compile_metric()` is `plan_metric` + `render_plan` and returns
-   `CompiledMetricQuery(sql, dialect, sql_hash, model_hash, plan_hash, lineage, assertions)`.
+   `CompiledMetricQuery(sql, dialect, sql_hash, model_hash, plan_hash, plan, request, lineage, assertions)`.
 5. **Execute** — two targets, one compiled query:
    - **database**: `DatabaseRuntime` wraps `compiled.sql` in a `GovernedQuery` and calls
      `Executor.run_with_columns(governed, connection=...)`. The SQL is sent unchanged (so the executed text matches
      `sql_hash`); a `truncated` result raises `AccountingExecutionError` instead of returning partial groups.
    - **duckdb**: `DuckDBRuntime` obtains frames from an injected `frame_provider`, converts them with `to_arrow`,
      and runs the query on a `DuckDBEngine` with the frames registered for that call only.
-   Both return a `RuntimeResult(columns, rows)` with exact `Decimal` amounts.
+   Both feed exact aggregates to `evaluate_rows(compiled.plan, rows)` and return final `Decimal` metric columns
+   in `RuntimeResult(columns, rows)`, under the numeric contract below.
 6. **Audit** — every executed query appends a signed `AccountingAuditEntry` to the shared `SemanticAuditLedger`
    (generalised to accept any signable entry). `FINANCE_AUDIT_MODE=required` (default) calls
    `append(entry, required=True)` and fails closed: if the durable append fails, the result is not returned.
@@ -233,7 +240,7 @@ Decisions reflected in this design:
 
 ```python
 # packages/ai-parrot-semantic/src/parrot/semantic/accounting/models.py  (new) — all frozen Pydantic v2
-from typing import Literal
+from typing import Annotated, Literal
 from decimal import Decimal
 from datetime import date, datetime
 from pydantic import BaseModel, Field, model_validator
@@ -325,6 +332,7 @@ class ResolvedSet(BaseModel, frozen=True):
 class AccountingModel(BaseModel, frozen=True):              # resolved, validated, hashable
     spec: AccountingModelSpec
     snapshot_hash: str
+    natures: tuple[tuple[str, Nature], ...]                  # sorted immutable resolved account/nature pairs
     intervals: tuple[tuple[date | None, date | None], ...]  # membership partition
     sets: dict[str, ResolvedSet]
     model_hash: str
@@ -335,16 +343,26 @@ class Period(BaseModel, frozen=True):
     cumulative: Cumulative | None = None
 
 class MetricRequest(BaseModel, frozen=True):
+    kind: Literal["metric"] = "metric"
     metric: str
     grain: AccountingGrain | None = None                    # None ⇒ one row per dimension combination
     dimensions: tuple[str, ...] = ()
     filters: dict[str, str | int | tuple[str | int, ...]] = {}   # equality / IN on declared dimensions only
     period: Period
     @model_validator(mode="after")
-    def _cumulative_fits_grain(self): ...                   # mtd needs grain ≤ month, qtd ≤ quarter, ytd ≤ year
+    def _cumulative_fits_grain(self): ...                   # explicit allowed combinations in the period contract
+
+class AssertionRequest(BaseModel, frozen=True):
+    kind: Literal["assertion"] = "assertion"
+    assertion_index: int = Field(ge=0)                       # index into model.spec.assertions, bound by model_hash
+    period: Period                                          # no cumulative mode for live assertions
+
+# Decode request JSON through a kind-discriminated union of MetricRequest and AssertionRequest.
+AccountingRequest = Annotated[MetricRequest | AssertionRequest, Field(discriminator="kind")]
 
 class Lineage(BaseModel, frozen=True):
-    metric: str
+    metric: str | None                                      # None for assertion plans
+    assertion_index: int | None = None
     formula: str                                            # fully inlined expression
     sets: tuple[ResolvedSet, ...]
     assertions: tuple[str, ...]                             # assertion exprs touching this metric
@@ -367,8 +385,11 @@ class MetricPlan(BaseModel, frozen=True):                   # portable IR — pl
     amount: str | None
     debit: str | None
     credit: str | None
-    natures: dict[str, Nature]                              # account → nature, only for accounts the plan uses
-    cast_decimal: bool                                      # True when allow_float applies
+    natures: tuple[tuple[str, Nature], ...]                  # sorted subset of model.natures used by this plan
+    result_scale: Literal[6] = 6
+    rounding: Literal["half_even"] = "half_even"
+    arithmetic_version: Literal[1] = 1                     # exact intermediates; final quantization only
+    cast_decimal: bool                                      # True for explicitly permitted float conversion; exact inputs also use fixed scale
     sets: tuple[PlanSet, ...]
     columns: tuple[tuple[str, PlanExpr], ...]               # (output alias "m_<metric>" | assertion side, expression)
     grain: AccountingGrain | None
@@ -387,7 +408,8 @@ class CompiledMetricQuery(BaseModel, frozen=True):          # NOT `CompiledQuery
     sql_hash: str                                           # sha256(dialect + "\n" + sql)
     model_hash: str
     plan_hash: str
-    request: MetricRequest
+    plan: MetricPlan                                       # formulas evaluated after SQL execution
+    request: AccountingRequest
     lineage: Lineage
     assertions: tuple["CompiledMetricQuery", ...] = ()
     @property
@@ -434,8 +456,8 @@ class AccountingAuditEntry(BaseModel):                      # signed by the shar
     dialect: str
     target: Literal["database", "duckdb"]
     tool: str
-    request_canonical: str                                  # canonical JSON of MetricRequest
-    lineage_ref: str                                        # f"{model_hash}:{sql_hash}" — lineage is rebuilt, never stored
+    request_canonical: str                                  # discriminated canonical JSON of AccountingRequest
+    lineage_ref: str                                        # f"{model_hash}:{plan_hash}:{sql_hash}" — never inline lineage
     assertion_status: Literal["passed", "failed", "skipped", "none"]
     outcome: Literal["ok", "denied", "validation_error", "execution_error"]
     row_count: int | None
@@ -453,6 +475,37 @@ balance** (revenue positive, expenses positive; metrics subtract):
 | `credit_positive` | one `amount` column, credits > 0 | `amount` if nature = credit else `-amount` |
 | `debit_credit_columns` | two columns `debit`, `credit` | `debit - credit` if nature = debit else `credit - debit` |
 | `natural_balance` | `amount` already in natural-balance sign | `amount` (nature optional) |
+
+### Numeric and period contracts (revision 0.3)
+
+- Exact source amounts must fit `DECIMAL(38,6)` without rounding: at most 32 integer and six fractional digits.
+  Validate declared types at load time and actual frame values at execution; reject incompatible sources rather
+  than silently casting away precision. `allow_float` is the sole explicit exception: its lossy conversion is
+  warned as `float_cast`; exactness is promised from conversion onward only.
+- SQL returns dimensions/buckets and exact per-set sums (or cumulative sums), never metric-expression results.
+  Cast exact inputs before aggregation: DuckDB `DECIMAL(38,6)`, Postgres `NUMERIC(38,6)`,
+  BigQuery `BIGNUMERIC` (enforce the common precision/scale bounds; ordinary NUMERIC has insufficient integer
+  range). Reject aggregate
+  overflow. Both runtimes reject floating aggregate values; accepted representations are `Decimal`, integer,
+  or a validated finite decimal string that fits the same precision/scale contract. Never repair a floating SQL
+  quotient by casting it back to decimal. NULL set aggregates normalize to zero before formula evaluation.
+- `evaluation.py` evaluates `PlanExpr` with standard-library `fractions.Fraction`, built from exact `Decimal`
+  inputs and literals, so `+`, `-`, `*`, `/` have exact intermediates. Division by zero yields NULL, which
+  propagates through the remaining expression; lineage warns `division_by_zero_possible`. Quantize each final
+  output once to scale 6 with half-even rounding using integer quotient/remainder operations; do not use the
+  ambient Decimal context or finite-precision division as an intermediate. Convert the scaled integer to
+  `Decimal` exactly. A rounded result outside `DECIMAL(38,6)` raises `AccountingExecutionError`. Both assertion
+  sides use the same output rule; compare tolerance exactly. A NULL side produces `skipped`, never `passed`.
+  `result_scale`, `rounding` and `arithmetic_version` are hashed plan fields.
+- A compiled artifact contains SQL and its plan. `sql_hash` identifies executed aggregation SQL; `plan_hash`
+  identifies formulas and numeric semantics. Different formulas over the same sets may share SQL but not a plan
+  hash. Audit records retain both hashes; replay verifies both before rebuilding lineage.
+- Allowed cumulative combinations: **mtd: day/month**, **qtd: day/month/quarter**,
+  **ytd: day/month/quarter/year**. `week` and `None` with any cumulative mode raise `RequestValidationError`
+  before SQL execution or frame access. This v1 restriction prevents weeks straddling natural windows.
+  Non-cumulative `week` remains valid. Supported grains retain the bucket containing `period.from_`, even if
+  its label precedes that date; cumulative values include earlier window postings. The final bucket is partial
+  through inclusive `period.to`. Empty buckets are not synthesized.
 
 ### New Public Interfaces
 
@@ -482,7 +535,7 @@ from parrot.interfaces.duckdb_engine import DuckDBEngine, to_arrow, FrameConvers
 | M3: Grammar | yes | grammar fixed below; AST node set closed; `GrammarError(position)` | — |
 | M4: Snapshot, loader, validation | no | — | interval partition + completeness semantics are the core invariant |
 | M5: Compiler (plan + render) + golden tests | no | — | plan shape, cumulative windows and the self-check allowlist define the determinism and FEAT-742 contracts |
-| M6: Accounting runtimes | yes (after M1, M5) | `GovernedQuery` construction and truncation rule fixed below | — |
+| M6: Accounting runtimes and exact evaluator | yes (after M1, M5) | `GovernedQuery`, truncation and exact numeric policy fixed below | — |
 | M7: Audit on the shared ledger | yes | protocol and entry fields fixed; `canonical_bytes` = sorted-key JSON without `signature` | — |
 | M8: Catalog, toolkit, CLI | yes (after M4–M7) | tool names, PBAC rule, CLI anchors fixed | — |
 | M9: Live validation + scheduler adapter | yes | `@schedule` + `register_object_schedules` verified; host wiring documented | — |
@@ -544,7 +597,9 @@ from parrot.interfaces.duckdb_engine import DuckDBEngine, to_arrow, FrameConvers
   exception hierarchy. Validators: `JournalSource` table XOR dataframe, and `connection` + `driver` required with
   `table`; `amount_convention` ⇒ required columns (`amount` vs `debit`+`credit`) and `nature` required unless
   `natural_balance`; `nature.from_column` XOR `nature.accounts`; `AccountSet` has `accounts` or `select`;
-  `valid_from < valid_to`; `MetricRequest.cumulative` fits `grain`; `Period.from_ <= Period.to`.
+  `valid_from < valid_to`; cumulative/grain combinations match the period contract; `Period.from_ <= Period.to`.
+  `AccountingModel.natures` is sorted, unique and round-trippable with immutable nested tuples. Reject the
+  reserved metric name `__validate__`.
   `parrot/semantic/__init__.py` keeps its four public names but resolves `SemanticQuery`, `SemanticQueryResult` and
   `SemanticLayerToolkit` through a module `__getattr__`, so importing a sub-package no longer imports
   `toolkit.py`. `accounting/__init__.py` imports the compile path eagerly and resolves `AccountingToolkit`,
@@ -565,7 +620,7 @@ from parrot.interfaces.duckdb_engine import DuckDBEngine, to_arrow, FrameConvers
   class AccountingError(Exception): """Base of every accounting-layer error."""
   class Problem(BaseModel, frozen=True):
       code: Literal["unassigned_account", "empty_set", "overlap", "dangling_ref", "cycle", "nature_missing",
-                    "nature_ambiguous", "float_amount", "column_missing", "interval_gap", "selector_no_match"]
+                    "nature_ambiguous", "float_amount", "numeric_type", "column_missing", "interval_gap", "selector_no_match"]
       message: str; interval: tuple[date | None, date | None] | None = None; accounts: tuple[str, ...] = ()
   class ModelValidationError(AccountingError):
       """Model failed load-time validation. `problems: list[Problem]` carries EVERY problem, never only the first."""
@@ -611,7 +666,12 @@ from parrot.interfaces.duckdb_engine import DuckDBEngine, to_arrow, FrameConvers
   `valid_from`/`valid_to`, materialises `ResolvedSet`s, and runs `validation.validate(...)`, which returns **all**
   problems: per interval — unassigned accounts (not in any valid set nor `excluded`), overlaps outside
   `allow_overlap`, empty sets; globally — dangling refs, cycles, selectors matching nothing, nature missing or
-  ambiguous, float amount columns (`allow_float=False`), missing columns. `detect_drift(model, fresh_snapshot)`
+  ambiguous, float amount columns (`allow_float=False`), incompatible exact precision/scale, missing columns.
+  Resolve `nature.from_column` from `ChartSnapshot.accounts[*].nature` (the name identifies the account-master
+  column, not a journal column); resolve `nature.accounts` from the explicit mapping and reject conflicts with
+  snapshot natures. Retain sorted immutable pairs in `AccountingModel.natures` and hash them. Require natures
+  for selected accounts unless `natural_balance`; `plan_metric` copies its needed subset without fetching a
+  snapshot. `detect_drift(model, fresh_snapshot)`
   returns accounts present in the fresh snapshot but unassigned in the loaded model.
 - **Depends on**: M2, M3.
 - **Interface Skeleton**:
@@ -655,11 +715,16 @@ from parrot.interfaces.duckdb_engine import DuckDBEngine, to_arrow, FrameConvers
   dimensions, filters on declared dimensions, period inside one membership interval — including the widened
   cumulative window — else `PeriodSpansMembershipChange(boundary, suggestion)`), inlines metric refs via
   `metric_order`, dedupes sets and returns a `MetricPlan`. `render_plan` builds the inner/outer `exp.Select` of §2
-  Overview from the plan alone (`exp.DateTrunc` for grain buckets; `COALESCE(SUM(CASE …), 0)` per set; `NULLIF`
-  denominators; window `SUM(...) OVER (PARTITION BY DATE_TRUNC(<window>, bucket), <dims> ORDER BY bucket)` for
+  Overview from the plan alone (`exp.DateTrunc` for grain buckets; `COALESCE(SUM(CASE …), 0)` per set;
+  window `SUM(...) OVER (PARTITION BY DATE_TRUNC(<window>, bucket), <dims> ORDER BY bucket)` for
   cumulative; literal `IN` lists sorted; aliases `set_<name>` / `m_<metric>`), renders with
   `expression.sql(dialect=dialect, pretty=False)`, and runs the self-check. `compile_metric` composes both and
-  fills `sql_hash`, `plan_hash`, `lineage`. Assertions compile to the same shape with both sides as columns. Golden
+  fills `sql_hash`, `plan_hash`, `plan`, `lineage`. SQL projects set aliases; `plan.columns` holds metric or
+  assertion-side expressions for the shared evaluator. Apply the numeric and period contracts, including
+  partial-bucket filtering and rejection of weekly cumulative requests. Assertions use the same aggregation
+  shape, with both side expressions in the plan. `AssertionRequest.assertion_index` must resolve within
+  `model.spec.assertions`; reject out-of-range indices and cumulative assertion periods. Its lineage carries
+  `metric=None` and the assertion index; metric lineage carries its metric name and `assertion_index=None`. Golden
   `.sql` files are the review artifact for any sqlglot bump; golden plan `.json` files are the FEAT-742 parity
   fixtures. The module imports nothing from `parrot.semantic` outside `accounting`.
 - **Depends on**: M2, M3, M4.
@@ -668,20 +733,21 @@ from parrot.interfaces.duckdb_engine import DuckDBEngine, to_arrow, FrameConvers
   # parrot/semantic/accounting/compiler.py  (new)
   def plan_metric(model: AccountingModel, request: MetricRequest) -> MetricPlan:
       """Dialect-independent, JSON-serialisable plan. Raises RequestValidationError / PeriodSpansMembershipChange."""
-  def plan_assertion(model: AccountingModel, assertion: Assertion, period: Period) -> MetricPlan: ...
+  def plan_assertion(model: AccountingModel, request: AssertionRequest) -> MetricPlan: ...
   def render_plan(plan: MetricPlan, dialect: str) -> str:
       """Render *plan* to SQL for *dialect*; deterministic; never returns SQL that fails the self-check."""
   def compile_metric(model: AccountingModel, request: MetricRequest, dialect: str) -> CompiledMetricQuery:
       """plan_metric + render_plan. Same (model_hash, canonical request, dialect) ⇒ byte-identical sql."""
-  def compile_assertion(model: AccountingModel, assertion: Assertion, period: Period, dialect: str) -> CompiledMetricQuery: ...
+  def compile_assertion(model: AccountingModel, request: AssertionRequest, dialect: str) -> CompiledMetricQuery: ...
   def self_check(sql: str, dialect: str, *, table: str, columns: frozenset[str]) -> None:
       """Re-parse and assert referenced tables/columns ⊆ declared; raise AccountingError otherwise."""
-  def canonical_request(request: MetricRequest) -> str: ...
+  def canonical_request(request: AccountingRequest) -> str: ...
   ```
 
 ### Module 6: Accounting runtimes — DuckDB engine and semantic executor
 - **Path**: `packages/ai-parrot-semantic/src/parrot/semantic/accounting/runtime/__init__.py`, `runtime/duckdb.py`,
-  `runtime/database.py`; `tests/accounting/test_runtime.py`, `test_e2e_duckdb.py`
+  `runtime/database.py`, `packages/ai-parrot-semantic/src/parrot/semantic/accounting/evaluation.py`; `tests/accounting/test_runtime.py`, `test_evaluation.py`,
+  `test_e2e_duckdb.py`
 - **Responsibility**: `duckdb.py` — `DuckDBRuntime(engine, frame_provider)`: awaits `frame_provider(name)` for the
   model's `dataframe` source, converts with core `to_arrow(decimal_columns=<amount columns>, allow_float=...)`, and
   calls `engine.execute(compiled.sql, frames={name: table})`; the compiled dialect must be `duckdb`. It converts
@@ -690,13 +756,20 @@ from parrot.interfaces.duckdb_engine import DuckDBEngine, to_arrow, FrameConvers
   table>,), rls_applied=(), masked_columns=(), limit=<result limit>, subject_digest=<digest>, members=(<metric>,),
   physical_columns=<declared columns>)` and awaits `executor.run_with_columns(governed, connection=<source.connection>)`.
   The SQL carries no `LIMIT`; when `truncated` is true it raises `AccountingExecutionError` (never partial
-  groups). Non-`Decimal` amount values are converted with `Decimal(str(value))`. `SemanticExecutionError` is
+  groups). Both targets validate exact aggregate types and call shared `evaluate_rows(compiled.plan, rows)`;
+  floats are rejected, never repaired using `Decimal(str(value))`. Evaluation and quantization follow the numeric
+  contract above. `SemanticExecutionError` is
   re-raised as `AccountingExecutionError`. It also provides the two helpers the loader path needs from a live
   database: `fetch_chart_rows` (account master) and `fetch_columns` (journal column types through
   `get_metadata`).
 - **Depends on**: M1, M2, M5.
 - **Interface Skeleton**:
   ```python
+  # parrot/semantic/accounting/evaluation.py (new, standard library + accounting models only)
+  def evaluate_rows(plan: MetricPlan, rows: Sequence[Mapping[str, Any]]) -> tuple[dict, ...]:
+      """Validate exact aggregates, evaluate formulas and round final columns once; preserve grain/dimensions.
+      Raise AccountingExecutionError for floats, malformed aggregates or precision/scale overflow."""
+
   # parrot/semantic/accounting/runtime/duckdb.py  (new)
   FrameProvider = Callable[[str], Awaitable[Any]]                    # name → pandas / polars-like / pa.Table
   class DuckDBRuntime:
@@ -729,7 +802,10 @@ from parrot.interfaces.duckdb_engine import DuckDBEngine, to_arrow, FrameConvers
   `accounting/audit.py` defines `AccountingAuditEntry` (fields in §2), `subject_digest`, `build_entry` and
   `append_entry`, which maps `FINANCE_AUDIT_MODE` to `ledger.append(entry, required=...)` and re-raises
   `SemanticExecutionError("audit_unavailable")` as `AccountingAuditError`. `rebuild_lineage(entry, model)`
-  recompiles from `request_canonical` and returns the `Lineage`, verifying `lineage_ref`.
+  parses the discriminated `request_canonical`, dispatches to `compile_metric` or `compile_assertion`, and
+  returns `Lineage` only after verifying model/plan/SQL hashes and `lineage_ref`. Assertion indices are stable
+  within the hashed model; never guess an assertion from a metric name. M9 constructs one `AssertionRequest`
+  per assertion index and period, so every assertion entry is independently replayable.
 - **Depends on**: M2, M5.
 - **Interface Skeleton**:
   ```python
@@ -758,15 +834,15 @@ from parrot.interfaces.duckdb_engine import DuckDBEngine, to_arrow, FrameConvers
   async def append_entry(ledger: "SemanticAuditLedger", entry: AccountingAuditEntry, *, mode: AuditMode) -> AccountingAuditEntry:
       """ledger.append(entry, required=(mode == 'required')); AccountingAuditError when the sink is missing or fails."""
   def rebuild_lineage(entry: AccountingAuditEntry, model: AccountingModel) -> Lineage:
-      """Recompile from request_canonical; raise AccountingError when model_hash or sql_hash no longer match."""
+      """Recompile from request_canonical; verify model_hash, plan_hash, sql_hash and lineage_ref before returning."""
   ```
 
 ### Module 8: `ModelCatalog`, `AccountingToolkit`, CLI
 - **Path**: `packages/ai-parrot-semantic/src/parrot/semantic/accounting/catalog.py`, `toolkit.py`, `cli.py` (new);
   MODIFY `packages/ai-parrot-semantic/src/parrot/semantic/cache.py` and
   `packages/ai-parrot/src/parrot/cli/__init__.py`; `tests/accounting/test_toolkit.py`, `test_cli.py`
-- **Responsibility**: `catalog.py` — `ModelCatalog(models_dir)` loads every `<tenant>/<model>.yaml` with its
-  snapshot, keeps `AccountingModel`s keyed `(tenant, model)`, exposes `metrics()` and `reload()`, and holds the
+- **Responsibility**: `catalog.py` — `ModelCatalog(models_dir)` indexes every `<tenant>/<model>.yaml` spec and
+  loads selected snapshots into `AccountingModel`s keyed `(tenant, model)`, exposes `metrics()` and `reload()`, and holds the
   per-model live flags of M9. `cache.py` — `CompileCache` annotations are widened to a `CacheableCompiled` protocol
   (anything with a `cache_key: str` of the existing shape); behaviour is unchanged. `toolkit.py` —
   `AccountingToolkit(AbstractToolkit)` with `tool_prefix = "finance"`; only the four tool methods are public
@@ -774,11 +850,38 @@ from parrot.interfaces.duckdb_engine import DuckDBEngine, to_arrow, FrameConvers
   `DatasetManager._pre_execute`: the hook stores the `_permission_context` kwarg in core `_pctx_var`; with no guard
   **or** no context every metric is allowed; otherwise `list_metrics` filters through
   `policy_guard.filter_datasets(pctx, names)` and explain/query require `can_read_dataset`, raising
-  `AuthorizationRequired`. Tenant resolution: explicit `tenant` argument → `pctx.tenant_id` → toolkit default.
-  `query_metric` flow: resolve model → authorize → compile (cached) → pick runtime by the model's journal source →
+  `AuthorizationRequired`. Both forms of `validate_model` additionally require the reserved model resource
+  `accounting:<tenant>:<model>:__validate__` and read access to every metric in that model. Deny the entire
+  request before snapshot refresh, compilation, execution or disclosure if any check fails. This explicit
+  model-validation privilege covers assertions over raw sets as well as metric references. The no-guard or
+  no-context rule remains unchanged. Guard inputs are bare `accounting:...` names; actual policy YAML keys
+  are `dataset:accounting:...` with action `dataset:read`, since the guard adds the prefix.
+  Tenant resolution: explicit `tenant` argument → `pctx.tenant_id` → toolkit default.
+  `query_metric` flow: resolve spec → authorize → load selected model → compile (cached) → pick runtime →
   execute → audit → return rows, lineage, `sql_hash`, `audit_id`, `chart_drift`. A model flagged by a `block`
   assertion makes `query_metric` raise. `cli.py` — click group `finance` with `validate <path> [--live]
   [--models-dir]` and `explain <path> <metric>`, registered lazily in the core CLI.
+
+  **Snapshot acquisition:** require exactly one of `snapshot_provider` or `snapshot_manifests` at construction;
+  never infer the account master from journal rows. `snapshot_provider(tenant, model, spec)` is an injected
+  async callable returning `ChartSnapshot`; its host owns the account-master connection/table, column mapping
+  and credentials. `snapshot_manifests` is a YAML-safe nested map `{tenant: {model: manifest_path}}`; adapt it to the same
+  provider and re-read each file on refresh. Missing configuration/keys or provider failure fail closed; a failed
+  refresh never clears previous flags or reports successful validation.
+  Resolve identities and permissions from `catalog.specs()` before any snapshot or journal access. Listing uses
+  PBAC-filtered specs and fetches no snapshots. Other tools then await private lock-protected
+  `_ensure_loaded(tenant, model)` only for the authorized selection: fetch its snapshot, validate journal
+  metadata, and publish the validated model atomically. Provider calls and manifest I/O stay outside compilation.
+  Structural CLI checks intentionally pass no journal columns; they report that live column checks were skipped.
+  `validate_model(live=True)` refreshes only its authorized `(tenant, model)`; scheduled validation explicitly
+  iterates all configured models through a private trusted helper. Fresh snapshots detect drift without silently
+  changing the loaded model/hash. Explicit reload validates replacements atomically and invalidates old hashes
+  in the compile cache.
+  CLI `validate` and `explain` require `--snapshot <manifest>` for the selected model; live validation re-reads it.
+  Database journal credentials use the existing resolver. For dataframe-backed live CLI validation require
+  `--journal-arrow <IPC file>` as an explicit journal frame, otherwise fail with an actionable usage error.
+  Structural validation/explain require no live journal. MCP-local uses explicit manifest configuration;
+  embedded hosts may inject a provider backed by a database or Arrow account master.
 - **Depends on**: M4, M5, M6, M7.
 - **Interface Skeleton**:
   ```python
@@ -792,16 +895,22 @@ from parrot.interfaces.duckdb_engine import DuckDBEngine, to_arrow, FrameConvers
       def put(self, compiled: CacheableCompiled) -> None: ...         # modifies cache.py:59
 
   # parrot/semantic/accounting/catalog.py  (new)
+  SnapshotProvider = Callable[[str, str, AccountingModelSpec], Awaitable[ChartSnapshot]]
+  # Arguments: tenant, model, spec; providers must honor the exact requested identity.
   class ModelCatalog:
       def __init__(self, models_dir: Path) -> None: ...
       def load(self, snapshots: Mapping[tuple[str, str], ChartSnapshot],
                columns: Mapping[tuple[str, str], Mapping[str, str]] | None = None) -> None:
-          """Load every <tenant>/<model>.yaml; raise ModelValidationError naming the file on the first invalid model."""
+          """Load only keys supplied in snapshots; validate the entire batch before atomic publication.
+          Reject unknown keys and identity mismatches with tenant/model declared in YAML; preserve other models."""
+      def reload(self, snapshots: Mapping[tuple[str, str], ChartSnapshot],
+                 columns: Mapping[tuple[str, str], Mapping[str, str]] | None = None) -> None:
+          """Validate replacements before atomic publication; caller invalidates replaced model hashes."""
       def specs(self) -> dict[tuple[str, str], AccountingModelSpec]:
           """Parsed YAML specs keyed (tenant, model) — available before snapshots exist."""
       def get(self, tenant: str, model: str) -> AccountingModel: ...
       def metrics(self, tenant: str) -> list[tuple[str, str, MetricDef]]:
-          """(model, metric name, definition) for one tenant."""
+          """(model, metric name, definition) from parsed specs for one tenant; no snapshot access."""
       def flags(self, tenant: str, model: str) -> "ModelLiveStatus | None": ...
       def set_flags(self, status: "ModelLiveStatus") -> None: ...
 
@@ -810,6 +919,8 @@ from parrot.interfaces.duckdb_engine import DuckDBEngine, to_arrow, FrameConvers
       """Finance tools: the LLM picks metric + grain + filters + period; the compiler writes the SQL."""
       tool_prefix = "finance"                                        # attribute verified: toolkit.py:276
       def __init__(self, *, models_dir: Path | str | None = None,
+                   snapshot_provider: "SnapshotProvider | None" = None,
+                   snapshot_manifests: "Mapping[str, Mapping[str, Path | str]] | None" = None,
                    database_toolkit: "DatabaseQueryToolkit | None" = None,   # verified: databasequery/toolkit.py:115
                    frame_provider: "FrameProvider | None" = None,
                    engine: "DuckDBEngine | None" = None,
@@ -828,16 +939,17 @@ from parrot.interfaces.duckdb_engine import DuckDBEngine, to_arrow, FrameConvers
                              tenant: str | None = None) -> dict:
           """Compile → execute (database or duckdb) → audit → rows + lineage + sql_hash + audit_id + chart_drift."""
       async def validate_model(self, model: str, tenant: str | None = None, live: bool = False) -> dict:
-          """Load-time problems, and with live=True assertion results for the last closed natural month + drift."""
+          """Require validation privilege and all metric reads; return only the selected model’s results.
+          With live=True refresh its snapshot and run last-closed-month assertions plus drift."""
       async def _pre_execute(self, tool_name: str, /, **kwargs) -> None:
           """Per-call PBAC hook  # hook verified: toolkit.py:491; pattern: dataset_manager/tool.py:2846"""
 
   # parrot/semantic/accounting/cli.py  (new)
   @click.group("finance")
   def finance() -> None: """Accounting metrics layer commands."""   # LazyGroup resolves the attribute `finance`
-  @finance.command("validate")  # args: path; --live; --models-dir; --snapshot (manifest path)
+  @finance.command("validate")  # args: path; --live; --models-dir; --snapshot (required); --journal-arrow
   def validate(...) -> None: """Exit 1 on any Problem; prints the full problem list, grouped by interval."""
-  @finance.command("explain")   # args: path, metric; --snapshot
+  @finance.command("explain")   # args: path, metric; --snapshot (required)
   def explain(...) -> None: ...
   ```
   ```python
@@ -851,13 +963,17 @@ from parrot.interfaces.duckdb_engine import DuckDBEngine, to_arrow, FrameConvers
 - **Path**: `packages/ai-parrot-semantic/src/parrot/semantic/accounting/live.py`;
   `packages/ai-parrot-server/src/parrot/scheduler/accounting_jobs.py` (new);
   `tests/accounting/test_live.py`, `packages/ai-parrot-server/tests/scheduler/test_accounting_jobs.py`
-- **Responsibility**: `live.py` — `run_live_validation(toolkit)`: for every model, take a fresh snapshot,
+- **Responsibility**: `live.py` — `run_live_validation(toolkit)` is a trusted host-only entry point, never a tool.
+  For every configured model in `catalog.specs()`, initialize it if needed and call the snapshot provider afresh,
   `detect_drift`, compile and execute every assertion for the last closed natural month, append one audit entry per
   assertion, and set the catalog flags (`chart_drift`, `assertion_failed`, `blocked`) so later `query_metric`
   results carry them. The server adapter wraps it in an object with a `@schedule(ScheduleType.DAILY, ...)` method
   and exposes `register_accounting_schedules(scheduler, toolkit_factory)`. The host application calls it on the
   scheduler it builds (`app["scheduler_manager"]`); neither the satellite nor `ai-parrot-server` constructs a
-  scheduler, and no host file is modified by this feature.
+  scheduler, and no host file is modified by this feature. The factory returns the same configured toolkit
+  instance serving queries, so its catalog flags persist; it must configure snapshot acquisition. No
+  caller-controlled flag enables trusted scheduler access. The public tool calls a private one-model helper
+  after authorization, never the all-model host entry point.
 - **Depends on**: M8.
 - **Interface Skeleton**:
   ```python
@@ -886,10 +1002,13 @@ from parrot.interfaces.duckdb_engine import DuckDBEngine, to_arrow, FrameConvers
 - **Path**: `wiki/tools/accounting-metrics-layer.md` (new); MODIFY `wiki/tools/semantic-layer.md` and
   `packages/ai-parrot-semantic/README.md`
 - **Responsibility**: the new page covers the model YAML reference (every key, the `amount_convention` table,
-  selectors, intervals), the request contract, cumulative-period semantics, determinism and the golden-test policy,
+  selectors, intervals, retained natures), the request contract, allowed cumulative/grain combinations and
+  partial buckets, exact evaluation/rounding/overflow semantics, determinism and golden-test policy,
   audit entry fields and `lineage_ref` rebuild, the governance posture (per-metric `DatasetPolicyGuard`, allow
   without a guard) next to the fail-closed posture of the `sl_*` tools, the `DuckDBEngine` API, and the MCP-local,
-  CLI and host-scheduler wiring (`register_accounting_schedules(app["scheduler_manager"], factory)`).
+  CLI and host-scheduler wiring (`register_accounting_schedules(app["scheduler_manager"], factory)`), required
+  snapshot provider/manifests, live CLI journal Arrow input, validation permissions and actual
+  `dataset:accounting:...` policy keys. The scheduler factory returns the same toolkit used for queries.
   `semantic-layer.md` gains a short section pointing to it. The README `Layering` paragraph is replaced by the
   actual contract: the accounting compile path (models, grammar, loader, validation, compiler) imports on its own;
   its toolkit and runtimes use the shared ledger, executor and cache.
@@ -914,7 +1033,7 @@ from parrot.interfaces.duckdb_engine import DuckDBEngine, to_arrow, FrameConvers
 | `test_semantic_package_exports_unchanged` | M2 | `from parrot.semantic import SemanticQuery, SemanticQueryResult, SemanticLayerToolkit` still works |
 | `test_amount_convention_required` | M2 | missing `amount_convention` ⇒ validation error; each convention enforces its columns/nature rules |
 | `test_journal_source_rules` | M2 | table XOR dataframe; `table` requires `connection` and `driver` |
-| `test_request_cumulative_fits_grain` | M2 | `mtd`+`quarter` rejected; `ytd`+`month` accepted |
+| `test_request_cumulative_fits_grain` | M2 | exact allowed matrix; all cumulative+week/None combinations rejected before execution; non-cumulative week accepted |
 | `test_grammar_accepts_closed_language` | M3 | every production parses; AST equality |
 | `test_grammar_rejects_everything_else` | M3 | `if`, function names, strings, `%`, inline SQL ⇒ `GrammarError` with position |
 | `test_partition_intervals` | M4 | boundaries from `valid_from`/`valid_to` produce the expected half-open intervals |
@@ -923,16 +1042,23 @@ from parrot.interfaces.duckdb_engine import DuckDBEngine, to_arrow, FrameConvers
 | `test_all_problems_reported` | M4 | a model with 5 defects raises one error listing 5 problems |
 | `test_cycle_and_dangling` | M4 | `a = b + 1, b = a` ⇒ cycle; `sum(nope)` ⇒ dangling |
 | `test_float_amount_rejected_unless_allowed` | M4 | float column ⇒ `float_amount`; `allow_float` ⇒ accepted with `float_cast` warning |
-| `test_model_hash_changes_with_snapshot` | M4 | same YAML, extra account in snapshot ⇒ different `model_hash` |
+| `test_model_hash_changes_with_snapshot` | M4 | same YAML, extra account or changed nature ⇒ different `model_hash` |
+| `test_resolved_natures_round_trip` | M4/M5 | from_column model survives JSON round-trip and compiles without snapshot access; mixed natures normalize correctly; mapping conflicts rejected |
+| `test_exact_numeric_types` | M4/M6 | reject unsupported precision/scale and out-of-range frame values before lossy conversion |
 | `test_plan_is_plain_json` | M5 | `MetricPlan.model_dump_json()` round-trips; the plan holds no sqlglot object; `plan_hash` is stable |
 | `test_plan_golden` | M5 | plans equal `golden/plans/*.json` |
 | `test_compile_deterministic` | M5 | 50 compiles ⇒ one distinct `sql_hash`; `IN` lists sorted |
 | `test_compile_golden_<dialect>` | M5 | rendered SQL equals `golden/<dialect>/*.sql` for duckdb, postgres, bigquery |
 | `test_sign_normalisation_per_convention` | M5 | the four conventions emit the expected `CASE` arms |
-| `test_cumulative_window_shape` | M5 | ytd: widened lower bound, window partition by year, outer `from` filter, arithmetic after window |
+| `test_cumulative_window_shape` | M5 | widened lower bound; natural-window partition; bucket-aligned output filter retains partial first bucket; formulas remain in plan |
 | `test_refuse_membership_change` | M5 | period (and ytd window) crossing `valid_from` ⇒ `PeriodSpansMembershipChange` naming the boundary |
 | `test_self_check_rejects_foreign_columns` | M5 | SQL referencing an undeclared column or table fails `self_check` |
-| `test_nullif_and_coalesce` | M5 | empty group ⇒ 0 per set; zero denominator ⇒ NULL + warning |
+| `test_coalesce_and_no_sql_division` | M5 | empty aggregate ⇒ 0 per set; generated SQL contains no metric arithmetic; formula and zero-division warning remain in plan/lineage |
+| `test_exact_formula_evaluation` | M6 | 9007199254740993 / 1 stays exact; 1/3 ⇒ 0.333333; nested cancellation before final rounding; both runtimes agree |
+| `test_rounding_and_overflow` | M6 | positive/negative half-even ties, signed division, precision-38 limits, intermediate values beyond Decimal context, final overflow raises |
+| `test_invalid_aggregate_values` | M6 | float, NaN, infinity and malformed numeric strings rejected; zero denominator propagates NULL and assertion is skipped |
+| `test_plan_hash_formula_identity` | M5/M7 | same-set formulas may share SQL hash but have different plan hashes; replay rejects tampered plan hash |
+| `test_assertion_audit_replay` | M5/M7/M9 | audit every assertion by index; deserialize kind-discriminated request and rebuild identical lineage/plan/SQL hashes; reject wrong model, index or cumulative period |
 | `test_duckdb_runtime_uses_frame_provider` | M6 | the provider is awaited with the model's frame name; the result has `Decimal` amounts |
 | `test_database_runtime_builds_governed_query` | M6 | a fake `Executor` records a `GovernedQuery` with the compiled SQL unchanged and all 10 fields set |
 | `test_database_runtime_truncation_raises` | M6 | `truncated=True` ⇒ `AccountingExecutionError`; `SemanticExecutionError` is re-raised as one |
@@ -943,17 +1069,23 @@ from parrot.interfaces.duckdb_engine import DuckDBEngine, to_arrow, FrameConvers
 | `test_compile_cache_holds_metric_queries` | M8 | `CompileCache.put/get/invalidate_model` work with `CompiledMetricQuery`; existing `CompiledQuery` behaviour unchanged |
 | `test_toolkit_tools_and_prefix` | M8 | `get_tools()` names are exactly the four `finance_*` tools |
 | `test_toolkit_pbac_filtering` | M8 | guard allowing one metric ⇒ `list_metrics` shows one; `query_metric` on another ⇒ `AuthorizationRequired` |
-| `test_toolkit_allows_without_guard_or_context` | M8 | no guard, or no permission context ⇒ every metric visible and queryable |
+| `test_toolkit_allows_without_guard_or_context` | M8 | existing allow posture applies consistently to all four tools |
+| `test_validate_model_authorization` | M8 | missing validation privilege or any metric read ⇒ deny before refresh/execution/disclosure, including raw-set assertions; permit fully authorized single-model validation |
+| `test_policy_resource_names` | M8 | real guard receives bare accounting names; evaluator sees dataset:accounting keys and dataset:read action |
+| `test_snapshot_acquisition` | M8 | distinct journal/master sources; provider called with tenant/model/spec; manifest adapter; missing/XOR config and missing manifest keys fail closed |
+| `test_snapshot_refresh_failure` | M8/M9 | failed refresh preserves previous flags/model/hash and reports failure; successful refresh does not silently reload model |
+| `test_cli_snapshot_inputs` | M8 | --snapshot required; live dataframe needs --journal-arrow; explicit manifest refresh; actionable missing-input errors |
 | `test_cli_validate_exit_codes` | M8 | `parrot finance validate` exits 1 with problems, 0 clean; the lazy command resolves |
 | `test_live_validation_flags` | M9 | failed `flag` assertion ⇒ `assertion_failed` on results; `block` ⇒ `query_metric` raises |
-| `test_register_accounting_schedules` | M9 | one `@schedule` method is registered on a `SchedulerManager` under the name `accounting` |
+| `test_register_accounting_schedules` | M9 | one registered job; trusted refresh uses configured provider and same toolkit instance; query sees flags; no public trusted-bypass parameter |
 
 ### Integration Tests
 
 | Test | Description |
 |---|---|
 | `test_e2e_duckdb_pnl` | 10k-row synthetic journal with mixed natures, `troc_pnl`-shaped model: revenue/gross_margin/ebitda by month equal hand-computed Decimals; assertions pass |
-| `test_e2e_duckdb_cumulative` | ytd/qtd/mtd rows equal cumulative sums of the monthly rows; ytd ratio equals ratio of ytd sums |
+| `test_e2e_duckdb_cumulative` | supported grains equal hand-computed cumulative sums; ratio uses cumulative sets; partial first/last buckets and month/quarter/year transitions covered |
+| `test_weekly_cumulative_rejected` | Dec 31/Jan 1 and month-end journals: week+ytd/qtd/mtd rejected, no query issued; non-cumulative weekly grouping remains correct |
 | `test_e2e_duckdb_file_through_executor` | the same model against a DuckDB **file** through `DatabaseRuntime` + the real `Executor`: rows equal the engine rows |
 | `test_e2e_postgres_parity` | same model against Postgres (`PARROT_TEST_PG_DSN`, skipped when unset): rows equal DuckDB rows |
 | `test_e2e_audit_trail` | every `query_metric` produces one verifiable entry whose `lineage_ref` rebuilds the same `Lineage` |
@@ -969,6 +1101,7 @@ tests:
 - packages/ai-parrot-semantic/tests/accounting/test_compiler.py
 - packages/ai-parrot-semantic/tests/accounting/test_golden.py
 - packages/ai-parrot-semantic/tests/accounting/test_runtime.py
+- packages/ai-parrot-semantic/tests/accounting/test_evaluation.py
 - packages/ai-parrot-semantic/tests/accounting/test_audit.py
 - packages/ai-parrot-semantic/tests/accounting/test_toolkit.py
 - packages/ai-parrot-semantic/tests/accounting/test_cli.py
@@ -1025,7 +1158,8 @@ def permission_context() -> "PermissionContext":
 - [ ] AC2 `parrot.interfaces.duckdb_engine` imports without `duckdb` installed; constructing `DuckDBEngine` without
   it raises the `require_extra` error naming `ai-parrot[duckdb]`.
 - [ ] AC3 A model without `amount_convention` does not load; each of the four conventions renders the documented
-  normalisation, proven by golden SQL and by DuckDB execution on the fixture.
+  normalisation, proven by golden SQL and DuckDB execution. A from_column model preserves immutable resolved
+  natures through JSON round-trip, compiles without its input snapshot, and hashes nature changes.
 - [ ] AC4 `load_model` reports **every** problem in one `ModelValidationError`; completeness, overlap and exclusions
   are checked **per membership interval**; a model with an unassigned account in any interval does not load.
 - [ ] AC5 `model_hash` covers the resolved model and the chart snapshot; `sql_hash` covers dialect + SQL; 50 compiles
@@ -1036,31 +1170,41 @@ def permission_context() -> "PermissionContext":
 - [ ] AC7 Requests (including the widened cumulative window) that cross a membership boundary are refused with
   `PeriodSpansMembershipChange` naming the boundary and a split suggestion; no SQL is produced.
 - [ ] AC8 `cumulative: mtd|qtd|ytd` returns running totals over the natural calendar; a cumulative ratio equals the
-  ratio of cumulative sums; the request validator rejects a cumulative window finer than the grain.
-- [ ] AC9 Empty groups yield 0 per set; zero denominators yield NULL plus a lineage warning; amounts are exact
-  numeric end to end (`Decimal` in results from both runtimes; float columns rejected unless `allow_float`).
+  ratio of cumulative sums. The validator enforces the explicit allowed matrix, rejecting week and no-grain
+  cumulative requests before execution; partial first/last buckets follow the documented contract.
+- [ ] AC9 Empty aggregates yield 0 per set; zero denominators yield NULL plus a lineage warning. Exact source
+  and aggregate values fit DECIMAL(38,6); shared formula evaluation uses exact rational intermediates and rounds
+  final outputs once to scale 6 half-even, independent of Decimal context. Float aggregates and overflow fail
+  closed. Float inputs require explicit warned conversion. High-precision ratios, ties, cancellation and overflow
+  execute identically in both runtimes; final amounts are Decimal, and NULL assertions are skipped.
 - [ ] AC10 The same `CompiledMetricQuery` executes on `DuckDBEngine` (Arrow-registered pandas frames, and polars
   when installed; per-thread cursors; 8 concurrent requests with isolated per-call frames) and through the semantic
   `Executor` against a DuckDB file, with equal rows; the Postgres parity test passes when a DSN is provided.
   `Executor`, `DatabaseQueryToolkit`, `DuckDBSource`, `SQLToolkit` and `DatasetManager` are unchanged.
 - [ ] AC11 Every executed query appends a signed `AccountingAuditEntry` to a `SemanticAuditLedger`; the same ledger
   instance still accepts `SemanticAuditEntry`; under `FINANCE_AUDIT_MODE=required` a missing or failing sink
-  prevents the result from being returned; `lineage_ref` rebuilds the exact `Lineage`.
+  prevents the result from being returned; `lineage_ref` rebuilds exact `Lineage` for both metric and assertion
+  requests using their discriminated request identity and verified model/plan/SQL hashes.
 - [ ] AC12 The rendered SQL passes the compiler self-check (only the declared journal table and declared columns)
   before it is returned, in every test.
 - [ ] AC13 `AccountingToolkit` exposes exactly `finance_list_metrics`, `finance_explain_metric`,
   `finance_query_metric`, `finance_validate_model`; with a `DatasetPolicyGuard` and a permission context, metrics
   the subject may not read are hidden and blocked; with no guard or no context every metric is allowed; no result
-  cache exists.
+  cache exists. Both structural and live validation require the model-validation resource and every metric
+  read when guard/context exist; denied calls disclose no assertion values or drift details and perform no refresh.
 - [ ] AC14 `parrot finance validate <model> [--live]` is registered lazily in the core CLI, exits non-zero on any
-  problem, and `--live` runs assertions for the last closed natural month plus chart drift.
+  problem, requires explicit --snapshot, and --live refreshes it and runs last-closed-month assertions plus drift.
+  Dataframe-backed live CLI requires --journal-arrow; database-backed CLI uses the existing connection resolver.
 - [ ] AC15 `register_accounting_schedules` registers a daily live validation on a `SchedulerManager`; its flags
   (`chart_drift`, `assertion_failed`) appear on subsequent results; a `block` assertion makes `query_metric` raise.
+  Startup and refresh use an explicit provider or manifest mapping, never infer a master from the journal. The
+  scheduler uses the same toolkit as queries; provider failure preserves flags and fails validation visibly.
 - [ ] AC16 `duckdb` is declared as an optional extra of core (`ai-parrot[duckdb]`) and of the satellite, and nowhere
   as a hard dependency; `pyarrow` stays a core dependency; polars is declared nowhere;
   `packages/ai-parrot-semantic/tests/test_packaging.py` passes unchanged.
 - [ ] AC17 `MetricPlan` round-trips through JSON, contains no sqlglot object, and `render_plan` needs nothing but
-  the plan and a dialect; golden plan files exist under `tests/accounting/golden/plans/`.
+  the plan and a dialect; golden plan files exist under `tests/accounting/golden/plans/`. The compiled artifact
+  retains the plan for exact evaluation, its hash covers numeric policy/formulas, and audit replay verifies it.
 - [ ] AC18 `ruff check` passes on every touched file (TID251 included); the existing satellite tests listed in the
   Validation Contract pass; no breaking change to any existing public API.
 - [ ] AC19 Documentation pages declared in §10 exist under `wiki/` (`parrot sdd techwiki check`).
@@ -1286,7 +1430,7 @@ Verified against: `928605b5a4`
 | `wiki/tools/semantic-layer.md` | MODIFY | `## Example agents` | `semantic-layer.md:159` | 1 |
 | `packages/ai-parrot/src/parrot/interfaces/duckdb_engine.py` | CREATE | — | — | — |
 | `packages/ai-parrot/tests/interfaces/test_duckdb_engine.py` | CREATE | — | — | — |
-| `packages/ai-parrot-semantic/src/parrot/semantic/accounting/{__init__,models,errors,grammar,snapshot,loader,validation,compiler,audit,catalog,toolkit,cli,live}.py` | CREATE | — | — | — |
+| `packages/ai-parrot-semantic/src/parrot/semantic/accounting/{__init__,models,errors,grammar,snapshot,loader,validation,compiler,evaluation,audit,catalog,toolkit,cli,live}.py` | CREATE | — | — | — |
 | `packages/ai-parrot-semantic/src/parrot/semantic/accounting/runtime/{__init__,duckdb,database}.py` | CREATE | — | — | — |
 | `packages/ai-parrot-semantic/tests/accounting/{__init__,conftest}.py`, `tests/accounting/test_*.py` | CREATE | — | — | — |
 | `packages/ai-parrot-semantic/tests/accounting/golden/{duckdb,postgres,bigquery}/*.sql`, `golden/plans/*.json` | CREATE | — | — | — |
@@ -1300,7 +1444,7 @@ Verified against: `928605b5a4`
 
 ### Patterns to Follow
 - **Import isolation**: `models.py`, `errors.py`, `grammar.py`, `snapshot.py`, `loader.py`, `validation.py` and
-  `compiler.py` import only the standard library, `pydantic`, `yaml`, `sqlglot`, `pyarrow` (inside functions) and
+  `compiler.py` and `evaluation.py` import only the standard library, `pydantic`, `yaml`, `sqlglot`, `pyarrow` (inside functions) and
   each other. `audit.py`, `catalog.py`, `toolkit.py`, `live.py` and `runtime/*` may import `parrot.semantic.*`
   siblings, `parrot.auth`, `parrot.tools` and `parrot.interfaces.duckdb_engine`.
 - **Lazy optional dependency**: `require_extra("duckdb", "duckdb")` inside `DuckDBEngine.__init__`, never at module
@@ -1308,11 +1452,12 @@ Verified against: `928605b5a4`
 - **Hashing**: `canonical_json` = `json.dumps(model_dump(mode="json"), sort_keys=True, separators=(",", ":"))`,
   Decimals as strings; `sha256` hex. The same function hashes models, requests, plans and audit entries.
 - **sqlglot**: build with `exp.*` constructors only (`exp.Select`, `exp.Case`, `exp.Sum`, `exp.Coalesce`,
-  `exp.Nullif`, `exp.DateTrunc`, `exp.Window`, `exp.In` with sorted `exp.Literal.string` values); never
+  `exp.DateTrunc`, `exp.Window`, `exp.In` with sorted `exp.Literal.string` values); never
   `sqlglot.parse_one(f"...")` with interpolated model data. Render `pretty=False`, `identify=False`.
 - **Plan before SQL**: `render_plan` reads only the `MetricPlan`. Anything the renderer needs must be a plan field.
 - **Dates**: half-open `[from, to + 1 day)` in SQL to be timestamp-safe; `Period.to` inclusive at the API.
-- **Decimal**: DuckDB `DECIMAL(38,6)`; Postgres `NUMERIC`; results converted with `Decimal`, never `float`.
+- **Decimal**: exact `DECIMAL(38,6)` aggregates on every dialect; shared rational evaluator with scale-6
+  half-even final outputs. Reject float aggregates and overflow; no SQL division or ambient-context rounding.
 - **Threading**: one root connection per engine; a new `root.cursor()` per `asyncio.to_thread` call; a semaphore
   bounds concurrency; cursors are closed in `finally`.
 - **PBAC**: copy `DatasetManager._pre_execute` semantics (no guard or no context ⇒ allow; `AuthorizationRequired`
@@ -1348,7 +1493,8 @@ Verified against: `928605b5a4`
   on results; the loaded model keeps serving.
 - **Metric referencing a set whose `valid_from` is after the period** — compile error, never an empty number.
 - **Unknown dimension / filter column** — `RequestValidationError` before compilation.
-- **Division by zero** — `NULLIF` emitted; result NULL + `division_by_zero_possible` warning in lineage.
+- **Division by zero** — the shared evaluator returns NULL and lineage warns `division_by_zero_possible`;
+  NULL assertion sides are skipped. No metric division is emitted in SQL.
 - **NULL vs 0** — `COALESCE(SUM(...), 0)` per set so empty groups reconcile; assertions compare Decimals with
   `tolerance` (default 0).
 - **pandas → Arrow copies** — `from_pandas` is not zero-copy; only Arrow → DuckDB registration is. Object or float
@@ -1389,8 +1535,8 @@ Database connections use the existing `PARROT_SEMANTIC_CONN_<NAME>_<KEY>` variab
   - M3 → M2 (imports `GrammarError`).
   - M4 → M2, M3 (models; `parse_expr` / `references` for cycle and dangling checks).
   - M5 → M2, M3, M4 (`AccountingModel`, `metric_order`, `canonical_json`).
-  - M6 → M1, M2, M5 (`DuckDBEngine` / `to_arrow`; `CompiledMetricQuery`).
-  - M7 → M2, M5 (`CompiledMetricQuery`, `compile_metric` for `rebuild_lineage`).
+  - M6 → M1, M2, M5 (`DuckDBEngine` / `to_arrow`; `CompiledMetricQuery`; shared `evaluate_rows`).
+  - M7 → M2, M5 (`CompiledMetricQuery`, discriminated requests, `compile_metric` / `compile_assertion` for replay).
   - M8 → M4, M5, M6, M7.
   - M9 → M8 (`AccountingToolkit`, `ModelCatalog` flags).
   - M10 → M8, M9.
@@ -1408,7 +1554,7 @@ Database connections use the existing `PARROT_SEMANTIC_CONN_<NAME>_<KEY>` variab
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:030e2f599662b934051f94923843d84793c3fd98f39537958a85e15ef7c3dd8c evaluation_digest=sha256:816fe7423612643231600b77bf4339960edf093ca4649cb626073d95af563f30 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:7ee631cb368c97479e2195d418b2e07d10bb28916376d7748fbd22161390ebe3 evaluation_digest=sha256:7f8e45f688bcbbf4eee6b68871988b267685a6fb53888374f616fd5eb6cbb992 rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -1416,7 +1562,7 @@ Findings:
 - none
 
 Diagnostics:
-- `SPEC_BLOCK_MISSING`; path: /home/jesuslara/proyectos/ai-parrot/sdd/specs/accounting-metrics-layer.spec.md; message: no fenced yaml block under '## Decisions'
+- `SPEC_BLOCK_MISSING`; path: sdd/specs/accounting-metrics-layer.spec.md; message: no fenced yaml block under '## Decisions'
 
 Coverage:
 - Subsystems: auth, bots, clients, config, flows, knowledge-graphindex, knowledge-pageindex, knowledge-wiki, memory, server, skills, tools
@@ -1462,13 +1608,13 @@ Coverage:
       "code": "SPEC_BLOCK_MISSING",
       "decision_id": null,
       "message": "no fenced yaml block under '## Decisions'",
-      "path": "/home/jesuslara/proyectos/ai-parrot/sdd/specs/accounting-metrics-layer.spec.md"
+      "path": "sdd/specs/accounting-metrics-layer.spec.md"
     }
   ],
-  "evaluation_digest": "sha256:816fe7423612643231600b77bf4339960edf093ca4649cb626073d95af563f30",
+  "evaluation_digest": "sha256:7f8e45f688bcbbf4eee6b68871988b267685a6fb53888374f616fd5eb6cbb992",
   "exit_code": 0,
   "findings": [],
-  "input_digest": "sha256:030e2f599662b934051f94923843d84793c3fd98f39537958a85e15ef7c3dd8c",
+  "input_digest": "sha256:7ee631cb368c97479e2195d418b2e07d10bb28916376d7748fbd22161390ebe3",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
@@ -1550,7 +1696,7 @@ Coverage:
 | S3 | Do not treat toolkit validation as a semantic allowlist (risk) | CONFIRM | unchanged: compiler self-check on the rendered SQL | M5 `self_check`, AC12 |
 | S4 | Specify the sign contract as data-shape semantics (api) | CONFIRM | unchanged: `amount_convention` with four normalisations | §2 sign table, AC3/AC9 |
 | S5 | Validate effective-dated completeness per interval (architecture) | CONFIRM | unchanged | M4 `partition_intervals`, AC4 |
-| S6 | Fix numeric and empty-result semantics before golden tests (testing) | CONFIRM | unchanged; extended to `Decimal` conversion of executor rows | M5, M6, AC8/AC9 |
+| S6 | Fix numeric and empty-result semantics before golden tests (testing) | CONFIRM | revision 0.3: exact set aggregates, shared rational evaluation, scale-6 half-even final outputs; reject floating aggregates | M5, M6, AC8/AC9 |
 | S7 | Keep accounting execution separate from the DatasetManager catalog contract (architecture) | CONFIRM | unchanged: own `ModelCatalog`, frames through `frame_provider`, `DatasetManager` unmodified | M6, M8 |
 | S8 | Exclude shared DatasetManager caches from accounting results (risk) | CONFIRM | unchanged: no result cache, compile cache only | Non-Goals, AC13 |
 | S9 | Define a separate durable accounting audit contract (architecture) | CONFIRM (revised) | the entry stays separate and fail-closed; the ledger is shared by owner decision U1 | M7, AC11 |
@@ -1582,3 +1728,20 @@ Summary: **10** confirmed · **1** rejected · **0** escalated.
 |---|---|---|---|
 | 0.1 | 2026-10-21 | Jesus Lara | Initial draft (standalone package, satellite skeleton created here) |
 | 0.2 | 2026-11-11 | Jesus Lara | Rewritten on the shipped `ai-parrot-semantic`: M1 skeleton dropped; shared audit ledger, executor and compile cache; core `DuckDBEngine`; portable `MetricPlan` for FEAT-742; `DatasetPolicyGuard` posture and tenant directories kept |
+| 0.3 | 2026-11-12 | Codex, at owner request | Resolve five review findings: retained natures, exact shared evaluator and numeric policy, supported cumulative grains/partial buckets, validation authorization, explicit snapshot acquisition and refresh. Update module interfaces, tests, ACs and docs together. |
+
+
+## 11. Specification Review Resolutions (revision 0.3)
+
+These are specification fixes authorized by the owner; implementation acceptance remains unchecked. The
+revision supersedes conflicting revision-0.2 prose, including its SQL-side formula evaluation. The original
+review probes are in `artifacts/logs/accounting_metrics_spec_review.log`.
+
+| Ledger finding | Resolution | Verification contract |
+|---|---|---|
+| `issue:a07ef212ed98` — discarded account natures | Model retains sorted immutable resolved natures and hashes them; plan copies the selected subset | M4/M5 round-trip test, AC3/5 |
+| `issue:90327faf562c` — floating division | SQL emits exact set aggregates; shared rational evaluator rounds final outputs once; reject float aggregates and overflow | M6 evaluation tests, AC9/10/17 |
+| `issue:229e6b94db2f` — weekly cumulative boundaries | Reject cumulative week/None; explicit allowed matrix and partial-bucket output bounds | M2/M5 boundary tests, AC8 |
+| `issue:1a91317c9437` — validation disclosure | Require validation privilege and all model metric reads before refresh/disclosure; scheduler is a separate trusted host path | M8 authorization tests, AC13 |
+| `issue:8d5487de6ac1` — missing snapshot acquisition | Required provider XOR manifest map; explicit startup, CLI and scheduled refresh contracts | M8/M9 acquisition/failure tests, AC14/15 |
+| Follow-up cross-check — assertion replay identity | Discriminated `AssertionRequest` carries a model-bound assertion index and period; replay dispatches by kind | M5/M7/M9 assertion replay test, AC11 |
