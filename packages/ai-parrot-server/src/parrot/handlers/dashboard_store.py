@@ -218,9 +218,15 @@ class RedisDashboardStore:
         return await self._dash.update({"dashboard_id": dashboard_id}, fields)
 
     async def delete_dashboard(self, dashboard_id: str) -> bool:
-        """Delete a dashboard and its tabs, deleting tabs first."""
+        """Delete a dashboard and its tabs.
+
+        Tabs are swept before and after the dashboard document so a tab created concurrently with the
+        delete is not left orphaned.
+        """
         await self._tabs.delete_where({"dashboard_id": dashboard_id})
-        return await self._dash.delete({"dashboard_id": dashboard_id})
+        existed = await self._dash.delete({"dashboard_id": dashboard_id})
+        await self._tabs.delete_where({"dashboard_id": dashboard_id})
+        return existed
 
     async def get_tab(self, dashboard_id: str, tab_id: str) -> dict[str, Any] | None:
         """Return one tab by its compound dashboard/tab key."""

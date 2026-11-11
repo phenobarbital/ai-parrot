@@ -113,7 +113,7 @@ class _UserLLMKeyResolver(CredentialResolver):
         try:
             return await store.get(user_id, channel.lower())
         except Exception as exc:  # pylint: disable=broad-except
-            logger.warning("_UserLLMKeyResolver: BYOK store read failed for provider=%s: %s", channel.lower(), exc)
+            logger.warning("_UserLLMKeyResolver: BYOK store read failed for provider=%s: %s", channel.lower(), type(exc).__name__)
             return None
 
     async def get_auth_url(self, channel: str, user_id: str) -> str:

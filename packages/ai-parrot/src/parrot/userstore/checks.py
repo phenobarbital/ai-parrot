@@ -10,6 +10,7 @@ from redis.exceptions import ResponseError
 
 from .settings import (
     SWITCHES,
+    UserStoreMisconfigured,
     close_user_store_redis,
     get_user_store_redis,
     redis_url,
@@ -43,6 +44,12 @@ async def run_user_store_diagnostics(logger: logging.Logger | None = None) -> li
     try:
         if not any(resolve_store_backend(switch) == "redis" for switch in SWITCHES):
             return warnings
+    except UserStoreMisconfigured as exc:
+        warning = f"User-store settings are invalid: {exc}"
+        warnings.append(warning)
+        log.warning(warning)
+        return warnings
+    try:
         client = get_user_store_redis()
         await client.ping()
     except Exception:  # noqa: BLE001 - diagnostics must never stop startup

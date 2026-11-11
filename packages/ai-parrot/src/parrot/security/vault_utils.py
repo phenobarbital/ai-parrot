@@ -19,6 +19,7 @@ Usage::
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Protocol
@@ -181,6 +182,39 @@ async def store_vault_credential(
                 {"user_id": user_id, "name": vault_name},
                 {"$set": {"credential": encrypted, "updated_at": now_str}},
             )
+
+
+_CREATE_LOCKS: Dict[tuple, asyncio.Lock] = {}
+
+
+async def create_vault_credential(
+    user_id: str,
+    vault_name: str,
+    secret_params: Dict[str, Any],
+) -> bool:
+    """Insert a credential only if ``(user_id, vault_name)`` does not exist yet.
+
+    Atomic when the configured store provides ``create`` (Redis); otherwise the
+    existence check and write are serialized per key inside this process.
+
+    Returns:
+        ``True`` when the credential was created, ``False`` when it already exists.
+    """
+    store = get_vault_credential_store()
+    create = getattr(store, "create", None)
+    if create is not None:
+        return await create(user_id, vault_name, secret_params)
+    key = (str(user_id), vault_name)
+    lock = _CREATE_LOCKS.setdefault(key, asyncio.Lock())
+    try:
+        async with lock:
+            if await vault_credential_exists(user_id, vault_name):
+                return False
+            await store_vault_credential(user_id, vault_name, secret_params)
+            return True
+    finally:
+        if not lock.locked():
+            _CREATE_LOCKS.pop(key, None)
 
 
 async def retrieve_vault_credential(

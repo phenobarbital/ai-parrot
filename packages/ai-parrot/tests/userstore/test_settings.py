@@ -127,8 +127,9 @@ def test_redis_url_override_and_key_prefix(monkeypatch):
     assert key_prefix() == "custom"
 
 
-def test_client_per_event_loop():
+def test_client_per_event_loop(monkeypatch):
     """Clients are reused per loop and closed without connecting to Redis."""
+    monkeypatch.setenv("PARROT_USER_STORE", "redis")
 
     async def create_and_close():
         client = get_user_store_redis()
@@ -146,3 +147,33 @@ def test_client_per_event_loop():
         second_loop.close()
 
     assert second is not first
+
+
+def test_client_creation_applies_implicit_default_guard(monkeypatch):
+    """Any entry point (not only BotManager) fails closed on a DocumentDB install with implicit Redis."""
+    for name in ("PARROT_USER_STORE", "CREW_RESULT_STORAGE", *SWITCHES):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("DOCUMENTDB_HOSTNAME", "mongo.example.test")
+
+    async def create():
+        try:
+            return get_user_store_redis()
+        finally:
+            await close_user_store_redis()
+
+    loop = asyncio.new_event_loop()
+    try:
+        with pytest.raises(UserStoreMisconfigured):
+            loop.run_until_complete(create())
+    finally:
+        loop.close()
+
+
+def test_warns_when_use_documentdb_without_switches(monkeypatch, caplog):
+    """USE_DOCUMENTDB with no DocumentDB host/db and no switch warns that stores default to Redis."""
+    for name in ("PARROT_USER_STORE", "CREW_RESULT_STORAGE", "DOCUMENTDB_HOSTNAME", "DOCUMENTDB_DBNAME", *SWITCHES):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("USE_DOCUMENTDB", "true")
+    with caplog.at_level("WARNING", logger="parrot.userstore"):
+        validate_user_store_settings()
+    assert "USE_DOCUMENTDB is enabled" in caplog.text

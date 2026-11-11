@@ -51,7 +51,9 @@ class RedisTelegramMCPStore:
                     doc["params"] = TelegramMCPPublicParams(**raw_params)
                 configs.append(UserTelegramMCPConfig(**doc))
             except Exception as exc:  # noqa: BLE001
-                logger.warning("Skipping malformed Telegram MCP config doc for user=%r: %s", user_id, exc)
+                logger.warning(
+                    "Skipping malformed Telegram MCP config doc for user=%r: %s", user_id, type(exc).__name__
+                )
         return configs
 
     async def read_one(self, user_id: str, name: str) -> Optional[UserTelegramMCPConfig]:
@@ -65,7 +67,9 @@ class RedisTelegramMCPStore:
                 doc["params"] = TelegramMCPPublicParams(**raw_params)
             return UserTelegramMCPConfig(**doc)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("Malformed Telegram MCP config doc for user=%r name=%r: %s", user_id, name, exc)
+            logger.warning(
+                "Malformed Telegram MCP config doc for user=%r name=%r: %s", user_id, name, type(exc).__name__
+            )
             return None
 
     async def remove(self, user_id: str, name: str) -> tuple[bool, Optional[str]]:

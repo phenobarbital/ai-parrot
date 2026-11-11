@@ -301,7 +301,11 @@ class RedisDocumentTarget(DocumentDbTarget):
             raise LookupError(f"{row.ref} not found")
 
     async def quarantine(self, row: Any, reason: str, run_id: str) -> None:
-        """Move a Redis document to its quarantine collection."""
+        """Move a Redis document to its quarantine collection.
+
+        The quarantine copy is written before the source is removed, so an interruption leaves the
+        document in both collections (safe, and idempotent on re-run) and never in neither.
+        """
         identity = dict(row.identity)
         document = await self._documents.get(identity)
         if document is None:

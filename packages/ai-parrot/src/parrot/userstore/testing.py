@@ -19,6 +19,7 @@ async def redis_test_settings(monkeypatch: Any) -> AsyncIterator[str]:
     from .settings import close_user_store_redis, get_user_store_redis
 
     prefix = f"test:feat878:{uuid.uuid4().hex}"
+    monkeypatch.setenv("PARROT_USER_STORE", "redis")  # explicit: disarms the implicit-default guard
     monkeypatch.setenv("PARROT_USER_STORE_REDIS_URL", TEST_REDIS_URL)
     monkeypatch.setenv("PARROT_USER_STORE_REDIS_PREFIX", prefix)
     client = get_user_store_redis()

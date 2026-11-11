@@ -218,7 +218,7 @@ class StudioKeysHandler(StudioBaseView):
         try:
             await self._persist_key(user, provider, encrypted, plaintext)
         except Exception as exc:  # pylint: disable=broad-except
-            self.logger.error("BYOK: failed to persist key (provider=%s): %s", provider, exc)
+            self.logger.error("BYOK: failed to persist key (provider=%s): %s", provider, type(exc).__name__)
             return self._error("Failed to store key.", status=500, code="store_failed")
 
         # NEVER echo the plaintext back — masked preview only.
@@ -287,7 +287,7 @@ class StudioKeysHandler(StudioBaseView):
         try:
             await self._remove_key(user, provider)
         except Exception as exc:  # pylint: disable=broad-except
-            self.logger.error("BYOK: failed to delete key (provider=%s): %s", provider, exc)
+            self.logger.error("BYOK: failed to delete key (provider=%s): %s", provider, type(exc).__name__)
             return self._error("Failed to delete key.", status=500, code="delete_failed")
 
         return self.json_response({"provider": provider, "deleted": True})

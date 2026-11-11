@@ -11,6 +11,9 @@ from parrot.userstore import RedisDocumentStore
 from parrot.userstore.collections import USER_LLM_KEYS
 
 
+_MIN_PERSISTED_MASK_LENGTH = 16
+
+
 def mask_api_key(api_key: str) -> str:
     """Return a safe preview containing at most three leading and four trailing characters."""
     if len(api_key) <= 7:
@@ -43,7 +46,9 @@ class RedisUserLLMKeyStore:
             {
                 "api_key": sealed,
                 "key_id": keyring.active_key_id,
-                "masked": mask_api_key(api_key),
+                # Persist a preview only for long keys; for short ones it would leak a large share of the
+                # key, so ``list_masked`` derives it on read by decrypting.
+                "masked": mask_api_key(api_key) if len(api_key) >= _MIN_PERSISTED_MASK_LENGTH else None,
                 "updated_at": now,
             },
             on_insert={"created_at": now},

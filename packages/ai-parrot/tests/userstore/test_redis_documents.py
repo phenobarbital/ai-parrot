@@ -112,3 +112,22 @@ async def test_missing_key_field_raises(store: RedisDocumentStore) -> None:
     """All configured key fields are mandatory."""
     with pytest.raises(ValueError, match="name"):
         await store.get({"user_id": 1})
+
+
+@pytest.mark.asyncio
+async def test_empty_key_part_rejected(store: RedisDocumentStore) -> None:
+    """Empty or null key values must not create a blank-identity document."""
+    with pytest.raises(ValueError):
+        await store.put({"user_id": "", "name": "n", "kind": "x"})
+    with pytest.raises(ValueError):
+        await store.get({"user_id": "u", "name": ""})
+
+
+@pytest.mark.asyncio
+async def test_find_none_matches_missing_or_null_field(store: RedisDocumentStore) -> None:
+    """A ``None`` filter matches documents whose field is absent or null, never a set value."""
+    await store.put({"user_id": "u", "name": "a", "kind": "x"})
+    await store.put({"user_id": "u", "name": "b", "kind": "x", "tag": None})
+    await store.put({"user_id": "u", "name": "c", "kind": "x", "tag": "t"})
+    found = await store.find({"user_id": "u", "tag": None})
+    assert sorted(doc["name"] for doc in found) == ["a", "b"]

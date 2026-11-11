@@ -56,7 +56,9 @@ When `CREW_RESULT_STORAGE` is unset, it follows `PARROT_USER_STORE` (or `redis` 
 
 ## Upgrading an installation that uses MongoDB
 
-**Startup guard.** When `DOCUMENTDB_HOSTNAME` or `DOCUMENTDB_DBNAME` is set, and any store (or unset `CREW_RESULT_STORAGE`) would default to Redis, startup stops with `UserStoreMisconfigured` and a message listing the affected stores.
+**Startup guard.** When `DOCUMENTDB_HOSTNAME` or `DOCUMENTDB_DBNAME` is set, and any store (or unset `CREW_RESULT_STORAGE`) would default to Redis, startup stops with `UserStoreMisconfigured` and a message listing the affected stores. Setting `PARROT_USER_STORE` clears the guard; setting every per-store switch clears it only if `CREW_RESULT_STORAGE` is also set. The guard also runs when the first user-store Redis client is created, so standalone runners and scripts are covered, not only `BotManager.setup()`. If `USE_DOCUMENTDB` is enabled but neither `DOCUMENTDB_HOSTNAME` nor `DOCUMENTDB_DBNAME` is set (DocumentDB would default to `localhost`), a warning is logged because stores silently default to Redis.
+
+**Authenticated Redis.** `REDIS_PASSWORD` is not used for user stores; put credentials in `PARROT_USER_STORE_REDIS_URL` (for example `redis://:password@host:6379/6`). Logged URLs have credentials stripped.
 
 **Fix A — keep MongoDB:**
 ```bash

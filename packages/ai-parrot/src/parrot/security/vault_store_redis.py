@@ -31,6 +31,20 @@ class RedisVaultCredentialStore:
             on_insert={"created_at": now},
         )
 
+    async def create(self, user_id: Any, vault_name: str, secret_params: dict[str, Any]) -> bool:
+        """Seal and insert a credential only when absent (atomic).
+
+        Returns:
+            ``True`` when created, ``False`` when a credential with that name already exists.
+        """
+        from parrot.security.vault_utils import get_vault_keyring
+
+        sealed = encrypt_credential(secret_params, credential_context(user_id, vault_name), get_vault_keyring())
+        now = datetime.now(timezone.utc).isoformat()
+        return await self._docs.create(
+            {"user_id": user_id, "name": vault_name, "credential": sealed, "created_at": now, "updated_at": now}
+        )
+
     async def retrieve(self, user_id: Any, vault_name: str) -> dict[str, Any]:
         """Open a stored credential.
 

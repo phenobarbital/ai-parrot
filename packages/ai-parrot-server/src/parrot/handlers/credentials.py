@@ -229,26 +229,20 @@ class CredentialsHandler(BaseView):
             return self.error("Encryption service unavailable.", status=500)
 
         try:
-            if await vault_utils.vault_credential_exists(user_id, payload.name):
-                return self.error(f"Credential '{payload.name}' already exists.", status=409)
-
-            # Save to session vault immediately
             credential_dict = {"driver": payload.driver, "params": payload.params}
+            # Durable, atomic create first: a failure must not leave the session ahead of the store.
+            if not await vault_utils.create_vault_credential(user_id, payload.name, credential_dict):
+                return self.error(f"Credential '{payload.name}' already exists.", status=409)
+            self.logger.info("Stored credential '%s' (user=%s)", payload.name, user_id)
+
             self._set_session_credential(payload.name, credential_dict)
             self.logger.info(
                 "Saved credential '%s' to session vault for user %s",
                 payload.name, user_id,
             )
 
-            await vault_utils.store_vault_credential(user_id, payload.name, credential_dict)
-            self.logger.info(
-                "Stored credential '%s' (user=%s)",
-                payload.name,
-                user_id,
-            )
-
         except Exception as exc:
-            self.logger.error("POST credential failed: %s", exc)
+            self.logger.error("POST credential failed: %s", type(exc).__name__)
             return self.error("Failed to create credential.", status=500)
 
         response = CredentialResponse(
@@ -305,23 +299,19 @@ class CredentialsHandler(BaseView):
             if not await vault_utils.vault_credential_exists(user_id, name):
                 return self.error(f"Credential '{name}' not found.", status=404)
 
-            # Update session vault
             credential_dict = {"driver": payload.driver, "params": payload.params}
+            # Durable write first, then the session vault.
+            await vault_utils.store_vault_credential(user_id, name, credential_dict)
+            self.logger.info("Stored updated credential '%s' (user=%s)", name, user_id)
+
             self._set_session_credential(name, credential_dict)
             self.logger.info(
                 "Updated credential '%s' in session vault for user %s",
                 name, user_id,
             )
 
-            await vault_utils.store_vault_credential(user_id, name, credential_dict)
-            self.logger.info(
-                "Stored updated credential '%s' (user=%s)",
-                name,
-                user_id,
-            )
-
         except Exception as exc:
-            self.logger.error("PUT credential failed: %s", exc)
+            self.logger.error("PUT credential failed: %s", type(exc).__name__)
             return self.error("Failed to update credential.", status=500)
 
         response = CredentialResponse(
@@ -360,13 +350,13 @@ class CredentialsHandler(BaseView):
         try:
             if not await vault_utils.vault_credential_exists(user_id, name):
                 return self.error(f"Credential '{name}' not found.", status=404)
+            await vault_utils.delete_vault_credential(user_id, name)
+            self.logger.info("Deleted credential '%s' for user %s", name, user_id)
             self._remove_session_credential(name)
             self.logger.info(
                 "Removed credential '%s' from session vault for user %s",
                 name, user_id,
             )
-            await vault_utils.delete_vault_credential(user_id, name)
-            self.logger.info("Deleted credential '%s' for user %s", name, user_id)
         except Exception as exc:  # pylint: disable=broad-except
             self.logger.error("Failed to delete credential '%s': %s", name, type(exc).__name__)
             return self.error("Failed to delete credential.", status=500)

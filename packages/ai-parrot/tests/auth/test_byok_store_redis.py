@@ -94,3 +94,14 @@ def test_store_accessor_selects_postgres_and_redis(monkeypatch):
     monkeypatch.setattr(broker, "_REDIS_STORE", object())
     assert broker.get_user_llm_key_store() is broker._REDIS_STORE
     broker.set_user_llm_key_store(None)
+
+
+async def test_short_key_preview_not_persisted(keyring):
+    """A short key's preview is derived on read, never stored beside the ciphertext."""
+    documents = FakeDocuments()
+    store = RedisUserLLMKeyStore(documents)
+    await store.put("user-1", "alpha", "sk-short-1234")  # 13 chars
+    assert documents.documents[0].get("masked") is None
+    assert (await store.list_masked("user-1"))[0]["masked"] == mask_api_key("sk-short-1234")
+    await store.put("user-1", "beta", "sk-" + "x" * 30)
+    assert next(d for d in documents.documents if d["provider"] == "beta")["masked"]

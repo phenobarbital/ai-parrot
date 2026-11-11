@@ -59,8 +59,8 @@ class RedisDocumentStore:
         values: list[str] = []
         for field in self.spec.key_fields:
             value = key.get(field)
-            if value is None:
-                raise ValueError(f"Missing key field: {field}")
+            if value is None or str(value) == "":
+                raise ValueError(f"Missing or empty key field: {field}")
             values.append(quote(str(value), safe=""))
         return ":".join(values)
 
@@ -174,11 +174,15 @@ class RedisDocumentStore:
     async def find(self, where: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
         """Return documents matching every equality filter in ``where``."""
         filters = dict(where or {})
-        if all(field in filters for field in self.spec.key_fields):
+        if all(filters.get(field) is not None for field in self.spec.key_fields):
             document = await self.get(filters)
             return [document] if document and self._matches(document, filters) else []
 
-        indexed_keys = [self._index_key(field, filters[field]) for field in self.spec.index_fields if field in filters]
+        indexed_keys = [
+            self._index_key(field, filters[field])
+            for field in self.spec.index_fields
+            if filters.get(field) is not None  # a None filter means "missing": never indexed
+        ]
         doc_ids = (
             await self.client.sinter(indexed_keys) if indexed_keys else await self.client.smembers(self._all_key())
         )
@@ -210,5 +214,8 @@ class RedisDocumentStore:
 
     @staticmethod
     def _matches(document: Mapping[str, Any], where: Mapping[str, Any]) -> bool:
-        """Return whether every filter has matching string representation."""
+        """Return whether every filter matches; ``None`` matches a missing or null field."""
+        for field, value in where.items():
+            if value is None and document.get(field) is not None:
+                return False
         return all(str(document.get(field)) == str(value) for field, value in where.items())

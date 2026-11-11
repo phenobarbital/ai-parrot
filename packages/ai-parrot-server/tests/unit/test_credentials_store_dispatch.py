@@ -95,3 +95,34 @@ async def test_pg_vault_list_and_exists(monkeypatch: pytest.MonkeyPatch) -> None
     store = PgVaultCredentialStore(pool)
     assert await store.list_credentials("u1") == {"pg": {"driver": "pg", "params": {}}}
     assert await store.exists("u1", "pg") is True
+
+
+async def test_concurrent_post_creates_once(redis_vault) -> None:
+    """Two concurrent POSTs for one name yield exactly one 201 and one 409."""
+    import asyncio
+
+    session: dict[str, object] = {"user_id": "u1"}
+
+    def _poster(host: str) -> CredentialsHandler:
+        handler = _handler(session)
+        handler.request.json = AsyncMock(return_value={"name": "pg", "driver": "pg", "params": {"host": host}})
+        return handler
+
+    results = await asyncio.gather(_poster("a").post(), _poster("b").post())
+    assert sorted(result.status for result in results) == [201, 409]
+    assert list(await vault_utils.list_vault_credentials("u1")) == ["pg"]
+
+
+async def test_durable_write_failure_leaves_session_untouched(redis_vault, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failing durable write must not leave the session vault ahead of the store."""
+    session: dict[str, object] = {"user_id": "u1"}
+    await vault_utils.store_vault_credential("u1", "pg", {"driver": "pg", "params": {"host": "one"}})
+
+    async def _boom(*_args, **_kwargs):
+        raise RuntimeError("store down")
+
+    monkeypatch.setattr(vault_utils, "store_vault_credential", _boom)
+    handler = _handler(session, "pg")
+    handler.request.json = AsyncMock(return_value={"name": "pg", "driver": "pg", "params": {"host": "two"}})
+    assert (await handler.put()).status == 500
+    assert "_credentials:pg" not in session

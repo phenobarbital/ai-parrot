@@ -114,6 +114,12 @@ def validate_user_store_settings() -> dict[str, StoreBackend]:
     """Resolve all switches and reject implicit Redis defaults on a DocumentDB installation."""
     resolved = {name: resolve_store_backend(name) for name in SWITCHES}
     implicit_stores = implicit_redis_stores()
+    if implicit_stores and not documentdb_configured() and config.getboolean("USE_DOCUMENTDB", fallback=False):
+        logger.warning(
+            "USE_DOCUMENTDB is enabled but no user-store switch is set; these stores default to Redis: %s. "
+            "Set PARROT_USER_STORE=documentdb to keep using DocumentDB.",
+            ", ".join(implicit_stores),
+        )
     if documentdb_configured() and implicit_stores:
         stores = ", ".join(implicit_stores)
         raise UserStoreMisconfigured(
@@ -151,13 +157,20 @@ def key_prefix() -> str:
 
 
 _CLIENTS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, aioredis.Redis] = weakref.WeakKeyDictionary()
+_GUARDED = False
 
 
 def get_user_store_redis() -> aioredis.Redis:
     """Return the lazy, response-decoding Redis client for the current event loop."""
+    global _GUARDED  # pylint: disable=global-statement
     loop = asyncio.get_running_loop()
     client = _CLIENTS.get(loop)
     if client is None:
+        if not _GUARDED:
+            # Fail closed for every entry point (not only BotManager): never silently use Redis on a
+            # DocumentDB installation.
+            validate_user_store_settings()
+            _GUARDED = True
         client = aioredis.from_url(redis_url(), decode_responses=True)
         _CLIENTS[loop] = client
     return client
@@ -165,6 +178,8 @@ def get_user_store_redis() -> aioredis.Redis:
 
 async def close_user_store_redis() -> None:
     """Close and forget the Redis client associated with the current event loop."""
+    global _GUARDED  # pylint: disable=global-statement
+    _GUARDED = False
     client = _CLIENTS.pop(asyncio.get_running_loop(), None)
     if client is not None:
         await client.aclose()
