@@ -43,14 +43,14 @@
       "feature_id": "FEAT-880",
       "feature": "datasetmanager-semantic-source",
       "spec": "sdd/specs/datasetmanager-semantic-source.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependencies — root of the graph; only touches sources/base.py and creates the shared core test file",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-11T23:45:56+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5515-datasource-self-governed-flag.md"
     },
@@ -61,7 +61,7 @@
       "feature_id": "FEAT-880",
       "feature": "datasetmanager-semantic-source",
       "spec": "sdd/specs/datasetmanager-semantic-source.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -70,7 +70,7 @@
       "parallel": true,
       "parallelism_notes": "reads DataSource.self_governed created by TASK-5515 (sources/base.py); appends to the test file TASK-5515 creates",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-11T23:45:56+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5516-datasetmanager-self-governed-fetch.md"
     },
@@ -81,7 +81,7 @@
       "feature_id": "FEAT-880",
       "feature": "datasetmanager-semantic-source",
       "spec": "sdd/specs/datasetmanager-semantic-source.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -90,7 +90,7 @@
       "parallel": true,
       "parallelism_notes": "modifies tool.py and the core test file after TASK-5516 (same files, serialized)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-11T23:45:56+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5517-datasetmanager-semantic-response-guidance.md"
     },
@@ -101,7 +101,7 @@
       "feature_id": "FEAT-880",
       "feature": "datasetmanager-semantic-source",
       "spec": "sdd/specs/datasetmanager-semantic-source.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -110,7 +110,7 @@
       "parallel": true,
       "parallelism_notes": "uses DataSource.self_governed/current_owner from TASK-5515; serialized after TASK-5517 because both modify tool.py and the core test file",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-11T23:45:56+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5518-datasetentry-per-subject-frames.md"
     },
@@ -121,7 +121,7 @@
       "feature_id": "FEAT-880",
       "feature": "datasetmanager-semantic-source",
       "spec": "sdd/specs/datasetmanager-semantic-source.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -130,7 +130,7 @@
       "parallel": true,
       "parallelism_notes": "reads DataSource.self_governed from TASK-5515 (sources/base.py); touches only ai-parrot-server files",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-11T23:45:56+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5519-server-session-governed-isolation.md"
     },
@@ -141,7 +141,7 @@
       "feature_id": "FEAT-880",
       "feature": "datasetmanager-semantic-source",
       "spec": "sdd/specs/datasetmanager-semantic-source.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -150,7 +150,7 @@
       "parallel": true,
       "parallelism_notes": "overrides DataSource.self_governed/current_owner from TASK-5515 (sources/base.py); only ai-parrot-semantic files",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-11T23:45:56+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5520-semantic-datasource.md"
     },
@@ -161,7 +161,7 @@
       "feature_id": "FEAT-880",
       "feature": "datasetmanager-semantic-source",
       "spec": "sdd/specs/datasetmanager-semantic-source.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -171,7 +171,7 @@
       "parallel": true,
       "parallelism_notes": "imports SemanticDataSource from TASK-5520 (semantic/dataset_source.py); modifies tool.py after TASK-5518; e2e two-subject test needs TASK-5518 slots",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-11T23:45:56+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5521-datasetmanager-add-semantic.md"
     },
@@ -182,7 +182,7 @@
       "feature_id": "FEAT-880",
       "feature": "datasetmanager-semantic-source",
       "spec": "sdd/specs/datasetmanager-semantic-source.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -195,7 +195,7 @@
       "parallel": true,
       "parallelism_notes": "documents add_semantic (TASK-5521), SemanticDataSource and the bridge (TASK-5520), response fields and guidance (TASK-5517), slots (TASK-5518), session isolation (TASK-5519)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-11T23:45:56+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5522-docs-semantic-datasets.md"
     }
