@@ -16,7 +16,7 @@ from parrot.knowledge.wiki.claude_code.installer import uninstall_toolkit_approv
 from parrot.knowledge.wiki.codex import assets as codex_assets
 from parrot.knowledge.wiki.codex.installer import _remove_marker_block, _validate_toml
 from parrot.knowledge.wiki.google.installer import _load_mcp_config, _save_mcp_config, toolkit_config_paths
-from parrot.mcp.toolkit_config import load_toolkits_config
+from parrot.mcp.toolkit_config import AGENT_SECTION_PREFIX, is_agent_section, load_toolkits_config
 from parrot.mcp.toolkit_seed import available_templates
 
 logger = logging.getLogger(__name__)
@@ -157,12 +157,17 @@ def find_stale_mcp_entries(
     if unknown:
         raise ValueError(f"unknown host(s): {', '.join(unknown)}")
     templates = set(available_templates())
+    agent_sections: set[str] = set()
+    config_readable = True
     try:
         cfg = load_toolkits_config(root)
         enabled: set[str] | None = {name for name, section in cfg.toolkits.items() if section.enabled}
+        agent_sections = {name for name, section in cfg.toolkits.items() if is_agent_section(section)}
     except ValueError as exc:
         logger.warning("toolkit config unreadable (%s); `undeclared` entries are not reported", exc)
         enabled = None
+        config_readable = False
+    known = templates | agent_sections
 
     found: list[StaleMcpEntry] = []
     for item in _mcp_files(root, hosts, gemini_config):
@@ -173,7 +178,10 @@ def find_stale_mcp_entries(
             if not is_parrot_toolkit_entry(key, entry):
                 continue
             name = key[len("parrot-") :]
-            stale_reason = _reason(root, item, name, entry["args"], templates, enabled)
+            item_known = known
+            if name.startswith(AGENT_SECTION_PREFIX) and (not config_readable or item.scope == "global"):
+                item_known = known | {name}
+            stale_reason = _reason(root, item, name, entry["args"], item_known, enabled)
             if stale_reason is None:
                 continue
             reason, detail = stale_reason
