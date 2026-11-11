@@ -3,6 +3,7 @@
 Only the methods the author wrote on the agent's own class are exposed; every name a
 framework class or mixin defines — and ``ask``/``ask_stream`` always — is reserved.
 """
+
 from __future__ import annotations
 
 import inspect
@@ -103,9 +104,7 @@ def exposed_methods(
     else:
         bad = list(dict.fromkeys(name for name in exposure.allow if name not in candidates))
         if bad:
-            message = (
-                f"Agent '{label}': allow entries are not own-class public async methods: {', '.join(bad)}"
-            )
+            message = f"Agent '{label}': allow entries are not own-class public async methods: {', '.join(bad)}"
             if any(name in NEVER_EXPOSED for name in bad):
                 message += " (ask/ask_stream are never exposed)"
             raise AgentExposureError(message)

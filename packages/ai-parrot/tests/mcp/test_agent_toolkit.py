@@ -1,4 +1,5 @@
 """FEAT-877 Module 3 — own-class rule, resolution and AgentToolkit."""
+
 from __future__ import annotations
 
 import pytest
