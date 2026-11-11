@@ -1430,3 +1430,142 @@ async def test_find_books_without_bm25s_matches_titles(store, book_md, monkeypat
     assert [s["code"] for s in result["sectors"]] == ["025"]
     assert "bm25s" in result["hint"] and "title" in result["hint"]
     assert (await store.find_books("astronomy"))["source"] == "catalog_fts"
+
+
+# ----------------------------------------------------------------------
+# import_tree (FEAT-876 TASK-5482)
+# ----------------------------------------------------------------------
+async def _source_tree(tmp_path: Path, book_md: Path, name: str = "src-handbook") -> Path:
+    """Build a real PageIndex tree (JSON + bodies + segments) in a throwaway library; return its JSON path."""
+    src = Bookstore([LibraryLocation(scope="project", root=tmp_path / "srclib")])
+    card, _ = await src.add_book(book_md, title=name)
+    return src._location("project").trees_dir / f"{card.book_id}.json"
+
+
+def _snapshot(json_path: Path) -> dict[str, bytes]:
+    base = json_path.parent
+    out = {json_path.name: json_path.read_bytes()}
+    side = base / json_path.stem
+    for f in sorted(side.rglob("*")):
+        if f.is_file():
+            out[f.relative_to(base).as_posix()] = f.read_bytes()
+    return out
+
+
+@pytest.mark.asyncio
+async def test_import_tree_copies_and_cards(store, tmp_path, book_md, locations):
+    src_json = await _source_tree(tmp_path, book_md)
+    before = _snapshot(src_json)
+    assert any("/segments/" in k for k in before), "fixture must carry segment revisions"
+    card, status = await store.import_tree(src_json)
+    assert status == "added"
+    assert card.source_format == "tree" and card.kind == "book"
+    assert card.source_path == str(src_json.resolve())
+    dst = locations[0].trees_dir
+    assert (dst / f"{card.book_id}.json").is_file()
+    assert any((dst / card.book_id / "segments").glob("*.json"))
+    assert _snapshot(src_json) == before
+    assert store.get_toc(card.book_id)["entries"]
+    again, status2 = await store.import_tree(src_json)
+    assert status2 == "skipped" and again.book_id == card.book_id
+
+
+@pytest.mark.asyncio
+async def test_import_tree_adopts_in_place(store, tmp_path, book_md, locations):
+    src_json = await _source_tree(tmp_path, book_md, "adoptable")
+    trees = locations[0].trees_dir
+    trees.mkdir(parents=True, exist_ok=True)
+    import shutil
+
+    shutil.copy2(src_json, trees / "adoptable.json")
+    shutil.copytree(src_json.parent / src_json.stem, trees / "adoptable")
+    before = sorted(p.name for p in trees.iterdir())
+    card, status = await store.import_tree("adoptable")
+    assert status == "adopted" and card.book_id == "adoptable"
+    assert sorted(p.name for p in trees.iterdir()) == before
+    assert store._catalog("project").get("adoptable") is not None
+
+
+@pytest.mark.asyncio
+async def test_import_tree_refuses_multi_document_as_book(store, tmp_path, book_md):
+    src = Bookstore([LibraryLocation(scope="project", root=tmp_path / "multi")])
+    toolkit = await src._ready_toolkit("project")
+    await toolkit.create_tree("multi")
+    await toolkit.insert_markdown("multi", SAMPLE_MARKDOWN, doc_name="One", doc_id="d1")
+    await toolkit.insert_markdown("multi", SAMPLE_MARKDOWN, doc_name="Two", doc_id="d2")
+    multi_json = src._location("project").trees_dir / "multi.json"
+    with pytest.raises(BookstoreError, match="as_kind='notes'"):
+        await store.import_tree(multi_json)
+    assert store._catalog("project").get("multi") is None
+    card, status = await store.import_tree(multi_json, as_kind="notes")
+    assert status == "added" and card.kind == "notes" and card.notes_for is None
+    assert card.book_id == LIBRARY_NOTEBOOK
+
+
+@pytest.mark.asyncio
+async def test_import_tree_notes_for_book_and_force(store, tmp_path, book_md):
+    book, _ = await store.add_book(book_md)
+    src = Bookstore([LibraryLocation(scope="project", root=tmp_path / "nb")])
+    toolkit = await src._ready_toolkit("project")
+    await toolkit.create_tree("mynotes")
+    await toolkit.add_node("mynotes", title="Note", body="hello")
+    nb_json = src._location("project").trees_dir / "mynotes.json"
+    card, status = await store.import_tree(nb_json, as_kind="notes", notes_for=book.book_id)
+    assert (card.book_id, card.kind, card.notes_for) == (f"{book.book_id}_notes", "notes", book.book_id)
+    await toolkit.add_node("mynotes", title="Another", body="more")
+    with pytest.raises(BookstoreError, match="force"):
+        await store.import_tree(nb_json, as_kind="notes", notes_for=book.book_id)
+    card2, status2 = await store.import_tree(nb_json, as_kind="notes", notes_for=book.book_id, force=True)
+    assert status2 == "added" and card2.book_id == card.book_id
+    trees = store._location("project").trees_dir
+    assert len(list(trees.glob(f"{book.book_id}_notes_*.json"))) == 1
+    with pytest.raises(BookstoreError, match="catalogued book"):
+        await store.import_tree(nb_json, as_kind="notes", notes_for="nope")
+    with pytest.raises(BookstoreError, match="as_kind='notes'"):
+        await store.import_tree(trees / f"{book.book_id}_notes.json")
+
+
+@pytest.mark.asyncio
+async def test_import_tree_stages_and_publishes_atomically(store, tmp_path, book_md, locations, monkeypatch):
+    src_json = await _source_tree(tmp_path, book_md)
+    real_copy2 = __import__("shutil").copy2
+    calls = {"n": 0}
+
+    def flaky(src, dst, *a, **kw):
+        calls["n"] += 1
+        if calls["n"] >= 3:
+            raise OSError("disk exploded")
+        return real_copy2(src, dst, *a, **kw)
+
+    monkeypatch.setattr("parrot.knowledge.bookstore.library.shutil.copy2", flaky)
+    with pytest.raises(OSError):
+        await store.import_tree(src_json)
+    monkeypatch.undo()
+    trees = locations[0].trees_dir
+    assert store._catalog("project").list_cards() == []
+    leftovers = [p.name for p in trees.glob("*.json")]
+    assert all(_STAGING_MARKER in n for n in leftovers)
+    await store._sweep_reserved_trees("project")
+    assert not [p for p in trees.glob("*.json") if _STAGING_MARKER in p.name]
+
+
+@pytest.mark.asyncio
+async def test_import_tree_sha_covers_bodies_and_segments(store, tmp_path, book_md):
+    src_json = await _source_tree(tmp_path, book_md)
+    sidecar = src_json.parent / src_json.stem
+    sha0 = Bookstore._tree_snapshot_sha(src_json, sidecar)
+    body = next(p for p in (sidecar / "bodies").rglob("*") if p.is_file())
+    original = body.read_bytes()
+    body.write_bytes(original + b"x")
+    assert Bookstore._tree_snapshot_sha(src_json, sidecar) != sha0
+    body.write_bytes(original)
+    assert Bookstore._tree_snapshot_sha(src_json, sidecar) == sha0
+    seg = next((sidecar / "segments").glob("*.json"))
+    seg_original = seg.read_bytes()
+    seg.write_bytes(seg_original + b" ")
+    assert Bookstore._tree_snapshot_sha(src_json, sidecar) != sha0
+    # A body missing from the copied sidecar is refused (references must resolve).
+    seg.write_bytes(seg_original)
+    body.unlink()
+    with pytest.raises(BookstoreError, match="body references"):
+        await store.import_tree(src_json)
