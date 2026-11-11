@@ -397,6 +397,9 @@ corpus/compliance_soc2_hipaa/trees/
 
 #MCP Custom Local configs
 .mcp.json
+# Antigravity workspace MCP config: written by `parrot sdd install --host google` with this machine's
+# absolute venv paths (like .mcp.json and .codex/config.toml) — never commit it
+.agents/plugins/parrot/mcp_config.json
 .sdd-coder/
 
 # Matrix dev stack — generated secrets / homeserver state (FEAT-463)
