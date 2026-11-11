@@ -13,10 +13,14 @@ and global libraries.
 
 ## Choose books, search sections, read evidence
 
-1. Start with `bookstore_catalog_search(query, top_k=8)` using topic keywords.
-   This searches catalog cards through SQLite FTS5 without an LLM. Keep the
-   returned `book_id` values. Use `bookstore_list_books()` for inventory or
-   when a named book cannot be located by topic search.
+1. **`bookstore_find_books(query)`** — ALWAYS start here. It answers "which books
+   treat X, and where" from the librarian's sectors, with direct table-of-contents
+   pointers; it falls back to `bookstore_catalog_search`.
+   Use topic keywords and keep the returned `book_id` and `node_id` values.
+   When no sector matches, or to search the cards directly, use
+   `bookstore_catalog_search(query, top_k=8)` (SQLite FTS5, no LLM). Use
+   `bookstore_list_books()` for inventory or when a named book cannot be
+   located by topic search.
 1b. **Expand by relations** — before opening any book, call
     `bookstore_related_books(book_id)` on the best `bookstore_catalog_search`
     hit to find the author's other works, sibling works of the same
@@ -50,6 +54,8 @@ invent a passage or present a catalog summary as a quotation.
 When a relation drives a claim, cite its origin: "the library links
 these as parallels (LLM-inferred, 0.7)" vs "same author
 (deterministic)".
+
+Annotations returned next to a section are the reader's notes — cite them as *Notebook: <title>*, never as book pages.
 
 ## Degraded or disconnected search
 

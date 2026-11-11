@@ -108,6 +108,23 @@ A typical agent flow, as tool calls:
 
 ## Gotchas
 
+- **`write_tools` and `read_only`.** `PageIndexToolkit.write_tools` is the class-level set of prefixed names of every
+  tool that mutates a tree (`create_tree`, `delete_tree`, `rename_tree`, `vacuum_tree`, `optimize`, `index_segments`,
+  `insert_*`, `import_*`, `tag_node`, `add_node`, `update_node`, `update_node_content`, `delete_node`), a sibling of
+  `llm_dependent_tools`. Passing `read_only: true` under `kwargs:` hides those tools from `get_tools()` (so the server
+  never lists them) and makes a direct write call raise `PageIndexWriteDenied`. Every write path calls the
+  `_authorize_write(tree_name, op)` hook before taking a tree lock (a no-op unless `read_only`); `optimize` is checked
+  only with `apply=True`, and `rename_tree` checks both names.
+- **The `pageindex-library` template.** `parrot toolkits install pageindex-library` seeds a section for
+  `parrot.knowledge.bookstore.pageindex.LibraryPageIndexToolkit` (`project_root: <repo>`, `max_result_chars: 24000`,
+  the same commented `llm:` line and `exclude: [pageindex_agentic_retrieve]`). It serves the same `pageindex_*` tools
+  over the Bookstore's project and global libraries, keeps book trees read-only and notebooks writable, and adds
+  `pageindex_list_library_trees` and a `scope` argument on `pageindex_create_tree`. See
+  [Bookstore notebooks](bookstore-notebooks.md) for the write-policy table.
+- **Pointing the plain `pageindex` template at a library is unsupported for writes — use `pageindex-library`.** A
+  plain section whose `storage_dir` is a Bookstore `<library>/trees` directory bypasses the Bookstore write policy,
+  so an agent could edit or delete a book tree. There is no ownership marker in v1: protection exists only through
+  the `pageindex-library` server, and `bookstore doctor` detects the damage.
 - **No-LLM trees are plainer.** With no model, `insert_markdown` builds the structure offline: no node summaries and
   no document description are generated, and on OKF-enriched trees new nodes are typed `Section` instead of being
   classified by a model. BM25 therefore indexes titles and bodies only. Setting `llm:` adds summaries on later ingests.
