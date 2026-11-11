@@ -14,7 +14,7 @@ docs:
 **Feature ID**: FEAT-880
 **Date**: 2026-11-11
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next release after 2.1.3
 
 ---
