@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-879 fixgroup-4ab74072d1a9
 **Spec**: `sdd/specs/fixgroup-4ab74072d1a9.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S
 **Depends-on**: none
@@ -52,4 +52,11 @@ Run from the worktree root with `PYTHONPATH=$PWD/packages/ai-parrot/src`; lint w
 
 ## Completion Note
 
-_(filled in on close)_
+Implemented in 71db31beee. `tests/mcp/test_toolkit_server.py` captures `_REAL_IMPORT_MODULE =
+importlib.import_module` at module import time, before any test patches the global function, and
+`mock_import_module` falls back to it instead of the (patched) `importlib.import_module`.
+`refusing_import` delegates to `mock_import_module`, so it is fixed by the same change and still
+refuses `parrot.clients.factory`. No production code changed.
+Validation: `pytest tests/mcp/test_toolkit_server.py` 22 passed (was 12 failed / 10 passed on base
+6c51de8c38); neighbour `tests/mcp/test_local_cli.py` 13 passed; ruff + black clean.
+Resolves `issue:203c75e0c1ac`.
