@@ -62,7 +62,7 @@
       "feature_id": "FEAT-880",
       "feature": "datasetmanager-semantic-source",
       "spec": "sdd/specs/datasetmanager-semantic-source.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -72,8 +72,9 @@
       "parallelism_notes": "reads DataSource.self_governed created by TASK-5515 (sources/base.py); appends to the test file TASK-5515 creates",
       "assigned_to": null,
       "started_at": "2026-11-11T23:45:56+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5516-datasetmanager-self-governed-fetch.md"
+      "completed_at": "2026-11-11T23:50:44+00:00",
+      "file": "sdd/tasks/completed/TASK-5516-datasetmanager-self-governed-fetch.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5517",
@@ -122,7 +123,7 @@
       "feature_id": "FEAT-880",
       "feature": "datasetmanager-semantic-source",
       "spec": "sdd/specs/datasetmanager-semantic-source.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -132,8 +133,9 @@
       "parallelism_notes": "reads DataSource.self_governed from TASK-5515 (sources/base.py); touches only ai-parrot-server files",
       "assigned_to": null,
       "started_at": "2026-11-11T23:45:56+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5519-server-session-governed-isolation.md"
+      "completed_at": "2026-11-11T23:50:44+00:00",
+      "file": "sdd/tasks/completed/TASK-5519-server-session-governed-isolation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5520",
