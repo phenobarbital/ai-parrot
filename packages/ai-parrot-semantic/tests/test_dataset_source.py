@@ -169,7 +169,7 @@ async def test_fetch_dataframe_shape_and_attrs(models_dir, duckdb_warehouse, mon
     async with bind_semantic_context(_context("first", "eu")):
         frame = await source.fetch(**_Q)
         empty = await source.fetch(
-            metrics=["revenue"], dimensions=["region"], filters={"member": "region", "op": "equals", "values": ["zz"]}
+            metrics=["revenue"], dimensions=["region"], filters={"op": "and", "items": [{"member": "region", "op": "equals", "values": ["zz"]}]}
         )
     meta = frame.attrs["semantic"]
     assert set(meta) == {"model", "audit_id", "truncated", "row_count"}
