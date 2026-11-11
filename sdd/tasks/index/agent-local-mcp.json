@@ -51,7 +51,7 @@
       "feature_id": "FEAT-877",
       "feature": "agent-local-mcp",
       "spec": "sdd/specs/agent-local-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -59,8 +59,9 @@
       "parallelism_notes": "Leaf: modifies only registry.py and creates its own test file; no symbol from another task.",
       "assigned_to": null,
       "started_at": "2026-11-11T00:03:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5485-mcp-local-exposure-registry.md"
+      "completed_at": "2026-11-11T00:14:25+00:00",
+      "file": "sdd/tasks/completed/TASK-5485-mcp-local-exposure-registry.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5486",
@@ -69,7 +70,7 @@
       "feature_id": "FEAT-877",
       "feature": "agent-local-mcp",
       "spec": "sdd/specs/agent-local-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -77,8 +78,9 @@
       "parallelism_notes": "Leaf: adds constants/helpers to toolkit_config.py only; imports nothing new from the feature. Non-edge to TASK-5487: agent_toolkit.py appears only as the string constant AGENT_TOOLKIT_CLASS_PATH and a Does-NOT-Exist note, never imported.",
       "assigned_to": null,
       "started_at": "2026-11-11T00:03:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5486-agent-section-config-helpers.md"
+      "completed_at": "2026-11-11T00:14:26+00:00",
+      "file": "sdd/tasks/completed/TASK-5486-agent-section-config-helpers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5487",
