@@ -2408,7 +2408,9 @@ class Bookstore:
             entries: list[tuple[str, str]] = []
             for file in sidecar_dir.rglob("*"):
                 if file.is_file():
-                    entries.append((file.relative_to(sidecar_dir).as_posix(), hashlib.sha256(file.read_bytes()).hexdigest()))
+                    entries.append(
+                        (file.relative_to(sidecar_dir).as_posix(), hashlib.sha256(file.read_bytes()).hexdigest())
+                    )
             for rel, file_sha in sorted(entries):
                 digest.update(f"{rel}\0{file_sha}\n".encode())
         return digest.hexdigest()
@@ -2659,8 +2661,10 @@ class Bookstore:
                 if as_kind == "notes":
                     slug = target  # type: ignore[assignment]
                     async with self._operation_locks([(self._operation_storage_dir(scope), f"book-{slug}")], deadline):
-                        if not (in_library and name == slug) and not force and (
-                            catalog.get(slug) is not None or JSONTreeStore(trees_dir).exists(slug)
+                        if (
+                            not (in_library and name == slug)
+                            and not force
+                            and (catalog.get(slug) is not None or JSONTreeStore(trees_dir).exists(slug))
                         ):
                             raise BookstoreError(
                                 f"{slug!r} already exists — pass force=True to replace it "
