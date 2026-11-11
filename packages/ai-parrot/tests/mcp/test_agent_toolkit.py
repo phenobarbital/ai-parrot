@@ -338,7 +338,9 @@ async def test_at_startup_agent_configured(isolated_registry: AgentRegistry, mon
 
 
 @pytest.mark.asyncio
-async def test_close_runs_shutdown_and_cleanup(isolated_registry: AgentRegistry, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_close_runs_shutdown_and_cleanup(
+    isolated_registry: AgentRegistry, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A shutdown failure cannot prevent cleanup or leave lifecycle state open."""
     isolated_registry.register_bot_decorator(name="finance", mcp_local=True)(FinanceAgent)
     stub = StubAgent()

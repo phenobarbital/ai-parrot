@@ -1,4 +1,5 @@
 """FEAT-877 — an ``agent-*`` section served through create_toolkit_mcp_server."""
+
 from __future__ import annotations
 
 from pathlib import Path
