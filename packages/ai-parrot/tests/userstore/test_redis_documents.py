@@ -1,4 +1,5 @@
 """Integration coverage for the FEAT-878 Redis keyed document primitive."""
+
 from __future__ import annotations
 
 import asyncio

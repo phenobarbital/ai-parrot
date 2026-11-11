@@ -1,4 +1,5 @@
 """Keyed JSON documents with secondary indexes over redis.asyncio (FEAT-878)."""
+
 from __future__ import annotations
 
 import json
@@ -143,6 +144,7 @@ class RedisDocumentStore:
         on_insert: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Apply $set/$setOnInsert semantics and return the stored document."""
+
         def build(old: dict[str, Any] | None) -> dict[str, Any]:
             document = dict(old) if old is not None else {**key, **(on_insert or {})}
             document.update(set_fields)
@@ -154,6 +156,7 @@ class RedisDocumentStore:
 
     async def update(self, key: Mapping[str, Any], set_fields: Mapping[str, Any]) -> bool:
         """Merge fields into an existing document without creating one."""
+
         def build(old: dict[str, Any] | None) -> dict[str, Any] | None:
             if old is None:
                 return None
@@ -172,10 +175,10 @@ class RedisDocumentStore:
             document = await self.get(filters)
             return [document] if document and self._matches(document, filters) else []
 
-        indexed_keys = [
-            self._index_key(field, filters[field]) for field in self.spec.index_fields if field in filters
-        ]
-        doc_ids = await self.client.sinter(indexed_keys) if indexed_keys else await self.client.smembers(self._all_key())
+        indexed_keys = [self._index_key(field, filters[field]) for field in self.spec.index_fields if field in filters]
+        doc_ids = (
+            await self.client.sinter(indexed_keys) if indexed_keys else await self.client.smembers(self._all_key())
+        )
         return [document for document in await self._documents(doc_ids) if self._matches(document, filters)]
 
     async def delete_where(self, where: Mapping[str, Any]) -> list[dict[str, Any]]:
@@ -196,7 +199,9 @@ class RedisDocumentStore:
         documents: list[dict[str, Any]] = []
         ordered_ids = sorted(doc_ids)
         for index in range(0, len(ordered_ids), _BATCH_SIZE):
-            values = await self.client.mget([self._doc_key(doc_id) for doc_id in ordered_ids[index : index + _BATCH_SIZE]])
+            values = await self.client.mget(
+                [self._doc_key(doc_id) for doc_id in ordered_ids[index : index + _BATCH_SIZE]]
+            )
             documents.extend(json.loads(raw) for raw in values if raw is not None)
         return documents
 

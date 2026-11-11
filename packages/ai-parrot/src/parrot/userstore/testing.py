@@ -1,4 +1,5 @@
 """Test support for FEAT-878 Redis-backed tests."""
+
 from __future__ import annotations
 
 import uuid

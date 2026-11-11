@@ -1,4 +1,5 @@
 """FEAT-878 collection registry: key/index fields per user-store collection."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
