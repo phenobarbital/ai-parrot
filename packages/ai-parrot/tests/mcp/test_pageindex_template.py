@@ -346,3 +346,52 @@ def test_install_registers_claude_host(repo_with_hosts: Path) -> None:
     assert "parrot-pageindex" in (repo_with_hosts / ".mcp.json").read_text(encoding="utf-8")
     section = load_toolkits_config(repo_with_hosts).toolkits["pageindex"]
     assert section.class_path == _CLASS
+
+
+_LIBRARY_CLASS = "parrot.knowledge.bookstore.pageindex.LibraryPageIndexToolkit"
+
+
+def test_template_pageindex_library_seeds_and_serves(tmp_path: Path, monkeypatch) -> None:
+    """FEAT-876 M3: template discovered, section seeded at the repo root, stdio handshake lists pageindex_*."""
+    assert "pageindex-library" in available_templates()
+    tpl = load_template("pageindex-library")
+    assert tpl.requires_llm is False
+    assert tpl.requires_dist == ("bm25s", "pymupdf")
+    assert tpl.requires_pip == ("ai-parrot[bookstore]",)
+    assert f"class: {_LIBRARY_CLASS}" in tpl.body
+
+    # Keep both library scopes inside tmp_path (the subprocess inherits the environment).
+    monkeypatch.setenv("PARROT_LIBRARY_DIR", str(tmp_path / "proj-library"))
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
+    result = seed_toolkit_sections(tmp_path, ["pageindex-library"])
+    assert result.added == ["pageindex-library"]
+    section = load_toolkits_config(tmp_path).toolkits["pageindex-library"]
+    assert section.class_path == _LIBRARY_CLASS
+    assert section.llm is None
+    assert list(section.exclude) == ["pageindex_agentic_retrieve"]
+    assert section.kwargs["project_root"] == str(tmp_path)
+    assert section.kwargs["max_result_chars"] == 24000
+
+    stray: list[str] = []
+    proc = _spawn(tmp_path, "mcp-local", "pageindex-library")
+    try:
+        init = _handshake(proc, stray)
+        assert init["result"]["serverInfo"]["name"] == "parrot-pageindex-library"
+        listed = _call(proc, 2, "tools/list", {}, stray)
+        names = {t["name"] for t in listed["result"]["tools"]}
+        assert CORE_TOOLS <= names
+        assert "pageindex_list_library_trees" in names
+        assert "pageindex_list_trees" in names
+        assert not (names & LLM_TOOLS)
+        assert "pageindex_agentic_retrieve" not in names
+        assert all(name.startswith("pageindex_") for name in names)
+        trees = _tool(proc, stray, 3, "pageindex_list_library_trees")
+        assert "error" not in trees, trees
+    finally:
+        _shutdown(proc)
+
+    assert not stray, f"non-JSON lines on stdout: {stray!r}"
+    for line in proc.stdout.read().splitlines():
+        if line.strip():
+            json.loads(line)
+    assert proc.returncode == 0, proc.stderr.read()

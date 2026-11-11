@@ -1,0 +1,13 @@
+# parrot:summary: PageIndex tools over the Bookstore library (project + global) — books read-only, notebooks writable.
+# parrot:requires_llm: false
+# parrot:requires_dist: bm25s,pymupdf
+# parrot:requires_pip: ai-parrot[bookstore]
+  pageindex-library:
+    class: parrot.knowledge.bookstore.pageindex.LibraryPageIndexToolkit
+    kwargs:
+      project_root: {{repo_root}}
+      max_result_chars: 24000
+    # Add a model to enable the LLM-dependent tools and the LLM tree walk.
+    # llm: anthropic:claude-haiku-5-5
+    exclude: [pageindex_agentic_retrieve]
+    env: {}
