@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-10T23:20:47+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-11T00:49:51+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -241,7 +241,7 @@
       "feature_id": "FEAT-876",
       "feature": "bookstore-notebooks-shared-pageindex",
       "spec": "sdd/specs/bookstore-notebooks-shared-pageindex.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -253,8 +253,9 @@
       "parallelism_notes": "documents LibraryPageIndexToolkit + template (TASK-5478), import_tree (TASK-5482) and the CLI flags (TASK-5483)",
       "assigned_to": null,
       "started_at": "2026-11-10T23:47:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5484-docs-and-skill-notebooks.md"
+      "completed_at": "2026-11-11T00:49:51+00:00",
+      "file": "sdd/tasks/completed/TASK-5484-docs-and-skill-notebooks.md",
+      "verification": "verified"
     }
   ]
 }
