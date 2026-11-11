@@ -11,7 +11,6 @@ from __future__ import annotations
 import logging
 from typing import Any, Literal
 
-from parrot.auth.broker import byok_store_setting
 from parrot.clients.base import AbstractClient
 from parrot.clients.factory import LLMFactory
 from parrot.interfaces.documentdb import DocumentDb
@@ -75,11 +74,11 @@ def server_credential_state(provider: str) -> Literal["present", "absent", "unkn
 async def user_byok_providers(app: Any, user_id: Any) -> frozenset[str]:
     """Providers the user has a stored key for (no decryption). Fails closed: an unreadable store is "none"."""
     try:
-        if byok_store_setting() == "postgres":
-            from .storage.byok_store import get_byok_store
+        from .byok import COLLECTION, active_byok_store
 
-            return frozenset(str(k["provider"]).lower() for k in await get_byok_store(app).list_masked(user_id))
-        from .byok import COLLECTION
+        store = active_byok_store(app)
+        if store is not None:
+            return frozenset(str(k["provider"]).lower() for k in await store.list_masked(user_id))
 
         async with DocumentDb() as db:
             docs = await db.read(COLLECTION, {"user_id": user_id})
