@@ -14,6 +14,12 @@ from parrot.auth.oauth2.persistence import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _pin_documentdb(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep tests that mock DocumentDB on the DocumentDB backend."""
+    monkeypatch.setenv("INTEGRATIONS_STORE", "documentdb")
+
+
 @pytest.fixture
 def sample_users_integration_row() -> UsersIntegrationRow:
     return UsersIntegrationRow(

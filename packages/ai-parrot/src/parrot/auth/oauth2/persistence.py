@@ -25,6 +25,21 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 USERS_INTEGRATIONS_COLLECTION: str = "users_integrations"
+_REDIS_STORE = None
+
+
+def _redis_store():
+    """Return the Redis integrations store when the backend resolves to Redis."""
+    from parrot.userstore import resolve_store_backend
+
+    global _REDIS_STORE  # pylint: disable=global-statement
+    if resolve_store_backend("INTEGRATIONS_STORE") != "redis":
+        return None
+    if _REDIS_STORE is None:
+        from parrot.auth.oauth2.persistence_redis import RedisUsersIntegrationStore
+
+        _REDIS_STORE = RedisUsersIntegrationStore()
+    return _REDIS_STORE
 
 
 # ---------------------------------------------------------------------------
@@ -41,6 +56,10 @@ async def upsert_users_integration(row: UsersIntegrationRow) -> None:
     Args:
         row: The credential record to persist.
     """
+    store = _redis_store()
+    if store is not None:
+        return await store.upsert(row)
+
     query = {"user_id": row.user_id, "provider": row.provider}
     update_data = {
         "$set": row.model_dump(exclude={"user_id", "provider"}),
@@ -70,6 +89,10 @@ async def get_users_integration(
         The :class:`~parrot.integrations.oauth2.models.UsersIntegrationRow`
         if found, otherwise ``None``.
     """
+    store = _redis_store()
+    if store is not None:
+        return await store.get(user_id, provider)
+
     query = {"user_id": user_id, "provider": provider}
     async with DocumentDb() as db:
         doc = await db.read_one(USERS_INTEGRATIONS_COLLECTION, query)
@@ -88,6 +111,10 @@ async def delete_users_integration(user_id: str, provider: str) -> None:
         user_id: Navigator user identifier.
         provider: Provider identifier, e.g. ``"jira"``.
     """
+    store = _redis_store()
+    if store is not None:
+        return await store.delete(user_id, provider)
+
     query = {"user_id": user_id, "provider": provider}
     async with DocumentDb() as db:
         await db.delete_many(USERS_INTEGRATIONS_COLLECTION, query)
@@ -110,6 +137,10 @@ async def list_users_integrations(user_id: str) -> List[UsersIntegrationRow]:
     Returns:
         Valid connection rows for the principal.
     """
+    store = _redis_store()
+    if store is not None:
+        return await store.list(user_id)
+
     query = {"user_id": user_id}
     async with DocumentDb() as db:
         docs = await db.read(USERS_INTEGRATIONS_COLLECTION, query)
