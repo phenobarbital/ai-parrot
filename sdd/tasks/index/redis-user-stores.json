@@ -343,7 +343,7 @@
       "feature_id": "FEAT-878",
       "feature": "redis-user-stores",
       "spec": "sdd/specs/redis-user-stores.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -353,8 +353,9 @@
       "parallelism_notes": "Exclusive: edits packages/ai-parrot-server/tests/conftest.py, which every server test loads. Uses validate_user_store_settings / get_user_store_redis / close_user_store_redis from TASK-5495.",
       "assigned_to": null,
       "started_at": "2026-11-11T00:26:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5508-userstore-startup-wiring.md"
+      "completed_at": "2026-11-11T00:56:25+00:00",
+      "file": "sdd/tasks/completed/TASK-5508-userstore-startup-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5509",

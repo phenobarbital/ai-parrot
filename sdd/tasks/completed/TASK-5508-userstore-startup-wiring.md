@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-878 — Redis user stores (MongoDB-free local installs)
 **Spec**: `sdd/specs/redis-user-stores.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5495
@@ -43,6 +43,7 @@ cleanup. The Studio backend must compute its `postgres` switches through the sam
 | `packages/ai-parrot-server/src/parrot/handlers/studio/storage/backend.py` | MODIFY | `_postgres_switches()` via resolver |
 | `packages/ai-parrot-server/tests/conftest.py` | MODIFY | `os.environ.setdefault("PARROT_USER_STORE", "redis")` |
 | `packages/ai-parrot-server/tests/unit/test_user_store_startup.py` | CREATE | tests |
+| `packages/ai-parrot-server/tests/manager/test_registry_only.py` | MODIFY | hook-count expectation now includes the user-store hook pair |
 
 ---
 
@@ -294,10 +295,15 @@ def test_studio_postgres_switches_resolver(monkeypatch): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-5508
+- Feature: redis-user-stores
+- Implementation SHA: fb0444a101d5d9fd1cfe124e3f50014240efcd28
+- Closed at (UTC): 2026-11-11T00:56:25+00:00
+- Fix commits: fb0444a101d5d9fd1cfe124e3f50014240efcd28
 
-**Deviations from spec**: `install_user_store_hooks` lives in `parrot/userstore/checks.py` and is also called from `setup_registry_only()` (spec §3 M11 names `BotManager.setup()` only) — same intent, both setup paths.
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 1 |
+| seat_summary | Seat: gpt-5.6-terra/gpt-5.6-sol · Backend: codex · Model: gpt-5.6-sol (attempt 3) · Attempts: 3 · Duration: 759s · Tokens: n/a. Feedback: coder-feedback:8a7d759e64c2b859d6293ea1 (existing-test-not-updated) |
