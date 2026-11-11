@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-877 — Agent as a local stdio MCP server
 **Spec**: `sdd/specs/agent-local-mcp.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5486
@@ -266,10 +266,15 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-5492
+- Feature: agent-local-mcp
+- Implementation SHA: 6be06f17097bdd4d54da566b87995e438c6a7ca2
+- Closed at (UTC): 2026-11-11T00:21:03+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-luna · Backend: codex · Model: gpt-5.6-luna · Attempts: 1 · Duration: 86s · Tokens: n/a |
