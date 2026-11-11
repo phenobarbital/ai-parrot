@@ -98,6 +98,8 @@ _ADDED_COLUMNS: list[tuple[str, str]] = [
     ("period", "period TEXT"),
     ("community_id", "community_id TEXT"),
     ("community_label", "community_label TEXT"),
+    ("kind", "kind TEXT NOT NULL DEFAULT 'book'"),
+    ("notes_for", "notes_for TEXT"),
 ]
 
 #: The book graph (FEAT-533 spec §2). One row per typed edge; symmetric
@@ -394,11 +396,48 @@ class CatalogStore:
             row = conn.execute("SELECT * FROM books WHERE source_path = ?", (source_path,)).fetchone()
         return self._row_to_card(row) if row else None
 
-    def list_cards(self) -> list[BookCard]:
-        """All cards, ordered by title."""
+    def list_cards(self, kind: Optional[str] = "book") -> list[BookCard]:
+        """Cards of one ``kind`` ordered by title; ``None`` returns every row.
+
+        Args:
+            kind: ``"book"`` (default), ``"notes"``, or ``None`` for all rows.
+
+        Returns:
+            The matching cards, ordered by title.
+        """
         with self._connection() as conn:
-            rows = conn.execute("SELECT * FROM books ORDER BY title COLLATE NOCASE").fetchall()
+            if kind is None:
+                rows = conn.execute("SELECT * FROM books ORDER BY title COLLATE NOCASE").fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM books WHERE kind = ? ORDER BY title COLLATE NOCASE", (kind,)
+                ).fetchall()
         return [self._row_to_card(row) for row in rows]
+
+    def notebook_for(self, book_id: str) -> Optional[BookCard]:
+        """The ``kind='notes'`` row whose ``notes_for == book_id``, or ``None``.
+
+        Args:
+            book_id: The book whose notebook is wanted.
+
+        Returns:
+            The notebook card, or ``None`` when the book has none.
+        """
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM books WHERE kind = 'notes' AND notes_for = ? ORDER BY book_id LIMIT 1",
+                (book_id,),
+            ).fetchone()
+        return self._row_to_card(row) if row else None
+
+    def library_notebook(self) -> Optional[BookCard]:
+        """The ``kind='notes'`` row with ``notes_for IS NULL`` (tree ``_library_notes``), or ``None``."""
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM books WHERE kind = 'notes' AND notes_for IS NULL "
+                "AND tree_name = '_library_notes' LIMIT 1"
+            ).fetchone()
+        return self._row_to_card(row) if row else None
 
     def taken_slugs(self) -> set[str]:
         """Book ids already used in this catalog."""
@@ -430,7 +469,7 @@ class CatalogStore:
             sql = (
                 "SELECT b.*, bm25(books_fts) AS rank FROM books_fts "
                 "JOIN books b ON b.book_id = books_fts.book_id "
-                "WHERE books_fts MATCH ? ORDER BY rank LIMIT ?"
+                "WHERE books_fts MATCH ? AND b.kind = 'book' ORDER BY rank LIMIT ?"
             )
             with self._connection() as conn:
                 rows = conn.execute(sql, (match, top_k)).fetchall()
@@ -498,18 +537,24 @@ class CatalogStore:
 
         Args:
             relations: Edges to persist. Existing rows sharing the
-                canonical ``(src, dst, rel)`` key are replaced.
+                canonical ``(src, dst, rel)`` key are replaced, except a
+                ``origin="manual"`` row by a computed (non-manual) edge.
         """
         with self._connection() as conn:
             self._ensure_schema(conn)
             for relation in relations:
                 src, dst = self._canonical_pair(relation)
                 conn.execute(
-                    "INSERT OR REPLACE INTO book_relations "
+                    "INSERT INTO book_relations "
                     "(src_book_id, dst_book_id, rel, weight, origin, "
                     "confidence, rationale, computed_at) "
                     "VALUES (:src, :dst, :rel, :weight, :origin, "
-                    ":confidence, :rationale, :computed_at)",
+                    ":confidence, :rationale, :computed_at) "
+                    "ON CONFLICT(src_book_id, dst_book_id, rel) DO UPDATE SET "
+                    "weight = excluded.weight, origin = excluded.origin, "
+                    "confidence = excluded.confidence, rationale = excluded.rationale, "
+                    "computed_at = excluded.computed_at "
+                    "WHERE book_relations.origin <> 'manual' OR excluded.origin = 'manual'",
                     {
                         "src": src,
                         "dst": dst,
