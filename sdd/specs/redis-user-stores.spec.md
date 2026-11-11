@@ -88,7 +88,7 @@ document, and `read_one` may keep returning the stale one.
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:164351031ae492756fe387a57f13f96bffc0ac3453941950d66ffb5cfc24d9c9 evaluation_digest=sha256:24187f1e386bbbd7f261701a55624ba38e7778892647665eaca266612dbc0808 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:42f6d1a0bdd44f3fb52b7b602f1e4421134c886c5020ec83c91af28787d09671 evaluation_digest=sha256:2f2d4f51f2fc6e2ec9411244a2a4db4b2c75a5aa6b1e51ee529888092da41d88 rules_version=1 status=pass -->
 
 ## 2. Architectural Design
 
@@ -807,6 +807,29 @@ tests:
 - packages/ai-parrot-integrations/tests/integrations/telegram/test_mcp_documentdb_gate.py
 - tests/unit/integrations/oauth2/test_persistence.py
 - tests/bots/flows/core/storage/test_factory.py
+- packages/ai-parrot/tests/handlers/test_credentials_integration.py
+- packages/ai-parrot/tests/handlers/test_credential_routes.py
+- packages/ai-parrot/tests/unit/auth/test_users_integrations_model.py
+- packages/ai-parrot/tests/unit/test_mcp_helper_handler.py
+- packages/ai-parrot/tests/userstore/test_user_stores_docs.py
+- packages/ai-parrot-server/tests/unit/test_agenttalk_oauth_hydration.py
+- packages/ai-parrot-server/tests/unit/test_dashboard_handler_store.py
+- packages/ai-parrot-server/tests/unit/test_vault_access_centralised.py
+- packages/ai-parrot-server/tests/unit/test_userstore_copy_roundtrip.py
+- packages/ai-parrot-server/tests/studio/storage/test_overrides_store.py
+- packages/ai-parrot-server/tests/studio/storage/test_byok_store.py
+- packages/ai-parrot-server/tests/studio/test_byok_redis.py
+- packages/ai-parrot-server/tests/studio/test_integration.py
+- packages/ai-parrot-server/tests/studio/test_key_source_pa2.py
+- packages/ai-parrot-server/tests/studio/test_keys_empty_api_key.py
+- packages/ai-parrot-server/tests/studio/test_tooling_identity.py
+- packages/ai-parrot-server/tests/test_agenttalk_toolkit_overrides.py
+- packages/ai-parrot-server/tests/manager/test_registry_only.py
+- packages/ai-parrot-server/tests/manager/test_studio_runtime.py
+- packages/ai-parrot-integrations/tests/integrations/telegram/test_mcp_commands.py
+- tests/bots/flows/core/storage/test_persistence_mixin.py
+- tests/bots/flows/core/storage/test_agentcrew_lifecycle.py
+- tests/bots/flows/core/storage/test_agentsflow_lifecycle.py
 markers: none
 
 ### Test Data / Fixtures
@@ -1175,7 +1198,7 @@ entries:
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:164351031ae492756fe387a57f13f96bffc0ac3453941950d66ffb5cfc24d9c9 evaluation_digest=sha256:24187f1e386bbbd7f261701a55624ba38e7778892647665eaca266612dbc0808 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:42f6d1a0bdd44f3fb52b7b602f1e4421134c886c5020ec83c91af28787d09671 evaluation_digest=sha256:2f2d4f51f2fc6e2ec9411244a2a4db4b2c75a5aa6b1e51ee529888092da41d88 rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -1228,7 +1251,7 @@ Coverage:
     ]
   },
   "diagnostics": [],
-  "evaluation_digest": "sha256:24187f1e386bbbd7f261701a55624ba38e7778892647665eaca266612dbc0808",
+  "evaluation_digest": "sha256:2f2d4f51f2fc6e2ec9411244a2a4db4b2c75a5aa6b1e51ee529888092da41d88",
   "exit_code": 0,
   "findings": [
     {
@@ -1300,7 +1323,7 @@ Coverage:
       "waived_by": null
     }
   ],
-  "input_digest": "sha256:164351031ae492756fe387a57f13f96bffc0ac3453941950d66ffb5cfc24d9c9",
+  "input_digest": "sha256:42f6d1a0bdd44f3fb52b7b602f1e4421134c886c5020ec83c91af28787d09671",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
@@ -1390,3 +1413,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | 0.1 | 2026-11-11 | Jesus Lara | Initial draft (design decisions from the 2026-11-11 interview) |
 | 0.2 | 2026-11-11 | Jesus Lara | Approved; §8 Q1–Q3 left open (spec defaults apply: warn, CREW_RESULT_STORAGE independent, Redis db 6) |
 | 0.3 | 2026-11-11 | Jesus Lara | Resolved §8 Q1–Q3: implicit Redis default on a DocumentDB install fails startup; unset CREW_RESULT_STORAGE follows PARROT_USER_STORE (M14); dedicated Redis db 6 |
+| 0.4 | 2026-11-11 | Jesus Lara | /sdd-task: Validation Contract extended with the regression suites and new test files the tasks run |
