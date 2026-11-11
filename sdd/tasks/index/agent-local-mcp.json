@@ -133,7 +133,7 @@
       "feature_id": "FEAT-877",
       "feature": "agent-local-mcp",
       "spec": "sdd/specs/agent-local-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -143,8 +143,9 @@
       "parallelism_notes": "Modifies agent_toolkit.py/test_agent_toolkit.py after TASK-5488 and calls its discover_agents, resolve_exposable_agent, _tool_names, ResolvedAgent.",
       "assigned_to": null,
       "started_at": "2026-11-11T00:03:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5489-agent-toolkit-class.md"
+      "completed_at": "2026-11-11T00:36:00+00:00",
+      "file": "sdd/tasks/completed/TASK-5489-agent-toolkit-class.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5490",
