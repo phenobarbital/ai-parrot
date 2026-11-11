@@ -57,6 +57,26 @@ def test_cli_install_agent(root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     ]
 
 
+def test_cli_install_declined_templates_still_installs_agents(root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Declining the template confirmation does not drop the separately confirmed agents."""
+    calls: list[tuple] = []
+
+    monkeypatch.setattr(
+        "parrot.mcp.toolkit_install.install_agent_toolkits",
+        lambda root_, agents, hosts, *, portable=None: calls.append(("agents", agents)) or ActionReport(actions=["ok"]),
+    )
+    monkeypatch.setattr(
+        "parrot.mcp.toolkit_install.install_toolkits",
+        lambda root_, names, hosts, *, portable=None: calls.append(("templates", names)) or ActionReport(),
+    )
+    monkeypatch.setattr("parrot.cli.toolkits._resolve_names", lambda root_, names, hosts: list(names))
+
+    result = CliRunner().invoke(toolkits, ["install", "memory", "--agent", "finance"], input="n\ny\n")
+
+    assert result.exit_code == 0, result.output
+    assert calls == [("agents", ["finance"])]
+
+
 def test_cli_install_agent_error_exit(root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Surface an agent installation error as a Click command failure."""
 

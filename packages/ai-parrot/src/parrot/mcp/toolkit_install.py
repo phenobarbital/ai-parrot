@@ -245,11 +245,11 @@ def install_agent_toolkits(
 
 def agent_inventory(root: Path, hosts: Sequence[HostKind] | None = None) -> list[ToolkitRow]:
     """Return one row per exposable agent and per orphaned installed agent section."""
-    from parrot.mcp.agent_toolkit import (
+    from parrot.mcp.agent_toolkit import (  # noqa: PLC0415
         AgentExposureError,
         list_exposable_agents,
         resolve_exposable_agent,
-    )  # noqa: PLC0415
+    )
 
     root = Path(root)
     resolved_hosts = _resolve_hosts(root, hosts)

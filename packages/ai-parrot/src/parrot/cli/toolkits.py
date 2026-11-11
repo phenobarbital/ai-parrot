@@ -224,9 +224,11 @@ def install(
         return
     for warning in _warn_user_global(root, hosts):
         click.secho(f"  ⚠ {warning}", fg="yellow")
+    if selected and not yes and not click.confirm(f"Install {', '.join(selected)} into {[h.value for h in hosts]}?"):
+        # Declining the template install must not silently drop the separately confirmed agents.
+        click.echo("Skipped toolkits.")
+        selected = []
     if selected:
-        if not yes and not click.confirm(f"Install {', '.join(selected)} into {[h.value for h in hosts]}?"):
-            return
         try:
             report = install_toolkits(root, selected, hosts, portable=portable)
         except ValueError as exc:

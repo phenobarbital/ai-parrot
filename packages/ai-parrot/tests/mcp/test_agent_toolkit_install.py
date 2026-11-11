@@ -20,6 +20,7 @@ from parrot.mcp.toolkit_install import (
 from parrot.mcp.toolkit_seed import seed_agent_sections, seed_toolkit_sections
 from parrot.registry.registry import AgentRegistry
 
+
 def _config(root: Path) -> Path:
     return root / ".parrot" / "mcp-toolkits.yaml"
 
@@ -148,3 +149,27 @@ def test_uninstall_and_disable_agent_section(repo: Path) -> None:
     assert "agent-finance" not in load_toolkits_config(repo).toolkits
     uninstalled_host = json.loads((repo / ".mcp.json").read_text(encoding="utf-8"))
     assert "parrot-agent-finance" not in uninstalled_host["mcpServers"]
+
+
+@pytest.mark.parametrize("header", ["# toolkits: managed by hand\n", "# toolkits:\nnotes: toolkits: none\n"])
+def test_seed_agent_section_ignores_toolkits_mention_in_comment(tmp_path: Path, header: str) -> None:
+    """A comment or value that merely mentions `toolkits:` is not mistaken for the root key."""
+    config = _config(tmp_path)
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(header, encoding="utf-8")
+
+    result = seed_agent_sections(tmp_path, {"agent-finance": "finance"})
+
+    assert result.added == ["agent-finance"]
+    assert "agent-finance" in load_toolkits_config(tmp_path).toolkits
+
+
+def test_seed_agent_section_empty_flow_mapping_root(tmp_path: Path) -> None:
+    """`toolkits: {}` is normalised so the new section loads."""
+    config = _config(tmp_path)
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text("toolkits: {}\n", encoding="utf-8")
+
+    seed_agent_sections(tmp_path, {"agent-finance": "finance"})
+
+    assert "agent-finance" in load_toolkits_config(tmp_path).toolkits

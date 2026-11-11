@@ -332,6 +332,24 @@ def remove_section(root: Path, name: str) -> bool:
     return True
 
 
+def _toolkits_root_state(content: str) -> tuple[str, bool]:
+    """Normalise the ``toolkits:`` root of an existing file and report whether it must be added.
+
+    A line-anchored match (not a substring test) so a comment or value that merely mentions
+    ``toolkits:`` is not mistaken for the root; an empty flow mapping (``toolkits: {}``) is
+    rewritten to the block form so sections can be appended beneath it.
+
+    Args:
+        content: Current text of the toolkits config file ("" when absent).
+
+    Returns:
+        The possibly normalised text and True when a ``toolkits:`` root line must still be appended.
+    """
+    normalised = re.sub(r"(?m)^toolkits:[ \t]*\{\s*\}[ \t]*(#.*)?$", "toolkits:", content)
+    has_root = re.search(r"(?m)^toolkits:[ \t]*(#.*)?$", normalised) is not None
+    return normalised, not has_root
+
+
 def seed_toolkit_sections(root: Path, names: Sequence[str]) -> SeedResult:
     """Create/extend `<root>/.parrot/mcp-toolkits.yaml` with the named sections.
 
@@ -393,7 +411,7 @@ def seed_toolkit_sections(root: Path, names: Sequence[str]) -> SeedResult:
             sections_to_add.append(name)
 
     # If file doesn't exist or doesn't have toolkits root, create/add it
-    needs_toolkits_root = not path.exists() or "toolkits:" not in content
+    content, needs_toolkits_root = _toolkits_root_state(content)
     # A hand-edited file missing a trailing newline would otherwise have the
     # first appended section's key concatenated onto its last line (e.g.
     # "enabled: true  bounded-source:") — corrupting the file.
@@ -471,9 +489,10 @@ def seed_agent_sections(root: Path, agents: Mapping[str, str]) -> SeedResult:
                 f"with agent {section.kwargs.get('agent')!r}"
             )
 
+    content, needs_root = _toolkits_root_state(content)
     if pending:
         pieces = [content]
-        if not path.exists() or "toolkits:" not in content:
+        if needs_root:
             pieces.append("toolkits:\n")
         elif content and not content.endswith("\n"):
             pieces.append("\n")
@@ -482,7 +501,16 @@ def seed_agent_sections(root: Path, agents: Mapping[str, str]) -> SeedResult:
             rendered = yaml.safe_dump({section_name: body}, sort_keys=False, default_flow_style=False)
             pieces.append("".join(f"  {line}\n" for line in rendered.splitlines()))
             result.added.append(section_name)
-        _atomic_write(path, "".join(pieces))
+        text = "".join(pieces)
+        try:
+            parsed = (yaml.safe_load(text) or {}).get("toolkits") or {}
+        except (yaml.YAMLError, AttributeError) as exc:
+            raise ValueError(f"Refusing to write {path}: the result is not valid YAML ({exc})") from exc
+        if not set(result.added) <= set(parsed):
+            raise ValueError(
+                f"Refusing to write {path}: sections {sorted(set(result.added) - set(parsed))} would not load"
+            )
+        _atomic_write(path, text)
 
     if result.added:
         try:

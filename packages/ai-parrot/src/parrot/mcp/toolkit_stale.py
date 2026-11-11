@@ -147,6 +147,11 @@ def find_stale_mcp_entries(
         hosts: Host names to inspect.
         gemini_config: Optional global Gemini config override.
 
+    ``parrot-agent-*`` entries (FEAT-877) are known when this repository declares the section. They
+    are also deliberately treated as known when the config is unreadable or the entry lives in a
+    user-global host file: a global entry may have been installed from another repository, so this
+    repository's config cannot prove it retired. Retired repo-scoped agent entries are reported.
+
     Returns:
         Stale entries sorted by display file and key.
 
