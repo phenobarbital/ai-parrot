@@ -39,6 +39,7 @@ def test_available_templates_lists_packaged_names():
         "lsp",
         "memory",
         "pageindex",
+        "pageindex-library",
     }
 
 

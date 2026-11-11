@@ -42,7 +42,7 @@ before it runs.
     With -Global: comma-separated components to add via `parrot self add`
     (installs the packages an MCP toolkit needs, e.g. scraping). One of:
     bounded-source, browsing, database-query, lsp, memory, pageindex,
-    querysource, scraping, sdd-coder, targeted-writer.
+    pageindex-library, querysource, scraping, sdd-coder, targeted-writer.
 
 .PARAMETER Help
     Show this help and exit.
@@ -245,7 +245,7 @@ function Add-UserPath([string]$Dir) {
 # Components -With accepts: the packaged toolkit templates (parrot/mcp/_toolkit_templates/*.yaml). Checked before the
 # plan, so a wrong name fails before anything is downloaded, under -DryRun too. Kept equal to the templates by
 # tests/docs/test_install_powershell.py::test_known_components_match_the_packaged_templates.
-$KnownComponents = @('bounded-source', 'browsing', 'database-query', 'lsp', 'memory', 'pageindex', 'querysource', 'scraping', 'sdd-coder', 'targeted-writer')
+$KnownComponents = @('bounded-source', 'browsing', 'database-query', 'lsp', 'memory', 'pageindex', 'pageindex-library', 'querysource', 'scraping', 'sdd-coder', 'targeted-writer')
 
 function Test-Components {
   foreach ($c in ($With -split ',' | Where-Object { $_ })) {
