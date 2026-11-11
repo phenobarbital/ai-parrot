@@ -310,7 +310,7 @@ REDIS_DB = config.get("REDIS_DB", fallback=1)
 REDIS_URL = config.get("REDIS_URL", fallback=f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}")
 
 # Crew/flow execution result storage (FEAT-147)
-CREW_RESULT_STORAGE = config.get("CREW_RESULT_STORAGE", fallback="documentdb")
+CREW_RESULT_STORAGE = config.get("CREW_RESULT_STORAGE", fallback=None)  # FEAT-878: None → follows PARROT_USER_STORE
 CREW_RESULT_STORAGE_PG_DSN = config.get("CREW_RESULT_STORAGE_PG_DSN", fallback=default_dsn)
 CREW_RESULT_STORAGE_REDIS_URL = config.get("CREW_RESULT_STORAGE_REDIS_URL", fallback=REDIS_URL)
 CREW_RESULT_STORAGE_REDIS_TTL = int(config.get("CREW_RESULT_STORAGE_REDIS_TTL", fallback=604800))

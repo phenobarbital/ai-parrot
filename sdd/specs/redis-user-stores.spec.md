@@ -179,8 +179,9 @@ installation**: when `DOCUMENTDB_HOSTNAME` or `DOCUMENTDB_DBNAME` is set (the ru
 `vault_targets._default_docdb_factory` already uses) and some store — or an unset
 `CREW_RESULT_STORAGE` — resolves to Redis only because nothing was configured, startup stops with
 one error that lists those stores and both fixes: `PARROT_USER_STORE=documentdb` (keep MongoDB) or
-`PARROT_USER_STORE=redis` (move; run the copy CLI first). Setting the global switch, or every
-per-store switch, to either value clears the guard; an installation with neither DocumentDB
+`PARROT_USER_STORE=redis` (move; run the copy CLI first). Setting the global switch to either value
+clears the guard; setting every per-store switch clears it only when `CREW_RESULT_STORAGE` is also set
+(an unset `CREW_RESULT_STORAGE` still counts as an implicit Redis default); an installation with neither DocumentDB
 variable is never affected. `setup()` then adds an `on_startup` diagnostic and an `on_cleanup` that
 closes the Redis client. The diagnostic runs only when some store resolves to `redis` and never
 fails startup: `PING` (warn when unreachable), `CONFIG GET maxmemory-policy` (warn on any
@@ -506,7 +507,7 @@ async def vault_credential_exists(user_id: str, vault_name: str) -> bool: ...
       async def delete(self, user_id: Any, provider: str) -> bool: ...
       async def list_masked(self, user_id: Any) -> list[dict[str, Any]]:
           """[{provider, masked, created_at}] sorted by provider; decrypts to mask only when a copied
-          document lacks ``masked``; skips quarantine-marked providers."""
+          document lacks ``masked``; quarantined documents live in the separate `user_llm_keys_quarantine` collection, so nothing needs skipping here."""
 
   # modifies auth/broker/__init__.py
   def byok_store_setting() -> str:  # verified: __init__.py:53 — now resolve_store_backend("BYOK_STORE")

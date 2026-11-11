@@ -19,8 +19,10 @@ Usage::
 """
 from __future__ import annotations
 
+import asyncio
+import logging
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Any, Dict, Protocol
 
 from parrot.security.credentials_utils import (
     credential_context,
@@ -35,6 +37,7 @@ except ImportError:  # pragma: no cover - navigator-session not installed
     KeyRing = None  # type: ignore[assignment]
 
 _KEYRING: Any = None
+logger = logging.getLogger("parrot.security.vault")
 
 
 # DocumentDB collection for Vault credential storage (mirrors CredentialsHandler)
@@ -47,6 +50,44 @@ def set_vault_credential_store(store: Any) -> None:
     """Server registers its Postgres store at startup (VAULT_STORE=postgres). Core never imports server code."""
     global _PG_VAULT_STORE  # pylint: disable=global-statement
     _PG_VAULT_STORE = store
+
+
+class VaultCredentialStore(Protocol):
+    """Storage operations implemented by Redis and Postgres vault stores."""
+
+    async def store(self, user_id: Any, vault_name: str, secret_params: Dict[str, Any]) -> None: ...
+
+    async def retrieve(self, user_id: Any, vault_name: str) -> Dict[str, Any]: ...
+
+    async def delete(self, user_id: Any, vault_name: str) -> None: ...
+
+    async def list_credentials(self, user_id: Any) -> Dict[str, Dict[str, Any]]: ...
+
+    async def exists(self, user_id: Any, vault_name: str) -> bool: ...
+
+
+_REDIS_VAULT_STORE: Any = None
+
+
+def get_vault_credential_store() -> "VaultCredentialStore | None":
+    """Resolve the configured vault store, preferring a registered Postgres store."""
+    global _REDIS_VAULT_STORE  # pylint: disable=global-statement
+
+    if _PG_VAULT_STORE is not None:
+        return _PG_VAULT_STORE
+
+    from parrot.userstore import resolve_store_backend
+
+    backend = resolve_store_backend("VAULT_STORE")
+    if backend == "documentdb":
+        return None
+    if backend == "postgres":
+        raise RuntimeError("VAULT_STORE=postgres but no Postgres vault store is registered")
+    if _REDIS_VAULT_STORE is None:
+        from parrot.security.vault_store_redis import RedisVaultCredentialStore
+
+        _REDIS_VAULT_STORE = RedisVaultCredentialStore()
+    return _REDIS_VAULT_STORE
 
 
 # ---------------------------------------------------------------------------
@@ -110,8 +151,9 @@ async def store_vault_credential(
         navigator_session.vault.VaultCryptoError: If the stored credential
             does not belong to ``(user_id, vault_name)`` or fails integrity.
     """
-    if _PG_VAULT_STORE is not None:
-        return await _PG_VAULT_STORE.store(user_id, vault_name, secret_params)
+    store = get_vault_credential_store()
+    if store is not None:
+        return await store.store(user_id, vault_name, secret_params)
     keyring = get_vault_keyring()
     encrypted = encrypt_credential(
         secret_params, credential_context(user_id, vault_name), keyring
@@ -142,6 +184,39 @@ async def store_vault_credential(
             )
 
 
+_CREATE_LOCKS: Dict[tuple, asyncio.Lock] = {}
+
+
+async def create_vault_credential(
+    user_id: str,
+    vault_name: str,
+    secret_params: Dict[str, Any],
+) -> bool:
+    """Insert a credential only if ``(user_id, vault_name)`` does not exist yet.
+
+    Atomic when the configured store provides ``create`` (Redis); otherwise the
+    existence check and write are serialized per key inside this process.
+
+    Returns:
+        ``True`` when the credential was created, ``False`` when it already exists.
+    """
+    store = get_vault_credential_store()
+    create = getattr(store, "create", None)
+    if create is not None:
+        return await create(user_id, vault_name, secret_params)
+    key = (str(user_id), vault_name)
+    lock = _CREATE_LOCKS.setdefault(key, asyncio.Lock())
+    try:
+        async with lock:
+            if await vault_credential_exists(user_id, vault_name):
+                return False
+            await store_vault_credential(user_id, vault_name, secret_params)
+            return True
+    finally:
+        if not lock.locked():
+            _CREATE_LOCKS.pop(key, None)
+
+
 async def retrieve_vault_credential(
     user_id: str,
     vault_name: str,
@@ -161,8 +236,9 @@ async def retrieve_vault_credential(
         navigator_session.vault.VaultCryptoError: If the stored credential
             does not belong to ``(user_id, vault_name)`` or fails integrity.
     """
-    if _PG_VAULT_STORE is not None:
-        return await _PG_VAULT_STORE.retrieve(user_id, vault_name)
+    store = get_vault_credential_store()
+    if store is not None:
+        return await store.retrieve(user_id, vault_name)
     keyring = get_vault_keyring()
 
     async with DocumentDb() as db:
@@ -188,13 +264,42 @@ async def delete_vault_credential(user_id: str, vault_name: str) -> None:
         user_id: Owner's user identifier.
         vault_name: Vault credential name to remove.
     """
-    if _PG_VAULT_STORE is not None:
-        return await _PG_VAULT_STORE.delete(user_id, vault_name)
+    store = get_vault_credential_store()
+    if store is not None:
+        return await store.delete(user_id, vault_name)
     async with DocumentDb() as db:
         await db.delete(
             VAULT_CRED_COLLECTION,
             {"user_id": user_id, "name": vault_name},
         )
+
+
+async def list_vault_credentials(user_id: str) -> Dict[str, Dict[str, Any]]:
+    """Return all decryptable credentials belonging to a user."""
+    store = get_vault_credential_store()
+    if store is not None:
+        return await store.list_credentials(user_id)
+
+    keyring = get_vault_keyring()
+    credentials: Dict[str, Dict[str, Any]] = {}
+    async with DocumentDb() as db:
+        documents = await db.read(VAULT_CRED_COLLECTION, {"user_id": user_id})
+    for document in documents:
+        name = document["name"]
+        try:
+            credentials[name] = decrypt_credential(document["credential"], credential_context(user_id, name), keyring)
+        except Exception as exc:  # noqa: BLE001 - one invalid credential must not hide valid entries
+            logger.warning("Skipping undecryptable credential '%s': %s", name, type(exc).__name__)
+    return credentials
+
+
+async def vault_credential_exists(user_id: str, vault_name: str) -> bool:
+    """Return whether a credential exists without decrypting it."""
+    store = get_vault_credential_store()
+    if store is not None:
+        return await store.exists(user_id, vault_name)
+    async with DocumentDb() as db:
+        return await db.read_one(VAULT_CRED_COLLECTION, {"user_id": user_id, "name": vault_name}) is not None
 
 
 # ---------------------------------------------------------------------------

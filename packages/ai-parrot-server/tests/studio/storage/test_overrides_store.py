@@ -100,8 +100,9 @@ async def test_purge_agent_pg(store):
     assert await svc.purge_agent(REF) == []
 
 
-async def test_default_stays_documentdb():
-    """Without a registered store the DocumentDB path is used (switch default ``documentdb``)."""
+async def test_default_stays_documentdb(monkeypatch):
+    """With ``TOOLKIT_OVERRIDES_STORE=documentdb`` and no registered store the DocumentDB path is used."""
+    monkeypatch.setenv("TOOLKIT_OVERRIDES_STORE", "documentdb")
     with pytest.raises(AssertionError, match="DocumentDB was contacted"):
         await ToolkitConfigService().load("u1", REF)
 

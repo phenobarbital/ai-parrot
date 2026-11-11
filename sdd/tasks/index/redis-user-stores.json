@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-11T00:12:32.886231+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-11T02:54:02+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -85,16 +85,17 @@
       "feature_id": "FEAT-878",
       "feature": "redis-user-stores",
       "spec": "sdd/specs/redis-user-stores.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Root task: creates parrot.userstore (resolver, validation, per-loop Redis client); no dependencies.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5495-userstore-settings.md"
+      "started_at": "2026-11-11T00:26:32+00:00",
+      "completed_at": "2026-11-11T00:35:27+00:00",
+      "file": "sdd/tasks/completed/TASK-5495-userstore-settings.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5496",
@@ -103,7 +104,7 @@
       "feature_id": "FEAT-878",
       "feature": "redis-user-stores",
       "spec": "sdd/specs/redis-user-stores.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -112,9 +113,10 @@
       "parallel": true,
       "parallelism_notes": "Imports get_user_store_redis/key_prefix from TASK-5495 (parrot/userstore/settings.py) and extends parrot/userstore/__init__.py which TASK-5495 creates.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5496-redis-document-store.md"
+      "started_at": "2026-11-11T00:26:32+00:00",
+      "completed_at": "2026-11-11T01:06:06+00:00",
+      "file": "sdd/tasks/completed/TASK-5496-redis-document-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5497",
@@ -123,7 +125,7 @@
       "feature_id": "FEAT-878",
       "feature": "redis-user-stores",
       "spec": "sdd/specs/redis-user-stores.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -132,9 +134,10 @@
       "parallel": true,
       "parallelism_notes": "Builds RedisVaultCredentialStore on RedisDocumentStore + USER_CREDENTIALS from TASK-5496 (parrot/userstore/redis_documents.py, collections.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5497-vault-redis-store.md"
+      "started_at": "2026-11-11T00:26:32+00:00",
+      "completed_at": "2026-11-11T01:36:53+00:00",
+      "file": "sdd/tasks/completed/TASK-5497-vault-redis-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5498",
@@ -143,7 +146,7 @@
       "feature_id": "FEAT-878",
       "feature": "redis-user-stores",
       "spec": "sdd/specs/redis-user-stores.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -152,9 +155,10 @@
       "parallel": true,
       "parallelism_notes": "Calls list_vault_credentials / vault_credential_exists added by TASK-5497 (parrot/security/vault_utils.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5498-credentials-handler-vault-utils.md"
+      "started_at": "2026-11-11T00:26:32+00:00",
+      "completed_at": "2026-11-11T02:01:29+00:00",
+      "file": "sdd/tasks/completed/TASK-5498-credentials-handler-vault-utils.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5499",
@@ -163,16 +167,17 @@
       "feature_id": "FEAT-878",
       "feature": "redis-user-stores",
       "spec": "sdd/specs/redis-user-stores.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Uses the already-existing retrieve_vault_credential (agent.py:56); owns agent.py exclusively; no new symbol needed.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5499-mcp-restore-vault-utils.md"
+      "started_at": "2026-11-11T00:26:32+00:00",
+      "completed_at": "2026-11-11T00:35:52+00:00",
+      "file": "sdd/tasks/completed/TASK-5499-mcp-restore-vault-utils.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5500",
@@ -181,7 +186,7 @@
       "feature_id": "FEAT-878",
       "feature": "redis-user-stores",
       "spec": "sdd/specs/redis-user-stores.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -190,9 +195,10 @@
       "parallel": true,
       "parallelism_notes": "RedisUsersIntegrationStore wraps RedisDocumentStore + USERS_INTEGRATIONS from TASK-5496; resolve_store_backend reached transitively.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5500-oauth2-integrations-redis.md"
+      "started_at": "2026-11-11T00:26:32+00:00",
+      "completed_at": "2026-11-11T01:37:05+00:00",
+      "file": "sdd/tasks/completed/TASK-5500-oauth2-integrations-redis.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5501",
@@ -201,7 +207,7 @@
       "feature_id": "FEAT-878",
       "feature": "redis-user-stores",
       "spec": "sdd/specs/redis-user-stores.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -210,9 +216,10 @@
       "parallel": true,
       "parallelism_notes": "RedisUserLLMKeyStore wraps RedisDocumentStore + USER_LLM_KEYS from TASK-5496 (parrot/userstore/collections.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5501-byok-redis-core.md"
+      "started_at": "2026-11-11T00:26:32+00:00",
+      "completed_at": "2026-11-11T01:37:06+00:00",
+      "file": "sdd/tasks/completed/TASK-5501-byok-redis-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5502",
@@ -221,7 +228,7 @@
       "feature_id": "FEAT-878",
       "feature": "redis-user-stores",
       "spec": "sdd/specs/redis-user-stores.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -230,9 +237,10 @@
       "parallel": true,
       "parallelism_notes": "Imports get_user_llm_key_store and mask_api_key created by TASK-5501 (parrot/auth/broker/__init__.py, byok_redis.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5502-byok-redis-studio.md"
+      "started_at": "2026-11-11T00:26:32+00:00",
+      "completed_at": "2026-11-11T02:01:31+00:00",
+      "file": "sdd/tasks/completed/TASK-5502-byok-redis-studio.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5503",
@@ -241,7 +249,7 @@
       "feature_id": "FEAT-878",
       "feature": "redis-user-stores",
       "spec": "sdd/specs/redis-user-stores.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -250,9 +258,10 @@
       "parallel": true,
       "parallelism_notes": "RedisToolkitOverrideStore wraps RedisDocumentStore + USER_TOOLKIT_CONFIGS from TASK-5496.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5503-toolkit-overrides-redis.md"
+      "started_at": "2026-11-11T00:26:32+00:00",
+      "completed_at": "2026-11-11T01:37:07+00:00",
+      "file": "sdd/tasks/completed/TASK-5503-toolkit-overrides-redis.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5504",
@@ -261,7 +270,7 @@
       "feature_id": "FEAT-878",
       "feature": "redis-user-stores",
       "spec": "sdd/specs/redis-user-stores.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -270,9 +279,10 @@
       "parallel": true,
       "parallelism_notes": "RedisMCPConfigStore wraps RedisDocumentStore + USER_MCP_CONFIGS from TASK-5496.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5504-mcp-configs-redis.md"
+      "started_at": "2026-11-11T00:26:32+00:00",
+      "completed_at": "2026-11-11T02:01:32+00:00",
+      "file": "sdd/tasks/completed/TASK-5504-mcp-configs-redis.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5505",
@@ -281,7 +291,7 @@
       "feature_id": "FEAT-878",
       "feature": "redis-user-stores",
       "spec": "sdd/specs/redis-user-stores.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -290,9 +300,10 @@
       "parallel": true,
       "parallelism_notes": "RedisTelegramMCPStore wraps RedisDocumentStore + TELEGRAM_USER_MCP_CONFIGS from TASK-5496; gate uses resolve_store_backend.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5505-telegram-mcp-redis.md"
+      "started_at": "2026-11-11T00:26:32+00:00",
+      "completed_at": "2026-11-11T02:01:33+00:00",
+      "file": "sdd/tasks/completed/TASK-5505-telegram-mcp-redis.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5506",
@@ -301,7 +312,7 @@
       "feature_id": "FEAT-878",
       "feature": "redis-user-stores",
       "spec": "sdd/specs/redis-user-stores.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -310,9 +321,10 @@
       "parallel": true,
       "parallelism_notes": "RedisDashboardStore uses RedisDocumentStore.create + DASHBOARDS/DASHBOARD_TABS from TASK-5496.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5506-dashboard-store.md"
+      "started_at": "2026-11-11T00:26:32+00:00",
+      "completed_at": "2026-11-11T02:09:02+00:00",
+      "file": "sdd/tasks/completed/TASK-5506-dashboard-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5507",
@@ -321,7 +333,7 @@
       "feature_id": "FEAT-878",
       "feature": "redis-user-stores",
       "spec": "sdd/specs/redis-user-stores.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -330,9 +342,10 @@
       "parallel": true,
       "parallelism_notes": "Handlers call get_dashboard_store() created by TASK-5506 (parrot/handlers/dashboard_store.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5507-dashboard-handler-store.md"
+      "started_at": "2026-11-11T00:26:32+00:00",
+      "completed_at": "2026-11-11T02:21:00+00:00",
+      "file": "sdd/tasks/completed/TASK-5507-dashboard-handler-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5508",
@@ -341,7 +354,7 @@
       "feature_id": "FEAT-878",
       "feature": "redis-user-stores",
       "spec": "sdd/specs/redis-user-stores.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -350,9 +363,10 @@
       "parallel": false,
       "parallelism_notes": "Exclusive: edits packages/ai-parrot-server/tests/conftest.py, which every server test loads. Uses validate_user_store_settings / get_user_store_redis / close_user_store_redis from TASK-5495.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5508-userstore-startup-wiring.md"
+      "started_at": "2026-11-11T00:26:32+00:00",
+      "completed_at": "2026-11-11T00:56:25+00:00",
+      "file": "sdd/tasks/completed/TASK-5508-userstore-startup-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5509",
@@ -361,7 +375,7 @@
       "feature_id": "FEAT-878",
       "feature": "redis-user-stores",
       "spec": "sdd/specs/redis-user-stores.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -370,9 +384,10 @@
       "parallel": true,
       "parallelism_notes": "Writes through RedisDocumentStore and iterates USER_STORE_COLLECTIONS from TASK-5496.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5509-userstore-copy-cli.md"
+      "started_at": "2026-11-11T00:26:32+00:00",
+      "completed_at": "2026-11-11T02:09:03+00:00",
+      "file": "sdd/tasks/completed/TASK-5509-userstore-copy-cli.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5510",
@@ -381,7 +396,7 @@
       "feature_id": "FEAT-878",
       "feature": "redis-user-stores",
       "spec": "sdd/specs/redis-user-stores.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -390,9 +405,10 @@
       "parallel": false,
       "parallelism_notes": "Exclusive: edits packages/ai-parrot/pyproject.toml (entry points). RedisDocumentTarget does I/O through RedisDocumentStore from TASK-5496.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5510-redis-vault-targets.md"
+      "started_at": "2026-11-11T00:26:32+00:00",
+      "completed_at": "2026-11-11T01:14:36+00:00",
+      "file": "sdd/tasks/completed/TASK-5510-redis-vault-targets.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5511",
@@ -401,7 +417,7 @@
       "feature_id": "FEAT-878",
       "feature": "redis-user-stores",
       "spec": "sdd/specs/redis-user-stores.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -410,9 +426,10 @@
       "parallel": true,
       "parallelism_notes": "factory.py imports default_result_storage created by TASK-5495 (parrot/userstore/settings.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5511-crew-result-default.md"
+      "started_at": "2026-11-11T00:26:32+00:00",
+      "completed_at": "2026-11-11T01:06:07+00:00",
+      "file": "sdd/tasks/completed/TASK-5511-crew-result-default.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5512",
@@ -421,7 +438,7 @@
       "feature_id": "FEAT-878",
       "feature": "redis-user-stores",
       "spec": "sdd/specs/redis-user-stores.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -439,9 +456,10 @@
       "parallel": true,
       "parallelism_notes": "Exercises the services changed by TASK-5497/5498/5499/5500/5501/5503/5504/5505, get_dashboard_store from TASK-5506 and copy_to_redis from TASK-5509; the AC5 grep test needs TASK-5498/5499's import removals.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5512-userstore-integration-tests.md"
+      "started_at": "2026-11-11T00:26:32+00:00",
+      "completed_at": "2026-11-11T02:21:02+00:00",
+      "file": "sdd/tasks/completed/TASK-5512-userstore-integration-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5513",
@@ -450,7 +468,7 @@
       "feature_id": "FEAT-878",
       "feature": "redis-user-stores",
       "spec": "sdd/specs/redis-user-stores.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -465,9 +483,10 @@
       "parallel": true,
       "parallelism_notes": "Documents symbols created by TASK-5495 (switch registry; the docs test imports SWITCHES), TASK-5496 (Redis layout), TASK-5497 (vault dispatch + fail-closed postgres), TASK-5508 (startup guard/diagnostics), TASK-5509 (copy CLI), TASK-5510 (rotation targets), TASK-5511 (crew default).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5513-userstore-documentation.md"
+      "started_at": "2026-11-11T00:26:32+00:00",
+      "completed_at": "2026-11-11T02:21:03+00:00",
+      "file": "sdd/tasks/completed/TASK-5513-userstore-documentation.md",
+      "verification": "verified"
     }
   ]
 }

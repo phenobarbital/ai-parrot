@@ -139,6 +139,8 @@ def patch_vault_keys(monkeypatch):
 @pytest.fixture
 def fake_db(monkeypatch):
     _FakeDocumentDb.docs = []
+    monkeypatch.setenv("BYOK_STORE", "documentdb")
+    monkeypatch.setenv("VAULT_STORE", "documentdb")
     monkeypatch.setattr(byok_module, "DocumentDb", _FakeDocumentDb)
     monkeypatch.setattr(documentdb_module, "DocumentDb", _FakeDocumentDb)
     return _FakeDocumentDb

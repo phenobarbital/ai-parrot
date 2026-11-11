@@ -46,8 +46,13 @@ class _UserLLMKeyResolver(CredentialResolver):
             The plaintext API key, or ``None`` if none is stored, the
             vault is unavailable, or decryption fails.
         """
-        if _pkg.byok_store_setting() == "postgres":
-            return await self._resolve_postgres(channel, user_id)
+        try:
+            setting = _pkg.byok_store_setting()
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.warning("_UserLLMKeyResolver: invalid BYOK store setting: %s", type(exc).__name__)
+            return None
+        if setting in ("postgres", "redis"):
+            return await self._resolve_store(channel, user_id)
 
         from parrot.interfaces.documentdb import DocumentDb
 
@@ -95,15 +100,20 @@ class _UserLLMKeyResolver(CredentialResolver):
             )
             return None
 
-    async def _resolve_postgres(self, channel: str, user_id: str) -> str | None:
-        """``BYOK_STORE=postgres``: read the registered store; fail closed, never touch DocumentDB."""
-        if _pkg._PG_STORE is None:
-            logger.warning("_UserLLMKeyResolver: BYOK_STORE=postgres but no store is registered")
+    async def _resolve_store(self, channel: str, user_id: str) -> str | None:
+        """Read the configured non-DocumentDB store and fail closed on errors."""
+        try:
+            store = _pkg.get_user_llm_key_store()
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.warning("_UserLLMKeyResolver: failed to get BYOK store: %s", type(exc).__name__)
+            return None
+        if store is None:
+            logger.warning("_UserLLMKeyResolver: BYOK store is not registered")
             return None
         try:
-            return await _pkg._PG_STORE.get(user_id, channel.lower())
+            return await store.get(user_id, channel.lower())
         except Exception as exc:  # pylint: disable=broad-except
-            logger.warning("_UserLLMKeyResolver: postgres read failed for provider=%s: %s", channel.lower(), exc)
+            logger.warning("_UserLLMKeyResolver: BYOK store read failed for provider=%s: %s", channel.lower(), type(exc).__name__)
             return None
 
     async def get_auth_url(self, channel: str, user_id: str) -> str:

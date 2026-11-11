@@ -14,7 +14,8 @@ from datetime import UTC, datetime
 from typing import Any
 
 from navigator_auth.decorators import is_authenticated, user_session
-from parrot.auth.broker import _UserLLMKeyResolver, byok_store_setting
+from parrot.auth.broker import _UserLLMKeyResolver, byok_store_setting, get_user_llm_key_store
+from parrot.auth.broker.byok_redis import mask_api_key
 from parrot.clients.factory import SUPPORTED_CLIENTS
 from parrot.interfaces.documentdb import DocumentDb
 from parrot.security.credentials_utils import (
@@ -47,9 +48,19 @@ def _vault_keyring():
 def _mask(api_key: str) -> str:
     """Mask an API key, showing first 3 + last 4 chars max (spec §7 Key
     Constraints — never expose more than that)."""
-    if len(api_key) <= 7:
-        return "*" * len(api_key)
-    return f"{api_key[:3]}…{api_key[-4:]}"
+    return mask_api_key(api_key)
+
+
+def active_byok_store(app: Any) -> Any | None:
+    """The store BYOK_STORE selects: Postgres (registered at startup), core Redis store, or None for documentdb."""
+    setting = byok_store_setting()
+    if setting == "postgres":
+        from .storage.byok_store import get_byok_store
+
+        return get_byok_store(app)
+    if setting == "redis":
+        return get_user_llm_key_store()
+    return None
 
 
 async def resolve_user_api_key(app: Any, user_id: str, provider: str) -> str | None:
@@ -119,10 +130,9 @@ class StudioKeysHandler(StudioBaseView):
 
     async def _list_keys(self, user, keyring) -> list[dict]:
         """Masked key previews from the store ``BYOK_STORE`` selects."""
-        if byok_store_setting() == "postgres":
-            from .storage.byok_store import get_byok_store
-
-            return await get_byok_store(self.request.app).list_masked(user.user_id)
+        store = active_byok_store(self.request.app)
+        if store is not None:
+            return await store.list_masked(user.user_id)
         async with DocumentDb() as db:
             docs = await db.read(COLLECTION, {"user_id": user.user_id})
         return [self._masked_item(doc, user, keyring) for doc in docs or []]
@@ -208,7 +218,7 @@ class StudioKeysHandler(StudioBaseView):
         try:
             await self._persist_key(user, provider, encrypted, plaintext)
         except Exception as exc:  # pylint: disable=broad-except
-            self.logger.error("BYOK: failed to persist key (provider=%s): %s", provider, exc)
+            self.logger.error("BYOK: failed to persist key (provider=%s): %s", provider, type(exc).__name__)
             return self._error("Failed to store key.", status=500, code="store_failed")
 
         # NEVER echo the plaintext back — masked preview only.
@@ -216,10 +226,9 @@ class StudioKeysHandler(StudioBaseView):
 
     async def _persist_key(self, user, provider: str, encrypted: str, plaintext: str) -> None:
         """Durable write to the store ``BYOK_STORE`` selects."""
-        if byok_store_setting() == "postgres":
-            from .storage.byok_store import get_byok_store
-
-            await get_byok_store(self.request.app).put(user.user_id, provider, plaintext)
+        store = active_byok_store(self.request.app)
+        if store is not None:
+            await store.put(user.user_id, provider, plaintext)
             return
         now = datetime.now(UTC)
         doc = {
@@ -249,10 +258,9 @@ class StudioKeysHandler(StudioBaseView):
 
     async def _remove_key(self, user, provider: str) -> None:
         """Durable delete from the store ``BYOK_STORE`` selects."""
-        if byok_store_setting() == "postgres":
-            from .storage.byok_store import get_byok_store
-
-            await get_byok_store(self.request.app).delete(user.user_id, provider)
+        store = active_byok_store(self.request.app)
+        if store is not None:
+            await store.delete(user.user_id, provider)
             return
         async with DocumentDb() as db:
             await db.delete(COLLECTION, {"user_id": user.user_id, "provider": provider})
@@ -279,7 +287,7 @@ class StudioKeysHandler(StudioBaseView):
         try:
             await self._remove_key(user, provider)
         except Exception as exc:  # pylint: disable=broad-except
-            self.logger.error("BYOK: failed to delete key (provider=%s): %s", provider, exc)
+            self.logger.error("BYOK: failed to delete key (provider=%s): %s", provider, type(exc).__name__)
             return self._error("Failed to delete key.", status=500, code="delete_failed")
 
         return self.json_response({"provider": provider, "deleted": True})

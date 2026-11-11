@@ -1,6 +1,7 @@
 """Shared fixtures for the ai-parrot-server test suite."""
 
 import importlib.util
+import os
 import shutil
 import subprocess
 import sys
@@ -9,6 +10,9 @@ import zipfile
 from pathlib import Path
 
 import pytest
+
+# FEAT-878: keep the implicit-default guard out of manager tests when a developer env configures DocumentDB.
+os.environ.setdefault("PARROT_USER_STORE", "redis")
 
 # ---------------------------------------------------------------------------
 # Cython extension stubs for ai-parrot-server tests

@@ -7,11 +7,10 @@ Stores the *non-secret* subset of each ``/add_mcp`` JSON payload in the
 ``vault_credential_name`` field in each document points to the relevant Vault
 entry.
 
-Persistence is opt-in: it runs only when ``USE_DOCUMENTDB`` (``parrot.conf``,
-default ``False``) is enabled. When disabled, every operation is a no-op —
-``save`` stores nothing, ``list`` returns ``[]``, ``read_one`` returns ``None``
-and ``remove`` reports not-found — so a deployment without DocumentDB never
-blocks a Telegram login on a connection attempt.
+Persistence uses Redis by default. When ``TELEGRAM_MCP_STORE=documentdb``, the
+existing ``USE_DOCUMENTDB`` opt-in still applies; if it is disabled, every
+operation is a no-op so a deployment without DocumentDB never blocks a
+Telegram login on a connection attempt.
 
 This module is Telegram-scoped and intentionally separate from
 :mod:`parrot.handlers.mcp_persistence` which handles catalog-activated MCP
@@ -24,6 +23,7 @@ Usage::
     configs = await svc.list(user_id)
     removed = await svc.remove(user_id, name)
 """
+
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
@@ -39,18 +39,40 @@ from parrot.interfaces.documentdb import DocumentDb
 
 
 logger = logging.getLogger(__name__)
+_REDIS_STORE = None
+
+
+def persistence_enabled() -> bool:
+    """Return whether the configured Telegram MCP persistence backend is enabled."""
+    try:
+        from parrot.userstore import resolve_store_backend
+
+        backend = resolve_store_backend("TELEGRAM_MCP_STORE")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Telegram MCP persistence is disabled: %s", type(exc).__name__)
+        return False
+    if backend == "redis":
+        return True
+    return bool(getattr(parrot_conf, "USE_DOCUMENTDB", False))
 
 
 def documentdb_enabled() -> bool:
-    """Return whether Telegram MCP persistence may use DocumentDB.
+    """Deprecated alias of :func:`persistence_enabled` (kept for importers)."""
+    return persistence_enabled()
 
-    Read at call time (not import time) so the ``USE_DOCUMENTDB`` setting can
-    be toggled in tests.
 
-    Returns:
-        ``True`` when ``parrot.conf.USE_DOCUMENTDB`` is enabled.
-    """
-    return bool(getattr(parrot_conf, "USE_DOCUMENTDB", False))
+def _redis_store():
+    """Return the Redis Telegram MCP store when the backend resolves to Redis."""
+    from parrot.userstore import resolve_store_backend
+
+    global _REDIS_STORE  # pylint: disable=global-statement
+    if resolve_store_backend("TELEGRAM_MCP_STORE") != "redis":
+        return None
+    if _REDIS_STORE is None:
+        from .mcp_persistence_redis import RedisTelegramMCPStore
+
+        _REDIS_STORE = RedisTelegramMCPStore()
+    return _REDIS_STORE
 
 
 @asynccontextmanager
@@ -61,7 +83,7 @@ async def _documentdb() -> AsyncIterator[Optional[DocumentDb]]:
         A connected :class:`DocumentDb`, or ``None`` when ``USE_DOCUMENTDB``
         is disabled (no connection is attempted).
     """
-    if not documentdb_enabled():
+    if not bool(getattr(parrot_conf, "USE_DOCUMENTDB", False)):
         yield None
         return
     async with DocumentDb() as db:
@@ -141,7 +163,8 @@ class TelegramMCPPersistenceService:
     Mirrors the pattern of :class:`~parrot.handlers.mcp_persistence.MCPPersistenceService`
     but is dedicated to the Telegram ``/add_mcp`` free-form flow.
 
-    Every method is a no-op when :func:`documentdb_enabled` is ``False``.
+    Every method dispatches to Redis when configured; the DocumentDB path is
+    a no-op when ``USE_DOCUMENTDB`` is false.
 
     Methods:
         save: Upsert a config document.
@@ -173,6 +196,10 @@ class TelegramMCPPersistenceService:
             vault_credential_name: Vault credential key for this server, or
                 ``None`` when no secrets are stored (``auth_scheme=none``).
         """
+        store = _redis_store()
+        if store is not None:
+            return await store.save(user_id, name, params, vault_credential_name)
+
         now = datetime.now(timezone.utc).isoformat()
         query = {"user_id": user_id, "name": name}
         update_data = {
@@ -213,6 +240,10 @@ class TelegramMCPPersistenceService:
             List of :class:`UserTelegramMCPConfig` instances.  Returns an
             empty list if none are found.
         """
+        store = _redis_store()
+        if store is not None:
+            return await store.list(user_id)
+
         query = {"user_id": user_id, "active": True}
 
         async with _documentdb() as db:
@@ -251,6 +282,10 @@ class TelegramMCPPersistenceService:
             :class:`UserTelegramMCPConfig` instance, or ``None`` if not found
             or if the matching doc is inactive.
         """
+        store = _redis_store()
+        if store is not None:
+            return await store.read_one(user_id, name)
+
         query = {"user_id": user_id, "name": name, "active": True}
 
         async with _documentdb() as db:
@@ -292,6 +327,10 @@ class TelegramMCPPersistenceService:
             ``vault_credential_name`` is the Vault key of the deleted document, or
             ``None`` if the document was not found or had no Vault entry.
         """
+        store = _redis_store()
+        if store is not None:
+            return await store.remove(user_id, name)
+
         query = {"user_id": user_id, "name": name}
 
         async with _documentdb() as db:

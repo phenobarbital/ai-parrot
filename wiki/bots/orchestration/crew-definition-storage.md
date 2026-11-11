@@ -30,6 +30,8 @@ The application configuration accepts these environment-backed keys:
 | `CREW_DEFINITION_PG_DSN` | the main database DSN, when configured | PostgreSQL DSN used by `CrewPostgres`. |
 | `CREW_DEFINITION_MIGRATION` | `false` | Run a Redis-to-Postgres migration sweep during initialization when both services are healthy. |
 
+**Note on `CREW_RESULT_STORAGE`:** When unset, `CREW_RESULT_STORAGE` follows `PARROT_USER_STORE` (which defaults to `redis` as of FEAT-878). Explicit values (`redis`, `documentdb`, `postgres`) are unchanged. See [User stores](../../../stores/user-stores.md) for details.
+
 `BotManager(crew_storage_backend=..., crew_migration=...)` can override the backend and migration flag for one
 manager. The DSN remains application configuration. Crew storage is constructed only when `enable_crews=True`.
 Selecting `postgres` without a usable DSN remains PostgreSQL mode but unavailable; it never silently routes writes
