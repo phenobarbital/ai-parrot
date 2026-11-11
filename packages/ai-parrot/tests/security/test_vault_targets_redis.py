@@ -10,7 +10,7 @@ from navigator_session.vault import KeyRing
 
 from parrot import vault_targets
 from parrot.security.credentials_utils import credential_context, decrypt_credential, encrypt_credential
-from parrot.userstore import RedisDocumentStore
+from parrot.userstore import RedisDocumentStore, UserStoreMisconfigured
 from parrot.userstore.collections import USER_CREDENTIALS
 from parrot.userstore.testing import redis_test_settings
 
@@ -78,7 +78,7 @@ async def test_redis_target_rotation_cycle(redis_env) -> None:
 
 
 def test_redis_target_factories(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Factories select Redis only and suppress invalid switch settings."""
+    """Factories select Redis only and fail closed on invalid switch settings."""
     monkeypatch.setenv("VAULT_STORE", "documentdb")
     assert vault_targets.redis_user_credentials_factory({}) is None
 
@@ -88,4 +88,5 @@ def test_redis_target_factories(monkeypatch: pytest.MonkeyPatch) -> None:
     assert isinstance(vault_targets.redis_user_llm_keys_factory({}), vault_targets.RedisUserLlmKeysTarget)
 
     monkeypatch.setenv("BYOK_STORE", "not-a-backend")
-    assert vault_targets.redis_user_llm_keys_factory({}) is None
+    with pytest.raises(UserStoreMisconfigured):
+        vault_targets.redis_user_llm_keys_factory({})
