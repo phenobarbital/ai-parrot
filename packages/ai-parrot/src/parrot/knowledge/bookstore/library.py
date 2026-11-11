@@ -21,18 +21,24 @@ import copy
 import hashlib
 import itertools
 import logging
+import re
 import secrets
+import shutil
+import sqlite3
 import time
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, AsyncIterator, Awaitable, Callable, Optional
+from typing import Any, AsyncIterator, Awaitable, Callable, Literal, Optional
 
 from parrot.knowledge.pageindex.content_store import NodeContentStore
 from parrot.knowledge.pageindex.layout import PDFStructureError
 from parrot.knowledge.pageindex.locks import TreeLockTimeout, tree_lock
+from parrot.knowledge.pageindex.segment_store import SegmentStore
 from parrot.knowledge.pageindex.segments import RevisionMismatchError
+from parrot.knowledge.pageindex.store import JSONTreeStore
 from parrot.knowledge.pageindex.toolkit import PageIndexToolkit, REPLACED_MARKER
+from parrot.knowledge.pageindex.utils import structure_to_list
 
 from .carding import (
     derive_toc,
@@ -45,7 +51,7 @@ from .carding import (
 )
 from .catalog import CatalogStore, merged_cards, merged_communities, merged_relations, merged_search
 from .config import LibraryLocation
-from .models import REL_WEIGHTS, BookCard, BookCommunity, BookRelation, CardDraft, RelateSummary
+from .models import REL_WEIGHTS, Anchor, Annotation, BookCard, BookCommunity, BookRelation, CardDraft, RelateSummary
 from .relations import (
     candidate_pairs,
     communities_from_result,
@@ -71,7 +77,48 @@ _FORMAT_BY_SUFFIX = {
 }
 
 _STAGING_MARKER = "--staging-"
+#: Per-scope library notebook tree (Dewey-like sectors) and the per-book notebook suffix (FEAT-876).
+LIBRARY_NOTEBOOK = "_library_notes"
+NOTEBOOK_SUFFIX = "_notes"
+#: Relation origins recomputed by ``relate_books``; ``manual`` edges are never invalidated (S10).
+_COMPUTED_RELATION_ORIGINS = ("deterministic", "llm", "community")
+
+
+def notebook_tree_name(book_id: Optional[str]) -> str:
+    """Tree name of a book's notebook, or of the scope's library notebook when ``book_id`` is ``None``.
+
+    Args:
+        book_id: The annotated book's id, or ``None`` for the scope-wide library notebook.
+
+    Returns:
+        ``"<book_id>_notes"`` or ``"_library_notes"``.
+    """
+    return LIBRARY_NOTEBOOK if book_id is None else f"{book_id}{NOTEBOOK_SUFFIX}"
+
+
 _STAGING_MAX_AGE_S = 3600
+
+#: Function words ignored when deciding whether a sector actually matches a ``find_books`` query.
+_QUERY_STOPWORDS = frozenset(
+    {
+        "a", "an", "and", "are", "as", "at", "be", "by", "de", "del", "el", "en", "for", "from", "in", "is",
+        "it", "la", "las", "los", "of", "on", "or", "the", "to", "un", "una", "what", "which", "with", "y",
+    }
+)  # fmt: skip
+
+
+def _query_terms(text: str) -> set[str]:
+    """Casefolded word terms of ``text`` minus function words (the ``find_books`` relevance gate)."""
+    return {term for term in re.findall(r"\w+", text.casefold()) if term not in _QUERY_STOPWORDS}
+
+
+def _sector_code(node: dict[str, Any]) -> Optional[str]:
+    """``metadata.sector_code`` of a library-notebook node, or ``None`` when it is not a sector."""
+    metadata = node.get("metadata")
+    if not isinstance(metadata, dict):
+        return None
+    code = metadata.get("sector_code")
+    return None if code is None or code == "" else str(code)
 
 
 def _epub_metadata_title(payload: bytes) -> str | None:
@@ -83,9 +130,7 @@ def _epub_metadata_title(payload: bytes) -> str | None:
     try:
         with zipfile.ZipFile(io.BytesIO(payload)) as zf:
             container = ElementTree.fromstring(zf.read("META-INF/container.xml"))
-            rootfiles = container.findall(
-                ".//{urn:oasis:names:tc:opendocument:xmlns:container}rootfile"
-            )
+            rootfiles = container.findall(".//{urn:oasis:names:tc:opendocument:xmlns:container}rootfile")
             if not rootfiles:
                 return None
             opf_path = rootfiles[0].get("full-path", "")
@@ -308,6 +353,7 @@ class Bookstore:
         self._ready_scopes: set[str] = set()
         self._ready_locks: dict[tuple[str, asyncio.AbstractEventLoop], asyncio.Lock] = {}
         self._active_staging_slugs: set[str] = set()
+        self._annotation_cache: dict[tuple[str, str], tuple[tuple[int, int], dict[str, list[Annotation]]]] = {}
 
     @property
     def has_llm(self) -> bool:
@@ -478,6 +524,7 @@ class Bookstore:
         repair: bool = False,
         relate: bool = False,
         use_llm: bool = True,
+        notes: bool = False,
     ) -> dict[str, Any]:
         """Report recovery, structural drift and missing judgements; optionally repair or relate.
 
@@ -605,7 +652,76 @@ class Bookstore:
                 report["relate_summary"] = (await self.relate_books(unjudged, use_llm=use_llm)).model_dump()
             except Exception as exc:  # noqa: BLE001 — report relation failure without discarding diagnosis
                 report["errors"].append({"error": str(exc)})
+        if notes:
+            report["notes"] = {}
+            for location in locations:
+                try:
+                    report["notes"][location.scope] = await asyncio.to_thread(self._notes_report, location.scope)
+                except Exception as exc:  # noqa: BLE001 — a broken notebook never aborts the doctor
+                    report["errors"].append({"scope": location.scope, "error": f"notes: {exc}"})
         return report
+
+    def _notes_report(self, scope: str) -> dict[str, Any]:
+        """Notebook health of one scope (blocking): orphans, malformed/stale anchors, broken bindings."""
+        location = self._location(scope)
+        catalog = self._catalog(scope)
+        trees = JSONTreeStore(location.trees_dir)
+        books = {card.book_id for card in catalog.list_cards()}
+        notebooks = catalog.list_cards(kind="notes")
+        registered = {card.tree_name for card in notebooks}
+        orphans: list[str] = []
+        malformed: list[dict[str, Any]] = []
+        broken: list[dict[str, str]] = []
+        stale = 0
+        for card in notebooks:
+            if card.book_id != LIBRARY_NOTEBOOK and (card.notes_for is None or card.notes_for not in books):
+                orphans.append(card.book_id)
+            if not trees.exists(card.tree_name):
+                broken.append({"book_id": card.book_id, "reason": "card_without_tree"})
+                continue
+            try:
+                tree = trees.load(card.tree_name)
+            except Exception as exc:  # noqa: BLE001 — unreadable notebook is reported, not raised
+                broken.append({"book_id": card.book_id, "reason": f"unreadable_tree: {exc}"})
+                continue
+            for node in structure_to_list(tree.get("structure", [])):
+                if not isinstance(node, dict):
+                    continue
+                metadata = node.get("metadata")
+                if not isinstance(metadata, dict) or "anchors" not in metadata:
+                    continue
+                raw_anchors = metadata.get("anchors")
+                if not isinstance(raw_anchors, list):
+                    malformed.append(
+                        {"note_tree": card.tree_name, "node_id": node.get("node_id"), "anchor": raw_anchors}
+                    )
+                    continue
+                for raw in raw_anchors:
+                    try:
+                        Anchor.model_validate(raw)
+                    except Exception:  # noqa: BLE001
+                        malformed.append({"note_tree": card.tree_name, "node_id": node.get("node_id"), "anchor": raw})
+                if metadata.get("anchor_status") == "stale":
+                    stale += sum(1 for raw in raw_anchors if isinstance(raw, dict))
+        unregistered: list[str] = []
+        if location.trees_dir.is_dir():
+            for path in sorted(location.trees_dir.glob("*.json")):
+                name = path.stem
+                if name in registered:
+                    continue
+                if name == LIBRARY_NOTEBOOK or (
+                    name.endswith(NOTEBOOK_SUFFIX) and name[: -len(NOTEBOOK_SUFFIX)] in books
+                ):
+                    unregistered.append(name)
+                    broken.append({"book_id": name, "reason": "tree_without_card"})
+        return {
+            "notebooks": len(notebooks),
+            "orphans": orphans,
+            "malformed_anchors": malformed,
+            "stale_anchors": stale,
+            "unregistered": unregistered,
+            "broken_bindings": broken,
+        }
 
     # ------------------------------------------------------------------
     # Read surface
@@ -626,7 +742,7 @@ class Bookstore:
         """
         for loc in self.locations:
             card = self._catalog(loc.scope).get(book_id)
-            if card is not None:
+            if card is not None and card.kind != "notes":
                 return card.model_copy(update={"scope": loc.scope}), loc
         raise BookstoreError(f"Unknown book {book_id!r} — use catalog_search/list_books first")
 
@@ -637,12 +753,20 @@ class Bookstore:
 
     def get_toc(self, book_id: str) -> dict[str, Any]:
         """Structured table of contents with node ids and page ranges."""
-        card, _ = self.resolve_book(book_id)
+        card, loc = self.resolve_book(book_id)
+        try:
+            index = self._notebook_index(loc.scope, notebook_tree_name(card.book_id))
+        except Exception as exc:  # noqa: BLE001 — a broken notebook must never break a book read
+            logger.warning("notebook for %r unreadable: %s", card.book_id, exc)
+            index = {}
         return {
             "book_id": card.book_id,
             "title": card.title,
             "toc_digest": card.toc_digest,
-            "entries": [entry.model_dump() for entry in card.toc],
+            "entries": [
+                {**entry.model_dump(), "has_notes": bool(index.get(f"{card.book_id}#{entry.node_id}"))}
+                for entry in card.toc
+            ],
         }
 
     async def search_book(self, book_id: str, query: str, top_k: int = 8) -> list[dict[str, Any]]:
@@ -682,7 +806,499 @@ class Bookstore:
             "start_page": entry.start_page if entry else None,
             "end_page": entry.end_page if entry else None,
             "content": body or "",
+            "annotations": [note.model_dump() for note in self._annotations_sync(card, loc.scope, node_id)],
         }
+
+    # ------------------------------------------------------------------
+    # Notebooks (FEAT-876)
+    # ------------------------------------------------------------------
+    def notebook_for(self, book_id: str) -> Optional[BookCard]:
+        """Registered or on-disk ``<book_id>_notes`` in the book's scope (lazy ``kind='notes'`` upsert).
+
+        Args:
+            book_id: The annotated book.
+
+        Returns:
+            The notebook card (scope stamped), or ``None`` when no notebook tree exists.
+        """
+        card, loc = self.resolve_book(book_id)
+        return self._registered_notebook(loc.scope, notebook_tree_name(card.book_id), card)
+
+    def library_notebook(self, scope: str) -> Optional[BookCard]:
+        """Registered or on-disk ``_library_notes`` of ``scope``.
+
+        Args:
+            scope: Library scope (``"project"`` or ``"global"``).
+
+        Returns:
+            The library notebook card, or ``None`` when its tree does not exist.
+        """
+        return self._registered_notebook(scope, LIBRARY_NOTEBOOK, None)
+
+    def _registered_notebook(self, scope: str, tree_name: str, book: Optional[BookCard]) -> Optional[BookCard]:
+        """Return the notebook row, lazily registering an on-disk conventional tree."""
+        catalog = self._catalog(scope)
+        existing = catalog.get(tree_name)
+        if existing is not None and existing.kind == "notes":
+            return existing.model_copy(update={"scope": scope})
+        if existing is not None:
+            logger.warning("%r is a book, not a notebook — not registering it as notes", tree_name)
+            return None
+        trees = JSONTreeStore(self._location(scope).trees_dir)
+        if not trees.exists(tree_name):
+            return None
+        try:
+            snapshot_sha = self._tree_snapshot_sha(
+                trees._path_for(tree_name), trees._path_for(tree_name).with_suffix("")
+            )
+        except OSError:
+            snapshot_sha = ""
+        card = BookCard(
+            book_id=tree_name,
+            title=f"Notes — {book.title}" if book is not None else f"Library notebook ({scope})",
+            tree_name=tree_name,
+            scope=scope,
+            source_path=str(trees._path_for(tree_name)),
+            source_sha256=snapshot_sha,
+            source_format="tree",
+            added_at=datetime.now(timezone.utc).isoformat(),
+            card_origin="fallback",
+            kind="notes",
+            notes_for=book.book_id if book is not None else None,
+        )
+        try:
+            catalog.upsert(card)
+        except sqlite3.OperationalError as exc:  # read-only library: serve the notebook unregistered
+            logger.debug("notebook %r (%s) not registered (read-only catalog): %s", tree_name, scope, exc)
+            return card.model_copy(update={"scope": scope})
+        logger.info("registered notebook %r (%s)", tree_name, scope)
+        return card.model_copy(update={"scope": scope})
+
+    async def ensure_notebook(self, book_id: Optional[str], scope: str = "project") -> BookCard:
+        """Create the conventional notebook tree when missing and register it.
+
+        Args:
+            book_id: Book to annotate, or ``None`` for the scope's library notebook.
+            scope: Scope of the library notebook; ignored for a book notebook, which
+                always lives in the book's own scope.
+
+        Returns:
+            The registered ``kind='notes'`` card.
+        """
+        book: Optional[BookCard] = None
+        if book_id is not None:
+            book, loc = self.resolve_book(book_id)
+            scope = loc.scope
+        name = notebook_tree_name(book.book_id if book is not None else None)
+        toolkit = await self._ready_toolkit(scope)
+        if not JSONTreeStore(self._location(scope).trees_dir).exists(name):
+            try:
+                await toolkit.create_tree(name)
+            except ValueError:
+                # A concurrent creator won the race; the tree exists now.
+                if not JSONTreeStore(self._location(scope).trees_dir).exists(name):
+                    raise
+        notebook = self._registered_notebook(scope, name, book)
+        if notebook is None:
+            raise BookstoreError(f"Could not register notebook {name!r} in the {scope} library")
+        return notebook
+
+    def _notebook_index(self, scope: str, tree_name: str) -> dict[str, list[Annotation]]:
+        """``{node_id_or_book_key: [Annotation]}`` for one notebook, cached by tree file signature.
+
+        Keys are ``f"{book_id}#{node_id}"`` for anchors into a node and ``f"{book_id}#"`` for
+        whole-book anchors. Anchors pointing into another scope are ignored (S11).
+        """
+        path = JSONTreeStore(self._location(scope).trees_dir)._path_for(tree_name)
+        key = (scope, tree_name)
+        try:
+            stat = path.stat()
+        except FileNotFoundError:
+            self._annotation_cache.pop(key, None)
+            return {}
+        signature = (stat.st_mtime_ns, stat.st_size)
+        cached = self._annotation_cache.get(key)
+        if cached is not None and cached[0] == signature:
+            return cached[1]
+        tree = JSONTreeStore(self._location(scope).trees_dir).load(tree_name)
+        content = self._content_store(scope)
+        index: dict[str, list[Annotation]] = {}
+        for node in structure_to_list(tree.get("structure", [])):
+            if not isinstance(node, dict) or not node.get("node_id"):
+                continue
+            metadata = node.get("metadata") or {}
+            if not isinstance(metadata, dict):
+                continue
+            raw_anchors = metadata.get("anchors") or []
+            if not isinstance(raw_anchors, list):
+                logger.debug("notebook %r node %r: anchors is not a list", tree_name, node["node_id"])
+                continue
+            keys: list[str] = []
+            for raw in raw_anchors:
+                try:
+                    anchor = Anchor.model_validate(raw)
+                except Exception as exc:  # noqa: BLE001 — malformed anchors are reported by doctor --notes
+                    logger.debug("notebook %r node %r: malformed anchor %r: %s", tree_name, node["node_id"], raw, exc)
+                    continue
+                if anchor.scope != scope:
+                    continue
+                anchor_key = f"{anchor.book_id}#{anchor.node_id or ''}"
+                if anchor_key not in keys:
+                    keys.append(anchor_key)
+            if not keys:
+                continue
+            try:
+                annotation = Annotation(
+                    note_tree=tree_name,
+                    node_id=str(node["node_id"]),
+                    title=str(node.get("title") or ""),
+                    body=content.load_current(tree_name, str(node["node_id"])) or "",
+                    note_kind=metadata.get("note_kind", "note"),
+                    origin=metadata.get("origin", "human"),
+                    anchor_status=metadata.get("anchor_status", "current"),
+                )
+            except Exception as exc:  # noqa: BLE001 — an invalid note never hides the others
+                logger.debug("notebook %r node %r: invalid annotation: %s", tree_name, node["node_id"], exc)
+                continue
+            for anchor_key in keys:
+                index.setdefault(anchor_key, []).append(annotation)
+        self._annotation_cache[key] = (signature, index)
+        return index
+
+    @staticmethod
+    def _fingerprint(text: Optional[str]) -> Optional[str]:
+        """sha256 of whitespace-normalised ``text``; ``None`` for empty text."""
+        normalised = " ".join((text or "").split())
+        if not normalised:
+            return None
+        return hashlib.sha256(normalised.encode("utf-8")).hexdigest()
+
+    def _owned_text(self, loc: LibraryLocation, tree_name: str, node: dict[str, Any]) -> Optional[str]:
+        """Text of the segments a node owns in its stamped revision, from the retained revision file."""
+        doc_id, revision = node.get("doc_id"), node.get("revision")
+        if not doc_id or not revision:
+            return None
+        document = SegmentStore(loc.trees_dir).load_revision(tree_name, str(doc_id), str(revision))
+        if document is None:
+            return None
+        parts: list[str] = []
+        for span in node.get("owned") or []:
+            try:
+                start, end = int(span[0]), int(span[1])
+            except (TypeError, ValueError, IndexError):
+                continue
+            parts.extend(seg.text for seg in document.segments[start:end])
+        return "\n".join(parts) or None
+
+    def _old_node_text(self, loc: LibraryLocation, tree_name: str, old_node: Optional[dict[str, Any]]) -> Optional[str]:
+        """Text of an anchored node as of the retained old revision (``None`` when unrecoverable)."""
+        if old_node is None:
+            return None
+        return self._owned_text(loc, tree_name, old_node)
+
+    def _match_node(
+        self,
+        loc: LibraryLocation,
+        tree_name: str,
+        old_node: Optional[dict[str, Any]],
+        old_text: Optional[str],
+        doc_id: Optional[str],
+        live_nodes: list[dict[str, Any]],
+    ) -> Optional[dict[str, Any]]:
+        """The one live node the old section maps to, or ``None`` when no unique match exists (S9)."""
+        candidates = [n for n in live_nodes if doc_id is None or n.get("doc_id") == doc_id]
+        title = (old_node or {}).get("title")
+        old_page = (old_node or {}).get("start_index")
+        fingerprint = self._fingerprint(old_text)
+        if fingerprint is not None:
+            hits = [n for n in candidates if self._fingerprint(self._owned_text(loc, tree_name, n)) == fingerprint]
+            if len(hits) == 1:
+                return hits[0]
+            if len(hits) > 1:
+                same_title = [n for n in hits if title is not None and n.get("title") == title]
+                if len(same_title) == 1:
+                    return same_title[0]
+                pool = same_title or hits
+                if isinstance(old_page, int):
+                    paged = [
+                        (abs(n["start_index"] - old_page), n) for n in pool if isinstance(n.get("start_index"), int)
+                    ]
+                    if paged:
+                        best = min(distance for distance, _n in paged)
+                        nearest = [n for distance, n in paged if distance == best]
+                        if len(nearest) == 1:
+                            return nearest[0]
+                return None
+        if title is None:
+            return None
+        by_title = [n for n in candidates if n.get("title") == title]
+        return by_title[0] if len(by_title) == 1 else None
+
+    async def _anchor_snapshot(self, scope: str, card: BookCard) -> Optional[dict[str, dict[str, Any]]]:
+        """Compact ``node_id -> {title, doc_id, revision, owned, start_index}`` of the live book tree.
+
+        Taken before a re-index swaps the tree so anchors can be matched afterwards; ``None`` when the
+        book has no notebook (nothing to remap) or the tree cannot be read.
+        """
+        if not JSONTreeStore(self._location(scope).trees_dir).exists(notebook_tree_name(card.book_id)):
+            return None
+        try:
+            tree = await (await self._ready_toolkit(scope)).get_tree(card.tree_name)
+        except Exception as exc:  # noqa: BLE001 — snapshot is best-effort
+            logger.warning("anchor snapshot of %r failed: %s", card.book_id, exc)
+            return None
+        snapshot: dict[str, dict[str, Any]] = {}
+        for node in structure_to_list(tree.get("structure", [])):
+            if isinstance(node, dict) and node.get("node_id"):
+                snapshot[str(node["node_id"])] = {
+                    key: node.get(key) for key in ("title", "doc_id", "revision", "owned", "start_index")
+                }
+        return snapshot
+
+    async def remap_anchors(
+        self, book_id: str, *, previous: Optional[dict[str, dict[str, Any]]] = None
+    ) -> dict[str, int]:
+        """Re-point notebook anchors of ``book_id`` after a re-index; never deletes (spec S9).
+
+        Args:
+            book_id: The re-indexed book.
+            previous: Snapshot of the pre-re-index tree nodes (``_anchor_snapshot``). Without it only
+                anchors whose node still exists can be judged; the rest are ``stale``.
+
+        Returns:
+            Counts ``{"current": n, "remapped": n, "stale": n}`` over the anchors of this book.
+        """
+        counts = {"current": 0, "remapped": 0, "stale": 0}
+        card, loc = self.resolve_book(book_id)
+        note_tree = notebook_tree_name(card.book_id)
+        trees = JSONTreeStore(loc.trees_dir)
+        if not trees.exists(note_tree):
+            return counts
+        toolkit = await self._ready_toolkit(loc.scope)
+        live = {doc["doc_id"]: doc["revision"] for doc in await toolkit.list_documents(card.tree_name)}
+        live_nodes = [
+            n
+            for n in structure_to_list((await toolkit.get_tree(card.tree_name)).get("structure", []))
+            if isinstance(n, dict) and n.get("node_id")
+        ]
+        live_by_id = {str(n["node_id"]): n for n in live_nodes}
+        rank = {"current": 0, "remapped": 1, "stale": 2}
+        note_nodes = [n for n in structure_to_list(trees.load(note_tree).get("structure", [])) if isinstance(n, dict)]
+        for note in note_nodes:
+            metadata = note.get("metadata")
+            raw_anchors = metadata.get("anchors") if isinstance(metadata, dict) else None
+            if not note.get("node_id") or not isinstance(raw_anchors, list):
+                continue
+            new_anchors: list[Any] = []
+            statuses: list[str] = []
+            for raw in raw_anchors:
+                try:
+                    anchor = Anchor.model_validate(raw)
+                except Exception:  # noqa: BLE001 — malformed anchors are doctor's business
+                    new_anchors.append(raw)
+                    continue
+                if anchor.book_id != card.book_id or anchor.scope != loc.scope or not anchor.node_id:
+                    new_anchors.append(raw)
+                    continue
+                old_node = (previous or {}).get(anchor.node_id)
+                doc_id = anchor.doc_id or (old_node or {}).get("doc_id")
+                old_rev = anchor.revision or (old_node or {}).get("revision")
+                node_now = live_by_id.get(anchor.node_id)
+                if old_rev is not None and doc_id in live:
+                    unchanged = live[doc_id] == old_rev
+                else:
+                    unchanged = previous is None and node_now is not None
+                if unchanged and node_now is not None:
+                    status, result = "current", raw
+                else:
+                    old_text = self._old_node_text(loc, card.tree_name, old_node)
+                    match = self._match_node(loc, card.tree_name, old_node, old_text, doc_id, live_nodes)
+                    if match is not None:
+                        result = anchor.model_copy(
+                            update={
+                                "node_id": str(match["node_id"]),
+                                "doc_id": match.get("doc_id") or anchor.doc_id,
+                                "revision": match.get("revision") or anchor.revision,
+                            }
+                        ).model_dump(exclude_none=True)
+                        status = "remapped"
+                    else:
+                        status, result = "stale", raw
+                counts[status] += 1
+                statuses.append(status)
+                new_anchors.append(result)
+            if not statuses:
+                continue
+            worst = max(statuses, key=rank.__getitem__)
+            if new_anchors == raw_anchors and metadata.get("anchor_status", "current") == worst:
+                continue
+            await toolkit.tag_node(
+                note_tree, str(note["node_id"]), metadata={"anchors": new_anchors, "anchor_status": worst}
+            )
+        self._annotation_cache.pop((loc.scope, note_tree), None)
+        return counts
+
+    async def annotations_for(self, book_id: str, node_id: str) -> list[Annotation]:
+        """Notes anchored to ``(book_id, node_id)``; ``[]`` when the book has no notebook.
+
+        Args:
+            book_id: The annotated book.
+            node_id: Node of the book the notes point at.
+
+        Returns:
+            The anchored notebook nodes, in tree order.
+        """
+        card, loc = self.resolve_book(book_id)
+        return self._annotations_sync(card, loc.scope, node_id)
+
+    def _annotations_sync(self, card: BookCard, scope: str, node_id: str) -> list[Annotation]:
+        """Synchronous annotation lookup used by the sync read surface."""
+        try:
+            index = self._notebook_index(scope, notebook_tree_name(card.book_id))
+        except Exception as exc:  # noqa: BLE001 — a broken notebook must never break a book read
+            logger.warning("notebook for %r unreadable: %s", card.book_id, exc)
+            return []
+        return list(index.get(f"{card.book_id}#{node_id}", []))
+
+    async def find_books(self, query: str, top_k: int = 5) -> dict[str, Any]:
+        """Which books treat ``query`` and where: sectors of every ``_library_notes`` first, catalog FTS fallback.
+
+        Each scope's library notebook is searched with the PageIndex hybrid search (BM25; the LLM
+        walk only when an adapter is configured), project scope first. A hit counts only when it
+        is a sector node (``metadata.sector_code``) sharing at least one query term with its code,
+        title, summary or note body; its anchors are resolved through ``(scope, book_id)`` against
+        the catalog (S11) — whole-book anchors name the book, node anchors point at ToC entries.
+        Book bodies are never read. Without ``bm25s`` the sectors are matched by title only and
+        the ``hint`` says so.
+
+        Args:
+            query: Topic or keywords.
+            top_k: Maximum sectors (or fallback books) returned.
+
+        Returns:
+            ``{"source": "sectors", "sectors": [{code, title, books: [{book_id, title, scope,
+            entries: [{node_id, title, start_page, end_page}]}]}]}`` (plus ``hint`` when degraded),
+            or ``{"source": "catalog_fts", "books": [brief...], "hint": ...}``.
+        """
+        top_k = max(1, top_k)
+        terms = _query_terms(query)
+        sectors: list[dict[str, Any]] = []
+        degraded: Optional[str] = None
+        for location in self.locations:
+            if await asyncio.to_thread(self.library_notebook, location.scope) is None:
+                continue
+            toolkit = await self._ready_toolkit(location.scope)
+            tree = await toolkit.get_tree(LIBRARY_NOTEBOOK)
+            try:
+                hits = await toolkit.search(
+                    LIBRARY_NOTEBOOK,
+                    query,
+                    top_k=top_k * 4,
+                    use_bm25=True,
+                    use_llm_walk=self.has_llm,
+                )
+                node_ids = [str(hit["node_id"]) for hit in hits if hit.get("node_id")]
+                title_only = False
+            except ImportError:
+                degraded = (
+                    "bm25s is not installed: sectors were matched by title only "
+                    "(install the ai-parrot[bookstore] extra for ranked sector search)."
+                )
+                node_ids, title_only = [], True
+            sectors.extend(
+                await asyncio.to_thread(self._sector_hits, location.scope, tree, node_ids, terms, query, title_only)
+            )
+        if sectors:
+            return {"source": "sectors", "sectors": sectors[:top_k], **({"hint": degraded} if degraded else {})}
+        return {
+            "source": "catalog_fts",
+            "books": [card.brief() for card in self.catalog_search(query, top_k=top_k)],
+            "hint": "No librarian sector matched; draft one with `bookstore notebook draft --library`.",
+        }
+
+    def _sector_hits(
+        self,
+        scope: str,
+        tree: dict[str, Any],
+        node_ids: list[str],
+        terms: set[str],
+        query: str,
+        title_only: bool,
+    ) -> list[dict[str, Any]]:
+        """Map ranked library-notebook node ids (or a title scan) to sector payloads (blocking)."""
+        nodes = [n for n in structure_to_list(tree.get("structure", [])) if isinstance(n, dict) and n.get("node_id")]
+        by_id = {str(n["node_id"]): n for n in nodes}
+        content = self._content_store(scope)
+        needle = " ".join(query.casefold().split())
+        selected: list[dict[str, Any]] = []
+        if title_only:
+            for node in nodes:
+                title = str(node.get("title") or "").casefold()
+                if (
+                    _sector_code(node) is not None
+                    and needle
+                    and (needle in title or any(term in title for term in terms))
+                ):
+                    selected.append(node)
+        else:
+            for node_id in node_ids:
+                node = by_id.get(node_id)
+                if node is None or _sector_code(node) is None:
+                    continue
+                text = " ".join(
+                    (
+                        str(_sector_code(node)),
+                        str(node.get("title") or ""),
+                        str(node.get("summary") or node.get("prefix_summary") or ""),
+                        content.load_current(LIBRARY_NOTEBOOK, node_id) or "",
+                    )
+                )
+                if terms & _query_terms(text):
+                    selected.append(node)
+        sectors: list[dict[str, Any]] = []
+        for node in selected:
+            books = self._sector_books(node)
+            if books:
+                sectors.append({"code": _sector_code(node), "title": str(node.get("title") or ""), "books": books})
+        return sectors
+
+    def _sector_books(self, node: dict[str, Any]) -> list[dict[str, Any]]:
+        """Resolve one sector's anchors to ``[{book_id, title, scope, entries}]`` (blocking, catalog only)."""
+        metadata = node.get("metadata") or {}
+        raw_anchors = metadata.get("anchors") if isinstance(metadata, dict) else None
+        if not isinstance(raw_anchors, list):
+            return []
+        known_scopes = {location.scope for location in self.locations}
+        books: dict[tuple[str, str], dict[str, Any]] = {}
+        for raw in raw_anchors:
+            try:
+                anchor = Anchor.model_validate(raw)
+            except Exception as exc:  # noqa: BLE001 — malformed anchors are reported by doctor --notes
+                logger.debug("sector %r: malformed anchor %r: %s", node.get("node_id"), raw, exc)
+                continue
+            if anchor.scope not in known_scopes:
+                continue
+            card = self._catalog(anchor.scope).get(anchor.book_id)
+            if card is None or card.kind != "book":
+                continue
+            key = (anchor.scope, card.book_id)
+            book = books.setdefault(
+                key, {"book_id": card.book_id, "title": card.title, "scope": anchor.scope, "entries": []}
+            )
+            if anchor.node_id is None:
+                continue
+            entry = next((e for e in card.toc if e.node_id == anchor.node_id), None)
+            if entry is None or any(e["node_id"] == entry.node_id for e in book["entries"]):
+                continue
+            book["entries"].append(
+                {
+                    "node_id": entry.node_id,
+                    "title": entry.title,
+                    "start_page": entry.start_page,
+                    "end_page": entry.end_page,
+                }
+            )
+        return list(books.values())
 
     async def _document_of(self, card: Any, toolkit: PageIndexToolkit) -> dict[str, Any]:
         """The single imported document of a book's tree."""
@@ -1556,9 +2172,7 @@ class Bookstore:
         sha256 = hashlib.sha256(payload).hexdigest()
         ebook_metadata_title: str | None = None
         if fmt in ("epub", "mobi"):
-            ebook_metadata_title = await asyncio.to_thread(
-                _extract_ebook_metadata_title, payload, path.suffix
-            )
+            ebook_metadata_title = await asyncio.to_thread(_extract_ebook_metadata_title, payload, path.suffix)
         deadline = time.monotonic() + self._reindex_lock_timeout_s
         source_locks = [
             (self._operation_storage_dir(scope), f"path-{hashlib.sha256(str(path).encode()).hexdigest()}"),
@@ -1580,8 +2194,11 @@ class Bookstore:
             """Build, publish and catalog one book while source/book locks are held."""
             staging = self._staging_tree_name(slug)
             doc_description = ""
+            previous_nodes: Optional[dict[str, dict[str, Any]]] = None
             self._active_staging_slugs.add(slug)
             try:
+                if existing is not None and status == "updated":
+                    previous_nodes = await self._anchor_snapshot(scope, existing)
                 await toolkit.create_tree(staging, doc_name=title or ebook_metadata_title or path.stem)
                 if after_staging is not None:
                     await after_staging()
@@ -1716,6 +2333,11 @@ class Bookstore:
             catalog.upsert(card)
             if status == "updated" and not preserve_graph:
                 self._invalidate_graph(slug)
+            if status == "updated":
+                try:
+                    await self.remap_anchors(slug, previous=previous_nodes)
+                except Exception as exc:  # noqa: BLE001 — notes must never fail an ingest
+                    self.logger.warning("remap_anchors(%r) failed: %s", slug, exc)
             return card, status
 
         try:
@@ -1780,6 +2402,345 @@ class Bookstore:
         if relate:
             await self.relate_books([card.book_id], communities=False)
         return card, status
+
+    # ------------------------------------------------------------------
+    # Tree import (FEAT-876)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _tree_snapshot_sha(json_path: Path, sidecar_dir: Path) -> str:
+        """sha256 over the tree JSON and the sorted ``(relative path, sha256)`` manifest of its sidecar files."""
+        digest = hashlib.sha256()
+        digest.update(json_path.read_bytes())
+        if sidecar_dir.is_dir():
+            entries: list[tuple[str, str]] = []
+            for file in sidecar_dir.rglob("*"):
+                if file.is_file():
+                    entries.append(
+                        (file.relative_to(sidecar_dir).as_posix(), hashlib.sha256(file.read_bytes()).hexdigest())
+                    )
+            for rel, file_sha in sorted(entries):
+                digest.update(f"{rel}\0{file_sha}\n".encode())
+        return digest.hexdigest()
+
+    @staticmethod
+    def _copy_tree_files(src_json: Path, src_dir: Path, dst_trees_dir: Path, staging: str) -> None:
+        """Copy exactly ``<name>.json`` and the ``<name>/`` sidecar files into ``<staging>`` (blocking)."""
+        dst_trees_dir.mkdir(parents=True, exist_ok=True)
+        # JSON first: a crash leaves a ``--staging-`` tree that ``_sweep_reserved_trees`` can recognise.
+        shutil.copy2(src_json, dst_trees_dir / f"{staging}.json")
+        if src_dir.is_dir():
+            dst_dir = dst_trees_dir / staging
+            dst_dir.mkdir(parents=True, exist_ok=True)
+            for file in sorted(src_dir.rglob("*")):
+                target = dst_dir / file.relative_to(src_dir)
+                if file.is_dir():
+                    target.mkdir(parents=True, exist_ok=True)
+                elif file.is_file():
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(file, target)
+
+    @staticmethod
+    def _remove_staging_files(trees_dir: Path, staging: str) -> None:
+        """Best-effort removal of a staging tree's JSON and sidecar directory (blocking)."""
+        shutil.rmtree(trees_dir / staging, ignore_errors=True)
+        (trees_dir / f"{staging}.json").unlink(missing_ok=True)
+
+    @staticmethod
+    def _resolve_import_source(source: str | Path, trees_dir: Path) -> tuple[Path, bool]:
+        """Return ``(tree_json_path, inside_library)`` for a path or an in-library tree name (blocking)."""
+        raw = Path(source).expanduser()
+        if raw.suffix == ".json" or raw.is_file():
+            path = raw.resolve()
+            if not path.is_file():
+                raise BookstoreError(f"Tree file not found: {path}")
+        else:
+            path = trees_dir / f"{source}.json"
+            if not path.is_file():
+                raise BookstoreError(f"Tree not found (not a .json path nor a tree in the library): {source}")
+            path = path.resolve()
+        return path, path.parent == trees_dir.resolve()
+
+    async def _validate_imported_tree(self, scope: str, tree_name: str, as_kind: str) -> dict[str, Any]:
+        """Check document count and that every body/segment reference resolves; return the tree."""
+        toolkit = self._toolkit(scope)
+        tree = await toolkit.get_tree(tree_name)
+        documents = await toolkit.list_documents(tree_name)
+        if as_kind == "book" and len(documents) != 1:
+            raise BookstoreError(
+                f"A book tree must hold exactly one document, found {len(documents)} — "
+                "use as_kind='notes' to import it as a notebook"
+            )
+        missing_revisions = [d["doc_id"] for d in documents if not d.get("available")]
+        if missing_revisions:
+            raise BookstoreError(f"Unresolvable segment revisions for documents {missing_revisions}")
+        content = NodeContentStore(self._location(scope).trees_dir)
+
+        def missing_bodies() -> list[str]:
+            bad: list[str] = []
+            for node in structure_to_list(tree.get("structure", [])):
+                ref = node.get("body_ref") if isinstance(node, dict) else None
+                if isinstance(ref, str) and ref:
+                    try:
+                        found = content.load_body(tree_name, ref) is not None
+                    except ValueError:
+                        found = False
+                    if not found:
+                        bad.append(str(node.get("node_id") or ref))
+            return bad
+
+        bad_nodes = await asyncio.to_thread(missing_bodies)
+        if bad_nodes:
+            raise BookstoreError(f"Unresolvable body references for nodes {bad_nodes[:10]}")
+        return tree
+
+    async def import_tree(
+        self,
+        source: str | Path,
+        scope: str = "project",
+        *,
+        as_kind: Literal["book", "notes"] = "book",
+        notes_for: Optional[str] = None,
+        title: Optional[str] = None,
+        force: bool = False,
+    ) -> tuple[BookCard, str]:
+        """Adopt an existing PageIndex tree as a book or a notebook, without re-ingesting.
+
+        ``source`` is a tree JSON path outside the library (copied; the original is untouched) or an uncatalogued
+        tree name inside it (adopted in place). Status ``added`` | ``adopted`` | ``skipped`` (same snapshot sha).
+
+        Raises:
+            BookstoreError: ``as_kind='book'`` with != 1 document; a ``_notes`` tree without ``as_kind='notes'``;
+                ``notes_for`` already has a notebook and not ``force``; unresolvable body/segment references.
+        """
+        if as_kind not in ("book", "notes"):
+            raise BookstoreError(f"as_kind must be 'book' or 'notes', got {as_kind!r}")
+        toolkit = await self._ready_toolkit(scope)
+        catalog = self._catalog(scope)
+        trees_dir = self._location(scope).trees_dir
+        try:
+            json_path, in_library = await asyncio.to_thread(self._resolve_import_source, source, trees_dir)
+        except OSError as exc:
+            raise BookstoreError(f"Cannot read tree {source}: {exc}") from exc
+        name = json_path.stem
+        try:
+            JSONTreeStore._validate_name(name)
+        except ValueError as exc:
+            raise BookstoreError(f"Invalid tree name {name!r}: {exc}") from exc
+        if _is_reserved_tree_name(name):
+            raise BookstoreError(f"Tree name {name!r} is reserved for in-flight operations")
+        notebook_named = name == LIBRARY_NOTEBOOK or name.endswith(NOTEBOOK_SUFFIX)
+        if as_kind == "book" and notebook_named:
+            raise BookstoreError(
+                f"Tree {name!r} looks like a notebook — import it with as_kind='notes' (a book slug must not "
+                f"end with {NOTEBOOK_SUFFIX!r})"
+            )
+        notes_book: Optional[BookCard] = None
+        target: Optional[str] = None
+        if as_kind == "notes":
+            if notes_for is not None:
+                notes_book = catalog.get(notes_for)
+                if notes_book is None or notes_book.kind != "book":
+                    raise BookstoreError(f"notes_for {notes_for!r} is not a catalogued book in the {scope} library")
+            target = notebook_tree_name(notes_for)
+        sidecar = json_path.parent / name
+        try:
+            sha256 = await asyncio.to_thread(self._tree_snapshot_sha, json_path, sidecar)
+        except OSError as exc:
+            raise BookstoreError(f"Cannot read tree {json_path}: {exc}") from exc
+        deadline = time.monotonic() + self._reindex_lock_timeout_s
+        source_locks = [
+            (self._operation_storage_dir(scope), f"path-{hashlib.sha256(str(json_path).encode()).hexdigest()}"),
+            (self._operation_storage_dir(scope), f"sha-{sha256}"),
+        ]
+        # In-library book trees and notebooks already named after their target are adopted without a copy.
+        adopt_in_place = in_library and (as_kind == "book" or name == target)
+
+        async def work(slug: str, existing: Optional[BookCard], release: Optional[Callable[[], Awaitable[None]]]):
+            """Stage/copy, validate, publish and catalog one tree while source/book locks are held."""
+            staged = not adopt_in_place and not (in_library and as_kind == "notes")
+            staging = self._staging_tree_name(slug) if staged else None
+            tree_name = staging if staged else name
+            backup: Optional[str] = None
+            published = False
+            # Re-importing over a live book swaps its tree: snapshot the old nodes so anchors can be remapped.
+            previous_nodes = (
+                await self._anchor_snapshot(scope, existing) if existing is not None and as_kind == "book" else None
+            )
+            self._active_staging_slugs.add(slug)
+            try:
+                if staged:
+                    await asyncio.to_thread(self._copy_tree_files, json_path, sidecar, trees_dir, staging)
+                if release is not None:
+                    await release()
+                tree = await self._validate_imported_tree(scope, tree_name, as_kind)
+                if as_kind == "book":
+                    toc_entries, toc_digest = derive_toc(tree)
+                    draft = await self._draft_card(
+                        path=json_path,
+                        tree_name=tree_name,
+                        scope=scope,
+                        doc_description=tree.get("doc_description") or "",
+                        toc_digest=toc_digest,
+                        toc_entries=toc_entries,
+                        tree=tree,
+                    )
+                    if title:
+                        final_title = title
+                    else:
+                        taken_titles = {c.title.casefold() for c in self.list_books() if c.book_id != slug}
+                        final_title = disambiguate_title(
+                            draft.title, taken_titles, toc_entries=toc_entries, stem=json_path.stem
+                        )
+                    card = BookCard(
+                        book_id=slug,
+                        title=final_title,
+                        authors=draft.authors,
+                        year=draft.year,
+                        language=draft.language,
+                        topics=draft.topics,
+                        summary=draft.summary,
+                        toc_digest=toc_digest,
+                        toc=toc_entries,
+                        tree_name=slug,
+                        scope=scope,  # type: ignore[arg-type]
+                        source_path=str(json_path),
+                        source_sha256=sha256,
+                        source_format="tree",
+                        page_count=max((e.end_page for e in toc_entries if e.end_page is not None), default=None),
+                        chapter_count=sum(1 for e in toc_entries if e.depth == 1),
+                        added_at=datetime.now(timezone.utc).isoformat(),
+                        card_origin="manual" if title else ("llm" if self.has_llm else "fallback"),  # type: ignore[arg-type]
+                        genre=draft.genre,  # type: ignore[arg-type]
+                        traditions=draft.traditions,
+                        period=draft.period,
+                    )
+                else:
+                    default_title = (
+                        f"Notes — {notes_book.title}" if notes_book is not None else f"Library notebook ({scope})"
+                    )
+                    card = BookCard(
+                        book_id=slug,
+                        title=title or default_title,
+                        tree_name=slug,
+                        scope=scope,  # type: ignore[arg-type]
+                        source_path=str(json_path),
+                        source_sha256=sha256,
+                        source_format="tree",
+                        added_at=datetime.now(timezone.utc).isoformat(),
+                        card_origin="manual" if title else "fallback",
+                        kind="notes",
+                        notes_for=notes_for,
+                    )
+                if (as_kind == "notes" and slug != name) or staged:
+                    live_exists = JSONTreeStore(trees_dir).exists(slug)
+                    if live_exists and as_kind == "notes":
+                        stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+                        backup = f"{slug}_{stamp}"
+                        await toolkit.rename_tree(slug, backup)
+                    await toolkit.rename_tree(tree_name, slug, overwrite=live_exists and as_kind == "book")
+                    published = True
+            except BaseException:  # noqa: BLE001 — includes CancelledError so a cancelled import cleans up
+                if backup is not None and not published:
+                    try:
+                        await toolkit.rename_tree(backup, slug)
+                    except Exception:  # noqa: BLE001 — best-effort restore
+                        logger.warning("Could not restore %r from %r", slug, backup, exc_info=True)
+                if staged:
+                    try:
+                        await asyncio.to_thread(self._remove_staging_files, trees_dir, staging)
+                    except Exception:  # noqa: BLE001 — best-effort cleanup
+                        logger.debug("Cleanup of tree %r failed", staging, exc_info=True)
+                raise
+            finally:
+                self._active_staging_slugs.discard(slug)
+            if existing is not None and as_kind == "book" and existing.source_sha256 != sha256:
+                self._invalidate_graph(slug)
+            self._content_stores.pop(scope, None)
+            catalog.upsert(card)
+            if existing is not None and as_kind == "book" and staged and existing.source_sha256 != sha256:
+                try:
+                    await self.remap_anchors(slug, previous=previous_nodes)
+                except Exception as exc:  # noqa: BLE001 — notes must never fail an import
+                    self.logger.warning("remap_anchors(%r) failed: %s", slug, exc)
+            return card, ("adopted" if not staged else "added")
+
+        def skip_candidate() -> Optional[BookCard]:
+            hit = catalog.find_by_sha(sha256)
+            if hit is None or hit.kind != as_kind:
+                return None
+            if as_kind == "notes" and hit.notes_for != notes_for:
+                return None  # same notebook bytes targeted at another book: not a duplicate
+            return hit
+
+        try:
+            async with self._operation_locks(source_locks, deadline):
+                hit = skip_candidate()
+                if hit is not None and not force:
+                    return hit.model_copy(update={"scope": scope}), "skipped"
+
+                if as_kind == "notes":
+                    slug = target  # type: ignore[assignment]
+                    async with self._operation_locks([(self._operation_storage_dir(scope), f"book-{slug}")], deadline):
+                        if (
+                            not (in_library and name == slug)
+                            and not force
+                            and (catalog.get(slug) is not None or JSONTreeStore(trees_dir).exists(slug))
+                        ):
+                            raise BookstoreError(
+                                f"{slug!r} already exists — pass force=True to replace it "
+                                f"(the old notebook is kept as {slug}_<UTC timestamp>)"
+                            )
+                        return await work(slug, catalog.get(slug), None)
+
+                if adopt_in_place:
+                    slug = name
+                    async with self._operation_locks([(self._operation_storage_dir(scope), f"book-{slug}")], deadline):
+                        existing = catalog.get(slug)
+                        if existing is not None and not force:
+                            raise BookstoreError(f"Tree {slug!r} is already catalogued — pass force=True to re-card it")
+                        for other_scope, other in self._stores():
+                            if other_scope != scope and other.get(slug) is not None:
+                                raise BookstoreError(f"Book id {slug!r} already exists in the {other_scope} library")
+                        return await work(slug, existing, None)
+
+                by_path = catalog.find_by_path(str(json_path))
+                if by_path is not None and by_path.kind == "book":
+                    slug = by_path.book_id
+                    async with self._operation_locks([(self._operation_storage_dir(scope), f"book-{slug}")], deadline):
+                        return await work(slug, by_path, None)
+
+                own_storage_dir = self._operation_storage_dir(scope)
+                allocation_locks = [
+                    (location.root / ".bookstore-operations", "allocation")
+                    for location in self.locations
+                    if location.scope == scope or location.root.exists()
+                ]
+                async with AsyncExitStack() as allocations:
+                    for storage_dir, lock_name in sorted(
+                        allocation_locks, key=lambda item: (str(item[0].resolve()), item[1])
+                    ):
+                        try:
+                            await allocations.enter_async_context(
+                                tree_lock(storage_dir, lock_name, timeout=self._lock_remaining(deadline))
+                            )
+                        except TreeLockTimeout:
+                            raise
+                        except OSError:
+                            if storage_dir == own_storage_dir:
+                                raise
+                            self.logger.debug("Skipping allocation lock for read-only %s", storage_dir)
+                    slug = unique_slug(slugify(title or name), self._all_taken_slugs())
+                    if slug.endswith(NOTEBOOK_SUFFIX):
+                        raise BookstoreError(f"A book slug must not end with {NOTEBOOK_SUFFIX!r}: {slug!r}")
+                    async with self._operation_locks([(own_storage_dir, f"book-{slug}")], deadline):
+
+                        async def release_allocation() -> None:
+                            """Release global slug allocation once the staging tree reserves the slug."""
+                            await allocations.aclose()
+
+                        return await work(slug, None, release_allocation)
+        except TreeLockTimeout as exc:
+            raise BookstoreError(f"Import already in progress for tree {json_path} or its book") from exc
 
     async def _draft_card(
         self,
@@ -1966,11 +2927,24 @@ class Bookstore:
         invalidates the whole partition; the next ``relate_books`` recomputes it.
         """
         for _scope, store in self._stores():
-            store.delete_relations(book_id=book_id)
+            for origin in _COMPUTED_RELATION_ORIGINS:
+                store.delete_relations(book_id=book_id, origin=origin)
             store.delete_judgements(book_id)
         self._clear_communities()
 
-    async def remove_book(self, book_id: str) -> bool:
+    def _drop_manual_edges(self, book_id: str) -> None:
+        """Delete the ``origin='manual'`` (relation-sheet) edges touching a removed book, in every store.
+
+        A re-index keeps manual edges (``_invalidate_graph`` only clears computed origins); removing the
+        book itself must not leave an edge to it that a re-added slug would silently resurrect.
+        """
+        for _scope, store in self._stores():
+            try:
+                store.delete_relations(book_id=book_id, origin="manual")
+            except sqlite3.OperationalError as exc:  # read-only library: not ours to prune
+                logger.debug("manual-edge prune skipped for %s: %s", _scope, exc)
+
+    async def remove_book(self, book_id: str, *, with_notes: bool = False) -> bool:
         """Remove a book — catalog row, PageIndex tree, and graph edges.
 
         Edges touching ``book_id`` may live in either scope's DB (the
@@ -1985,6 +2959,17 @@ class Bookstore:
         successful ``relate_books(communities=True)`` recomputes it;
         until then, ``communities()``/``get_community()`` correctly
         report nothing rather than a book that no longer exists.
+
+        The book's notebook (``<book_id>_notes``) is kept by default as an
+        orphan (row kept, ``notes_for`` cleared); ``with_notes=True`` also
+        deletes the notebook tree and its row.
+
+        Args:
+            book_id: The book to remove.
+            with_notes: Also delete the book's notebook.
+
+        Returns:
+            Whether the catalog row was removed.
         """
         card, loc = self.resolve_book(book_id)
         toolkit = await self._ready_toolkit(loc.scope)
@@ -1994,8 +2979,21 @@ class Bookstore:
                     await toolkit.delete_tree(card.tree_name)
                 except Exception:  # noqa: BLE001 — the tree may already be gone
                     logger.warning("Tree %r missing while removing book %r", card.tree_name, book_id)
-                removed = self._catalog(loc.scope).remove(book_id)
+                catalog = self._catalog(loc.scope)
+                notebook = self._registered_notebook(loc.scope, notebook_tree_name(card.book_id), card)
+                removed = catalog.remove(book_id)
+                if notebook is not None:
+                    if with_notes:
+                        try:
+                            await toolkit.delete_tree(notebook.tree_name)
+                        except Exception:  # noqa: BLE001 — the notebook tree may already be gone
+                            logger.warning("Notebook tree %r missing while removing %r", notebook.tree_name, book_id)
+                        catalog.remove(notebook.book_id)
+                        self._annotation_cache.pop((loc.scope, notebook.tree_name), None)
+                    else:
+                        catalog.upsert(notebook.model_copy(update={"notes_for": None}))
                 self._invalidate_graph(book_id)
+                self._drop_manual_edges(book_id)
         except TreeLockTimeout as exc:
             raise BookstoreError(f"Re-index already in progress for {card.tree_name!r}") from exc
         return removed

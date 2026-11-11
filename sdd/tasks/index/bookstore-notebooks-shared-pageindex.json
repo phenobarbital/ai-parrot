@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-10T23:20:47+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-11T01:44:33+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -51,16 +51,17 @@
       "feature_id": "FEAT-876",
       "feature": "bookstore-notebooks-shared-pageindex",
       "spec": "sdd/specs/bookstore-notebooks-shared-pageindex.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependencies: catalog.py/models.py are not touched by any earlier task",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5475-catalog-models-notebook-kind.md"
+      "started_at": "2026-11-10T23:47:35+00:00",
+      "completed_at": "2026-11-11T00:01:13+00:00",
+      "file": "sdd/tasks/completed/TASK-5475-catalog-models-notebook-kind.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5476",
@@ -69,16 +70,17 @@
       "feature_id": "FEAT-876",
       "feature": "bookstore-notebooks-shared-pageindex",
       "spec": "sdd/specs/bookstore-notebooks-shared-pageindex.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependencies: only pageindex/toolkit.py, pageindex/__init__.py and a new test file",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5476-pageindex-write-policy-hook.md"
+      "started_at": "2026-11-10T23:47:35+00:00",
+      "completed_at": "2026-11-11T00:01:13+00:00",
+      "file": "sdd/tasks/completed/TASK-5476-pageindex-write-policy-hook.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5477",
@@ -87,7 +89,7 @@
       "feature_id": "FEAT-876",
       "feature": "bookstore-notebooks-shared-pageindex",
       "spec": "sdd/specs/bookstore-notebooks-shared-pageindex.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -96,9 +98,10 @@
       "parallel": true,
       "parallelism_notes": "needs BookCard.kind/notes_for, Anchor, Annotation and CatalogStore.list_cards(kind=)/notebook_for from TASK-5475 (models.py, catalog.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5477-notebook-lifecycle-annotated-reads.md"
+      "started_at": "2026-11-10T23:47:35+00:00",
+      "completed_at": "2026-11-11T00:07:55+00:00",
+      "file": "sdd/tasks/completed/TASK-5477-notebook-lifecycle-annotated-reads.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5478",
@@ -107,7 +110,7 @@
       "feature_id": "FEAT-876",
       "feature": "bookstore-notebooks-shared-pageindex",
       "spec": "sdd/specs/bookstore-notebooks-shared-pageindex.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -118,9 +121,10 @@
       "parallel": true,
       "parallelism_notes": "imports PageIndexWriteDenied/write_tools from TASK-5476 (pageindex/toolkit.py); LIBRARY_NOTEBOOK/NOTEBOOK_SUFFIX and annotated read_section from TASK-5477 (library.py); BookCard.kind from TASK-5475",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5478-library-pageindex-facade-template.md"
+      "started_at": "2026-11-10T23:47:35+00:00",
+      "completed_at": "2026-11-11T00:19:17+00:00",
+      "file": "sdd/tasks/completed/TASK-5478-library-pageindex-facade-template.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5479",
@@ -129,7 +133,7 @@
       "feature_id": "FEAT-876",
       "feature": "bookstore-notebooks-shared-pageindex",
       "spec": "sdd/specs/bookstore-notebooks-shared-pageindex.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -138,9 +142,10 @@
       "parallel": true,
       "parallelism_notes": "modifies library.py and test_library.py after TASK-5477; uses notebook_tree_name/_notebook_index from TASK-5477",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5479-remap-anchors-doctor-notes.md"
+      "started_at": "2026-11-10T23:47:35+00:00",
+      "completed_at": "2026-11-11T00:15:13+00:00",
+      "file": "sdd/tasks/completed/TASK-5479-remap-anchors-doctor-notes.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5480",
@@ -149,7 +154,7 @@
       "feature_id": "FEAT-876",
       "feature": "bookstore-notebooks-shared-pageindex",
       "spec": "sdd/specs/bookstore-notebooks-shared-pageindex.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -158,9 +163,10 @@
       "parallel": true,
       "parallelism_notes": "modifies library.py and test_library.py after TASK-5479 (same files); uses library_notebook from TASK-5477",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5480-find-books-relation-sheets.md"
+      "started_at": "2026-11-10T23:47:35+00:00",
+      "completed_at": "2026-11-11T00:32:12+00:00",
+      "file": "sdd/tasks/completed/TASK-5480-find-books-relation-sheets.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5481",
@@ -169,7 +175,7 @@
       "feature_id": "FEAT-876",
       "feature": "bookstore-notebooks-shared-pageindex",
       "spec": "sdd/specs/bookstore-notebooks-shared-pageindex.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -178,9 +184,10 @@
       "parallel": true,
       "parallelism_notes": "extends notebooks.py and test_notebooks.py, both created by TASK-5480; uses SectorDraft (TASK-5475) and ensure_notebook (TASK-5477)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5481-notebook-drafting.md"
+      "started_at": "2026-11-10T23:47:35+00:00",
+      "completed_at": "2026-11-11T00:37:57+00:00",
+      "file": "sdd/tasks/completed/TASK-5481-notebook-drafting.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5482",
@@ -189,7 +196,7 @@
       "feature_id": "FEAT-876",
       "feature": "bookstore-notebooks-shared-pageindex",
       "spec": "sdd/specs/bookstore-notebooks-shared-pageindex.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -198,9 +205,10 @@
       "parallel": true,
       "parallelism_notes": "modifies library.py and test_library.py after TASK-5480 (same files)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5482-import-tree.md"
+      "started_at": "2026-11-10T23:47:35+00:00",
+      "completed_at": "2026-11-11T00:37:57+00:00",
+      "file": "sdd/tasks/completed/TASK-5482-import-tree.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5483",
@@ -209,7 +217,7 @@
       "feature_id": "FEAT-876",
       "feature": "bookstore-notebooks-shared-pageindex",
       "spec": "sdd/specs/bookstore-notebooks-shared-pageindex.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -221,9 +229,10 @@
       "parallel": true,
       "parallelism_notes": "calls doctor(notes=) from TASK-5479, apply_relation_sheets from TASK-5480, draft_* from TASK-5481, import_tree from TASK-5482",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5483-bookstore-cli-notebooks.md"
+      "started_at": "2026-11-10T23:47:35+00:00",
+      "completed_at": "2026-11-11T00:44:23+00:00",
+      "file": "sdd/tasks/completed/TASK-5483-bookstore-cli-notebooks.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5484",
@@ -232,7 +241,7 @@
       "feature_id": "FEAT-876",
       "feature": "bookstore-notebooks-shared-pageindex",
       "spec": "sdd/specs/bookstore-notebooks-shared-pageindex.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -243,9 +252,10 @@
       "parallel": true,
       "parallelism_notes": "documents LibraryPageIndexToolkit + template (TASK-5478), import_tree (TASK-5482) and the CLI flags (TASK-5483)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5484-docs-and-skill-notebooks.md"
+      "started_at": "2026-11-10T23:47:35+00:00",
+      "completed_at": "2026-11-11T00:49:51+00:00",
+      "file": "sdd/tasks/completed/TASK-5484-docs-and-skill-notebooks.md",
+      "verification": "verified"
     }
   ]
 }

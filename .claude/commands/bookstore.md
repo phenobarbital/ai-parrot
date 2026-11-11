@@ -13,8 +13,11 @@ CLI via Bash):
 Follow the bookstore research funnel strictly (see
 `.agent/skills/bookstore/SKILL.md`):
 
-1. `bookstore_catalog_search` with the question's key topics — pick the
-   1–3 most relevant books from the fichas.
+1. **`bookstore_find_books(query)`** — ALWAYS start here. It answers "which books
+   treat X, and where" from the librarian's sectors, with direct table-of-contents
+   pointers; it falls back to `bookstore_catalog_search`.
+   Call it with the question's key topics and pick the 1–3 most relevant
+   books; use `bookstore_catalog_search` when no sector matches.
 1b. **Expand by relations** — before opening any book, call
     `bookstore_related_books(book_id)` on the best `bookstore_catalog_search`
     hit to find the author's other works, sibling works of the same
@@ -35,3 +38,5 @@ without flagging it.
 When a relation drives a claim, cite its origin: "the library links
 these as parallels (LLM-inferred, 0.7)" vs "same author
 (deterministic)".
+
+Annotations returned next to a section are the reader's notes — cite them as *Notebook: <title>*, never as book pages.
