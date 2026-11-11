@@ -10,6 +10,7 @@ The loader enforces Pydantic validation with clear error messages naming the fil
 and offending section/key.
 """
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -75,6 +76,40 @@ class ToolkitSection(BaseModel):
         if "llm" in self.llm_kwargs:
             raise ValueError("llm_kwargs must not contain 'llm' (collides with LLMFactory.create(llm=...))")
         return self
+
+
+#: FEAT-877 — class path of the toolkit that serves one registered agent.
+AGENT_TOOLKIT_CLASS_PATH: str = "parrot.mcp.agent_toolkit.AgentToolkit"
+#: FEAT-877 — prefix of every generated agent section name.
+AGENT_SECTION_PREFIX: str = "agent-"
+
+_SLUG_SEPARATORS = re.compile(r"[^a-z0-9]+")
+
+
+def agent_section_name(agent_name: str) -> str:
+    """Return the `.parrot/mcp-toolkits.yaml` section name for an agent.
+
+    Lower-cases the name, collapses every run of characters outside ``[a-z0-9]``
+    into one ``-`` and strips leading/trailing ``-``.
+
+    Args:
+        agent_name: Registered agent name.
+
+    Returns:
+        ``"agent-<slug>"``.
+
+    Raises:
+        ValueError: The name has no ``[a-z0-9]`` character.
+    """
+    slug = _SLUG_SEPARATORS.sub("-", agent_name.lower()).strip("-")
+    if not slug:
+        raise ValueError(f"Agent name {agent_name!r} has no slug characters")
+    return f"{AGENT_SECTION_PREFIX}{slug}"
+
+
+def is_agent_section(section: ToolkitSection) -> bool:
+    """Return whether the section serves an agent through AgentToolkit."""
+    return section.class_path == AGENT_TOOLKIT_CLASS_PATH
 
 
 class MCPToolkitsConfig(BaseModel):
