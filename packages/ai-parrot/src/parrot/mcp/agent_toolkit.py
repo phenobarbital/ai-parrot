@@ -7,6 +7,7 @@ framework class or mixin defines — and ``ask``/``ask_stream`` always — is re
 from __future__ import annotations
 
 import difflib
+import functools
 import importlib
 import inspect
 import logging
@@ -21,6 +22,7 @@ from parrot.mcp.agent_tools import MCP_TOOL_ATTR, MCPToolDeclaration
 from parrot.mcp.toolkit_config import agent_section_name
 from parrot.registry import AgentKind, AgentRegistry, BotMetadata, agent_registry
 from parrot.registry.registry import MCPLocalExposure
+from parrot.tools.toolkit import AbstractToolkit
 
 logger = logging.getLogger(__name__)
 
@@ -255,3 +257,93 @@ def list_exposable_agents(registry: AgentRegistry | None = None) -> list[Exposab
         except (AgentExposureError, ValueError) as exc:
             logger.warning("agent %s not exposable: %s", name, exc)
     return result
+
+
+def _has_parameters(func: Callable[..., Any]) -> bool:
+    """True when ``func`` takes an argument besides ``self`` (``*args``/``**kwargs`` ignored)."""
+    params = list(inspect.signature(func).parameters.values())[1:]
+    return any(param.kind not in (param.VAR_POSITIONAL, param.VAR_KEYWORD) for param in params)
+
+
+class AgentToolkit(AbstractToolkit):
+    """Serve one registered agent's own async methods as MCP tools (FEAT-877).
+
+    Tools are built from the agent class; the agent is instantiated and configured on the
+    first tool call (``auto_open``) and released by ``_close()``. All calls share one instance.
+    """
+
+    auto_open: bool = True
+
+    def __init__(self, agent: str, *, registry: AgentRegistry | None = None, **kwargs: Any) -> None:
+        """Resolve ``agent`` without instantiating it.
+
+        Raises:
+            AgentExposureError: The agent cannot be exposed (see resolve_exposable_agent).
+        """
+        super().__init__(**kwargs)
+        self._registry = discover_agents(registry)
+        self._resolved: ResolvedAgent = resolve_exposable_agent(agent, self._registry)
+        self._agent_name = agent
+        self._agent: Any = None
+
+    def _proxy(self, method_name: str, func: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[Any]]:
+        """Return ``func``'s signature bound to this toolkit, forwarding to the live agent."""
+
+        @functools.wraps(func)
+        async def proxy(toolkit_self: AgentToolkit, *args: Any, **kwargs: Any) -> Any:
+            return await getattr(toolkit_self._agent, method_name)(*args, **kwargs)
+
+        declaration: MCPToolDeclaration | None = getattr(func, MCP_TOOL_ATTR, None)
+        if declaration is not None:
+            proxy.__doc__ = declaration.description
+            proxy._args_schema = declaration.args_schema  # type: ignore[attr-defined]
+        return types.MethodType(proxy, self)
+
+    def _generate_tools(self) -> None:
+        """Create one ToolkitTool per exposed method, named by ``_tool_names``."""
+        if self._tools_generated:
+            return
+        for tool_name, method_name in _tool_names(self._resolved.methods, self._agent_name).items():
+            func = self._resolved.methods[method_name]
+            tool = self._create_tool_from_method(tool_name, self._proxy(method_name, func))
+            tool._method_name = method_name
+            declaration: MCPToolDeclaration | None = getattr(func, MCP_TOOL_ATTR, None)
+            if declaration is None and _has_parameters(func) and not tool.args_schema.model_fields:
+                raise AgentExposureError(
+                    f"Agent '{self._agent_name}': could not build the argument schema for {method_name}"
+                )
+            if declaration is not None and declaration.requires_confirmation:
+                tool.routing_meta["requires_confirmation"] = True
+            self._tool_cache[tool_name] = tool
+        self._tools_generated = True
+
+    async def _open(self) -> None:
+        """Instantiate and configure the agent on the first tool call."""
+        instance = await self._registry.get_instance(self._agent_name)
+        if instance is None:
+            raise RuntimeError(f"Agent '{self._agent_name}' could not be instantiated; see the server's stderr log")
+        if self._resolved.metadata.at_startup:
+            await instance.configure()
+        self._agent = instance
+
+    async def _close(self) -> None:
+        """Run the agent's shutdown and cleanup hooks, then drop its instance."""
+        agent, self._agent = self._agent, None
+        if agent is not None:
+            try:
+                await agent.shutdown()
+            except Exception:  # noqa: BLE001 -- cleanup must still run
+                self.logger.exception("Error shutting down agent %s", self._agent_name)
+            try:
+                await agent.cleanup()
+            except Exception:  # noqa: BLE001 -- lifecycle cleanup is isolated
+                self.logger.exception("Error cleaning up agent %s", self._agent_name)
+        await super()._close()
+
+    async def _post_execute(self, tool_name: str, result: Any, /, **kwargs: Any) -> Any:
+        """Return Pydantic results as JSON-compatible dictionaries."""
+        if isinstance(result, BaseModel):
+            return result.model_dump(mode="json")
+        if isinstance(result, (list, tuple)) and all(isinstance(item, BaseModel) for item in result):
+            return [item.model_dump(mode="json") for item in result]
+        return result

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 import yaml
@@ -12,6 +13,7 @@ from parrot.bots.agent import Agent, BasicAgent
 from parrot.mcp.agent_tools import mcp_tool
 from parrot.mcp.agent_toolkit import (
     AgentExposureError,
+    AgentToolkit,
     discover_agents,
     exposed_methods,
     list_exposable_agents,
@@ -231,3 +233,139 @@ def test_discovery_runs_once(isolated_registry: AgentRegistry, monkeypatch: pyte
     discover_agents(isolated_registry)
 
     assert calls == 1
+
+
+class StubAgent:
+    """Stands in for a configured agent instance; records calls."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict]] = []
+
+    async def forecast(self, months: int) -> dict:
+        self.calls.append(("forecast", {"months": months}))
+        return {"months": months}
+
+    async def configure(self, app=None) -> None:
+        self.calls.append(("configure", {}))
+
+    async def shutdown(self, **kwargs) -> None:
+        self.calls.append(("shutdown", {}))
+
+    async def cleanup(self) -> None:
+        self.calls.append(("cleanup", {}))
+
+
+def test_string_annotations_schema(isolated_registry: AgentRegistry) -> None:
+    """String annotations resolve to a typed MCP tool schema."""
+    isolated_registry.register_bot_decorator(name="finance", mcp_local={"allow": ["forecast"]})(FinanceAgent)
+
+    tool = AgentToolkit("finance", registry=isolated_registry).get_tools()[0]
+
+    assert tool.args_schema.model_fields["months"].annotation is int
+
+
+def test_unresolvable_hints_fail_loudly(isolated_registry: AgentRegistry) -> None:
+    """Schema inference failures may not result in an empty tool schema."""
+
+    class BrokenHintsAgent(Agent):
+        async def run(self, x: "NoSuchType") -> dict:
+            return {"x": str(x)}
+
+    isolated_registry.register_bot_decorator(name="broken", mcp_local=True)(BrokenHintsAgent)
+
+    with pytest.raises(AgentExposureError, match="could not build the argument schema for run"):
+        AgentToolkit("broken", registry=isolated_registry).get_tools()
+
+
+def test_mcp_tool_declaration_honoured(isolated_registry: AgentRegistry) -> None:
+    """An MCP declaration provides the public name, schema, documentation, and confirmation flag."""
+
+    class ForecastArgs(BaseModel):
+        months: int
+
+    class ForecastResult(BaseModel):
+        total: int
+
+    class DeclaredAgent(Agent):
+        @mcp_tool(
+            name="cash_forecast",
+            description="Calculate the cash forecast.",
+            args_schema=ForecastArgs,
+            returns=ForecastResult,
+            scope="agent:x",
+            requires_confirmation=True,
+        )
+        async def forecast(self, months: int) -> dict:
+            return {"total": months}
+
+    isolated_registry.register_bot_decorator(name="declared", mcp_local=True)(DeclaredAgent)
+
+    tool = AgentToolkit("declared", registry=isolated_registry).get_tools()[0]
+
+    assert tool.name == "cash_forecast"
+    assert tool.description == "Calculate the cash forecast."
+    assert tool.args_schema is ForecastArgs
+    assert tool.routing_meta["requires_confirmation"] is True
+
+
+@pytest.mark.asyncio
+async def test_lazy_open_on_first_call(isolated_registry: AgentRegistry, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Building tools does not construct the agent; repeated calls share its instance."""
+    isolated_registry.register_bot_decorator(name="finance", mcp_local={"allow": ["forecast"]})(FinanceAgent)
+    stub = StubAgent()
+    get_instance = AsyncMock(return_value=stub)
+    monkeypatch.setattr(isolated_registry, "get_instance", get_instance)
+    toolkit = AgentToolkit("finance", registry=isolated_registry)
+    tool = toolkit.get_tools()[0]
+
+    assert get_instance.await_count == 0
+    assert (await tool.execute(months=2)).result == {"months": 2}
+    assert (await tool.execute(months=3)).result == {"months": 3}
+    get_instance.assert_awaited_once_with("finance")
+    assert stub.calls == [("forecast", {"months": 2}), ("forecast", {"months": 3})]
+
+
+@pytest.mark.asyncio
+async def test_at_startup_agent_configured(isolated_registry: AgentRegistry, monkeypatch: pytest.MonkeyPatch) -> None:
+    """At-startup registrations receive the configuration call the registry normally skips."""
+    isolated_registry.register_bot_decorator(name="finance", mcp_local=True, at_startup=True)(FinanceAgent)
+    stub = StubAgent()
+    monkeypatch.setattr(isolated_registry, "get_instance", AsyncMock(return_value=stub))
+
+    await AgentToolkit("finance", registry=isolated_registry).get_tools()[0].execute(months=2)
+
+    assert stub.calls.count(("configure", {})) == 1
+
+
+@pytest.mark.asyncio
+async def test_close_runs_shutdown_and_cleanup(
+    isolated_registry: AgentRegistry, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A shutdown failure cannot prevent cleanup or leave lifecycle state open."""
+    isolated_registry.register_bot_decorator(name="finance", mcp_local=True)(FinanceAgent)
+    stub = StubAgent()
+    stub.shutdown = AsyncMock(side_effect=RuntimeError("boom"))
+    monkeypatch.setattr(isolated_registry, "get_instance", AsyncMock(return_value=stub))
+    toolkit = AgentToolkit("finance", registry=isolated_registry)
+
+    await toolkit.get_tools()[0].execute(months=2)
+    await toolkit._close()
+
+    assert ("cleanup", {}) in stub.calls
+    assert toolkit._opened is False
+    assert toolkit._agent is None
+
+
+@pytest.mark.asyncio
+async def test_post_execute_dumps_models(isolated_registry: AgentRegistry) -> None:
+    """Pydantic results reach MCP adapters as JSON-compatible data."""
+
+    class Result(BaseModel):
+        a: int
+
+    isolated_registry.register_bot_decorator(name="finance", mcp_local=True)(FinanceAgent)
+    toolkit = AgentToolkit("finance", registry=isolated_registry)
+
+    assert await toolkit._post_execute("t", Result(a=1)) == {"a": 1}
+    assert await toolkit._post_execute("t", [Result(a=1)]) == [{"a": 1}]
+    assert await toolkit._post_execute("t", {"a": 1}) == {"a": 1}
