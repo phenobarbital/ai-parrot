@@ -7,7 +7,6 @@ from __future__ import annotations
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
-
 def make_mock_db() -> tuple[MagicMock, AsyncMock]:
     """Return (mock_db_cls, mock_db_instance) pair for patching DocumentDb.
 
