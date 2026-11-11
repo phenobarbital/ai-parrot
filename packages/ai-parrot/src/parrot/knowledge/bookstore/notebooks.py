@@ -22,10 +22,12 @@ origin (a human or agent edit).
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import itertools
 import json
 import logging
 import re
+import sqlite3
 from datetime import datetime, timezone
 from typing import Any, Callable, Optional, get_args
 
@@ -167,7 +169,8 @@ async def apply_relation_sheets(store: Bookstore, scope: Optional[str] = None) -
 
     Args:
         store: The library whose notebooks are read and whose catalogs are written.
-        scope: Restrict the walk to one scope's notebooks (``None`` = every scope).
+        scope: Restrict the walk to one scope's notebooks (``None`` = every scope). Only a full
+            walk (``None``) also prunes manual edges no sheet backs any more.
 
     Returns:
         Number of manual edges written.
@@ -179,6 +182,14 @@ async def apply_relation_sheets(store: Bookstore, scope: Optional[str] = None) -
         for relation in relations:
             owner = store._relations_store_for(relation.src_book_id)
             groups.setdefault(id(owner), (owner, []))[1].append(relation)
+        if scope is None:
+            # A full walk is authoritative: manual edges whose sheet was deleted, re-anchored
+            # or re-typed are dropped, so the manual set always mirrors the notebooks.
+            for _scope, catalog in store._stores():
+                try:
+                    catalog.delete_relations(origin="manual")
+                except sqlite3.OperationalError as exc:  # read-only library: nothing of ours to prune
+                    logger.debug("manual-edge prune skipped for %s: %s", _scope, exc)
         for owner, owned in groups.values():
             owner.upsert_relations(owned)
 
@@ -189,19 +200,38 @@ async def apply_relation_sheets(store: Bookstore, scope: Optional[str] = None) -
 # ----------------------------------------------------------------------
 # Drafting (TASK-5481)
 # ----------------------------------------------------------------------
+def _draft_fingerprint(title: str, body: str, metadata: dict[str, Any]) -> str:
+    """Stable hash of the fields a human edit would change on a drafted node.
+
+    The PageIndex edit tools never flip ``metadata.origin``, so a draft stamps this
+    fingerprint (``metadata.draft_sha``) and a later run treats a draft whose current
+    fingerprint differs as edited, hence protected.
+    """
+    payload = {
+        "title": title,
+        "body": body,
+        "anchors": metadata.get("anchors") or [],
+        "sector_code": metadata.get("sector_code"),
+        "note_kind": metadata.get("note_kind"),
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
 def _existing_by_key_sync(
     store: Bookstore, scope: str, tree_name: str, key_fn: Callable[[dict[str, Any]], list[str]]
-) -> dict[str, tuple[Optional[str], bool]]:
-    """``{key: (draft_node_id, has_non_draft)}`` over every node of one notebook tree.
+) -> dict[str, tuple[Optional[str], bool, str]]:
+    """``{key: (draft_node_id, protected, draft_title)}`` over every node of one notebook tree.
 
     ``key_fn`` maps a node's metadata to the keys it occupies. A key held by a
-    node of any origin other than ``"draft"`` is protected (``has_non_draft``);
-    the first draft node holding a key is the one a re-run updates.
+    node of any origin other than ``"draft"`` is protected, and so is a draft whose
+    content no longer matches its stamped ``draft_sha`` (a human edited it); the first
+    pristine draft node holding a key is the one a re-run updates.
     """
     trees = JSONTreeStore(store._location(scope).trees_dir)
     if not trees.exists(tree_name):
         return {}
-    existing: dict[str, tuple[Optional[str], bool]] = {}
+    content = store._content_store(scope)
+    existing: dict[str, tuple[Optional[str], bool, str]] = {}
     for node in structure_to_list(trees.load(tree_name).get("structure", [])):
         if not isinstance(node, dict) or not node.get("node_id"):
             continue
@@ -209,17 +239,23 @@ def _existing_by_key_sync(
         if not isinstance(metadata, dict):
             continue
         is_draft = metadata.get("origin") == _DRAFT_ORIGIN
+        title = str(node.get("title") or "")
+        stamped = metadata.get("draft_sha")
+        if is_draft and stamped:
+            body = content.load_current(tree_name, str(node["node_id"])) or ""
+            if _draft_fingerprint(title, body, metadata) != stamped:
+                is_draft = False  # edited after drafting: treat like any human node
         for key in key_fn(metadata):
-            draft_id, protected = existing.get(key, (None, False))
+            draft_id, protected, draft_title = existing.get(key, (None, False, ""))
             if is_draft and draft_id is None:
-                draft_id = str(node["node_id"])
-            existing[key] = (draft_id, protected or not is_draft)
+                draft_id, draft_title = str(node["node_id"]), title
+            existing[key] = (draft_id, protected or not is_draft, draft_title)
     return existing
 
 
 async def _existing_by_key(
     store: Bookstore, scope: str, tree_name: str, key_fn: Callable[[dict[str, Any]], list[str]]
-) -> dict[str, tuple[Optional[str], bool]]:
+) -> dict[str, tuple[Optional[str], bool, str]]:
     """Async wrapper of :func:`_existing_by_key_sync` (the tree read runs off the event loop)."""
     return await asyncio.to_thread(_existing_by_key_sync, store, scope, tree_name, key_fn)
 
@@ -235,18 +271,20 @@ async def _write_draft(
     tree_name: str,
     title: str,
     metadata: dict[str, Any],
-    existing: tuple[Optional[str], bool],
+    existing: tuple[Optional[str], bool, str],
     counts: dict[str, int],
 ) -> None:
     """Create, update or skip one drafted node according to the never-overwrite rule."""
-    draft_id, protected = existing
+    draft_id, protected, draft_title = existing
     if protected:
         counts["skipped_human"] += 1
     elif draft_id is not None:
-        await toolkit.tag_node(tree_name, draft_id, metadata=metadata)
+        stamped = {**metadata, "draft_sha": _draft_fingerprint(draft_title, "", metadata)}
+        await toolkit.tag_node(tree_name, draft_id, metadata=stamped)
         counts["updated"] += 1
     else:
-        await toolkit.add_node(tree_name, title=title, body="", metadata=metadata)
+        stamped = {**metadata, "draft_sha": _draft_fingerprint(title, "", metadata)}
+        await toolkit.add_node(tree_name, title=title, body="", metadata=stamped)
         counts["created"] += 1
 
 
@@ -290,7 +328,8 @@ async def draft_library_notebook(store: Bookstore, scope: str = "project", *, us
     toolkit = await store._ready_toolkit(scope)
     communities = [c for c in store.communities() if c.member_book_ids]
     existing = await _existing_by_key(store, scope, LIBRARY_NOTEBOOK, _sector_key)
-    used: set[str] = set()
+    # Codes held by human/edited sectors are reserved so a community never collides with them.
+    used: set[str] = {key for key, (_id, protected, _t) in existing.items() if protected}
     for index, community in enumerate(communities):
         fallback = _sector_from_community(community, index)
         draft: Optional[SectorDraft] = None
@@ -312,7 +351,7 @@ async def draft_library_notebook(store: Bookstore, scope: str = "project", *, us
             "anchors": anchors,
         }
         title = draft.title.strip() or fallback.title
-        await _write_draft(toolkit, LIBRARY_NOTEBOOK, title, metadata, existing.get(code, (None, False)), counts)
+        await _write_draft(toolkit, LIBRARY_NOTEBOOK, title, metadata, existing.get(code, (None, False, "")), counts)
     return counts
 
 
@@ -382,7 +421,7 @@ async def draft_book_notebook(store: Bookstore, book_id: str) -> dict[str, Any]:
             notebook.tree_name,
             entry.title,
             metadata,
-            existing.get(entry.node_id, (None, False)),
+            existing.get(entry.node_id, (None, False, "")),
             counts,
         )
     return counts

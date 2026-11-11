@@ -440,7 +440,11 @@ class CatalogStore:
         return self._row_to_card(row) if row else None
 
     def taken_slugs(self) -> set[str]:
-        """Book ids already used in this catalog."""
+        """Every id already used in this catalog — books AND notebooks.
+
+        Deliberately not kind-filtered (unlike :meth:`list_cards` / :meth:`search`): a notebook's tree name
+        (``<book>_notes``) must stay taken so slug allocation can never reuse it.
+        """
         with self._connection() as conn:
             rows = conn.execute("SELECT book_id FROM books").fetchall()
         return {row["book_id"] for row in rows}

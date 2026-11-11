@@ -282,12 +282,38 @@ async def test_draft_never_overwrites_human_nodes(store, tmp_path):
     human = next(n for n in _nodes(store, LIBRARY_NOTEBOOK) if n["metadata"]["sector_code"] == "000")
     await toolkit.tag_node(LIBRARY_NOTEBOOK, human["node_id"], metadata={"origin": "human", "anchors": []})
 
+    # The human sector's code is reserved: every community still gets a sector, none collides with it.
     counts = await draft_library_notebook(store, use_llm=False)
-    assert counts == {"created": 0, "updated": 1, "skipped_human": 1}
+    assert counts == {"created": 1, "updated": 1, "skipped_human": 0}
     after = next(n for n in _nodes(store, LIBRARY_NOTEBOOK) if n["node_id"] == human["node_id"])
     assert after["metadata"]["origin"] == "human"
     assert after["metadata"]["anchors"] == []
-    assert len(_nodes(store, LIBRARY_NOTEBOOK)) == 2
+    codes = [n["metadata"]["sector_code"] for n in _nodes(store, LIBRARY_NOTEBOOK)]
+    assert len(codes) == 3 and len(set(codes)) == 3
+
+
+@pytest.mark.asyncio
+async def test_draft_keeps_edited_drafts(store, tmp_path):
+    """Editing a draft through the PageIndex tools (origin stays 'draft') still protects it."""
+    await _library_with_communities(store, tmp_path)
+    await draft_library_notebook(store, use_llm=False)
+    toolkit = await store._ready_toolkit("project")
+    edited = next(n for n in _nodes(store, LIBRARY_NOTEBOOK) if n["metadata"]["sector_code"] == "000")
+    human_anchor = {"book_id": "someone-else", "scope": "project"}
+    await toolkit.tag_node(
+        LIBRARY_NOTEBOOK,
+        edited["node_id"],
+        metadata={"anchors": [*edited["metadata"]["anchors"], human_anchor]},
+    )
+    assert (
+        next(n for n in _nodes(store, LIBRARY_NOTEBOOK) if n["node_id"] == edited["node_id"])["metadata"]["origin"]
+        == "draft"
+    )
+
+    counts = await draft_library_notebook(store, use_llm=False)
+    assert counts["skipped_human"] == 0  # its code is reserved, so its community moved to a free code
+    after = next(n for n in _nodes(store, LIBRARY_NOTEBOOK) if n["node_id"] == edited["node_id"])
+    assert human_anchor in after["metadata"]["anchors"]
 
 
 @pytest.mark.asyncio
@@ -306,7 +332,7 @@ async def test_draft_book_notebook_skeleton_idempotent(store, tmp_path):
     content = store._content_store("project")
     toolkit = await store._ready_toolkit("project")
     documents = await toolkit.list_documents(card.tree_name)
-    for node, entry in zip(nodes, expected):
+    for node, entry in zip(nodes, expected, strict=True):
         metadata = node["metadata"]
         assert metadata["origin"] == "draft" and metadata["note_kind"] == "note"
         (anchor,) = metadata["anchors"]
@@ -328,3 +354,31 @@ async def test_draft_book_notebook_skeleton_idempotent(store, tmp_path):
     draft_node = nodes[0]
     still = next(n for n in _nodes(store, tree_name) if n["node_id"] == draft_node["node_id"])
     assert still["metadata"] == draft_node["metadata"]
+
+
+@pytest.mark.asyncio
+async def test_relation_sheets_prune_and_removed_book(store, tmp_path):
+    """Manual edges mirror the sheets: a re-anchored sheet drops its edge; removing a book drops its edges."""
+    from parrot.knowledge.bookstore.notebooks import apply_relation_sheets
+
+    a = await _add(store, tmp_path, "alpha-book")
+    b = await _add(store, tmp_path, "beta-book")
+    c = await _add(store, tmp_path, "gamma-book")
+    sheet = await _sheet(store, [{"book_id": a}, {"book_id": b}], title="A~B")
+    await _sheet(store, [{"book_id": a}, {"book_id": c}], title="A~C")
+    assert await apply_relation_sheets(store) == 2
+    catalog = store._catalog("project")
+    manual = lambda: {  # noqa: E731
+        (r.src_book_id, r.dst_book_id) for r in catalog._all_relations() if r.origin == "manual"
+    }
+    assert len(manual()) == 2
+
+    # Re-anchoring the A~B sheet to a single book leaves no edge for it.
+    toolkit = await store._ready_toolkit("project")
+    await toolkit.tag_node(LIBRARY_NOTEBOOK, sheet, metadata={"anchors": [{"book_id": a}]})
+    assert await apply_relation_sheets(store) == 1
+    assert len(manual()) == 1
+
+    # Removing a book deletes its manual edges (a re-added slug must not resurrect them).
+    await store.remove_book(c)
+    assert manual() == set()

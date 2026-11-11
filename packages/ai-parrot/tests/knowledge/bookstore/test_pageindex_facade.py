@@ -327,3 +327,65 @@ async def test_mcp_write_then_bookstore_read(library, facade) -> None:
     section = store.read_section(project_card.book_id, node_id)
     assert [note["node_id"] for note in section["annotations"]] == [added["node_id"]]
     assert section["annotations"][0]["note_tree"] == notebook
+
+
+@pytest.mark.asyncio
+async def test_concurrent_notebook_writes_and_reads(library, facade) -> None:
+    """FEAT-876 §4 / S12: parallel creators and readers leave exactly one ``kind=notes`` row per notebook."""
+    import asyncio
+
+    store, project_card, _ = library
+    node_id = project_card.toc[0].node_id
+    notebook = f"{project_card.book_id}{NOTEBOOK_SUFFIX}"
+
+    async def create() -> None:
+        try:
+            await facade.create_tree(notebook)
+        except ValueError:
+            pass  # a racing creator won; the tree exists
+
+    async def read() -> None:
+        await asyncio.to_thread(store.read_section, project_card.book_id, node_id)
+        await asyncio.to_thread(store.notebook_for, project_card.book_id)
+
+    await asyncio.gather(
+        *(create() for _ in range(4)), *(read() for _ in range(8)), store.ensure_notebook(project_card.book_id)
+    )
+    notes = [c for c in store._catalog("project").list_cards(kind="notes") if c.tree_name == notebook]
+    assert len(notes) == 1 and notes[0].notes_for == project_card.book_id
+    assert all(c.kind == "book" for c in store.list_books())
+
+
+@pytest.mark.asyncio
+async def test_project_and_global_lookups_under_concurrency(library, facade) -> None:
+    """FEAT-876 S11: concurrent reads resolve annotations through each book's own scope only."""
+    import asyncio
+
+    store, project_card, global_card = library
+    for card, scope in ((project_card, "project"), (global_card, "global")):
+        notebook = await store.ensure_notebook(card.book_id, scope=scope)
+        toolkit = await store._ready_toolkit(scope)
+        added = await toolkit.add_node(notebook.tree_name, title=f"note-{scope}", body=scope)
+        await toolkit.tag_node(
+            notebook.tree_name,
+            added["node_id"],
+            metadata={"anchors": [{"book_id": card.book_id, "scope": scope, "node_id": card.toc[0].node_id}]},
+        )
+
+    async def notes(card):
+        section = await asyncio.to_thread(store.read_section, card.book_id, card.toc[0].node_id)
+        return [n["title"] for n in section["annotations"]]
+
+    results = await asyncio.gather(*(notes(project_card) for _ in range(6)), *(notes(global_card) for _ in range(6)))
+    assert results[:6] == [["note-project"]] * 6
+    assert results[6:] == [["note-global"]] * 6
+
+
+@pytest.mark.asyncio
+async def test_unknown_tree_probe_has_no_side_effects(tmp_path, two_scope_locations) -> None:
+    """Reading a tree that exists nowhere raises and creates no scope directory."""
+    facade = LibraryPageIndexToolkit(project_root=tmp_path)
+    before = sorted(p.name for p in tmp_path.rglob("*"))
+    with pytest.raises(FileNotFoundError):
+        await facade.search("no-such-tree", "anything")
+    assert sorted(p.name for p in tmp_path.rglob("*")) == before

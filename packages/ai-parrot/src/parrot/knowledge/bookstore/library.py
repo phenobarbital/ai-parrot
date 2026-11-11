@@ -24,6 +24,7 @@ import logging
 import re
 import secrets
 import shutil
+import sqlite3
 import time
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime, timezone
@@ -129,9 +130,7 @@ def _epub_metadata_title(payload: bytes) -> str | None:
     try:
         with zipfile.ZipFile(io.BytesIO(payload)) as zf:
             container = ElementTree.fromstring(zf.read("META-INF/container.xml"))
-            rootfiles = container.findall(
-                ".//{urn:oasis:names:tc:opendocument:xmlns:container}rootfile"
-            )
+            rootfiles = container.findall(".//{urn:oasis:names:tc:opendocument:xmlns:container}rootfile")
             if not rootfiles:
                 return None
             opf_path = rootfiles[0].get("full-path", "")
@@ -848,20 +847,30 @@ class Bookstore:
         trees = JSONTreeStore(self._location(scope).trees_dir)
         if not trees.exists(tree_name):
             return None
+        try:
+            snapshot_sha = self._tree_snapshot_sha(
+                trees._path_for(tree_name), trees._path_for(tree_name).with_suffix("")
+            )
+        except OSError:
+            snapshot_sha = ""
         card = BookCard(
             book_id=tree_name,
             title=f"Notes — {book.title}" if book is not None else f"Library notebook ({scope})",
             tree_name=tree_name,
             scope=scope,
             source_path=str(trees._path_for(tree_name)),
-            source_sha256="",
+            source_sha256=snapshot_sha,
             source_format="tree",
             added_at=datetime.now(timezone.utc).isoformat(),
             card_origin="fallback",
             kind="notes",
             notes_for=book.book_id if book is not None else None,
         )
-        catalog.upsert(card)
+        try:
+            catalog.upsert(card)
+        except sqlite3.OperationalError as exc:  # read-only library: serve the notebook unregistered
+            logger.debug("notebook %r (%s) not registered (read-only catalog): %s", tree_name, scope, exc)
+            return card.model_copy(update={"scope": scope})
         logger.info("registered notebook %r (%s)", tree_name, scope)
         return card.model_copy(update={"scope": scope})
 
@@ -1176,7 +1185,7 @@ class Bookstore:
         sectors: list[dict[str, Any]] = []
         degraded: Optional[str] = None
         for location in self.locations:
-            if self.library_notebook(location.scope) is None:
+            if await asyncio.to_thread(self.library_notebook, location.scope) is None:
                 continue
             toolkit = await self._ready_toolkit(location.scope)
             tree = await toolkit.get_tree(LIBRARY_NOTEBOOK)
@@ -2163,9 +2172,7 @@ class Bookstore:
         sha256 = hashlib.sha256(payload).hexdigest()
         ebook_metadata_title: str | None = None
         if fmt in ("epub", "mobi"):
-            ebook_metadata_title = await asyncio.to_thread(
-                _extract_ebook_metadata_title, payload, path.suffix
-            )
+            ebook_metadata_title = await asyncio.to_thread(_extract_ebook_metadata_title, payload, path.suffix)
         deadline = time.monotonic() + self._reindex_lock_timeout_s
         source_locks = [
             (self._operation_storage_dir(scope), f"path-{hashlib.sha256(str(path).encode()).hexdigest()}"),
@@ -2555,6 +2562,10 @@ class Bookstore:
             tree_name = staging if staged else name
             backup: Optional[str] = None
             published = False
+            # Re-importing over a live book swaps its tree: snapshot the old nodes so anchors can be remapped.
+            previous_nodes = (
+                await self._anchor_snapshot(scope, existing) if existing is not None and as_kind == "book" else None
+            )
             self._active_staging_slugs.add(slug)
             try:
                 if staged:
@@ -2620,7 +2631,7 @@ class Bookstore:
                         kind="notes",
                         notes_for=notes_for,
                     )
-                if as_kind == "notes" and slug != name or staged:
+                if (as_kind == "notes" and slug != name) or staged:
                     live_exists = JSONTreeStore(trees_dir).exists(slug)
                     if live_exists and as_kind == "notes":
                         stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
@@ -2646,11 +2657,20 @@ class Bookstore:
                 self._invalidate_graph(slug)
             self._content_stores.pop(scope, None)
             catalog.upsert(card)
+            if existing is not None and as_kind == "book" and staged and existing.source_sha256 != sha256:
+                try:
+                    await self.remap_anchors(slug, previous=previous_nodes)
+                except Exception as exc:  # noqa: BLE001 — notes must never fail an import
+                    self.logger.warning("remap_anchors(%r) failed: %s", slug, exc)
             return card, ("adopted" if not staged else "added")
 
         def skip_candidate() -> Optional[BookCard]:
             hit = catalog.find_by_sha(sha256)
-            return hit if hit is not None and hit.kind == as_kind else None
+            if hit is None or hit.kind != as_kind:
+                return None
+            if as_kind == "notes" and hit.notes_for != notes_for:
+                return None  # same notebook bytes targeted at another book: not a duplicate
+            return hit
 
         try:
             async with self._operation_locks(source_locks, deadline):
@@ -2912,6 +2932,18 @@ class Bookstore:
             store.delete_judgements(book_id)
         self._clear_communities()
 
+    def _drop_manual_edges(self, book_id: str) -> None:
+        """Delete the ``origin='manual'`` (relation-sheet) edges touching a removed book, in every store.
+
+        A re-index keeps manual edges (``_invalidate_graph`` only clears computed origins); removing the
+        book itself must not leave an edge to it that a re-added slug would silently resurrect.
+        """
+        for _scope, store in self._stores():
+            try:
+                store.delete_relations(book_id=book_id, origin="manual")
+            except sqlite3.OperationalError as exc:  # read-only library: not ours to prune
+                logger.debug("manual-edge prune skipped for %s: %s", _scope, exc)
+
     async def remove_book(self, book_id: str, *, with_notes: bool = False) -> bool:
         """Remove a book — catalog row, PageIndex tree, and graph edges.
 
@@ -2961,6 +2993,7 @@ class Bookstore:
                     else:
                         catalog.upsert(notebook.model_copy(update={"notes_for": None}))
                 self._invalidate_graph(book_id)
+                self._drop_manual_edges(book_id)
         except TreeLockTimeout as exc:
             raise BookstoreError(f"Re-index already in progress for {card.tree_name!r}") from exc
         return removed

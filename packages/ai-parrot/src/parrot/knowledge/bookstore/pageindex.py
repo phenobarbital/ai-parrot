@@ -20,6 +20,7 @@ catalog but never writes ``library.db``.
 
 from __future__ import annotations
 
+import asyncio
 import functools
 import inspect
 import logging
@@ -232,9 +233,23 @@ class LibraryPageIndexToolkit(AbstractToolkit):
         if kind == "notes" and op in _STRUCTURAL_DENIED_FOR_NOTES:
             raise PageIndexWriteDenied(f"{tree_name!r} is a Bookstore notebook: {op} is not allowed")
 
+    async def _aclassify(self, tree_name: str) -> tuple[str, Optional[BookCard], str]:
+        """:meth:`_classify` off the event loop (catalog reads + filesystem probes)."""
+        return await asyncio.to_thread(self._classify, tree_name)
+
+    async def _aauthorize(self, tree_name: str, op: str) -> None:
+        """:meth:`_authorize` off the event loop."""
+        await asyncio.to_thread(self._authorize, tree_name, op)
+
     async def _toolkit_for(self, tree_name: str) -> PageIndexToolkit:
-        """The ready (reserved-tree-swept) toolkit of the scope that owns ``tree_name``."""
-        scope, _, _ = self._classify(tree_name)
+        """The ready (reserved-tree-swept) toolkit of the scope that owns ``tree_name``.
+
+        A free (unclassified) name that exists nowhere raises ``FileNotFoundError`` without touching
+        any scope directory, so probing an unknown tree has no side effects.
+        """
+        scope, _, kind = await self._aclassify(tree_name)
+        if kind == "free" and not await asyncio.to_thread(self._tree_exists, scope, tree_name):
+            raise FileNotFoundError(f"Tree {tree_name!r} not found in the library")
         return await self._store._ready_toolkit(scope)
 
     # ------------------------------------------------------------------
@@ -242,13 +257,21 @@ class LibraryPageIndexToolkit(AbstractToolkit):
     # ------------------------------------------------------------------
     async def list_trees(self) -> list[str]:
         """List all PageIndex tree names available in the library (project and global)."""
-        names: set[str] = set()
-        for scope in self._scopes():
-            names.update(self._tree_names(scope))
-        return sorted(names)
+
+        def _collect() -> list[str]:
+            names: set[str] = set()
+            for scope in self._scopes():
+                names.update(self._tree_names(scope))
+            return sorted(names)
+
+        return await asyncio.to_thread(_collect)
 
     async def list_library_trees(self) -> list[dict[str, Any]]:
         """List library trees with their scope and kind (book, notes or free)."""
+        return await asyncio.to_thread(self._library_listing)
+
+    def _library_listing(self) -> list[dict[str, Any]]:
+        """Blocking body of :meth:`list_library_trees`."""
         scopes = self._scopes()
         cards = {scope: self._cards(scope) for scope in scopes}
         listing: list[dict[str, Any]] = []
@@ -283,8 +306,8 @@ class LibraryPageIndexToolkit(AbstractToolkit):
         """
         if scope not in self._scopes():
             raise ValueError(f"Unknown library scope {scope!r}; available: {self._scopes()}")
-        self._authorize(tree_name, "create_tree")
-        owner_scope, card, kind = self._classify(tree_name)
+        await self._aauthorize(tree_name, "create_tree")
+        owner_scope, card, kind = await self._aclassify(tree_name)
         # A book notebook (or any catalogued notebook) lives in its owner's scope; only the per-scope
         # ``_library_notes`` may be created in either scope.
         if kind == "notes" and tree_name != LIBRARY_NOTEBOOK and owner_scope != scope:
@@ -296,10 +319,10 @@ class LibraryPageIndexToolkit(AbstractToolkit):
 
     async def rename_tree(self, src: str, dst: str, *, overwrite: bool = False) -> dict[str, Any]:
         """Rename a tree inside one library scope."""
-        self._authorize(src, "rename_tree")
-        self._authorize(dst, "rename_tree")
-        src_scope, _, _ = self._classify(src)
-        holders = [scope for scope in self._scopes() if self._tree_exists(scope, dst)]
+        await self._aauthorize(src, "rename_tree")
+        await self._aauthorize(dst, "rename_tree")
+        src_scope, _, _ = await self._aclassify(src)
+        holders = await asyncio.to_thread(lambda: [scope for scope in self._scopes() if self._tree_exists(scope, dst)])
         if holders and src_scope not in holders:
             raise PageIndexWriteDenied(
                 f"cannot rename {src!r} ({src_scope} library) onto {dst!r} ({holders[0]} library): "
@@ -359,7 +382,7 @@ class LibraryPageIndexToolkit(AbstractToolkit):
         back to summary text only when the content sidecar is missing
         (e.g. a tree imported before this feature).
         """
-        scope, _, _ = self._classify(tree_name)
+        scope, _, _ = await self._aclassify(tree_name)
         toolkit = await self._store._ready_toolkit(scope)
         # BM25 (+ the LLM walk only when a real model is configured: Bookstore's toolkits carry a
         # _NullAdapter otherwise, which would make PageIndex's own retrieve attempt the walk and fail).
@@ -416,7 +439,7 @@ class LibraryPageIndexToolkit(AbstractToolkit):
         effective = list(tree_names[:max_trees])
         groups: dict[str, list[str]] = {}
         for tree_name in effective:
-            scope, _, _ = self._classify(tree_name)
+            scope, _, _ = await self._aclassify(tree_name)
             groups.setdefault(scope, []).append(tree_name)
         merged: list[dict[str, Any]] = []
         for scope, names in groups.items():
@@ -451,7 +474,7 @@ def _make_delegator(name: str, write: bool) -> Callable[..., Any]:
         tree_name = bound.arguments["tree_name"]
         # optimize(apply=False) only plans — a read.
         if write and (name != "optimize" or bound.arguments.get("apply", False)):
-            self._authorize(tree_name, name)
+            await self._aauthorize(tree_name, name)
         toolkit = await self._toolkit_for(tree_name)
         return await getattr(toolkit, name)(*bound.args[1:], **bound.kwargs)
 

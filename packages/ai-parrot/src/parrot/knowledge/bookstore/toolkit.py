@@ -21,6 +21,7 @@ the wrong shape for a stdio tool call, same reasoning that keeps
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Optional
 
 from parrot.tools.toolkit import AbstractToolkit
@@ -129,7 +130,7 @@ class BookstoreToolkit(AbstractToolkit):
         Args:
             book_id: The book to open.
         """
-        return self._bookstore.get_toc(book_id)
+        return await asyncio.to_thread(self._bookstore.get_toc, book_id)
 
     async def search_book(self, book_id: str, query: str, top_k: int = 8) -> list[dict[str, Any]]:
         """Search inside ONE book's chapter tree.
@@ -195,7 +196,7 @@ class BookstoreToolkit(AbstractToolkit):
             node_id: Section id from ``bookstore_get_toc`` or
                 ``bookstore_search_book``.
         """
-        return self._bookstore.read_section(book_id, node_id)
+        return await asyncio.to_thread(self._bookstore.read_section, book_id, node_id)
 
     async def read_pages(
         self, book_id: str, pages: str, max_chars: int = 12000, cursor: Optional[str] = None

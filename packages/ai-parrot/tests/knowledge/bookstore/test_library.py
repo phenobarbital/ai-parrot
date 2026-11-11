@@ -1569,3 +1569,47 @@ async def test_import_tree_sha_covers_bodies_and_segments(store, tmp_path, book_
     body.unlink()
     with pytest.raises(BookstoreError, match="body references"):
         await store.import_tree(src_json)
+
+
+@pytest.mark.asyncio
+async def test_import_tree_reimport_remaps_anchors(store, tmp_path):
+    """Re-importing a changed tree over a live book remaps its notes' anchors, like a re-index does."""
+    src = Bookstore([LibraryLocation(scope="project", root=tmp_path / "srclib")])
+    book = tmp_path / "evolving.md"
+    book.write_text(_chapters(("Chapter One", "alpha"), ("Chapter Two", "beta")), encoding="utf-8")
+    src_card, _ = await src.add_book(book, title="evolving")
+    src_json = src._location("project").trees_dir / f"{src_card.book_id}.json"
+
+    card, status = await store.import_tree(src_json)
+    assert status == "added"
+    ch2 = _node_id_by_title(card.toc, "Chapter Two")
+    note_id = await _anchor_note(store, card.book_id, ch2)
+
+    # The source grows a chapter before "Chapter Two" (its node id shifts, text unchanged).
+    book.write_text(_chapters(("Chapter One", "alpha"), ("Bridge", "gamma"), ("Chapter Two", "beta")), encoding="utf-8")
+    await src.add_book(book, title="evolving")
+    updated, status = await store.import_tree(src_json)
+    assert status == "added" and updated.book_id == card.book_id
+    new_ch2 = _node_id_by_title(updated.toc, "Chapter Two")
+    assert new_ch2 != ch2
+
+    anchors, anchor_status = await _note_anchors(store, updated, note_id)
+    assert anchor_status == "remapped"
+    assert anchors[0]["node_id"] == new_ch2
+
+
+@pytest.mark.asyncio
+async def test_find_books_survives_read_only_catalog(store, book_md, monkeypatch):
+    """find_books on a read-only library degrades instead of raising from lazy notebook registration."""
+    import sqlite3
+
+    await store.add_book(book_md)
+    toolkit = await store._ready_toolkit("project")
+    await toolkit.create_tree("_library_notes")  # on disk, never registered
+
+    def read_only(*_args, **_kwargs):
+        raise sqlite3.OperationalError("attempt to write a readonly database")
+
+    monkeypatch.setattr(store._catalog("project"), "upsert", read_only)
+    result = await store.find_books("anything")
+    assert result["source"] in {"sectors", "catalog_fts"}
