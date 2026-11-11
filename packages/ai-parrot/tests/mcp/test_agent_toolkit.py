@@ -268,7 +268,7 @@ def test_unresolvable_hints_fail_loudly(isolated_registry: AgentRegistry) -> Non
     """Schema inference failures may not result in an empty tool schema."""
 
     class BrokenHintsAgent(Agent):
-        async def run(self, x: "NoSuchType") -> dict:
+        async def run(self, x: "NoSuchType") -> dict:  # noqa: F821
             return {"x": str(x)}
 
     isolated_registry.register_bot_decorator(name="broken", mcp_local=True)(BrokenHintsAgent)
