@@ -85,7 +85,7 @@
       "feature_id": "FEAT-878",
       "feature": "redis-user-stores",
       "spec": "sdd/specs/redis-user-stores.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -93,8 +93,9 @@
       "parallelism_notes": "Root task: creates parrot.userstore (resolver, validation, per-loop Redis client); no dependencies.",
       "assigned_to": null,
       "started_at": "2026-11-11T00:26:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5495-userstore-settings.md"
+      "completed_at": "2026-11-11T00:35:27+00:00",
+      "file": "sdd/tasks/completed/TASK-5495-userstore-settings.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5496",
@@ -163,7 +164,7 @@
       "feature_id": "FEAT-878",
       "feature": "redis-user-stores",
       "spec": "sdd/specs/redis-user-stores.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -171,8 +172,9 @@
       "parallelism_notes": "Uses the already-existing retrieve_vault_credential (agent.py:56); owns agent.py exclusively; no new symbol needed.",
       "assigned_to": null,
       "started_at": "2026-11-11T00:26:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5499-mcp-restore-vault-utils.md"
+      "completed_at": "2026-11-11T00:35:52+00:00",
+      "file": "sdd/tasks/completed/TASK-5499-mcp-restore-vault-utils.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5500",
@@ -471,4 +473,3 @@
     }
   ]
 }
-
