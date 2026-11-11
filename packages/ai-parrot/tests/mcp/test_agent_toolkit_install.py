@@ -48,11 +48,7 @@ def test_seed_agent_section_conflict(tmp_path: Path) -> None:
     path = _config(other_root)
     path.parent.mkdir(parents=True)
     path.write_text(
-        "toolkits:\n"
-        "  agent-x:\n"
-        "    class: parrot.mcp.other.OtherToolkit\n"
-        "    kwargs:\n"
-        "      agent: x\n",
+        "toolkits:\n" "  agent-x:\n" "    class: parrot.mcp.other.OtherToolkit\n" "    kwargs:\n" "      agent: x\n",
         encoding="utf-8",
     )
     other_original = path.read_bytes()
