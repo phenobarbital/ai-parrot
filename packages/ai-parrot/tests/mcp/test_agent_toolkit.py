@@ -20,7 +20,6 @@ from parrot.mcp.agent_toolkit import (
 )
 from parrot.registry.registry import AgentRegistry, MCPLocalExposure
 
-
 class AuditMixin:
     """A user mixin: not an AbstractBot subclass → its names are reserved."""
 
