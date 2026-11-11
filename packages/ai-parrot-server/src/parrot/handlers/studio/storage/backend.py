@@ -73,11 +73,10 @@ class StudioStorageMisconfigured(RuntimeError):
 
 
 def _postgres_switches() -> list[str]:
-    """The phase-2 store switches currently set to ``postgres``."""
-    return [
-        key for key in _STORE_SWITCHES
-        if str(config.get(key, fallback="documentdb") or "documentdb").strip().lower() == "postgres"
-    ]
+    """Return phase-2 store switches currently resolving to ``postgres``."""
+    from parrot.userstore import resolve_store_backend
+
+    return [key for key in _STORE_SWITCHES if resolve_store_backend(key) == "postgres"]
 
 
 def _fail_closed(backend: str, reason: str | None) -> None:
