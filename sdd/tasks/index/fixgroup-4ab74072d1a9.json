@@ -14,14 +14,15 @@
       "feature_id": "FEAT-879",
       "feature": "fixgroup-4ab74072d1a9",
       "spec": "sdd/specs/fixgroup-4ab74072d1a9.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "assigned_to": null,
       "file": "sdd/tasks/active/TASK-5514-real-importer-in-test-mock.md",
-      "discovered_from": "issue:203c75e0c1ac"
+      "discovered_from": "issue:203c75e0c1ac",
+      "started_at": "2026-11-11T02:24:27+00:00"
     }
   ]
 }
