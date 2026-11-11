@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-878 — Redis user stores (MongoDB-free local installs)
 **Spec**: `sdd/specs/redis-user-stores.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5501
@@ -42,6 +42,7 @@ adds one helper, `active_byok_store(app)`, and replaces the four branches with i
 | `packages/ai-parrot-server/tests/studio/test_byok.py` | MODIFY | autouse pin `BYOK_STORE=documentdb` |
 | `packages/ai-parrot-server/tests/studio/test_integration.py` | MODIFY | pin `BYOK_STORE=documentdb` where it fakes DocumentDB (line ~303) |
 | `packages/ai-parrot-server/tests/studio/test_key_source_pa2.py` | MODIFY | pin `BYOK_STORE=documentdb` for cases not already setting `postgres` (only if they fail unpinned) |
+| `packages/ai-parrot-server/tests/unit/test_credentials_store_dispatch.py` | MODIFY | shared wave fix (see TASK-5498) |
 
 ---
 
@@ -233,10 +234,15 @@ async def test_user_byok_providers_redis(redis_byok): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-5502
+- Feature: redis-user-stores
+- Implementation SHA: 3b6790806012f759699020949e27c5bf17ef4178
+- Closed at (UTC): 2026-11-11T02:01:31+00:00
+- Fix commits: none
 
-**Deviations from spec**: none
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1 · Duration: 73s · Tokens: n/a |

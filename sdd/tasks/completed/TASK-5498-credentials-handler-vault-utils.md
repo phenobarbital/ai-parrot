@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-878 — Redis user stores (MongoDB-free local installs)
 **Spec**: `sdd/specs/redis-user-stores.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5497
@@ -269,10 +269,15 @@ async def test_pg_vault_list_and_exists(): ...                          # mocked
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-5498
+- Feature: redis-user-stores
+- Implementation SHA: 3b6790806012f759699020949e27c5bf17ef4178
+- Closed at (UTC): 2026-11-11T02:01:29+00:00
+- Fix commits: 3b6790806012f759699020949e27c5bf17ef4178
 
-**Deviations from spec**: none
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 1 |
+| seat_summary | Seat: gpt-5.6-luna/gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra (attempt 3) · Attempts: 3 · Duration: 924s · Tokens: n/a |

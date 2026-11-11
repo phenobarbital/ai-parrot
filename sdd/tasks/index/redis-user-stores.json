@@ -146,7 +146,7 @@
       "feature_id": "FEAT-878",
       "feature": "redis-user-stores",
       "spec": "sdd/specs/redis-user-stores.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -156,8 +156,9 @@
       "parallelism_notes": "Calls list_vault_credentials / vault_credential_exists added by TASK-5497 (parrot/security/vault_utils.py).",
       "assigned_to": null,
       "started_at": "2026-11-11T00:26:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5498-credentials-handler-vault-utils.md"
+      "completed_at": "2026-11-11T02:01:29+00:00",
+      "file": "sdd/tasks/completed/TASK-5498-credentials-handler-vault-utils.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5499",
@@ -227,7 +228,7 @@
       "feature_id": "FEAT-878",
       "feature": "redis-user-stores",
       "spec": "sdd/specs/redis-user-stores.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -237,8 +238,9 @@
       "parallelism_notes": "Imports get_user_llm_key_store and mask_api_key created by TASK-5501 (parrot/auth/broker/__init__.py, byok_redis.py).",
       "assigned_to": null,
       "started_at": "2026-11-11T00:26:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5502-byok-redis-studio.md"
+      "completed_at": "2026-11-11T02:01:31+00:00",
+      "file": "sdd/tasks/completed/TASK-5502-byok-redis-studio.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5503",
@@ -268,7 +270,7 @@
       "feature_id": "FEAT-878",
       "feature": "redis-user-stores",
       "spec": "sdd/specs/redis-user-stores.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -278,8 +280,9 @@
       "parallelism_notes": "RedisMCPConfigStore wraps RedisDocumentStore + USER_MCP_CONFIGS from TASK-5496.",
       "assigned_to": null,
       "started_at": "2026-11-11T00:26:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5504-mcp-configs-redis.md"
+      "completed_at": "2026-11-11T02:01:32+00:00",
+      "file": "sdd/tasks/completed/TASK-5504-mcp-configs-redis.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5505",
@@ -288,7 +291,7 @@
       "feature_id": "FEAT-878",
       "feature": "redis-user-stores",
       "spec": "sdd/specs/redis-user-stores.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -298,8 +301,9 @@
       "parallelism_notes": "RedisTelegramMCPStore wraps RedisDocumentStore + TELEGRAM_USER_MCP_CONFIGS from TASK-5496; gate uses resolve_store_backend.",
       "assigned_to": null,
       "started_at": "2026-11-11T00:26:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5505-telegram-mcp-redis.md"
+      "completed_at": "2026-11-11T02:01:33+00:00",
+      "file": "sdd/tasks/completed/TASK-5505-telegram-mcp-redis.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5506",

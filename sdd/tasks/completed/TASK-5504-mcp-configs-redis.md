@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-878 — Redis user stores (MongoDB-free local installs)
 **Spec**: `sdd/specs/redis-user-stores.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5496
@@ -37,6 +37,7 @@ switch (default `redis`) and a Redis store that preserves soft delete and "`crea
 | `packages/ai-parrot-server/src/parrot/handlers/mcp_persistence.py` | MODIFY | dispatch in three methods |
 | `packages/ai-parrot-server/tests/unit/test_mcp_persistence_redis.py` | CREATE | Redis tests |
 | `packages/ai-parrot/tests/unit/test_mcp_persistence.py` | MODIFY | autouse pin `MCP_CONFIGS_STORE=documentdb` |
+| `packages/ai-parrot-server/tests/unit/test_credentials_store_dispatch.py` | MODIFY | shared wave fix (see TASK-5498) |
 
 ---
 
@@ -252,10 +253,15 @@ async def test_remove_absent_returns_false(svc): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-5504
+- Feature: redis-user-stores
+- Implementation SHA: 3b6790806012f759699020949e27c5bf17ef4178
+- Closed at (UTC): 2026-11-11T02:01:32+00:00
+- Fix commits: none
 
-**Deviations from spec**: none
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 277s · Tokens: n/a |

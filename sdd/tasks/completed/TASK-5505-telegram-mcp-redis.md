@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-878 — Redis user stores (MongoDB-free local installs)
 **Spec**: `sdd/specs/redis-user-stores.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5496
@@ -42,6 +42,7 @@ so a DocumentDB-less deployment never blocks a Telegram login). FEAT-878 adds `T
 | `packages/ai-parrot-integrations/tests/integrations/telegram/test_mcp_persistence_redis.py` | CREATE | Redis + gate tests |
 | `packages/ai-parrot-integrations/tests/integrations/telegram/test_mcp_documentdb_gate.py` | MODIFY | autouse pin `TELEGRAM_MCP_STORE=documentdb` |
 | `packages/ai-parrot-integrations/tests/integrations/telegram/test_mcp_commands.py` | MODIFY | autouse pin `TELEGRAM_MCP_STORE=documentdb` |
+| `packages/ai-parrot-server/tests/unit/test_credentials_store_dispatch.py` | MODIFY | shared wave fix (see TASK-5498) |
 
 ---
 
@@ -304,10 +305,15 @@ async def test_telegram_redis_roundtrip(svc):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-5505
+- Feature: redis-user-stores
+- Implementation SHA: 3b6790806012f759699020949e27c5bf17ef4178
+- Closed at (UTC): 2026-11-11T02:01:33+00:00
+- Fix commits: none
 
-**Deviations from spec**: none
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-sol · Backend: codex · Model: gpt-5.6-sol · Attempts: 1 · Duration: 199s · Tokens: n/a |
