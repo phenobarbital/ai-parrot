@@ -956,6 +956,8 @@ all-fast = [
 [project.entry-points."navigator_session.vault_targets"]
 parrot_user_credentials = "parrot.vault_targets:user_credentials_factory"
 parrot_user_llm_keys = "parrot.vault_targets:user_llm_keys_factory"
+parrot_redis_user_credentials = "parrot.vault_targets:redis_user_credentials_factory"
+parrot_redis_user_llm_keys = "parrot.vault_targets:redis_user_llm_keys_factory"
 
 [project.urls]
 Homepage = "https://github.com/phenobarbital/ai-parrot"

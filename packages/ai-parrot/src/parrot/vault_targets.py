@@ -260,3 +260,124 @@ def user_credentials_factory(resources: Mapping[str, Any]) -> Optional[UserCrede
 def user_llm_keys_factory(resources: Mapping[str, Any]) -> Optional[UserLlmKeysTarget]:
     """Entry-point factory for ``user_llm_keys`` (needs DocumentDB)."""
     return _targets(resources, UserLlmKeysTarget)
+
+
+class RedisDocumentTarget(DocumentDbTarget):
+    """DocumentDbTarget whose I/O goes through RedisDocumentStore (FEAT-878). Same refs, records and contexts."""
+
+    def __init__(self, documents: Any, quarantine: Any) -> None:
+        self._documents = documents
+        self._quarantine = quarantine
+
+    async def iter_batches(self, batch_size: int) -> AsyncIterator[list[VaultRow]]:
+        """Iterate Redis documents in deterministic identity order."""
+        if batch_size < 1:
+            raise ValueError("batch_size must be >= 1")
+        documents = [document async for document in self._documents.scan()]
+        documents.sort(key=lambda doc: tuple(str(doc.get(name)) for name in self.identity_fields))
+        for start in range(0, len(documents), batch_size):
+            yield [self._row(doc) for doc in documents[start : start + batch_size]]
+
+    async def write(
+        self, row: Any, blobs: Mapping[str, Optional[bytes]], key_version: int
+    ) -> None:
+        """Replace the sealed field and record key_version.
+
+        Raises:
+            ValueError: If ``blobs`` names unknown fields or is empty.
+            LookupError: If the document no longer exists.
+        """
+        unknown = set(blobs) - {self.encrypted_field}
+        if unknown or not blobs:
+            raise ValueError(f"unknown encrypted fields for {self.name}: {sorted(unknown)}")
+        blob = blobs[self.encrypted_field]
+        if blob is None:
+            raise ValueError(f"{self.name} requires a value for {self.encrypted_field}")
+        update = {
+            self.encrypted_field: base64.b64encode(bytes(blob)).decode("ascii"),
+            "key_version": key_version,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if not await self._documents.update(dict(row.identity), update):
+            raise LookupError(f"{row.ref} not found")
+
+    async def quarantine(self, row: Any, reason: str, run_id: str) -> None:
+        """Move a Redis document to its quarantine collection."""
+        identity = dict(row.identity)
+        document = await self._documents.get(identity)
+        if document is None:
+            raise LookupError(f"{row.ref} not found")
+        await self._quarantine.put(
+            {
+                **document,
+                "quarantined_at": datetime.now(timezone.utc).isoformat(),
+                "reason": reason,
+                "run_id": run_id,
+            }
+        )
+        await self._documents.delete(identity)
+
+    async def restore_raw(self, source: BackupSource) -> int:
+        """Restore backed-up Redis documents and remove their quarantine copies."""
+        count = 0
+        async for record in source.read(self.name):
+            document = dict(record["document"])
+            await self._documents.put(document)
+            await self._quarantine.delete(dict(record["identity"]))
+            count += 1
+        return count
+
+
+class RedisUserCredentialsTarget(RedisDocumentTarget):
+    """Redis target for sealed user credentials."""
+
+    name = "redis:user_credentials"
+    collection = UserCredentialsTarget.collection
+    purpose = UserCredentialsTarget.purpose
+    identity_fields = UserCredentialsTarget.identity_fields
+    encrypted_field = UserCredentialsTarget.encrypted_field
+    _context = UserCredentialsTarget._context
+
+
+class RedisUserLlmKeysTarget(RedisDocumentTarget):
+    """Redis target for sealed user LLM keys."""
+
+    name = "redis:user_llm_keys"
+    collection = UserLlmKeysTarget.collection
+    purpose = UserLlmKeysTarget.purpose
+    identity_fields = UserLlmKeysTarget.identity_fields
+    encrypted_field = UserLlmKeysTarget.encrypted_field
+    _context = UserLlmKeysTarget._context
+
+
+def _redis_target(switch: str, cls: type, spec_name: str) -> Optional[RedisDocumentTarget]:
+    """Target over Redis when ``switch`` resolves to redis, else None."""
+    try:
+        from parrot.userstore import RedisDocumentStore, resolve_store_backend
+        from parrot.userstore.collections import CollectionSpec, USER_CREDENTIALS, USER_LLM_KEYS
+
+        if resolve_store_backend(switch) != "redis":
+            return None
+        specs = {
+            USER_CREDENTIALS.name: USER_CREDENTIALS,
+            USER_LLM_KEYS.name: USER_LLM_KEYS,
+        }
+        spec = specs[spec_name]
+        quarantine_spec = CollectionSpec(
+            spec.name + QUARANTINE_SUFFIX,
+            spec.key_fields,
+            spec.index_fields,
+        )
+        return cls(RedisDocumentStore(spec), RedisDocumentStore(quarantine_spec))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def redis_user_credentials_factory(resources: Mapping[str, Any]) -> Optional[RedisUserCredentialsTarget]:
+    """Entry-point factory for ``user_credentials`` in Redis (VAULT_STORE=redis)."""
+    return _redis_target("VAULT_STORE", RedisUserCredentialsTarget, "user_credentials")
+
+
+def redis_user_llm_keys_factory(resources: Mapping[str, Any]) -> Optional[RedisUserLlmKeysTarget]:
+    """Entry-point factory for ``user_llm_keys`` in Redis (BYOK_STORE=redis)."""
+    return _redis_target("BYOK_STORE", RedisUserLlmKeysTarget, "user_llm_keys")
