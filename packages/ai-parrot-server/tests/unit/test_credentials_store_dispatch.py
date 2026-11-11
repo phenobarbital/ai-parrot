@@ -28,9 +28,15 @@ async def redis_vault(monkeypatch: pytest.MonkeyPatch):
         yield
 
 
+class _DirectHandler(CredentialsHandler):
+    """Handler whose read-only ``request`` property is shadowed so tests can inject a double."""
+
+    request = None  # type: ignore[assignment]
+
+
 def _handler(session: dict[str, object], name: str | None = None) -> CredentialsHandler:
     """Construct a direct-invocation handler with simple response doubles."""
-    handler = CredentialsHandler.__new__(CredentialsHandler)
+    handler = _DirectHandler.__new__(_DirectHandler)
     handler.logger = MagicMock()
     handler._session = session
     handler.request = MagicMock()
