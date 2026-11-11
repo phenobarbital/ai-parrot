@@ -23,11 +23,12 @@ import itertools
 import logging
 import re
 import secrets
+import shutil
 import time
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, AsyncIterator, Awaitable, Callable, Optional
+from typing import Any, AsyncIterator, Awaitable, Callable, Literal, Optional
 
 from parrot.knowledge.pageindex.content_store import NodeContentStore
 from parrot.knowledge.pageindex.layout import PDFStructureError
@@ -2394,6 +2395,328 @@ class Bookstore:
         if relate:
             await self.relate_books([card.book_id], communities=False)
         return card, status
+
+    # ------------------------------------------------------------------
+    # Tree import (FEAT-876)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _tree_snapshot_sha(json_path: Path, sidecar_dir: Path) -> str:
+        """sha256 over the tree JSON and the sorted ``(relative path, sha256)`` manifest of its sidecar files."""
+        digest = hashlib.sha256()
+        digest.update(json_path.read_bytes())
+        if sidecar_dir.is_dir():
+            entries: list[tuple[str, str]] = []
+            for file in sidecar_dir.rglob("*"):
+                if file.is_file():
+                    entries.append((file.relative_to(sidecar_dir).as_posix(), hashlib.sha256(file.read_bytes()).hexdigest()))
+            for rel, file_sha in sorted(entries):
+                digest.update(f"{rel}\0{file_sha}\n".encode())
+        return digest.hexdigest()
+
+    @staticmethod
+    def _copy_tree_files(src_json: Path, src_dir: Path, dst_trees_dir: Path, staging: str) -> None:
+        """Copy exactly ``<name>.json`` and the ``<name>/`` sidecar files into ``<staging>`` (blocking)."""
+        dst_trees_dir.mkdir(parents=True, exist_ok=True)
+        # JSON first: a crash leaves a ``--staging-`` tree that ``_sweep_reserved_trees`` can recognise.
+        shutil.copy2(src_json, dst_trees_dir / f"{staging}.json")
+        if src_dir.is_dir():
+            dst_dir = dst_trees_dir / staging
+            dst_dir.mkdir(parents=True, exist_ok=True)
+            for file in sorted(src_dir.rglob("*")):
+                target = dst_dir / file.relative_to(src_dir)
+                if file.is_dir():
+                    target.mkdir(parents=True, exist_ok=True)
+                elif file.is_file():
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(file, target)
+
+    @staticmethod
+    def _remove_staging_files(trees_dir: Path, staging: str) -> None:
+        """Best-effort removal of a staging tree's JSON and sidecar directory (blocking)."""
+        shutil.rmtree(trees_dir / staging, ignore_errors=True)
+        (trees_dir / f"{staging}.json").unlink(missing_ok=True)
+
+    @staticmethod
+    def _resolve_import_source(source: str | Path, trees_dir: Path) -> tuple[Path, bool]:
+        """Return ``(tree_json_path, inside_library)`` for a path or an in-library tree name (blocking)."""
+        raw = Path(source).expanduser()
+        if raw.suffix == ".json" or raw.is_file():
+            path = raw.resolve()
+            if not path.is_file():
+                raise BookstoreError(f"Tree file not found: {path}")
+        else:
+            path = trees_dir / f"{source}.json"
+            if not path.is_file():
+                raise BookstoreError(f"Tree not found (not a .json path nor a tree in the library): {source}")
+            path = path.resolve()
+        return path, path.parent == trees_dir.resolve()
+
+    async def _validate_imported_tree(self, scope: str, tree_name: str, as_kind: str) -> dict[str, Any]:
+        """Check document count and that every body/segment reference resolves; return the tree."""
+        toolkit = self._toolkit(scope)
+        tree = await toolkit.get_tree(tree_name)
+        documents = await toolkit.list_documents(tree_name)
+        if as_kind == "book" and len(documents) != 1:
+            raise BookstoreError(
+                f"A book tree must hold exactly one document, found {len(documents)} — "
+                "use as_kind='notes' to import it as a notebook"
+            )
+        missing_revisions = [d["doc_id"] for d in documents if not d.get("available")]
+        if missing_revisions:
+            raise BookstoreError(f"Unresolvable segment revisions for documents {missing_revisions}")
+        content = NodeContentStore(self._location(scope).trees_dir)
+
+        def missing_bodies() -> list[str]:
+            bad: list[str] = []
+            for node in structure_to_list(tree.get("structure", [])):
+                ref = node.get("body_ref") if isinstance(node, dict) else None
+                if isinstance(ref, str) and ref:
+                    try:
+                        found = content.load_body(tree_name, ref) is not None
+                    except ValueError:
+                        found = False
+                    if not found:
+                        bad.append(str(node.get("node_id") or ref))
+            return bad
+
+        bad_nodes = await asyncio.to_thread(missing_bodies)
+        if bad_nodes:
+            raise BookstoreError(f"Unresolvable body references for nodes {bad_nodes[:10]}")
+        return tree
+
+    async def import_tree(
+        self,
+        source: str | Path,
+        scope: str = "project",
+        *,
+        as_kind: Literal["book", "notes"] = "book",
+        notes_for: Optional[str] = None,
+        title: Optional[str] = None,
+        force: bool = False,
+    ) -> tuple[BookCard, str]:
+        """Adopt an existing PageIndex tree as a book or a notebook, without re-ingesting.
+
+        ``source`` is a tree JSON path outside the library (copied; the original is untouched) or an uncatalogued
+        tree name inside it (adopted in place). Status ``added`` | ``adopted`` | ``skipped`` (same snapshot sha).
+
+        Raises:
+            BookstoreError: ``as_kind='book'`` with != 1 document; a ``_notes`` tree without ``as_kind='notes'``;
+                ``notes_for`` already has a notebook and not ``force``; unresolvable body/segment references.
+        """
+        if as_kind not in ("book", "notes"):
+            raise BookstoreError(f"as_kind must be 'book' or 'notes', got {as_kind!r}")
+        toolkit = await self._ready_toolkit(scope)
+        catalog = self._catalog(scope)
+        trees_dir = self._location(scope).trees_dir
+        try:
+            json_path, in_library = await asyncio.to_thread(self._resolve_import_source, source, trees_dir)
+        except OSError as exc:
+            raise BookstoreError(f"Cannot read tree {source}: {exc}") from exc
+        name = json_path.stem
+        try:
+            JSONTreeStore._validate_name(name)
+        except ValueError as exc:
+            raise BookstoreError(f"Invalid tree name {name!r}: {exc}") from exc
+        if _is_reserved_tree_name(name):
+            raise BookstoreError(f"Tree name {name!r} is reserved for in-flight operations")
+        notebook_named = name == LIBRARY_NOTEBOOK or name.endswith(NOTEBOOK_SUFFIX)
+        if as_kind == "book" and notebook_named:
+            raise BookstoreError(
+                f"Tree {name!r} looks like a notebook — import it with as_kind='notes' (a book slug must not "
+                f"end with {NOTEBOOK_SUFFIX!r})"
+            )
+        notes_book: Optional[BookCard] = None
+        target: Optional[str] = None
+        if as_kind == "notes":
+            if notes_for is not None:
+                notes_book = catalog.get(notes_for)
+                if notes_book is None or notes_book.kind != "book":
+                    raise BookstoreError(f"notes_for {notes_for!r} is not a catalogued book in the {scope} library")
+            target = notebook_tree_name(notes_for)
+        sidecar = json_path.parent / name
+        try:
+            sha256 = await asyncio.to_thread(self._tree_snapshot_sha, json_path, sidecar)
+        except OSError as exc:
+            raise BookstoreError(f"Cannot read tree {json_path}: {exc}") from exc
+        deadline = time.monotonic() + self._reindex_lock_timeout_s
+        source_locks = [
+            (self._operation_storage_dir(scope), f"path-{hashlib.sha256(str(json_path).encode()).hexdigest()}"),
+            (self._operation_storage_dir(scope), f"sha-{sha256}"),
+        ]
+        # In-library book trees and notebooks already named after their target are adopted without a copy.
+        adopt_in_place = in_library and (as_kind == "book" or name == target)
+
+        async def work(slug: str, existing: Optional[BookCard], release: Optional[Callable[[], Awaitable[None]]]):
+            """Stage/copy, validate, publish and catalog one tree while source/book locks are held."""
+            staged = not adopt_in_place and not (in_library and as_kind == "notes")
+            staging = self._staging_tree_name(slug) if staged else None
+            tree_name = staging if staged else name
+            backup: Optional[str] = None
+            published = False
+            self._active_staging_slugs.add(slug)
+            try:
+                if staged:
+                    await asyncio.to_thread(self._copy_tree_files, json_path, sidecar, trees_dir, staging)
+                if release is not None:
+                    await release()
+                tree = await self._validate_imported_tree(scope, tree_name, as_kind)
+                if as_kind == "book":
+                    toc_entries, toc_digest = derive_toc(tree)
+                    draft = await self._draft_card(
+                        path=json_path,
+                        tree_name=tree_name,
+                        scope=scope,
+                        doc_description=tree.get("doc_description") or "",
+                        toc_digest=toc_digest,
+                        toc_entries=toc_entries,
+                        tree=tree,
+                    )
+                    if title:
+                        final_title = title
+                    else:
+                        taken_titles = {c.title.casefold() for c in self.list_books() if c.book_id != slug}
+                        final_title = disambiguate_title(
+                            draft.title, taken_titles, toc_entries=toc_entries, stem=json_path.stem
+                        )
+                    card = BookCard(
+                        book_id=slug,
+                        title=final_title,
+                        authors=draft.authors,
+                        year=draft.year,
+                        language=draft.language,
+                        topics=draft.topics,
+                        summary=draft.summary,
+                        toc_digest=toc_digest,
+                        toc=toc_entries,
+                        tree_name=slug,
+                        scope=scope,  # type: ignore[arg-type]
+                        source_path=str(json_path),
+                        source_sha256=sha256,
+                        source_format="tree",
+                        page_count=max((e.end_page for e in toc_entries if e.end_page is not None), default=None),
+                        chapter_count=sum(1 for e in toc_entries if e.depth == 1),
+                        added_at=datetime.now(timezone.utc).isoformat(),
+                        card_origin="manual" if title else ("llm" if self.has_llm else "fallback"),  # type: ignore[arg-type]
+                        genre=draft.genre,  # type: ignore[arg-type]
+                        traditions=draft.traditions,
+                        period=draft.period,
+                    )
+                else:
+                    default_title = (
+                        f"Notes — {notes_book.title}" if notes_book is not None else f"Library notebook ({scope})"
+                    )
+                    card = BookCard(
+                        book_id=slug,
+                        title=title or default_title,
+                        tree_name=slug,
+                        scope=scope,  # type: ignore[arg-type]
+                        source_path=str(json_path),
+                        source_sha256=sha256,
+                        source_format="tree",
+                        added_at=datetime.now(timezone.utc).isoformat(),
+                        card_origin="manual" if title else "fallback",
+                        kind="notes",
+                        notes_for=notes_for,
+                    )
+                if as_kind == "notes" and slug != name or staged:
+                    live_exists = JSONTreeStore(trees_dir).exists(slug)
+                    if live_exists and as_kind == "notes":
+                        stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+                        backup = f"{slug}_{stamp}"
+                        await toolkit.rename_tree(slug, backup)
+                    await toolkit.rename_tree(tree_name, slug, overwrite=live_exists and as_kind == "book")
+                    published = True
+            except BaseException:  # noqa: BLE001 — includes CancelledError so a cancelled import cleans up
+                if backup is not None and not published:
+                    try:
+                        await toolkit.rename_tree(backup, slug)
+                    except Exception:  # noqa: BLE001 — best-effort restore
+                        logger.warning("Could not restore %r from %r", slug, backup, exc_info=True)
+                if staged:
+                    try:
+                        await asyncio.to_thread(self._remove_staging_files, trees_dir, staging)
+                    except Exception:  # noqa: BLE001 — best-effort cleanup
+                        logger.debug("Cleanup of tree %r failed", staging, exc_info=True)
+                raise
+            finally:
+                self._active_staging_slugs.discard(slug)
+            if existing is not None and as_kind == "book" and existing.source_sha256 != sha256:
+                self._invalidate_graph(slug)
+            self._content_stores.pop(scope, None)
+            catalog.upsert(card)
+            return card, ("adopted" if not staged else "added")
+
+        def skip_candidate() -> Optional[BookCard]:
+            hit = catalog.find_by_sha(sha256)
+            return hit if hit is not None and hit.kind == as_kind else None
+
+        try:
+            async with self._operation_locks(source_locks, deadline):
+                hit = skip_candidate()
+                if hit is not None and not force:
+                    return hit.model_copy(update={"scope": scope}), "skipped"
+
+                if as_kind == "notes":
+                    slug = target  # type: ignore[assignment]
+                    async with self._operation_locks([(self._operation_storage_dir(scope), f"book-{slug}")], deadline):
+                        if not (in_library and name == slug) and not force and (
+                            catalog.get(slug) is not None or JSONTreeStore(trees_dir).exists(slug)
+                        ):
+                            raise BookstoreError(
+                                f"{slug!r} already exists — pass force=True to replace it "
+                                f"(the old notebook is kept as {slug}_<UTC timestamp>)"
+                            )
+                        return await work(slug, catalog.get(slug), None)
+
+                if adopt_in_place:
+                    slug = name
+                    async with self._operation_locks([(self._operation_storage_dir(scope), f"book-{slug}")], deadline):
+                        existing = catalog.get(slug)
+                        if existing is not None and not force:
+                            raise BookstoreError(f"Tree {slug!r} is already catalogued — pass force=True to re-card it")
+                        for other_scope, other in self._stores():
+                            if other_scope != scope and other.get(slug) is not None:
+                                raise BookstoreError(f"Book id {slug!r} already exists in the {other_scope} library")
+                        return await work(slug, existing, None)
+
+                by_path = catalog.find_by_path(str(json_path))
+                if by_path is not None and by_path.kind == "book":
+                    slug = by_path.book_id
+                    async with self._operation_locks([(self._operation_storage_dir(scope), f"book-{slug}")], deadline):
+                        return await work(slug, by_path, None)
+
+                own_storage_dir = self._operation_storage_dir(scope)
+                allocation_locks = [
+                    (location.root / ".bookstore-operations", "allocation")
+                    for location in self.locations
+                    if location.scope == scope or location.root.exists()
+                ]
+                async with AsyncExitStack() as allocations:
+                    for storage_dir, lock_name in sorted(
+                        allocation_locks, key=lambda item: (str(item[0].resolve()), item[1])
+                    ):
+                        try:
+                            await allocations.enter_async_context(
+                                tree_lock(storage_dir, lock_name, timeout=self._lock_remaining(deadline))
+                            )
+                        except TreeLockTimeout:
+                            raise
+                        except OSError:
+                            if storage_dir == own_storage_dir:
+                                raise
+                            self.logger.debug("Skipping allocation lock for read-only %s", storage_dir)
+                    slug = unique_slug(slugify(title or name), self._all_taken_slugs())
+                    if slug.endswith(NOTEBOOK_SUFFIX):
+                        raise BookstoreError(f"A book slug must not end with {NOTEBOOK_SUFFIX!r}: {slug!r}")
+                    async with self._operation_locks([(own_storage_dir, f"book-{slug}")], deadline):
+
+                        async def release_allocation() -> None:
+                            """Release global slug allocation once the staging tree reserves the slug."""
+                            await allocations.aclose()
+
+                        return await work(slug, None, release_allocation)
+        except TreeLockTimeout as exc:
+            raise BookstoreError(f"Import already in progress for tree {json_path} or its book") from exc
 
     async def _draft_card(
         self,
