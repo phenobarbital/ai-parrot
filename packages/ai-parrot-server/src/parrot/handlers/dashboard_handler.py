@@ -141,8 +141,8 @@ class DashboardHandler(BaseView):
         }
 
         if not await get_dashboard_store().create_dashboard(doc):
-            return self.error(
-                response={"message": f"Dashboard '{dashboard_id}' already exists"},
+            return self.json_response(
+                {"message": f"Dashboard '{dashboard_id}' already exists"},
                 status=409,
             )
 
@@ -379,8 +379,8 @@ class DashboardTabHandler(BaseView):
             "updated_at": now,
         }
         if not await store.create_tab(doc):
-            return self.error(
-                response={"message": f"Tab '{tab_id}' already exists"},
+            return self.json_response(
+                {"message": f"Tab '{tab_id}' already exists"},
                 status=409,
             )
 
