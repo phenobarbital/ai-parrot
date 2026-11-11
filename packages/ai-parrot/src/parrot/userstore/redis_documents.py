@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator, Callable, Mapping
@@ -42,6 +43,7 @@ class RedisDocumentStore:
         self.spec = spec
         self._client = client
         self._prefix = prefix
+        self._write_lock = asyncio.Lock()
         self.logger = logging.getLogger("parrot.userstore.redis")
 
     @property
@@ -78,35 +80,36 @@ class RedisDocumentStore:
     ) -> dict[str, Any] | None:
         """Apply one watched document mutation and maintain its secondary indexes."""
         doc_key = self._doc_key(doc_id)
-        for _attempt in range(_MAX_RETRIES):
-            try:
-                async with self.client.pipeline(transaction=True) as pipe:
-                    await pipe.watch(doc_key)
-                    raw = await pipe.get(doc_key)
-                    old = json.loads(raw) if raw else None
-                    new = build(old)
-                    pipe.multi()
-                    if new is None:
-                        pipe.delete(doc_key)
-                    else:
-                        pipe.set(doc_key, _dumps(new))
+        async with self._write_lock:
+            for _attempt in range(_MAX_RETRIES):
+                try:
+                    async with self.client.pipeline(transaction=True) as pipe:
+                        await pipe.watch(doc_key)
+                        raw = await pipe.get(doc_key)
+                        old = json.loads(raw) if raw else None
+                        new = build(old)
+                        pipe.multi()
+                        if new is None:
+                            pipe.delete(doc_key)
+                        else:
+                            pipe.set(doc_key, _dumps(new))
 
-                    for field in self.spec.index_fields:
-                        old_value = old.get(field) if old is not None else None
-                        new_value = new.get(field) if new is not None else None
-                        if old_value is not None and (new_value is None or str(old_value) != str(new_value)):
-                            pipe.srem(self._index_key(field, old_value), doc_id)
-                        if new_value is not None and (old_value is None or str(old_value) != str(new_value)):
-                            pipe.sadd(self._index_key(field, new_value), doc_id)
+                        for field in self.spec.index_fields:
+                            old_value = old.get(field) if old is not None else None
+                            new_value = new.get(field) if new is not None else None
+                            if old_value is not None and (new_value is None or str(old_value) != str(new_value)):
+                                pipe.srem(self._index_key(field, old_value), doc_id)
+                            if new_value is not None and (old_value is None or str(old_value) != str(new_value)):
+                                pipe.sadd(self._index_key(field, new_value), doc_id)
 
-                    if new is None:
-                        pipe.srem(self._all_key(), doc_id)
-                    elif old is None:
-                        pipe.sadd(self._all_key(), doc_id)
-                    await pipe.execute()
-                    return old if new is None else new
-            except WatchError:
-                continue
+                        if new is None:
+                            pipe.srem(self._all_key(), doc_id)
+                        elif old is None:
+                            pipe.sadd(self._all_key(), doc_id)
+                        await pipe.execute()
+                        return old if new is None else new
+                except WatchError:
+                    continue
         raise RuntimeError("Redis document write conflicted too many times")
 
     async def get(self, key: Mapping[str, Any]) -> dict[str, Any] | None:
