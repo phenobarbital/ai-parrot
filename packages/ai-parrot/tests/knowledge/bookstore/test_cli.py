@@ -410,3 +410,191 @@ def test_cli_update_clear_flags_conflict(tmp_path, monkeypatch) -> None:
         card = _persisted(tmp_path, book_id)
         assert card.authors == ["Ann", "Bob"]
         assert card.topics == ["x", "y"]
+
+
+# ----------------------------------------------------------------------
+# FEAT-876 TASK-5483 — notebooks surface
+# ----------------------------------------------------------------------
+def _notebook_env(tmp_path, monkeypatch, lib_name: str = "lib"):
+    monkeypatch.setenv(ENV_LIBRARY_DIR, str(tmp_path / lib_name))
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(bookstore_cli, "_INVOCATION_CWD", str(tmp_path))
+
+
+def _cli_add(tmp_path, slug: str):
+    path = tmp_path / f"{slug}.md"
+    path.write_text(SAMPLE_BOOK + f"\n{slug} unique sha.\n", encoding="utf-8")
+    result = CliRunner().invoke(bookstore_cli.bookstore, ["add", str(path), "--no-llm"])
+    assert result.exit_code == 0, result.output
+    return slug
+
+
+def test_cli_add_import_and_notebook_draft(tmp_path, monkeypatch):
+    import json as jsonlib
+
+    # Build a real tree in a throwaway library, then import it into "lib".
+    _notebook_env(tmp_path, monkeypatch, "srclib")
+    _cli_add(tmp_path, "imported")
+    src_json = tmp_path / "srclib" / "trees" / "imported.json"
+    assert src_json.is_file()
+
+    _notebook_env(tmp_path, monkeypatch)
+    runner = CliRunner()
+    # Relative .json path is anchored to the invocation directory.
+    result = runner.invoke(bookstore_cli.bookstore, ["add", "--import", "srclib/trees/imported.json", "--no-llm"])
+    assert result.exit_code == 0, result.output
+    assert "added: imported (project)" in result.output
+    assert (tmp_path / "lib" / "trees" / "imported.json").is_file()
+    again = runner.invoke(bookstore_cli.bookstore, ["add", "--import", str(src_json), "--no-llm"])
+    assert again.exit_code == 0, again.output
+    assert "skipped: imported (project)" in again.output
+
+    # Plain add still validates the file exists, with click's wording.
+    missing = runner.invoke(bookstore_cli.bookstore, ["add", "missing.md", "--no-llm"])
+    assert missing.exit_code == 2
+    assert "does not exist" in missing.output
+    folder = runner.invoke(bookstore_cli.bookstore, ["add", str(tmp_path), "--no-llm"])
+    assert folder.exit_code == 2
+    assert "is a directory" in folder.output
+    # Unknown in-library tree name with --import is a clean error, not a traceback.
+    unknown = runner.invoke(bookstore_cli.bookstore, ["add", "--import", "no-such-tree", "--no-llm"])
+    assert unknown.exit_code == 1
+    assert "Tree not found" in unknown.output
+    # --as notes / --for need --import.
+    for args in (["--as", "notes"], ["--for", "imported"]):
+        bad = runner.invoke(bookstore_cli.bookstore, ["add", str(src_json), "--no-llm", *args])
+        assert bad.exit_code == 2, bad.output
+        assert "--import" in bad.output
+    bad_for = runner.invoke(bookstore_cli.bookstore, ["add", "--import", str(src_json), "--for", "imported"])
+    assert bad_for.exit_code == 2
+    assert "--as notes" in bad_for.output
+
+    # notebook draft: exactly one of --library / --book.
+    both = runner.invoke(bookstore_cli.bookstore, ["notebook", "draft", "--library", "--book", "x"])
+    assert both.exit_code == 2
+    assert "exactly one" in both.output
+    neither = runner.invoke(bookstore_cli.bookstore, ["notebook", "draft"])
+    assert neither.exit_code == 2
+    glob_book = runner.invoke(bookstore_cli.bookstore, ["notebook", "draft", "--book", "imported", "--global"])
+    assert glob_book.exit_code == 2
+
+    drafted = runner.invoke(bookstore_cli.bookstore, ["notebook", "draft", "--library", "--no-llm", "--json"])
+    assert drafted.exit_code == 0, drafted.output
+    assert set(jsonlib.loads(drafted.output)) == {"created", "updated", "skipped_human"}
+
+    guide = runner.invoke(bookstore_cli.bookstore, ["notebook", "draft", "--book", "imported", "--json"])
+    assert guide.exit_code == 0, guide.output
+    counts = jsonlib.loads(guide.output)
+    assert counts["created"] >= 1
+    human = runner.invoke(bookstore_cli.bookstore, ["notebook", "draft", "--book", "imported"])
+    assert human.exit_code == 0, human.output
+    assert "notebook of imported: created 0" in human.output
+    unknown_book = runner.invoke(bookstore_cli.bookstore, ["notebook", "draft", "--book", "nope"])
+    assert unknown_book.exit_code == 1
+
+
+def test_cli_list_notes_and_remove_with_notes(tmp_path, monkeypatch):
+    import json as jsonlib
+
+    from parrot.knowledge.bookstore.catalog import CatalogStore
+
+    _notebook_env(tmp_path, monkeypatch)
+    runner = CliRunner()
+    _cli_add(tmp_path, "keeper")
+    _cli_add(tmp_path, "goner")
+    plain_before = runner.invoke(bookstore_cli.bookstore, ["list"])
+    assert plain_before.exit_code == 0, plain_before.output
+
+    empty = runner.invoke(bookstore_cli.bookstore, ["list", "--notes"])
+    assert empty.exit_code == 0, empty.output
+    assert "No notebooks yet" in empty.output
+
+    for slug in ("keeper", "goner"):
+        drafted = runner.invoke(bookstore_cli.bookstore, ["notebook", "draft", "--book", slug])
+        assert drafted.exit_code == 0, drafted.output
+
+    listed = runner.invoke(bookstore_cli.bookstore, ["list", "--notes"])
+    assert listed.exit_code == 0, listed.output
+    assert "keeper_notes" in listed.output and "goner_notes" in listed.output
+    assert "project" in listed.output
+    as_json = runner.invoke(bookstore_cli.bookstore, ["list", "--notes", "--json"])
+    payload = jsonlib.loads(as_json.output)
+    assert {(row["tree_name"], row["scope"], row["notes_for"]) for row in payload} == {
+        ("keeper_notes", "project", "keeper"),
+        ("goner_notes", "project", "goner"),
+    }
+    # Plain `list` output is unchanged by notebooks: books only, same text.
+    plain_after = runner.invoke(bookstore_cli.bookstore, ["list"])
+    assert plain_after.output == plain_before.output
+    assert "_notes" not in plain_after.output
+
+    removed = runner.invoke(bookstore_cli.bookstore, ["remove", "goner", "--with-notes", "--yes"])
+    assert removed.exit_code == 0, removed.output
+    assert "removed" in removed.output
+    catalog = CatalogStore(tmp_path / "lib" / "library.db")
+    assert catalog.get("goner") is None
+    assert catalog.get("goner_notes") is None
+    assert not (tmp_path / "lib" / "trees" / "goner_notes.json").exists()
+    # Without --with-notes the notebook survives as an orphan.
+    kept = runner.invoke(bookstore_cli.bookstore, ["remove", "keeper", "--yes"])
+    assert kept.exit_code == 0, kept.output
+    orphan = catalog.get("keeper_notes")
+    assert orphan is not None and orphan.notes_for is None
+
+
+def test_cli_relate_from_notes(tmp_path, monkeypatch):
+    import asyncio
+
+    from parrot.knowledge.bookstore.catalog import CatalogStore
+
+    _notebook_env(tmp_path, monkeypatch)
+    runner = CliRunner()
+    a = _cli_add(tmp_path, "alpha")
+    b = _cli_add(tmp_path, "beta")
+
+    store = bookstore_cli._open_bookstore(use_llm=False)
+
+    async def _sheet() -> None:
+        notebook = await store.ensure_notebook(None, scope="project")
+        toolkit = await store._ready_toolkit("project")
+        added = await toolkit.add_node(notebook.tree_name, title="Sheet", body="Shared theme.")
+        await toolkit.tag_node(
+            notebook.tree_name, added["node_id"], metadata={"anchors": [{"book_id": a}, {"book_id": b}]}
+        )
+
+    asyncio.run(_sheet())
+
+    result = runner.invoke(bookstore_cli.bookstore, ["relate", "--from-notes"])
+    assert result.exit_code == 0, result.output
+    assert "notebook relation edges: 1" in result.output
+    assert "targets:" not in result.output  # alone, the normal stages do not run
+    catalog = CatalogStore(tmp_path / "lib" / "library.db")
+    assert [(r.rel, r.origin) for r in catalog.list_relations(a)] == [("parallels", "manual")]
+
+    combined = runner.invoke(bookstore_cli.bookstore, ["relate", "--from-notes", "--all", "--no-llm"])
+    assert combined.exit_code == 0, combined.output
+    assert combined.output.index("notebook relation edges: 1") < combined.output.index("targets: 2")
+
+
+def test_cli_doctor_notes_json(tmp_path, monkeypatch):
+    import json as jsonlib
+
+    _notebook_env(tmp_path, monkeypatch)
+    runner = CliRunner()
+    _cli_add(tmp_path, "solo")
+    assert runner.invoke(bookstore_cli.bookstore, ["notebook", "draft", "--book", "solo"]).exit_code == 0
+    assert runner.invoke(bookstore_cli.bookstore, ["remove", "solo", "--yes"]).exit_code == 0
+
+    plain = runner.invoke(bookstore_cli.bookstore, ["doctor", "--json"])
+    assert plain.exit_code == 0, plain.output
+    assert "notes" not in jsonlib.loads(plain.output)
+
+    result = runner.invoke(bookstore_cli.bookstore, ["doctor", "--notes", "--json"])
+    assert result.exit_code == 0, result.output
+    report = jsonlib.loads(result.output)
+    assert report["notes"]["project"]["orphans"] == ["solo_notes"]
+
+    human = runner.invoke(bookstore_cli.bookstore, ["doctor", "--notes"])
+    assert human.exit_code == 0, human.output
+    assert "notes (project): notebooks 1, orphans 1" in human.output
+    assert "orphan: solo_notes" in human.output

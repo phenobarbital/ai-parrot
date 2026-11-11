@@ -101,7 +101,7 @@ def bookstore() -> None:
 
 
 @bookstore.command("add")
-@click.argument("file", type=click.Path(exists=True, dir_okay=False))
+@click.argument("file")
 @click.option("--global", "global_scope", is_flag=True, help="Add to ~/.parrot/library.")
 @click.option("--title", default=None, help="Override the book title.")
 @click.option("--author", "authors", multiple=True, help="Override authors.")
@@ -114,6 +114,21 @@ def bookstore() -> None:
     default=None,
     help="LLM spec 'provider:model' (default: $PARROT_BOOKSTORE_LLM).",
 )
+@click.option(
+    "--import",
+    "import_tree",
+    is_flag=True,
+    help="FILE is a PageIndex tree JSON (or an in-library tree name) to adopt without re-ingesting.",
+)
+@click.option(
+    "--as",
+    "as_kind",
+    type=click.Choice(["book", "notes"]),
+    default="book",
+    show_default=True,
+    help="Catalog the imported tree as a book or a notebook.",
+)
+@click.option("--for", "notes_for", default=None, help="With --as notes: the book these notes belong to.")
 def add(
     file: str,
     global_scope: bool,
@@ -124,15 +139,61 @@ def add(
     no_llm: bool,
     relate: bool,
     llm: Optional[str],
+    import_tree: bool,
+    as_kind: str,
+    notes_for: Optional[str],
 ) -> None:
-    """Index FILE (pdf/md/txt/epub/mobi/docx) and catalog its ficha."""
-    # Anchor a relative FILE to the invocation directory NOW — the heavy
-    # imports below chdir() the process (see _INVOCATION_CWD).
-    file = str((Path(_INVOCATION_CWD) / file).resolve())
+    """Index FILE (pdf/md/txt/epub/mobi/docx) and catalog its ficha.
+
+    With ``--import``, FILE is an existing PageIndex tree (a ``.json`` path
+    or an uncatalogued tree name inside the library) adopted as a book or,
+    with ``--as notes``, as a notebook — nothing is re-ingested.
+    """
+    if not import_tree:
+        if as_kind != "book":
+            raise click.UsageError("--as notes requires --import")
+        if notes_for is not None:
+            raise click.UsageError("--for requires --import --as notes")
+    elif notes_for is not None and as_kind != "notes":
+        raise click.UsageError("--for requires --as notes")
+    elif authors or topics or relate:
+        raise click.UsageError("--author/--topic/--relate cannot be combined with --import")
 
     from .library import BookstoreError
 
     scope = "global" if global_scope else "project"
+    if import_tree:
+        # A path (``.json`` or an existing file) is anchored to the
+        # invocation directory NOW — the heavy imports chdir() the process
+        # (see _INVOCATION_CWD); anything else is an in-library tree name.
+        candidate = Path(_INVOCATION_CWD) / Path(file).expanduser()
+        source = str(candidate.resolve()) if file.endswith(".json") or candidate.is_file() else file
+        store = _open_bookstore(llm_spec=llm, scope_needed=scope, use_llm=not no_llm)
+        try:
+            card, status = asyncio.run(
+                store.import_tree(
+                    source,
+                    scope,
+                    as_kind=as_kind,
+                    notes_for=notes_for,
+                    title=title,
+                    force=force,
+                )
+            )
+        except BookstoreError as exc:
+            raise click.ClickException(str(exc)) from exc
+        click.echo(f"{status}: {card.book_id} ({scope})")
+        return
+
+    # Anchor a relative FILE to the invocation directory NOW — the heavy
+    # imports below chdir() the process (see _INVOCATION_CWD).
+    resolved = (Path(_INVOCATION_CWD) / file).resolve()
+    if not resolved.exists():
+        raise click.BadParameter(f"File {file!r} does not exist.", param_hint="'FILE'")
+    if resolved.is_dir():
+        raise click.BadParameter(f"File {file!r} is a directory.", param_hint="'FILE'")
+    file = str(resolved)
+
     store = _open_bookstore(
         llm_spec=llm,
         scope_needed=scope,
@@ -248,9 +309,29 @@ def add_folder(
 @bookstore.command("list")
 @click.option("--json", "as_json", is_flag=True, help="JSON output.")
 @click.option("--by-community", is_flag=True, help="Group books by their community.")
-def list_cmd(as_json: bool, by_community: bool) -> None:
-    """List every book in the library."""
+@click.option("--notes", "show_notes", is_flag=True, help="List notebooks instead of books.")
+def list_cmd(as_json: bool, by_community: bool, show_notes: bool) -> None:
+    """List every book in the library (or, with ``--notes``, every notebook)."""
     store = _open_bookstore(require_exists=True, use_llm=False)
+    if show_notes:
+        notebooks = [
+            (loc.scope, card) for loc in store.locations for card in store._catalog(loc.scope).list_cards(kind="notes")
+        ]
+        if as_json:
+            click.echo(
+                json.dumps(
+                    [{**card.model_dump(mode="json"), "scope": scope} for scope, card in notebooks],
+                    indent=2,
+                )
+            )
+            return
+        if not notebooks:
+            click.echo("No notebooks yet — `bookstore notebook draft` or `bookstore add --import --as notes`.")
+            return
+        click.echo(f"{'tree_name':<32}{'scope':<10}notes_for")
+        for scope, card in notebooks:
+            click.echo(f"{_inline(card.tree_name):<32}{scope:<10}{_inline(card.notes_for) or '-'}")
+        return
     cards = store.list_books()
     if by_community:
         cards = sorted(
@@ -459,6 +540,7 @@ def related(book_id: str, rel: Optional[str], depth: int, as_json: bool) -> None
     default=None,
     help="LLM spec 'provider:model' for Stage 2 (default: $PARROT_BOOKSTORE_LLM).",
 )
+@click.option("--from-notes", is_flag=True, help="Turn notebook relation sheets into manual edges.")
 def relate(
     book_ids: tuple[str, ...],
     relate_all: bool,
@@ -467,14 +549,30 @@ def relate(
     force: bool,
     resolution: float,
     llm: Optional[str],
+    from_notes: bool,
 ) -> None:
-    """Compute deterministic + LLM relations for BOOK_IDS (or --all)."""
+    """Compute deterministic + LLM relations for BOOK_IDS (or --all).
+
+    ``--from-notes`` first turns notebook relation sheets into ``manual``
+    edges; it can run alone or before the normal stages.
+    """
     from .library import BookstoreError
 
-    if not relate_all and not book_ids:
+    run_stages = relate_all or bool(book_ids)
+    if not run_stages and not from_notes:
         raise click.ClickException("Pass --all or at least one BOOK_ID")
 
-    store = _open_bookstore(llm_spec=llm, require_exists=True, use_llm=not no_llm)
+    store = _open_bookstore(llm_spec=llm, require_exists=True, use_llm=run_stages and not no_llm)
+    if from_notes:
+        from .notebooks import apply_relation_sheets
+
+        try:
+            written = asyncio.run(apply_relation_sheets(store))
+        except BookstoreError as exc:
+            raise click.ClickException(str(exc)) from exc
+        click.echo(f"notebook relation edges: {written}")
+        if not run_stages:
+            return
     try:
         summary = asyncio.run(
             store.relate_books(
@@ -718,6 +816,7 @@ def ask_cmd(
     help="LLM spec 'provider:model' for --relate (default: $PARROT_BOOKSTORE_LLM).",
 )
 @click.option("--json", "as_json", is_flag=True, help="JSON output (the full report).")
+@click.option("--notes", "check_notes", is_flag=True, help="Also check notebooks and anchors.")
 def doctor_cmd(
     global_scope: bool,
     repair: bool,
@@ -725,6 +824,7 @@ def doctor_cmd(
     no_llm: bool,
     llm: Optional[str],
     as_json: bool,
+    check_notes: bool,
 ) -> None:
     """Report recovery and drift, optionally repair cards and build missing judgements."""
     from .library import BookstoreError
@@ -740,7 +840,9 @@ def doctor_cmd(
     if use_llm:
         _echo_identity(store)
     try:
-        report = asyncio.run(store.doctor(scope=scope, repair=repair, relate=relate, use_llm=not no_llm))
+        # ``notes`` is passed only when requested so the default call is unchanged.
+        extra: dict[str, Any] = {"notes": True} if check_notes else {}
+        report = asyncio.run(store.doctor(scope=scope, repair=repair, relate=relate, use_llm=not no_llm, **extra))
     except (BookstoreError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc
 
@@ -770,6 +872,19 @@ def doctor_cmd(
         )
         if summary.get("skipped_llm_reason"):
             click.echo(f"  LLM skipped: {summary['skipped_llm_reason']}")
+    if check_notes:
+        for notes_scope, notes in (report.get("notes") or {}).items():
+            click.echo(
+                f"notes ({_inline(notes_scope)}): notebooks {notes.get('notebooks', 0)}, "
+                f"orphans {len(notes.get('orphans', []))}, "
+                f"malformed anchors {len(notes.get('malformed_anchors', []))}, "
+                f"stale anchors {notes.get('stale_anchors', 0)}, "
+                f"broken bindings {len(notes.get('broken_bindings', []))}"
+            )
+            for orphan in notes.get("orphans", []):
+                click.echo(f"  orphan: {_inline(orphan)}")
+            for entry in notes.get("broken_bindings", []):
+                click.echo(f"  broken: {_inline(entry.get('book_id'))} ({_inline(entry.get('reason'))})")
     for error in report.get("errors", []):
         target = error.get("book_id") or error.get("name") or error.get("scope") or "-"
         click.echo(f"error: {_inline(target)}: {_inline(error.get('error'))}", err=True)
@@ -778,8 +893,9 @@ def doctor_cmd(
 @bookstore.command("remove")
 @click.argument("book_id")
 @click.option("--yes", is_flag=True, help="Skip the confirmation prompt.")
-def remove(book_id: str, yes: bool) -> None:
-    """Remove a book (catalog card + indexed tree)."""
+@click.option("--with-notes", is_flag=True, help="Also delete the book's notebook.")
+def remove(book_id: str, yes: bool, with_notes: bool) -> None:
+    """Remove a book (catalog card + indexed tree; ``--with-notes`` also its notebook)."""
     from .library import BookstoreError
 
     store = _open_bookstore(require_exists=True, use_llm=False)
@@ -788,9 +904,57 @@ def remove(book_id: str, yes: bool) -> None:
     except BookstoreError as exc:
         raise click.ClickException(str(exc)) from exc
     if not yes:
-        click.confirm(f"Remove {card.title!r} ({card.scope}) and its index?", abort=True)
-    removed = asyncio.run(store.remove_book(book_id))
+        extra = " and notebook" if with_notes else ""
+        click.confirm(f"Remove {card.title!r} ({card.scope}) and its index{extra}?", abort=True)
+    try:
+        removed = asyncio.run(store.remove_book(book_id, with_notes=with_notes))
+    except BookstoreError as exc:
+        raise click.ClickException(str(exc)) from exc
     click.echo("removed" if removed else "nothing removed")
+
+
+@bookstore.group("notebook")
+def notebook() -> None:
+    """Notebooks: per-book notes and the library's sector index."""
+
+
+@notebook.command("draft")
+@click.option("--library", "library", is_flag=True, help="Draft sectors into the library notebook.")
+@click.option("--book", "book_id", default=None, help="Draft a reading-guide skeleton for one book.")
+@click.option("--global", "global_scope", is_flag=True, help="Target the global library (with --library).")
+@click.option("--no-llm", is_flag=True, help="Communities map 1:1 to sectors; no model calls.")
+@click.option("--json", "as_json", is_flag=True, help="JSON output.")
+def notebook_draft(library: bool, book_id: Optional[str], global_scope: bool, no_llm: bool, as_json: bool) -> None:
+    """Propose notebook structure (drafts never overwrite your own notes)."""
+    if library == (book_id is not None):
+        raise click.UsageError("Pass exactly one of --library or --book <id>")
+    if global_scope and not library:
+        raise click.UsageError("--global only applies to --library")
+
+    from .library import BookstoreError
+    from .notebooks import draft_book_notebook, draft_library_notebook
+
+    scope = "global" if global_scope else "project"
+    store = _open_bookstore(
+        require_exists=True,
+        scope_needed=scope if library else None,
+        use_llm=library and not no_llm,
+    )
+    try:
+        if library:
+            counts = asyncio.run(draft_library_notebook(store, scope, use_llm=not no_llm))
+        else:
+            counts = asyncio.run(draft_book_notebook(store, book_id))
+    except BookstoreError as exc:
+        raise click.ClickException(str(exc)) from exc
+    if as_json:
+        click.echo(json.dumps(counts, indent=2))
+        return
+    target = f"library notebook ({scope})" if library else f"notebook of {book_id}"
+    click.echo(
+        f"{target}: created {counts.get('created', 0)}, updated {counts.get('updated', 0)}, "
+        f"skipped (human) {counts.get('skipped_human', 0)}"
+    )
 
 
 @bookstore.command("mcp")
