@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-878 — Redis user stores (MongoDB-free local installs)
 **Spec**: `sdd/specs/redis-user-stores.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5495
@@ -422,10 +422,15 @@ async def test_missing_key_field_raises(store): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-5496
+- Feature: redis-user-stores
+- Implementation SHA: eb3a9dbd4baf13afcfd27c54386511a26ed7f84b
+- Closed at (UTC): 2026-11-11T01:06:06+00:00
+- Fix commits: none
 
-**Deviations from spec**: none
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 2 · Duration: 431s · Tokens: n/a |

@@ -104,7 +104,7 @@
       "feature_id": "FEAT-878",
       "feature": "redis-user-stores",
       "spec": "sdd/specs/redis-user-stores.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -114,8 +114,9 @@
       "parallelism_notes": "Imports get_user_store_redis/key_prefix from TASK-5495 (parrot/userstore/settings.py) and extends parrot/userstore/__init__.py which TASK-5495 creates.",
       "assigned_to": null,
       "started_at": "2026-11-11T00:26:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5496-redis-document-store.md"
+      "completed_at": "2026-11-11T01:06:06+00:00",
+      "file": "sdd/tasks/completed/TASK-5496-redis-document-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5497",
@@ -404,7 +405,7 @@
       "feature_id": "FEAT-878",
       "feature": "redis-user-stores",
       "spec": "sdd/specs/redis-user-stores.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -414,8 +415,9 @@
       "parallelism_notes": "factory.py imports default_result_storage created by TASK-5495 (parrot/userstore/settings.py).",
       "assigned_to": null,
       "started_at": "2026-11-11T00:26:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5511-crew-result-default.md"
+      "completed_at": "2026-11-11T01:06:07+00:00",
+      "file": "sdd/tasks/completed/TASK-5511-crew-result-default.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5512",
