@@ -1,0 +1,437 @@
+{
+  "feature": "accounting-metrics-layer",
+  "feature_id": "FEAT-713",
+  "spec": "sdd/specs/accounting-metrics-layer.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-11T23:57:46+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/interfaces/test_duckdb_engine.py",
+          "packages/ai-parrot-semantic/tests/accounting/test_import_isolation.py",
+          "packages/ai-parrot-semantic/tests/accounting/test_models.py",
+          "packages/ai-parrot-semantic/tests/accounting/test_grammar.py",
+          "packages/ai-parrot-semantic/tests/accounting/test_snapshot_validation.py",
+          "packages/ai-parrot-semantic/tests/accounting/test_loader_validation.py",
+          "packages/ai-parrot-semantic/tests/accounting/test_compiler.py",
+          "packages/ai-parrot-semantic/tests/accounting/test_golden.py",
+          "packages/ai-parrot-semantic/tests/accounting/test_runtime.py",
+          "packages/ai-parrot-semantic/tests/accounting/test_evaluation.py",
+          "packages/ai-parrot-semantic/tests/accounting/test_audit.py",
+          "packages/ai-parrot-semantic/tests/accounting/test_catalog.py",
+          "packages/ai-parrot-semantic/tests/accounting/test_toolkit.py",
+          "packages/ai-parrot-semantic/tests/accounting/test_cli.py",
+          "packages/ai-parrot-semantic/tests/accounting/test_live.py",
+          "packages/ai-parrot-semantic/tests/accounting/test_e2e_duckdb.py",
+          "packages/ai-parrot-semantic/tests/test_audit.py",
+          "packages/ai-parrot-semantic/tests/test_cache.py",
+          "packages/ai-parrot-semantic/tests/test_packaging.py",
+          "packages/ai-parrot-semantic/tests/test_toolkit.py",
+          "packages/ai-parrot-server/tests/scheduler/test_accounting_jobs.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:779f445c67993ed3fde3fcbd702a07f6086811d23e26687f5072cf45b80f9aba"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5523",
+      "slug": "core-duckdb-engine",
+      "title": "Core in-process DuckDB engine over Arrow",
+      "feature_id": "FEAT-713",
+      "feature": "accounting-metrics-layer",
+      "spec": "sdd/specs/accounting-metrics-layer.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Exclusive: edits the dependency manifest packages/ai-parrot/pyproject.toml (new optional extra duckdb).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5523-core-duckdb-engine.md"
+    },
+    {
+      "id": "TASK-5524",
+      "slug": "accounting-package-entry-and-errors",
+      "title": "Accounting package entry, lazy parrot.semantic exports and error taxonomy",
+      "feature_id": "FEAT-713",
+      "feature": "accounting-metrics-layer",
+      "spec": "sdd/specs/accounting-metrics-layer.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies: touches only parrot/semantic/__init__.py and creates the accounting package, errors.py and its own tests.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5524-accounting-package-entry-and-errors.md"
+    },
+    {
+      "id": "TASK-5525",
+      "slug": "model-definition-contracts-and-fixtures",
+      "title": "Model-definition contracts and shared accounting test fixtures",
+      "feature_id": "FEAT-713",
+      "feature": "accounting-metrics-layer",
+      "spec": "sdd/specs/accounting-metrics-layer.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5524"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Needs the parrot.semantic.accounting package from TASK-5524 (accounting/__init__.py). Exclusive: creates tests/accounting/conftest.py, loaded by every later accounting test.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5525-model-definition-contracts-and-fixtures.md"
+    },
+    {
+      "id": "TASK-5526",
+      "slug": "request-plan-result-contracts",
+      "title": "Request, plan and result contracts",
+      "feature_id": "FEAT-713",
+      "feature": "accounting-metrics-layer",
+      "spec": "sdd/specs/accounting-metrics-layer.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5525"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Appends to models.py and test_models.py created by TASK-5525 (same files; uses ResolvedSet and the literals).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5526-request-plan-result-contracts.md"
+    },
+    {
+      "id": "TASK-5527",
+      "slug": "metric-expression-grammar",
+      "title": "Metric expression grammar",
+      "feature_id": "FEAT-713",
+      "feature": "accounting-metrics-layer",
+      "spec": "sdd/specs/accounting-metrics-layer.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5524"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Imports GrammarError from TASK-5524 (accounting/errors.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5527-metric-expression-grammar.md"
+    },
+    {
+      "id": "TASK-5528",
+      "slug": "chart-snapshot-and-validation",
+      "title": "Chart snapshot builders and model validation",
+      "feature_id": "FEAT-713",
+      "feature": "accounting-metrics-layer",
+      "spec": "sdd/specs/accounting-metrics-layer.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-5525",
+        "TASK-5527"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Imports ChartSnapshot/AccountSet/AccountingModelSpec from TASK-5525 (models.py) and parse_expr/references from TASK-5527 (grammar.py); uses the chart_snapshot fixture.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5528-chart-snapshot-and-validation.md"
+    },
+    {
+      "id": "TASK-5529",
+      "slug": "model-loader",
+      "title": "Model loader — selectors, resolved natures and hashing",
+      "feature_id": "FEAT-713",
+      "feature": "accounting-metrics-layer",
+      "spec": "sdd/specs/accounting-metrics-layer.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5528"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Calls partition_intervals and validate from TASK-5528 (validation.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5529-model-loader.md"
+    },
+    {
+      "id": "TASK-5530",
+      "slug": "compiler-plan",
+      "title": "Compiler, part 1 — request validation and MetricPlan construction",
+      "feature_id": "FEAT-713",
+      "feature": "accounting-metrics-layer",
+      "spec": "sdd/specs/accounting-metrics-layer.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-5526",
+        "TASK-5529"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Builds MetricPlan/PlanExpr from TASK-5526 (models.py) over models loaded by load_model from TASK-5529 (loader.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5530-compiler-plan.md"
+    },
+    {
+      "id": "TASK-5531",
+      "slug": "compiler-render-and-goldens",
+      "title": "Compiler, part 2 — SQL rendering, self-check, compile_metric and golden files",
+      "feature_id": "FEAT-713",
+      "feature": "accounting-metrics-layer",
+      "spec": "sdd/specs/accounting-metrics-layer.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-5530"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Appends to compiler.py and test_compiler.py created by TASK-5530 and renders its plan_metric/plan_assertion output; also extends test_import_isolation.py from TASK-5524 (reached through the chain).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5531-compiler-render-and-goldens.md"
+    },
+    {
+      "id": "TASK-5532",
+      "slug": "exact-formula-evaluator",
+      "title": "Exact formula evaluator",
+      "feature_id": "FEAT-713",
+      "feature": "accounting-metrics-layer",
+      "spec": "sdd/specs/accounting-metrics-layer.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5526"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Evaluates MetricPlan/PlanExpr defined by TASK-5526 (models.py); independent of the compiler.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5532-exact-formula-evaluator.md"
+    },
+    {
+      "id": "TASK-5533",
+      "slug": "accounting-runtimes",
+      "title": "Accounting runtimes — DuckDB engine and semantic executor",
+      "feature_id": "FEAT-713",
+      "feature": "accounting-metrics-layer",
+      "spec": "sdd/specs/accounting-metrics-layer.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-5523",
+        "TASK-5531",
+        "TASK-5532"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Uses DuckDBEngine/to_arrow from TASK-5523 (interfaces/duckdb_engine.py), CompiledMetricQuery from compile_metric of TASK-5531 (compiler.py) and evaluate_rows from TASK-5532 (evaluation.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5533-accounting-runtimes.md"
+    },
+    {
+      "id": "TASK-5534",
+      "slug": "audit-on-shared-ledger",
+      "title": "Accounting audit on the shared semantic ledger",
+      "feature_id": "FEAT-713",
+      "feature": "accounting-metrics-layer",
+      "spec": "sdd/specs/accounting-metrics-layer.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5531"
+      ],
+      "parallel": true,
+      "parallelism_notes": "rebuild_lineage calls compile_metric/compile_assertion from TASK-5531 (compiler.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5534-audit-on-shared-ledger.md"
+    },
+    {
+      "id": "TASK-5535",
+      "slug": "compile-cache-protocol-and-catalog",
+      "title": "Compile-cache protocol and ModelCatalog",
+      "feature_id": "FEAT-713",
+      "feature": "accounting-metrics-layer",
+      "spec": "sdd/specs/accounting-metrics-layer.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5529",
+        "TASK-5531"
+      ],
+      "parallel": true,
+      "parallelism_notes": "ModelCatalog calls load_model/load_spec from TASK-5529 (loader.py); the cache test stores a CompiledMetricQuery produced by compile_metric from TASK-5531.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5535-compile-cache-protocol-and-catalog.md"
+    },
+    {
+      "id": "TASK-5536",
+      "slug": "accounting-toolkit-core",
+      "title": "AccountingToolkit core — construction, snapshot acquisition, PBAC, list and explain",
+      "feature_id": "FEAT-713",
+      "feature": "accounting-metrics-layer",
+      "spec": "sdd/specs/accounting-metrics-layer.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-5533",
+        "TASK-5534",
+        "TASK-5535"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Wires DatabaseRuntime/DuckDBRuntime from TASK-5533 (runtime/), audit_mode_from_env from TASK-5534 (accounting/audit.py) and ModelCatalog from TASK-5535 (catalog.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5536-accounting-toolkit-core.md"
+    },
+    {
+      "id": "TASK-5537",
+      "slug": "query-validate-and-live-validation",
+      "title": "query_metric, validate_model and live validation",
+      "feature_id": "FEAT-713",
+      "feature": "accounting-metrics-layer",
+      "spec": "sdd/specs/accounting-metrics-layer.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-5536"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Appends query_metric/validate_model to toolkit.py and test_toolkit.py created by TASK-5536 and uses its private helpers (_ensure_loaded, _authorize).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5537-query-validate-and-live-validation.md"
+    },
+    {
+      "id": "TASK-5538",
+      "slug": "scheduler-adapter",
+      "title": "Scheduler adapter for daily live validation",
+      "feature_id": "FEAT-713",
+      "feature": "accounting-metrics-layer",
+      "spec": "sdd/specs/accounting-metrics-layer.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5537"
+      ],
+      "parallel": true,
+      "parallelism_notes": "The job calls run_live_validation from TASK-5537 (accounting/live.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5538-scheduler-adapter.md"
+    },
+    {
+      "id": "TASK-5539",
+      "slug": "finance-cli",
+      "title": "parrot finance CLI",
+      "feature_id": "FEAT-713",
+      "feature": "accounting-metrics-layer",
+      "spec": "sdd/specs/accounting-metrics-layer.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5537"
+      ],
+      "parallel": true,
+      "parallelism_notes": "--live builds AccountingToolkit and calls live._validate_one from TASK-5537 (toolkit.py, live.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5539-finance-cli.md"
+    },
+    {
+      "id": "TASK-5540",
+      "slug": "end-to-end-integration-tests",
+      "title": "End-to-end integration tests",
+      "feature_id": "FEAT-713",
+      "feature": "accounting-metrics-layer",
+      "spec": "sdd/specs/accounting-metrics-layer.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5537"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Drives AccountingToolkit.query_metric from TASK-5537 (toolkit.py) end to end.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5540-end-to-end-integration-tests.md"
+    },
+    {
+      "id": "TASK-5541",
+      "slug": "documentation",
+      "title": "Documentation — wiki/tools/accounting-metrics-layer.md, wiki/tools/semantic-layer.md, README",
+      "feature_id": "FEAT-713",
+      "feature": "accounting-metrics-layer",
+      "spec": "sdd/specs/accounting-metrics-layer.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5538",
+        "TASK-5539"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Documents register_accounting_schedules from TASK-5538 (scheduler/accounting_jobs.py) and the parrot finance CLI from TASK-5539 (accounting/cli.py); every other documented symbol is upstream of these.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5541-documentation.md"
+    }
+  ]
+}

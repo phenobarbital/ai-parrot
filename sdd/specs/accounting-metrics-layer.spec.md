@@ -117,7 +117,7 @@ produced it); and the future DuckDB-backed dataset store.
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:7ee631cb368c97479e2195d418b2e07d10bb28916376d7748fbd22161390ebe3 evaluation_digest=sha256:7f8e45f688bcbbf4eee6b68871988b267685a6fb53888374f616fd5eb6cbb992 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:5d5f25c90a40c004844eb8914f54c2c69e52e98d6b1f58ef674dbba6ea4573f2 evaluation_digest=sha256:ae9a98bc1ad4b887690c326986d46bb22b1560f7f36d5dab84afbbcc448e4a7e rules_version=1 status=pass -->
 
 No eligible decisions govern subsystems: auth, bots, clients, config, flows, knowledge-graphindex, knowledge-pageindex, knowledge-wiki, memory, server, skills, tools
 
@@ -1092,17 +1092,22 @@ from parrot.interfaces.duckdb_engine import DuckDBEngine, to_arrow, FrameConvers
 
 ### Validation Contract
 
+> The four existing files (`test_audit.py`, `test_cache.py`, `test_packaging.py`, `test_toolkit.py`) guard the
+> shipped modules this feature widens (`audit.py`, `cache.py`, `__init__.py`).
+
 tests:
 - packages/ai-parrot/tests/interfaces/test_duckdb_engine.py
 - packages/ai-parrot-semantic/tests/accounting/test_import_isolation.py
 - packages/ai-parrot-semantic/tests/accounting/test_models.py
 - packages/ai-parrot-semantic/tests/accounting/test_grammar.py
+- packages/ai-parrot-semantic/tests/accounting/test_snapshot_validation.py
 - packages/ai-parrot-semantic/tests/accounting/test_loader_validation.py
 - packages/ai-parrot-semantic/tests/accounting/test_compiler.py
 - packages/ai-parrot-semantic/tests/accounting/test_golden.py
 - packages/ai-parrot-semantic/tests/accounting/test_runtime.py
 - packages/ai-parrot-semantic/tests/accounting/test_evaluation.py
 - packages/ai-parrot-semantic/tests/accounting/test_audit.py
+- packages/ai-parrot-semantic/tests/accounting/test_catalog.py
 - packages/ai-parrot-semantic/tests/accounting/test_toolkit.py
 - packages/ai-parrot-semantic/tests/accounting/test_cli.py
 - packages/ai-parrot-semantic/tests/accounting/test_live.py
@@ -1114,8 +1119,6 @@ tests:
 - packages/ai-parrot-server/tests/scheduler/test_accounting_jobs.py
 markers: none
 
-The four existing files (`test_audit.py`, `test_cache.py`, `test_packaging.py`, `test_toolkit.py`) guard the shipped
-modules this feature widens (`audit.py`, `cache.py`, `__init__.py`).
 
 ### Test Data / Fixtures
 
@@ -1554,7 +1557,7 @@ Database connections use the existing `PARROT_SEMANTIC_CONN_<NAME>_<KEY>` variab
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:7ee631cb368c97479e2195d418b2e07d10bb28916376d7748fbd22161390ebe3 evaluation_digest=sha256:7f8e45f688bcbbf4eee6b68871988b267685a6fb53888374f616fd5eb6cbb992 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:5d5f25c90a40c004844eb8914f54c2c69e52e98d6b1f58ef674dbba6ea4573f2 evaluation_digest=sha256:ae9a98bc1ad4b887690c326986d46bb22b1560f7f36d5dab84afbbcc448e4a7e rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -1562,7 +1565,7 @@ Findings:
 - none
 
 Diagnostics:
-- `SPEC_BLOCK_MISSING`; path: sdd/specs/accounting-metrics-layer.spec.md; message: no fenced yaml block under '## Decisions'
+- `SPEC_BLOCK_MISSING`; path: /home/jesuslara/proyectos/ai-parrot/sdd/specs/accounting-metrics-layer.spec.md; message: no fenced yaml block under '## Decisions'
 
 Coverage:
 - Subsystems: auth, bots, clients, config, flows, knowledge-graphindex, knowledge-pageindex, knowledge-wiki, memory, server, skills, tools
@@ -1608,13 +1611,13 @@ Coverage:
       "code": "SPEC_BLOCK_MISSING",
       "decision_id": null,
       "message": "no fenced yaml block under '## Decisions'",
-      "path": "sdd/specs/accounting-metrics-layer.spec.md"
+      "path": "/home/jesuslara/proyectos/ai-parrot/sdd/specs/accounting-metrics-layer.spec.md"
     }
   ],
-  "evaluation_digest": "sha256:7f8e45f688bcbbf4eee6b68871988b267685a6fb53888374f616fd5eb6cbb992",
+  "evaluation_digest": "sha256:ae9a98bc1ad4b887690c326986d46bb22b1560f7f36d5dab84afbbcc448e4a7e",
   "exit_code": 0,
   "findings": [],
-  "input_digest": "sha256:7ee631cb368c97479e2195d418b2e07d10bb28916376d7748fbd22161390ebe3",
+  "input_digest": "sha256:5d5f25c90a40c004844eb8914f54c2c69e52e98d6b1f58ef674dbba6ea4573f2",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
