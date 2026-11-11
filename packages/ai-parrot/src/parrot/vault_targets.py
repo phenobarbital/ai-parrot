@@ -278,9 +278,7 @@ class RedisDocumentTarget(DocumentDbTarget):
         for start in range(0, len(documents), batch_size):
             yield [self._row(doc) for doc in documents[start : start + batch_size]]
 
-    async def write(
-        self, row: Any, blobs: Mapping[str, Optional[bytes]], key_version: int
-    ) -> None:
+    async def write(self, row: Any, blobs: Mapping[str, Optional[bytes]], key_version: int) -> None:
         """Replace the sealed field and record key_version.
 
         Raises:

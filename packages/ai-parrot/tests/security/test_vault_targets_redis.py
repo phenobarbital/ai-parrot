@@ -1,4 +1,5 @@
 """Redis protected-target coverage for vault rotation (FEAT-878)."""
+
 from __future__ import annotations
 
 import base64
@@ -59,9 +60,7 @@ async def test_redis_target_rotation_cycle(redis_env) -> None:
     )
 
     [[row]] = [batch async for batch in target.iter_batches(10)]
-    rotated = base64.b64decode(
-        encrypt_credential({"driver": "postgres-rotated"}, context, keyring, key_id=2)
-    )
+    rotated = base64.b64decode(encrypt_credential({"driver": "postgres-rotated"}, context, keyring, key_id=2))
     await target.write(row, {"credential": rotated}, key_version=2)
     stored = await documents.get(identity)
     assert stored is not None
