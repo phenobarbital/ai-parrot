@@ -40,13 +40,11 @@ from ..models.responses import AIMessage, AgentResponse
 from ..outputs import OutputMode, OutputFormatter
 from ..mcp.integration import MCPServerConfig
 from ..memory import RedisConversation
-from ..interfaces.documentdb import DocumentDb
 from ..tools.manager import ToolManager, get_toolkit_owner
 from .user_objects import UserObjectsHandler
 from .scope import resolve_request_tenant
 from ..mcp.registry import get_factory_map as _get_factory_map
 from .mcp_persistence import MCPPersistenceService as _MCPPersistenceService
-from .credentials_utils import decrypt_credential as _decrypt_credential
 from .toolkit_persistence import ToolkitConfigService
 from parrot.auth.credentials import AuthRequiredPayload, CredentialRequired
 from ..auth.exceptions import AuthorizationRequired
@@ -1135,7 +1133,7 @@ class AgentTalk(BaseView):
         Runs during :meth:`_setup_agent_tools` for agents that opt in by setting
         ``enable_mcp_restore = True``.  For each saved :class:`UserMCPServerConfig`:
 
-        1. Retrieves the Vault credential (if any) from DocumentDB.
+        1. Retrieves the Vault credential (if any) through the configured Vault store.
         2. Calls the appropriate ``create_*`` factory function.
         3. Registers the resulting config on the session ToolManager.
 
@@ -1192,10 +1190,9 @@ class AgentTalk(BaseView):
 
         # Load the vault key ring once for all secrets retrieval
         try:
-            from parrot.security.credentials_utils import credential_context
             from parrot.security.vault_utils import get_vault_keyring
 
-            keyring = get_vault_keyring()
+            get_vault_keyring()
         except Exception as exc:
             self.logger.warning("MCP restore: vault unavailable, skipping restore: %s", exc)
             return
@@ -1214,26 +1211,14 @@ class AgentTalk(BaseView):
                 secret_params: Dict[str, Any] = {}
                 if config.vault_credential_name:
                     try:
-                        async with DocumentDb() as db:
-                            doc = await db.read_one(
-                                "user_credentials",
-                                {
-                                    "user_id": user_id,
-                                    "name": config.vault_credential_name,
-                                },
-                            )
-                        if doc is None:
-                            self.logger.warning(
-                                "MCP restore: Vault credential '%s' missing " "for server '%s', skipping",
-                                config.vault_credential_name,
-                                config.server_name,
-                            )
-                            continue
-                        secret_params = _decrypt_credential(
-                            doc["credential"],
-                            credential_context(user_id, config.vault_credential_name),
-                            keyring,
+                        secret_params = await retrieve_vault_credential(user_id, config.vault_credential_name)
+                    except KeyError:
+                        self.logger.warning(
+                            "MCP restore: Vault credential '%s' missing " "for server '%s', skipping",
+                            config.vault_credential_name,
+                            config.server_name,
                         )
+                        continue
                     except Exception as exc:
                         self.logger.warning(
                             "MCP restore: failed to decrypt Vault credential " "'%s' for server '%s': %s",
