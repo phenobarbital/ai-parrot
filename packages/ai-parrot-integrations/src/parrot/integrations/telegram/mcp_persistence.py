@@ -23,6 +23,7 @@ Usage::
     configs = await svc.list(user_id)
     removed = await svc.remove(user_id, name)
 """
+
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
