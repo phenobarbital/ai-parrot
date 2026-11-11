@@ -5,6 +5,7 @@ import importlib
 from typing import Union
 
 from parrot.conf import CREW_RESULT_STORAGE
+from parrot.userstore import default_result_storage
 
 from .base import ResultStorage
 
@@ -39,8 +40,8 @@ def get_result_storage(
     Resolution precedence:
         1. ``ResultStorage`` instance → returned as-is.
         2. Non-empty string → looked up in the backend registry.
-        3. ``None`` → falls back to env var ``CREW_RESULT_STORAGE``,
-           then defaults to ``"documentdb"``.
+        3. ``None`` → env var ``CREW_RESULT_STORAGE``; when unset,
+           ``PARROT_USER_STORE`` (``"redis"`` or ``"documentdb"``), else ``"redis"``.
 
     Args:
         name_or_instance: A ``ResultStorage`` instance, a backend name string
@@ -55,7 +56,7 @@ def get_result_storage(
     if isinstance(name_or_instance, ResultStorage):
         return name_or_instance
 
-    name = name_or_instance or CREW_RESULT_STORAGE or "documentdb"
+    name = name_or_instance or CREW_RESULT_STORAGE or default_result_storage()
     name = name.lower()
 
     if name not in _REGISTRY:
