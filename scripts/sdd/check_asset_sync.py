@@ -4,7 +4,9 @@ Modes: ``--write`` regenerate _assets/ + manifest.json; ``--check`` (default) ex
 ``--wheel <whl>`` verify a built wheel carries every manifest entry. ``--check`` and ``--wheel`` also
 report any shipped line naming a monorepo source path (C16) or other monorepo-specific text (C22), and any
 guard-hook line baked to one machine's venv. ``--write`` and ``--check`` restore a baked guard hook in a repo
-source to the bare form before copying or comparing, so a local ``parrot sdd install`` never leaks into _assets/.
+source to the bare form before copying or comparing, so a local ``parrot sdd install`` never leaks into _assets/;
+``--check`` still reports the baked source itself (``baked-source``), because that tracked file reaches every
+collaborator through git (use ``parrot sdd install --portable`` on this repo).
 Stdlib only — never import parrot.
 """
 
@@ -172,14 +174,18 @@ def packaged_bytes(data: bytes) -> bytes:
     return data if restored == text else restored.encode("utf-8")
 
 
-def baked_hook_problems(target: str, data: bytes) -> list[str]:
-    """One ``baked-hook: <target>:<line>: <text>`` per shipped guard-hook command that is not the bare form."""
+def baked_hook_problems(target: str, data: bytes, kind: str = "baked-hook") -> list[str]:
+    """One ``<kind>: <target>:<line>: <text>`` per guard-hook command that is not the bare form.
+
+    ``kind`` is ``baked-hook`` for a shipped asset and ``baked-source`` for a tracked repo source: the repo's own
+    ``.claude/agents`` copies reach every collaborator through git, so a baked line there breaks their hooks too.
+    """
     try:
         text = data.decode("utf-8")
     except UnicodeDecodeError:
         return []
     return [
-        f"baked-hook: {target}:{number}: {line}"
+        f"{kind}: {target}:{number}: {line}"
         for number, line in enumerate(text.splitlines(), start=1)
         if (match := BAKED_GUARD_RE.search(line)) and match["exe"] != "parrot"
     ]
@@ -208,7 +214,8 @@ def find_problems(root: Path, assets_dir: Path) -> list[str]:
     source), ``extra`` (file under ``assets_dir`` not in the expected set), ``manifest`` (committed
     ``manifest.json`` differs from ``build_manifest``), ``monorepo-path`` (C16/C22, a shipped source line
     names a monorepo source path or other monorepo-specific text), ``baked-hook`` (an asset ships a guard hook
-    baked to one machine's venv). Sources are compared in their :func:`packaged_bytes` form.
+    baked to one machine's venv), ``baked-source`` (a tracked repo source carries such a hook). Sources are
+    compared in their :func:`packaged_bytes` form, so a baked source is reported once, not also as ``diverged``.
     """
     problems: list[str] = []
     entries = expected_entries(root)
@@ -223,7 +230,9 @@ def find_problems(root: Path, assets_dir: Path) -> list[str]:
                 problems.extend(monorepo_path_problems(entry.target, asset.read_bytes()))
                 problems.extend(baked_hook_problems(entry.target, asset.read_bytes()))
             continue
-        source_bytes = packaged_bytes((root / entry.target).read_bytes())
+        raw_source = (root / entry.target).read_bytes()
+        problems.extend(baked_hook_problems(entry.target, raw_source, kind="baked-source"))
+        source_bytes = packaged_bytes(raw_source)
         if not asset.is_file():
             problems.append(f"missing: {entry.source} (source {entry.target})")
         else:
@@ -317,7 +326,12 @@ def main(argv: list[str] | None = None) -> int:
         problems = find_problems(root, assets_dir)
     for problem in problems:
         sys.stderr.write(f"{problem}\n")
-    if problems:
+    if any(problem.startswith("baked-source:") for problem in problems):
+        sys.stderr.write(
+            "Guard hook baked to one machine's venv in a tracked file — re-run: parrot sdd install --portable "
+            f"(or restore the line to: {GUARD_HOOK_LINE})\n"
+        )
+    if any(not problem.startswith("baked-source:") for problem in problems):
         sys.stderr.write("SDD assets out of sync — run: python scripts/sdd/check_asset_sync.py --write\n")
     return 1 if problems else 0
 
