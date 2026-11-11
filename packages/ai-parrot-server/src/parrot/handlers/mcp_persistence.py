@@ -30,6 +30,22 @@ from parrot.mcp.registry import UserMCPServerConfig
 # Collection name used for all MCP config documents.
 COLLECTION: str = "user_mcp_configs"
 
+_REDIS_STORE = None
+
+
+def _redis_store():
+    """Return the Redis store when selected, otherwise ``None`` for DocumentDB."""
+    from parrot.userstore import resolve_store_backend
+
+    global _REDIS_STORE  # pylint: disable=global-statement
+    if resolve_store_backend("MCP_CONFIGS_STORE") != "redis":
+        return None
+    if _REDIS_STORE is None:
+        from .mcp_persistence_redis import RedisMCPConfigStore
+
+        _REDIS_STORE = RedisMCPConfigStore()
+    return _REDIS_STORE
+
 logger = logging.getLogger(__name__)
 
 
@@ -59,6 +75,16 @@ class MCPPersistenceService:
                 persist.  The ``params`` dict must **not** contain any secret
                 values — those belong in the Vault.
         """
+        store = _redis_store()
+        if store is not None:
+            await store.save(config)
+            logger.info(
+                "Upserted MCP config for server='%s' user='%s' agent='%s'",
+                config.server_name,
+                config.user_id,
+                config.agent_id,
+            )
+            return
         now = datetime.now(timezone.utc).isoformat()
         query = {
             "user_id": config.user_id,
@@ -108,6 +134,9 @@ class MCPPersistenceService:
             List of :class:`~parrot.mcp.registry.UserMCPServerConfig` instances.
             Returns an empty list if none are found.
         """
+        store = _redis_store()
+        if store is not None:
+            return await store.load(user_id, agent_id)
         query = {
             "user_id": user_id,
             "agent_id": agent_id,
@@ -153,6 +182,17 @@ class MCPPersistenceService:
             ``True`` if a matching document was found and deactivated.
             ``False`` if no document with the given compound key exists.
         """
+        store = _redis_store()
+        if store is not None:
+            removed = await store.remove(user_id, agent_id, server_name)
+            if removed:
+                logger.info(
+                    "Soft-deleted MCP config for server='%s' user='%s' agent='%s'",
+                    server_name,
+                    user_id,
+                    agent_id,
+                )
+            return removed
         query = {
             "user_id": user_id,
             "agent_id": agent_id,
