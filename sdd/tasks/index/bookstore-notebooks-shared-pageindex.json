@@ -89,7 +89,7 @@
       "feature_id": "FEAT-876",
       "feature": "bookstore-notebooks-shared-pageindex",
       "spec": "sdd/specs/bookstore-notebooks-shared-pageindex.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -99,8 +99,9 @@
       "parallelism_notes": "needs BookCard.kind/notes_for, Anchor, Annotation and CatalogStore.list_cards(kind=)/notebook_for from TASK-5475 (models.py, catalog.py)",
       "assigned_to": null,
       "started_at": "2026-11-10T23:47:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5477-notebook-lifecycle-annotated-reads.md"
+      "completed_at": "2026-11-11T00:07:55+00:00",
+      "file": "sdd/tasks/completed/TASK-5477-notebook-lifecycle-annotated-reads.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5478",
