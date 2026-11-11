@@ -15,7 +15,8 @@ The Model Context Protocol (MCP) layer lets an AI-Parrot agent do three things:
 2. **Serve** AI-Parrot tools to any MCP client (the *server* side): stdio, HTTP, Streamable HTTP, SSE,
    Unix socket and QUIC transports, with optional API-key or OAuth2 authentication.
 3. **Expose agents** as MCP servers, either one endpoint per agent (`AgentMCPMount`) or by marking
-   individual agent methods with `@mcp_tool`.
+   individual agent methods with `@mcp_tool`. To serve an agent locally over stdio instead, see
+   [Agent as a Local MCP Server](agent-local-mcp.md).
 
 The code is split across two distributions that share the `parrot.mcp` namespace (PEP 420 style,
 `parrot/mcp/__init__.py` calls `extend_path`):

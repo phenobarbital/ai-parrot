@@ -100,3 +100,29 @@ def test_cli_list_agents(root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert calls == ["agent_inventory"]
     assert "agent-finance" in result.output
     assert "discovering agents imports every agent module under AGENTS_DIR" in result.output
+
+
+REPO_ROOT = Path(__file__).resolve().parents[4]
+
+
+def test_agent_local_mcp_docs_cover_contract() -> None:
+    """The FEAT-877 docs page names the shipped contract and is cross-linked from its neighbours."""
+    page = (REPO_ROOT / "wiki" / "mcp" / "agent-local-mcp.md").read_text(encoding="utf-8")
+    assert page.startswith("---\ntitle:")
+    for phrase in (
+        "mcp_local",
+        "parrot toolkits install --agent",
+        "parrot toolkits list --agents",
+        "ask_stream",
+        "agent-",
+        "not declared for local MCP exposure",
+        "defines no exposable methods",
+    ):
+        assert phrase in page, phrase
+
+    toolkits_page = (REPO_ROOT / "wiki" / "tools" / "mcp-local-toolkits.md").read_text(encoding="utf-8")
+    assert "## Exposing an agent" in toolkits_page
+    assert "agent-local-mcp.md" in toolkits_page
+
+    server_page = (REPO_ROOT / "wiki" / "mcp" / "mcp-server-and-client.md").read_text(encoding="utf-8")
+    assert "agent-local-mcp.md" in server_page
