@@ -11,7 +11,8 @@ from typing import Dict, Any, List, Optional, Union, TYPE_CHECKING
 from pydantic import ValidationError
 from navconfig.logging import logging
 from ..tools.manager import ToolManager
-from ..tools.dataset_manager import DatasetManager
+from ..tools.dataset_manager import DatasetEntry, DatasetManager
+from ..tools.dataset_manager.sources import request_scoped_copy
 from ..models import ToolConfig
 from ..mcp.integration import MCPServerConfig
 from parrot.auth.oauth2.registry import OAuth2ProviderRegistry
@@ -339,7 +340,23 @@ class UserObjectsHandler:
                     # holds a source object (TableSource, InMemorySource, …)
                     # and optionally a loaded DataFrame.  Sharing the entry
                     # means fetches in the user DM see the same cache/source.
-                    user_dm._datasets[name] = entry
+                    if getattr(entry.source, "self_governed", False):
+                        # FEAT-880: never share a governed entry or its rows across sessions.
+                        user_dm._datasets[name] = DatasetEntry(
+                            name=name,
+                            description=entry.description,
+                            source=request_scoped_copy(entry.source),
+                            metadata=dict(entry.metadata or {}),
+                            is_active=entry.is_active,
+                            auto_detect_types=entry.auto_detect_types,
+                            cache_ttl=entry.cache_ttl,
+                            no_cache=entry.no_cache,
+                            computed_columns=list(entry._computed_columns),
+                            usage_guidance={k: list(v) for k, v in (entry.usage_guidance or {}).items()},
+                            protected=entry.protected,
+                        )
+                    else:
+                        user_dm._datasets[name] = entry
                     self.logger.debug(
                         "Copied dataset entry '%s' (%s, loaded=%s) "
                         "from agent to user DatasetManager",
