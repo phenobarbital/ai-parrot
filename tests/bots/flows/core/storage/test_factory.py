@@ -73,9 +73,7 @@ def test_result_storage_explicit_value_wins(monkeypatch):
         "postgres",
     )
     monkeypatch.setenv("PARROT_USER_STORE", "documentdb")
-    with patch(
-        "parrot.bots.flows.core.storage.backends.factory._import_class"
-    ) as imp:
+    with patch("parrot.bots.flows.core.storage.backends.factory._import_class") as imp:
         imp.return_value = _Fake
         get_result_storage(None)
         called_path = imp.call_args.args[0]
