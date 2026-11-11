@@ -151,7 +151,7 @@ def test_uninstall_and_disable_agent_section(repo: Path) -> None:
     assert "parrot-agent-finance" not in uninstalled_host["mcpServers"]
 
 
-@pytest.mark.parametrize("header", ["# toolkits: managed by hand\n", "# toolkits:\nnotes: toolkits: none\n"])
+@pytest.mark.parametrize("header", ["# toolkits: managed by hand\n", "# toolkits:\nnotes: \"toolkits: none\"\n"])
 def test_seed_agent_section_ignores_toolkits_mention_in_comment(tmp_path: Path, header: str) -> None:
     """A comment or value that merely mentions `toolkits:` is not mistaken for the root key."""
     config = _config(tmp_path)
