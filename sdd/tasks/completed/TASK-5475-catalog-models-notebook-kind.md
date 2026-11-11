@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-876 — Bookstore notebooks over a shared PageIndex
 **Spec**: `sdd/specs/bookstore-notebooks-shared-pageindex.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -321,10 +321,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+*(filled by sdd-worker)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker
+**Date**: 2026-11-11
+**Notes**: Delivered by native opus seat (attempt 2e5e25e5…). Commit 8970af4af3 + lint 99e13e7721, merged by hand: the engine task-tier validation could not run (bwrap: no user namespaces) so test_catalog/test_models/bookstore dir were run directly (244 passed; 5 test_integration_graph failures are pre-existing sandbox sqlite 'unable to open database file', identical on the base).
 
 **Deviations from spec**: none

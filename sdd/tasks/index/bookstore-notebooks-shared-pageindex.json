@@ -51,7 +51,7 @@
       "feature_id": "FEAT-876",
       "feature": "bookstore-notebooks-shared-pageindex",
       "spec": "sdd/specs/bookstore-notebooks-shared-pageindex.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -59,8 +59,9 @@
       "parallelism_notes": "no dependencies: catalog.py/models.py are not touched by any earlier task",
       "assigned_to": null,
       "started_at": "2026-11-10T23:47:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5475-catalog-models-notebook-kind.md"
+      "completed_at": "2026-11-11T00:01:13+00:00",
+      "file": "sdd/tasks/completed/TASK-5475-catalog-models-notebook-kind.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5476",
@@ -69,7 +70,7 @@
       "feature_id": "FEAT-876",
       "feature": "bookstore-notebooks-shared-pageindex",
       "spec": "sdd/specs/bookstore-notebooks-shared-pageindex.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -77,8 +78,9 @@
       "parallelism_notes": "no dependencies: only pageindex/toolkit.py, pageindex/__init__.py and a new test file",
       "assigned_to": null,
       "started_at": "2026-11-10T23:47:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5476-pageindex-write-policy-hook.md"
+      "completed_at": "2026-11-11T00:01:13+00:00",
+      "file": "sdd/tasks/completed/TASK-5476-pageindex-write-policy-hook.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5477",

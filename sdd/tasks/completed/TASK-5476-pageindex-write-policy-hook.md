@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-876 — Bookstore notebooks over a shared PageIndex
 **Spec**: `sdd/specs/bookstore-notebooks-shared-pageindex.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -335,10 +335,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+*(filled by sdd-worker)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker
+**Date**: 2026-11-11
+**Notes**: Delivered in a prior interrupted run (commits 96fd40c24c + 8bfe1d6311, merged fa15cc83d4). Closed in this run; test_write_policy.py present.
 
 **Deviations from spec**: none
