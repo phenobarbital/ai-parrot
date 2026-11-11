@@ -33,7 +33,7 @@ except ImportError:
     pass
 from navconfig.logging import logging
 from navconfig import BASE_DIR
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from aiohttp import web
 from ..bots.abstract import AbstractBot
 from ..mcp import MCPServerConfig
@@ -253,6 +253,22 @@ class PromptConfig(BaseModel):
     customize: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
 
 
+class MCPLocalExposure(BaseModel):
+    """Opt-in declaration that an agent may be served as a local stdio MCP server (FEAT-877).
+
+    Attributes:
+        enabled: When False the agent is treated as undeclared.
+        allow: Method names to expose. None exposes every own-class method; an entry
+            that is not an own-class public async method is an error at install and at
+            serve time (raised by parrot.mcp.agent_toolkit).
+    """
+
+    enabled: bool = True
+    allow: Optional[List[str]] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class BotConfig(BaseModel):
     """Configuration for the bot in config-based discovery."""
 
@@ -271,6 +287,7 @@ class BotConfig(BaseModel):
     model: Optional[ModelConfig] = Field(default=None)
     system_prompt: Optional[Union[str, Dict[str, Any]]] = Field(default=None)
     prompt: Optional[PromptConfig] = Field(default=None)
+    mcp_local: Optional[MCPLocalExposure] = Field(default=None)
     vector_store: Optional[StoreConfig] = Field(default=None)
 
     tags: Optional[Set[str]] = Field(default_factory=set)
@@ -285,6 +302,19 @@ class BotConfig(BaseModel):
     kind: AgentKind = AgentKind.LOCAL
     endpoint: Optional[str] = None
     contract_categories: List[str] = Field(default_factory=list)
+
+    @field_validator("mcp_local", mode="before")
+    @classmethod
+    def _coerce_mcp_local(cls, value: Any) -> Any:
+        """Coerce the `mcp_local` declaration (FEAT-877).
+
+        True -> {} (enabled, no allowlist); False/None -> None; anything else unchanged.
+        """
+        if value is True:
+            return {}
+        if value is False or value is None:
+            return None
+        return value
 
     @model_validator(mode="after")
     def _kind_requirements(self) -> "BotConfig":
@@ -1082,6 +1112,10 @@ class AgentRegistry:
         if "prompt" in content:
             bot_config_data["prompt"] = PromptConfig(**content["prompt"])
 
+        # Map 'mcp_local' section (FEAT-877): raw value, coerced by BotConfig._coerce_mcp_local
+        if "mcp_local" in content:
+            bot_config_data["mcp_local"] = content["mcp_local"]
+
         # Create BotConfig
         config = BotConfig(**bot_config_data)
 
@@ -1209,6 +1243,9 @@ class AgentRegistry:
 
         if config.prompt:
             data["prompt"] = config.prompt.model_dump(exclude_none=True)
+
+        if config.mcp_local is not None:
+            data["mcp_local"] = config.mcp_local.model_dump(exclude_none=True)
 
         with open(file_path, "w") as f:
             yaml.dump(data, f)
@@ -1379,11 +1416,13 @@ class AgentRegistry:
                 self.logger.error(f"Failed to import {file_path}: {e}")
         return imported_count
 
-    async def load_modules(self) -> int:
-        """
-        Dynamically import all Python modules from every discovery directory.
+    def load_modules_sync(self) -> int:
+        """Import every ``*.py`` in every discovery directory (sync).
 
-        This triggers any decorators in those modules to register agents.
+        This triggers any ``@register_agent`` decorators in those modules.
+
+        Returns:
+            Number of modules imported.
         """
         total_imported = 0
         for directory in self._discovery_paths:
@@ -1393,6 +1432,14 @@ class AgentRegistry:
             f"Discovered (decorator) agent modules: {total_imported} across {len(self._discovery_paths)} directories"
         )
         return total_imported
+
+    async def load_modules(self) -> int:
+        """
+        Dynamically import all Python modules from every discovery directory.
+
+        This triggers any decorators in those modules to register agents.
+        """
+        return self.load_modules_sync()
 
     def register_bot_decorator(
         self,
@@ -1405,6 +1452,7 @@ class AgentRegistry:
         startup_config: Optional[Dict[str, Any]] = None,
         tags: Optional[Iterable[str]] = None,
         roost: Optional[RoostAgentConfig] = None,
+        mcp_local: Union[bool, Dict[str, Any], MCPLocalExposure, None] = None,
         **kwargs,
     ):
         """
@@ -1419,6 +1467,8 @@ class AgentRegistry:
             dependencies: List of required dependencies
             singleton: Whether to enforce singleton instance
             tags: Optional tags for categorization
+            mcp_local: FEAT-877 opt-in to local stdio MCP exposure (True, a mapping
+                with ``enabled``/``allow``, or an MCPLocalExposure).
             **kwargs: Additional registration parameters
 
         Usage:
@@ -1470,6 +1520,7 @@ class AgentRegistry:
                 tags=set(tags or []),
                 priority=priority,
                 roost=roost,
+                mcp_local=mcp_local,
             )
 
             # Register immediately using the core register method
