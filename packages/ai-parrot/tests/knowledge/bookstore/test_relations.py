@@ -474,3 +474,55 @@ async def test_relate_drops_deterministic_edge_when_no_longer_matching(store):
 
     assert summary.deterministic_edges == 0
     assert project.list_relations("a", rel="same_author") == []
+
+
+# ---------------------------------------------------------------------------
+# FEAT-876 TASK-5480 — manual edges from relation sheets survive relate_books
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_relate_books_keeps_manual_edges(store_llm):
+    from parrot.knowledge.bookstore.notebooks import apply_relation_sheets
+
+    project = store_llm._catalog("project")
+    for card in (
+        _card("a", authors=["Same Author"], topics=["x"]),
+        _card("b", authors=["Same Author"], topics=["x"]),
+    ):
+        project.upsert(card)
+
+    notebook = await store_llm.ensure_notebook(None, scope="project")
+    toolkit = await store_llm._ready_toolkit("project")
+    for title, metadata in (
+        ("Parallel lives", {}),
+        ("Same author, by hand", {"rel": "same_author"}),
+        ("B answers A", {"rel": "responds_to"}),
+    ):
+        node = await toolkit.add_node(notebook.tree_name, title=title, body=f"{title} — reader's note.")
+        anchors = [{"book_id": "b"}, {"book_id": "a"}] if metadata.get("rel") == "responds_to" else [
+            {"book_id": "a"},
+            {"book_id": "b"},
+        ]
+        await toolkit.tag_node(notebook.tree_name, node["node_id"], metadata={"anchors": anchors, **metadata})
+
+    assert await apply_relation_sheets(store_llm) == 3
+
+    # Stage 1 (same_author/shares_topic), Stage 2 (the fake LLM judges a "parallels" pair) and
+    # Stage 3 all run — none of them may overwrite or delete a manual row.
+    summary = await store_llm.relate_books(None)
+    assert summary.llm_prompts >= 1
+
+    rows = {(r.src_book_id, r.dst_book_id, r.rel): r for r in project.list_relations("a")}
+    assert rows[("a", "b", "parallels")].origin == "manual"
+    assert rows[("a", "b", "parallels")].rationale == "Parallel lives — reader's note."
+    assert rows[("a", "b", "same_author")].origin == "manual"
+    assert rows[("b", "a", "responds_to")].origin == "manual"
+    assert ("a", "b", "shares_topic") in rows  # computed edges still land next to the manual ones
+
+    # A second relate pass (re-judging forced) keeps them too.
+    await store_llm.relate_books(["a", "b"], force=True)
+    again = {(r.src_book_id, r.dst_book_id, r.rel): r.origin for r in project.list_relations("a")}
+    assert again[("a", "b", "parallels")] == "manual"
+    assert again[("a", "b", "same_author")] == "manual"
+    assert again[("b", "a", "responds_to")] == "manual"

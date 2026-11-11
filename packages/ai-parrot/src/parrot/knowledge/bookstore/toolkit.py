@@ -4,6 +4,7 @@ Every public async method auto-becomes a ``bookstore_*`` tool via
 :class:`~parrot.tools.toolkit.AbstractToolkit`. The surface is
 deliberately small and funnel-shaped for research:
 
+0. ``bookstore_find_books`` — which books treat X, and where (librarian's sectors first)
 1. ``bookstore_catalog_search`` — which book covers X? (cheap, no LLM)
 1b. ``bookstore_related_books`` / ``bookstore_communities`` — expand by
     the book graph before opening anything (FEAT-533)
@@ -41,6 +42,7 @@ class BookstoreToolkit(AbstractToolkit):
             "agentic_retrieve",
             "catalog_search",
             "communities",
+            "find_books",
             "get_card",
             "get_community",
             "get_toc",
@@ -59,8 +61,25 @@ class BookstoreToolkit(AbstractToolkit):
         super().__init__(**kwargs)
         self._bookstore = bookstore
 
+    async def find_books(self, query: str, top_k: int = 5) -> dict[str, Any]:
+        """Which books of the library treat a topic, and where — START HERE.
+
+        Answers from the librarian's sectors (the library notebook) with direct pointers to the
+        table-of-contents entries; falls back to catalog search when no sector matches.
+
+        Args:
+            query: Topic or keywords (e.g. "stoic ethics").
+            top_k: Maximum sectors or books returned (clamped to 1-50).
+
+        Returns:
+            ``{"source": "sectors", "sectors": [{code, title, books: [{book_id, title, scope,
+            entries}]}]}``, or ``{"source": "catalog_fts", "books": [...], "hint": ...}`` when no
+            sector matched. Use ``book_id`` + entry ``node_id`` with ``bookstore_read_section``.
+        """
+        return await self._bookstore.find_books(query, top_k=max(1, min(top_k, 50)))
+
     async def catalog_search(self, query: str, top_k: int = 8) -> list[dict[str, Any]]:
-        """Find which books cover a topic — ALWAYS start here.
+        """Find which books cover a topic by their catalog cards (lexical fallback of find_books).
 
         Lexical (FTS/BM25) search over the per-book catalog cards
         (title, authors, topics, summary, table of contents). Cheap —
