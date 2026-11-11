@@ -59,6 +59,83 @@ except Exception:
     logger = logging
 
 
+_MISSING_RELATION_PATTERNS: Tuple[re.Pattern[str], ...] = (
+    re.compile(r'relation "(?P<table>[^"]+)" does not exist', re.IGNORECASE),
+    re.compile(r"Table '(?P<table>[^']+)' doesn't exist", re.IGNORECASE),
+    re.compile(r"Not found: Table (?P<table>\S+)", re.IGNORECASE),
+)
+_PERMISSION_PATTERN: re.Pattern[str] = re.compile(r"permission denied|access denied", re.IGNORECASE)
+_CONNECTION_PATTERN: re.Pattern[str] = re.compile(
+    r"connection refused|could not connect|connection (?:was )?closed|timeout expired|name or service not known",
+    re.IGNORECASE,
+)
+
+
+def _normalize_table_name(value: str) -> str:
+    """Lower-case a table reference and strip quoting characters."""
+    return value.strip().strip("\"'`[]").replace('"', "").replace("`", "").lower()
+
+
+def _classify_fetch_failure(exc: BaseException, table: Optional[str]) -> Optional[str]:
+    """Classify a materialize() failure the LLM cannot fix by rewriting its query.
+
+    Args:
+        exc: The exception raised while fetching the dataset.
+        table: The entry's own table name, or None when the source has no table.
+
+    Returns:
+        "missing_table", "permission_denied" or "connection" for terminal failures;
+        None when the failure is correctable by the caller.
+    """
+    text = str(exc)
+    if table:
+        own = _normalize_table_name(table)
+        for pattern in _MISSING_RELATION_PATTERNS:
+            for match in pattern.finditer(text):
+                named = _normalize_table_name(match.group("table"))
+                if named == own or named.rsplit(".", 1)[-1] == own.rsplit(".", 1)[-1]:
+                    return "missing_table"
+    if _PERMISSION_PATTERN.search(text):
+        return "permission_denied"
+    if isinstance(exc, (ConnectionError, OSError)) or _CONNECTION_PATTERN.search(text):
+        return "connection"
+    return None
+
+
+_TERMINAL_CAUSES: Dict[str, str] = {
+    "missing_table": "its underlying table does not exist",
+    "permission_denied": "access to its underlying table is denied",
+    "connection": "the data source is not reachable",
+}
+
+
+def _terminal_fetch_error(name: str, kind: str, detail: str) -> Dict[str, Any]:
+    """Build the ToolResult-shaped error dict for a terminal fetch failure.
+
+    Args:
+        name: Dataset name as the caller passed it.
+        kind: One of the kinds returned by ``_classify_fetch_failure``.
+        detail: The underlying error text.
+
+    Returns:
+        A dict with status/result/success/error plus ``retryable`` and ``error_kind``.
+    """
+    cause = _TERMINAL_CAUSES.get(kind, "the data source failed")
+    message = (
+        f"Dataset '{name}' is unavailable: {cause}. This is not a SQL problem. "
+        f"Do NOT retry and do NOT rewrite the query or try other parameters for this dataset. "
+        f"Tell the user that this data is currently unavailable. Detail: {detail}"
+    )
+    return {
+        "status": "error",
+        "success": False,
+        "result": None,
+        "error": message,
+        "retryable": False,
+        "error_kind": kind,
+    }
+
+
 class DatasetInfo(BaseModel):
     """Schema for dataset information exposed to LLM.
 
@@ -112,6 +189,8 @@ class DatasetInfo(BaseModel):
     )
 
     is_active: bool = Field(default=True, description="Whether dataset is currently active")
+    available: bool = Field(default=True, description="False when the source failed terminally; do not fetch")
+    unavailable_reason: Optional[str] = Field(default=None, description="Why the dataset is unavailable")
     cache_ttl: int = Field(default=3600, description="Per-entry TTL in seconds for Redis cache")
     cache_key: str = Field(default="", description="Stable Redis cache key (from source.cache_key)")
 
@@ -167,6 +246,8 @@ class DatasetEntry:
         raw_desc = description or self.metadata.get("description", "")
         self.description: str = raw_desc[:300] if raw_desc else ""
         self.is_active = is_active
+        self.unavailable_reason: Optional[str] = None
+        self._unavailable_kind: Optional[str] = None
         self.auto_detect_types = auto_detect_types
         self.cache_ttl = cache_ttl
         self.no_cache = no_cache
@@ -472,6 +553,8 @@ class DatasetEntry:
             row_count_estimate=row_count,
             table_size_warning=size_warning,
             is_active=self.is_active,
+            available=self.unavailable_reason is None,
+            unavailable_reason=self.unavailable_reason,
             cache_ttl=self.cache_ttl,
             cache_key=self.source.cache_key,
             usage_do=self.usage_guidance.get("do", []),
@@ -2303,6 +2386,8 @@ class DatasetManager(AbstractToolkit):
             resolved = self._resolve_name(name)
             if resolved in self._datasets:
                 self._datasets[resolved].is_active = True
+                self._datasets[resolved].unavailable_reason = None
+                self._datasets[resolved]._unavailable_kind = None
                 activated.append(resolved)
 
         # Regenerate guide when activation changes
@@ -3407,6 +3492,11 @@ class DatasetManager(AbstractToolkit):
                 "hint": "Call list_datasets() to see all datasets.",
             }
 
+        if entry.unavailable_reason is not None:
+            return _terminal_fetch_error(
+                name, entry._unavailable_kind or "missing_table", entry.unavailable_reason
+            )
+
         # Validate conditions type — LLMs sometimes pass a string instead of dict.
         if conditions is not None and not isinstance(conditions, dict):
             self.logger.warning(
@@ -3588,6 +3678,15 @@ class DatasetManager(AbstractToolkit):
             df = await self.materialize(name, force_refresh=force_refresh, **params)
         except Exception as exc:
             self.logger.error("fetch_dataset '%s' failed: %s", name, exc)
+            kind = _classify_fetch_failure(exc, getattr(entry.source, "table", None))
+            if kind is not None:
+                if kind in ("missing_table", "permission_denied"):
+                    entry.unavailable_reason = str(exc)
+                    entry._unavailable_kind = kind
+                    self.logger.warning(
+                        "fetch_dataset '%s' marked unavailable (%s)", name, kind
+                    )
+                return _terminal_fetch_error(name, kind, str(exc))
             # Provide source-aware guidance so the LLM can self-correct.
             source_type = type(entry.source).__name__
             if isinstance(entry.source, TableSource):
@@ -3619,8 +3718,12 @@ class DatasetManager(AbstractToolkit):
                     "with no extra parameters. "
                     "For SQLQuerySource provide conditions=."
                 )
+            message = f"Error fetching dataset '{name}': {exc}"
             return {
-                "error": f"Error fetching dataset '{name}': {exc}",
+                "status": "error",
+                "success": False,
+                "result": None,
+                "error": f"{message} {hint}",
                 "hint": hint,
             }
 

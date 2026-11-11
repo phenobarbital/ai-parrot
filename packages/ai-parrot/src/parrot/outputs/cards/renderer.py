@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterator
 from typing import Any
 
 from pydantic import BaseModel
@@ -598,7 +599,120 @@ def _version_gte(version: str, target: str) -> bool:
         return True
 
 
-def render(spec: CardSpec, *, max_card_bytes: int = 28_000) -> dict[str, Any]:
+# ── Fit-to-size ───────────────────────────────────────────────────────
+
+_FIT_NOTE = "Some content was shortened to fit the message size limit."
+_FIT_TEXT_LIMITS = (4000, 2000, 1000, 500)
+
+
+def _halvings(start: int) -> list[int]:
+    """Return ``start``, ``start // 2``, ... down to 1 (empty when ``start < 1``)."""
+    limits: list[int] = []
+    value = start
+    while value >= 1:
+        limits.append(value)
+        value //= 2
+    return limits
+
+
+def _shrink_spec(
+    spec: CardSpec,
+    *,
+    row_limit: int | None,
+    drop_inline_images: bool,
+    text_limit: int | None,
+) -> CardSpec:
+    """Build a reduced copy of ``spec`` for one fit-to-size attempt.
+
+    Auto-collapse is turned off, because its hidden toggles carry the
+    overflow rows and a second copy of long text — bytes the reader does
+    not see. A note telling the reader the content was shortened is
+    appended. Sections the reduction does not cover (forms, raw elements,
+    explicit toggles) are kept as they are.
+
+    Args:
+        spec: The original card specification.
+        row_limit: Maximum rows shown per table, or ``None`` to keep them.
+        drop_inline_images: Replace ``data:`` URI images with a short note.
+        text_limit: Maximum characters per text or code section, or ``None``.
+
+    Returns:
+        A new :class:`CardSpec`; ``spec`` is left untouched.
+    """
+    sections: list[CardSection] = []
+    for section in spec.sections:
+        if isinstance(section, TableSection) and row_limit is not None:
+            shown = min(section.max_display_rows, len(section.rows), row_limit)
+            total = section.total_rows if section.total_rows is not None else len(section.rows)
+            section = section.model_copy(update={
+                "rows": section.rows[:shown],
+                "max_display_rows": shown,
+                "total_rows": total,
+            })
+        elif isinstance(section, ImageSection) and drop_inline_images:
+            kept = [img for img in section.images if not img.url.startswith("data:")]
+            dropped = len(section.images) - len(kept)
+            if dropped:
+                if kept:
+                    sections.append(section.model_copy(update={"images": kept}))
+                noun = "image" if dropped == 1 else "images"
+                section = TextSection(
+                    text=f"{dropped} embedded {noun} omitted (too large for this message).",
+                    is_subtle=True,
+                )
+        elif isinstance(section, TextSection) and text_limit is not None and len(section.text) > text_limit:
+            section = section.model_copy(update={"text": section.text[:text_limit].rstrip() + " …"})
+        elif isinstance(section, CodeSection) and text_limit is not None and len(section.code) > text_limit:
+            section = section.model_copy(update={"code": section.code[:text_limit].rstrip() + "\n…"})
+        sections.append(section)
+    sections.append(TextSection(text=_FIT_NOTE, is_subtle=True, separator=True))
+    return spec.model_copy(update={"sections": sections, "auto_collapse": None})
+
+
+def _shrink_candidates(spec: CardSpec) -> Iterator[CardSpec]:
+    """Yield ever-smaller versions of ``spec``, the most faithful first.
+
+    The order is: fewer table rows (keeping embedded images), then embedded
+    ``data:`` images dropped with the table rows restored and halved again,
+    then long text and code cut down as well. Each candidate is built from
+    the original ``spec``, so a later step never inherits a cut it does
+    not need.
+
+    Args:
+        spec: The card specification that rendered over budget.
+
+    Yields:
+        Reduced :class:`CardSpec` copies.
+    """
+    tables = [s for s in spec.sections if isinstance(s, TableSection)]
+    widest = max((min(len(t.rows), t.max_display_rows) for t in tables), default=0)
+    first = widest
+    if spec.auto_collapse is not None and spec.auto_collapse.enabled:
+        first = min(widest, spec.auto_collapse.table_row_threshold)
+    row_limits: list[int | None] = list(_halvings(first)) or [None]
+    has_inline_images = any(
+        img.url.startswith("data:")
+        for s in spec.sections
+        if isinstance(s, ImageSection)
+        for img in s.images
+    )
+
+    for row_limit in row_limits:
+        yield _shrink_spec(spec, row_limit=row_limit, drop_inline_images=False, text_limit=None)
+    if has_inline_images:
+        for row_limit in row_limits:
+            yield _shrink_spec(spec, row_limit=row_limit, drop_inline_images=True, text_limit=None)
+    for text_limit in _FIT_TEXT_LIMITS:
+        for row_limit in row_limits:
+            yield _shrink_spec(spec, row_limit=row_limit, drop_inline_images=True, text_limit=text_limit)
+
+
+def _card_size(card: dict[str, Any]) -> int:
+    """Return the serialized UTF-8 size of ``card`` in bytes."""
+    return len(json.dumps(card).encode("utf-8"))
+
+
+def render(spec: CardSpec, *, max_card_bytes: int = 28_000, fit: bool = False) -> dict[str, Any]:
     """Render a :class:`CardSpec` into an Adaptive Card JSON payload.
 
     Uses native ``Table`` elements for AC >= 1.5, and falls back to
@@ -607,12 +721,45 @@ def render(spec: CardSpec, *, max_card_bytes: int = 28_000) -> dict[str, Any]:
     Args:
         spec: The card specification to render.
         max_card_bytes: Maximum allowed serialized card size in bytes.
+        fit: When the card is over ``max_card_bytes``, shrink it instead of
+            failing: show fewer table rows, drop embedded ``data:`` images,
+            then cut long text, until it fits. The card then ends with a
+            note saying content was shortened.
 
     Returns:
         A JSON-serializable dict representing the Adaptive Card.
 
     Raises:
-        CardRenderError: If the serialized card exceeds ``max_card_bytes``.
+        CardRenderError: If the serialized card exceeds ``max_card_bytes``
+            (with ``fit=True``: if even the smallest version still does).
+    """
+    card = _render_card(spec)
+    size = _card_size(card)
+    if size <= max_card_bytes:
+        return card
+    if fit:
+        for candidate in _shrink_candidates(spec):
+            card = _render_card(candidate)
+            fitted_size = _card_size(card)
+            if fitted_size <= max_card_bytes:
+                logger.info(
+                    "Card shrunk from %d to %d bytes to fit max_card_bytes=%d",
+                    size, fitted_size, max_card_bytes,
+                )
+                return card
+    raise CardRenderError(
+        f"card size {size} exceeds max_card_bytes={max_card_bytes}"
+    )
+
+
+def _render_card(spec: CardSpec) -> dict[str, Any]:
+    """Render ``spec`` into Adaptive Card JSON without any size check.
+
+    Args:
+        spec: The card specification to render.
+
+    Returns:
+        A JSON-serializable dict representing the Adaptive Card.
     """
     body: list[dict[str, Any]] = []
     all_actions: list[ACAction] = list(spec.actions)
@@ -673,12 +820,6 @@ def render(spec: CardSpec, *, max_card_bytes: int = 28_000) -> dict[str, Any]:
     }
     if all_actions:
         card["actions"] = [_serialize_action(a) for a in all_actions]
-
-    serialized_size = len(json.dumps(card).encode("utf-8"))
-    if serialized_size > max_card_bytes:
-        raise CardRenderError(
-            f"card size {serialized_size} exceeds max_card_bytes={max_card_bytes}"
-        )
     return card
 
 

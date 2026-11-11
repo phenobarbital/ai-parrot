@@ -30,11 +30,19 @@ def test_uses_detection_when_unset(monkeypatch):
 
 
 def test_respects_opt_out(monkeypatch, caplog):
+    """PARROT_NO_AUTO_LLM skips CLI detection but the built-in default still applies."""
     monkeypatch.setenv("PARROT_NO_AUTO_LLM", "1")
     with patch("parrot.clients.detection.detect_coding_agent_llm") as mock_detect:
-        adapter, light, client = _llm.resolve_adapter()
+        with (
+            patch("parrot.clients.factory.LLMFactory.create") as mock_create,
+            patch(
+                "parrot.clients.factory.LLMFactory.parse_llm_string",
+                return_value=("google", "gemini-3.5-flash"),
+            ),
+        ):
+            adapter, light, client = _llm.resolve_adapter()
     mock_detect.assert_not_called()
-    assert (adapter, light, client) == (None, None, None)
+    assert adapter is not None
 
 
 def test_explicit_config_wins(monkeypatch):
@@ -48,23 +56,46 @@ def test_explicit_config_wins(monkeypatch):
     mock_detect.assert_not_called()
 
 
-def test_degrades_when_detection_misses(monkeypatch, caplog):
+def test_degrades_when_detection_misses_and_default_fails(monkeypatch, caplog):
+    """When detection finds nothing AND the built-in default can't be built, degrade."""
     caplog.set_level(logging.WARNING)
     with patch("parrot.clients.detection.detect_coding_agent_llm", return_value=None):
-        adapter, light, client = _llm.resolve_adapter()
+        with patch.object(_llm, "_default_llm_spec", side_effect=ImportError("no google")):
+            adapter, light, client = _llm.resolve_adapter()
     assert (adapter, light, client) == (None, None, None)
     assert "bookstore runs BM25/catalog only" in caplog.text
 
 
+def test_default_kicks_in_when_detection_misses(monkeypatch, caplog):
+    """When detection finds nothing, the built-in Google default is used."""
+    caplog.set_level(logging.INFO)
+    with patch("parrot.clients.detection.detect_coding_agent_llm", return_value=None):
+        with (
+            patch("parrot.clients.factory.LLMFactory.create") as mock_create,
+            patch(
+                "parrot.clients.factory.LLMFactory.parse_llm_string",
+                return_value=("google", "gemini-3.5-flash"),
+            ),
+        ):
+            adapter, light, client = _llm.resolve_adapter()
+    assert adapter is not None
+    assert "Using default bookstore LLM" in caplog.text
+
+
 def test_degrades_when_detection_itself_raises(monkeypatch, caplog):
-    """Code-review fix: detection failures (entry-point discovery blowing
-    up, shutil.which raising, etc.) must never escape resolve_adapter() —
-    spec §7 requires graceful degradation on any detection/resolution
-    failure, matching the existing except-Exception pattern."""
+    """Detection failures must never escape resolve_adapter() —
+    the built-in default still applies after a detection crash."""
     caplog.set_level(logging.WARNING)
     with patch(
         "parrot.clients.detection.detect_coding_agent_llm",
         side_effect=RuntimeError("boom"),
     ):
-        adapter, light, client = _llm.resolve_adapter()
-    assert (adapter, light, client) == (None, None, None)
+        with (
+            patch("parrot.clients.factory.LLMFactory.create") as mock_create,
+            patch(
+                "parrot.clients.factory.LLMFactory.parse_llm_string",
+                return_value=("google", "gemini-3.5-flash"),
+            ),
+        ):
+            adapter, light, client = _llm.resolve_adapter()
+    assert adapter is not None
