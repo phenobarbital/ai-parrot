@@ -83,7 +83,7 @@
       "feature_id": "FEAT-880",
       "feature": "datasetmanager-semantic-source",
       "spec": "sdd/specs/datasetmanager-semantic-source.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -93,8 +93,9 @@
       "parallelism_notes": "modifies tool.py and the core test file after TASK-5516 (same files, serialized)",
       "assigned_to": null,
       "started_at": "2026-11-11T23:45:56+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5517-datasetmanager-semantic-response-guidance.md"
+      "completed_at": "2026-11-11T23:52:48+00:00",
+      "file": "sdd/tasks/completed/TASK-5517-datasetmanager-semantic-response-guidance.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5518",
