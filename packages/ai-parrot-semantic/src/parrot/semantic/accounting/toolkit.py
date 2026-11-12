@@ -141,7 +141,10 @@ class AccountingToolkit(AbstractToolkit):
     @staticmethod
     def _manifest_provider(manifests: Mapping[str, Mapping[str, Path | str]]) -> SnapshotProvider:
         """Adapt ``{tenant: {model: manifest_path}}`` into a provider that re-reads the file on every call."""
-        table = {str(tenant): {str(model): Path(path) for model, path in models.items()} for tenant, models in manifests.items()}
+        table = {
+            str(tenant): {str(model): Path(path) for model, path in models.items()}
+            for tenant, models in manifests.items()
+        }
 
         async def provider(tenant: str, model: str, spec: AccountingModelSpec) -> ChartSnapshot:
             path = table.get(tenant, {}).get(model)
@@ -223,7 +226,9 @@ class AccountingToolkit(AbstractToolkit):
             if metric not in spec.metrics:
                 raise RequestValidationError(f"unknown metric {metric!r} in model {model!r}")
             return model
-        candidates = sorted(name for (spec_tenant, name), spec in specs.items() if spec_tenant == tenant and metric in spec.metrics)
+        candidates = sorted(
+            name for (spec_tenant, name), spec in specs.items() if spec_tenant == tenant and metric in spec.metrics
+        )
         if not candidates:
             raise RequestValidationError(f"unknown metric {metric!r} for tenant {tenant!r}")
         if len(candidates) > 1:

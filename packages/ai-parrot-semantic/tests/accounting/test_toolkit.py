@@ -74,15 +74,15 @@ def _toolkit(models_dir: Path, snapshot: ChartSnapshot, **kwargs: Any) -> Accoun
 
 
 def _write_manifest(path: Path, snapshot: ChartSnapshot) -> None:
-    accounts = [
-        {"account_id": a.account_id, "nature": a.nature, "tags": ",".join(a.tags)} for a in snapshot.accounts
-    ]
+    accounts = [{"account_id": a.account_id, "nature": a.nature, "tags": ",".join(a.tags)} for a in snapshot.accounts]
     path.write_text(yaml.safe_dump({"taken_at": "2026-10-01", "accounts": accounts}), encoding="utf-8")
 
 
 async def test_toolkit_list_and_explain(troc_pnl_yaml, chart_snapshot) -> None:
     calls: list = []
-    toolkit = AccountingToolkit(models_dir=troc_pnl_yaml.parent.parent, snapshot_provider=_provider(chart_snapshot, calls))
+    toolkit = AccountingToolkit(
+        models_dir=troc_pnl_yaml.parent.parent, snapshot_provider=_provider(chart_snapshot, calls)
+    )
 
     listed = await toolkit.list_metrics("troc")
     assert sorted(row["metric"] for row in listed) == list(METRICS)
