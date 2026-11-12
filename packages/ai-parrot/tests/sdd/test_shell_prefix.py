@@ -196,9 +196,7 @@ def test_errors_exit_2_and_exec_nothing(
     assert "sdd shell prefix:" in capsys.readouterr().err
 
 
-def _assert_blocked(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], policy_path: Path
-) -> None:
+def _assert_blocked(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], policy_path: Path) -> None:
     """Run the prefix against ``policy_path`` and require a fail-closed exit."""
     monkeypatch.setenv(shell_prefix.POLICY_ENV, str(policy_path))
     captured = _capture_exec(monkeypatch)

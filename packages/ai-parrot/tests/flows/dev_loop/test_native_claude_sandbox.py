@@ -438,7 +438,10 @@ def test_prefix_stub_runs_passthrough_from_session_copy(
 
     result = subprocess.run(
         [environment["CLAUDE_CODE_SHELL_PREFIX"], "printf hook-ran"],
-        env={"PATH": os.environ["PATH"], "PARROT_SDD_SHELL_PREFIX_POLICY": environment["PARROT_SDD_SHELL_PREFIX_POLICY"]},
+        env={
+            "PATH": os.environ["PATH"],
+            "PARROT_SDD_SHELL_PREFIX_POLICY": environment["PARROT_SDD_SHELL_PREFIX_POLICY"],
+        },
         cwd=tmp_path,
         capture_output=True,
         text=True,
@@ -516,7 +519,7 @@ def test_agent_hook_commands_only_inside_hooks_block(tmp_path: Path) -> None:
         "      hooks:\n"
         "        - type: command\n"
         "          command: 'guard --hook || exit 2'\n"
-        "        - command: \"second\"\n"
+        '        - command: "second"\n'
         "color: blue\n"
         "---\n"
         "command: body\n"
