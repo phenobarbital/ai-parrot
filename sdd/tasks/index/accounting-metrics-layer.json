@@ -94,7 +94,7 @@
       "feature_id": "FEAT-713",
       "feature": "accounting-metrics-layer",
       "spec": "sdd/specs/accounting-metrics-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -104,8 +104,9 @@
       "parallelism_notes": "Needs the parrot.semantic.accounting package from TASK-5524 (accounting/__init__.py). Exclusive: creates tests/accounting/conftest.py, loaded by every later accounting test.",
       "assigned_to": null,
       "started_at": "2026-11-12T00:04:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5525-model-definition-contracts-and-fixtures.md"
+      "completed_at": "2026-11-12T00:39:28+00:00",
+      "file": "sdd/tasks/completed/TASK-5525-model-definition-contracts-and-fixtures.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5526",

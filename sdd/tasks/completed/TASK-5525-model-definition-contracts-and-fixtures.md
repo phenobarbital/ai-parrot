@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-713 — Accounting Metrics Layer
 **Spec**: `sdd/specs/accounting-metrics-layer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5524
@@ -411,10 +411,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker / native opus coder (attempt 9420810507b64a3989d5ee7718f18a99), commit 4092546c70
+**Date**: 2026-11-12
+**Notes**: models.py contracts, conftest fixtures, test_models.py. Tests green. AC4 (troc_pnl_yaml loads with zero problems) is verifiable only in TASK-5529. Residual lint: B905 zip() without strict= at models.py:209 (style, left to /sdd-done).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: fixture account 4900 (returns) is debit-natured (contra-revenue) so revenue = sales - returns works under debit_positive; spec docstring says "4xxx credit". Fixture also adds set `d_and_a_legacy` (valid_to 2025-01-01) to cover two membership intervals. Later tasks must use set names: product_sales, returns, cost_of_sales, other_cost, operating_expenses, d_and_a, d_and_a_legacy.
