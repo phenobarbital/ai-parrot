@@ -156,6 +156,13 @@ Exercise both an explicit allow and an explicit deny policy against the real
 server factory. Parsing or listing configuration alone is not evidence that
 the configured PBAC guard binds the static identity around tool execution.
 
+## Accounting metrics
+
+Chart-of-accounts rollups (revenue, EBITDA, …) are served by the `finance_*` tools of
+`parrot.semantic.accounting` — see [accounting-metrics-layer](accounting-metrics-layer.md). Their visibility is
+per metric through `DatasetPolicyGuard` and allows every metric when no guard or no permission context is
+configured; the `sl_*` tools on this page fail closed instead.
+
 ## Example agents
 
 Runnable examples live in `examples/agents/semantic/`, over one committed model fixture

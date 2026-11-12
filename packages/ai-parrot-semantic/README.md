@@ -5,8 +5,7 @@ Install: `uv pip install 'ai-parrot-semantic[duckdb]'`.
 
 ## Layering
 
-Generic semantic queries and the future accounting extension share this namespace.
-The accounting extension must remain independently importable.
+Generic semantic queries and the accounting extension share this namespace. The accounting compile path (`parrot.semantic.accounting` models, grammar, loader, validation, compiler) imports without the governed stack; its toolkit and runtimes share this package's audit ledger, executor and compile cache.
 
 ## Governance
 
