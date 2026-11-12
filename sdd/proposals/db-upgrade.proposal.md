@@ -119,6 +119,20 @@ A spec can follow directly.
 - **`creation.sql` is not a migration.** It starts with `DROP TABLE IF EXISTS navigator.ai_bots CASCADE`,
   its constraint/trigger statements fail on re-run, and it lacks the five FEAT-752 columns.
   *Implication*: the baseline must be rewritten as guarded, additive SQL. *Evidence*: F002, F003
+- **The catch-up script is not a bootstrap.** `ai-bots-homologate-botmodel.sql` only adds selected
+  columns to an existing table; FEAT-752 also only adds columns. A complete guarded table creation,
+  including foundational columns and required database objects, must precede those ALTERs.
+  *Evidence*: review of `sdd/migrations/ai-bots-homologate-botmodel.sql` and
+  `sdd/migrations/FEAT-752-ai-bots-suggestion-columns.sql`.
+- **Fold backfills reference columns that may already be gone.** Both legacy fold scripts run
+  `UPDATE`s before dropping their source columns. `DROP COLUMN IF EXISTS` does not protect those
+  updates; each backfill needs a catalog-based source-column existence check before execution.
+  *Evidence*: review of `sdd/migrations/FEAT-fold-legacy-llm-columns.sql` and
+  `sdd/migrations/FEAT-fold-embedding-model-into-vector-store-config.sql`.
+- **The embedding fold spans two tables.** It changes both `ai_bots` and `users_bots`. The `bots`
+  set must contain only the `ai_bots` portion; retain the `users_bots` portion as a separate manual
+  migration until that table has its own migration owner. A bots-only installation must not require
+  `users_bots`. *Evidence*: review of `sdd/migrations/FEAT-fold-embedding-model-into-vector-store-config.sql`.
 - **Byte-freeze gate.** `creation.sql` and the BotModel docstring DDL are frozen by
   `test_storage_gates.py::test_load_database_bots_untouched`; deliberate edits need a `_SANCTIONED_REWRITES`
   entry. *Implication*: demoting `creation.sql` (U5) is a sanctioned rewrite. *Evidence*: F003
@@ -182,8 +196,22 @@ suggestion columns (10-28). Every step was tracked by hand.
 - **Parrot ledger table** in `PARROT_SCHEMA`, keyed by `(migration_set, filename)`, distinct from
   `navigator.ai_studio_migrations` (U1).
 - **`bots` set** for `navigator.ai_bots`:
-  - `001` is a guarded baseline built from `ai-bots-homologate-botmodel.sql` plus the FEAT-752 columns.
-  - The fold and data-fix steps follow in the order of their git dates.
+  - `001` creates the configured schema and a complete current `BotModel` table if missing, including
+    all 49 fields (FEAT-752 included), required defaults, constraints, indexes and trigger/function.
+    Resolve UUID-generation prerequisites explicitly. Derive the full definition from `BotModel`
+    and `creation.sql`, excluding destructive DROP statements and example-data inserts.
+  - On an existing table, guarded additive catch-up ALTERs run after the create-if-missing step,
+    using `ai-bots-homologate-botmodel.sql` and FEAT-752 as inputs. Creation alone does not repair
+    an existing table. Guard constraints and triggers through catalog checks where SQL has no
+    `IF NOT EXISTS` form. Preserve existing rows and legacy columns until their backfills complete.
+  - Fold and data-fix steps follow in verified dependency order; git dates are research hints only.
+    Before each backfill, check that its individual source column exists, then execute SQL referencing
+    it only inside that guarded branch. Preserve explicit destination JSONB values, backfill missing
+    keys, and drop that source column only after a successful backfill in the same transaction.
+    Independent normalization steps must still run when a source column has already been dropped.
+  - Split the embedding fold: package only its `ai_bots` statements in `bots`. Keep its `users_bots`
+    statements in a separately named manual script under `sdd/migrations/`, with their own table/column
+    prerequisites documented. The `bots` set neither reads nor alters `users_bots`.
   - Everything is templated with `{schema}` / `{bots_table}`.
 - **Runtime-table sets (U2)** for the `navigator.*` tables that create themselves at runtime with
   `CREATE TABLE IF NOT EXISTS` (F011 names `ui_surfaces`, `ui_surface_shares`, `crew_definitions`,
@@ -192,13 +220,23 @@ suggestion columns (10-28). Every step was tracked by hand.
 - **CLI verb group (U4):**
   - `parrot self migration status`: the `--check` equivalent, with exit code 1 when anything is pending or changed.
   - `upgrade [--set …] [--fail-fast] [--reapply-changed]`
-  - `baseline`: records files as applied without running them (U3).
+  - `baseline`: records explicitly selected files as applied without running them (U3), only after
+    their schema and data postconditions have been verified. It must not stamp pending changes merely
+    to bypass a failed fold on a partially migrated database.
   - `new <set> <name>`: scaffolds the next `NNN_*.sql`.
   - All verbs take `--dsn`; exit codes are 0 ok, 1 pending, 2 failed, 3 config.
 - **Read-only integration:** a row in `parrot self doctor`, plus a startup warning where database bots
   are loaded.
-- **Documentation and a guard test:** a "how to add a migration" convention, and a test that the
-  `bots` set covers every `BotModel` column.
+- **Documentation and validation:** a "how to add a migration" convention and a guard test that the
+  resulting `bots` schema covers every `BotModel` column. Live-Postgres tests must exercise:
+  - A fresh database through the full chain, including defaults, constraints, indexes and triggers,
+    without running `creation.sql` manually; repeat the upgrade and verify no changes.
+  - Legacy, fully folded, and partially folded schemas, including a mix of present/absent source
+    columns. Verify row preservation, backfilled values, destination-value precedence, normalization,
+    and rollback of both data and ledger writes on failure.
+  - A database without `users_bots`, and one with sentinel `users_bots` rows: `upgrade --set bots`
+    succeeds in both and leaves that table untouched.
+  - Non-default configured schema/table names and baseline selection that leaves unapplied changes pending.
 
 ### What Changes
 
@@ -212,7 +250,10 @@ suggestion columns (10-28). Every step was tracked by hand.
   fresh-install-only file whose header points to `parrot self migration`. This is a sanctioned rewrite
   in `test_storage_gates.py` (U5). *Evidence*: F002, F003
 - **`sdd/migrations/`**: the `ai_bots` scripts move into the packaged `bots` set and are removed from
-  here. The planogram, ecotank and ontology files stay (U5). *Evidence*: F017, F020
+  here after safe conversion. Exclude `botmodel-recreate-table.sql` from the executable migration chain;
+  its destructive rebuild is not an upgrade. Split the mixed embedding fold before removing the old
+  file, preserving its `users_bots` portion as a separate manual script. The planogram, ecotank and
+  ontology files stay (U5). *Evidence*: F017, F020; direct review of the fold and rebuild scripts.
 - **Runtime-DDL modules of the U2 tables**: their schema becomes owned by a migration set. Whether the
   runtime `CREATE TABLE IF NOT EXISTS` stays as a create-on-first-use fallback is a spec decision
   (§5). *Evidence*: F011
@@ -220,7 +261,10 @@ suggestion columns (10-28). Every step was tracked by hand.
 ### What's Untouched (Non-Goals)
 
 - Down/rollback migrations (navauth non-goal); rollback DDL stays as comments where it exists.
-- Data migrations and non-parrot domain data (planogram, ecotank, ontology seeds in `sdd/migrations/`).
+- Unrelated data migrations and non-parrot domain data (planogram, ecotank, ontology seeds in
+  `sdd/migrations/`). Bot configuration backfills and the existing bot tool-name fix remain in scope.
+- Versioned ownership of `users_bots`: its embedding fold remains a separate manual migration;
+  the packaged `bots` set has no dependency on that table.
 - Agent Studio's runner and its `navigator.ai_studio_migrations` ledger (U1 — kept apart for now).
 - task-memory's own `verify_schema` / `apply_migrations` mechanism.
 - External migration tools (alembic etc.) and non-Postgres databases.
@@ -249,9 +293,15 @@ suggestion columns (10-28). Every step was tracked by hand.
 ### Integration Risks
 
 - **Pre-existing databases at unknown versions:** the scripts were partly applied by hand, and the fold
-  scripts `DROP` columns. Mitigation: guard every statement with `IF EXISTS` / `IF NOT EXISTS`, and use
-  `baseline` (U3) for environments known to be current. Keep `_fold_legacy_bot_columns` until every
-  environment reports clean. *Evidence*: F003, F017, F020
+  scripts `DROP` columns. Mitigation: use per-column catalog guards around backfills, preserve explicit
+  JSONB values, and keep each backfill/drop atomic. DDL existence guards alone are insufficient.
+  Use `baseline` (U3) only for selected files whose postconditions are verified; partially migrated
+  environments must still execute pending work. Keep `_fold_legacy_bot_columns` until every
+  environment reports clean. *Evidence*: F003, F017, F020; direct review of the fold scripts.
+- **Fresh databases and optional tables:** additive catch-up SQL cannot create `ai_bots`, and the
+  original embedding fold assumes `users_bots` exists. Mitigation: a complete guarded bootstrap,
+  followed by catch-up and folds, and a strict split of the two tables' migrations. Validate the full
+  chain without `users_bots` or a manual `creation.sql` prerequisite.
 - **The runtime database user may lack DDL rights.** Mitigation: an admin DSN option with a fallback and a
   notice. *Evidence*: F014, F019
 - **U2 widens scope across distributions and live features.** Some tables, such as `studio_drafts` and
@@ -286,7 +336,7 @@ suggestion columns (10-28). Every step was tracked by hand.
 | C13 | `creation.sql` + docstring DDL are byte-frozen by a test gate | F003 | medium | from a wiki lesson; test file exists, symbol not read |
 | C14 | The verb name risks confusion with `self update` / `migrate_legacy_uv` | F012, F018 | medium | names verified; user impact is judgement |
 | C15 | `parrot setup` / `parrot install` provision no DB tables | F021 | medium | absence grep scoped to two packages |
-| C16 | An ai_bots version chain can be reconstructed from git dates of `sdd/migrations` files | F017, F003 | medium | order inferred; some files edited after creation |
+| C16 | Git dates suggest an ai_bots history, but the executable chain requires dependency and schema-state validation | F017, F003; review of fold SQL | medium | files were edited after creation; backfills require guards and the embedding fold spans two tables |
 | C17 | The runner must not rely on asyncdb `execute()` to detect failure | F007, F019 | high | documented navauth gotcha with code |
 | C18 | The ai_bots DDL ships from ai-parrot-server while BotModel and the CLI are core | F001, F012 | high | file locations verified |
 
@@ -304,14 +354,18 @@ Distribution: **11** high, **7** medium, **0** low.
 - [x] **U2 — What is the v1 scope?** — *Resolved*: ai_bots + runtime tables — also cover `navigator.*` tables
   that self-create at runtime (ui_surfaces, crew_definitions, …). *Resolves claims*: C8, C9
 - [x] **U3 — How are databases with hand-applied changes adopted?** — *Resolved*: idempotent + baseline —
-  files stay idempotent (first run is a no-op where applied) AND a `baseline`/stamp records files without
-  running them. *Resolves claims*: C5, C16
+  files stay idempotent through per-column guarded backfills and guarded DDL (first run is a no-op
+  where applied). A `baseline`/stamp records explicitly selected files without running them only after
+  their postconditions are verified; it does not replace pending work. *Resolves claims*: C5, C16
 - [x] **U4 — CLI shape?** — *Resolved*: group with verbs —
   `parrot self migration status | upgrade | baseline | new` (`new` scaffolds the next `NNN_*.sql` for a set).
   *Resolves claims*: C1, C14
 - [x] **U5 — Fate of `sdd/migrations/` and `creation.sql`?** — *Resolved*: move ai_bots scripts into the
-  package set (removed from `sdd/migrations`); planogram/ontology files stay; `creation.sql` becomes
-  fresh-install only and points to the command (sanctioned rewrite). *Resolves claims*: C3, C4, C13
+  package set after safe conversion (removed from `sdd/migrations`); retain the split `users_bots`
+  embedding fold as a manual script and exclude destructive rebuild SQL from the chain.
+  Planogram/ontology files stay; `creation.sql` becomes fresh-install only and points to the command
+  (sanctioned rewrite). The command itself supports fresh databases without that file.
+  *Resolves claims*: C3, C4, C13
 
 ### Unresolved (defer to spec / implementation)
 
