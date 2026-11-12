@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -267,3 +268,233 @@ async def test_table_source_fetches_journal_columns(troc_pnl_yaml, chart_snapsho
     with pytest.raises(ModelValidationError):
         await bad._ensure_loaded("troc", "troc_pnl")
     assert not bad._catalog.is_loaded("troc", "troc_pnl")
+
+
+# --- TASK-5537: query_metric / validate_model ---------------------------------------------------------------------
+
+
+def _frames(frame: Any, requested: list | None = None):  # noqa: ANN202
+    async def frame_provider(name: str) -> Any:
+        if requested is not None:
+            requested.append(name)
+        return frame
+
+    return frame_provider
+
+
+async def _close(toolkit: AccountingToolkit) -> None:
+    if toolkit._engine is not None:
+        await toolkit._engine.close()
+
+
+async def test_toolkit_tools_and_prefix(troc_pnl_yaml, chart_snapshot) -> None:
+    toolkit = _toolkit(troc_pnl_yaml.parent.parent, chart_snapshot)
+    names = sorted(tool.name for tool in toolkit.get_tools())
+    assert names == [
+        "finance_explain_metric",
+        "finance_list_metrics",
+        "finance_query_metric",
+        "finance_validate_model",
+    ]
+
+
+async def test_query_metric_duckdb(troc_pnl_yaml, chart_snapshot, journal_frame, monkeypatch) -> None:
+    import threading
+
+    from parrot.semantic.accounting import toolkit as toolkit_module
+
+    compile_threads: list[int] = []
+    real_compile = toolkit_module.compile_metric
+
+    def spy(*args: Any, **kwargs: Any) -> Any:
+        compile_threads.append(threading.get_ident())
+        return real_compile(*args, **kwargs)
+
+    monkeypatch.setattr(toolkit_module, "compile_metric", spy)
+    requested: list[str] = []
+    toolkit = _toolkit(
+        troc_pnl_yaml.parent.parent,
+        chart_snapshot,
+        frame_provider=_frames(journal_frame, requested),
+        audit_mode="best_effort",
+        duckdb_threads=2,
+    )
+    try:
+        result = await toolkit.query_metric(
+            "gross_margin", "2025-01-01", "2025-03-31", grain="month", dimensions=["entity"], tenant="troc"
+        )
+        again = await toolkit.query_metric(
+            "gross_margin", "2025-01-01", "2025-03-31", grain="month", dimensions=["entity"], tenant="troc"
+        )
+    finally:
+        await _close(toolkit)
+
+    assert requested == ["journal", "journal"]
+    assert len(compile_threads) == 1  # the second query hit the compile cache
+    assert compile_threads[0] != threading.get_ident()  # compiled off the event loop
+    assert result["columns"] == ["bucket", "entity", "m_gross_margin"]
+    assert result["row_count"] == len(result["rows"]) == 9
+    for row in result["rows"]:
+        assert isinstance(row["m_gross_margin"], str)
+        Decimal(row["m_gross_margin"])  # exact decimal text
+        assert row["bucket"] in ("2025-01-01", "2025-02-01", "2025-03-01")
+    assert len(result["sql_hash"]) == 64 and len(result["plan_hash"]) == 64
+    assert result["lineage"]["metric"] == "gross_margin"
+    assert result["chart_drift"] is False and result["assertion_failed"] is False
+    assert result["audit_id"] and result["audit_id"] != again["audit_id"]
+    assert again["rows"] == result["rows"] and again["sql_hash"] == result["sql_hash"]
+
+    with pytest.raises(RequestValidationError):
+        await toolkit.query_metric("revenue", "2025-03-31", "2025-01-01", tenant="troc")
+    with pytest.raises(RequestValidationError):
+        await toolkit.query_metric("revenue", "2025-01-01", "2025-03-31", grain="week", cumulative="ytd", tenant="troc")
+
+
+async def test_query_metric_audits(troc_pnl_yaml, chart_snapshot, journal_frame, recording_storage) -> None:
+    from parrot.semantic.accounting.audit import AccountingAuditEntry
+    from parrot.semantic.accounting.errors import AccountingAuditError
+
+    storage, payloads = recording_storage
+    models_dir = troc_pnl_yaml.parent.parent
+    toolkit = _toolkit(
+        models_dir, chart_snapshot, frame_provider=_frames(journal_frame), audit_storage=storage, audit_mode="required"
+    )
+    try:
+        result = await toolkit.query_metric("revenue", "2025-01-01", "2025-01-31", tenant="troc")
+    finally:
+        await _close(toolkit)
+    assert len(payloads) == 1
+    entry = AccountingAuditEntry.model_validate_json(payloads[0])
+    assert entry.entry_id == result["audit_id"]
+    assert entry.outcome == "ok" and entry.target == "duckdb" and entry.tool == "finance_query_metric"
+    assert entry.sql_hash == result["sql_hash"] and entry.row_count == result["row_count"] == 1
+    assert entry.signature and await toolkit._ledger.verify(entry)
+
+    async def failing_sink(payload: str) -> None:
+        raise OSError("audit sink down")
+
+    strict = _toolkit(
+        models_dir,
+        chart_snapshot,
+        frame_provider=_frames(journal_frame),
+        audit_storage=failing_sink,
+        audit_mode="required",
+    )
+    outcome: dict | None = None
+    try:
+        with pytest.raises(AccountingAuditError):
+            outcome = await strict.query_metric("revenue", "2025-01-01", "2025-01-31", tenant="troc")
+    finally:
+        await _close(strict)
+    assert outcome is None
+
+    # A runtime failure is audited as execution_error (best effort) and re-raised with the audit id.
+    payloads.clear()
+
+    async def broken_frames(name: str) -> Any:
+        raise OSError("lake unreachable")
+
+    broken = _toolkit(
+        models_dir, chart_snapshot, frame_provider=broken_frames, audit_storage=storage, audit_mode="required"
+    )
+    try:
+        with pytest.raises(AccountingExecutionError) as excinfo:
+            await broken.query_metric("revenue", "2025-01-01", "2025-01-31", tenant="troc")
+    finally:
+        await _close(broken)
+    assert len(payloads) == 1
+    failed = AccountingAuditEntry.model_validate_json(payloads[0])
+    assert failed.outcome == "execution_error" and excinfo.value.audit_id == failed.entry_id
+    assert "lake unreachable" not in str(excinfo.value)
+
+
+async def test_validate_model_authorization(troc_pnl_yaml, chart_snapshot, journal_frame, permission_context) -> None:
+    second = troc_pnl_yaml.parent / "troc_alt.yaml"
+    second.write_text(troc_pnl_yaml.read_text(encoding="utf-8").replace("model: troc_pnl\n", "model: troc_alt\n"))
+    models_dir = troc_pnl_yaml.parent.parent
+    metric_names = {f"accounting:troc:troc_pnl:{m}" for m in METRICS}
+    validate_name = "accounting:troc:troc_pnl:__validate__"
+
+    for allowed in (metric_names, (metric_names - {"accounting:troc:troc_pnl:opex"}) | {validate_name}):
+        calls: list = []
+        guard = _FakeGuard(allowed)
+        toolkit = AccountingToolkit(
+            models_dir=models_dir,
+            snapshot_provider=_provider(chart_snapshot, calls),
+            frame_provider=_frames(journal_frame),
+            policy_guard=guard,
+            audit_mode="best_effort",
+        )
+        await toolkit._pre_execute("finance_validate_model", _permission_context=permission_context)
+        for live in (False, True):
+            with pytest.raises(AuthorizationRequired):
+                await toolkit.validate_model("troc_pnl", live=live)
+        assert calls == []  # denied before any snapshot refresh
+        assert not toolkit._catalog.is_loaded("troc", "troc_pnl")
+        assert toolkit._catalog.flags("troc", "troc_pnl") is None
+        assert len(toolkit._ledger.entries) == 0  # nothing compiled, executed or audited
+
+    calls = []
+    toolkit = AccountingToolkit(
+        models_dir=models_dir,
+        snapshot_provider=_provider(chart_snapshot, calls),
+        frame_provider=_frames(journal_frame),
+        policy_guard=_FakeGuard(metric_names | {validate_name}),
+        audit_mode="best_effort",
+    )
+    await toolkit._pre_execute("finance_validate_model", _permission_context=permission_context)
+    try:
+        structural = await toolkit.validate_model("troc_pnl")
+        assert structural == {"tenant": "troc", "model": "troc_pnl", "problems": []}
+        live = await toolkit.validate_model("troc_pnl", live=True)
+    finally:
+        await _close(toolkit)
+    assert (live["tenant"], live["model"], live["error"]) == ("troc", "troc_pnl", None)
+    assert [item["status"] for item in live["assertion_results"]] == ["passed"]
+    assert {(tenant, model) for tenant, model, _ in calls} == {("troc", "troc_pnl")}
+    assert toolkit._catalog.flags("troc", "troc_alt") is None
+    assert not toolkit._catalog.is_loaded("troc", "troc_alt")
+    with pytest.raises(AuthorizationRequired):
+        await toolkit.validate_model("troc_alt")  # its own privilege is not granted
+
+
+async def test_snapshot_refresh_failure(troc_pnl_yaml, chart_snapshot, journal_frame) -> None:
+    from parrot.semantic.accounting.models import ChartAccount
+
+    state = {"mode": "ok"}
+    drifted = chart_snapshot.model_copy(
+        update={"accounts": (*chart_snapshot.accounts, ChartAccount(account_id="7000", nature="debit"))}
+    )
+
+    async def provider(tenant: str, model: str, spec: Any) -> ChartSnapshot:
+        if state["mode"] == "fail":
+            raise OSError("account master down")
+        return drifted if state["mode"] == "drift" else chart_snapshot
+
+    toolkit = AccountingToolkit(
+        models_dir=troc_pnl_yaml.parent.parent,
+        snapshot_provider=provider,
+        frame_provider=_frames(journal_frame),
+        audit_mode="best_effort",
+    )
+    try:
+        first = await toolkit.validate_model("troc_pnl", tenant="troc", live=True)
+        assert first["error"] is None and first["drift_accounts"] == []
+        flags = toolkit._catalog.flags("troc", "troc_pnl")
+        model_hash = toolkit._catalog.get("troc", "troc_pnl").model_hash
+
+        state["mode"] = "fail"
+        failed = await toolkit.validate_model("troc_pnl", tenant="troc", live=True)
+        assert failed["error"] and "OSError" in failed["error"]
+        assert failed["assertion_results"] == []
+        assert toolkit._catalog.flags("troc", "troc_pnl") is flags  # previous flags preserved
+        assert toolkit._catalog.get("troc", "troc_pnl").model_hash == model_hash
+
+        state["mode"] = "drift"
+        drift = await toolkit.validate_model("troc_pnl", tenant="troc", live=True)
+        assert drift["error"] is None and drift["drift_accounts"] == ["7000"]
+        assert toolkit._catalog.get("troc", "troc_pnl").model_hash == model_hash  # no silent reload
+        result = await toolkit.query_metric("revenue", "2025-01-01", "2025-01-31", tenant="troc")
+        assert result["chart_drift"] is True
+    finally:
+        await _close(toolkit)
