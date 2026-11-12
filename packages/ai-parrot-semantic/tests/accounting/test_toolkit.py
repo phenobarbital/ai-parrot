@@ -374,7 +374,11 @@ async def test_query_metric_audits(troc_pnl_yaml, chart_snapshot, journal_frame,
         raise OSError("audit sink down")
 
     strict = _toolkit(
-        models_dir, chart_snapshot, frame_provider=_frames(journal_frame), audit_storage=failing_sink, audit_mode="required"
+        models_dir,
+        chart_snapshot,
+        frame_provider=_frames(journal_frame),
+        audit_storage=failing_sink,
+        audit_mode="required",
     )
     outcome: dict | None = None
     try:
