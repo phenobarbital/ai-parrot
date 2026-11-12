@@ -23,6 +23,7 @@ from parrot.semantic.accounting.toolkit import AccountingToolkit
 
 async def test_e2e_duckdb_pnl(troc_pnl_yaml, chart_snapshot, journal_frame) -> None:
     """Test PNL metrics by month equal hand-computed Decimals."""
+
     # Build toolkit with dataframe source
     async def frame_provider(name: str):
         assert name == "journal"
@@ -94,6 +95,7 @@ async def test_e2e_duckdb_pnl(troc_pnl_yaml, chart_snapshot, journal_frame) -> N
 
 async def test_e2e_duckdb_cumulative(troc_pnl_yaml, chart_snapshot, journal_frame) -> None:
     """Test cumulative metrics (mtd/qtd/ytd) at supported grains."""
+
     async def frame_provider(name: str):
         assert name == "journal"
         return journal_frame
@@ -179,6 +181,7 @@ async def test_e2e_duckdb_cumulative(troc_pnl_yaml, chart_snapshot, journal_fram
 
 async def test_weekly_cumulative_rejected(troc_pnl_yaml, chart_snapshot, journal_frame) -> None:
     """Test that cumulative with week grain raises RequestValidationError."""
+
     async def frame_provider(name: str):
         assert name == "journal"
         return journal_frame
@@ -302,8 +305,7 @@ async def test_e2e_postgres_parity(troc_pnl_yaml, chart_snapshot, journal_frame)
     async with psycopg.AsyncConnection(dsn) as conn:
         async with conn.cursor() as cur:
             # Create temp table
-            await cur.execute(
-                """
+            await cur.execute("""
                 CREATE TEMP TABLE journal (
                     account_id TEXT,
                     posting_date DATE,
@@ -312,8 +314,7 @@ async def test_e2e_postgres_parity(troc_pnl_yaml, chart_snapshot, journal_frame)
                     product_line TEXT,
                     cost_center TEXT
                 )
-                """
-            )
+                """)
 
             # Insert journal rows
             for row in journal_frame.to_pylist():
@@ -375,6 +376,7 @@ async def test_e2e_postgres_parity(troc_pnl_yaml, chart_snapshot, journal_frame)
 
 async def test_e2e_audit_trail(troc_pnl_yaml, chart_snapshot, journal_frame, recording_storage) -> None:
     """Test that N queries ⇒ N signed payloads; each lineage_ref rebuilds the same Lineage."""
+
     async def frame_provider(name: str):
         assert name == "journal"
         return journal_frame
