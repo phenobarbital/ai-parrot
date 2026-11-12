@@ -266,7 +266,9 @@ Missing configuration/keys or provider failure fail closed. A failed refresh nev
 ### `FINANCE_*` settings
 
 - `FINANCE_AUDIT_MODE`: `required` (default) or `best_effort`. When `required`, a missing or failing audit sink prevents the result from being returned.
-- `FINANCE_DEFAULT_TENANT`: default tenant for tools when no context is provided.
+- `FINANCE_MODELS_DIR`: root of the `<tenant>/<model>.yaml` specs when `models_dir` is not passed to the toolkit (default `./models`).
+
+The default tenant is not an environment setting: pass `default_tenant=` to `AccountingToolkit` (it is used when neither the tool argument nor the permission context names a tenant).
 
 ## Usage Examples
 
@@ -322,7 +324,7 @@ print(lineage.sets)
 - **Import isolation**: The compile path (`parrot.semantic.accounting`) imports without the governed stack. Do not import `parrot.semantic.toolkit` or `parrot.semantic.governance` when compiling.
 - **Exact precision**: Source amounts must fit `DECIMAL(38,6)`. Float inputs require `allow_float=True` and are warned as `float_cast`.
 - **Cumulative windows**: A cumulative request that spans a membership change is refused with `PeriodSpansMembershipChange`.
-- **Golden files**: Do not commit golden files with `REGENERATE_GOLDENS=1`. Run the test suite to update them.
+- **Golden files**: Regenerate them only deliberately with `REGENERATE_GOLDENS=1`, review the diff of every changed `.sql`/`.json` file, and commit them together with the compiler change that caused it; a normal test run compares byte-for-byte and never rewrites them.
 - **Audit mode**: When `FINANCE_AUDIT_MODE=required`, a missing audit sink fails closed. Use `postgres_audit_storage` to write entries to Postgres.
 
 ## Related
