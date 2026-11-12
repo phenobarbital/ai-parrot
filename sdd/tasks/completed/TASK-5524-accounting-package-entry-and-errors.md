@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-713 — Accounting Metrics Layer
 **Spec**: `sdd/specs/accounting-metrics-layer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -367,10 +367,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker / native opus coder (attempt 874a0074992c4e20b72d41719240981b), commit b5bbac527b
+**Date**: 2026-11-12
+**Notes**: Lazy `parrot.semantic.__getattr__`, `accounting/errors.py` hierarchy, accounting package entry, isolation tests. Tests green.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: `accounting/__init__.py` resolves all names lazily (decided in this task file).
+**Deviations from spec**: none
