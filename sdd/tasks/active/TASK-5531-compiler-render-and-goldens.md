@@ -58,10 +58,22 @@ Design-bearing module (spec delegation table: "no").
 | `packages/ai-parrot-semantic/src/parrot/semantic/accounting/compiler.py` | MODIFY | rendering half |
 | `packages/ai-parrot-semantic/tests/accounting/test_compiler.py` | MODIFY | rendering tests |
 | `packages/ai-parrot-semantic/tests/accounting/test_golden.py` | CREATE | golden comparisons |
-| `packages/ai-parrot-semantic/tests/accounting/golden/duckdb/*.sql` | CREATE | goldens |
-| `packages/ai-parrot-semantic/tests/accounting/golden/postgres/*.sql` | CREATE | goldens |
-| `packages/ai-parrot-semantic/tests/accounting/golden/bigquery/*.sql` | CREATE | goldens |
-| `packages/ai-parrot-semantic/tests/accounting/golden/plans/*.json` | CREATE | plan goldens (FEAT-742 fixtures) |
+| `packages/ai-parrot-semantic/tests/accounting/golden/duckdb/revenue_by_entity_month.sql` | CREATE | goldens |
+| `packages/ai-parrot-semantic/tests/accounting/golden/duckdb/gross_margin_pct_month.sql` | CREATE | goldens |
+| `packages/ai-parrot-semantic/tests/accounting/golden/duckdb/ebitda_ytd_month.sql` | CREATE | goldens |
+| `packages/ai-parrot-semantic/tests/accounting/golden/duckdb/assertion_0.sql` | CREATE | goldens |
+| `packages/ai-parrot-semantic/tests/accounting/golden/postgres/revenue_by_entity_month.sql` | CREATE | goldens |
+| `packages/ai-parrot-semantic/tests/accounting/golden/postgres/gross_margin_pct_month.sql` | CREATE | goldens |
+| `packages/ai-parrot-semantic/tests/accounting/golden/postgres/ebitda_ytd_month.sql` | CREATE | goldens |
+| `packages/ai-parrot-semantic/tests/accounting/golden/postgres/assertion_0.sql` | CREATE | goldens |
+| `packages/ai-parrot-semantic/tests/accounting/golden/bigquery/revenue_by_entity_month.sql` | CREATE | goldens |
+| `packages/ai-parrot-semantic/tests/accounting/golden/bigquery/gross_margin_pct_month.sql` | CREATE | goldens |
+| `packages/ai-parrot-semantic/tests/accounting/golden/bigquery/ebitda_ytd_month.sql` | CREATE | goldens |
+| `packages/ai-parrot-semantic/tests/accounting/golden/bigquery/assertion_0.sql` | CREATE | goldens |
+| `packages/ai-parrot-semantic/tests/accounting/golden/plans/revenue_by_entity_month.json` | CREATE | plan goldens (FEAT-742 fixtures) |
+| `packages/ai-parrot-semantic/tests/accounting/golden/plans/gross_margin_pct_month.json` | CREATE | plan goldens (FEAT-742 fixtures) |
+| `packages/ai-parrot-semantic/tests/accounting/golden/plans/ebitda_ytd_month.json` | CREATE | plan goldens (FEAT-742 fixtures) |
+| `packages/ai-parrot-semantic/tests/accounting/golden/plans/assertion_0.json` | CREATE | plan goldens (FEAT-742 fixtures) |
 | `packages/ai-parrot-semantic/tests/accounting/test_import_isolation.py` | MODIFY | compile-path isolation test |
 
 ---
@@ -101,10 +113,22 @@ from parrot.semantic.accounting.models import CompiledMetricQuery, Lineage, Metr
     {"path": "packages/ai-parrot-semantic/src/parrot/semantic/accounting/compiler.py", "action": "MODIFY"},
     {"path": "packages/ai-parrot-semantic/tests/accounting/test_compiler.py", "action": "MODIFY"},
     {"path": "packages/ai-parrot-semantic/tests/accounting/test_golden.py", "action": "CREATE"},
-    {"path": "packages/ai-parrot-semantic/tests/accounting/golden/duckdb/*.sql", "action": "CREATE"},
-    {"path": "packages/ai-parrot-semantic/tests/accounting/golden/postgres/*.sql", "action": "CREATE"},
-    {"path": "packages/ai-parrot-semantic/tests/accounting/golden/bigquery/*.sql", "action": "CREATE"},
-    {"path": "packages/ai-parrot-semantic/tests/accounting/golden/plans/*.json", "action": "CREATE"},
+    {"path": "packages/ai-parrot-semantic/tests/accounting/golden/duckdb/revenue_by_entity_month.sql", "action": "CREATE"},
+    {"path": "packages/ai-parrot-semantic/tests/accounting/golden/duckdb/gross_margin_pct_month.sql", "action": "CREATE"},
+    {"path": "packages/ai-parrot-semantic/tests/accounting/golden/duckdb/ebitda_ytd_month.sql", "action": "CREATE"},
+    {"path": "packages/ai-parrot-semantic/tests/accounting/golden/duckdb/assertion_0.sql", "action": "CREATE"},
+    {"path": "packages/ai-parrot-semantic/tests/accounting/golden/postgres/revenue_by_entity_month.sql", "action": "CREATE"},
+    {"path": "packages/ai-parrot-semantic/tests/accounting/golden/postgres/gross_margin_pct_month.sql", "action": "CREATE"},
+    {"path": "packages/ai-parrot-semantic/tests/accounting/golden/postgres/ebitda_ytd_month.sql", "action": "CREATE"},
+    {"path": "packages/ai-parrot-semantic/tests/accounting/golden/postgres/assertion_0.sql", "action": "CREATE"},
+    {"path": "packages/ai-parrot-semantic/tests/accounting/golden/bigquery/revenue_by_entity_month.sql", "action": "CREATE"},
+    {"path": "packages/ai-parrot-semantic/tests/accounting/golden/bigquery/gross_margin_pct_month.sql", "action": "CREATE"},
+    {"path": "packages/ai-parrot-semantic/tests/accounting/golden/bigquery/ebitda_ytd_month.sql", "action": "CREATE"},
+    {"path": "packages/ai-parrot-semantic/tests/accounting/golden/bigquery/assertion_0.sql", "action": "CREATE"},
+    {"path": "packages/ai-parrot-semantic/tests/accounting/golden/plans/revenue_by_entity_month.json", "action": "CREATE"},
+    {"path": "packages/ai-parrot-semantic/tests/accounting/golden/plans/gross_margin_pct_month.json", "action": "CREATE"},
+    {"path": "packages/ai-parrot-semantic/tests/accounting/golden/plans/ebitda_ytd_month.json", "action": "CREATE"},
+    {"path": "packages/ai-parrot-semantic/tests/accounting/golden/plans/assertion_0.json", "action": "CREATE"},
     {"path": "packages/ai-parrot-semantic/tests/accounting/test_import_isolation.py", "action": "MODIFY"}
   ],
   "contract_symbols": []
