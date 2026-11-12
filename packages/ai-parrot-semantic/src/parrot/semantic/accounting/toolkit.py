@@ -7,25 +7,43 @@ metric is allowed (as DatasetManager). The ``sl_*`` tools of this package fail c
 from __future__ import annotations
 
 import asyncio
+import json
 import os
+import time
+from datetime import date, datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Mapping
 
+from pydantic import ValidationError
+
 from parrot.auth.context import _pctx_var
 from parrot.auth.exceptions import AuthorizationRequired
+from parrot.interfaces.duckdb_engine import DuckDBEngine
 from parrot.semantic.audit import SemanticAuditLedger
 from parrot.semantic.cache import CompileCache
 from parrot.semantic.execution import ConnectionResolver, Executor
 from parrot.tools.databasequery.toolkit import DatabaseQueryToolkit
 from parrot.tools.toolkit import AbstractToolkit
 
-from .audit import AuditMode, audit_mode_from_env
+from .audit import AuditMode, append_entry, audit_mode_from_env, build_entry, subject_digest
 from .catalog import ModelCatalog, SnapshotProvider
-from .errors import AccountingError, AccountingExecutionError, RequestValidationError
+from .compiler import canonical_request, compile_assertion, compile_metric
+from .errors import AccountingError, AccountingExecutionError, ModelValidationError, RequestValidationError
 from .grammar import BinOp, Expr, Neg, Num, Ref, Sum, parse_assertion, parse_expr, references
-from .models import AccountingModel, AccountingModelSpec, ChartSnapshot
+from .models import (
+    AccountingModel,
+    AccountingModelSpec,
+    AssertionRequest,
+    AssertionResult,
+    ChartSnapshot,
+    CompiledMetricQuery,
+    MetricRequest,
+    Period,
+    RuntimeResult,
+)
 from .runtime.database import DatabaseRuntime
-from .runtime.duckdb import FrameProvider
+from .runtime.duckdb import DuckDBRuntime, FrameProvider
 from .snapshot import snapshot_from_manifest
 
 
@@ -72,6 +90,22 @@ def _metric_closure(metrics: Mapping[str, Any], names: frozenset[str]) -> frozen
         closure.add(name)
         pending.extend(references(parse_expr(metrics[name].expr))[1])
     return frozenset(closure)
+
+
+def _json_value(value: Any) -> Any:
+    """Serialise one result cell: Decimals as exact strings, dates as ISO strings, everything else unchanged."""
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    return value
+
+
+def _validation_message(exc: ValidationError) -> str:
+    """Compact, location-qualified summary of a pydantic validation error."""
+    return "; ".join(
+        f"{'.'.join(str(part) for part in err['loc']) or '<request>'}: {err['msg']}" for err in exc.errors()
+    )
 
 
 class AccountingToolkit(AbstractToolkit):
@@ -358,3 +392,254 @@ class AccountingToolkit(AbstractToolkit):
         if not covering:
             lines.append("  (none)")
         return "\n".join(lines)
+
+    async def query_metric(
+        self,
+        metric: str,
+        period_from: str,
+        period_to: str,
+        model: str | None = None,
+        grain: str | None = None,
+        dimensions: list[str] | None = None,
+        filters: dict | None = None,
+        cumulative: str | None = None,
+        tenant: str | None = None,
+    ) -> dict:
+        """Compile → execute (database or duckdb) → audit → rows + lineage + sql_hash + audit_id + chart_drift.
+
+        Args:
+            metric: Metric name.
+            period_from: First day of the period (ISO date, inclusive).
+            period_to: Last day of the period (ISO date, inclusive).
+            model: Model defining the metric; optional when exactly one model of the tenant defines it.
+            grain: Time bucket: day, week, month, quarter or year; omit for a single total.
+            dimensions: Dimensions to group by.
+            filters: ``{dimension: value or [values]}`` equality filters.
+            cumulative: Period-to-date mode: mtd, qtd or ytd (requires a compatible grain).
+            tenant: Tenant; defaults to the caller's tenant.
+
+        Returns:
+            ``columns``, ``rows`` (amounts as exact decimal strings), ``row_count``, ``lineage``, ``sql_hash``,
+            ``plan_hash``, ``audit_id``, ``chart_drift``, ``assertion_failed`` and ``duration_ms``.
+        """
+        started = time.monotonic()
+        tool = "finance_query_metric"
+        resolved_tenant = self._resolve_tenant(tenant)
+        resolved_model = self._resolve_model(resolved_tenant, metric, model)
+        await self._authorize_metric(tool, resolved_tenant, resolved_model, metric)
+        request = self._metric_request(metric, period_from, period_to, grain, dimensions, filters, cumulative)
+        loaded = await self._ensure_loaded(resolved_tenant, resolved_model)
+        flags = self._catalog.flags(resolved_tenant, resolved_model)
+        if flags is not None and flags.blocked:
+            raise AccountingExecutionError(
+                f"model {resolved_model!r} of tenant {resolved_tenant!r} is blocked by a failed live-validation "
+                "assertion; queries are refused until validation passes"
+            )
+        runtime, dialect = self._runtime_for(loaded)
+        compiled = await self._compile(loaded, request, dialect)
+        result = await self._execute(runtime, compiled, loaded, tenant=resolved_tenant, tool=tool)
+        entry = build_entry(
+            context=self._audit_context(),
+            tenant=resolved_tenant,
+            model=loaded,
+            compiled=compiled,
+            target=result.target,
+            tool=tool,
+            outcome="ok",
+            assertion_status="none",
+            row_count=len(result.rows),
+            duration_ms=result.duration_ms,
+        )
+        signed = await append_entry(self._ledger, entry, mode=self._audit_mode)
+        return {
+            "columns": list(result.columns),
+            "rows": [{key: _json_value(value) for key, value in row.items()} for row in result.rows],
+            "row_count": len(result.rows),
+            "lineage": compiled.lineage.model_dump(mode="json"),
+            "sql_hash": compiled.sql_hash,
+            "plan_hash": compiled.plan_hash,
+            "audit_id": signed.entry_id,
+            "chart_drift": bool(flags is not None and flags.drift_accounts),
+            "assertion_failed": bool(
+                flags is not None and any(item.status == "failed" for item in flags.assertion_results)
+            ),
+            "duration_ms": int((time.monotonic() - started) * 1000),
+        }
+
+    async def validate_model(self, model: str, tenant: str | None = None, live: bool = False) -> dict:
+        """Require validation privilege and all metric reads; return only the selected model's results.
+        With live=True refresh its snapshot and run last-closed-month assertions plus drift.
+
+        Args:
+            model: Model to validate.
+            tenant: Tenant; defaults to the caller's tenant.
+            live: Refresh the chart snapshot, detect drift and run every assertion over the last closed month.
+
+        Returns:
+            Structural: ``{"tenant", "model", "problems": [...]}``. Live: the model's live status.
+        """
+        tool = "finance_validate_model"
+        resolved_tenant = self._resolve_tenant(tenant)
+        spec = self._catalog.specs().get((resolved_tenant, model))
+        if spec is None:
+            raise RequestValidationError(f"unknown model {model!r} for tenant {resolved_tenant!r}")
+        names = [self._resource(resolved_tenant, model, "__validate__")]
+        names += [self._resource(resolved_tenant, model, metric) for metric in sorted(spec.metrics)]
+        await self._authorize(tool, names)
+        if live:
+            from .live import _validate_one
+
+            status = await _validate_one(self, resolved_tenant, model, today=datetime.now(timezone.utc).date())
+            return status.model_dump(mode="json")
+        problems: list[dict] = []
+        try:
+            await self._ensure_loaded(resolved_tenant, model)
+        except ModelValidationError as exc:
+            problems = [problem.model_dump(mode="json") for problem in exc.problems]
+        return {"tenant": resolved_tenant, "model": model, "problems": problems}
+
+    @staticmethod
+    def _metric_request(
+        metric: str,
+        period_from: str,
+        period_to: str,
+        grain: str | None,
+        dimensions: list[str] | None,
+        filters: dict | None,
+        cumulative: str | None,
+    ) -> MetricRequest:
+        """Build the MetricRequest from tool arguments.
+
+        Raises:
+            RequestValidationError: Malformed period, grain, dimensions, filters or cumulative mode.
+        """
+        normalised: dict[str, Any] = {}
+        for key, value in (filters or {}).items():
+            normalised[str(key)] = tuple(value) if isinstance(value, (list, tuple, set, frozenset)) else value
+        try:
+            return MetricRequest.model_validate(
+                {
+                    "metric": metric,
+                    "grain": grain,
+                    "dimensions": tuple(dimensions or ()),
+                    "filters": normalised,
+                    "period": {"from": period_from, "to": period_to, "cumulative": cumulative},
+                }
+            )
+        except ValidationError as exc:
+            raise RequestValidationError(f"invalid query request: {_validation_message(exc)}") from exc
+
+    @staticmethod
+    def _audit_context() -> Any:
+        """The caller's permission context for audit entries, or ``None`` (anonymous / trusted host)."""
+        return _pctx_var.get() or None
+
+    def _runtime_for(self, model: AccountingModel) -> tuple[Any, str]:
+        """(runtime, dialect): DuckDBRuntime for dataframe sources (engine created lazily), else DatabaseRuntime.
+
+        Raises:
+            AccountingExecutionError: A dataframe source without a frame provider, or an unusable database driver.
+        """
+        if model.spec.chart_of_accounts.source.dataframe is not None:
+            if self._frame_provider is None:
+                raise AccountingExecutionError("dataframe-backed model needs a frame_provider on the toolkit")
+            if self._engine is None:
+                self._engine = DuckDBEngine(threads=self._duckdb_threads)
+            return DuckDBRuntime(self._engine, self._frame_provider), "duckdb"
+        return self._database, self._database.dialect_for(model)
+
+    async def _compile(
+        self, model: AccountingModel, request: MetricRequest | AssertionRequest, dialect: str
+    ) -> CompiledMetricQuery:
+        """Cached compile in a worker thread; metric or assertion by request kind."""
+        key = json.dumps([model.model_hash, canonical_request(request), dialect], separators=(",", ":"))
+        cached = self._cache.get(key)
+        if isinstance(cached, CompiledMetricQuery):
+            return cached
+        if isinstance(request, AssertionRequest):
+            compiled = await asyncio.to_thread(compile_assertion, model, request, dialect)
+        else:
+            compiled = await asyncio.to_thread(compile_metric, model, request, dialect)
+        self._cache.put(compiled)
+        return compiled
+
+    async def _execute(
+        self, runtime: Any, compiled: CompiledMetricQuery, model: AccountingModel, *, tenant: str, tool: str
+    ) -> RuntimeResult:
+        """Run *compiled* on *runtime*; a failure is audited (best effort) as ``execution_error`` and re-raised."""
+        started = time.monotonic()
+        context = self._audit_context()
+        try:
+            if isinstance(runtime, DuckDBRuntime):
+                return await runtime.execute(compiled, model)
+            return await runtime.execute(compiled, model, subject_digest=subject_digest(context))
+        except Exception as exc:
+            audit_id: str | None = None
+            try:
+                entry = build_entry(
+                    context=context,
+                    tenant=tenant,
+                    model=model,
+                    compiled=compiled,
+                    target="duckdb" if isinstance(runtime, DuckDBRuntime) else "database",
+                    tool=tool,
+                    outcome="execution_error",
+                    assertion_status="none",
+                    row_count=None,
+                    duration_ms=int((time.monotonic() - started) * 1000),
+                )
+                audit_id = (await append_entry(self._ledger, entry, mode="best_effort")).entry_id
+            except Exception as audit_exc:  # noqa: BLE001 - best-effort audit of a failure
+                self.logger.warning("accounting execution-error audit failed: %s", type(audit_exc).__name__)
+            if isinstance(exc, AccountingExecutionError):
+                exc.audit_id = audit_id
+                raise
+            if isinstance(exc, AccountingError):
+                raise
+            self.logger.warning("accounting execution failed: %s", type(exc).__name__)
+            raise AccountingExecutionError(f"execution failed ({type(exc).__name__})", audit_id=audit_id) from exc
+
+    async def _run_assertions(
+        self, tenant: str, model: AccountingModel, period: Period, *, tool: str
+    ) -> tuple[tuple[AssertionResult, ...], tuple[str, ...]]:
+        """Compile, run and audit every assertion of *model* over *period*; one audit entry per assertion.
+
+        A NULL side yields ``skipped``; otherwise the quantized sides pass when ``|lhs - rhs| <= tolerance``.
+
+        Returns:
+            The assertion results (in assertion-index order) and the audit entry ids.
+        """
+        runtime, dialect = self._runtime_for(model)
+        results: list[AssertionResult] = []
+        audit_ids: list[str] = []
+        for index, assertion in enumerate(model.spec.assertions):
+            request = AssertionRequest(assertion_index=index, period=period)
+            compiled = await self._compile(model, request, dialect)
+            result = await self._execute(runtime, compiled, model, tenant=tenant, tool=tool)
+            row = result.rows[0] if result.rows else {}
+            lhs, rhs = row.get("lhs"), row.get("rhs")
+            if lhs is None or rhs is None:
+                status = "skipped"
+            elif abs(lhs - rhs) <= assertion.tolerance:
+                status = "passed"
+            else:
+                status = "failed"
+            results.append(
+                AssertionResult(
+                    expr=assertion.expr, status=status, lhs=lhs, rhs=rhs, tolerance=assertion.tolerance, period=period
+                )
+            )
+            entry = build_entry(
+                context=self._audit_context(),
+                tenant=tenant,
+                model=model,
+                compiled=compiled,
+                target=result.target,
+                tool=tool,
+                outcome="ok",
+                assertion_status=status,
+                row_count=len(result.rows),
+                duration_ms=result.duration_ms,
+            )
+            audit_ids.append((await append_entry(self._ledger, entry, mode=self._audit_mode)).entry_id)
+        return tuple(results), tuple(audit_ids)
