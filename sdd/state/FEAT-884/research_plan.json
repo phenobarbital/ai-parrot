@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0",
+  "mode_hint": "enrichment",
+  "rationale": "Feature-shaped ('implementar', 'imitar', 'permitir'): replicate navigator-auth's `navauth self upgrade` as `parrot self migration`, first for navigator.ai_bots. Research must (a) extract the reference design from navigator-auth, (b) locate parrot's `self` CLI group and its registration pattern, (c) locate every DDL/model definition of navigator.ai_bots and other parrot-owned tables, (d) find existing schema-bootstrap patterns and DB connection config, (e) history of ai_bots schema drift.",
+  "queries": [
+    {"id": "Q001", "intent": "Read the reference spec for `navauth self upgrade` (design, ledger table, migration file format, CLI flags).", "type": "wiki_page", "priority": 0, "params": {"page_id": "navigator-auth::file:sdd/specs/new-command-migration.spec.md"}},
+    {"id": "Q002", "intent": "Read the navauth upgrade CLI parser and follow edges to the migrations package (runner, registry, ledger).", "type": "wiki_page", "priority": 0, "params": {"page_id": "navigator-auth::sym:navigator_auth/migrations/cli.py#build_parser"}},
+    {"id": "Q003", "intent": "Discover the modules around navigator_auth/migrations (runner, models, versions dir).", "type": "wiki_related", "priority": 0, "params": {"page_id": "navigator-auth::file:navigator_auth/migrations/cli.py"}},
+    {"id": "Q004", "intent": "Read the `parrot self` CLI group page — subcommand registration (lazy), runtime scope (~/.parrot).", "type": "wiki_page", "priority": 0, "params": {"page_id": "file:packages/ai-parrot/src/parrot/self_/cli.py"}},
+    {"id": "Q005", "intent": "Locate where navigator.ai_bots is defined (DDL, datamodel, BotModel) in parrot.", "type": "wiki_query", "priority": 0, "params": {"question": "navigator.ai_bots table BotModel datamodel"}},
+    {"id": "Q006", "intent": "Find existing schema-bootstrap / CREATE TABLE IF NOT EXISTS / verify_schema patterns parrot already uses.", "type": "wiki_query", "priority": 0, "params": {"question": "postgres table schema bootstrap create table if not exists verify_schema"}},
+    {"id": "Q007", "intent": "Locate every reference to ai_bots across packages (models, SQL, handlers, botmanager loader).", "type": "grep", "priority": 1, "params": {"pattern": "ai_bots", "path": "packages/", "case_sensitive": false, "max_results": 40}},
+    {"id": "Q008", "intent": "List SQL DDL files shipped in the repo (schema definitions to fold into migrations).", "type": "glob", "priority": 1, "params": {"pattern": "**/*.sql", "path": "packages/"}},
+    {"id": "Q009", "intent": "Structure of the navigator-auth migrations package (versions, runner, ledger).", "type": "tree", "priority": 1, "params": {"path": "../navigator-auth/navigator_auth/migrations", "max_depth": 3}},
+    {"id": "Q010", "intent": "Read the navauth migration runner / ledger implementation to extract the contract to mirror.", "type": "read", "priority": 1, "params": {"path": "../navigator-auth/navigator_auth/migrations/", "lines": null}},
+    {"id": "Q011", "intent": "Read parrot self_ CLI to see how subcommands are added (click group, lazy registration).", "type": "read", "priority": 1, "params": {"path": "packages/ai-parrot/src/parrot/self_/cli.py", "lines": null}},
+    {"id": "Q012", "intent": "Find other parrot-owned tables (CREATE TABLE) that would be candidates for the migration registry.", "type": "grep", "priority": 2, "params": {"pattern": "CREATE TABLE", "path": "packages/", "case_sensitive": false, "max_results": 40}},
+    {"id": "Q013", "intent": "Find the datamodel/asyncdb Model bound to ai_bots and its column list (source of truth for current schema).", "type": "grep", "priority": 2, "params": {"pattern": "class BotModel|name = .ai_bots.|table.*ai_bots", "path": "packages/", "case_sensitive": false, "max_results": 20}},
+    {"id": "Q014", "intent": "Find the DB connection config used by bot storage (default_dsn, asyncpg DSN env vars) for the migration runner.", "type": "grep", "priority": 2, "params": {"pattern": "default_dsn|asyncpg_url|DBHOST|PG_DSN", "path": "packages/ai-parrot/src/parrot/conf.py", "case_sensitive": false, "max_results": 20}},
+    {"id": "Q015", "intent": "Check parrot console-script entry points and the top-level CLI that mounts `self`.", "type": "grep", "priority": 2, "params": {"pattern": "\\[project.scripts\\]|parrot = |navauth", "path": "packages/ai-parrot/pyproject.toml", "case_sensitive": false, "max_results": 20}},
+    {"id": "Q016", "intent": "Existing tests for the self_ CLI (to mirror test layout).", "type": "glob", "priority": 3, "params": {"pattern": "**/test*self*", "path": "packages/ai-parrot/tests"}},
+    {"id": "Q017", "intent": "History of navauth migrations package — how the feature landed and evolved.", "type": "git_log", "priority": 1, "params": {"path": "../navigator-auth/navigator_auth/migrations", "since": "180.days.ago", "max_results": 20}},
+    {"id": "Q018", "intent": "Schema drift of ai_bots in parrot — commits that added/changed columns (what migrations would have needed).", "type": "git_log", "priority": 1, "params": {"path": "packages/", "pickaxe": "ai_bots", "since": "365.days.ago", "max_results": 25}},
+    {"id": "Q019", "intent": "Recent activity on the parrot self_ CLI package.", "type": "git_log", "priority": 2, "params": {"path": "packages/ai-parrot/src/parrot/self_", "since": "90.days.ago", "max_results": 15}}
+  ],
+  "expected_findings": [
+    "Reference design of navauth self upgrade (ledger table, migration format, CLI flags, idempotency)",
+    "Parrot self CLI group and how to add a `migration` subcommand",
+    "All definitions of navigator.ai_bots (SQL, datamodel) and their drift",
+    "Other parrot-owned tables that could join the registry",
+    "DB connection configuration for a migration runner",
+    "Existing schema-bootstrap patterns to reuse or replace"
+  ],
+  "meta": {
+    "source_signals": {"named_entities": ["navauth self upgrade", "parrot self migration", "navigator.ai_bots"], "verbs": ["implementamos", "imitar", "permitir"], "polarity": "positive"},
+    "estimated_budget_use": {"wiki_queries": 6, "files_read": 10, "grep_calls": 9, "git_calls": 3}
+  }
+}

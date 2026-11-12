@@ -1,0 +1,716 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-884",
+  "mode": "enrichment",
+  "summary_oneline": "Add `parrot self migration`: a packaged, ledger-tracked, versioned schema-migration runner for parrot-owned tables, starting with navigator.ai_bots, modelled on navauth self upgrade.",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/self_/cli.py",
+      "symbol": "self_group",
+      "lines": "1-19",
+      "role": "click group `parrot self` (managed runtime ~/.parrot); the new `migration` verb is one more lazily-imported command here",
+      "evidence": [
+        "F012",
+        "F018"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/self_/cli.py",
+      "symbol": "doctor",
+      "lines": "58-84",
+      "role": "readiness checks with fix hints; natural home for a read-only 'pending schema migrations' row",
+      "evidence": [
+        "F012"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/cli/__init__.py",
+      "symbol": "cli._lazy_commands",
+      "lines": "170-194",
+      "role": "root LazyGroup registry (`self` \u2192 parrot.self_.cli); supports commands implemented in satellite distributions with install hints",
+      "evidence": [
+        "F012",
+        "F013",
+        "F021"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/models/bots.py",
+      "symbol": "BotModel",
+      "lines": "100-468",
+      "role": "strict asyncdb model of navigator.ai_bots (49 fields, Meta.strict=True): target schema; a missing column breaks every bot load",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/models/bots.py",
+      "symbol": "_fold_legacy_bot_columns",
+      "lines": "43-44",
+      "role": "compat shim tolerating pre-fold databases \u2014 evidence that environments sit at unknown schema versions",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/handlers/creation.sql",
+      "symbol": "navigator.ai_bots",
+      "lines": "12-81",
+      "role": "destructive bootstrap DDL (DROP \u2026 CASCADE at line 9) with hand-appended ALTERs; already missing FEAT-752 columns",
+      "evidence": [
+        "F001",
+        "F002",
+        "F003"
+      ]
+    },
+    {
+      "path": "sdd/migrations/ai-bots-homologate-botmodel.sql",
+      "symbol": "ai-bots-homologate-botmodel",
+      "lines": "1-40",
+      "role": "idempotent additive catch-up script (Status: pending), candidate seed for a baseline migration",
+      "evidence": [
+        "F003",
+        "F005",
+        "F020"
+      ]
+    },
+    {
+      "path": "sdd/migrations/FEAT-752-ai-bots-suggestion-columns.sql",
+      "symbol": null,
+      "lines": "1-12",
+      "role": "de-facto file convention: own BEGIN/COMMIT, ADD COLUMN IF NOT EXISTS, rollback in comments, deploy-order prose",
+      "evidence": [
+        "F005",
+        "F017"
+      ]
+    },
+    {
+      "path": "sdd/migrations/",
+      "symbol": null,
+      "lines": null,
+      "role": "15 loose, unpackaged, unordered hand-run SQL files (8 ai_bots schema + data fixes + planogram/ontology domain data)",
+      "evidence": [
+        "F004",
+        "F017",
+        "F020",
+        "F021"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrate.py",
+      "symbol": "apply_studio_migrations",
+      "lines": "191-216",
+      "role": "existing parrot ledger runner (navigator.ai_studio_migrations, console script parrot-studio-migrate) scoped to Agent Studio tables",
+      "evidence": [
+        "F010",
+        "F013"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/conf.py",
+      "symbol": "default_dsn",
+      "lines": "65-77",
+      "role": "runtime DSN from DB* settings; no admin/DDL DSN exists",
+      "evidence": [
+        "F014"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/conf.py",
+      "symbol": "PARROT_SCHEMA",
+      "lines": "121-122",
+      "role": "configurable schema/table names (PARROT_SCHEMA, PARROT_BOTS_TABLE) \u2014 SQL must be templated",
+      "evidence": [
+        "F001",
+        "F014"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/store/postgres.py",
+      "symbol": "PostgresTaskMemoryStore.verify_schema",
+      "lines": "612-642",
+      "role": "third in-repo pattern: startup version check + explicit apply_migrations at deploy",
+      "evidence": [
+        "F011"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/tests/studio/storage/test_storage_gates.py",
+      "symbol": "test_load_database_bots_untouched",
+      "lines": null,
+      "role": "byte-freeze gate on creation.sql + BotModel docstring DDL; edits need a _SANCTIONED_REWRITES entry",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "../navigator-auth/navigator_auth/migrations/runner.py",
+      "symbol": "upgrade",
+      "lines": "278-287",
+      "role": "reference runner: (set, filename) sha256 ledger, session advisory lock, one transaction per file, continue-on-failure",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": "../navigator-auth/navigator_auth/migrations/catalog.py",
+      "symbol": "discover",
+      "lines": "62-113",
+      "role": "reference catalog: sql/<set>/NNN_*.sql discovery, ordered MIGRATION_SETS, render_sql placeholders",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "path": "../navigator-auth/navigator_auth/migrations/cli.py",
+      "symbol": "build_parser",
+      "lines": "21-41",
+      "role": "reference CLI: navauth self upgrade --check/--dsn/--user/--set/--fail-fast, exit codes 0-3",
+      "evidence": [
+        "F007",
+        "F019"
+      ]
+    },
+    {
+      "path": "../navigator-auth/navigator_auth/migrations/startup.py",
+      "symbol": "warn_pending_migrations",
+      "lines": "56-79",
+      "role": "reference startup behaviour: read-only warning, never DDL",
+      "evidence": [
+        "F009"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/tests/self_/test_self_cli.py",
+      "symbol": null,
+      "lines": null,
+      "role": "test home for the new CLI verb",
+      "evidence": [
+        "F015"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "statement": "BotModel is strict: every declared field is selected by name, so a column the code expects but the table lacks fails every bot load.",
+      "evidence": [
+        "F003"
+      ],
+      "implication": "migrations must run before deploying code that adds fields; a model-vs-DB column check is high value"
+    },
+    {
+      "statement": "creation.sql is a destructive bootstrap (DROP TABLE \u2026 CASCADE) whose constraint/trigger statements are not idempotent and which lacks the FEAT-752 columns.",
+      "evidence": [
+        "F002",
+        "F003"
+      ],
+      "implication": "it cannot be reused as a migration; the baseline must be rewritten as guarded, additive SQL"
+    },
+    {
+      "statement": "creation.sql and the BotModel docstring DDL are byte-frozen by test_storage_gates (test_load_database_bots_untouched / _SANCTIONED_REWRITES).",
+      "evidence": [
+        "F003"
+      ],
+      "implication": "any edit that points them at the new command must be registered as a sanctioned rewrite"
+    },
+    {
+      "statement": "Schema and table names are configurable (PARROT_SCHEMA, PARROT_BOTS_TABLE) but every existing SQL file hard-codes navigator.ai_bots.",
+      "evidence": [
+        "F003",
+        "F014",
+        "F008"
+      ],
+      "implication": "migration SQL must use placeholders rendered from config, as navauth's render_sql does"
+    },
+    {
+      "statement": "sdd/migrations/ is outside every distribution, so an installed parrot cannot read it; navauth decided SQL lives in-package.",
+      "evidence": [
+        "F004",
+        "F019",
+        "F020"
+      ],
+      "implication": "the catalog must ship as package data (importlib.resources), like Studio's migrations"
+    },
+    {
+      "statement": "The ai_bots DDL ships from ai-parrot-server while BotModel and the self_ CLI are in core.",
+      "evidence": [
+        "F001",
+        "F012",
+        "F013"
+      ],
+      "implication": "either the bots set lives in core next to BotModel, or the core CLI discovers sets contributed by installed satellites"
+    },
+    {
+      "statement": "asyncdb execute() returns errors instead of raising; navauth's runner therefore uses a raw asyncpg connection and execute_checked.",
+      "evidence": [
+        "F007",
+        "F019"
+      ],
+      "implication": "the parrot runner must not trust asyncdb execute() results for recording a file as applied"
+    },
+    {
+      "statement": "Existing ai_bots scripts open and close their own transaction (BEGIN/COMMIT) and keep rollback DDL in comments.",
+      "evidence": [
+        "F005"
+      ],
+      "implication": "importing them into a per-file-transaction runner requires stripping BEGIN/COMMIT"
+    },
+    {
+      "statement": "Parrot already has a ledger table in the navigator schema (navigator.ai_studio_migrations) with different semantics (integer versions, body checksum, xact lock, MANIFEST).",
+      "evidence": [
+        "F010"
+      ],
+      "implication": "a second ledger must be a deliberate decision (separate vs unified), not an accident"
+    },
+    {
+      "statement": "Startup must never run DDL: navauth warns only, Studio never migrates at startup, task-memory verifies and refuses.",
+      "evidence": [
+        "F009",
+        "F010",
+        "F011"
+      ],
+      "implication": "startup/doctor integration is read-only (warn on pending)"
+    },
+    {
+      "statement": "parrot conf has no admin/DDL credential; only the runtime default_dsn.",
+      "evidence": [
+        "F014"
+      ],
+      "implication": "add an optional admin DSN setting with fallback to default_dsn and a notice, mirroring navauth's precedence"
+    },
+    {
+      "statement": "`parrot self` is scoped to the managed runtime, `self update` already exists, and `migrate_legacy_uv` already uses the word migration inside self_.",
+      "evidence": [
+        "F012",
+        "F018"
+      ],
+      "implication": "the verb name and help text must disambiguate DB schema migration from runtime/uv migration"
+    }
+  ],
+  "investigation": null,
+  "enrichment": {
+    "new": [
+      "A core migrations package (catalog + runner + status/ledger models), modelled on navauth: sql/<set>/NNN_<name>.sql files shipped as package data, ordered sets, sha256 checksums, APPLIED/PENDING/CHANGED states, advisory lock, one transaction per file, Pydantic report",
+      "A parrot-owned ledger table in PARROT_SCHEMA keyed by (migration_set, filename)",
+      "A `bots` migration set for navigator.ai_bots: guarded baseline derived from ai-bots-homologate-botmodel.sql + FEAT-752 columns, then the fold steps in git-date order, all templated with {schema}/{bots_table}",
+      "`parrot self migration` CLI verb(s): status/--check, upgrade, --set, --dsn, --fail-fast, exit codes 0 ok / 1 pending / 2 failed / 3 config",
+      "Read-only pending-migrations check in `parrot self doctor` and a startup warning where BotManager loads database bots",
+      "A documented convention (docs/migrations/) and a consistency test that the bots set covers every BotModel column"
+    ],
+    "modified": [
+      {
+        "target": "packages/ai-parrot/src/parrot/self_/cli.py::self_group",
+        "change": "register the `migration` command/group (lazy import of the runner)",
+        "evidence": [
+          "F012"
+        ]
+      },
+      {
+        "target": "packages/ai-parrot/src/parrot/self_/cli.py::doctor",
+        "change": "add a pending-migrations row",
+        "evidence": [
+          "F012"
+        ]
+      },
+      {
+        "target": "packages/ai-parrot/src/parrot/conf.py::default_dsn",
+        "change": "add an optional admin DSN setting used by the runner, falling back to default_dsn",
+        "evidence": [
+          "F014"
+        ]
+      },
+      {
+        "target": "packages/ai-parrot-server/src/parrot/handlers/creation.sql::navigator.ai_bots",
+        "change": "point operators to the command (sanctioned rewrite) or demote to fresh-install-only",
+        "evidence": [
+          "F002",
+          "F003"
+        ]
+      },
+      {
+        "target": "sdd/migrations/",
+        "change": "retire the ai_bots scripts once folded into the packaged set",
+        "evidence": [
+          "F017",
+          "F020"
+        ]
+      }
+    ],
+    "untouched": [
+      "Down/rollback migrations (navauth non-goal)",
+      "Data migrations and non-parrot domain data (planogram, ecotank, ontology seeds in sdd/migrations/)",
+      "Tables that self-create at runtime with CREATE TABLE IF NOT EXISTS (ui_surfaces, crew_definitions, \u2026) in v1",
+      "External migration tools (alembic etc.) and non-Postgres databases"
+    ],
+    "patterns": [
+      {
+        "pattern": "navauth FEAT-110 design: catalog/runner/checks/startup/cli split, sets, (set, filename) ledger, --check, exit codes, admin-DSN precedence, sanitized errors",
+        "evidence": [
+          "F006",
+          "F007",
+          "F008",
+          "F009",
+          "F016",
+          "F019"
+        ]
+      },
+      {
+        "pattern": "Studio runner: importlib.resources package data, concurrent-runner safety, --print for DBAs, file-only tests + live-DB tests that skip when Postgres is unreachable",
+        "evidence": [
+          "F010",
+          "F015"
+        ]
+      },
+      {
+        "pattern": "LazyGroup registration with lazy imports and install hints for satellite-provided commands",
+        "evidence": [
+          "F012",
+          "F013"
+        ]
+      },
+      {
+        "pattern": "verify-at-startup / apply-at-deploy split (task-memory verify_schema)",
+        "evidence": [
+          "F011"
+        ]
+      }
+    ],
+    "risks": [
+      {
+        "risk": "Two ledgers in the navigator schema (ai_studio_migrations + the new one) with diverging semantics",
+        "evidence": [
+          "F010"
+        ],
+        "mitigation": "decide in the spec: keep Studio separate, or absorb it as a set"
+      },
+      {
+        "risk": "Pre-existing databases at unknown versions with scripts partially hand-applied; fold scripts DROP columns",
+        "evidence": [
+          "F003",
+          "F017",
+          "F020"
+        ],
+        "mitigation": "idempotent guarded SQL (IF EXISTS / IF NOT EXISTS) so a first run is a no-op where already applied; keep _fold_legacy_bot_columns until all environments report clean"
+      },
+      {
+        "risk": "Runtime DB user may lack DDL rights",
+        "evidence": [
+          "F014",
+          "F019"
+        ],
+        "mitigation": "admin DSN option with fallback and notice"
+      },
+      {
+        "risk": "self_ is a high-churn installer package",
+        "evidence": [
+          "F018"
+        ],
+        "mitigation": "keep the runner in its own module; touch self_/cli.py only to register the verb"
+      },
+      {
+        "risk": "Byte-freeze gate on creation.sql",
+        "evidence": [
+          "F003"
+        ],
+        "mitigation": "register a _SANCTIONED_REWRITES entry for any edit"
+      }
+    ]
+  },
+  "confidence_map": [
+    {
+      "id": "C1",
+      "statement": "`parrot self` is a click group in core self_/cli.py, lazily registered in the root LazyGroup; adding a verb is one more command.",
+      "evidence": [
+        "F012",
+        "F013"
+      ],
+      "confidence": "high",
+      "reasoning": "direct reads of cli.py and cli/__init__.py"
+    },
+    {
+      "id": "C2",
+      "statement": "navigator.ai_bots is defined by the strict BotModel in core (49 fields) and by creation.sql in ai-parrot-server.",
+      "evidence": [
+        "F001",
+        "F002",
+        "F003"
+      ],
+      "confidence": "high",
+      "reasoning": "grep + read of both files, citations probe-verified"
+    },
+    {
+      "id": "C3",
+      "statement": "creation.sql is destructive, partly non-idempotent and already drifted (no FEAT-752 columns), so it cannot serve as a migration.",
+      "evidence": [
+        "F002",
+        "F003"
+      ],
+      "confidence": "high",
+      "reasoning": "DROP at line 9 verified; grep count of enable_suggestions = 0"
+    },
+    {
+      "id": "C4",
+      "statement": "ai_bots schema changes are tracked only by hand-run loose SQL in sdd/migrations/ (15 files, 8 ai_bots schema), unpackaged, unordered and without a ledger.",
+      "evidence": [
+        "F005",
+        "F017",
+        "F020",
+        "F021"
+      ],
+      "confidence": "high",
+      "reasoning": "git ls-files count and per-file inspection"
+    },
+    {
+      "id": "C5",
+      "statement": "Deployed environments sit at unknown ai_bots schema versions (fold migrations pending on staging/prod).",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "medium",
+      "reasoning": "stated in commit 4f05450930 and by the compat shim; no live DB was inspected"
+    },
+    {
+      "id": "C6",
+      "statement": "navauth self upgrade = catalog of sql/<set>/NNN files + (set, filename) sha256 ledger + session advisory lock + per-file transaction + --check + exit codes 0-3 + admin-DSN precedence + read-only startup warning; no rollback and no baseline flag.",
+      "evidence": [
+        "F006",
+        "F007",
+        "F008",
+        "F009",
+        "F016",
+        "F019"
+      ],
+      "confidence": "high",
+      "reasoning": "spec and code read; citations verified"
+    },
+    {
+      "id": "C7",
+      "statement": "Parrot already ships a ledger-based migration runner for Agent Studio (navigator.ai_studio_migrations, parrot-studio-migrate) that does not cover ai_bots.",
+      "evidence": [
+        "F010",
+        "F013"
+      ],
+      "confidence": "high",
+      "reasoning": "migrate.py read, console script in server pyproject"
+    },
+    {
+      "id": "C8",
+      "statement": "Parrot has at least four independent schema mechanisms (Studio runner, task-memory verify/apply, runtime CREATE IF NOT EXISTS, loose SQL).",
+      "evidence": [
+        "F004",
+        "F010",
+        "F011"
+      ],
+      "confidence": "high",
+      "reasoning": "each mechanism cited directly"
+    },
+    {
+      "id": "C9",
+      "statement": "Runtime self-created tables handle creation but not column evolution, so they share ai_bots' drift risk.",
+      "evidence": [
+        "F011"
+      ],
+      "confidence": "medium",
+      "reasoning": "about 70 of 163 CREATE TABLE sites inspected"
+    },
+    {
+      "id": "C10",
+      "statement": "parrot conf has no admin/DDL DSN setting.",
+      "evidence": [
+        "F014"
+      ],
+      "confidence": "medium",
+      "reasoning": "absence grep scoped to conf.py"
+    },
+    {
+      "id": "C11",
+      "statement": "Migration SQL must be templated because schema and table names are configurable.",
+      "evidence": [
+        "F003",
+        "F008",
+        "F014"
+      ],
+      "confidence": "high",
+      "reasoning": "PARROT_SCHEMA / PARROT_BOTS_TABLE read in conf.py"
+    },
+    {
+      "id": "C12",
+      "statement": "Migration SQL must ship inside a package; sdd/ is not in any wheel.",
+      "evidence": [
+        "F004",
+        "F019",
+        "F020"
+      ],
+      "confidence": "high",
+      "reasoning": "repo layout + navauth decision"
+    },
+    {
+      "id": "C13",
+      "statement": "creation.sql and the BotModel docstring DDL are byte-frozen by a test gate requiring sanctioned rewrites.",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "medium",
+      "reasoning": "from a wiki lesson naming the test; the test file exists but the symbol was not read"
+    },
+    {
+      "id": "C14",
+      "statement": "The verb name risks confusion with `self update` and the existing `migrate_legacy_uv` vocabulary in self_.",
+      "evidence": [
+        "F012",
+        "F018"
+      ],
+      "confidence": "medium",
+      "reasoning": "names verified; impact on users is a judgement"
+    },
+    {
+      "id": "C15",
+      "statement": "Neither `parrot setup` nor `parrot install` provisions database tables today.",
+      "evidence": [
+        "F021"
+      ],
+      "confidence": "medium",
+      "reasoning": "absence grep scoped to two core packages"
+    },
+    {
+      "id": "C16",
+      "statement": "A version chain for ai_bots can be reconstructed from the git dates of the sdd/migrations files.",
+      "evidence": [
+        "F017",
+        "F003"
+      ],
+      "confidence": "medium",
+      "reasoning": "order inferred from first-commit dates; some files were edited after creation"
+    },
+    {
+      "id": "C17",
+      "statement": "The runner must not rely on asyncdb execute() to detect failure.",
+      "evidence": [
+        "F007",
+        "F019"
+      ],
+      "confidence": "high",
+      "reasoning": "documented gotcha with code (execute_checked) in navauth"
+    },
+    {
+      "id": "C18",
+      "statement": "The ai_bots DDL ships from ai-parrot-server while BotModel and the CLI are core, so set placement/discovery is a design decision.",
+      "evidence": [
+        "F001",
+        "F012"
+      ],
+      "confidence": "high",
+      "reasoning": "file locations verified"
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Which runner should `parrot self migration` build on: a new navauth-style runner (sets + (set, filename) ledger), or a generalisation of Studio's existing parrot-studio-migrate runner (integer versions, MANIFEST)?",
+      "blocks_claims": [
+        "C7",
+        "C8"
+      ],
+      "plausible_answers": [
+        "New navauth-style runner; Studio keeps its own ledger for now",
+        "New navauth-style runner; Studio becomes a set under the same ledger",
+        "Generalise Studio's runner and add ai_bots to it"
+      ],
+      "ask_user": true,
+      "user_answer": "navauth-style, Studio apart \u2014 new generic runner mirroring navauth (sets, (set, filename) ledger); Studio keeps its own ledger for now."
+    },
+    {
+      "id": "U2",
+      "question": "What is the v1 scope: only navigator.ai_bots, or also other parrot-owned tables?",
+      "blocks_claims": [
+        "C8",
+        "C9"
+      ],
+      "plausible_answers": [
+        "ai_bots only, with a registry other subsystems can join later",
+        "ai_bots + the Studio tables",
+        "ai_bots + runtime self-created navigator.* tables"
+      ],
+      "ask_user": true,
+      "user_answer": "ai_bots + runtime tables \u2014 also cover navigator.* tables that self-create at runtime (ui_surfaces, crew_definitions, \u2026)."
+    },
+    {
+      "id": "U3",
+      "question": "How should databases that already have some or all changes applied by hand be adopted?",
+      "blocks_claims": [
+        "C5",
+        "C16"
+      ],
+      "plausible_answers": [
+        "Idempotent files only: first run re-executes and records (navauth)",
+        "Add a --baseline/--stamp that records files without running them",
+        "Both"
+      ],
+      "ask_user": true,
+      "user_answer": "Idempotent + baseline \u2014 files stay idempotent (first run is a no-op where applied) AND a --baseline/--stamp records files without running them."
+    },
+    {
+      "id": "U4",
+      "question": "What CLI shape should the command have?",
+      "blocks_claims": [
+        "C1",
+        "C14"
+      ],
+      "plausible_answers": [
+        "Group with verbs: parrot self migration status | upgrade | new",
+        "Single command like navauth: parrot self migration [--check]",
+        "Different noun outside self (e.g. parrot db migrate)"
+      ],
+      "ask_user": true,
+      "user_answer": "Group with verbs \u2014 parrot self migration status | upgrade | baseline | new (`new` scaffolds the next NNN_*.sql for a set)."
+    },
+    {
+      "id": "U5",
+      "question": "What happens to sdd/migrations/ and creation.sql once the packaged set exists?",
+      "blocks_claims": [
+        "C3",
+        "C4",
+        "C13"
+      ],
+      "plausible_answers": [
+        "Move ai_bots scripts into the package set and delete them from sdd/migrations; creation.sql becomes fresh-install only, pointing to the command",
+        "Keep sdd/migrations as historical record; packaged set is a rewrite",
+        "Generate creation.sql from the migration chain"
+      ],
+      "ask_user": true,
+      "user_answer": "Move ai_bots, demote creation.sql \u2014 ai_bots scripts move into the package set (removed from sdd/migrations); planogram/ontology files stay; creation.sql becomes fresh-install only and points to the command (sanctioned rewrite)."
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization is high-confidence and the reference design is concrete; the two architectural forks (runner base U1, scope U2) are narrow binary choices captured as unknowns and settled in Q&A, so a spec can follow directly."
+  },
+  "overall_confidence": "medium",
+  "meta": {
+    "findings_used": [
+      "F001",
+      "F002",
+      "F003",
+      "F004",
+      "F005",
+      "F006",
+      "F007",
+      "F008",
+      "F009",
+      "F010",
+      "F011",
+      "F012",
+      "F013",
+      "F014",
+      "F015",
+      "F016",
+      "F017",
+      "F018",
+      "F019",
+      "F020",
+      "F021"
+    ],
+    "findings_unused": [],
+    "notes": "Citation probe (inline fixed commands): 153 checks, 150 verified, 2 stale (F003 server bots.py is a re-export shim; F007 runner range is a merge artifact), 1 missing (F003 pre-move historical path). Not read: navauth access.py (GRANT reconciliation), test_bot_model_fields.py. F004's '17 files' superseded by F021 (15)."
+  }
+}

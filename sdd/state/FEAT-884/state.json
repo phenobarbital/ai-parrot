@@ -1,0 +1,154 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-884",
+  "feature_slug": "db-upgrade",
+  "started_at": "2026-11-12T19:16:11Z",
+  "updated_at": "2026-11-12T20:53:20Z",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": null,
+    "raw_path": "sdd/state/FEAT-884/source.md",
+    "fetched_at": "2026-11-12T19:16:11Z",
+    "summary_oneline": "parrot self migration \u2014 versioned DB schema migrations for parrot tables (starting with navigator.ai_bots), mirroring navauth self upgrade"
+  },
+  "mode": "auto",
+  "phase": "proposal_drafted",
+  "phases": {
+    "source": {
+      "status": "completed",
+      "started_at": "2026-11-12T19:16:11Z",
+      "completed_at": "2026-11-12T19:16:11Z",
+      "duration_seconds": 0
+    },
+    "plan": {
+      "status": "completed",
+      "started_at": "2026-11-12T20:37:47Z",
+      "completed_at": "2026-11-12T20:37:47Z",
+      "queries_total": 19,
+      "approved_by_user": true,
+      "edited_by_user": false,
+      "plan_path": "sdd/state/FEAT-884/research_plan.json"
+    },
+    "research": {
+      "status": "completed",
+      "started_at": "2026-11-12T20:37:47Z",
+      "parallel": {
+        "enabled": true,
+        "fallback_reason": null,
+        "lanes": {
+          "codebase": {
+            "status": "completed",
+            "started_at": "2026-11-12T20:37:47Z",
+            "completed_at": "2026-11-12T20:44:31Z",
+            "findings_count": 16,
+            "queries_executed": 10,
+            "queries_skipped": 0,
+            "error": null,
+            "duration_seconds": 301.5
+          },
+          "git": {
+            "status": "completed",
+            "started_at": "2026-11-12T20:37:47Z",
+            "completed_at": "2026-11-12T20:44:31Z",
+            "findings_count": 4,
+            "queries_executed": 3,
+            "queries_skipped": 0,
+            "error": null,
+            "duration_seconds": 99.2
+          },
+          "wiki": {
+            "status": "completed",
+            "started_at": "2026-11-12T20:37:47Z",
+            "completed_at": "2026-11-12T20:44:31Z",
+            "findings_count": 7,
+            "queries_executed": 6,
+            "queries_skipped": 0,
+            "error": null,
+            "duration_seconds": 227.5
+          }
+        },
+        "merge": {
+          "started_at": "2026-11-12T20:44:31Z",
+          "completed_at": "2026-11-12T20:44:31Z",
+          "input_count": 27,
+          "output_count": 20,
+          "merged_count": 7,
+          "audit_dir": "findings/.audit"
+        }
+      },
+      "completed_at": "2026-11-12T20:44:31Z",
+      "queries_executed": 19,
+      "queries_skipped": 0,
+      "depth_reached": 1,
+      "files_read": 18,
+      "grep_calls": 22,
+      "git_calls": 8,
+      "truncated": false,
+      "truncation_reason": null,
+      "duration_seconds": 301.5,
+      "citation_probe": {
+        "mode": "inline-script (sdd-contract-probe fixed commands)",
+        "report": "sdd/state/FEAT-884/citation_probe.json",
+        "checks": 153,
+        "verified": 150,
+        "stale": 2,
+        "missing": 1,
+        "completed_at": "2026-11-12T20:45:45Z"
+      }
+    },
+    "synthesis": {
+      "status": "completed",
+      "started_at": "2026-11-12T20:48:34Z",
+      "completed_at": "2026-11-12T20:48:34Z",
+      "synthesis_path": "sdd/state/FEAT-884/synthesis.json",
+      "thinking_path": null,
+      "overall_confidence": "medium",
+      "claims_total": 18,
+      "claims_high_conf": 11,
+      "claims_medium_conf": 7,
+      "claims_low_conf": 0,
+      "unknowns_count": 5,
+      "lint_passed": true,
+      "lint_iterations": 1
+    },
+    "qa": {
+      "status": "completed",
+      "started_at": "2026-11-12T20:51:15Z",
+      "completed_at": "2026-11-12T20:51:15Z",
+      "questions_total": 5,
+      "questions_answered": 5,
+      "skipped_reason": null
+    },
+    "output": {
+      "status": "completed",
+      "started_at": "2026-11-12T20:53:20Z",
+      "completed_at": "2026-11-12T20:53:20Z",
+      "proposal_path": "sdd/proposals/db-upgrade.proposal.md",
+      "commit_sha": null,
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "Localization is high-confidence and the reference design is concrete; runner base (U1) and scope (U2) were settled in Q&A, remaining items are spec-level details."
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 18,
+    "grep_calls": 22,
+    "git_calls": 8,
+    "wall_seconds": 301.5
+  },
+  "errors": [],
+  "resume_hint": {
+    "next_phase": "committed",
+    "next_action": "commit proposal + state"
+  },
+  "detected_mode": "enrichment"
+}

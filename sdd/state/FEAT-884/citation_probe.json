@@ -1,0 +1,3035 @@
+{
+ "repo_root": "/home/jesuslara/proyectos/ai-parrot",
+ "head": "35a395efb2",
+ "results": [
+  {
+   "id": "c0",
+   "fid": "F001",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/conf.py",
+   "line": 122,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot/src/parrot/conf.py",
+   "output": "1361"
+  },
+  {
+   "id": "c1",
+   "fid": "F001",
+   "kind": "anchor",
+   "path": "packages/ai-parrot/src/parrot/conf.py",
+   "anchor": "PARROT_BOTS_TABLE = config.get(\"PARROT_BOTS_TABLE\", fallback=\"ai_bots\")",
+   "status": "found",
+   "command": "grep -nF -- 'PARROT_BOTS_TABLE = config.get(\"PARROT_BOTS_TABLE\", fallback=\"ai_bots\")' packages/ai-parrot/src/parrot/conf.py",
+   "lines": [
+    121
+   ],
+   "range": [
+    121,
+    122
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c2",
+   "fid": "F001",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/creation.sql",
+   "line": 12,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot-server/src/parrot/handlers/creation.sql",
+   "output": "250"
+  },
+  {
+   "id": "c3",
+   "fid": "F001",
+   "kind": "anchor",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/creation.sql",
+   "anchor": "DROP TABLE IF EXISTS navigator.ai_bots CASCADE;",
+   "status": "found",
+   "command": "grep -nF -- 'DROP TABLE IF EXISTS navigator.ai_bots CASCADE;' packages/ai-parrot-server/src/parrot/handlers/creation.sql",
+   "lines": [
+    9
+   ],
+   "range": [
+    9,
+    12
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c4",
+   "fid": "F001",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/manager/manager.py",
+   "line": 522,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot-server/src/parrot/manager/manager.py",
+   "output": "3745"
+  },
+  {
+   "id": "c5",
+   "fid": "F001",
+   "kind": "anchor",
+   "path": "packages/ai-parrot-server/src/parrot/manager/manager.py",
+   "anchor": "bot_model: A loaded ``BotModel`` row (``navigator.ai_bots``).",
+   "status": "found",
+   "command": "grep -nF -- 'bot_model: A loaded ``BotModel`` row (``navigator.ai_bots``).' packages/ai-parrot-server/src/parrot/manager/manager.py",
+   "lines": [
+    522
+   ],
+   "range": [
+    522,
+    522
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c6",
+   "fid": "F001",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/auth/agent_guard.py",
+   "line": 76,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot/src/parrot/auth/agent_guard.py",
+   "output": "257"
+  },
+  {
+   "id": "c7",
+   "fid": "F001",
+   "kind": "anchor",
+   "path": "packages/ai-parrot/src/parrot/auth/agent_guard.py",
+   "anchor": "\"\"\"Validate and parse the JSONB shape stored in ``ai_bots.permissions``.",
+   "status": "found",
+   "command": "grep -nF -- '\"\"\"Validate and parse the JSONB shape stored in ``ai_bots.permissions``.' packages/ai-parrot/src/parrot/auth/agent_guard.py",
+   "lines": [
+    76
+   ],
+   "range": [
+    76,
+    76
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c8",
+   "fid": "F001",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/server/ui/status.py",
+   "line": 176,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot-server/src/parrot/server/ui/status.py",
+   "output": "258"
+  },
+  {
+   "id": "c9",
+   "fid": "F001",
+   "kind": "anchor",
+   "path": "packages/ai-parrot-server/src/parrot/server/ui/status.py",
+   "anchor": "Number of enabled rows in the ``ai_bots`` table, or 0 when the",
+   "status": "found",
+   "command": "grep -nF -- 'Number of enabled rows in the ``ai_bots`` table, or 0 when the' packages/ai-parrot-server/src/parrot/server/ui/status.py",
+   "lines": [
+    176
+   ],
+   "range": [
+    176,
+    176
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c10",
+   "fid": "F001",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/studio/agents/_db.py",
+   "line": 77,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot-server/src/parrot/handlers/studio/agents/_db.py",
+   "output": "236"
+  },
+  {
+   "id": "c11",
+   "fid": "F001",
+   "kind": "anchor",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/studio/agents/_db.py",
+   "anchor": "\"\"\"GLOBAL partition: the duplicate check also covers the legacy registry and ``ai_bots``; bot class check.\"\"\"",
+   "status": "found",
+   "command": "grep -nF -- '\"\"\"GLOBAL partition: the duplicate check also covers the legacy registry and ``ai_bots``; bot class check.\"\"\"' packages/ai-parrot-server/src/parrot/handlers/studio/agents/_db.py",
+   "lines": [
+    77
+   ],
+   "range": [
+    77,
+    77
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c12",
+   "fid": "F002",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/creation.sql",
+   "line": 9,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot-server/src/parrot/handlers/creation.sql",
+   "output": "250"
+  },
+  {
+   "id": "c13",
+   "fid": "F002",
+   "kind": "anchor",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/creation.sql",
+   "anchor": "-- WARNING: Initial setup DDL only. DO NOT run against production.",
+   "status": "found",
+   "command": "grep -nF -- '-- WARNING: Initial setup DDL only. DO NOT run against production.' packages/ai-parrot-server/src/parrot/handlers/creation.sql",
+   "lines": [
+    1
+   ],
+   "range": [
+    1,
+    9
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c14",
+   "fid": "F002",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/creation.sql",
+   "line": 81,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot-server/src/parrot/handlers/creation.sql",
+   "output": "250"
+  },
+  {
+   "id": "c15",
+   "fid": "F002",
+   "kind": "anchor",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/creation.sql",
+   "anchor": "chatbot_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),",
+   "status": "found",
+   "command": "grep -nF -- 'chatbot_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),' packages/ai-parrot-server/src/parrot/handlers/creation.sql",
+   "lines": [
+    14
+   ],
+   "range": [
+    12,
+    81
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c16",
+   "fid": "F002",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/creation.sql",
+   "line": 129,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot-server/src/parrot/handlers/creation.sql",
+   "output": "250"
+  },
+  {
+   "id": "c17",
+   "fid": "F002",
+   "kind": "anchor",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/creation.sql",
+   "anchor": "CREATE INDEX IF NOT EXISTS idx_ai_bots_name ON navigator.ai_bots(name);  (+ GIN on tools/permissions/model_con",
+   "status": "missing",
+   "command": "grep -nF -- 'CREATE INDEX IF NOT EXISTS idx_ai_bots_name ON navigator.ai_bots(name);  (+ GIN on tools/permissions/model_con' packages/ai-parrot-server/src/parrot/handlers/creation.sql",
+   "lines": [],
+   "range": [
+    84,
+    129
+   ],
+   "in_range": false
+  },
+  {
+   "id": "c18",
+   "fid": "F002",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/creation.sql",
+   "line": 250,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot-server/src/parrot/handlers/creation.sql",
+   "output": "250"
+  },
+  {
+   "id": "c19",
+   "fid": "F002",
+   "kind": "anchor",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/creation.sql",
+   "anchor": "-- FEAT-133: Add reranker_config and parent_searcher_config columns (idempotent)",
+   "status": "found",
+   "command": "grep -nF -- '-- FEAT-133: Add reranker_config and parent_searcher_config columns (idempotent)' packages/ai-parrot-server/src/parrot/handlers/creation.sql",
+   "lines": [
+    209
+   ],
+   "range": [
+    209,
+    250
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c20",
+   "fid": "F003",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/models/bots.py",
+   "line": 468,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot/src/parrot/models/bots.py",
+   "output": "702"
+  },
+  {
+   "id": "c21",
+   "fid": "F003",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/models/bots.py",
+   "name": "Meta",
+   "status": "ambiguous",
+   "command": "grep -nE '^[[:space:]]*(async def|def|class) Meta\\b' packages/ai-parrot/src/parrot/models/bots.py",
+   "output": "461:    class Meta:\n508:    class Meta:\n590:    class Meta:\n665:    class Meta:",
+   "lines": [
+    461,
+    508,
+    590,
+    665
+   ],
+   "range": [
+    461,
+    468
+   ]
+  },
+  {
+   "id": "c22",
+   "fid": "F003",
+   "kind": "anchor",
+   "path": "packages/ai-parrot/src/parrot/models/bots.py",
+   "anchor": "class Meta:",
+   "status": "ambiguous",
+   "command": "grep -nF -- 'class Meta:' packages/ai-parrot/src/parrot/models/bots.py",
+   "lines": [
+    461,
+    508,
+    590,
+    665
+   ],
+   "range": [
+    461,
+    468
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c23",
+   "fid": "F003",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/models/bots.py",
+   "line": 40,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot/src/parrot/models/bots.py",
+   "output": "702"
+  },
+  {
+   "id": "c24",
+   "fid": "F003",
+   "kind": "anchor",
+   "path": "packages/ai-parrot/src/parrot/models/bots.py",
+   "anchor": "# Older ``navigator.ai_bots`` tables still carry the pre-fold standalone",
+   "status": "found",
+   "command": "grep -nF -- '# Older ``navigator.ai_bots`` tables still carry the pre-fold standalone' packages/ai-parrot/src/parrot/models/bots.py",
+   "lines": [
+    27
+   ],
+   "range": [
+    24,
+    40
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c25",
+   "fid": "F003",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/models/bots.py",
+   "line": 44,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot/src/parrot/models/bots.py",
+   "output": "702"
+  },
+  {
+   "id": "c26",
+   "fid": "F003",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/models/bots.py",
+   "name": "_fold_legacy_bot_columns",
+   "status": "found",
+   "command": "grep -nE '^[[:space:]]*(async def|def|class) _fold_legacy_bot_columns\\b' packages/ai-parrot/src/parrot/models/bots.py",
+   "output": "43:def _fold_legacy_bot_columns(kwargs: dict) -> None:",
+   "lines": [
+    43
+   ],
+   "range": [
+    43,
+    44
+   ]
+  },
+  {
+   "id": "c27",
+   "fid": "F003",
+   "kind": "anchor",
+   "path": "packages/ai-parrot/src/parrot/models/bots.py",
+   "anchor": "def _fold_legacy_bot_columns(kwargs: dict) -> None:",
+   "status": "found",
+   "command": "grep -nF -- 'def _fold_legacy_bot_columns(kwargs: dict) -> None:' packages/ai-parrot/src/parrot/models/bots.py",
+   "lines": [
+    43
+   ],
+   "range": [
+    43,
+    44
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c28",
+   "fid": "F003",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/models/bots.py",
+   "name": "BotModel",
+   "status": "found",
+   "command": "grep -nE '^[[:space:]]*(async def|def|class) BotModel\\b' packages/ai-parrot/src/parrot/models/bots.py",
+   "output": "100:class BotModel(Model):",
+   "lines": [
+    100
+   ],
+   "range": [
+    100,
+    468
+   ]
+  },
+  {
+   "id": "c29",
+   "fid": "F003",
+   "kind": "anchor",
+   "path": "packages/ai-parrot/src/parrot/models/bots.py",
+   "anchor": "A row hydrated from an ai_bots table that still carries the pre-fold columns",
+   "status": "missing",
+   "command": "grep -nF -- 'A row hydrated from an ai_bots table that still carries the pre-fold columns' packages/ai-parrot/src/parrot/models/bots.py",
+   "lines": [],
+   "range": [
+    100,
+    468
+   ],
+   "in_range": false
+  },
+  {
+   "id": "c30",
+   "fid": "F003",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/models/bots.py",
+   "line": 161,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot/src/parrot/models/bots.py",
+   "output": "702"
+  },
+  {
+   "id": "c31",
+   "fid": "F003",
+   "kind": "anchor",
+   "path": "packages/ai-parrot/src/parrot/models/bots.py",
+   "anchor": "-- Follow-up suggestion chips (FEAT-752)",
+   "status": "found",
+   "command": "grep -nF -- '-- Follow-up suggestion chips (FEAT-752)' packages/ai-parrot/src/parrot/models/bots.py",
+   "lines": [
+    156
+   ],
+   "range": [
+    156,
+    161
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c32",
+   "fid": "F003",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/creation.sql",
+   "line": 86,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot-server/src/parrot/handlers/creation.sql",
+   "output": "250"
+  },
+  {
+   "id": "c33",
+   "fid": "F003",
+   "kind": "anchor",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/creation.sql",
+   "anchor": "9:  DROP TABLE IF EXISTS navigator.ai_bots CASCADE;",
+   "status": "missing",
+   "command": "grep -nF -- '9:  DROP TABLE IF EXISTS navigator.ai_bots CASCADE;' packages/ai-parrot-server/src/parrot/handlers/creation.sql",
+   "lines": [],
+   "range": [
+    9,
+    86
+   ],
+   "in_range": false
+  },
+  {
+   "id": "c34",
+   "fid": "F003",
+   "kind": "file",
+   "path": "sdd/migrations/ai-bots-homologate-botmodel.sql",
+   "line": 40,
+   "status": "found",
+   "command": "wc -l < sdd/migrations/ai-bots-homologate-botmodel.sql",
+   "output": "95"
+  },
+  {
+   "id": "c35",
+   "fid": "F003",
+   "kind": "anchor",
+   "path": "sdd/migrations/ai-bots-homologate-botmodel.sql",
+   "anchor": "-- Homologate navigator.ai_bots with parrot.models.bots.BotModel",
+   "status": "found",
+   "command": "grep -nF -- '-- Homologate navigator.ai_bots with parrot.models.bots.BotModel' sdd/migrations/ai-bots-homologate-botmodel.sql",
+   "lines": [
+    2
+   ],
+   "range": [
+    1,
+    40
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c36",
+   "fid": "F003",
+   "kind": "file",
+   "path": "sdd/migrations/botmodel-recreate-table.sql",
+   "line": 20,
+   "status": "found",
+   "command": "wc -l < sdd/migrations/botmodel-recreate-table.sql",
+   "output": "88"
+  },
+  {
+   "id": "c37",
+   "fid": "F003",
+   "kind": "anchor",
+   "path": "sdd/migrations/botmodel-recreate-table.sql",
+   "anchor": "-- WARNING: DROP TABLE ... CASCADE destroys all existing bot rows \u2026",
+   "status": "missing",
+   "command": "grep -nF -- '-- WARNING: DROP TABLE ... CASCADE destroys all existing bot rows \u2026' sdd/migrations/botmodel-recreate-table.sql",
+   "lines": [],
+   "range": [
+    1,
+    20
+   ],
+   "in_range": false
+  },
+  {
+   "id": "c38",
+   "fid": "F003",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/tests/studio/storage/test_storage_gates.py",
+   "line": null,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot-server/tests/studio/storage/test_storage_gates.py",
+   "output": "286"
+  },
+  {
+   "id": "c39",
+   "fid": "F003",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-server/tests/studio/storage/test_storage_gates.py",
+   "name": "test_load_database_bots_untouched",
+   "status": "found",
+   "command": "grep -nE '^[[:space:]]*(async def|def|class) test_load_database_bots_untouched\\b' packages/ai-parrot-server/tests/studio/storage/test_storage_gates.py",
+   "output": "268:def test_load_database_bots_untouched():",
+   "lines": [
+    268
+   ],
+   "range": null
+  },
+  {
+   "id": "c40",
+   "fid": "F003",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/creation.sql",
+   "line": 11,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot-server/src/parrot/handlers/creation.sql",
+   "output": "250"
+  },
+  {
+   "id": "c41",
+   "fid": "F003",
+   "kind": "anchor",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/creation.sql",
+   "anchor": "-- WARNING: Initial setup DDL only. DO NOT run against production.",
+   "status": "found",
+   "command": "grep -nF -- '-- WARNING: Initial setup DDL only. DO NOT run against production.' packages/ai-parrot-server/src/parrot/handlers/creation.sql",
+   "lines": [
+    1
+   ],
+   "range": [
+    1,
+    11
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c42",
+   "fid": "F003",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/handlers/creation.sql",
+   "line": 203,
+   "status": "missing",
+   "command": "wc -l < packages/ai-parrot/src/parrot/handlers/creation.sql",
+   "output": ""
+  },
+  {
+   "id": "c43",
+   "fid": "F003",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/creation.sql",
+   "line": 215,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot-server/src/parrot/handlers/creation.sql",
+   "output": "250"
+  },
+  {
+   "id": "c44",
+   "fid": "F003",
+   "kind": "anchor",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/creation.sql",
+   "anchor": "-- FEAT-593: Agent Studio tool configuration (idempotent)",
+   "status": "found",
+   "command": "grep -nF -- '-- FEAT-593: Agent Studio tool configuration (idempotent)' packages/ai-parrot-server/src/parrot/handlers/creation.sql",
+   "lines": [
+    218
+   ],
+   "range": [
+    203,
+    215
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c45",
+   "fid": "F003",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/models/bots.py",
+   "line": null,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot-server/src/parrot/handlers/models/bots.py",
+   "output": "29"
+  },
+  {
+   "id": "c46",
+   "fid": "F003",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/models/bots.py",
+   "name": "BotModel",
+   "status": "missing",
+   "command": "grep -nE '^[[:space:]]*(async def|def|class) BotModel\\b' packages/ai-parrot-server/src/parrot/handlers/models/bots.py",
+   "output": "",
+   "lines": [],
+   "range": null
+  },
+  {
+   "id": "c47",
+   "fid": "F004",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrations/",
+   "status": "found",
+   "command": "test -d packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrations/",
+   "output": "dir"
+  },
+  {
+   "id": "c48",
+   "fid": "F004",
+   "kind": "file",
+   "path": "packages/parrot-formdesigner/migrations/",
+   "status": "found",
+   "command": "test -d packages/parrot-formdesigner/migrations/",
+   "output": "dir"
+  },
+  {
+   "id": "c49",
+   "fid": "F004",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/migrations/001_task_memory.sql",
+   "line": null,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot/src/parrot/tools/working_memory/task_memory/migrations/001_task_memory.sql",
+   "output": "351"
+  },
+  {
+   "id": "c50",
+   "fid": "F004",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/models/",
+   "status": "found",
+   "command": "test -d packages/ai-parrot-server/src/parrot/handlers/models/",
+   "output": "dir"
+  },
+  {
+   "id": "c51",
+   "fid": "F004",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/security/security_events.sql",
+   "line": null,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot/src/parrot/security/security_events.sql",
+   "output": "25"
+  },
+  {
+   "id": "c52",
+   "fid": "F004",
+   "kind": "file",
+   "path": "sdd/migrations/",
+   "status": "found",
+   "command": "test -d sdd/migrations/",
+   "output": "dir"
+  },
+  {
+   "id": "c53",
+   "fid": "F005",
+   "kind": "file",
+   "path": "sdd/migrations/FEAT-752-ai-bots-suggestion-columns.sql",
+   "line": 12,
+   "status": "found",
+   "command": "wc -l < sdd/migrations/FEAT-752-ai-bots-suggestion-columns.sql",
+   "output": "27"
+  },
+  {
+   "id": "c54",
+   "fid": "F005",
+   "kind": "anchor",
+   "path": "sdd/migrations/FEAT-752-ai-bots-suggestion-columns.sql",
+   "anchor": "-- Apply BEFORE deploying the code: BotModel selects these columns and fails on a missing one.",
+   "status": "found",
+   "command": "grep -nF -- '-- Apply BEFORE deploying the code: BotModel selects these columns and fails on a missing one.' sdd/migrations/FEAT-752-ai-bots-suggestion-columns.sql",
+   "lines": [
+    3
+   ],
+   "range": [
+    1,
+    12
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c55",
+   "fid": "F005",
+   "kind": "file",
+   "path": "sdd/migrations/FEAT-752-ai-bots-suggestion-columns.sql",
+   "line": 27,
+   "status": "found",
+   "command": "wc -l < sdd/migrations/FEAT-752-ai-bots-suggestion-columns.sql",
+   "output": "27"
+  },
+  {
+   "id": "c56",
+   "fid": "F005",
+   "kind": "file",
+   "path": "sdd/migrations/ai-bots-homologate-botmodel.sql",
+   "line": 30,
+   "status": "found",
+   "command": "wc -l < sdd/migrations/ai-bots-homologate-botmodel.sql",
+   "output": "95"
+  },
+  {
+   "id": "c57",
+   "fid": "F005",
+   "kind": "anchor",
+   "path": "sdd/migrations/ai-bots-homologate-botmodel.sql",
+   "anchor": "-- Homologate navigator.ai_bots with parrot.models.bots.BotModel",
+   "status": "found",
+   "command": "grep -nF -- '-- Homologate navigator.ai_bots with parrot.models.bots.BotModel' sdd/migrations/ai-bots-homologate-botmodel.sql",
+   "lines": [
+    2
+   ],
+   "range": [
+    1,
+    30
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c58",
+   "fid": "F006",
+   "kind": "file",
+   "path": "../navigator-auth/navigator_auth/migrations/",
+   "status": "found",
+   "command": "test -d ../navigator-auth/navigator_auth/migrations/",
+   "output": "dir"
+  },
+  {
+   "id": "c59",
+   "fid": "F006",
+   "kind": "file",
+   "path": "../navigator-auth/pyproject.toml",
+   "line": 75,
+   "status": "found",
+   "command": "wc -l < ../navigator-auth/pyproject.toml",
+   "output": "202"
+  },
+  {
+   "id": "c60",
+   "fid": "F007",
+   "kind": "file",
+   "path": "../navigator-auth/navigator_auth/migrations/runner.py",
+   "line": 39,
+   "status": "found",
+   "command": "wc -l < ../navigator-auth/navigator_auth/migrations/runner.py",
+   "output": "341"
+  },
+  {
+   "id": "c61",
+   "fid": "F007",
+   "kind": "anchor",
+   "path": "../navigator-auth/navigator_auth/migrations/runner.py",
+   "anchor": "LEDGER_TABLE = \"schema_migrations\"",
+   "status": "found",
+   "command": "grep -nF -- 'LEDGER_TABLE = \"schema_migrations\"' ../navigator-auth/navigator_auth/migrations/runner.py",
+   "lines": [
+    23
+   ],
+   "range": [
+    23,
+    39
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c62",
+   "fid": "F007",
+   "kind": "file",
+   "path": "../navigator-auth/navigator_auth/migrations/runner.py",
+   "line": 82,
+   "status": "found",
+   "command": "wc -l < ../navigator-auth/navigator_auth/migrations/runner.py",
+   "output": "341"
+  },
+  {
+   "id": "c63",
+   "fid": "F007",
+   "kind": "symbol",
+   "path": "../navigator-auth/navigator_auth/migrations/runner.py",
+   "name": "MigrationState",
+   "status": "found",
+   "command": "grep -nE '^[[:space:]]*(async def|def|class) MigrationState\\b' ../navigator-auth/navigator_auth/migrations/runner.py",
+   "output": "50:class MigrationState(str, Enum):",
+   "lines": [
+    50
+   ],
+   "range": [
+    50,
+    82
+   ]
+  },
+  {
+   "id": "c64",
+   "fid": "F007",
+   "kind": "anchor",
+   "path": "../navigator-auth/navigator_auth/migrations/runner.py",
+   "anchor": "class MigrationState(str, Enum): APPLIED = \"applied\"; PENDING = \"pending\"; CHANGED = \"changed\"",
+   "status": "missing",
+   "command": "grep -nF -- 'class MigrationState(str, Enum): APPLIED = \"applied\"; PENDING = \"pending\"; CHANGED = \"changed\"' ../navigator-auth/navigator_auth/migrations/runner.py",
+   "lines": [],
+   "range": [
+    50,
+    82
+   ],
+   "in_range": false
+  },
+  {
+   "id": "c65",
+   "fid": "F007",
+   "kind": "file",
+   "path": "../navigator-auth/navigator_auth/migrations/runner.py",
+   "line": 162,
+   "status": "found",
+   "command": "wc -l < ../navigator-auth/navigator_auth/migrations/runner.py",
+   "output": "341"
+  },
+  {
+   "id": "c66",
+   "fid": "F007",
+   "kind": "symbol",
+   "path": "../navigator-auth/navigator_auth/migrations/runner.py",
+   "name": "ensure_ledger",
+   "status": "found",
+   "command": "grep -nE '^[[:space:]]*(async def|def|class) ensure_ledger\\b' ../navigator-auth/navigator_auth/migrations/runner.py",
+   "output": "152:async def ensure_ledger(conn: Any) -> None:",
+   "lines": [
+    152
+   ],
+   "range": [
+    152,
+    162
+   ]
+  },
+  {
+   "id": "c67",
+   "fid": "F007",
+   "kind": "anchor",
+   "path": "../navigator-auth/navigator_auth/migrations/runner.py",
+   "anchor": "exists = await conn.fetchval(\"SELECT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = $1)\", AUTH_DB_SCHEMA)",
+   "status": "found",
+   "command": "grep -nF -- 'exists = await conn.fetchval(\"SELECT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = $1)\", AUTH_DB_SCHEMA)' ../navigator-auth/navigator_auth/migrations/runner.py",
+   "lines": [
+    158
+   ],
+   "range": [
+    152,
+    162
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c68",
+   "fid": "F007",
+   "kind": "file",
+   "path": "../navigator-auth/navigator_auth/migrations/runner.py",
+   "line": 243,
+   "status": "found",
+   "command": "wc -l < ../navigator-auth/navigator_auth/migrations/runner.py",
+   "output": "341"
+  },
+  {
+   "id": "c69",
+   "fid": "F007",
+   "kind": "symbol",
+   "path": "../navigator-auth/navigator_auth/migrations/runner.py",
+   "name": "_apply_file",
+   "status": "found",
+   "command": "grep -nE '^[[:space:]]*(async def|def|class) _apply_file\\b' ../navigator-auth/navigator_auth/migrations/runner.py",
+   "output": "224:async def _apply_file(conn: Any, file: MigrationFile, runtime_role: str) -> MigrationResult:",
+   "lines": [
+    224
+   ],
+   "range": [
+    224,
+    243
+   ]
+  },
+  {
+   "id": "c70",
+   "fid": "F007",
+   "kind": "anchor",
+   "path": "../navigator-auth/navigator_auth/migrations/runner.py",
+   "anchor": "async with conn.transaction():",
+   "status": "ambiguous",
+   "command": "grep -nF -- 'async with conn.transaction():' ../navigator-auth/navigator_auth/migrations/runner.py",
+   "lines": [
+    231,
+    251
+   ],
+   "range": [
+    224,
+    243
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c71",
+   "fid": "F007",
+   "kind": "file",
+   "path": "../navigator-auth/navigator_auth/migrations/runner.py",
+   "line": 275,
+   "status": "found",
+   "command": "wc -l < ../navigator-auth/navigator_auth/migrations/runner.py",
+   "output": "341"
+  },
+  {
+   "id": "c72",
+   "fid": "F007",
+   "kind": "symbol",
+   "path": "../navigator-auth/navigator_auth/migrations/runner.py",
+   "name": "_acquire_lock",
+   "status": "found",
+   "command": "grep -nE '^[[:space:]]*(async def|def|class) _acquire_lock\\b' ../navigator-auth/navigator_auth/migrations/runner.py",
+   "output": "260:async def _acquire_lock(conn: Any, timeout: float, poll: float) -> None:",
+   "lines": [
+    260
+   ],
+   "range": [
+    260,
+    275
+   ]
+  },
+  {
+   "id": "c73",
+   "fid": "F007",
+   "kind": "anchor",
+   "path": "../navigator-auth/navigator_auth/migrations/runner.py",
+   "anchor": "if await conn.fetchval(\"SELECT pg_try_advisory_lock($1)\", ADVISORY_LOCK_KEY): return",
+   "status": "missing",
+   "command": "grep -nF -- 'if await conn.fetchval(\"SELECT pg_try_advisory_lock($1)\", ADVISORY_LOCK_KEY): return' ../navigator-auth/navigator_auth/migrations/runner.py",
+   "lines": [],
+   "range": [
+    260,
+    275
+   ],
+   "in_range": false
+  },
+  {
+   "id": "c74",
+   "fid": "F007",
+   "kind": "file",
+   "path": "../navigator-auth/navigator_auth/migrations/runner.py",
+   "line": 287,
+   "status": "found",
+   "command": "wc -l < ../navigator-auth/navigator_auth/migrations/runner.py",
+   "output": "341"
+  },
+  {
+   "id": "c75",
+   "fid": "F007",
+   "kind": "symbol",
+   "path": "../navigator-auth/navigator_auth/migrations/runner.py",
+   "name": "upgrade",
+   "status": "found",
+   "command": "grep -nE '^[[:space:]]*(async def|def|class) upgrade\\b' ../navigator-auth/navigator_auth/migrations/runner.py",
+   "output": "278:async def upgrade(",
+   "lines": [
+    278
+   ],
+   "range": [
+    278,
+    287
+   ]
+  },
+  {
+   "id": "c76",
+   "fid": "F007",
+   "kind": "anchor",
+   "path": "../navigator-auth/navigator_auth/migrations/runner.py",
+   "anchor": "LEDGER_TABLE = \"schema_migrations\"",
+   "status": "found",
+   "command": "grep -nF -- 'LEDGER_TABLE = \"schema_migrations\"' ../navigator-auth/navigator_auth/migrations/runner.py",
+   "lines": [
+    23
+   ],
+   "range": [
+    278,
+    287
+   ],
+   "in_range": false
+  },
+  {
+   "id": "c77",
+   "fid": "F007",
+   "kind": "file",
+   "path": "../navigator-auth/navigator_auth/migrations/runner.py",
+   "line": 144,
+   "status": "found",
+   "command": "wc -l < ../navigator-auth/navigator_auth/migrations/runner.py",
+   "output": "341"
+  },
+  {
+   "id": "c78",
+   "fid": "F007",
+   "kind": "symbol",
+   "path": "../navigator-auth/navigator_auth/migrations/runner.py",
+   "name": "execute_checked",
+   "status": "found",
+   "command": "grep -nE '^[[:space:]]*(async def|def|class) execute_checked\\b' ../navigator-auth/navigator_auth/migrations/runner.py",
+   "output": "135:async def execute_checked(conn: Any, sql: str, *args: Any) -> Any:",
+   "lines": [
+    135
+   ],
+   "range": [
+    135,
+    144
+   ]
+  },
+  {
+   "id": "c79",
+   "fid": "F007",
+   "kind": "anchor",
+   "path": "../navigator-auth/navigator_auth/migrations/runner.py",
+   "anchor": "result = await conn.execute(sql, *args)",
+   "status": "found",
+   "command": "grep -nF -- 'result = await conn.execute(sql, *args)' ../navigator-auth/navigator_auth/migrations/runner.py",
+   "lines": [
+    137
+   ],
+   "range": [
+    135,
+    144
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c80",
+   "fid": "F007",
+   "kind": "file",
+   "path": "../navigator-auth/navigator_auth/migrations/cli.py",
+   "line": 41,
+   "status": "found",
+   "command": "wc -l < ../navigator-auth/navigator_auth/migrations/cli.py",
+   "output": "213"
+  },
+  {
+   "id": "c81",
+   "fid": "F007",
+   "kind": "symbol",
+   "path": "../navigator-auth/navigator_auth/migrations/cli.py",
+   "name": "build_parser",
+   "status": "found",
+   "command": "grep -nE '^[[:space:]]*(async def|def|class) build_parser\\b' ../navigator-auth/navigator_auth/migrations/cli.py",
+   "output": "24:def build_parser() -> argparse.ArgumentParser:",
+   "lines": [
+    24
+   ],
+   "range": [
+    21,
+    41
+   ]
+  },
+  {
+   "id": "c82",
+   "fid": "F007",
+   "kind": "anchor",
+   "path": "../navigator-auth/navigator_auth/migrations/cli.py",
+   "anchor": "EXIT_OK, EXIT_PENDING, EXIT_FAILED, EXIT_CONFIG = 0, 1, 2, 3",
+   "status": "found",
+   "command": "grep -nF -- 'EXIT_OK, EXIT_PENDING, EXIT_FAILED, EXIT_CONFIG = 0, 1, 2, 3' ../navigator-auth/navigator_auth/migrations/cli.py",
+   "lines": [
+    21
+   ],
+   "range": [
+    21,
+    41
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c83",
+   "fid": "F007",
+   "kind": "file",
+   "path": "../navigator-auth/navigator_auth/migrations/cli.py",
+   "line": 70,
+   "status": "found",
+   "command": "wc -l < ../navigator-auth/navigator_auth/migrations/cli.py",
+   "output": "213"
+  },
+  {
+   "id": "c84",
+   "fid": "F007",
+   "kind": "symbol",
+   "path": "../navigator-auth/navigator_auth/migrations/cli.py",
+   "name": "resolve_dsn",
+   "status": "found",
+   "command": "grep -nE '^[[:space:]]*(async def|def|class) resolve_dsn\\b' ../navigator-auth/navigator_auth/migrations/cli.py",
+   "output": "44:def resolve_dsn(args: argparse.Namespace, *, getpass_fn: Callable[[str], str] = getpass.getpass) -> tuple[str, str]:",
+   "lines": [
+    44
+   ],
+   "range": [
+    44,
+    70
+   ]
+  },
+  {
+   "id": "c85",
+   "fid": "F007",
+   "kind": "anchor",
+   "path": "../navigator-auth/navigator_auth/migrations/cli.py",
+   "anchor": "if args.dsn: return args.dsn, \"--dsn\"",
+   "status": "missing",
+   "command": "grep -nF -- 'if args.dsn: return args.dsn, \"--dsn\"' ../navigator-auth/navigator_auth/migrations/cli.py",
+   "lines": [],
+   "range": [
+    44,
+    70
+   ],
+   "in_range": false
+  },
+  {
+   "id": "c86",
+   "fid": "F007",
+   "kind": "file",
+   "path": "../navigator-auth/navigator_auth/migrations/cli.py",
+   "line": 112,
+   "status": "found",
+   "command": "wc -l < ../navigator-auth/navigator_auth/migrations/cli.py",
+   "output": "213"
+  },
+  {
+   "id": "c87",
+   "fid": "F007",
+   "kind": "symbol",
+   "path": "../navigator-auth/navigator_auth/migrations/cli.py",
+   "name": "_sanitized_error",
+   "status": "found",
+   "command": "grep -nE '^[[:space:]]*(async def|def|class) _sanitized_error\\b' ../navigator-auth/navigator_auth/migrations/cli.py",
+   "output": "98:def _sanitized_error(error: BaseException, dsn: str) -> str:",
+   "lines": [
+    98
+   ],
+   "range": [
+    98,
+    112
+   ]
+  },
+  {
+   "id": "c88",
+   "fid": "F007",
+   "kind": "anchor",
+   "path": "../navigator-auth/navigator_auth/migrations/cli.py",
+   "anchor": "message = str(error).replace(dsn, \"[redacted DSN]\")",
+   "status": "found",
+   "command": "grep -nF -- 'message = str(error).replace(dsn, \"[redacted DSN]\")' ../navigator-auth/navigator_auth/migrations/cli.py",
+   "lines": [
+    100
+   ],
+   "range": [
+    98,
+    112
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c89",
+   "fid": "F007",
+   "kind": "file",
+   "path": "../navigator-auth/navigator_auth/migrations/cli.py",
+   "line": 213,
+   "status": "found",
+   "command": "wc -l < ../navigator-auth/navigator_auth/migrations/cli.py",
+   "output": "213"
+  },
+  {
+   "id": "c90",
+   "fid": "F007",
+   "kind": "symbol",
+   "path": "../navigator-auth/navigator_auth/migrations/cli.py",
+   "name": "main",
+   "status": "found",
+   "command": "grep -nE '^[[:space:]]*(async def|def|class) main\\b' ../navigator-auth/navigator_auth/migrations/cli.py",
+   "output": "201:def main(argv: Sequence[str] | None = None, *, connect: Callable[[str], Awaitable[Any]] | None = None) -> int:",
+   "lines": [
+    201
+   ],
+   "range": [
+    201,
+    213
+   ]
+  },
+  {
+   "id": "c91",
+   "fid": "F007",
+   "kind": "anchor",
+   "path": "../navigator-auth/navigator_auth/migrations/cli.py",
+   "anchor": "def main(argv=None, *, connect=None) -> int:",
+   "status": "missing",
+   "command": "grep -nF -- 'def main(argv=None, *, connect=None) -> int:' ../navigator-auth/navigator_auth/migrations/cli.py",
+   "lines": [],
+   "range": [
+    201,
+    213
+   ],
+   "in_range": false
+  },
+  {
+   "id": "c92",
+   "fid": "F008",
+   "kind": "file",
+   "path": "../navigator-auth/navigator_auth/migrations/catalog.py",
+   "line": 21,
+   "status": "found",
+   "command": "wc -l < ../navigator-auth/navigator_auth/migrations/catalog.py",
+   "output": "118"
+  },
+  {
+   "id": "c93",
+   "fid": "F008",
+   "kind": "anchor",
+   "path": "../navigator-auth/navigator_auth/migrations/catalog.py",
+   "anchor": "SQL_ROOT: Path = Path(__file__).parent / \"sql\"",
+   "status": "found",
+   "command": "grep -nF -- 'SQL_ROOT: Path = Path(__file__).parent / \"sql\"' ../navigator-auth/navigator_auth/migrations/catalog.py",
+   "lines": [
+    19
+   ],
+   "range": [
+    19,
+    21
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c94",
+   "fid": "F008",
+   "kind": "file",
+   "path": "../navigator-auth/navigator_auth/migrations/catalog.py",
+   "line": 43,
+   "status": "found",
+   "command": "wc -l < ../navigator-auth/navigator_auth/migrations/catalog.py",
+   "output": "118"
+  },
+  {
+   "id": "c95",
+   "fid": "F008",
+   "kind": "symbol",
+   "path": "../navigator-auth/navigator_auth/migrations/catalog.py",
+   "name": "MigrationFile",
+   "status": "found",
+   "command": "grep -nE '^[[:space:]]*(async def|def|class) MigrationFile\\b' ../navigator-auth/navigator_auth/migrations/catalog.py",
+   "output": "28:class MigrationFile(BaseModel):",
+   "lines": [
+    28
+   ],
+   "range": [
+    28,
+    43
+   ]
+  },
+  {
+   "id": "c96",
+   "fid": "F008",
+   "kind": "anchor",
+   "path": "../navigator-auth/navigator_auth/migrations/catalog.py",
+   "anchor": "class MigrationFile(BaseModel):",
+   "status": "found",
+   "command": "grep -nF -- 'class MigrationFile(BaseModel):' ../navigator-auth/navigator_auth/migrations/catalog.py",
+   "lines": [
+    28
+   ],
+   "range": [
+    28,
+    43
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c97",
+   "fid": "F008",
+   "kind": "file",
+   "path": "../navigator-auth/navigator_auth/migrations/catalog.py",
+   "line": 113,
+   "status": "found",
+   "command": "wc -l < ../navigator-auth/navigator_auth/migrations/catalog.py",
+   "output": "118"
+  },
+  {
+   "id": "c98",
+   "fid": "F008",
+   "kind": "symbol",
+   "path": "../navigator-auth/navigator_auth/migrations/catalog.py",
+   "name": "discover",
+   "status": "found",
+   "command": "grep -nE '^[[:space:]]*(async def|def|class) discover\\b' ../navigator-auth/navigator_auth/migrations/catalog.py",
+   "output": "62:def discover(sets: Iterable[str] | None = None) -> tuple[MigrationFile, ...]:",
+   "lines": [
+    62
+   ],
+   "range": [
+    62,
+    113
+   ]
+  },
+  {
+   "id": "c99",
+   "fid": "F008",
+   "kind": "anchor",
+   "path": "../navigator-auth/navigator_auth/migrations/catalog.py",
+   "anchor": "def discover(sets: Iterable[str] | None = None) -> tuple[MigrationFile, ...]:",
+   "status": "found",
+   "command": "grep -nF -- 'def discover(sets: Iterable[str] | None = None) -> tuple[MigrationFile, ...]:' ../navigator-auth/navigator_auth/migrations/catalog.py",
+   "lines": [
+    62
+   ],
+   "range": [
+    62,
+    113
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c100",
+   "fid": "F008",
+   "kind": "file",
+   "path": "../navigator-auth/navigator_auth/migrations/catalog.py",
+   "line": 118,
+   "status": "found",
+   "command": "wc -l < ../navigator-auth/navigator_auth/migrations/catalog.py",
+   "output": "118"
+  },
+  {
+   "id": "c101",
+   "fid": "F008",
+   "kind": "symbol",
+   "path": "../navigator-auth/navigator_auth/migrations/catalog.py",
+   "name": "render_sql",
+   "status": "found",
+   "command": "grep -nE '^[[:space:]]*(async def|def|class) render_sql\\b' ../navigator-auth/navigator_auth/migrations/catalog.py",
+   "output": "116:def render_sql(sql: str) -> str:",
+   "lines": [
+    116
+   ],
+   "range": [
+    116,
+    118
+   ]
+  },
+  {
+   "id": "c102",
+   "fid": "F008",
+   "kind": "anchor",
+   "path": "../navigator-auth/navigator_auth/migrations/catalog.py",
+   "anchor": "def render_sql(sql: str) -> str:",
+   "status": "found",
+   "command": "grep -nF -- 'def render_sql(sql: str) -> str:' ../navigator-auth/navigator_auth/migrations/catalog.py",
+   "lines": [
+    116
+   ],
+   "range": [
+    116,
+    118
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c103",
+   "fid": "F009",
+   "kind": "file",
+   "path": "../navigator-auth/navigator_auth/migrations/startup.py",
+   "line": 5,
+   "status": "found",
+   "command": "wc -l < ../navigator-auth/navigator_auth/migrations/startup.py",
+   "output": "93"
+  },
+  {
+   "id": "c104",
+   "fid": "F009",
+   "kind": "anchor",
+   "path": "../navigator-auth/navigator_auth/migrations/startup.py",
+   "anchor": "\"\"\"Startup migration checks \u2014 read-only (FEAT-110, spec M6).",
+   "status": "found",
+   "command": "grep -nF -- '\"\"\"Startup migration checks \u2014 read-only (FEAT-110, spec M6).' ../navigator-auth/navigator_auth/migrations/startup.py",
+   "lines": [
+    1
+   ],
+   "range": [
+    1,
+    5
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c105",
+   "fid": "F009",
+   "kind": "file",
+   "path": "../navigator-auth/navigator_auth/migrations/startup.py",
+   "line": 79,
+   "status": "found",
+   "command": "wc -l < ../navigator-auth/navigator_auth/migrations/startup.py",
+   "output": "93"
+  },
+  {
+   "id": "c106",
+   "fid": "F009",
+   "kind": "symbol",
+   "path": "../navigator-auth/navigator_auth/migrations/startup.py",
+   "name": "warn_pending_migrations",
+   "status": "found",
+   "command": "grep -nE '^[[:space:]]*(async def|def|class) warn_pending_migrations\\b' ../navigator-auth/navigator_auth/migrations/startup.py",
+   "output": "56:async def warn_pending_migrations(db_pool: Any, backends: Sequence[Any] | None = None) -> None:",
+   "lines": [
+    56
+   ],
+   "range": [
+    56,
+    79
+   ]
+  },
+  {
+   "id": "c107",
+   "fid": "F009",
+   "kind": "anchor",
+   "path": "../navigator-auth/navigator_auth/migrations/startup.py",
+   "anchor": "pending = await pending_migrations(db_pool, enabled_migration_sets(backends))",
+   "status": "found",
+   "command": "grep -nF -- 'pending = await pending_migrations(db_pool, enabled_migration_sets(backends))' ../navigator-auth/navigator_auth/migrations/startup.py",
+   "lines": [
+    64
+   ],
+   "range": [
+    56,
+    79
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c108",
+   "fid": "F009",
+   "kind": "file",
+   "path": "../navigator-auth/navigator_auth/migrations/checks.py",
+   "line": 154,
+   "status": "found",
+   "command": "wc -l < ../navigator-auth/navigator_auth/migrations/checks.py",
+   "output": "234"
+  },
+  {
+   "id": "c109",
+   "fid": "F009",
+   "kind": "symbol",
+   "path": "../navigator-auth/navigator_auth/migrations/checks.py",
+   "name": "check_prerequisites",
+   "status": "found",
+   "command": "grep -nE '^[[:space:]]*(async def|def|class) check_prerequisites\\b' ../navigator-auth/navigator_auth/migrations/checks.py",
+   "output": "143:async def check_prerequisites(conn: Any, file: MigrationFile) -> None:",
+   "lines": [
+    143
+   ],
+   "range": [
+    128,
+    154
+   ]
+  },
+  {
+   "id": "c110",
+   "fid": "F009",
+   "kind": "anchor",
+   "path": "../navigator-auth/navigator_auth/migrations/checks.py",
+   "anchor": "def prerequisite_tables(migration_set: str) -> tuple[tuple[str, str], ...]:",
+   "status": "found",
+   "command": "grep -nF -- 'def prerequisite_tables(migration_set: str) -> tuple[tuple[str, str], ...]:' ../navigator-auth/navigator_auth/migrations/checks.py",
+   "lines": [
+    128
+   ],
+   "range": [
+    128,
+    154
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c111",
+   "fid": "F009",
+   "kind": "file",
+   "path": "../navigator-auth/navigator_auth/migrations/sql/identity/004_identity_base_columns.sql",
+   "line": 23,
+   "status": "found",
+   "command": "wc -l < ../navigator-auth/navigator_auth/migrations/sql/identity/004_identity_base_columns.sql",
+   "output": "57"
+  },
+  {
+   "id": "c112",
+   "fid": "F009",
+   "kind": "anchor",
+   "path": "../navigator-auth/navigator_auth/migrations/sql/identity/004_identity_base_columns.sql",
+   "anchor": "-- Additive and idempotent -- re-run on every startup, and a no-op against a",
+   "status": "found",
+   "command": "grep -nF -- '-- Additive and idempotent -- re-run on every startup, and a no-op against a' ../navigator-auth/navigator_auth/migrations/sql/identity/004_identity_base_columns.sql",
+   "lines": [
+    9
+   ],
+   "range": [
+    9,
+    23
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c113",
+   "fid": "F010",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrations/0001_studio_migrations_ledger.sql",
+   "line": 14,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrations/0001_studio_migrations_ledger.sql",
+   "output": "14"
+  },
+  {
+   "id": "c114",
+   "fid": "F010",
+   "kind": "anchor",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrations/0001_studio_migrations_ledger.sql",
+   "anchor": "SELECT pg_advisory_xact_lock(4715391001);   -- STUDIO_MIGRATION_LOCK_KEY",
+   "status": "found",
+   "command": "grep -nF -- 'SELECT pg_advisory_xact_lock(4715391001);   -- STUDIO_MIGRATION_LOCK_KEY' packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrations/0001_studio_migrations_ledger.sql",
+   "lines": [
+    1
+   ],
+   "range": [
+    1,
+    14
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c115",
+   "fid": "F010",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrate.py",
+   "line": 25,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrate.py",
+   "output": "285"
+  },
+  {
+   "id": "c116",
+   "fid": "F010",
+   "kind": "anchor",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrate.py",
+   "anchor": "STUDIO_SCHEMA_REQUIRED: int = 9",
+   "status": "found",
+   "command": "grep -nF -- 'STUDIO_SCHEMA_REQUIRED: int = 9' packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrate.py",
+   "lines": [
+    20
+   ],
+   "range": [
+    18,
+    25
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c117",
+   "fid": "F010",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrate.py",
+   "line": 160,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrate.py",
+   "output": "285"
+  },
+  {
+   "id": "c118",
+   "fid": "F010",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrate.py",
+   "name": "problems",
+   "status": "found",
+   "command": "grep -nE '^[[:space:]]*(async def|def|class) problems\\b' packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrate.py",
+   "output": "150:    def problems(self, required: int, manifest: Mapping[int, str]) -> list[str]:",
+   "lines": [
+    150
+   ],
+   "range": [
+    138,
+    160
+   ]
+  },
+  {
+   "id": "c119",
+   "fid": "F010",
+   "kind": "anchor",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrate.py",
+   "anchor": "found.extend(f\"missing {v}\" for v in range(1, required + 1) if v not in self.applied)",
+   "status": "found",
+   "command": "grep -nF -- 'found.extend(f\"missing {v}\" for v in range(1, required + 1) if v not in self.applied)' packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrate.py",
+   "lines": [
+    155
+   ],
+   "range": [
+    138,
+    160
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c120",
+   "fid": "F010",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrate.py",
+   "line": 216,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrate.py",
+   "output": "285"
+  },
+  {
+   "id": "c121",
+   "fid": "F010",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrate.py",
+   "name": "apply_studio_migrations",
+   "status": "found",
+   "command": "grep -nE '^[[:space:]]*(async def|def|class) apply_studio_migrations\\b' packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrate.py",
+   "output": "191:async def apply_studio_migrations(pool: Any, *, dry_run: bool = False) -> list[int]:",
+   "lines": [
+    191
+   ],
+   "range": [
+    191,
+    216
+   ]
+  },
+  {
+   "id": "c122",
+   "fid": "F010",
+   "kind": "anchor",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrate.py",
+   "anchor": "async def apply_studio_migrations(pool: Any, *, dry_run: bool = False) -> list[int]:",
+   "status": "found",
+   "command": "grep -nF -- 'async def apply_studio_migrations(pool: Any, *, dry_run: bool = False) -> list[int]:' packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrate.py",
+   "lines": [
+    191
+   ],
+   "range": [
+    191,
+    216
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c123",
+   "fid": "F010",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrate.py",
+   "line": 227,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrate.py",
+   "output": "285"
+  },
+  {
+   "id": "c124",
+   "fid": "F010",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrate.py",
+   "name": "_build_parser",
+   "status": "found",
+   "command": "grep -nE '^[[:space:]]*(async def|def|class) _build_parser\\b' packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrate.py",
+   "output": "219:def _build_parser() -> argparse.ArgumentParser:",
+   "lines": [
+    219
+   ],
+   "range": [
+    219,
+    227
+   ]
+  },
+  {
+   "id": "c125",
+   "fid": "F010",
+   "kind": "anchor",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrate.py",
+   "anchor": "parser = argparse.ArgumentParser(prog=\"parrot-studio-migrate\", ...)",
+   "status": "missing",
+   "command": "grep -nF -- 'parser = argparse.ArgumentParser(prog=\"parrot-studio-migrate\", ...)' packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrate.py",
+   "lines": [],
+   "range": [
+    219,
+    227
+   ],
+   "in_range": false
+  },
+  {
+   "id": "c126",
+   "fid": "F010",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/studio/storage/backend.py",
+   "line": 64,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot-server/src/parrot/handlers/studio/storage/backend.py",
+   "output": "182"
+  },
+  {
+   "id": "c127",
+   "fid": "F010",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/studio/storage/backend.py",
+   "name": "_probe",
+   "status": "found",
+   "command": "grep -nE '^[[:space:]]*(async def|def|class) _probe\\b' packages/ai-parrot-server/src/parrot/handlers/studio/storage/backend.py",
+   "output": "58:async def _probe(pool: Any) -> migrate.LedgerState | Exception:",
+   "lines": [
+    58
+   ],
+   "range": [
+    58,
+    64
+   ]
+  },
+  {
+   "id": "c128",
+   "fid": "F010",
+   "kind": "anchor",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/studio/storage/backend.py",
+   "anchor": "async def _probe(pool: Any) -> migrate.LedgerState | Exception:",
+   "status": "found",
+   "command": "grep -nF -- 'async def _probe(pool: Any) -> migrate.LedgerState | Exception:' packages/ai-parrot-server/src/parrot/handlers/studio/storage/backend.py",
+   "lines": [
+    58
+   ],
+   "range": [
+    58,
+    64
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c129",
+   "fid": "F010",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/pyproject.toml",
+   "line": 109,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot-server/pyproject.toml",
+   "output": "159"
+  },
+  {
+   "id": "c130",
+   "fid": "F010",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrate.py",
+   "line": null,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrate.py",
+   "output": "285"
+  },
+  {
+   "id": "c131",
+   "fid": "F010",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrate.py",
+   "name": "main",
+   "status": "found",
+   "command": "grep -nE '^[[:space:]]*(async def|def|class) main\\b' packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrate.py",
+   "output": "271:def main(argv: list[str] | None = None) -> int:",
+   "lines": [
+    271
+   ],
+   "range": null
+  },
+  {
+   "id": "c132",
+   "fid": "F010",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrations/0001_studio_migrations_ledger.sql",
+   "line": 13,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrations/0001_studio_migrations_ledger.sql",
+   "output": "14"
+  },
+  {
+   "id": "c133",
+   "fid": "F010",
+   "kind": "anchor",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrations/0001_studio_migrations_ledger.sql",
+   "anchor": "SELECT pg_advisory_xact_lock(4715391001);   -- STUDIO_MIGRATION_LOCK_KEY",
+   "status": "found",
+   "command": "grep -nF -- 'SELECT pg_advisory_xact_lock(4715391001);   -- STUDIO_MIGRATION_LOCK_KEY' packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrations/0001_studio_migrations_ledger.sql",
+   "lines": [
+    1
+   ],
+   "range": [
+    1,
+    13
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c134",
+   "fid": "F010",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/tests/studio/storage/test_migrations_db.py",
+   "line": 191,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot-server/tests/studio/storage/test_migrations_db.py",
+   "output": "355"
+  },
+  {
+   "id": "c135",
+   "fid": "F010",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-server/tests/studio/storage/test_migrations_db.py",
+   "name": "test_migrations_apply_twice",
+   "status": "found",
+   "command": "grep -nE '^[[:space:]]*(async def|def|class) test_migrations_apply_twice\\b' packages/ai-parrot-server/tests/studio/storage/test_migrations_db.py",
+   "output": "76:async def test_migrations_apply_twice(studio_pool) -> None:",
+   "lines": [
+    76
+   ],
+   "range": [
+    76,
+    191
+   ]
+  },
+  {
+   "id": "c136",
+   "fid": "F010",
+   "kind": "anchor",
+   "path": "packages/ai-parrot-server/tests/studio/storage/test_migrations_db.py",
+   "anchor": "test_migrations_apply_twice (L76-82) \u00b7 test_migrations_apply_on_feat467_database (L85-119)",
+   "status": "missing",
+   "command": "grep -nF -- 'test_migrations_apply_twice (L76-82) \u00b7 test_migrations_apply_on_feat467_database (L85-119)' packages/ai-parrot-server/tests/studio/storage/test_migrations_db.py",
+   "lines": [],
+   "range": [
+    76,
+    191
+   ],
+   "in_range": false
+  },
+  {
+   "id": "c137",
+   "fid": "F011",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/models/ui_surfaces.py",
+   "line": 110,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot-server/src/parrot/handlers/models/ui_surfaces.py",
+   "output": "777"
+  },
+  {
+   "id": "c138",
+   "fid": "F011",
+   "kind": "anchor",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/models/ui_surfaces.py",
+   "anchor": "CREATE TABLE IF NOT EXISTS navigator.ui_surfaces (",
+   "status": "found",
+   "command": "grep -nF -- 'CREATE TABLE IF NOT EXISTS navigator.ui_surfaces (' packages/ai-parrot-server/src/parrot/handlers/models/ui_surfaces.py",
+   "lines": [
+    110
+   ],
+   "range": [
+    110,
+    110
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c139",
+   "fid": "F011",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/crew/postgres_persistence.py",
+   "line": 23,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot-server/src/parrot/handlers/crew/postgres_persistence.py",
+   "output": "387"
+  },
+  {
+   "id": "c140",
+   "fid": "F011",
+   "kind": "anchor",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/crew/postgres_persistence.py",
+   "anchor": "\"\"\"CREATE TABLE IF NOT EXISTS navigator.crew_definitions (",
+   "status": "found",
+   "command": "grep -nF -- '\"\"\"CREATE TABLE IF NOT EXISTS navigator.crew_definitions (' packages/ai-parrot-server/src/parrot/handlers/crew/postgres_persistence.py",
+   "lines": [
+    23
+   ],
+   "range": [
+    23,
+    23
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c141",
+   "fid": "F011",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/models/studio_drafts.py",
+   "line": 45,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot-server/src/parrot/handlers/models/studio_drafts.py",
+   "output": "85"
+  },
+  {
+   "id": "c142",
+   "fid": "F011",
+   "kind": "anchor",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/models/studio_drafts.py",
+   "anchor": "CREATE TABLE IF NOT EXISTS navigator.studio_drafts (",
+   "status": "found",
+   "command": "grep -nF -- 'CREATE TABLE IF NOT EXISTS navigator.studio_drafts (' packages/ai-parrot-server/src/parrot/handlers/models/studio_drafts.py",
+   "lines": [
+    45
+   ],
+   "range": [
+    45,
+    45
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c143",
+   "fid": "F011",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrations/0005_studio_drafts_baseline.sql",
+   "line": 4,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrations/0005_studio_drafts_baseline.sql",
+   "output": "21"
+  },
+  {
+   "id": "c144",
+   "fid": "F011",
+   "kind": "anchor",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrations/0005_studio_drafts_baseline.sql",
+   "anchor": "CREATE TABLE IF NOT EXISTS navigator.studio_drafts (",
+   "status": "found",
+   "command": "grep -nF -- 'CREATE TABLE IF NOT EXISTS navigator.studio_drafts (' packages/ai-parrot-server/src/parrot/handlers/studio/storage/migrations/0005_studio_drafts_baseline.sql",
+   "lines": [
+    4
+   ],
+   "range": [
+    4,
+    4
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c145",
+   "fid": "F011",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/models/skills_catalog.py",
+   "line": 34,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot-server/src/parrot/handlers/models/skills_catalog.py",
+   "output": "90"
+  },
+  {
+   "id": "c146",
+   "fid": "F011",
+   "kind": "anchor",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/models/skills_catalog.py",
+   "anchor": "CREATE TABLE IF NOT EXISTS navigator.ai_skills_catalog (",
+   "status": "found",
+   "command": "grep -nF -- 'CREATE TABLE IF NOT EXISTS navigator.ai_skills_catalog (' packages/ai-parrot-server/src/parrot/handlers/models/skills_catalog.py",
+   "lines": [
+    34
+   ],
+   "range": [
+    34,
+    34
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c147",
+   "fid": "F011",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/models/metric_definitions.py",
+   "line": 23,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot-server/src/parrot/handlers/models/metric_definitions.py",
+   "output": "313"
+  },
+  {
+   "id": "c148",
+   "fid": "F011",
+   "kind": "anchor",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/models/metric_definitions.py",
+   "anchor": "\"\"\"CREATE TABLE IF NOT EXISTS navigator.metric_definitions (",
+   "status": "found",
+   "command": "grep -nF -- '\"\"\"CREATE TABLE IF NOT EXISTS navigator.metric_definitions (' packages/ai-parrot-server/src/parrot/handlers/models/metric_definitions.py",
+   "lines": [
+    23
+   ],
+   "range": [
+    23,
+    23
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c149",
+   "fid": "F011",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/scheduler/models.py",
+   "line": 24,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot-server/src/parrot/scheduler/models.py",
+   "output": "263"
+  },
+  {
+   "id": "c150",
+   "fid": "F011",
+   "kind": "anchor",
+   "path": "packages/ai-parrot-server/src/parrot/scheduler/models.py",
+   "anchor": "CREATE TABLE IF NOT EXISTS navigator.service_scheduler (",
+   "status": "found",
+   "command": "grep -nF -- 'CREATE TABLE IF NOT EXISTS navigator.service_scheduler (' packages/ai-parrot-server/src/parrot/scheduler/models.py",
+   "lines": [
+    24
+   ],
+   "range": [
+    24,
+    24
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c151",
+   "fid": "F011",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/pg_schema.py",
+   "line": 345,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot/src/parrot/knowledge/graphindex/pg_schema.py",
+   "output": "547"
+  },
+  {
+   "id": "c152",
+   "fid": "F011",
+   "kind": "anchor",
+   "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/pg_schema.py",
+   "anchor": "#: Columns added after v1 shipped. ``CREATE TABLE IF NOT EXISTS`` silently",
+   "status": "found",
+   "command": "grep -nF -- '#: Columns added after v1 shipped. ``CREATE TABLE IF NOT EXISTS`` silently' packages/ai-parrot/src/parrot/knowledge/graphindex/pg_schema.py",
+   "lines": [
+    345
+   ],
+   "range": [
+    345,
+    345
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c153",
+   "fid": "F011",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/models/users_bots_creation.sql",
+   "line": 7,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot-server/src/parrot/handlers/models/users_bots_creation.sql",
+   "output": "96"
+  },
+  {
+   "id": "c154",
+   "fid": "F011",
+   "kind": "anchor",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/models/users_bots_creation.sql",
+   "anchor": "CREATE TABLE IF NOT EXISTS navigator.users_bots (",
+   "status": "found",
+   "command": "grep -nF -- 'CREATE TABLE IF NOT EXISTS navigator.users_bots (' packages/ai-parrot-server/src/parrot/handlers/models/users_bots_creation.sql",
+   "lines": [
+    7
+   ],
+   "range": [
+    7,
+    7
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c155",
+   "fid": "F011",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/eval/sink.py",
+   "line": 11,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot/src/parrot/eval/sink.py",
+   "output": "235"
+  },
+  {
+   "id": "c156",
+   "fid": "F011",
+   "kind": "anchor",
+   "path": "packages/ai-parrot/src/parrot/eval/sink.py",
+   "anchor": "Idempotent ``CREATE TABLE IF NOT EXISTS`` DDL so the sink self-provisions",
+   "status": "found",
+   "command": "grep -nF -- 'Idempotent ``CREATE TABLE IF NOT EXISTS`` DDL so the sink self-provisions' packages/ai-parrot/src/parrot/eval/sink.py",
+   "lines": [
+    11
+   ],
+   "range": [
+    11,
+    11
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c157",
+   "fid": "F011",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/store/postgres.py",
+   "line": 642,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot/src/parrot/tools/working_memory/task_memory/store/postgres.py",
+   "output": "3080"
+  },
+  {
+   "id": "c158",
+   "fid": "F011",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/store/postgres.py",
+   "name": "verify_schema",
+   "status": "found",
+   "command": "grep -nE '^[[:space:]]*(async def|def|class) verify_schema\\b' packages/ai-parrot/src/parrot/tools/working_memory/task_memory/store/postgres.py",
+   "output": "612:    async def verify_schema(self) -> None:",
+   "lines": [
+    612
+   ],
+   "range": [
+    612,
+    642
+   ]
+  },
+  {
+   "id": "c159",
+   "fid": "F011",
+   "kind": "anchor",
+   "path": "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/store/postgres.py",
+   "anchor": "async def verify_schema(self) -> None:",
+   "status": "found",
+   "command": "grep -nF -- 'async def verify_schema(self) -> None:' packages/ai-parrot/src/parrot/tools/working_memory/task_memory/store/postgres.py",
+   "lines": [
+    612
+   ],
+   "range": [
+    612,
+    642
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c160",
+   "fid": "F011",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/store/postgres.py",
+   "line": null,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot/src/parrot/tools/working_memory/task_memory/store/postgres.py",
+   "output": "3080"
+  },
+  {
+   "id": "c161",
+   "fid": "F011",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/store/postgres.py",
+   "name": "apply_migrations",
+   "status": "found",
+   "command": "grep -nE '^[[:space:]]*(async def|def|class) apply_migrations\\b' packages/ai-parrot/src/parrot/tools/working_memory/task_memory/store/postgres.py",
+   "output": "535:    async def apply_migrations(self) -> int:",
+   "lines": [
+    535
+   ],
+   "range": null
+  },
+  {
+   "id": "c162",
+   "fid": "F012",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/self_/cli.py",
+   "line": 19,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot/src/parrot/self_/cli.py",
+   "output": "132"
+  },
+  {
+   "id": "c163",
+   "fid": "F012",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/self_/cli.py",
+   "name": "self_group",
+   "status": "found",
+   "command": "grep -nE '^[[:space:]]*(async def|def|class) self_group\\b' packages/ai-parrot/src/parrot/self_/cli.py",
+   "output": "18:def self_group() -> None:",
+   "lines": [
+    18
+   ],
+   "range": [
+    1,
+    19
+   ]
+  },
+  {
+   "id": "c164",
+   "fid": "F012",
+   "kind": "anchor",
+   "path": "packages/ai-parrot/src/parrot/self_/cli.py",
+   "anchor": "\"\"\"`parrot self` \u2014 manage the parrot-managed runtime (~/.parrot) (FEAT-633, spec \u00a73 M3).",
+   "status": "found",
+   "command": "grep -nF -- '\"\"\"`parrot self` \u2014 manage the parrot-managed runtime (~/.parrot) (FEAT-633, spec \u00a73 M3).' packages/ai-parrot/src/parrot/self_/cli.py",
+   "lines": [
+    1
+   ],
+   "range": [
+    1,
+    19
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c165",
+   "fid": "F012",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/self_/cli.py",
+   "line": 84,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot/src/parrot/self_/cli.py",
+   "output": "132"
+  },
+  {
+   "id": "c166",
+   "fid": "F012",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/self_/cli.py",
+   "name": "doctor",
+   "status": "found",
+   "command": "grep -nE '^[[:space:]]*(async def|def|class) doctor\\b' packages/ai-parrot/src/parrot/self_/cli.py",
+   "output": "61:def doctor(sdd_scope: bool, runtime_only: bool) -> None:",
+   "lines": [
+    61
+   ],
+   "range": [
+    58,
+    84
+   ]
+  },
+  {
+   "id": "c167",
+   "fid": "F012",
+   "kind": "anchor",
+   "path": "packages/ai-parrot/src/parrot/self_/cli.py",
+   "anchor": "@self_group.command()",
+   "status": "ambiguous",
+   "command": "grep -nF -- '@self_group.command()' packages/ai-parrot/src/parrot/self_/cli.py",
+   "lines": [
+    27,
+    43,
+    58,
+    87,
+    120
+   ],
+   "range": [
+    58,
+    84
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c168",
+   "fid": "F012",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/self_/cli.py",
+   "line": 132,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot/src/parrot/self_/cli.py",
+   "output": "132"
+  },
+  {
+   "id": "c169",
+   "fid": "F012",
+   "kind": "anchor",
+   "path": "packages/ai-parrot/src/parrot/self_/cli.py",
+   "anchor": "#: LazyGroup lookup name (cli/__init__.py:99-100: getattr(mod, \"self\")).",
+   "status": "found",
+   "command": "grep -nF -- '#: LazyGroup lookup name (cli/__init__.py:99-100: getattr(mod, \"self\")).' packages/ai-parrot/src/parrot/self_/cli.py",
+   "lines": [
+    131
+   ],
+   "range": [
+    131,
+    132
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c170",
+   "fid": "F012",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/self_/",
+   "status": "found",
+   "command": "test -d packages/ai-parrot/src/parrot/self_/",
+   "output": "dir"
+  },
+  {
+   "id": "c171",
+   "fid": "F012",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/self_/cli.py",
+   "line": 55,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot/src/parrot/self_/cli.py",
+   "output": "132"
+  },
+  {
+   "id": "c172",
+   "fid": "F012",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/self_/cli.py",
+   "name": "update",
+   "status": "found",
+   "command": "grep -nE '^[[:space:]]*(async def|def|class) update\\b' packages/ai-parrot/src/parrot/self_/cli.py",
+   "output": "48:def update(version: str | None) -> None:",
+   "lines": [
+    48
+   ],
+   "range": [
+    48,
+    55
+   ]
+  },
+  {
+   "id": "c173",
+   "fid": "F012",
+   "kind": "anchor",
+   "path": "packages/ai-parrot/src/parrot/self_/cli.py",
+   "anchor": "def update(version: str | None) -> None:",
+   "status": "found",
+   "command": "grep -nF -- 'def update(version: str | None) -> None:' packages/ai-parrot/src/parrot/self_/cli.py",
+   "lines": [
+    48
+   ],
+   "range": [
+    48,
+    55
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c174",
+   "fid": "F012",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/cli/__init__.py",
+   "line": 194,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot/src/parrot/cli/__init__.py",
+   "output": "234"
+  },
+  {
+   "id": "c175",
+   "fid": "F012",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/cli/__init__.py",
+   "name": "_lazy_commands",
+   "status": "missing",
+   "command": "grep -nE '^[[:space:]]*(async def|def|class) _lazy_commands\\b' packages/ai-parrot/src/parrot/cli/__init__.py",
+   "output": "",
+   "lines": [],
+   "range": [
+    170,
+    194
+   ]
+  },
+  {
+   "id": "c176",
+   "fid": "F012",
+   "kind": "anchor",
+   "path": "packages/ai-parrot/src/parrot/cli/__init__.py",
+   "anchor": "cli._lazy_commands = {",
+   "status": "found",
+   "command": "grep -nF -- 'cli._lazy_commands = {' packages/ai-parrot/src/parrot/cli/__init__.py",
+   "lines": [
+    170
+   ],
+   "range": [
+    170,
+    194
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c177",
+   "fid": "F013",
+   "kind": "file",
+   "path": "packages/ai-parrot/pyproject.toml",
+   "line": 220,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot/pyproject.toml",
+   "output": "1129"
+  },
+  {
+   "id": "c178",
+   "fid": "F013",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/cli/__init__.py",
+   "line": 182,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot/src/parrot/cli/__init__.py",
+   "output": "234"
+  },
+  {
+   "id": "c179",
+   "fid": "F013",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/cli/__init__.py",
+   "name": "cli",
+   "status": "found",
+   "command": "grep -nE '^[[:space:]]*(async def|def|class) cli\\b' packages/ai-parrot/src/parrot/cli/__init__.py",
+   "output": "165:def cli():",
+   "lines": [
+    165
+   ],
+   "range": [
+    164,
+    182
+   ]
+  },
+  {
+   "id": "c180",
+   "fid": "F013",
+   "kind": "anchor",
+   "path": "packages/ai-parrot/src/parrot/cli/__init__.py",
+   "anchor": "@click.group(cls=LazyGroup)",
+   "status": "found",
+   "command": "grep -nF -- '@click.group(cls=LazyGroup)' packages/ai-parrot/src/parrot/cli/__init__.py",
+   "lines": [
+    164
+   ],
+   "range": [
+    164,
+    182
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c181",
+   "fid": "F013",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/cli/__init__.py",
+   "line": 226,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot/src/parrot/cli/__init__.py",
+   "output": "234"
+  },
+  {
+   "id": "c182",
+   "fid": "F013",
+   "kind": "anchor",
+   "path": "packages/ai-parrot/src/parrot/cli/__init__.py",
+   "anchor": "# FEAT-581 \u2014 Deterministic E2E gate, ships in ai-parrot-server.",
+   "status": "found",
+   "command": "grep -nF -- '# FEAT-581 \u2014 Deterministic E2E gate, ships in ai-parrot-server.' packages/ai-parrot/src/parrot/cli/__init__.py",
+   "lines": [
+    199
+   ],
+   "range": [
+    199,
+    226
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c183",
+   "fid": "F013",
+   "kind": "anchor",
+   "path": "packages/ai-parrot-server/pyproject.toml",
+   "anchor": "parrot-studio-migrate = \"parrot.handlers.studio.storage.migrate:main\"",
+   "status": "found",
+   "command": "grep -nF -- 'parrot-studio-migrate = \"parrot.handlers.studio.storage.migrate:main\"' packages/ai-parrot-server/pyproject.toml",
+   "lines": [
+    109
+   ],
+   "range": [
+    107,
+    109
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c184",
+   "fid": "F014",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/conf.py",
+   "line": 77,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot/src/parrot/conf.py",
+   "output": "1361"
+  },
+  {
+   "id": "c185",
+   "fid": "F014",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/conf.py",
+   "name": "default_dsn",
+   "status": "missing",
+   "command": "grep -nE '^[[:space:]]*(async def|def|class) default_dsn\\b' packages/ai-parrot/src/parrot/conf.py",
+   "output": "",
+   "lines": [],
+   "range": [
+    65,
+    77
+   ]
+  },
+  {
+   "id": "c186",
+   "fid": "F014",
+   "kind": "anchor",
+   "path": "packages/ai-parrot/src/parrot/conf.py",
+   "anchor": "DBHOST = config.get(\"DBHOST\", fallback=\"localhost\")",
+   "status": "ambiguous",
+   "command": "grep -nF -- 'DBHOST = config.get(\"DBHOST\", fallback=\"localhost\")' packages/ai-parrot/src/parrot/conf.py",
+   "lines": [
+    65,
+    269
+   ],
+   "range": [
+    65,
+    77
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c187",
+   "fid": "F014",
+   "kind": "anchor",
+   "path": "packages/ai-parrot/src/parrot/conf.py",
+   "anchor": "PARROT_BOTS_TABLE = config.get(\"PARROT_BOTS_TABLE\", fallback=\"ai_bots\")",
+   "status": "found",
+   "command": "grep -nF -- 'PARROT_BOTS_TABLE = config.get(\"PARROT_BOTS_TABLE\", fallback=\"ai_bots\")' packages/ai-parrot/src/parrot/conf.py",
+   "lines": [
+    121
+   ],
+   "range": [
+    121,
+    122
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c188",
+   "fid": "F014",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/conf.py",
+   "line": 283,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot/src/parrot/conf.py",
+   "output": "1361"
+  },
+  {
+   "id": "c189",
+   "fid": "F014",
+   "kind": "anchor",
+   "path": "packages/ai-parrot/src/parrot/conf.py",
+   "anchor": "DBHOST/DBUSER/DBPWD/DBNAME/DBPORT re-read (second block)",
+   "status": "missing",
+   "command": "grep -nF -- 'DBHOST/DBUSER/DBPWD/DBNAME/DBPORT re-read (second block)' packages/ai-parrot/src/parrot/conf.py",
+   "lines": [],
+   "range": [
+    269,
+    283
+   ],
+   "in_range": false
+  },
+  {
+   "id": "c190",
+   "fid": "F015",
+   "kind": "file",
+   "path": "packages/ai-parrot/tests/self_/test_self_cli.py",
+   "line": null,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot/tests/self_/test_self_cli.py",
+   "output": "74"
+  },
+  {
+   "id": "c191",
+   "fid": "F015",
+   "kind": "file",
+   "path": "packages/ai-parrot/tests/self_/test_doctor.py",
+   "line": null,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot/tests/self_/test_doctor.py",
+   "output": "337"
+  },
+  {
+   "id": "c192",
+   "fid": "F015",
+   "kind": "file",
+   "path": "packages/ai-parrot/tests/self_/test_components.py",
+   "line": null,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot/tests/self_/test_components.py",
+   "output": "267"
+  },
+  {
+   "id": "c193",
+   "fid": "F015",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/tests/studio/storage/test_migration_files.py",
+   "line": null,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot-server/tests/studio/storage/test_migration_files.py",
+   "output": "67"
+  },
+  {
+   "id": "c194",
+   "fid": "F015",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/tests/studio/storage/test_migrations_db.py",
+   "line": null,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot-server/tests/studio/storage/test_migrations_db.py",
+   "output": "355"
+  },
+  {
+   "id": "c195",
+   "fid": "F015",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/tests/handlers/test_crew_migration_live.py",
+   "line": null,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot-server/tests/handlers/test_crew_migration_live.py",
+   "output": "206"
+  },
+  {
+   "id": "c196",
+   "fid": "F015",
+   "kind": "file",
+   "path": "packages/ai-parrot/tests/handlers/test_bot_model_fields.py",
+   "line": null,
+   "status": "found",
+   "command": "wc -l < packages/ai-parrot/tests/handlers/test_bot_model_fields.py",
+   "output": "142"
+  },
+  {
+   "id": "c197",
+   "fid": "F016",
+   "kind": "file",
+   "path": "/home/jesuslara/proyectos/navigator-auth/navigator_auth/migrations/catalog.py",
+   "line": null,
+   "status": "found",
+   "command": "wc -l < /home/jesuslara/proyectos/navigator-auth/navigator_auth/migrations/catalog.py",
+   "output": "118"
+  },
+  {
+   "id": "c198",
+   "fid": "F016",
+   "kind": "file",
+   "path": "/home/jesuslara/proyectos/navigator-auth/navigator_auth/migrations/runner.py",
+   "line": null,
+   "status": "found",
+   "command": "wc -l < /home/jesuslara/proyectos/navigator-auth/navigator_auth/migrations/runner.py",
+   "output": "341"
+  },
+  {
+   "id": "c199",
+   "fid": "F016",
+   "kind": "symbol",
+   "path": "/home/jesuslara/proyectos/navigator-auth/navigator_auth/migrations/runner.py",
+   "name": "upgrade",
+   "status": "found",
+   "command": "grep -nE '^[[:space:]]*(async def|def|class) upgrade\\b' /home/jesuslara/proyectos/navigator-auth/navigator_auth/migrations/runner.py",
+   "output": "278:async def upgrade(",
+   "lines": [
+    278
+   ],
+   "range": null
+  },
+  {
+   "id": "c200",
+   "fid": "F016",
+   "kind": "file",
+   "path": "/home/jesuslara/proyectos/navigator-auth/navigator_auth/migrations/access.py",
+   "line": null,
+   "status": "found",
+   "command": "wc -l < /home/jesuslara/proyectos/navigator-auth/navigator_auth/migrations/access.py",
+   "output": "189"
+  },
+  {
+   "id": "c201",
+   "fid": "F016",
+   "kind": "file",
+   "path": "/home/jesuslara/proyectos/navigator-auth/navigator_auth/migrations/checks.py",
+   "line": null,
+   "status": "found",
+   "command": "wc -l < /home/jesuslara/proyectos/navigator-auth/navigator_auth/migrations/checks.py",
+   "output": "234"
+  },
+  {
+   "id": "c202",
+   "fid": "F016",
+   "kind": "file",
+   "path": "/home/jesuslara/proyectos/navigator-auth/navigator_auth/migrations/cli.py",
+   "line": null,
+   "status": "found",
+   "command": "wc -l < /home/jesuslara/proyectos/navigator-auth/navigator_auth/migrations/cli.py",
+   "output": "213"
+  },
+  {
+   "id": "c203",
+   "fid": "F016",
+   "kind": "symbol",
+   "path": "/home/jesuslara/proyectos/navigator-auth/navigator_auth/migrations/cli.py",
+   "name": "build_parser",
+   "status": "found",
+   "command": "grep -nE '^[[:space:]]*(async def|def|class) build_parser\\b' /home/jesuslara/proyectos/navigator-auth/navigator_auth/migrations/cli.py",
+   "output": "24:def build_parser() -> argparse.ArgumentParser:",
+   "lines": [
+    24
+   ],
+   "range": null
+  },
+  {
+   "id": "c204",
+   "fid": "F016",
+   "kind": "file",
+   "path": "/home/jesuslara/proyectos/navigator-auth/navigator_auth/migrations/startup.py",
+   "line": null,
+   "status": "found",
+   "command": "wc -l < /home/jesuslara/proyectos/navigator-auth/navigator_auth/migrations/startup.py",
+   "output": "93"
+  },
+  {
+   "id": "c205",
+   "fid": "F016",
+   "kind": "file",
+   "path": "/home/jesuslara/proyectos/navigator-auth/navigator_auth/migrations/sql/",
+   "status": "found",
+   "command": "test -d /home/jesuslara/proyectos/navigator-auth/navigator_auth/migrations/sql/",
+   "output": "dir"
+  },
+  {
+   "id": "c206",
+   "fid": "F016",
+   "kind": "file",
+   "path": "/home/jesuslara/proyectos/navigator-auth/sdd/specs/new-command-migration.spec.md",
+   "line": null,
+   "status": "found",
+   "command": "wc -l < /home/jesuslara/proyectos/navigator-auth/sdd/specs/new-command-migration.spec.md",
+   "output": "1092"
+  },
+  {
+   "id": "c207",
+   "fid": "F017",
+   "kind": "file",
+   "path": "sdd/migrations/FEAT-add-prompt-config-ai-bots.sql",
+   "line": null,
+   "status": "found",
+   "command": "wc -l < sdd/migrations/FEAT-add-prompt-config-ai-bots.sql",
+   "output": "37"
+  },
+  {
+   "id": "c208",
+   "fid": "F017",
+   "kind": "file",
+   "path": "sdd/migrations/FEAT-fold-embedding-model-into-vector-store-config.sql",
+   "line": null,
+   "status": "found",
+   "command": "wc -l < sdd/migrations/FEAT-fold-embedding-model-into-vector-store-config.sql",
+   "output": "113"
+  },
+  {
+   "id": "c209",
+   "fid": "F017",
+   "kind": "file",
+   "path": "sdd/migrations/FEAT-fold-legacy-llm-columns.sql",
+   "line": null,
+   "status": "found",
+   "command": "wc -l < sdd/migrations/FEAT-fold-legacy-llm-columns.sql",
+   "output": "107"
+  },
+  {
+   "id": "c210",
+   "fid": "F017",
+   "kind": "file",
+   "path": "sdd/migrations/botmodel-recreate-table.sql",
+   "line": null,
+   "status": "found",
+   "command": "wc -l < sdd/migrations/botmodel-recreate-table.sql",
+   "output": "88"
+  },
+  {
+   "id": "c211",
+   "fid": "F017",
+   "kind": "file",
+   "path": "sdd/migrations/FEAT-593-ai-bots-tooling-columns.sql",
+   "line": null,
+   "status": "found",
+   "command": "wc -l < sdd/migrations/FEAT-593-ai-bots-tooling-columns.sql",
+   "output": "22"
+  },
+  {
+   "id": "c212",
+   "fid": "F017",
+   "kind": "file",
+   "path": "sdd/migrations/FEAT-638-bot-language-nullable.sql",
+   "line": null,
+   "status": "found",
+   "command": "wc -l < sdd/migrations/FEAT-638-bot-language-nullable.sql",
+   "output": "18"
+  },
+  {
+   "id": "c213",
+   "fid": "F017",
+   "kind": "file",
+   "path": "sdd/migrations/ai-bots-homologate-botmodel.sql",
+   "line": null,
+   "status": "found",
+   "command": "wc -l < sdd/migrations/ai-bots-homologate-botmodel.sql",
+   "output": "95"
+  },
+  {
+   "id": "c214",
+   "fid": "F017",
+   "kind": "file",
+   "path": "sdd/migrations/FEAT-752-ai-bots-suggestion-columns.sql",
+   "line": null,
+   "status": "found",
+   "command": "wc -l < sdd/migrations/FEAT-752-ai-bots-suggestion-columns.sql",
+   "output": "27"
+  },
+  {
+   "id": "c215",
+   "fid": "F017",
+   "kind": "file",
+   "path": "sdd/migrations/FEAT-159-ontology-curation.sql",
+   "line": null,
+   "status": "found",
+   "command": "wc -l < sdd/migrations/FEAT-159-ontology-curation.sql",
+   "output": "166"
+  },
+  {
+   "id": "c216",
+   "fid": "F018",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/self_",
+   "status": "found",
+   "command": "test -d packages/ai-parrot/src/parrot/self_",
+   "output": "dir"
+  },
+  {
+   "id": "c217",
+   "fid": "F019",
+   "kind": "file",
+   "path": "../navigator-auth/sdd/specs/new-command-migration.spec.md",
+   "line": 88,
+   "status": "found",
+   "command": "wc -l < ../navigator-auth/sdd/specs/new-command-migration.spec.md",
+   "output": "1092"
+  },
+  {
+   "id": "c218",
+   "fid": "F019",
+   "kind": "anchor",
+   "path": "../navigator-auth/sdd/specs/new-command-migration.spec.md",
+   "anchor": "G1 \u2014 A navauth console script with self upgrade \u2026 and self upgrade --check that only reports.",
+   "status": "missing",
+   "command": "grep -nF -- 'G1 \u2014 A navauth console script with self upgrade \u2026 and self upgrade --check that only reports.' ../navigator-auth/sdd/specs/new-command-migration.spec.md",
+   "lines": [],
+   "range": [
+    55,
+    88
+   ],
+   "in_range": false
+  },
+  {
+   "id": "c219",
+   "fid": "F019",
+   "kind": "file",
+   "path": "../navigator-auth/sdd/specs/new-command-migration.spec.md",
+   "line": 147,
+   "status": "found",
+   "command": "wc -l < ../navigator-auth/sdd/specs/new-command-migration.spec.md",
+   "output": "1092"
+  },
+  {
+   "id": "c220",
+   "fid": "F019",
+   "kind": "anchor",
+   "path": "../navigator-auth/sdd/specs/new-command-migration.spec.md",
+   "anchor": "**First run on an existing database.** A database migrated by earlier startups has no ledger rows, so",
+   "status": "missing",
+   "command": "grep -nF -- '**First run on an existing database.** A database migrated by earlier startups has no ledger rows, so' ../navigator-auth/sdd/specs/new-command-migration.spec.md",
+   "lines": [],
+   "range": [
+    99,
+    147
+   ],
+   "in_range": false
+  },
+  {
+   "id": "c221",
+   "fid": "F019",
+   "kind": "file",
+   "path": "../navigator-auth/sdd/specs/new-command-migration.spec.md",
+   "line": 260,
+   "status": "found",
+   "command": "wc -l < ../navigator-auth/sdd/specs/new-command-migration.spec.md",
+   "output": "1092"
+  },
+  {
+   "id": "c222",
+   "fid": "F019",
+   "kind": "anchor",
+   "path": "../navigator-auth/sdd/specs/new-command-migration.spec.md",
+   "anchor": "CREATE TABLE IF NOT EXISTS {schema}.schema_migrations (",
+   "status": "found",
+   "command": "grep -nF -- 'CREATE TABLE IF NOT EXISTS {schema}.schema_migrations (' ../navigator-auth/sdd/specs/new-command-migration.spec.md",
+   "lines": [
+    217
+   ],
+   "range": [
+    180,
+    260
+   ],
+   "in_range": true
+  },
+  {
+   "id": "c223",
+   "fid": "F019",
+   "kind": "file",
+   "path": "../navigator-auth/sdd/specs/new-command-migration.spec.md",
+   "line": 420,
+   "status": "found",
+   "command": "wc -l < ../navigator-auth/sdd/specs/new-command-migration.spec.md",
+   "output": "1092"
+  },
+  {
+   "id": "c224",
+   "fid": "F019",
+   "kind": "anchor",
+   "path": "../navigator-auth/sdd/specs/new-command-migration.spec.md",
+   "anchor": "A successful execute() is necessary but insufficient for recording a file. \u2026 implement read-only",
+   "status": "missing",
+   "command": "grep -nF -- 'A successful execute() is necessary but insufficient for recording a file. \u2026 implement read-only' ../navigator-auth/sdd/specs/new-command-migration.spec.md",
+   "lines": [],
+   "range": [
+    391,
+    420
+   ],
+   "in_range": false
+  },
+  {
+   "id": "c225",
+   "fid": "F019",
+   "kind": "file",
+   "path": "../navigator-auth/sdd/specs/new-command-migration.spec.md",
+   "line": 1000,
+   "status": "found",
+   "command": "wc -l < ../navigator-auth/sdd/specs/new-command-migration.spec.md",
+   "output": "1092"
+  },
+  {
+   "id": "c226",
+   "fid": "F019",
+   "kind": "anchor",
+   "path": "../navigator-auth/sdd/specs/new-command-migration.spec.md",
+   "anchor": "asyncdb execute() never raises \u2026 Startup no longer migrates \u2026 Pre-ledger databases show everything as",
+   "status": "missing",
+   "command": "grep -nF -- 'asyncdb execute() never raises \u2026 Startup no longer migrates \u2026 Pre-ledger databases show everything as' ../navigator-auth/sdd/specs/new-command-migration.spec.md",
+   "lines": [],
+   "range": [
+    949,
+    1000
+   ],
+   "in_range": false
+  },
+  {
+   "id": "c227",
+   "fid": "F020",
+   "kind": "file",
+   "path": "sdd/migrations/ai-bots-homologate-botmodel.sql",
+   "line": 31,
+   "status": "found",
+   "command": "wc -l < sdd/migrations/ai-bots-homologate-botmodel.sql",
+   "output": "95"
+  },
+  {
+   "id": "c228",
+   "fid": "F020",
+   "kind": "anchor",
+   "path": "sdd/migrations/ai-bots-homologate-botmodel.sql",
+   "anchor": "-- Additive only: it never drops anything. The columns the model no longer declares are removed by their own f",
+   "status": "missing",
+   "command": "grep -nF -- '-- Additive only: it never drops anything. The columns the model no longer declares are removed by their own f' sdd/migrations/ai-bots-homologate-botmodel.sql",
+   "lines": [],
+   "range": [
+    20,
+    31
+   ],
+   "in_range": false
+  }
+ ]
+}
