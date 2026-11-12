@@ -1,186 +1,227 @@
-"""FEAT-713 integration tests over the 10k-row fixture journal."""
+"""FEAT-713 integration tests over the 10k-row fixture journal.
+
+Expected values are computed here from ``journal_frame`` with plain ``Decimal`` arithmetic and plain Python
+predicates over account ids - never copied from engine output and never through floats.
+"""
 
 from __future__ import annotations
 
+import json
 import os
+from collections import defaultdict
+from collections.abc import Callable
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_EVEN, Decimal, localcontext
+from pathlib import Path
+from typing import Any
 
 import pyarrow as pa
-import pyarrow.compute as pc
 import pytest
 
 pytest.importorskip("duckdb")
 
-from parrot.semantic.accounting.audit import rebuild_lineage
+from parrot.semantic.accounting.audit import AccountingAuditEntry, rebuild_lineage
 from parrot.semantic.accounting.errors import RequestValidationError
-from parrot.semantic.accounting.models import ChartSnapshot
+from parrot.semantic.accounting.loader import load_model
 from parrot.semantic.accounting.toolkit import AccountingToolkit
+
+_SCALE = Decimal("0.000001")
+
+# Independent re-statement of the troc_pnl sets as plain predicates over the account id.
+_PREDICATES: dict[str, Callable[[str], bool]] = {
+    "product_sales": lambda a: a.startswith("40"),
+    "returns": lambda a: a == "4900",
+    "cost_of_sales": lambda a: a.startswith("5") and a != "5900",
+    "other_cost": lambda a: a == "5900",
+    "operating_expenses": lambda a: "6000" <= a <= "6799",
+}
+_CREDIT_PREFIX = "40"  # every 4xxx account except 4900 is credit-natured in the fixture chart
+
+
+def _month_start(value: date) -> date:
+    return value.replace(day=1)
+
+
+def _normalised(account_id: str, amount: Decimal) -> Decimal:
+    """debit_positive journal: credit-natured accounts post negative, so their normalised value is -amount."""
+    return -amount if account_id.startswith(_CREDIT_PREFIX) else amount
+
+
+def _set_totals(frame: pa.Table, lower: date, upper: date) -> dict[date, dict[str, Decimal]]:
+    """{month: {set_name: Decimal}} for postings in [lower, upper]; a month appears when it has any posting."""
+    totals: dict[date, dict[str, Decimal]] = defaultdict(lambda: {name: Decimal(0) for name in _PREDICATES})
+    for row in frame.to_pylist():
+        posted = row["posting_date"]
+        if not lower <= posted <= upper:
+            continue
+        bucket = totals[_month_start(posted)]
+        for name, predicate in _PREDICATES.items():
+            if predicate(row["account_id"]):
+                bucket[name] += _normalised(row["account_id"], row["amount"])
+    return dict(totals)
+
+
+def _metrics(sets: dict[str, Decimal]) -> dict[str, Decimal | None]:
+    revenue = sets["product_sales"] - sets["returns"]
+    cogs = sets["cost_of_sales"]
+    gross_margin = revenue - cogs
+    opex = sets["operating_expenses"]
+    ebitda = gross_margin - sets["other_cost"] - opex
+    pct: Decimal | None = None
+    if revenue != 0:
+        with localcontext() as context:
+            context.prec = 60
+            pct = (gross_margin / revenue).quantize(_SCALE, rounding=ROUND_HALF_EVEN)
+    return {
+        "revenue": revenue,
+        "cogs": cogs,
+        "gross_margin": gross_margin,
+        "opex": opex,
+        "ebitda": ebitda,
+        "gross_margin_pct": pct,
+    }
+
+
+def _expected_by_month(frame: pa.Table, lower: date, upper: date, metric: str) -> dict[str, Decimal | None]:
+    return {
+        month.isoformat(): _metrics(sets)[metric] for month, sets in sorted(_set_totals(frame, lower, upper).items())
+    }
+
+
+def _as_decimal(value: Any) -> Decimal | None:
+    return None if value is None else Decimal(str(value))
+
+
+def _by_bucket(result: dict, metric: str) -> dict[str, Decimal | None]:
+    column = f"m_{metric}"
+    assert result["columns"][0] == "bucket"
+    assert column in result["columns"]
+    assert result["row_count"] == len(result["rows"])
+    return {str(row["bucket"]): _as_decimal(row[column]) for row in result["rows"]}
+
+
+def _toolkit(troc_pnl_yaml: Path, chart_snapshot: Any, journal_frame: pa.Table, **kwargs: Any) -> AccountingToolkit:
+    async def frame_provider(name: str) -> pa.Table:
+        assert name == "journal"
+        return journal_frame
+
+    async def snapshot_provider(tenant: str, model: str, spec: Any) -> Any:
+        assert (tenant, model) == ("troc", "troc_pnl")
+        return chart_snapshot
+
+    kwargs.setdefault("audit_mode", "best_effort")
+    return AccountingToolkit(
+        models_dir=troc_pnl_yaml.parent.parent,
+        snapshot_provider=snapshot_provider,
+        frame_provider=frame_provider,
+        **kwargs,
+    )
+
+
+async def _close(toolkit: AccountingToolkit) -> None:
+    if toolkit._engine is not None:
+        await toolkit._engine.close()
 
 
 async def test_e2e_duckdb_pnl(troc_pnl_yaml, chart_snapshot, journal_frame) -> None:
-    """Test PNL metrics by month equal hand-computed Decimals."""
-
-    # Build toolkit with dataframe source
-    async def frame_provider(name: str):
-        assert name == "journal"
-        return journal_frame
-
-    async def snapshot_provider(tenant: str, model: str, spec):
-        assert tenant == "troc"
-        assert model == "troc_pnl"
-        return chart_snapshot
-
-    toolkit = AccountingToolkit(
-        models_dir=troc_pnl_yaml.parent.parent,
-        snapshot_provider=snapshot_provider,
-        frame_provider=frame_provider,
-        audit_mode="best_effort",
-    )
-
-    # Compute expectations from journal_frame
-    def _sum_by_month(df, account_ids):
-        """Sum amounts for given account_ids by month."""
-        amounts = []
-        for row in df.to_pylist():
-            if row["account_id"] in account_ids:
-                amounts.append(Decimal(str(row["amount"])))
-        return sum(amounts, Decimal(0))
-
-    # Product sales (4xxx credit) - returns (4900 debit)
-    product_sales = _sum_by_month(journal_frame, [f"40{n}0" for n in range(10)])
-    returns = _sum_by_month(journal_frame, ["4900"])
-    revenue = product_sales - returns
-
-    # COGS (5xxx debit, excluding 5900)
-    cogs = _sum_by_month(journal_frame, [f"50{n}0" for n in range(10)])
-    cogs -= _sum_by_month(journal_frame, ["5900"])
-
-    # Gross margin = revenue - cogs
-    gross_margin = revenue - cogs
-
-    # Operating expenses (6xxx debit)
-    opex = _sum_by_month(journal_frame, [f"6{n:02d}0" for n in range(15)])
-
-    # Other cost (5900)
-    other_cost = _sum_by_month(journal_frame, ["5900"])
-
-    # EBITDA = gross_margin - other_cost - opex
-    ebitda = gross_margin - other_cost - opex
-
-    # Query by month
-    result = await toolkit.query_metric(
-        metric="revenue",
-        period_from="2025-01-01",
-        period_to="2025-12-31",
-        grain="month",
-        tenant="troc",
-    )
-
-    # Verify columns
-    assert "bucket" in result["columns"]
-    assert "m_revenue" in result["columns"]
-
-    # Verify each month has data
-    assert len(result["rows"]) > 0
-    for row in result["rows"]:
-        assert "bucket" in row
-        assert "m_revenue" in row
-        assert row["m_revenue"] is not None
-        assert Decimal(str(row["m_revenue"])) > 0
+    """Every P&L metric by month equals the hand-computed Decimal; the empty month has no row (AC8/AC9)."""
+    toolkit = _toolkit(troc_pnl_yaml, chart_snapshot, journal_frame)
+    try:
+        lower, upper = date(2025, 1, 1), date(2026, 9, 30)
+        for metric in ("revenue", "cogs", "gross_margin", "opex", "ebitda", "gross_margin_pct"):
+            result = await toolkit.query_metric(
+                metric=metric, period_from=lower.isoformat(), period_to=upper.isoformat(), grain="month", tenant="troc"
+            )
+            expected = _expected_by_month(journal_frame, lower, upper, metric)
+            actual = _by_bucket(result, metric)
+            assert actual == expected, metric
+            assert "2025-08-01" not in actual  # the fixture's empty month
+            assert len(actual) == 20
+        # Exactness: the totals are not float-representable round numbers, so equality above is a real check.
+        revenue = _by_bucket(
+            await toolkit.query_metric(
+                metric="revenue", period_from="2025-01-01", period_to="2026-09-30", grain="month", tenant="troc"
+            ),
+            "revenue",
+        )
+        assert all(value is not None and value > 0 for value in revenue.values())
+    finally:
+        await _close(toolkit)
 
 
 async def test_e2e_duckdb_cumulative(troc_pnl_yaml, chart_snapshot, journal_frame) -> None:
-    """Test cumulative metrics (mtd/qtd/ytd) at supported grains."""
+    """mtd / qtd / ytd results equal running sums of the hand-computed monthly values (AC8)."""
+    toolkit = _toolkit(troc_pnl_yaml, chart_snapshot, journal_frame)
+    try:
+        monthly = _set_totals(journal_frame, date(2025, 1, 1), date(2025, 12, 31))
 
-    async def frame_provider(name: str):
-        assert name == "journal"
-        return journal_frame
-
-    async def snapshot_provider(tenant: str, model: str, spec):
-        assert tenant == "troc"
-        assert model == "troc_pnl"
-        return chart_snapshot
-
-    toolkit = AccountingToolkit(
-        models_dir=troc_pnl_yaml.parent.parent,
-        snapshot_provider=snapshot_provider,
-        frame_provider=frame_provider,
-        audit_mode="best_effort",
-    )
-
-    # Compute expectations from journal_frame
-    def _sum_by_date(df, account_ids, date_col="posting_date"):
-        """Sum amounts for given account_ids by date."""
-        amounts = []
-        for row in df.to_pylist():
-            if row["account_id"] in account_ids:
-                amounts.append(Decimal(str(row["amount"])))
-        return sum(amounts, Decimal(0))
-
-    # Test YTD gross margin ratio
-    ytd_revenue = _sum_by_date(journal_frame, [f"40{n}0" for n in range(10)])
-    ytd_revenue -= _sum_by_date(journal_frame, ["4900"])
-    ytd_cogs = _sum_by_date(journal_frame, [f"50{n}0" for n in range(10)])
-    ytd_cogs -= _sum_by_date(journal_frame, ["5900"])
-    ytd_gross_margin = ytd_revenue - ytd_cogs
-    ytd_gross_margin_pct = ytd_gross_margin / ytd_revenue if ytd_revenue != 0 else Decimal(0)
-
-    # Query YTD gross margin ratio
-    result = await toolkit.query_metric(
-        metric="gross_margin_pct",
-        period_from="2025-01-01",
-        period_to="2025-12-31",
-        grain="year",
-        cumulative="ytd",
-        tenant="troc",
-    )
-
-    # Verify columns
-    assert "bucket" in result["columns"]
-    assert "m_gross_margin_pct" in result["columns"]
-
-    # Verify YTD gross margin ratio is computed
-    assert len(result["rows"]) == 1
-    row = result["rows"][0]
-    assert "m_gross_margin_pct" in row
-    assert row["m_gross_margin_pct"] is not None
-
-    # Test MTD and QTD at month grain
-    for cumulative in ["mtd", "qtd"]:
+        # ytd, month grain: running sum from January (August is empty, so it has no row but still carries no value).
         result = await toolkit.query_metric(
+            metric="ebitda",
+            period_from="2025-01-01",
+            period_to="2025-12-31",
+            grain="month",
+            cumulative="ytd",
+            tenant="troc",
+        )
+        running = {name: Decimal(0) for name in _PREDICATES}
+        expected: dict[str, Decimal | None] = {}
+        for month, sets in sorted(monthly.items()):
+            for name in running:
+                running[name] += sets[name]
+            expected[month.isoformat()] = _metrics(running)["ebitda"]
+        assert _by_bucket(result, "ebitda") == expected
+
+        # ytd, year grain: one bucket holding the whole-year ratio.
+        year_sets = {name: sum((s[name] for s in monthly.values()), Decimal(0)) for name in _PREDICATES}
+        result = await toolkit.query_metric(
+            metric="gross_margin_pct",
+            period_from="2025-01-01",
+            period_to="2025-12-31",
+            grain="year",
+            cumulative="ytd",
+            tenant="troc",
+        )
+        assert _by_bucket(result, "gross_margin_pct") == {"2025-01-01": _metrics(year_sets)["gross_margin_pct"]}
+
+        # mtd at month grain equals the plain monthly value; qtd accumulates within each quarter.
+        plain = _expected_by_month(journal_frame, date(2025, 1, 1), date(2025, 3, 31), "gross_margin")
+        mtd = await toolkit.query_metric(
             metric="gross_margin",
             period_from="2025-01-01",
             period_to="2025-03-31",
             grain="month",
-            cumulative=cumulative,
+            cumulative="mtd",
             tenant="troc",
         )
-
-        # Verify columns
-        assert "bucket" in result["columns"]
-        assert "m_gross_margin" in result["columns"]
-
-        # Verify that we got results
-        assert len(result["rows"]) > 0
-
-        # Verify each row has the expected columns
-        for row in result["rows"]:
-            assert "bucket" in row
-            assert "m_gross_margin" in row
-            assert row["m_gross_margin"] is not None
+        assert _by_bucket(mtd, "gross_margin") == plain
+        qtd = await toolkit.query_metric(
+            metric="gross_margin",
+            period_from="2025-01-01",
+            period_to="2025-03-31",
+            grain="month",
+            cumulative="qtd",
+            tenant="troc",
+        )
+        total = Decimal(0)
+        running_gm: dict[str, Decimal | None] = {}
+        for bucket, value in plain.items():
+            total += value  # type: ignore[operator]
+            running_gm[bucket] = total
+        assert _by_bucket(qtd, "gross_margin") == running_gm
+    finally:
+        await _close(toolkit)
 
 
 async def test_weekly_cumulative_rejected(troc_pnl_yaml, chart_snapshot, journal_frame) -> None:
-    """Test that cumulative with week grain raises RequestValidationError."""
+    """A cumulative mode with a week (or no) grain is refused before any data is read; plain weekly works."""
+    requested: list[str] = []
 
-    async def frame_provider(name: str):
-        assert name == "journal"
+    async def frame_provider(name: str) -> pa.Table:
+        requested.append(name)
         return journal_frame
 
-    async def snapshot_provider(tenant: str, model: str, spec):
-        assert tenant == "troc"
-        assert model == "troc_pnl"
+    async def snapshot_provider(tenant: str, model: str, spec: Any) -> Any:
         return chart_snapshot
 
     toolkit = AccountingToolkit(
@@ -189,212 +230,143 @@ async def test_weekly_cumulative_rejected(troc_pnl_yaml, chart_snapshot, journal
         frame_provider=frame_provider,
         audit_mode="best_effort",
     )
+    try:
+        for grain in ("week", None):
+            with pytest.raises(RequestValidationError):
+                await toolkit.query_metric(
+                    metric="gross_margin",
+                    period_from="2025-01-01",
+                    period_to="2025-12-31",
+                    grain=grain,
+                    cumulative="ytd",
+                    tenant="troc",
+                )
+        assert requested == []  # no journal was fetched for the refused requests
 
-    # Query with cumulative + week grain should raise
-    with pytest.raises(RequestValidationError, match="cumulative.*week"):
-        await toolkit.query_metric(
-            metric="gross_margin",
-            period_from="2025-01-01",
-            period_to="2025-12-31",
-            grain="week",
-            cumulative="ytd",
-            tenant="troc",
+        result = await toolkit.query_metric(
+            metric="gross_margin", period_from="2025-12-22", period_to="2026-01-11", grain="week", tenant="troc"
         )
-
-    # Query with cumulative + no grain should raise
-    with pytest.raises(RequestValidationError, match="cumulative.*grain"):
-        await toolkit.query_metric(
-            metric="gross_margin",
-            period_from="2025-01-01",
-            period_to="2025-12-31",
-            grain=None,
-            cumulative="ytd",
-            tenant="troc",
-        )
-
-    # Non-cumulative weekly should work
-    result = await toolkit.query_metric(
-        metric="gross_margin",
-        period_from="2025-01-01",
-        period_to="2025-12-31",
-        grain="week",
-        cumulative=None,
-        tenant="troc",
-    )
-
-    # Verify columns
-    assert "bucket" in result["columns"]
-    assert "m_gross_margin" in result["columns"]
-
-    # Verify week buckets are correct across Dec 31/Jan 1
-    # (no specific assertion needed, just that it runs)
+        buckets = list(_by_bucket(result, "gross_margin"))
+        # ISO weeks start on Monday: 2025-12-22, 2025-12-29 (spans the year boundary), 2026-01-05.
+        assert buckets == sorted(buckets)
+        assert all(date.fromisoformat(bucket).weekday() == 0 for bucket in buckets)
+        assert set(buckets) <= {"2025-12-22", "2025-12-29", "2026-01-05"}
+        assert "2025-12-29" in buckets
+    finally:
+        await _close(toolkit)
 
 
 async def test_e2e_duckdb_file_through_executor(
     troc_pnl_yaml, chart_snapshot, journal_frame, journal_duckdb_file, tmp_path, monkeypatch
 ) -> None:
-    """Test table-source model variant over the DuckDB file via PARROT_SEMANTIC_CONN_* env."""
-    # Set up environment for ConnectionResolver
+    """The table-source variant over the DuckDB file (database runtime + Executor) equals the dataframe result."""
     monkeypatch.setenv("PARROT_SEMANTIC_CONN_ACCT_DATABASE", str(journal_duckdb_file))
-    monkeypatch.setenv("PARROT_SEMANTIC_CONN_ACCT_DRIVER", "duckdb")
+    models_dir = tmp_path / "table_models"
+    (models_dir / "troc").mkdir(parents=True)
+    table_yaml = troc_pnl_yaml.read_text(encoding="utf-8").replace(
+        "source: { dataframe: journal }", 'source: { table: "journal", connection: "acct", driver: "duckdb" }'
+    )
+    assert "table:" in table_yaml
+    (models_dir / "troc" / "troc_pnl.yaml").write_text(table_yaml, encoding="utf-8")
 
-    async def frame_provider(name: str):
-        assert name == "journal"
-        return journal_frame
-
-    async def snapshot_provider(tenant: str, model: str, spec):
-        assert tenant == "troc"
-        assert model == "troc_pnl"
+    async def snapshot_provider(tenant: str, model: str, spec: Any) -> Any:
         return chart_snapshot
 
     toolkit = AccountingToolkit(
-        models_dir=troc_pnl_yaml.parent.parent,
-        snapshot_provider=snapshot_provider,
-        frame_provider=frame_provider,
-        audit_mode="best_effort",
-    )
+        models_dir=models_dir, snapshot_provider=snapshot_provider, audit_mode="best_effort"
+    )  # no frame_provider: the data can only come through the database runtime
+    try:
+        model = await toolkit._ensure_loaded("troc", "troc_pnl")
+        source = model.spec.chart_of_accounts.source
+        assert (source.table, source.connection, source.driver) == ("journal", "acct", "duckdb")
+        assert source.dataframe is None
 
-    # Load model with table source
-    model = await toolkit._ensure_loaded("troc", "troc_pnl")
-
-    # Verify the model has the table source
-    assert model.spec.chart_of_accounts.source.dataframe == "journal"
-    # Note: table source is not set when using dataframe source
-
-    # Query with table source
-    result = await toolkit.query_metric(
-        metric="revenue",
-        period_from="2025-01-01",
-        period_to="2025-12-31",
-        grain="month",
-        tenant="troc",
-    )
-
-    # Verify columns
-    assert "bucket" in result["columns"]
-    assert "m_revenue" in result["columns"]
-
-    # Verify rows are returned
-    assert len(result["rows"]) > 0
-
-    # Verify each row has the expected columns
-    for row in result["rows"]:
-        assert "bucket" in row
-        assert "m_revenue" in row
-        assert row["m_revenue"] is not None
+        lower, upper = date(2025, 1, 1), date(2026, 9, 30)
+        for metric in ("revenue", "ebitda", "gross_margin_pct"):
+            result = await toolkit.query_metric(
+                metric=metric,
+                period_from=lower.isoformat(),
+                period_to=upper.isoformat(),
+                grain="month",
+                tenant="troc",
+            )
+            assert _by_bucket(result, metric) == _expected_by_month(journal_frame, lower, upper, metric), metric
+    finally:
+        await _close(toolkit)
 
 
 @pytest.mark.skipif(not os.environ.get("PARROT_TEST_PG_DSN"), reason="PARROT_TEST_PG_DSN not set")
 async def test_e2e_postgres_parity(troc_pnl_yaml, chart_snapshot, journal_frame) -> None:
-    """Test Postgres parity with DuckDB."""
-    # This test is skipped unless PARROT_TEST_PG_DSN is set
+    """Postgres rows equal the hand-computed values (and therefore the DuckDB rows). Needs a reachable server."""
     pytest.importorskip("psycopg")
-
     import psycopg
 
-    # Load journal into a temp Postgres table
     dsn = os.environ["PARROT_TEST_PG_DSN"]
-    async with psycopg.AsyncConnection(dsn) as conn:
-        async with conn.cursor() as cur:
-            # Create temp table
-            await cur.execute("""
-                CREATE TEMP TABLE journal (
-                    account_id TEXT,
-                    posting_date DATE,
-                    amount DECIMAL(18,2),
-                    entity TEXT,
-                    product_line TEXT,
-                    cost_center TEXT
+    table = "feat713_journal_parity"
+    async with await psycopg.AsyncConnection.connect(dsn, autocommit=True) as conn:
+        await conn.execute(f"DROP TABLE IF EXISTS {table}")
+        await conn.execute(
+            f"CREATE TABLE {table} (account_id text, posting_date date, amount numeric(18,2), entity text, "
+            "product_line text, cost_center text)"
+        )
+        try:
+            async with conn.cursor() as cur:
+                await cur.executemany(
+                    f"INSERT INTO {table} VALUES (%s, %s, %s, %s, %s, %s)",
+                    [
+                        (
+                            r["account_id"],
+                            r["posting_date"],
+                            r["amount"],
+                            r["entity"],
+                            r["product_line"],
+                            r["cost_center"],
+                        )
+                        for r in journal_frame.to_pylist()
+                    ],
                 )
-                """)
+            parity = load_model(troc_pnl_yaml, chart_snapshot)
+            assert parity.spec.chart_of_accounts.source.dataframe == "journal"
+            # The table-source model reads PARROT_SEMANTIC_CONN_ACCT_* from the environment; the operator that sets
+            # PARROT_TEST_PG_DSN is expected to expose the same server under that connection name.
+            models = Path(os.environ.get("PARROT_TEST_PG_MODELS_DIR", ""))
+            if not models.is_dir():
+                pytest.skip("PARROT_TEST_PG_MODELS_DIR (table-source model dir for connection 'acct') not set")
 
-            # Insert journal rows
-            for row in journal_frame.to_pylist():
-                await cur.execute(
-                    """
-                    INSERT INTO journal (account_id, posting_date, amount, entity, product_line, cost_center)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                    """,
-                    (
-                        row["account_id"],
-                        row["posting_date"],
-                        row["amount"],
-                        row["entity"],
-                        row["product_line"],
-                        row["cost_center"],
-                    ),
-                )
-
-            # Query with table source
-            async def frame_provider(name: str):
-                assert name == "journal"
-                return journal_frame
+            async def snapshot_provider(tenant: str, model: str, spec: Any) -> Any:
+                return chart_snapshot
 
             toolkit = AccountingToolkit(
-                models_dir=troc_pnl_yaml.parent,
-                snapshot_manifests={"troc": {"troc_pnl": troc_pnl_yaml}},
-                frame_provider=frame_provider,
-                audit_mode="best_effort",
+                models_dir=models, snapshot_provider=snapshot_provider, audit_mode="best_effort"
             )
-
-            # Load model with table source
-            model = await toolkit._ensure_loaded("troc", "troc_pnl")
-
-            # Verify the model has the table source
-            assert model.spec.chart_of_accounts.source.table == "journal"
-            assert model.spec.chart_of_accounts.source.connection == "acct"
-            assert model.spec.chart_of_accounts.source.driver == "pg"
-
-            # Query with table source
             result = await toolkit.query_metric(
-                metric="revenue",
-                period_from="2025-01-01",
-                period_to="2025-12-31",
-                grain="month",
-                tenant="troc",
+                metric="revenue", period_from="2025-01-01", period_to="2026-09-30", grain="month", tenant="troc"
             )
-
-            # Verify columns
-            assert "bucket" in result["columns"]
-            assert "revenue" in result["columns"]
-
-            # Verify rows equal DuckDB rows
-            # (we can't easily count engine rows without running the query, but we can verify the result is not empty)
-            assert len(result["rows"]) > 0
-
-            # Clean up
-            await cur.execute("DROP TABLE journal")
+            assert _by_bucket(result, "revenue") == _expected_by_month(
+                journal_frame, date(2025, 1, 1), date(2026, 9, 30), "revenue"
+            )
+        finally:
+            await conn.execute(f"DROP TABLE IF EXISTS {table}")
 
 
 async def test_e2e_audit_trail(troc_pnl_yaml, chart_snapshot, journal_frame, recording_storage) -> None:
-    """Test that N queries ⇒ N signed payloads; each lineage_ref rebuilds the same Lineage."""
-
-    async def frame_provider(name: str):
-        assert name == "journal"
-        return journal_frame
-
-    async def snapshot_provider(tenant: str, model: str, spec):
-        assert tenant == "troc"
-        assert model == "troc_pnl"
-        return chart_snapshot
-
-    toolkit = AccountingToolkit(
-        models_dir=troc_pnl_yaml.parent.parent,
-        snapshot_provider=snapshot_provider,
-        frame_provider=frame_provider,
-        audit_storage=recording_storage[0],
-        audit_mode="best_effort",
-    )
-
-    # Execute multiple queries
-    for i in range(3):
-        await toolkit.query_metric(
-            metric="revenue",
-            period_from="2025-01-01",
-            period_to="2025-12-31",
-            grain="month",
-            tenant="troc",
-        )
-
-    # Verify N queries produced N payloads
-    assert len(recording_storage[1]) == 3
+    """N queries -> N signed payloads; each entry's lineage rebuilds to the lineage the query returned (AC11)."""
+    storage, payloads = recording_storage
+    toolkit = _toolkit(troc_pnl_yaml, chart_snapshot, journal_frame, audit_storage=storage)
+    try:
+        results = [
+            await toolkit.query_metric(
+                metric=metric, period_from="2025-01-01", period_to="2025-12-31", grain="month", tenant="troc"
+            )
+            for metric in ("revenue", "gross_margin", "ebitda")
+        ]
+        assert len(payloads) == 3
+        model = load_model(troc_pnl_yaml, chart_snapshot)
+        for payload, result in zip(payloads, results, strict=True):
+            entry = AccountingAuditEntry.model_validate(json.loads(payload))
+            assert entry.entry_id == result["audit_id"]
+            assert entry.sql_hash == result["sql_hash"]
+            assert rebuild_lineage(entry, model).model_dump(mode="json") == result["lineage"]
+        assert len({result["audit_id"] for result in results}) == 3
+    finally:
+        await _close(toolkit)
