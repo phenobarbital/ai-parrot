@@ -39,6 +39,7 @@ class BeforeClientCallEvent(LifecycleEvent):
             when called outside a bot invocation scope.  Set by the client
             from the ``current_agent_name`` ContextVar (FEAT-228).
             NEVER contains PII (user_id, session_id, prompt content).
+        tenant: Optional server-resolved tenant identifier.
     """
 
     client_name: str = ""
@@ -49,6 +50,7 @@ class BeforeClientCallEvent(LifecycleEvent):
     agent_name: Optional[str] = None   # FEAT-228: invoking agent's self.name
     user_id: Optional[str] = None      # per-user usage attribution (spans only, never metric labels)
     session_id: Optional[str] = None   # per-session correlation (spans only, never metric labels)
+    tenant: Optional[str] = None  # FEAT-710
 
 
 @dataclass(frozen=True)
@@ -254,6 +256,7 @@ class ClientRoundEvent(LifecycleEvent):
             attributes only — NEVER in metric labels.
         session_id: Optional session identifier. Set from the
             ``current_session_id`` ContextVar. Spans only.
+        tenant: Optional server-resolved tenant identifier.
     """
 
     client_name: str = ""
@@ -269,3 +272,4 @@ class ClientRoundEvent(LifecycleEvent):
     agent_name: Optional[str] = None   # FEAT-228: invoking agent's self.name
     user_id: Optional[str] = None      # per-user usage attribution (spans only)
     session_id: Optional[str] = None   # per-session correlation (spans only)
+    tenant: Optional[str] = None  # FEAT-710
