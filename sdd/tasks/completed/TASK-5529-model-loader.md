@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-713 — Accounting Metrics Layer
 **Spec**: `sdd/specs/accounting-metrics-layer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5528
@@ -250,10 +250,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker / native sonnet coder (attempt 63336a2b32c84629b4da06ef33c4d15b), commit f9bbc4c53c
+**Date**: 2026-11-12
+**Notes**: loader.py (canonical_json, load_spec, load_model, detect_drift) + 5 tests green; troc_pnl_yaml loads with zero problems (AC4 met). Pydantic schema errors map to Problem(code='dangling_ref') one per error (no closer code exists). Natures: explicit map first, then snapshot, selected accounts only; accounts without a nature are skipped.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

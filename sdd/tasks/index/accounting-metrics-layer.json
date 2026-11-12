@@ -179,7 +179,7 @@
       "feature_id": "FEAT-713",
       "feature": "accounting-metrics-layer",
       "spec": "sdd/specs/accounting-metrics-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -189,8 +189,9 @@
       "parallelism_notes": "Calls partition_intervals and validate from TASK-5528 (validation.py).",
       "assigned_to": null,
       "started_at": "2026-11-12T00:04:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5529-model-loader.md"
+      "completed_at": "2026-11-12T00:47:21+00:00",
+      "file": "sdd/tasks/completed/TASK-5529-model-loader.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5530",
