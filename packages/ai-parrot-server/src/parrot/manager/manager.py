@@ -113,6 +113,7 @@ from ..conf import (
     ENABLE_SWAGGER,
     PARROT_PBAC_POLICY_DIR,
     REDIS_URL,
+    default_dsn,
 )
 
 # Credentials handler
@@ -501,6 +502,9 @@ class BotManager:
 
         # Step 4: Load database bots
         if self.enable_database_bots:
+            from parrot.migrations.startup import warn_pending_migrations
+
+            await warn_pending_migrations(default_dsn, logger=self.logger)
             await self._load_database_bots(app)
         else:
             self.logger.debug("Database bot loading skipped (enable_database_bots=False)")
