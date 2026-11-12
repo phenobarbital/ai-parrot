@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-883 — Gemini Live envelope tests — match the AUDIO-mode role contract
 **Spec**: `sdd/specs/fixgroup-f545489af365.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -246,8 +246,15 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: Claude Code (/sdd-fix, actor agent:sdd-fix:fed0b58a)
+**Date**: 2026-11-12
+**Notes**: Implemented the blueprint as written in commit 9ae37242e2. `_text_response` renamed to
+`_model_turn_text_response`; `_output_transcription_response` added; `test_model_text_is_assistant` and
+`test_mixed_turn_both_roles_present` now assert AUDIO-mode assistant text through `output_transcription`;
+added `test_text_mode_model_turn_is_assistant` and `test_audio_mode_model_turn_is_thinking_only`.
+Validation: `PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-client-google/src pytest
+packages/ai-parrot/tests/clients/test_live_envelope.py -q` → 13 passed (live.py imported from the worktree);
+`ruff check` and `black --check` clean. Both failures reproduced on `dev` before the change.
+Resolves `issue:33b76e470d2b`.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

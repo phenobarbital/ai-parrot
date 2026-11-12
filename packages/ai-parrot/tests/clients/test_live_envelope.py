@@ -71,10 +71,27 @@ def _mock_client(monkeypatch, client, responses):
     return session
 
 
-def _text_response(text: str):
+def _model_turn_text_response(text: str):
+    """A ``model_turn`` text part.
+
+    It is the model's reply in TEXT mode but its internal reasoning
+    ("thinking") in the default AUDIO mode.
+    """
     return SimpleNamespace(
         server_content=SimpleNamespace(
             model_turn=SimpleNamespace(parts=[SimpleNamespace(text=text, inline_data=None)]),
+        ),
+        tool_call=None,
+        usage_metadata=None,
+        go_away=None,
+    )
+
+
+def _output_transcription_response(text: str):
+    """An ``output_transcription`` frame: the model's spoken words in AUDIO mode."""
+    return SimpleNamespace(
+        server_content=SimpleNamespace(
+            output_transcription=SimpleNamespace(text=text),
         ),
         tool_call=None,
         usage_metadata=None,
@@ -101,9 +118,25 @@ def client():
 class TestCanonicalRole:
     @pytest.mark.asyncio
     async def test_model_text_is_assistant(self, monkeypatch, client):
-        _mock_client(monkeypatch, client, [_text_response("Hello there")])
+        """AUDIO mode (default): the spoken transcript is the assistant's text."""
+        _mock_client(monkeypatch, client, [_output_transcription_response("Hello there")])
         responses = [r async for r in client.stream_voice(_empty_audio_iterator())]
-        assert any(r.role == "assistant" for r in responses if r.text)
+        assert any(r.role == "assistant" and r.text == "Hello there" for r in responses)
+
+    @pytest.mark.asyncio
+    async def test_text_mode_model_turn_is_assistant(self, monkeypatch, client):
+        """TEXT mode: ``model_turn`` text is the reply and carries role="assistant"."""
+        _mock_client(monkeypatch, client, [_model_turn_text_response("Hello there")])
+        responses = [r async for r in client.stream_voice(_empty_audio_iterator(), response_modalities=["TEXT"])]
+        assert any(r.role == "assistant" and r.text == "Hello there" for r in responses)
+
+    @pytest.mark.asyncio
+    async def test_audio_mode_model_turn_is_thinking_only(self, monkeypatch, client):
+        """AUDIO mode: ``model_turn`` text is thinking — metadata only, never response text."""
+        _mock_client(monkeypatch, client, [_model_turn_text_response("planning the answer")])
+        responses = [r async for r in client.stream_voice(_empty_audio_iterator())]
+        assert all(not r.text for r in responses)
+        assert any(r.role == "assistant" and r.metadata.get("thinking") == "planning the answer" for r in responses)
 
     @pytest.mark.asyncio
     async def test_user_transcription_is_role_user(self, monkeypatch, client):
@@ -124,7 +157,7 @@ class TestCanonicalRole:
             client,
             [
                 _user_transcription_response("what's the weather"),
-                _text_response("It's sunny"),
+                _output_transcription_response("It's sunny"),
             ],
         )
         responses = [r async for r in client.stream_voice(_empty_audio_iterator())]
