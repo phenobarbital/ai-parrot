@@ -848,6 +848,83 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         """Parse 'provider:model' or plain provider string."""
         return match.groups() if (match := _LLM_PATTERN.match(llm)) else (llm, None)
 
+    def _apply_agent_env_overrides(self) -> tuple[Any, Optional[str], dict[str, Any]]:
+        """Return LLM configuration inputs with applicable per-agent environment overrides.
+
+        A live client instance is returned unchanged. ``<AGENT>_MODEL`` replaces the
+        declared provider/model and becomes ``self._llm_model``. An agent-specific
+        API key fills a copy of ``llm_kwargs`` unless an explicit credential is
+        already supplied.
+
+        Raises:
+            ValueError: If the configured ``<AGENT>_MODEL`` is malformed.
+        """
+        from ..llm_defaults import (  # noqa: PLC0415 -- keep llm_defaults out of bots' import time
+            COMPONENTS,
+            agent_env_token,
+            is_component_default_key,
+            resolve_agent_api_key,
+            resolve_agent_llm,
+        )
+
+        llm: Any = self._llm_raw
+        model: Optional[str] = self._llm_model if self._llm_model_explicit else None
+        llm_kwargs: dict[str, Any] = dict(self._llm_kwargs or {})
+        if isinstance(llm, AbstractClient):
+            return llm, model, llm_kwargs
+
+        token = agent_env_token(self.name or "")
+        if not token:
+            return llm, model, llm_kwargs
+        if token in COMPONENTS or token == "DEFAULT":
+            self.logger.warning(
+                "Agent name %r maps to reserved env prefix %s_; per-agent LLM env variables are ignored",
+                self.name,
+                token,
+            )
+            return llm, model, llm_kwargs
+
+        if isinstance(llm, str):
+            current_provider = self._parse_llm_string(llm)[0].lower()
+        elif llm is None:
+            current_provider = self._default_llm
+        elif isinstance(llm, type):
+            client_name = getattr(llm, "client_name", None)
+            current_provider = client_name.lower() if isinstance(client_name, str) else None
+        else:
+            current_provider = None
+
+        override = resolve_agent_llm(self.name, default_provider=current_provider or self._default_llm)
+        provider = current_provider
+        provider_switched = False
+        if override is not None:
+            provider = override.provider
+            provider_switched = provider != current_provider
+            llm = f"{override.provider}:{override.model}"
+            model = override.model
+            self._llm_model = override.model
+
+        api_key = llm_kwargs.get("api_key")
+        has_explicit_credential = any(
+            llm_kwargs.get(name) for name in ("credentials_file", "credentials", "vertexai")
+        ) or bool(api_key and not is_component_default_key(api_key, current_provider or self._default_llm))
+
+        if has_explicit_credential:
+            if provider_switched:
+                self.logger.warning(
+                    "Explicit LLM credential retained while per-agent model variable %s_MODEL changes provider",
+                    token,
+                )
+            return llm, model, llm_kwargs
+
+        if provider:
+            agent_api_key = resolve_agent_api_key(self.name, provider)
+            if agent_api_key:
+                llm_kwargs["api_key"] = agent_api_key
+            elif provider_switched and is_component_default_key(api_key, current_provider or self._default_llm):
+                llm_kwargs.pop("api_key", None)
+        return llm, model, llm_kwargs
+
     def _resolve_llm_config(
         self,
         llm: Union[str, Type[AbstractClient], AbstractClient, Callable, None] = None,
@@ -1677,9 +1754,9 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
             # Configure LLM:
             if not self._configured:
                 try:
-                    model_arg = self._llm_model if self._llm_model_explicit else None
+                    llm_arg, model_arg, llm_kwargs = self._apply_agent_env_overrides()
                     config = self._resolve_llm_config(
-                        llm=self._llm_raw, model=model_arg, preset=self._llm_preset, **self._llm_kwargs
+                        llm=llm_arg, model=model_arg, preset=self._llm_preset, **llm_kwargs
                     )
                     self._llm_config = config
                     # Mirror the resolved model onto _llm_model so ask()/
