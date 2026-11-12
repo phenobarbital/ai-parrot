@@ -1796,7 +1796,7 @@ class AgentsFlow(PersistenceMixin):
             edges = synthetic_edges
 
         completion_queue: asyncio.Queue[CompletionEvent] = asyncio.Queue()
-        attempts: dict[str, int] = {nid: 0 for nid in nodes}
+        attempts: dict[str, int] = dict.fromkeys(nodes, 0)
         tasks: dict[str, asyncio.Task] = {}  # type: ignore[type-arg]
         # Resume (FEAT-399): seed from ctx.completed_tasks/.results when the
         # caller pre-populated a FlowContext (AgentsFlow.resume()) — a no-op

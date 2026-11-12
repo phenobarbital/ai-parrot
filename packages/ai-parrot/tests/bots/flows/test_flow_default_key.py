@@ -145,9 +145,7 @@ def test_flow_llm_sets_provider_before_injecting_key(env: dict[str, str]) -> Non
         ("_model_config", {"model": "explicit"}),
     ],
 )
-def test_flow_llm_does_not_override_explicit_agent_model(
-    env: dict[str, str], attribute: str, value: object
-) -> None:
+def test_flow_llm_does_not_override_explicit_agent_model(env: dict[str, str], attribute: str, value: object) -> None:
     """Any explicit agent model declaration blocks FLOW_LLM reassignment."""
     env["FLOW_LLM"] = "openai:gpt-x"
     agent = _StubAgent("worker")
