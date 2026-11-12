@@ -353,7 +353,7 @@
       "feature_id": "FEAT-713",
       "feature": "accounting-metrics-layer",
       "spec": "sdd/specs/accounting-metrics-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -363,8 +363,9 @@
       "parallelism_notes": "Appends query_metric/validate_model to toolkit.py and test_toolkit.py created by TASK-5536 and uses its private helpers (_ensure_loaded, _authorize).",
       "assigned_to": null,
       "started_at": "2026-11-12T00:04:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5537-query-validate-and-live-validation.md"
+      "completed_at": "2026-11-12T01:18:40+00:00",
+      "file": "sdd/tasks/completed/TASK-5537-query-validate-and-live-validation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5538",

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-713 — Accounting Metrics Layer
 **Spec**: `sdd/specs/accounting-metrics-layer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5536
@@ -305,11 +305,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker / native opus coder (attempt 4fb61e08638246958878041f4326664e), commit be519d3459
+**Date**: 2026-11-12
+**Notes**: `query_metric`, `validate_model` (structural + live) on the toolkit; new `accounting/live.py` (ModelLiveStatus, LiveValidationReport, last_closed_month, _validate_one, run_live_validation). Compilation is cached and runs via asyncio.to_thread (thread-id spy test + cache-hit check); audit entry appended before returning (required mode propagates AccountingAuditError); PBAC checked before any snapshot/load/compile/execute/audit; failures keep previous catalog flags. 15 tests green, ruff clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: `ModelLiveStatus` gains an optional `error` field to report a failed refresh (spec §3 M9
-requires the failure be reported; the field is additive).
+**Deviations from spec**: `query_metric` also returns `assertion_failed` (needed by spec M9 / AC15); extra private helpers `_execute`, `_metric_request`, `_run_assertions` (a toolkit method called by live._validate_one). Reviewer note: the full pytest run printed a "Logging error: I/O operation on closed file" traceback from parrot/observability shutdown_telemetry after all tests passed; not investigated.
