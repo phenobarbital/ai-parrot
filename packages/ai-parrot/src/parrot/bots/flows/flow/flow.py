@@ -18,6 +18,7 @@ See sdd/specs/agentsflow-refactor-spec3.spec.md for the full design.
 from __future__ import annotations
 
 import asyncio
+import functools
 import os
 import socket
 import uuid
@@ -32,6 +33,8 @@ from navconfig.logging import logging
 # ─── flows.core primitives (import, do not redefine) ────────────────────────
 
 from ..core.node import AgentNode, EndNode, Node, StartNode
+from ....llm_defaults import apply_component_api_key, resolve_component_llm
+from ....observability.context import usage_component
 from ..core.context import FlowContext
 from ..core.fsm import AgentTaskMachine
 from ..core.result import (
@@ -207,6 +210,58 @@ def register_node(
 
 
 # ─── AgentsFlow class skeleton ────────────────────────────────────────────────
+
+
+_FLOW_BUILTIN_LLM = "google:gemini-4-argon"
+
+#: Agent names already reported as "configured, FLOW defaults skipped" (one INFO per name per process).
+_flow_skip_logged: set[str] = set()
+
+
+def _flow_usage_scope(func):
+    """Tag every client call made inside an AgentsFlow entry point as component ``FLOW`` (FEAT-882)."""
+
+    @functools.wraps(func)
+    async def wrapper(*args, **kwargs):
+        with usage_component("FLOW"):
+            return await func(*args, **kwargs)
+
+    return wrapper
+
+
+def _apply_flow_defaults(agent: Any) -> None:
+    """Apply ``FLOW_LLM`` / ``FLOW_<PROVIDER>_API_KEY`` to an unconfigured agent.
+
+    Configured agents keep their client (one INFO log per name); their key comes from
+    ``<AGENT>_<PROVIDER>_API_KEY`` instead. ``FLOW_LLM`` applies only when it is set and the agent
+    declares no llm, model or model_config.
+
+    Args:
+        agent: Agent entering the flow.
+
+    Raises:
+        ValueError: When ``FLOW_LLM`` is malformed.
+    """
+    if getattr(agent, "is_configured", False):
+        name = str(getattr(agent, "name", None) or type(agent).__name__)
+        if name not in _flow_skip_logged:
+            _flow_skip_logged.add(name)
+            logger.info(
+                "AgentsFlow: agent %r is already configured; FLOW_* defaults not applied "
+                "(set <AGENT>_<PROVIDER>_API_KEY / <AGENT>_MODEL instead)",
+                name,
+            )
+        return
+    if (
+        hasattr(agent, "_llm_raw")
+        and agent._llm_raw is None
+        and not getattr(agent, "_llm_model_explicit", False)
+        and not getattr(agent, "_model_config", None)
+    ):
+        resolved = resolve_component_llm("FLOW", builtin=_FLOW_BUILTIN_LLM)
+        if resolved.source == "component":
+            agent._llm_raw = f"{resolved.provider}:{resolved.model}"
+    apply_component_api_key(agent, "FLOW")
 
 
 class AgentsFlow(PersistenceMixin):
@@ -417,6 +472,8 @@ class AgentsFlow(PersistenceMixin):
         if node.node_id in self._nodes:
             raise ValueError(f"Node {node.node_id!r} already added to flow {self.name!r}")
         self._nodes[node.node_id] = node
+        if isinstance(node, AgentNode):
+            _apply_flow_defaults(node.agent)
         self.logger.debug("Added node %r to flow %r", node.node_id, self.name)
 
     def add_edge(
@@ -636,6 +693,7 @@ class AgentsFlow(PersistenceMixin):
             if agent is None:
                 raise AgentNotFoundError(f"Cannot resolve agent_ref {agent_ref!r} for node {node_def.id!r}")
             # Keyed by node_id so _materialize_nodes can look up by node_def.id.
+            _apply_flow_defaults(agent)
             resolved_agents[node_def.id] = agent
 
         # Also validate non-agent node types are registered, and resolve the
@@ -661,6 +719,7 @@ class AgentsFlow(PersistenceMixin):
                 agent = agent_registry.get_bot_instance(ref)
                 if agent is None:
                     raise AgentNotFoundError(f"Cannot resolve agent_refs entry {ref!r} for node " f"{node_def.id!r}")
+                _apply_flow_defaults(agent)
                 group[ref] = agent
             resolved_groups[node_def.id] = group
 
@@ -1223,6 +1282,7 @@ class AgentsFlow(PersistenceMixin):
             metadata=metadata,
         )
 
+    @_flow_usage_scope
     async def run_flow(
         self,
         ctx: Optional[Union[FlowContext, str]] = None,
@@ -1736,7 +1796,7 @@ class AgentsFlow(PersistenceMixin):
             edges = synthetic_edges
 
         completion_queue: asyncio.Queue[CompletionEvent] = asyncio.Queue()
-        attempts: dict[str, int] = {nid: 0 for nid in nodes}
+        attempts: dict[str, int] = dict.fromkeys(nodes, 0)
         tasks: dict[str, asyncio.Task] = {}  # type: ignore[type-arg]
         # Resume (FEAT-399): seed from ctx.completed_tasks/.results when the
         # caller pre-populated a FlowContext (AgentsFlow.resume()) — a no-op

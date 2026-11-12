@@ -94,3 +94,125 @@ def test_api_key_cascade_order(env: dict[str, str]) -> None:
 
     del env["CREW_AI_KEY"]
     assert ld.resolve_component_api_key(("CREW", "AGENT"), "google", legacy=("CREW_AI_KEY",)) is None
+
+
+class _Agent:
+    """Unconfigured AbstractBot stand-in exposing injector attributes."""
+
+    _default_llm = "google"
+
+    def __init__(self, name="feat882-agent", llm=None, llm_kwargs=None, configured=False):
+        """Initialize the agent stand-in."""
+        self.name = name
+        self._llm_raw = llm
+        self._llm_kwargs = llm_kwargs if llm_kwargs is not None else {}
+        self.is_configured = configured
+
+
+@pytest.mark.parametrize(
+    ("name", "token"),
+    [("odoo-helpdesk", "ODOO_HELPDESK"), ("My Agent", "MY_AGENT"), ("a__b", "A_B"), ("--", "")],
+)
+def test_agent_env_token_normalizes(name: str, token: str) -> None:
+    """Agent names normalize to the expected environment-variable token."""
+    assert ld.agent_env_token(name) == token
+
+
+def test_resolve_agent_llm_unset_none(env: dict[str, str]) -> None:
+    """An unset agent model does not create an override."""
+    assert ld.resolve_agent_llm("feat882-agent", default_provider="google") is None
+
+
+def test_resolve_agent_llm_provider_model(env: dict[str, str]) -> None:
+    """Agent model declarations support both explicit and inherited providers."""
+    env["FEAT882_AGENT_MODEL"] = "openai:gpt-4.1"
+    assert ld.resolve_agent_llm("feat882-agent", default_provider="google") == ld.ComponentLLM(
+        provider="openai", model="gpt-4.1", source="agent"
+    )
+
+    env["FEAT882_AGENT_MODEL"] = "gemini-4-argon"
+    assert ld.resolve_agent_llm("feat882-agent", default_provider="google") == ld.ComponentLLM(
+        provider="google", model="gemini-4-argon", source="agent"
+    )
+
+
+def test_resolve_agent_llm_malformed_names_var(env: dict[str, str]) -> None:
+    """Malformed agent model declarations identify their source variable."""
+    env["FEAT882_AGENT_MODEL"] = "openai:"
+
+    with pytest.raises(ValueError, match="FEAT882_AGENT_MODEL"):
+        ld.resolve_agent_llm("feat882-agent", default_provider="google")
+
+
+@pytest.mark.parametrize("provider", ["google", "gemini-live", "google-compat"])
+def test_resolve_agent_api_key_google_family(env: dict[str, str], provider: str) -> None:
+    """Google-family providers use the shared GOOGLE agent key."""
+    env["FEAT882_AGENT_GOOGLE_API_KEY"] = "agent-key"
+    assert ld.resolve_agent_api_key("feat882-agent", provider) == "agent-key"
+
+
+def test_is_component_default_key(env: dict[str, str]) -> None:
+    """Component defaults and the Google-only legacy key are recognized by value."""
+    for component in ld.COMPONENTS:
+        value = f"{component.lower()}-key"
+        env[f"{component}_GOOGLE_API_KEY"] = value
+        assert ld.is_component_default_key(value, "google")
+
+    env["CREW_AI_KEY"] = "legacy-key"
+    assert ld.is_component_default_key("legacy-key", "google")
+    assert not ld.is_component_default_key("legacy-key", "openai")
+    assert not ld.is_component_default_key("unrelated", "google")
+    assert not ld.is_component_default_key(None, "google")
+
+
+def test_apply_component_api_key_flow(env: dict[str, str]) -> None:
+    """Component injection copy-on-writes the agent keyword dictionary."""
+    env["FLOW_GOOGLE_API_KEY"] = "flow-key"
+    shared: dict[str, str] = {}
+    agent = _Agent(llm="google", llm_kwargs=shared)
+
+    assert ld.apply_component_api_key(agent, "FLOW")
+    assert shared == {}
+    assert agent._llm_kwargs == {"api_key": "flow-key"}
+    assert agent._llm_kwargs is not shared
+
+
+@pytest.mark.parametrize(
+    "signal",
+    [{"api_key": "x"}, {"credentials_file": "f"}, {"credentials": object()}, {"vertexai": True}],
+)
+def test_apply_component_api_key_noop_explicit(env: dict[str, str], signal: dict[str, object]) -> None:
+    """Explicit credentials take precedence over component defaults."""
+    env["FLOW_GOOGLE_API_KEY"] = "flow-key"
+    agent = _Agent(llm="google", llm_kwargs=signal)
+
+    assert not ld.apply_component_api_key(agent, "FLOW")
+    assert agent._llm_kwargs is signal
+
+
+def test_apply_component_api_key_noop_configured(env: dict[str, str]) -> None:
+    """Configured agents are never altered by component injection."""
+    env["FLOW_GOOGLE_API_KEY"] = "flow-key"
+    agent = _Agent(llm="google", configured=True)
+
+    assert not ld.apply_component_api_key(agent, "FLOW")
+    assert agent._llm_kwargs == {}
+
+
+def test_apply_component_api_key_noop_client_instance(env: dict[str, str]) -> None:
+    """A live client-like instance is not altered by component injection."""
+    env["FLOW_GOOGLE_API_KEY"] = "flow-key"
+    agent = _Agent(llm=object())
+
+    assert not ld.apply_component_api_key(agent, "FLOW")
+    assert agent._llm_kwargs == {}
+
+
+def test_no_key_value_logged(env: dict[str, str], caplog: pytest.LogCaptureFixture) -> None:
+    """Credential values do not appear in the injector's logs."""
+    secret = "feat882-secret-key"
+    env["FLOW_GOOGLE_API_KEY"] = secret
+    agent = _Agent(llm="google")
+
+    assert ld.apply_component_api_key(agent, "FLOW")
+    assert secret not in caplog.text

@@ -8,7 +8,19 @@ ROOT = pathlib.Path(__file__).resolve().parents[3]
 
 
 @pytest.mark.parametrize(
-    "name", ["DEFAULT_LLM", "CREW_LLM", "AGENT_LLM", "EXPERT_JUDGMENT_LLM", "CREW_GOOGLE_API_KEY", "CREW_AI_KEY"]
+    "name",
+    [
+        "DEFAULT_LLM",
+        "CREW_LLM",
+        "AGENT_LLM",
+        "EXPERT_JUDGMENT_LLM",
+        "CREW_GOOGLE_API_KEY",
+        "CREW_AI_KEY",
+        "FLOW_LLM",
+        "FLOW_GOOGLE_API_KEY",
+        "<AGENT>_MODEL",
+        "<AGENT>_<PROVIDER>_API_KEY",
+    ],
 )
 def test_llm_defaults_documented(name: str) -> None:
     doc = ROOT / "wiki" / "operations" / "configuration" / "llm-defaults.md"
