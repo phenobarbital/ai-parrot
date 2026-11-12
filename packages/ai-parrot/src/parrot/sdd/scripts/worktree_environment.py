@@ -734,7 +734,7 @@ def _wrap_bash(command: str, cwd: Path, tool_input: dict[str, Any], native: Any,
             return command
         shell = bounded_shell_argv(command, tool_input) if explicit else ["/bin/bash", "-c", command]
         return shlex.join(["env", *(f"{key}={value}" for key, value in diff.items()), *shell])
-    if backend == "bubblewrap" and (policy := _shell_prefix_policy()) and policy.mode == "legacy":
+    if backend == "bubblewrap" and prefix_policy and prefix_policy.mode == "legacy":
         if tool_input.get("timeout") or tool_input.get("run_in_background"):
             return shlex.join(bounded_shell_argv(command, tool_input))
         return command
