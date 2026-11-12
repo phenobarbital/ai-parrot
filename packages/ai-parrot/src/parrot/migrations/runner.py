@@ -248,7 +248,9 @@ async def upgrade(
         import asyncpg
 
         connection = await asyncpg.connect(dsn, timeout=connect_timeout)
-        await connection.execute("SELECT set_config('statement_timeout', $1, false)", str(int(statement_timeout * 1000)))
+        await connection.execute(
+            "SELECT set_config('statement_timeout', $1, false)", str(int(statement_timeout * 1000))
+        )
         await _acquire_lock(connection, lock_timeout)
         locked = True
         await _create_ledger(connection, schema)
@@ -302,7 +304,9 @@ async def upgrade(
                 applied.append(identity)
             if reapply_changed and not set_failed:
                 try:
-                    if await verify_postconditions(connection, migrations[migration_set.name], schema=schema, bots_table=bots_table):
+                    if await verify_postconditions(
+                        connection, migrations[migration_set.name], schema=schema, bots_table=bots_table
+                    ):
                         raise RuntimeError("Migration postcondition failed")
                 except asyncio.CancelledError:
                     raise
@@ -358,10 +362,16 @@ async def baseline(
         import asyncpg
 
         connection = await asyncpg.connect(dsn, timeout=connect_timeout)
-        await connection.execute("SELECT set_config('statement_timeout', $1, false)", str(int(statement_timeout * 1000)))
+        await connection.execute(
+            "SELECT set_config('statement_timeout', $1, false)", str(int(statement_timeout * 1000))
+        )
         await _acquire_lock(connection, lock_timeout)
         locked = True
-        rows = await _read_ledger(connection, schema, (migration_set.name,)) if await _ledger_exists(connection, schema) else []
+        rows = (
+            await _read_ledger(connection, schema, (migration_set.name,))
+            if await _ledger_exists(connection, schema)
+            else []
+        )
         row_map, diagnostics = _ledger_state(rows, migrations, (migration_set,))
         for migration in migrations[migration_set.name]:
             states[(migration.migration_set, migration.filename)] = _state(
@@ -369,9 +379,13 @@ async def baseline(
             )
         if diagnostics:
             return _report((migration_set,), migrations, states, applied, failed, skipped, diagnostics, 2)
-        changed = [migration for migration in selected if states[(migration.migration_set, migration.filename)] == "CHANGED"]
+        changed = [
+            migration for migration in selected if states[(migration.migration_set, migration.filename)] == "CHANGED"
+        ]
         if changed:
-            diagnostics.extend(f"Migration changed and cannot be baselined: {_identity(migration)}" for migration in changed)
+            diagnostics.extend(
+                f"Migration changed and cannot be baselined: {_identity(migration)}" for migration in changed
+            )
             return _report((migration_set,), migrations, states, applied, failed, skipped, diagnostics, 1)
         try:
             async with connection.transaction(readonly=True):

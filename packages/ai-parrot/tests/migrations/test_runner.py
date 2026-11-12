@@ -74,9 +74,7 @@ class _Connection:
         if query.startswith("INSERT INTO"):
             migration_set, filename, checksum, check_checksum, identity, operation = arguments
             self.rows = [
-                row
-                for row in self.rows
-                if (row["migration_set"], row["filename"]) != (migration_set, filename)
+                row for row in self.rows if (row["migration_set"], row["filename"]) != (migration_set, filename)
             ]
             self.rows.append(
                 {
@@ -84,7 +82,9 @@ class _Connection:
                     "filename": filename,
                     "checksum": checksum,
                     "check_checksum": check_checksum,
-                    "target_identity": ["navigator.bots"] if migration_set == "bots" else [f"navigator.{migration_set}"],
+                    "target_identity": (
+                        ["navigator.bots"] if migration_set == "bots" else [f"navigator.{migration_set}"]
+                    ),
                     "operation": operation,
                     "identity": identity,
                 }
@@ -144,7 +144,9 @@ def successful_checks(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_lock_precedes_ledger_creation_and_all_files_stamp(connection: _Connection, migrations: dict[str, tuple[MigrationFile, ...]], successful_checks: None) -> None:
+async def test_lock_precedes_ledger_creation_and_all_files_stamp(
+    connection: _Connection, migrations: dict[str, tuple[MigrationFile, ...]], successful_checks: None
+) -> None:
     """Acquire the bounded global lock before any ledger snapshot or DDL."""
     report = await upgrade("postgresql://user:secret@example/test", sets=(_set(),))
 
@@ -152,7 +154,9 @@ async def test_lock_precedes_ledger_creation_and_all_files_stamp(connection: _Co
     assert report.applied == ["bots/001_first.sql", "bots/002_second.sql"]
     lock_index = next(index for index, call in enumerate(connection.calls) if "pg_try_advisory_lock" in call)
     create_index = next(index for index, call in enumerate(connection.calls) if call.startswith("CREATE SCHEMA"))
-    read_index = next(index for index, call in enumerate(connection.calls) if "FROM \"navigator\".\"parrot_schema_migrations\"" in call)
+    read_index = next(
+        index for index, call in enumerate(connection.calls) if 'FROM "navigator"."parrot_schema_migrations"' in call
+    )
     assert lock_index < create_index < read_index
     assert connection.closed is True
     assert any("pg_advisory_unlock" in call for call in connection.calls)
@@ -245,7 +249,10 @@ async def test_changed_and_unknown_history_are_rejected_without_bodies(
 
 @pytest.mark.asyncio
 async def test_explicit_reapply_updates_hashes_then_rechecks_entire_set(
-    connection: _Connection, migrations: dict[str, tuple[MigrationFile, ...]], successful_checks: None, monkeypatch: pytest.MonkeyPatch
+    connection: _Connection,
+    migrations: dict[str, tuple[MigrationFile, ...]],
+    successful_checks: None,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Replay changed files only by opt-in and check the full selected set afterwards."""
     first, second = migrations["bots"]
@@ -334,7 +341,9 @@ async def test_lock_timeout_and_cancellation_release_connection(
         """Return the cancellation fixture connection."""
         return connection
 
-    async def cancelled_check(connection: _Connection, files: tuple[MigrationFile, ...], **_: object) -> tuple[str, ...]:
+    async def cancelled_check(
+        connection: _Connection, files: tuple[MigrationFile, ...], **_: object
+    ) -> tuple[str, ...]:
         """Cancel after the runner has acquired its lock and entered a body transaction."""
         raise asyncio.CancelledError()
 
@@ -345,4 +354,3 @@ async def test_lock_timeout_and_cancellation_release_connection(
 
     assert connection.closed is True
     assert any("pg_advisory_unlock" in call for call in connection.calls)
-
