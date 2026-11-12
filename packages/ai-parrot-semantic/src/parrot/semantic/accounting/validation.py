@@ -220,7 +220,9 @@ def _cycles(graph: Mapping[str, frozenset[str]]) -> list[tuple[str, ...]]:
 def _formula_problems(spec: AccountingModelSpec) -> list[Problem]:
     """dangling_ref (syntax errors, unknown sets/metrics) and cycle."""
     problems: list[Problem] = []
-    sources: list[tuple[str, str, bool]] = [(f"metric {name!r}", metric.expr, False) for name, metric in spec.metrics.items()]
+    sources: list[tuple[str, str, bool]] = [
+        (f"metric {name!r}", metric.expr, False) for name, metric in spec.metrics.items()
+    ]
     sources += [(f"assertion {index}", assertion.expr, True) for index, assertion in enumerate(spec.assertions)]
     for label, text, is_assertion in sources:
         try:
@@ -237,9 +239,7 @@ def _formula_problems(spec: AccountingModelSpec) -> list[Problem]:
         for set_name in sorted(sets - set(spec.sets)):
             problems.append(Problem(code="dangling_ref", message=f"{label} references unknown set {set_name!r}"))
         for metric_name in sorted(metrics - set(spec.metrics)):
-            problems.append(
-                Problem(code="dangling_ref", message=f"{label} references unknown metric {metric_name!r}")
-            )
+            problems.append(Problem(code="dangling_ref", message=f"{label} references unknown metric {metric_name!r}"))
     for component in _cycles(_metric_graph(spec)):
         problems.append(
             Problem(

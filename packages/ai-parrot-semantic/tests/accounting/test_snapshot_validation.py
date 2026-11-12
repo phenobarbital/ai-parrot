@@ -185,7 +185,9 @@ def test_snapshot_builders(tmp_path) -> None:
     assert from_rows.accounts[1].nature == "debit" and from_rows.accounts[1].tags == ("admin", "opex")
     assert from_rows.accounts[2].nature is None and from_rows.accounts[1].parent_id is None
 
-    arrow_rows = [{**row, "tags": row["tags"] if isinstance(row["tags"], str) else ",".join(row["tags"] or [])} for row in rows]
+    arrow_rows = [
+        {**row, "tags": row["tags"] if isinstance(row["tags"], str) else ",".join(row["tags"] or [])} for row in rows
+    ]
     from_arrow = snapshot_from_arrow(pa.Table.from_pylist(arrow_rows), source="arrow", taken_at=taken, **keys)
 
     manifest_rows = [
