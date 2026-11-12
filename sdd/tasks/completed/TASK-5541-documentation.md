@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-713 — Accounting Metrics Layer
 **Spec**: `sdd/specs/accounting-metrics-layer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5538, TASK-5539
@@ -160,10 +160,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator over MCP seat glm (nova / zai.glm-4.7-flash, attempt `f4a6ac3b53e14ec29ebc8706a418d11a`) + review fix `eb35f92c76`
+**Date**: 2026-11-12
+**Notes**: Created `wiki/tools/accounting-metrics-layer.md`, added the "Accounting metrics" pointer section to `wiki/tools/semantic-layer.md`, replaced the README Layering paragraph. `parrot sdd techwiki check --spec ... --root .` passes; `test_packaging.py` 3 passed. Spot-check against the code (settings, scheduler signature, CLI flags, policy keys) found and fixed a nonexistent `FINANCE_DEFAULT_TENANT` setting (the real ones are `FINANCE_AUDIT_MODE` and `FINANCE_MODELS_DIR`; the default tenant is the `default_tenant` argument) and a wrong golden-file instruction. Feedback recorded: coder-feedback:34044ac463d1b47996b50997. The rest of the 332-line page was only spot-checked, not line-by-line verified.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
