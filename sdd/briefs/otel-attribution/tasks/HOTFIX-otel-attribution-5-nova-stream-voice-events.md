@@ -175,3 +175,4 @@ Merge-tier validation did NOT settle green: the engine runs ended `timed_out` (s
 Three failing tests seen in the first validation log are NOT caused by this brief (static diff evidence vs origin/dev, not a baseline run): `test_agent_name_is_not_pii_field` -> issue:ea9f2f8ab334 (`user_id` already declared on AfterClientCallEvent on dev; this brief adds only `tenant`); `test_live_envelope.py::TestCanonicalRole` x2 -> issue:33b76e470d2b (stream_voice role handling untouched by this brief).
 
 **Deviations from spec**: none in scope; task 5 merged by hand (see Notes)
+**Status promoted to `done` (2026-11-12)** on the user's explicit instruction. The caveats above (unrun merge-tier validation, three known failing tests `issue:ea9f2f8ab334` / `issue:33b76e470d2b`, deferred review findings `issue:4591f0dd1f03` / `issue:6c08bea1a8b2` / `issue:2e7011858c08` / `issue:a694582dbb67`) still apply.
