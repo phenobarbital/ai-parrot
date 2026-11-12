@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-11T23:03:06Z",
-  "completed_at": null,
+  "completed_at": "2026-11-12T00:02:19+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -189,7 +189,7 @@
       "feature_id": "FEAT-880",
       "feature": "datasetmanager-semantic-source",
       "spec": "sdd/specs/datasetmanager-semantic-source.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -203,8 +203,9 @@
       "parallelism_notes": "documents add_semantic (TASK-5521), SemanticDataSource and the bridge (TASK-5520), response fields and guidance (TASK-5517), slots (TASK-5518), session isolation (TASK-5519)",
       "assigned_to": null,
       "started_at": "2026-11-11T23:45:56+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5522-docs-semantic-datasets.md"
+      "completed_at": "2026-11-12T00:02:19+00:00",
+      "file": "sdd/tasks/completed/TASK-5522-docs-semantic-datasets.md",
+      "verification": "verified"
     }
   ]
 }
