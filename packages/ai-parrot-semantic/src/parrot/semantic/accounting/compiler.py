@@ -659,7 +659,9 @@ def _lineage(
     by_alias = {_set_alias(name): resolved for name, resolved in model.sets.items()}
     sets = tuple(by_alias[plan_set.alias] for plan_set in plan.sets)
     if metric is None:
-        assertions: tuple[str, ...] = (model.spec.assertions[assertion_index].expr,) if assertion_index is not None else ()
+        assertions: tuple[str, ...] = (
+            (model.spec.assertions[assertion_index].expr,) if assertion_index is not None else ()
+        )
     else:
         related = _metric_closure(model, frozenset({metric}))
         found: list[str] = []

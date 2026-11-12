@@ -260,7 +260,8 @@ def test_compile_deterministic(troc_pnl_yaml, chart_snapshot) -> None:
     assert "OR 1=1" not in query.sql.replace("'x'' OR 1=1 --'", "")
 
     assertion = compile_assertion(
-        model, AssertionRequest.model_validate({"assertion_index": 0, "period": {"from": "2025-01-01", "to": "2025-01-31"}}),
+        model,
+        AssertionRequest.model_validate({"assertion_index": 0, "period": {"from": "2025-01-01", "to": "2025-01-31"}}),
         "postgres",
     )
     assert assertion.lineage.metric is None and assertion.lineage.assertion_index == 0
@@ -302,7 +303,9 @@ def test_sign_normalisation_per_convention(troc_pnl_yaml, chart_snapshot) -> Non
             f"THEN {returns_amount} END END), 0)"
         )
     natural = compile_metric(_convention_model(troc_pnl_yaml, chart_snapshot, "natural_balance"), request, "duckdb")
-    assert _set_sql(natural.sql, "set_returns") == f"COALESCE(SUM(CASE WHEN account_id IN ('4900') THEN {_EXACT} END), 0)"
+    assert (
+        _set_sql(natural.sql, "set_returns") == f"COALESCE(SUM(CASE WHEN account_id IN ('4900') THEN {_EXACT} END), 0)"
+    )
 
     duckdb = pytest.importorskip("duckdb")
     rows = {
@@ -324,7 +327,9 @@ def test_sign_normalisation_per_convention(troc_pnl_yaml, chart_snapshot) -> Non
                     "('4900', DATE '2025-02-04', 10.00, NULL)"
                 )
             else:
-                connection.execute("CREATE TABLE journal (account_id VARCHAR, posting_date DATE, amount DECIMAL(18, 2))")
+                connection.execute(
+                    "CREATE TABLE journal (account_id VARCHAR, posting_date DATE, amount DECIMAL(18, 2))"
+                )
                 for account, amount in rows[convention]:
                     connection.execute("INSERT INTO journal VALUES (?, DATE '2025-02-03', ?)", [account, amount])
             result = connection.execute(compile_metric(model, request, "duckdb").sql).fetchall()
@@ -360,19 +365,25 @@ def test_cumulative_window_shape(troc_pnl_yaml, chart_snapshot) -> None:
     assert query.plan.columns[0][1].op == "div"
 
     qtd = compile_metric(
-        model, _request(metric="revenue", grain="day", period={"from": "2025-05-10", "to": "2025-05-20", "cumulative": "qtd"}),
+        model,
+        _request(metric="revenue", grain="day", period={"from": "2025-05-10", "to": "2025-05-20", "cumulative": "qtd"}),
         "postgres",
     )
     assert "posting_date >= CAST('2025-04-01' AS DATE)" in qtd.sql
     assert "PARTITION BY CAST(DATE_TRUNC('QUARTER', bucket) AS DATE) ORDER BY bucket" in qtd.sql
     assert "bucket >= CAST(DATE_TRUNC('DAY', CAST('2025-05-10' AS DATE)) AS DATE)" in qtd.sql
     mtd = compile_metric(
-        model, _request(metric="revenue", grain="month", period={"from": "2025-05-10", "to": "2025-05-20", "cumulative": "mtd"}),
+        model,
+        _request(
+            metric="revenue", grain="month", period={"from": "2025-05-10", "to": "2025-05-20", "cumulative": "mtd"}
+        ),
         "bigquery",
     )
     assert "PARTITION BY CAST(DATE_TRUNC(bucket, MONTH) AS DATE) ORDER BY bucket" in mtd.sql
 
-    plain = compile_metric(model, _request(metric="revenue", grain="month", period={"from": "2025-03-15", "to": "2025-06-30"}), "duckdb")
+    plain = compile_metric(
+        model, _request(metric="revenue", grain="month", period={"from": "2025-03-15", "to": "2025-06-30"}), "duckdb"
+    )
     assert "OVER" not in plain.sql and "posting_date >= CAST('2025-03-15' AS DATE)" in plain.sql
 
     with pytest.raises(ValueError):
@@ -450,7 +461,9 @@ def test_coalesce_and_no_sql_division(troc_pnl_yaml, chart_snapshot) -> None:
 
     data = _data(troc_pnl_yaml)
     data["chart_of_accounts"]["allow_float"] = True
-    floaty = compile_metric(load_model(data, chart_snapshot), _request(metric="gross_margin_pct", period=period), "duckdb")
+    floaty = compile_metric(
+        load_model(data, chart_snapshot), _request(metric="gross_margin_pct", period=period), "duckdb"
+    )
     assert floaty.lineage.warnings == ("division_by_zero_possible", "float_cast")
 
     duckdb = pytest.importorskip("duckdb")
