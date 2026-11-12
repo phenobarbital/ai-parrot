@@ -14,7 +14,7 @@ docs:
 **Feature ID**: FEAT-884
 **Date**: 2026-11-12
 **Author**: Jesus Lara / Codex
-**Status**: review
+**Status**: approved
 **Target version**: next minor release
 
 ## 1. Motivation & Business Requirements
