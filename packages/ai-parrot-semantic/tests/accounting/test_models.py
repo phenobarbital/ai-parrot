@@ -183,22 +183,28 @@ def test_request_cumulative_fits_grain() -> None:
 def test_accounting_request_discriminates() -> None:
     adapter: TypeAdapter[Any] = TypeAdapter(AccountingRequest)
 
-    metric = adapter.validate_json('{"kind": "metric", "metric": "revenue", "grain": "month", "period": %s}'
-                                   % '{"from": "2025-01-01", "to": "2025-03-31", "cumulative": "ytd"}')
+    metric = adapter.validate_json(
+        '{"kind": "metric", "metric": "revenue", "grain": "month", "period": %s}'
+        % '{"from": "2025-01-01", "to": "2025-03-31", "cumulative": "ytd"}'
+    )
     assert isinstance(metric, MetricRequest)
     assert metric.metric == "revenue"
 
-    assertion = adapter.validate_json('{"kind": "assertion", "assertion_index": 0, '
-                                      '"period": {"from": "2025-01-01", "to": "2025-03-31"}}')
+    assertion = adapter.validate_json(
+        '{"kind": "assertion", "assertion_index": 0, ' '"period": {"from": "2025-01-01", "to": "2025-03-31"}}'
+    )
     assert isinstance(assertion, AssertionRequest)
     assert assertion.assertion_index == 0
 
     with pytest.raises(ValidationError):
-        adapter.validate_json('{"kind": "assertion", "assertion_index": 0, '
-                              '"period": {"from": "2025-01-01", "to": "2025-03-31", "cumulative": "mtd"}}')
+        adapter.validate_json(
+            '{"kind": "assertion", "assertion_index": 0, '
+            '"period": {"from": "2025-01-01", "to": "2025-03-31", "cumulative": "mtd"}}'
+        )
     with pytest.raises(ValidationError):
-        adapter.validate_json('{"kind": "assertion", "assertion_index": -1, '
-                              '"period": {"from": "2025-01-01", "to": "2025-03-31"}}')
+        adapter.validate_json(
+            '{"kind": "assertion", "assertion_index": -1, ' '"period": {"from": "2025-01-01", "to": "2025-03-31"}}'
+        )
     with pytest.raises(ValidationError):
         adapter.validate_json('{"kind": "report", "period": {"from": "2025-01-01", "to": "2025-03-31"}}')
 
