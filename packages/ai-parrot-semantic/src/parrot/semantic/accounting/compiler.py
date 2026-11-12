@@ -128,7 +128,12 @@ def _interval_for(model: AccountingModel, start: date, end_exclusive: date) -> t
             boundary is reported with the two sub-periods to request instead.
     """
     boundaries = sorted(
-        {bound for interval in model.intervals for bound in interval if bound is not None and start < bound < end_exclusive}
+        {
+            bound
+            for interval in model.intervals
+            for bound in interval
+            if bound is not None and start < bound < end_exclusive
+        }
     )
     if boundaries:
         boundary = boundaries[0]
@@ -156,7 +161,9 @@ def _active(valid_from: date | None, valid_to: date | None, interval: Interval) 
     return True
 
 
-def _plan_sets(model: AccountingModel, columns: tuple[tuple[str, PlanExpr], ...], interval: Interval) -> tuple[PlanSet, ...]:
+def _plan_sets(
+    model: AccountingModel, columns: tuple[tuple[str, PlanExpr], ...], interval: Interval
+) -> tuple[PlanSet, ...]:
     """Deduplicated, alias-sorted plan sets referenced by *columns*, each checked active in *interval*.
 
     Raises:

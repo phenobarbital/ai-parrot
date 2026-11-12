@@ -75,17 +75,22 @@ def test_plan_is_plain_json(troc_pnl_yaml, chart_snapshot) -> None:
     assert canonical_request(request) == key_request
 
     ytd = plan_metric(
-        model, _request(metric="revenue", grain="month", period={"from": "2025-05-10", "to": "2025-06-30", "cumulative": "ytd"})
+        model,
+        _request(
+            metric="revenue", grain="month", period={"from": "2025-05-10", "to": "2025-06-30", "cumulative": "ytd"}
+        ),
     )
     assert ytd.scan_from == date(2025, 1, 1)
     assert ytd.output_from == date(2025, 5, 10)
     assert ytd.cumulative == "ytd"
     qtd = plan_metric(
-        model, _request(metric="revenue", grain="day", period={"from": "2025-05-10", "to": "2025-06-30", "cumulative": "qtd"})
+        model,
+        _request(metric="revenue", grain="day", period={"from": "2025-05-10", "to": "2025-06-30", "cumulative": "qtd"}),
     )
     assert qtd.scan_from == date(2025, 4, 1)
     mtd = plan_metric(
-        model, _request(metric="revenue", grain="day", period={"from": "2025-05-10", "to": "2025-05-30", "cumulative": "mtd"})
+        model,
+        _request(metric="revenue", grain="day", period={"from": "2025-05-10", "to": "2025-05-30", "cumulative": "mtd"}),
     )
     assert mtd.scan_from == date(2025, 5, 1)
 
@@ -101,7 +106,9 @@ def test_refuse_membership_change(troc_pnl_yaml, chart_snapshot) -> None:
     with pytest.raises(PeriodSpansMembershipChange) as info:
         plan_metric(
             model,
-            _request(metric="revenue", grain="month", period={"from": "2024-12-01", "to": "2025-02-28", "cumulative": "ytd"}),
+            _request(
+                metric="revenue", grain="month", period={"from": "2024-12-01", "to": "2025-02-28", "cumulative": "ytd"}
+            ),
         )
     assert info.value.boundary == date(2025, 1, 1)
 
@@ -164,7 +171,10 @@ def test_plan_assertion_index(troc_pnl_yaml, chart_snapshot) -> None:
         plan_assertion(model, AssertionRequest.model_validate({"assertion_index": 1, "period": period}))
     with pytest.raises(PeriodSpansMembershipChange):
         plan_assertion(
-            model, AssertionRequest.model_validate({"assertion_index": 0, "period": {"from": "2024-12-01", "to": "2025-01-31"}})
+            model,
+            AssertionRequest.model_validate(
+                {"assertion_index": 0, "period": {"from": "2024-12-01", "to": "2025-01-31"}}
+            ),
         )
 
 
@@ -176,4 +186,6 @@ def test_plan_hash_formula_identity(troc_pnl_yaml, chart_snapshot) -> None:
     assert margin.sets == ratio.sets
     assert margin.natures == ratio.natures
     assert margin.plan_hash != ratio.plan_hash
-    assert plan_metric(model, _request(metric="gross_margin", grain="month", period=period)).plan_hash == margin.plan_hash
+    assert (
+        plan_metric(model, _request(metric="gross_margin", grain="month", period=period)).plan_hash == margin.plan_hash
+    )
