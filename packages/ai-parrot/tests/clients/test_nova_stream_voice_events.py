@@ -129,7 +129,9 @@ async def test_cancelled_and_aclosed_sessions_emit_after(client):
         patch.object(
             aclosed_client,
             "_iter_events",
-            return_value=_events([{"contentStart": {"role": "ASSISTANT", "type": "TEXT"}}, {"textOutput": {"content": "hi"}}]),
+            return_value=_events(
+                [{"contentStart": {"role": "ASSISTANT", "type": "TEXT"}}, {"textOutput": {"content": "hi"}}]
+            ),
         ),
         patch.object(aclosed_client, "_close_stream", new=AsyncMock()),
     ):
