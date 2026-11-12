@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import re
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from .catalog import load_migrations, render_sql
 from .models import MigrationFile, MigrationItem, MigrationReport, MigrationSet
@@ -180,9 +180,7 @@ async def status(
                 row_map[key] = row
 
             missing_sets = {
-                migration_set.name
-                for migration_set in sets
-                if not await _relations_exist(connection, migration_set)
+                migration_set.name for migration_set in sets if not await _relations_exist(connection, migration_set)
             }
             failed_checks: set[str] = set()
             for migration_set in sets:

@@ -72,7 +72,7 @@ class _Connection:
         self.calls.append(query)
         if self.raise_error is not None:
             raise self.raise_error
-        if "FROM \"navigator\".\"parrot_schema_migrations\"" in query:
+        if 'FROM "navigator"."parrot_schema_migrations"' in query:
             selected = arguments[0]
             return [row for row in self.rows if row["migration_set"] in selected]
         return self.check_rows
