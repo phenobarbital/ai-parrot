@@ -1,5 +1,6 @@
 """FEAT-882 — per-agent environment configuration in ``AbstractBot.configure``."""
 
+import logging
 from typing import Any, AsyncIterator, Dict, List, Optional, Sequence, Union
 
 import pytest
@@ -209,6 +210,54 @@ def test_configure_reserved_name_warns_and_ignores(env: dict[str, str], caplog: 
 
     assert agent._apply_agent_env_overrides()[:2] == ("google", None)
     assert "reserved env prefix" in caplog.text
+    assert "secret-key" not in caplog.text
+    assert any(r.levelno == logging.WARNING for r in _reserved_records(caplog))
+
+
+def _reserved_records(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
+    """Return the captured reserved-name log records."""
+    return [r for r in caplog.records if "reserved env prefix" in r.getMessage()]
+
+
+@pytest.mark.parametrize(
+    ("name", "token"),
+    [
+        ("agent", "AGENT"),
+        ("Crew", "CREW"),
+        ("flow", "FLOW"),
+        ("default", "DEFAULT"),
+        ("expert-judgment", "EXPERT_JUDGMENT"),
+    ],
+)
+def test_configure_reserved_name_without_env_logs_debug_only(
+    env: dict[str, str], caplog: pytest.LogCaptureFixture, name: str, token: str
+) -> None:
+    """A reserved name with no colliding variable set is reported at DEBUG, never as a WARNING."""
+    env[f"{token}_MODEL"] = ""
+    env[f"{token}_GOOGLE_API_KEY"] = ""
+    agent = _agent(name=name)
+    caplog.set_level(logging.DEBUG, logger=agent.logger.name)
+
+    assert agent._apply_agent_env_overrides()[:2] == ("google", None)
+    records = _reserved_records(caplog)
+    assert records
+    assert all(r.levelno == logging.DEBUG for r in records)
+
+
+def test_configure_reserved_name_warning_names_only_set_variables(
+    env: dict[str, str], caplog: pytest.LogCaptureFixture
+) -> None:
+    """The WARNING names the reserved variable that is set, never its value."""
+    env["CREW_MODEL"] = ""
+    env["CREW_GOOGLE_API_KEY"] = "secret-key"
+    agent = _agent(name="crew")
+
+    assert agent._apply_agent_env_overrides()[:2] == ("google", None)
+    warnings = [r for r in _reserved_records(caplog) if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    message = warnings[0].getMessage()
+    assert "CREW_GOOGLE_API_KEY" in message
+    assert "CREW_MODEL" not in message
     assert "secret-key" not in caplog.text
 
 

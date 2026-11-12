@@ -45,7 +45,9 @@ single underscore, and strip leading or trailing underscores. For example, `odoo
 
 Do not use agent names that normalize to the reserved tokens `AGENT`, `CREW`, `FLOW`, `DEFAULT`, or the
 Expert tier tokens `EXPERT_JUDGMENT`, `EXPERT_BALANCED`, and `EXPERT_TEMPLATED`. Per-agent variables are
-ignored for those names. Normalization can also create collisions: for example, `odoo-helpdesk` and
+ignored for those names. `configure()` logs a WARNING for such an agent only when `<TOKEN>_MODEL` or its
+provider's `<TOKEN>_<PROVIDER>_API_KEY` is set (variable names only, never values), and a DEBUG line
+otherwise. Normalization can also create collisions: for example, `odoo-helpdesk` and
 `odoo_helpdesk` both use `ODOO_HELPDESK`. Colliding names cannot be disambiguated through environment
 variables.
 

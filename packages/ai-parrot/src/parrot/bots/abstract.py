@@ -848,6 +848,42 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         """Parse 'provider:model' or plain provider string."""
         return match.groups() if (match := _LLM_PATTERN.match(llm)) else (llm, None)
 
+    def _log_reserved_agent_env_token(self, token: str, provider: Optional[str]) -> None:
+        """Report that an agent name maps to a reserved per-agent environment token.
+
+        Names that normalize to a component token (``AGENT``, ``CREW``, ``FLOW``,
+        ``EXPERT_*``) or to ``DEFAULT`` share their variable names with component
+        defaults, so per-agent variables are never applied to them. The message is a
+        WARNING only when ``<TOKEN>_MODEL`` or ``<TOKEN>_<PROVIDER>_API_KEY`` is
+        actually set; otherwise nothing is being ignored and it is logged at DEBUG.
+        Variable values are never logged.
+
+        Args:
+            token: Reserved environment-variable token derived from the agent name.
+            provider: Provider whose ``<TOKEN>_<PROVIDER>_API_KEY`` is checked, if known.
+        """
+        from navconfig import config  # noqa: PLC0415 -- keep a `config` name out of module scope
+
+        from ..llm_defaults import provider_key_token  # noqa: PLC0415 -- keep llm_defaults out of bots' import time
+
+        names = [f"{token}_MODEL"]
+        if provider:
+            names.append(f"{token}_{provider_key_token(provider)}_API_KEY")
+        present = [name for name in names if config.get(name)]
+        if present:
+            self.logger.warning(
+                "Agent name %r maps to reserved env prefix %s_; %s set but not applied as per-agent LLM configuration",
+                self.name,
+                token,
+                ", ".join(present),
+            )
+        else:
+            self.logger.debug(
+                "Agent name %r maps to reserved env prefix %s_; per-agent LLM env variables are not read for it",
+                self.name,
+                token,
+            )
+
     def _apply_agent_env_overrides(self) -> tuple[Any, Optional[str], dict[str, Any]]:
         """Return LLM configuration inputs with applicable per-agent environment overrides.
 
@@ -876,13 +912,6 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         token = agent_env_token(self.name or "")
         if not token:
             return llm, model, llm_kwargs
-        if token in COMPONENTS or token == "DEFAULT":
-            self.logger.warning(
-                "Agent name %r maps to reserved env prefix %s_; per-agent LLM env variables are ignored",
-                self.name,
-                token,
-            )
-            return llm, model, llm_kwargs
 
         if isinstance(llm, str):
             current_provider = self._parse_llm_string(llm)[0].lower()
@@ -893,6 +922,10 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
             current_provider = client_name.lower() if isinstance(client_name, str) else None
         else:
             current_provider = None
+
+        if token in COMPONENTS or token == "DEFAULT":
+            self._log_reserved_agent_env_token(token, current_provider or self._default_llm)
+            return llm, model, llm_kwargs
 
         override = resolve_agent_llm(self.name, default_provider=current_provider or self._default_llm)
         provider = current_provider
