@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-713 — Accounting Metrics Layer
 **Spec**: `sdd/specs/accounting-metrics-layer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5533, TASK-5534, TASK-5535
@@ -322,10 +322,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker / native opus coder (attempt c2ff8d55b60748528b1cf1060883f3cc), commit f085a16b77
+**Date**: 2026-11-12
+**Notes**: `accounting/toolkit.py` AccountingToolkit core (tool_prefix `finance`): construction rules, snapshot provider/manifests, tenant resolution, PBAC filtering for list_metrics/explain_metric (`accounting:<tenant>:<model>:<metric>`), lazy all-or-nothing `_ensure_loaded`, list_metrics, explain_metric. engine/frame_provider/duckdb_threads are stored for TASK-5537. 7 tests green + neighbours; ruff clean.
+Notes for review: explain_metric uses its own small `_render`/`_metric_closure` helpers (built on grammar.parse_expr/parse_assertion/references) instead of the compiler's private `_lineage`/`_metric_closure`; the manifest test compares account ids and natures, not snapshot_hash (snapshot_from_rows sorts tags); manifest reading uses asyncio.to_thread but no thread-id spy test covers it.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: added `_authorize_metric`, `_visible_names`, `_guarded_context`, `_resolve_model` helpers beyond the blueprint's `_authorize`.
