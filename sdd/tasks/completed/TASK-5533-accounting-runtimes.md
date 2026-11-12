@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-713 — Accounting Metrics Layer
 **Spec**: `sdd/specs/accounting-metrics-layer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5523, TASK-5531, TASK-5532
@@ -334,10 +334,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker / native opus coder (attempt 44be9eddc9fb483c8cfb7dc627bc2a24), commit 73b7977069
+**Date**: 2026-11-12
+**Notes**: `runtime/` package: DuckDBRuntime (DECIMAL(38,6) value checks and Arrow conversion off the event loop via asyncio.to_thread; engine errors reduced to the exception type name) and DatabaseRuntime (dialect_for, execute, fetch_chart_rows with quoted sqlglot identifiers, fetch_columns). 8 tests green incl. DuckDBEngine vs real Executor agreement.
+Decisions for downstream tasks (TASK-5536/5537): (1) result columns are named `m_<metric>` as the compiler emits them (blueprint said bare metric name); (2) `fetch_chart_rows` uses module constant `CHART_SUBJECT_DIGEST = "accounting:chart-master"` for the GovernedQuery since the signature has no digest parameter; (3) database.py imports `output_columns` from runtime/duckdb.py (which never imports the duckdb package).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
