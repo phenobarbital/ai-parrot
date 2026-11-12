@@ -167,6 +167,13 @@ reach the observability fan-out.
   disconnected. All four change.
 - AgentTalk's direct `save_turn` calls are removed, and `ChatStorage.save_turn` is
   replaced by `ChatStorage.store_turn(ChatStorageTurn)` (hard cut).
+- **AgentTalk owns no persistence (hard cut).** The HTTP handler never writes to
+  ChatStorage or to any `ConversationMemory`, and never serializes turns or tool calls —
+  on the success, error and streaming paths alike. The bot is the only writer of
+  conversation state (`add_turn`) and the only emitter of the turn event; a partial turn
+  from a stream disconnect is saved by the bot. The server keeps only UI reads and
+  deletion through the `ChatStorage` API (`chat_interaction` / `threads`) and the bus
+  lifecycle in `BotManager`.
 
 **Piece 2 — Automatic memory default and hydration.**
 
@@ -982,6 +989,7 @@ async def shutdown_turn_persistence(handle: TurnPersistence) -> None: ...
 | `test_format_history_consumes_content_once` | M16 | base, bedrock, google and jev emit `content` once, never parts |
 | `test_custom_policy_without_parts` | M16 | a policy returning no parts yields one text part |
 | `test_registry_only_turn_persistence` | M17 | opt-in flag starts and stops the bus |
+| `test_agenttalk_has_no_persistence_writes` | M17 | AST scan of `handlers/agent.py`: no ChatStorage / ConversationMemory write calls, no memory construction |
 | `test_add_bot_attaches_durable_memory` | M17 | publisher, source and allocator are set on registered bots |
 
 **Backend contract suite (M5–M8, one file, parametrized).** For each backend: a
@@ -1059,6 +1067,11 @@ def legacy_rows():
   package has no import of `parrot.storage.chat`.
 - [ ] **AgentTalk mismatch fixed**: a `memory_type="memory"` agent called twice over HTTP
   with the same `session_id` sees the first turn on the second call.
+- [ ] **AgentTalk persistence-free**: `handlers/agent.py` calls no write method of
+  `ChatStorage` (`store_turn`, `save_turn`, thread/turn writes) and no `ConversationMemory`
+  write (`add_turn`, `install_history`, `upsert_turn`) and constructs no
+  `ConversationMemory`; enforced by a test that inspects the module (AST), so a
+  regression fails CI.
 - [ ] **Streaming commits compaction**: `ask_stream` rounds update `metadata.compaction`.
 - [ ] **Failure propagation and retries**: with a disconnected backend and with a failed
   durable write, in every supported backend, the subscriber fails, the bus retries, and
@@ -1610,6 +1623,7 @@ Coverage:
 - [ ] Q10 — Hot-tier TTL: use `HOT_TTL_HOURS` (48h) once hydration exists, or keep no TTL? M1 wires the setting with a default of `0` (no TTL), so this can be decided at any time without a code change. — *Owner: Jesus Lara*
 - [ ] Q13 — Stage 2 rendering: when the follow-up adds `SUMMARIZED` turns, should they render as an assistant-side context block, a system-adjacent block, or a pseudo user/assistant pair? Belongs to the follow-up spec; not needed here. — *Owner: Jesus Lara*
 - [ ] Q14 — Hydration while the source is unavailable or the index is unready: this spec lets the round proceed with an empty history marked `pending` and merges the hydrated window on a later round. The brainstorm only says such an outcome "must not be treated as an empty conversation". The alternative is to fail the request (HTTP 503) until the source is ready. Confirm before M13 / M15 start. — *Owner: Jesus Lara*
+- [ ] Q16 — Turn bus startup failure: with AgentTalk no longer writing ChatStorage, a bus that fails to start means turns never reach the audit log. M17 currently logs at ERROR and keeps serving. Should production instead fail startup (fail-closed), e.g. behind a `PARROT_TURN_BUS_REQUIRED` setting? Decide before M17 starts; Agent Studio must be coordinated as a consumer of the subscriber. — *Owner: Jesus Lara*
 - [ ] Q15 — DLQ persistence needs a Postgres DSN (`DLQHandler` default driver). Is a Postgres DSN available in every environment that runs ChatStorage, or should exhausted envelopes without one stay in the SQLite outbox instead of being dropped? — *Owner: Jesus Lara*
 
 ---
