@@ -1145,7 +1145,7 @@ def test_launch_worker_legacy_exports_shell_prefix(tmp_path: Path, monkeypatch: 
     monkeypatch.setattr(native, "plan_native_launch", lambda *args, **kwargs: ("legacy", False, "", {"hooks": {}}))
     monkeypatch.setattr(native, "native_root_env", lambda cwd: {})
     monkeypatch.setattr(native, "_allocate_session_cache", lambda: tmp_path / "cache")
-    monkeypatch.setattr(native, "prepare_shell_prefix", lambda cwd, settings, mode, *, rtk: exported)
+    monkeypatch.setattr(native, "prepare_shell_prefix", lambda cwd, settings, mode, *, rtk, environ: exported)
     monkeypatch.setattr(native.os, "chdir", lambda path: None)
     execs: list[dict[str, str]] = []
     monkeypatch.setattr(native.os, "execvpe", lambda file, args, env: execs.append(env))
@@ -1866,7 +1866,6 @@ def _legacy_launch_command(
 ) -> list[str]:
     """Run a stubbed legacy ``launch_worker`` and return the Claude argv it would exec."""
     native = launcher.native_claude_sandbox
-    exported = {"CLAUDE_CODE_SHELL_PREFIX": "/state/prefix", "PARROT_SDD_SHELL_PREFIX_POLICY": "/state/policy"}
     primary = tmp_path / "primary"
     primary.mkdir(exist_ok=True)
     monkeypatch.setattr(native.shutil, "which", lambda name: "/usr/bin/claude" if name == "claude" else None)
@@ -1875,7 +1874,8 @@ def _legacy_launch_command(
     monkeypatch.setattr(native, "plan_native_launch", lambda *args, **kwargs: ("legacy", False, "", {"hooks": {}}))
     monkeypatch.setattr(native, "native_root_env", lambda cwd: {})
     monkeypatch.setattr(native, "_allocate_session_cache", lambda: tmp_path / "cache")
-    monkeypatch.setattr(native, "prepare_shell_prefix", lambda cwd, settings, mode, *, rtk: exported)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setattr(native, "_prefix_writable_roots", lambda cwd: (primary,))
     monkeypatch.setattr(native.os, "chdir", lambda path: None)
     commands: list[list[str]] = []
     monkeypatch.setattr(native.os, "execvpe", lambda file, args, env: commands.append(args))
@@ -1893,7 +1893,11 @@ def test_launch_worker_legacy_passes_primary_mcp_config(tmp_path: Path, monkeypa
 
     index = command.index("--mcp-config")
     # `--mcp-config` is variadic: an option must follow the path, never a forwarded argument or the prompt.
-    assert command[index : index + 3] == ["--mcp-config", str(config), "--strict-mcp-config"]
+    snapshot = Path(command[index + 1])
+    assert snapshot != config
+    assert snapshot.read_bytes() == config.read_bytes()
+    assert snapshot.stat().st_mode & 0o777 == 0o400
+    assert command[index + 2] == "--strict-mcp-config"
     assert index < command.index("--settings")
     assert command[-1] == "run FEAT-881"
 
@@ -1904,7 +1908,8 @@ def test_launch_worker_legacy_warns_without_mcp_config(
     """Without a primary ``.mcp.json`` the session starts with no MCP server and says so."""
     command = _legacy_launch_command(tmp_path, monkeypatch, [])
 
-    assert "--mcp-config" not in command
+    snapshot = Path(command[command.index("--mcp-config") + 1])
+    assert json.loads(snapshot.read_text()) == {"mcpServers": {}}
     assert "--strict-mcp-config" in command
     assert "WARNING no MCP servers" in capsys.readouterr().err
 
@@ -1969,3 +1974,31 @@ def test_native_launch_drops_inherited_shell_prefix(tmp_path: Path, monkeypatch:
     command, environment = execs[0]
     assert not {key for key in environment if "SHELL_PREFIX" in key}
     assert "--strict-mcp-config" not in command
+
+
+def test_legacy_launch_reads_config_once_and_expands_child_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The launcher uses one snapshot and the sanitized child environment, even when the source changes."""
+    native = launcher.native_claude_sandbox
+    config = tmp_path / "primary" / ".mcp.json"
+    config.parent.mkdir()
+    original = {"mcpServers": {"tool": {"command": "server", "args": ["${PATH}"]}}}
+    config.write_text(json.dumps(original))
+    real_load = native.load_prefix_mcp_config
+    calls = []
+
+    def load_then_replace(cwd: Path) -> dict[str, object]:
+        calls.append(cwd)
+        document = real_load(cwd)
+        config.write_text('{"mcpServers": {}}')
+        return document
+
+    monkeypatch.setattr(native, "load_prefix_mcp_config", load_then_replace)
+    monkeypatch.setenv("PATH", "/parent-only")
+    command = _legacy_launch_command(tmp_path, monkeypatch, [])
+    snapshot = Path(command[command.index("--mcp-config") + 1])
+
+    assert calls == [tmp_path]
+    assert json.loads(snapshot.read_text()) == original
+    assert json.loads(snapshot.with_name("policy.json").read_text())["mcp_argv"] == [["server", "/usr/bin"]]

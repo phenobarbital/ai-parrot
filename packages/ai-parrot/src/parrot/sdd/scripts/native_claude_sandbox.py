@@ -16,6 +16,7 @@ from pathlib import Path
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -975,7 +976,7 @@ def _agent_hook_commands(path: Path) -> list[str]:
     in_hooks = False
     for line in frontmatter.splitlines():
         if line and not line[0].isspace() and not line.startswith("#"):
-            in_hooks = line.rstrip() == "hooks:"
+            in_hooks = re.fullmatch(r"hooks:(?:[ \t]+#.*|[ \t]*)", line) is not None
             continue
         match = re.match(r"^\s+(?:-\s+)?command:\s*(.*?)\s*$", line) if in_hooks else None
         if match is None:
@@ -988,9 +989,29 @@ def _agent_hook_commands(path: Path) -> list[str]:
     return commands
 
 
-def _prefix_mcp_argv(path: Path) -> list[list[str]]:
-    """Collect the stdio command argv values from an MCP configuration file."""
-    servers = _load_json(path).get("mcpServers")
+_MCP_VARIABLE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
+
+
+def _expand_mcp_argument(value: str, environ: Mapping[str, str]) -> str:
+    """Expand Claude's variable syntax once; empty values win over defaults.
+
+    Args:
+        value: A command or argument from the MCP configuration.
+        environ: The environment passed to Claude, not the importing process's environment.
+
+    Returns:
+        Expanded text, preserving unset variables without defaults verbatim.
+    """
+
+    def substitute(match: re.Match[str]) -> str:
+        return environ.get(match[1], match[2] if match[2] is not None else match[0])
+
+    return _MCP_VARIABLE.sub(substitute, value)
+
+
+def _prefix_mcp_argv(document: Mapping[str, Any], environ: Mapping[str, str]) -> list[list[str]]:
+    """Collect stdio argv from the snapshot, expanded in Claude's launch environment."""
+    servers = document.get("mcpServers")
     if not isinstance(servers, dict):
         return []
     result: list[list[str]] = []
@@ -999,7 +1020,7 @@ def _prefix_mcp_argv(path: Path) -> list[list[str]]:
             continue
         arguments = server.get("args", [])
         if isinstance(arguments, list) and all(isinstance(argument, str) for argument in arguments):
-            result.append([command, *arguments])
+            result.append([_expand_mcp_argument(value, environ) for value in (command, *arguments)])
     return result
 
 
@@ -1062,24 +1083,45 @@ def _remove_expired_prefix_sessions(state_root: Path) -> None:
 _PREFIX_RUNTIME_FILES = ("shell_prefix.py", "worktree_environment.py")
 
 
-def prefix_mcp_config(cwd: Path) -> Path | None:
-    """Return the primary checkout's MCP configuration when it declares at least one server.
-
-    The worktree's own ``.mcp.json`` is never consulted: it is gitignored (so normally absent) and
-    writable by the session, while the primary checkout is read-only inside the legacy sandbox.
+def load_prefix_mcp_config(cwd: Path) -> dict[str, Any]:
+    """Read the primary MCP configuration once without following a symlink.
 
     Args:
         cwd: A path inside the linked worker worktree.
 
     Returns:
-        ``<primary>/.mcp.json``, or ``None`` when it is absent, malformed or declares no server.
+        The parsed configuration, or an empty server configuration if absent or malformed.
+
+    Raises:
+        RuntimeError: The primary configuration is a symlink or not a regular file.
     """
     path = _native_roots(cwd)[2] / ".mcp.json"
-    servers = _load_json(path).get("mcpServers")
-    return path if path.is_file() and isinstance(servers, dict) and servers else None
+    empty = {"mcpServers": {}}
+    # O_NOFOLLOW closes the lstat/open race; O_NONBLOCK prevents a FIFO from hanging the launcher.
+    try:
+        if path.is_symlink():
+            raise RuntimeError("primary MCP configuration must not be a symlink")
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return empty
+    except OSError as exc:
+        raise RuntimeError("cannot safely open primary MCP configuration") from exc
+    if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+        os.close(descriptor)
+        raise RuntimeError("primary MCP configuration must be a regular file")
+    with os.fdopen(descriptor, "r", encoding="utf-8") as source:
+        try:
+            document = json.load(source)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return empty
+    if not isinstance(document, dict) or not isinstance(document.get("mcpServers"), dict):
+        return empty
+    return document
 
 
-def prepare_shell_prefix(cwd: Path, settings: dict, mode: str, *, rtk: bool) -> dict[str, str]:
+def prepare_shell_prefix(
+    cwd: Path, settings: dict, mode: str, *, rtk: bool, environ: Mapping[str, str] | None = None
+) -> dict[str, str]:
     """Write an immutable legacy shell-prefix policy, runtime copy and executable launcher.
 
     Args:
@@ -1087,13 +1129,15 @@ def prepare_shell_prefix(cwd: Path, settings: dict, mode: str, *, rtk: bool) -> 
         settings: Final launcher settings, including notification hooks.
         mode: Prefix sandbox mode.
         rtk: Whether the prefix applies RTK rewrites.
+        environ: The child environment used for MCP expansion; defaults to os.environ.
 
     Returns:
         Environment variables that select this prefix and its policy.
 
     Raises:
-        RuntimeError: If the configured state root is writable by the session.
+        RuntimeError: If the state root is writable by the session or the MCP source is unsafe.
     """
+    mcp_config = load_prefix_mcp_config(cwd)
     state_root = _canonical(shell_prefix_state_root())
     writable = _prefix_writable_roots(cwd)
     if any(_is_within(state_root, root) for root in writable):
@@ -1111,13 +1155,22 @@ def prepare_shell_prefix(cwd: Path, settings: dict, mode: str, *, rtk: bool) -> 
     for path in (cwd / ".claude" / "settings.json", cwd / ".claude" / "settings.local.json"):
         hook_commands.extend(_hook_commands(_load_json(path).get("hooks", {})))
     hook_commands.extend(_agent_hook_commands(cwd / ".claude" / "agents" / "sdd-worker.md"))
-    mcp_config = prefix_mcp_config(cwd)
+    mcp_path = session_dir / "mcp.json"
+    mcp_path.write_text(json.dumps(mcp_config), encoding="utf-8")
+    mcp_path.chmod(0o400)
+    if not mcp_config["mcpServers"]:
+        sys.stderr.write(
+            "launch_worker: WARNING no MCP servers: the primary checkout has no usable .mcp.json; "
+            "the session starts without MCP tools\n"
+        )
     policy = PrefixPolicy(
         schema_version=1,
         mode=mode,
         worktree=str(_native_roots(cwd)[0]),
         hook_commands=tuple(hook_commands),
-        mcp_argv=tuple(tuple(argv) for argv in (_prefix_mcp_argv(mcp_config) if mcp_config else [])),
+        mcp_argv=tuple(
+            tuple(argv) for argv in _prefix_mcp_argv(mcp_config, os.environ if environ is None else environ)
+        ),
         rtk=rtk,
     )
     policy_path = session_dir / "policy.json"
@@ -1279,7 +1332,7 @@ def launch_worker(
             )
             return 1
         try:
-            env.update(prepare_shell_prefix(cwd, settings, mode, rtk=True))
+            env.update(prepare_shell_prefix(cwd, settings, mode, rtk=True, environ=env))
         except RuntimeError as exc:
             print(f"launch_worker: shell prefix unavailable ({exc})", file=sys.stderr)
             return 1
@@ -1289,18 +1342,10 @@ def launch_worker(
         env.pop("PARROT_SDD_SHELL_PREFIX_POLICY", None)
     command = [claude, "--agent", "sdd-worker"]
     if uses_prefix:
-        # The prefix passes through only the servers recorded in its policy, so the session must load
-        # exactly that file. `--mcp-config` is variadic: the next option has to follow it directly.
-        mcp_config = prefix_mcp_config(cwd)
-        if mcp_config is None:
-            print(
-                "launch_worker: WARNING no MCP servers: the primary checkout has no usable .mcp.json; "
-                "the session starts without MCP tools",
-                file=sys.stderr,
-            )
-        else:
-            command += ["--mcp-config", str(mcp_config)]
-        command.append("--strict-mcp-config")
+        # Both consumers use the one session snapshot; Claude expands its variable references using
+        # the same child environment used to compile the allowlist. Never reopen the primary config.
+        mcp_config = Path(env["PARROT_SDD_SHELL_PREFIX_POLICY"]).with_name("mcp.json")
+        command += ["--mcp-config", str(mcp_config), "--strict-mcp-config"]
     if not has_sources:
         command += ["--setting-sources", "project,local"]
     if not has_model:

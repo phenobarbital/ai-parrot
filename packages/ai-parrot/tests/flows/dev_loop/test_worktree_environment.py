@@ -547,8 +547,9 @@ def test_real_feature_worktree_can_write_shared_ledger_but_not_wiki_plane(tmp_pa
     assert not (main / ".parrot" / "wiki.db").exists()
 
 
-
-def test_feature_worktree_binds_primary_coder_evidence_dir_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_feature_worktree_binds_primary_coder_evidence_dir_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The evidence store is writable; the rest of ``artifacts/`` is not."""
     monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
     main, worktree = _registered_feature_worktree(tmp_path)
@@ -626,6 +627,7 @@ def test_coder_evidence_dir_matches_resolve_durable_root(tmp_path: Path, monkeyp
     subprocess.run(["git", "init"], cwd=repo, capture_output=True, check=True)
     resolved = resolve_durable_root(None, worktree_base_path=str(repo / ".parrot" / "worktrees"))
     assert resolved == (repo / policy.CODER_EVIDENCE_DIR).resolve()
+
 
 # ---------------------------------------------------------------------------
 # Hung-command guard: a sandboxed process that never exits must not keep bwrap
@@ -1768,7 +1770,10 @@ def test_worktree_env_agy_quoted_separator_is_not_a_command_boundary(tmp_path: P
     repo = tmp_path / "repo"
     (repo / ".git").mkdir(parents=True)
     decision, _reason, _overwrite = policy.agy_verdict(
-        _agy([repo], CommandLine="echo 'a; uv pip install foo' && ls"), root=repo, backend="bubblewrap", unattended=False
+        _agy([repo], CommandLine="echo 'a; uv pip install foo' && ls"),
+        root=repo,
+        backend="bubblewrap",
+        unattended=False,
     )
     assert decision == "ask"
 
@@ -1944,3 +1949,30 @@ def test_worktree_env_agy_verdict_does_not_change_claude_hook(
     assert output["hookEventName"] == "PreToolUse"
     assert "permissionDecision" not in output
     assert shlex.split(output["updatedInput"]["command"])[-3:] == ["/bin/bash", "-c", "true"]
+
+
+@pytest.mark.parametrize("valid", [True, False])
+def test_wrap_bash_loads_prefix_policy_once(
+    checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path, valid: bool
+) -> None:
+    """RTK and sandbox decisions share one validated policy, including a failed validation."""
+    worktree, _environment = checkout
+    policy_path = _write_prefix_policy(tmp_path, worktree, rtk=True)
+    monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_POLICY", str(policy_path))
+    monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_TOKEN", _prefix_token(policy_path) if valid else "invalid")
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap" if name == "bwrap" else None)
+    monkeypatch.setattr(policy, "_scope_guard", lambda command, cwd: ("allow", None))
+    real_load = policy._shell_prefix_policy
+    calls = []
+
+    def counted_load() -> object:
+        calls.append(True)
+        return real_load()
+
+    monkeypatch.setattr(policy, "_shell_prefix_policy", counted_load)
+    command = policy._wrap_bash("git status", worktree, {}, None, backend="bubblewrap")
+
+    assert calls == [True]
+    assert (command == "git status") is valid
+    if not valid:
+        assert "bwrap" in command

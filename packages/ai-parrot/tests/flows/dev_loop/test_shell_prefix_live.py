@@ -69,8 +69,8 @@ def test_legacy_prefix_live_session(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     )
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     environment = {**os.environ, **native.prepare_shell_prefix(worktree, {}, "legacy", rtk=True)}
-    mcp_config = native.prefix_mcp_config(worktree)
-    assert mcp_config == repo.resolve() / ".mcp.json"
+    mcp_config = Path(environment["PARROT_SDD_SHELL_PREFIX_POLICY"]).with_name("mcp.json")
+    assert mcp_config.is_file()
     prompt = (
         f"Use Bash to run `touch {inside}` and then, as a separate command, `touch {outside}`. "
         "Report whether each command succeeded."
