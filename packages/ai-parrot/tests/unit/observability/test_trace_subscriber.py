@@ -5,6 +5,9 @@ FEAT-177 TASK-1230.
 
 from __future__ import annotations
 
+import asyncio
+from datetime import datetime
+
 import pytest
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
@@ -182,3 +185,97 @@ async def test_cost_absent_when_no_calculator(telemetry) -> None:
 
     spans = exporter.get_finished_spans()
     assert "parrot.cost.usd" not in spans[0].attributes
+
+
+def _ns(ts: datetime) -> int:
+    """Epoch nanoseconds of an aware datetime, at microsecond precision."""
+    return round(ts.timestamp() * 1_000_000) * 1_000
+
+
+@pytest.mark.asyncio
+async def test_client_end_before_start_still_exports_span(telemetry) -> None:
+    """An after-event processed before its before-event still ends and exports the span.
+
+    Regression for issue:a694582dbb67: the end used to be dropped and the
+    late-started span leaked in ``_active_spans``.
+    """
+    reg, exporter, sub = telemetry
+    tc = TraceContext.new_root()
+    before = BeforeClientCallEvent(trace_context=tc, client_name="openai", model="gpt-4o")
+    after = AfterClientCallEvent(
+        trace_context=tc, client_name="openai", model="gpt-4o",
+        duration_ms=1.0, input_tokens=7, output_tokens=3,
+    )
+
+    await reg.emit(after)
+    assert exporter.get_finished_spans() == ()
+    await reg.emit(before)
+
+    spans = exporter.get_finished_spans()
+    assert len(spans) == 1
+    span = spans[0]
+    assert span.status.is_ok is True
+    assert span.attributes["gen_ai.system"] == "openai"
+    assert span.attributes["gen_ai.usage.input_tokens"] == 7
+    assert span.start_time == _ns(before.timestamp)
+    assert span.end_time == _ns(after.timestamp)
+    assert sub._active_spans == {}
+    assert len(sub._pending_ends) == 0
+
+
+@pytest.mark.asyncio
+async def test_client_fail_before_start_sets_error_status(telemetry) -> None:
+    """A failed-event processed before its before-event ends the span with ERROR."""
+    reg, exporter, sub = telemetry
+    tc = TraceContext.new_root()
+    before = BeforeClientCallEvent(trace_context=tc, client_name="openai", model="gpt-4o")
+    failed = ClientCallFailedEvent(
+        trace_context=tc, client_name="openai", model="gpt-4o",
+        duration_ms=1.0, error_type="APIError", error_message="boom",
+    )
+
+    await reg.emit(failed)
+    await reg.emit(before)
+
+    spans = exporter.get_finished_spans()
+    assert len(spans) == 1
+    assert spans[0].status.is_ok is False
+    assert spans[0].status.description == "boom"
+    assert spans[0].attributes["error.type"] == "APIError"
+    assert sub._active_spans == {}
+    assert len(sub._pending_ends) == 0
+
+
+@pytest.mark.asyncio
+async def test_fire_and_forget_start_after_awaited_end(telemetry) -> None:
+    """Mirror AbstractClient: start scheduled as a task, end awaited without yielding."""
+    reg, exporter, sub = telemetry
+    tc = TraceContext.new_root()
+
+    start_task = asyncio.create_task(
+        reg.emit(BeforeClientCallEvent(trace_context=tc, client_name="openai", model="gpt-4o"))
+    )
+    await reg.emit(AfterClientCallEvent(
+        trace_context=tc, client_name="openai", model="gpt-4o", duration_ms=0.0,
+    ))
+    await start_task
+
+    assert len(exporter.get_finished_spans()) == 1
+    assert sub._active_spans == {}
+    assert len(sub._pending_ends) == 0
+
+
+@pytest.mark.asyncio
+async def test_pending_end_buffer_is_capped(telemetry) -> None:
+    """Ends whose start never arrives are evicted oldest-first past the cap."""
+    reg, exporter, sub = telemetry
+    sub._max_pending_ends = 2
+    contexts = [TraceContext.new_root() for _ in range(3)]
+
+    for tc in contexts:
+        await reg.emit(AfterClientCallEvent(
+            trace_context=tc, client_name="openai", model="gpt-4o", duration_ms=1.0,
+        ))
+
+    assert list(sub._pending_ends) == [contexts[1].span_id, contexts[2].span_id]
+    assert exporter.get_finished_spans() == ()
