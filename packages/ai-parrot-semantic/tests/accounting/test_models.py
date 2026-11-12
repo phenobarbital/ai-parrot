@@ -6,15 +6,20 @@ from datetime import date
 from typing import Any
 
 import pytest
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from parrot.semantic.accounting.models import (
     AccountingModel,
     AccountingModelSpec,
+    AccountingRequest,
     AccountSet,
+    AssertionRequest,
     ChartOfAccounts,
     JournalSource,
+    MetricPlan,
+    MetricRequest,
     NatureSpec,
+    PlanExpr,
 )
 
 _FRAME = {"dataframe": "journal"}
@@ -143,3 +148,105 @@ def test_natures_sorted_unique() -> None:
     assert isinstance(restored.natures, tuple) and all(isinstance(pair, tuple) for pair in restored.natures)
     assert isinstance(restored.intervals[0], tuple)
     assert hash(restored.natures) == hash(model.natures)
+
+
+_PERIOD = {"from": "2025-01-01", "to": "2025-03-31"}
+
+
+def test_request_cumulative_fits_grain() -> None:
+    allowed = {
+        "mtd": {"day", "month"},
+        "qtd": {"day", "month", "quarter"},
+        "ytd": {"day", "month", "quarter", "year"},
+    }
+    for cumulative, grains in allowed.items():
+        for grain in ("day", "week", "month", "quarter", "year", None):
+            payload = {"metric": "revenue", "grain": grain, "period": {**_PERIOD, "cumulative": cumulative}}
+            if grain in grains:
+                assert MetricRequest.model_validate(payload).period.cumulative == cumulative
+            else:
+                with pytest.raises(ValidationError):
+                    MetricRequest.model_validate(payload)
+
+    # Non-cumulative requests accept any grain, week and None included.
+    for grain in ("day", "week", "month", "quarter", "year", None):
+        assert MetricRequest.model_validate({"metric": "revenue", "grain": grain, "period": _PERIOD}).grain == grain
+
+    # Period ordering: from <= to (equal is a valid single day).
+    assert MetricRequest.model_validate(
+        {"metric": "revenue", "period": {"from": "2025-01-01", "to": "2025-01-01"}}
+    ).period.from_ == date(2025, 1, 1)
+    with pytest.raises(ValidationError):
+        MetricRequest.model_validate({"metric": "revenue", "period": {"from": "2025-02-01", "to": "2025-01-31"}})
+
+
+def test_accounting_request_discriminates() -> None:
+    adapter: TypeAdapter[Any] = TypeAdapter(AccountingRequest)
+
+    metric = adapter.validate_json(
+        '{"kind": "metric", "metric": "revenue", "grain": "month", "period": %s}'
+        % '{"from": "2025-01-01", "to": "2025-03-31", "cumulative": "ytd"}'
+    )
+    assert isinstance(metric, MetricRequest)
+    assert metric.metric == "revenue"
+
+    assertion = adapter.validate_json(
+        '{"kind": "assertion", "assertion_index": 0, ' '"period": {"from": "2025-01-01", "to": "2025-03-31"}}'
+    )
+    assert isinstance(assertion, AssertionRequest)
+    assert assertion.assertion_index == 0
+
+    with pytest.raises(ValidationError):
+        adapter.validate_json(
+            '{"kind": "assertion", "assertion_index": 0, '
+            '"period": {"from": "2025-01-01", "to": "2025-03-31", "cumulative": "mtd"}}'
+        )
+    with pytest.raises(ValidationError):
+        adapter.validate_json(
+            '{"kind": "assertion", "assertion_index": -1, ' '"period": {"from": "2025-01-01", "to": "2025-03-31"}}'
+        )
+    with pytest.raises(ValidationError):
+        adapter.validate_json('{"kind": "report", "period": {"from": "2025-01-01", "to": "2025-03-31"}}')
+
+
+def _plan(formula: PlanExpr, **overrides: Any) -> MetricPlan:
+    payload: dict[str, Any] = {
+        "table": "gl.journal",
+        "account_key": "account_id",
+        "posting_date": "posting_date",
+        "amount_convention": "debit_positive",
+        "amount": "amount",
+        "debit": None,
+        "credit": None,
+        "natures": (("4000", "credit"), ("5000", "debit")),
+        "cast_decimal": True,
+        "sets": ({"alias": "s0", "accounts": ("4000",)}, {"alias": "s1", "accounts": ("5000",)}),
+        "columns": (("gross_margin", formula),),
+        "grain": "month",
+        "dimensions": ("store_id",),
+        "filters": (("store_id", ("A", 7)),),
+        "scan_from": date(2025, 1, 1),
+        "output_from": date(2025, 1, 1),
+        "to_exclusive": date(2025, 4, 1),
+        "cumulative": "ytd",
+    }
+    payload.update(overrides)
+    return MetricPlan.model_validate(payload)
+
+
+def test_plan_round_trips_json() -> None:
+    formula = PlanExpr(op="sub", args=(PlanExpr(op="set", alias="s0"), PlanExpr(op="set", alias="s1")))
+    plan = _plan(formula)
+
+    restored = MetricPlan.model_validate_json(plan.model_dump_json())
+    assert restored == plan
+    assert restored.columns[0][1].args[0].alias == "s0"
+    assert restored.plan_hash == plan.plan_hash
+    assert len(plan.plan_hash) == 64
+    assert _plan(formula).plan_hash == plan.plan_hash
+
+    other = PlanExpr(op="add", args=(PlanExpr(op="set", alias="s0"), PlanExpr(op="num", value="1.5")))
+    assert _plan(other).plan_hash != plan.plan_hash
+    assert _plan(formula, cast_decimal=False).plan_hash != plan.plan_hash
+    assert _plan(formula, cumulative=None).plan_hash != plan.plan_hash
+    assert {"result_scale", "rounding", "arithmetic_version"} <= set(plan.model_dump(mode="json"))
