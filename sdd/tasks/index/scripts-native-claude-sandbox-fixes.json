@@ -79,7 +79,7 @@
       "feature_id": "FEAT-881",
       "feature": "scripts-native-claude-sandbox-fixes",
       "spec": "sdd/specs/scripts-native-claude-sandbox-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -87,8 +87,9 @@
       "parallelism_notes": "No dependency: touches worktree_environment.py, shell_prefix.py and their own test files, none shared with TASK-5542/5543/5545.",
       "assigned_to": null,
       "started_at": "2026-11-12T00:51:57Z",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5544-hook-policy-validation-token-scope.md"
+      "completed_at": "2026-11-12T00:53:36+00:00",
+      "file": "sdd/tasks/completed/TASK-5544-hook-policy-validation-token-scope.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5545",
@@ -133,7 +134,7 @@
     {
       "id": "TASK-5547",
       "slug": "documentation-claude-native-sandbox",
-      "title": "Documentation \u2014 wiki/sdd-tooling/dev_loop/claude-native-sandbox.md",
+      "title": "Documentation — wiki/sdd-tooling/dev_loop/claude-native-sandbox.md",
       "feature_id": "FEAT-881",
       "feature": "scripts-native-claude-sandbox-fixes",
       "spec": "sdd/specs/scripts-native-claude-sandbox-fixes.spec.md",
