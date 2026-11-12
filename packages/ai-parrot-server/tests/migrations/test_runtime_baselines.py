@@ -57,9 +57,7 @@ def test_runtime_baselines_are_safe_complete_resources(resource: str) -> None:
 def test_metric_baseline_preserves_nullable_tenant_identity() -> None:
     """Retain both tenant-scoped uniqueness and the global partial unique index."""
     sql = (_MIGRATIONS / "sql" / "metric_definitions" / "001_baseline.sql").read_text(encoding="utf-8")
-    check_sql = (_MIGRATIONS / "sql" / "metric_definitions" / "001_baseline.check.sql").read_text(
-        encoding="utf-8"
-    )
+    check_sql = (_MIGRATIONS / "sql" / "metric_definitions" / "001_baseline.check.sql").read_text(encoding="utf-8")
 
     assert "UNIQUE (tenant, metric_id)" in sql
     assert "WHERE tenant IS NULL" in sql
