@@ -92,9 +92,7 @@ def _column_values(frame: Any, column: str) -> Iterable[Any] | None:
             field_type.scale <= _MAX_SCALE and field_type.precision - field_type.scale <= _MAX_INTEGER_DIGITS
         ):
             return ()  # the Arrow type itself guarantees every value fits DECIMAL(38,6)
-        if pa.types.is_integer(field_type) or not (
-            pa.types.is_decimal(field_type) or pa.types.is_floating(field_type)
-        ):
+        if pa.types.is_integer(field_type) or not (pa.types.is_decimal(field_type) or pa.types.is_floating(field_type)):
             return ()  # non-decimal types are rejected by to_arrow with a precise message
         return frame.column(column).to_pylist()
     if hasattr(frame, "dtypes") and hasattr(frame, "iloc"):  # pandas, duck typed like to_arrow
