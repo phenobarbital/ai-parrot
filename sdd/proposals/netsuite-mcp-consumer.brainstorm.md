@@ -311,9 +311,10 @@ M2M fallback moves to a follow-up using Option B's REST path for SuiteQL only.
 
 ### Edge Cases & Error Handling
 
-- **Not connected / token expired / refresh token expired** → standard needs-auth envelope with the
-  NetSuite provider; never a silent fallback from a user identity to the service identity unless
-  the dataset explicitly allows it.
+- **Not connected / token expired / refresh token expired** → tool calls return the standard
+  needs-auth envelope with the NetSuite provider. Dataset fetches fall back to the service (M2M)
+  identity when one is configured (decision: fallback allowed); the result records which identity
+  produced it, and without a service identity the needs-auth envelope is returned.
 - **Administrator role or missing permission** → explicit, user-readable error; connection is not
   stored as healthy.
 - **Missing required report filters** (`dateTo`, `subsidiaryId` on subsidiary-aware reports, nexus,
@@ -360,7 +361,7 @@ M2M fallback moves to a follow-up using Option B's REST path for SuiteQL only.
 | `parrot/tools/dataset_manager/sources/` | extends | new NetSuite source module (lazy import like other optional sources) |
 | `parrot/tools/dataset_manager/tool.py` | extends | registration method; conditional NetSuite tools; cache key use |
 | `parrot/tools/dataset_manager/sources/opaque.py` | extends | resource identity for policies |
-| `parrot/conf.py` | extends | redirect URI / default role-policy settings if needed |
+| `parrot/conf.py` | extends | configurable NetSuite OAuth redirect URI (env-driven; ngrok URL in local/live runs) |
 | Admin UI connections page | depends on | shows role/account; no new screen expected |
 | NetSuite account `4984231` | configuration | redirect URI on the integration record; role permissions |
 
@@ -573,7 +574,7 @@ from parrot.tools.dataset_manager.sources import DataSource, SmartsheetSource, r
 - **Cross-feature independence**: touches `mcp/integration.py`, `tools/mcp_mixin.py` and
   `dataset_manager/tool.py` — all hot files. FEAT-877 (agent-local MCP, just merged) worked in the
   MCP area; check for in-flight specs on `dataset_manager/tool.py` before task decomposition.
-- **Recommended isolation**: `per-spec` — and consider **two specs**: (1) `netsuite-mcp-consumer`
+- **Recommended isolation**: `per-spec`, as **two specs** (decided): (1) `netsuite-mcp-consumer`
   (Phases 0–1) and (2) `netsuite-dataset-sources` (Phase 2), the second depending on the first's
   fixtures and connection.
 - **Rationale**: the dataset layer's payload model depends on facts only the live harness can
@@ -594,11 +595,11 @@ from parrot.tools.dataset_manager.sources import DataSource, SmartsheetSource, r
 - [ ] Does the NetSuite MCP endpoint accept client-credentials (M2M) tokens with scope `mcp`? Oracle documents only Authorization Code + PKCE. — *Owner: live harness (Phase 0)*
 - [ ] Does the server accept a client offering protocol `2024-11-05`, or must the transport offer `2025-06-18`? Any Streamable-HTTP behavior (session id header, SSE responses) the current `HttpMCPSession` mishandles? — *Owner: live harness (Phase 0)*
 - [ ] Access-token and refresh-token lifetimes for the public-client PKCE grant (how often must a user re-consent?), and whether refresh tokens rotate. — *Owner: live harness (Phase 0)*
-- [ ] Exact redirect URI to register on the integration record (generic `/api/v1/connections` callback vs. a NetSuite-specific path), per environment. — *Owner: Jesus Lara*
+- [x] Exact redirect URI to register on the integration record, per environment. — *Owner: Jesus Lara*: the redirect URI comes from configuration (a `parrot.conf` / env setting, never hard-coded), so a public tunnel URL (ngrok) can be set to receive the redirect during local and live-harness runs; the same value must be registered on the NetSuite integration record.
 - [ ] Semantics of the report payload fields (`value`, `parent`, `summaryLine`, `openingLine`, `summaryLineValues`, `alias`, column `path` for nested/grouped columns) on a non-empty, multi-level report; and the result shape of `ns_runSavedSearch` / `ns_runCustomSuiteQL` and `ns_getSessionInfo`. — *Owner: live harness (Phase 0)*
 - [ ] Delegated tool discovery when no service identity is available: pinned catalog vs. lazy discovery at the first authenticated call. — *Owner: spec*
 - [ ] Where the ad hoc "load report/search by id" tools live: conditional tools on `DatasetManager` vs. a small NetSuite dataset toolkit in `parrot_tools` that holds a DatasetManager reference. — *Owner: spec*
 - [ ] How a `DataSource.fetch` obtains the caller's delegated credential (DatasetManager tools do not declare a `credential_provider`): broker lookup by request principal vs. declaring the provider on the fetch tools. — *Owner: spec*
-- [ ] May a dataset fall back from a missing user connection to the service identity, or is that an explicit per-dataset opt-in? (Default proposed: explicit opt-in.) — *Owner: Jesus Lara*
+- [x] May a dataset fall back from a missing user connection to the service identity? — *Owner: Jesus Lara*: yes — fallback to the service (M2M) identity is allowed when the user has no connection (subject to Phase 0 confirming M2M works against the MCP endpoint). The frame's cache partition and metadata must record which identity produced it.
 - [ ] Row caps and paging defaults for saved searches / SuiteQL, and NetSuite concurrency limits for the MCP endpoint. — *Owner: live harness (Phase 0)*
-- [ ] One spec or two (consumer vs. dataset sources)? — *Owner: Jesus Lara*
+- [x] One spec or two (consumer vs. dataset sources)? — *Owner: Jesus Lara*: two specs — `netsuite-mcp-consumer` (Phases 0–1) and `netsuite-dataset-sources` (Phase 2, depends on the first).
