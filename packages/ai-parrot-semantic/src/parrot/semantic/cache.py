@@ -7,7 +7,6 @@ import threading
 from collections import OrderedDict
 from typing import Protocol
 
-
 def _model_digest_of(cache_key: str) -> str:
     """Extract the model digest from a canonical JSON cache key.
 
