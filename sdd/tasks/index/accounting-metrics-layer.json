@@ -115,7 +115,7 @@
       "feature_id": "FEAT-713",
       "feature": "accounting-metrics-layer",
       "spec": "sdd/specs/accounting-metrics-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -125,8 +125,9 @@
       "parallelism_notes": "Appends to models.py and test_models.py created by TASK-5525 (same files; uses ResolvedSet and the literals).",
       "assigned_to": null,
       "started_at": "2026-11-12T00:04:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5526-request-plan-result-contracts.md"
+      "completed_at": "2026-11-12T00:41:38+00:00",
+      "file": "sdd/tasks/completed/TASK-5526-request-plan-result-contracts.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5527",

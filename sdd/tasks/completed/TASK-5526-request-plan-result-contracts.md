@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-713 — Accounting Metrics Layer
 **Spec**: `sdd/specs/accounting-metrics-layer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5525
@@ -326,10 +326,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker / native opus coder (attempt 3fd4c396043d4d33b5b72ab93dc06acd), commit 24d87b17f2
+**Date**: 2026-11-12
+**Notes**: Request/plan/result models added to models.py; tests green. `CompiledMetricQuery.cache_key` was verified only by a one-off script, not a committed test. Residual B905 at models.py:209 (TASK-5525 code) left to /sdd-done.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: omitted the blueprint's unused `from datetime import datetime` import (ruff F401).
