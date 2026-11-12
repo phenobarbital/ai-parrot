@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-713 — Accounting Metrics Layer
 **Spec**: `sdd/specs/accounting-metrics-layer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5526, TASK-5529
@@ -246,10 +246,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker / native opus coder (attempt 088ec4fc279249009f3ecf550fcf09cd), commit 77ceeb4038
+**Date**: 2026-11-12
+**Notes**: compiler.py (canonical_request, plan_metric, plan_assertion) + 5 tests green. Open-spec decisions: filters allowed on any chart_of_accounts dimension, grouping limited to the metric's dimensions; duplicate dimensions / empty filter lists raise RequestValidationError; filter values de-duplicated and sorted (ints before strings); metric_order used only for the metric-exists check, references inlined recursively. The blueprint's `_REQUEST = TypeAdapter(AccountingRequest)` is kept but unused; `Decimal` import dropped.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
