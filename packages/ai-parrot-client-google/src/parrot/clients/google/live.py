@@ -31,6 +31,7 @@ import asyncio
 import contextlib
 import inspect
 import logging
+import time
 import uuid
 from datetime import datetime
 from enum import Enum
@@ -800,6 +801,19 @@ class GeminiLiveClient(AbstractClient):
 
         self.logger.info(f"Starting voice session {session_id}, turn {turn_id}")
 
+        _lc_tc = self._emit_before_call(
+            client_name="gemini-live",
+            model=self.model or "",
+            temperature=None,
+            system_prompt=system_prompt,
+            has_tools=bool(getattr(live_config, "tools", None)),
+            parent_trace=None,
+        )
+        _lc_t0 = time.perf_counter()
+        _lc_error: Optional[BaseException] = None
+        _lc_in_tokens = 0
+        _lc_out_tokens = 0
+
         try:
             async with self.client.aio.live.connect(model=self.model, config=live_config) as session:
                 # Start audio sender task
@@ -972,6 +986,8 @@ class GeminiLiveClient(AbstractClient):
                                 )
 
                                 # Reset for next turn
+                                _lc_in_tokens += usage.input_tokens
+                                _lc_out_tokens += usage.output_tokens
                                 turn_id = str(uuid.uuid4())
                                 turn_metadata = VoiceTurnMetadata(turn_id=turn_id)
                                 accumulated_text = ""
@@ -1157,6 +1173,7 @@ class GeminiLiveClient(AbstractClient):
             self.logger.info(f"Voice session {session_id} cancelled")
             raise
         except Exception as e:
+            _lc_error = e
             self.logger.error(f"Voice session error: {e}")
 
             # Check for unsupported language error
@@ -1219,6 +1236,31 @@ class GeminiLiveClient(AbstractClient):
                 turn_id=turn_id,
                 user_id=user_id,
             )
+        finally:
+            _lc_in_tokens += usage.input_tokens
+            _lc_out_tokens += usage.output_tokens
+            try:
+                duration_ms = (time.perf_counter() - _lc_t0) * 1000
+                if _lc_error is not None:
+                    await self._emit_failed_call(
+                        _lc_tc,
+                        client_name="gemini-live",
+                        model=self.model or "",
+                        duration_ms=duration_ms,
+                        exc=_lc_error,
+                    )
+                else:
+                    await self._emit_after_call(
+                        _lc_tc,
+                        client_name="gemini-live",
+                        model=self.model or "",
+                        duration_ms=duration_ms,
+                        input_tokens=_lc_in_tokens or None,
+                        output_tokens=_lc_out_tokens or None,
+                        finish_reason=None,
+                    )
+            except Exception:  # noqa: BLE001 — telemetry must never break the stream
+                self.logger.debug("Gemini Live voice telemetry emission failed", exc_info=True)
 
     async def _audio_sender(self, session, audio_iterator: AsyncIterator[bytes]) -> None:
         """Send audio chunks to the Gemini session.
