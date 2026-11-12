@@ -39,7 +39,7 @@
       "feature_id": "FEAT-881",
       "feature": "scripts-native-claude-sandbox-fixes",
       "spec": "sdd/specs/scripts-native-claude-sandbox-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -47,8 +47,9 @@
       "parallelism_notes": "No dependency: first task to modify native_claude_sandbox.py; the later launcher tasks serialize behind it.",
       "assigned_to": null,
       "started_at": "2026-11-12T00:50:02Z",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5542-prefix-mcp-from-primary.md"
+      "completed_at": "2026-11-12T00:51:01+00:00",
+      "file": "sdd/tasks/completed/TASK-5542-prefix-mcp-from-primary.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5543",
@@ -131,7 +132,7 @@
     {
       "id": "TASK-5547",
       "slug": "documentation-claude-native-sandbox",
-      "title": "Documentation \u2014 wiki/sdd-tooling/dev_loop/claude-native-sandbox.md",
+      "title": "Documentation — wiki/sdd-tooling/dev_loop/claude-native-sandbox.md",
       "feature_id": "FEAT-881",
       "feature": "scripts-native-claude-sandbox-fixes",
       "spec": "sdd/specs/scripts-native-claude-sandbox-fixes.spec.md",

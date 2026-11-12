@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-881 — Legacy shell-prefix fixes
 **Spec**: `sdd/specs/scripts-native-claude-sandbox-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -200,8 +200,8 @@ def test_launch_worker_legacy_warns_without_mcp_config(tmp_path, monkeypatch, ca
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Code host session (/sdd-fix agent:sdd-fix:b338296a)
+**Date**: 2026-11-12
+**Notes**: Added prefix_mcp_config(); prepare_shell_prefix builds mcp_argv from the primary .mcp.json only; launch_worker emits --mcp-config <primary> --strict-mcp-config (or --strict-mcp-config alone with a stderr warning); --strict-mcp-config added to _REJECTED_OPTIONS. 186 tests pass in the two suites.
 
 **Deviations from spec**: none
