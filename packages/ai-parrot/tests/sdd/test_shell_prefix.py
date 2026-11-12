@@ -43,17 +43,18 @@ def _capture_exec(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
     return captured
 
 
-def test_hook_and_mcp_commands_pass_through_with_token(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Exact hook strings and MCP argv commands preserve the policy marker."""
+def test_hook_and_mcp_commands_pass_through_token_is_hook_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Exact hook strings and MCP argv commands pass through; only the hook receives the policy token."""
     policy_path, _document = _write_policy(tmp_path)
     monkeypatch.setenv(shell_prefix.POLICY_ENV, str(policy_path))
     expected_token = hashlib.sha256(policy_path.read_bytes()).hexdigest()
 
-    for command in ("echo hook-ran >&2; exit 0", "/bin/sleep 2"):
+    monkeypatch.setenv(shell_prefix.TOKEN_ENV, "inherited")
+    for command, token in (("echo hook-ran >&2; exit 0", expected_token), ("/bin/sleep 2", None)):
         captured = _capture_exec(monkeypatch)
         shell_prefix.main([command])
         assert captured["argv"] == ["/bin/bash", "-c", command]
-        assert captured["environment"][shell_prefix.TOKEN_ENV] == expected_token
+        assert captured["environment"].get(shell_prefix.TOKEN_ENV) == token
 
 
 def test_bash_preamble_is_wrapped_in_legacy_mode(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

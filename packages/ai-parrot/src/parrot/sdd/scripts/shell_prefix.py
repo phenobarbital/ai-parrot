@@ -210,7 +210,8 @@ def main(argv: Sequence[str] | None = None) -> NoReturn:
             if rewritten != arguments[0]:
                 decision = decide(rewritten, policy, Path.cwd())
         environment = os.environ.copy()
-        if decision.kind == "passthrough":
+        # The token is the hook's proof that it ran through this prefix; MCP servers have no use for it.
+        if decision.kind == "passthrough" and arguments[0] in policy.hook_commands:
             environment[TOKEN_ENV] = token
         else:
             environment.pop(TOKEN_ENV, None)
