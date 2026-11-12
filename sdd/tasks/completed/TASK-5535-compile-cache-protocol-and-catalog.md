@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-713 — Accounting Metrics Layer
 **Spec**: `sdd/specs/accounting-metrics-layer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5529, TASK-5531
@@ -266,10 +266,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker / native opus coder (attempt caf99d10c07b4bd7b11679c4e8c1e061), commit ec4d600888
+**Date**: 2026-11-12
+**Notes**: `CacheableCompiled` Protocol in `semantic/cache.py` (annotations on _data/get/put only); new `accounting/catalog.py` (ModelCatalog, SnapshotProvider): parse-once, identity checks, all-or-nothing load/reload under a lock. 4 catalog tests + existing test_cache.py pass, ruff clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: removed the now-unused `CompiledQuery` import from cache.py (ruff F401); test_catalog_identity_mismatch takes the troc_pnl_yaml fixture.

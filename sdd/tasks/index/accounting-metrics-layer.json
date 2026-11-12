@@ -308,7 +308,7 @@
       "feature_id": "FEAT-713",
       "feature": "accounting-metrics-layer",
       "spec": "sdd/specs/accounting-metrics-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -319,8 +319,9 @@
       "parallelism_notes": "ModelCatalog calls load_model/load_spec from TASK-5529 (loader.py); the cache test stores a CompiledMetricQuery produced by compile_metric from TASK-5531.",
       "assigned_to": null,
       "started_at": "2026-11-12T00:04:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5535-compile-cache-protocol-and-catalog.md"
+      "completed_at": "2026-11-12T01:07:48+00:00",
+      "file": "sdd/tasks/completed/TASK-5535-compile-cache-protocol-and-catalog.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5536",
