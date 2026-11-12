@@ -1,5 +1,5 @@
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 class Candidate(BaseModel):
     """
@@ -133,8 +133,8 @@ class Candidate(BaseModel):
     documents: Optional[List[str]] = None
     attachments: Optional[List[Dict[str, Any]]] = None  # All attachments with metadata (JSONB)
     
-    class Config:
-        """Pydantic configuration"""
-        arbitrary_types_allowed = True
-        extra = "allow"
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        extra="allow",
         # exclude_none = True  # Uncomment if quieres excluir campos None en output
+    )

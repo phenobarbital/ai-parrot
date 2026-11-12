@@ -1,6 +1,6 @@
 from typing import List, Optional, Dict, Any
 from decimal import Decimal
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 from datetime import date
 
 class ManagementChainLevel(BaseModel):
@@ -207,11 +207,13 @@ class Worker(BaseModel):
     # raw payload (excluded from serialization, set to None to prevent memory leaks)
     raw_data: Optional[Dict[str, Any]] = Field(default=None, exclude=True)
 
-    @validator("*", pre=True)
+    @field_validator("*", mode="before")
+    @classmethod
     def _convert_decimal(cls, v):
         if isinstance(v, Decimal):
             return float(v)
         return v
 
-    class Config:
-        extra = "ignore" 
+    model_config = ConfigDict(
+        extra="ignore",
+    )

@@ -1,5 +1,5 @@
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from datetime import date
 
 class Location(BaseModel):
@@ -52,5 +52,6 @@ class Location(BaseModel):
     # Raw payload
     raw_data: Dict[str, Any] = Field(..., exclude=True)
 
-    class Config:
-        extra = "ignore" 
+    model_config = ConfigDict(
+        extra="ignore",
+    )
