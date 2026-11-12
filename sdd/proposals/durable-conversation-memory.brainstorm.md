@@ -97,12 +97,17 @@ no guarantee that the agent remembers any of what the user is looking at.
 - **Hydration on miss, once.** When ConversationHistory has no data for a session,
   hydrate from ChatStorage atomically (only if not already present in Redis). Never
   re-hydrate a session that already has data.
-- **Default memory resolves automatically.** Redis when configured (`REDIS_HISTORY_URL`
-  is set), in-memory when not. No flag needed per agent.
+- **Default memory resolves automatically.** Redis only when explicitly configured for
+  history or supplied by the host; otherwise in-memory. The synthesized
+  `parrot.conf.REDIS_HISTORY_URL` is not evidence of explicit configuration.
 - **Backend-agnostic.** Uses FEAT-116 `ConversationBackend` (sqlite/postgres/mongo/
   dynamodb).
-- **Bounded cost.** Hydration reads at most a budget-sized window. The event bus uses
-  Redis Streams when ChatStorage is present.
+- **Bounded cost.** Hydration selects the newest window using a chronological backend
+  index before applying the limit, then applies the token budget. Legacy index backfill
+  runs separately, never as an unbounded request-time scan. The event bus uses Redis
+  Streams when ChatStorage is present.
+- **Deletion wins over delayed writes.** Durable conversation tombstones fence writes,
+  reads, and hydration, including retries and DLQ replay. Deleted session IDs are not reused.
 - **Backwards-safe rollout.** Existing `memory`/`file`/`redis` users keep working.
 - **Stage 2 compaction (LLM summarizer) is a follow-up spec.** This brainstorm defines
   where summaries would live (ConversationHistory only, never ChatStorage) and leaves the
@@ -132,6 +137,16 @@ ChatStorage subscribes to topic `conversation.turn.completed`. Its handler does 
 **upsert by `turn_id`** (at-least-once delivery means duplicates). AgentTalk's direct
 `save_turn` calls and the injected `RedisConversation()` are removed.
 
+**Required backend failure contract (P1):** `put_turn` must return only after a
+successful durable write, or raise a typed storage error. Disconnected backends must
+raise too. Today `ConversationDynamoDB.put_turn` silently returns when disconnected
+and catches `ClientError` / `BotoCoreError`; change those paths and audit the other
+backends. The subscriber must propagate failures to the bus, which retries and then
+routes exhausted envelopes to the DLQ. A log message is not a failure signal.
+Acknowledge success only after both required tier writes complete; retries must be
+idempotent in both tiers when the cold write succeeds but the hot write fails.
+Permanent payload errors go to terminal failure handling rather than being swallowed.
+
 A new `ChatStorageTurn` model replaces the current dict-based turn payload. It carries the
 full `ConversationTurn` fields plus handler-side metadata (output_mode, data, code,
 sources, tenant). Fields the bot doesn't have today are either moved to the turn (preferred)
@@ -139,8 +154,18 @@ or injected into the event by a middleware layer before publish.
 
 **Piece 2 — Automatic memory default and hydration.**
 `get_conversation_memory` (`abstract.py:2081`) gains a `"auto"` storage type (the new
-default). Resolution: check if `REDIS_HISTORY_URL` (or a Redis connection) is available →
-`RedisConversation`; otherwise → `InMemoryConversation`. Explicit `memory_type` overrides.
+default). Resolution: an explicitly supplied history Redis connection, or an explicitly
+configured `REDIS_HISTORY_URL`, selects `RedisConversation`; otherwise select
+`InMemoryConversation`. Explicit `memory_type` overrides this resolution.
+
+`parrot.conf` currently always synthesizes `REDIS_HISTORY_URL` from host/port/database
+defaults. Add a separate explicit-history-configuration signal, captured before defaults
+are applied, and honor an explicitly configured history URL. Preserve the synthesized
+URL for existing explicit `memory_type="redis"` users. Hosts that currently configure
+Redis via shared host/port settings must explicitly inject their history connection to
+opt into auto selection; document this migration. Do not infer configuration from URL
+truthiness or run a connection probe in the synchronous factory. Once Redis is selected,
+connection failure is surfaced rather than silently splitting history into local memory.
 
 On a ConversationHistory miss (`get_history` returns None at `bots/base.py:431`, `:830`,
 `:1326`, `:2069`), a pluggable `HydrationSource` interface is consulted:
@@ -155,12 +180,44 @@ class HydrationSource(ABC):
 
 `ChatStorageHydrationSource` implements it. The bot never imports `ChatStorage` — it
 receives an optional `HydrationSource` via dependency injection. CLI and code get `None`.
+The signature above is illustrative: `None` means no retained turns for an active session;
+backend failure, deleted session, and index-not-ready are distinct typed errors/outcomes
+and must never be converted to `None` or an empty list.
 
-Hydration writes to Redis atomically (NX — only if key doesn't exist). Two concurrent
-first requests race safely: the loser's NX fails, it reads what the winner wrote, and
-proceeds. A sequence number per `(agent_id, user_id, session_id)` is assigned by the bot
-at turn creation time, monotonically incrementing, stored in the turn. This is the
-desambiguator for same-millisecond timestamps.
+**Chronological query contract (P2):** select by emitter-owned UTC timestamp, sequence,
+and `turn_id` as a final deterministic tie-breaker; apply `limit` in descending order
+at the backend, then return the selected window ascending. Sorting a limited set of
+arbitrary IDs afterward is insufficient. Today DynamoDB orders `THREAD#session#TURN#id`
+lexically, and `ChatStorage.load_conversation` requests the oldest-first cold window;
+neither path is suitable for bounded newest-turn hydration unchanged.
+
+Add a dedicated ordered-window backend operation. SQL backends need the corresponding
+composite index and `ORDER BY ... DESC LIMIT`; Mongo needs an equivalent indexed query.
+For DynamoDB, maintain a chronological companion item per turn in the same partition,
+keyed by session plus fixed-width timestamp/sequence/ID. Write it transactionally with
+the canonical ID-addressed turn and deletion guard. Query companion items with a
+consistent descending read; retain canonical IDs for idempotent upserts. Retries must
+preserve the original ordering fields. Implement equivalent atomicity in every backend.
+
+Backfill legacy rows and indexes before enabling hydration for a session. Use their
+stored timestamps, sequence `0` when missing, and `turn_id` to break ties; never invent
+historical chronology from random IDs. Record index readiness. Missing/invalid timestamps
+require explicit migration handling and leave the session unready. Reads during backfill
+return an explicit not-ready outcome, not an empty history that would suppress future
+hydration. Backfill is resumable, bounded in batches, and safe alongside new writes.
+
+Hydration writes to Redis atomically (NX — only if the key does not exist), fenced by
+the deletion protocol below. Two first requests may race: the loser reads the winner's
+history. Preserve `add_turn` normalization/count/offload semantics while staging imported
+turns, then atomically install the complete history; do not expose a partially seeded key.
+Explicit file/in-memory backends need equivalent guarded initialization in their supported
+concurrency scope, rather than silently changing the user's selected backend.
+
+The bot obtains a monotonic sequence from a shared atomic allocator per
+`(agent_id, user_id, session_id)` before emitting the turn; an instance-local counter is
+insufficient across workers. Initialize/recover the allocator from the durable maximum
+before issuing numbers after Redis loss. Sequence values and timestamps are immutable
+across retries; gaps are permitted.
 
 **Piece 3 — Rich ChatStorage turn model (breaking change).**
 `ChatStorageTurn` replaces the current `save_turn` parameter soup:
@@ -180,7 +237,8 @@ desambiguator for same-millisecond timestamps.
 
 A tolerant reader handles old-shape rows (missing fields default to None, `schema_version`
 discriminates). The cold-tier `ConversationBackend.put_turn` already takes a `dict`, so
-the schema change is in the serialization, not the ABC.
+the payload schema change is in serialization. Backend contracts still change for
+failure propagation, chronological queries, and deletion fencing.
 
 **Piece 4 — Composer: HistoryMessage with structured parts.**
 `HistoryMessage` (`memory/render.py:54`) gains an optional `parts` field:
@@ -202,19 +260,28 @@ class HistoryMessage:
     turn_id: Optional[str] = None
 ```
 
-`render_history` populates `parts` from `TurnView.tool_invocations` when present, using
-three rendering tiers by turn age (reusing FEAT-525's existing turn states):
+`TurnView` currently has only materialized text, `assistant_suffix`, state, IDs, and
+`estimated_tokens`; **it has no `tool_invocations` field**. Extend the compaction contract
+explicitly: move the shared `MessagePart` model to a neutral memory module and add
+immutable optional `parts` to `TurnView`. `compact_history` and prune policies produce
+these already-budgeted parts together with their canonical text rendering. The renderer
+must not recover raw invocations after the budget decision.
 
-- **Recent** (VERBATIM): full tool_use + tool_result parts with complete output.
-- **Intermediate** (PRUNED): tool_use + tool_result with preview-only output (the full
-  output is recoverable via `read_omitted_content`).
-- **Old** (DROPPED): no parts, text-only summary. (With the follow-up Stage 2 spec, these
-  become a single `SUMMARIZED` turn.)
+- **RAW:** parts retain only the tool content allowed by existing activity limits and
+  write-time offload rules. RAW does not promise complete offloaded output.
+- **PRUNED:** parts contain the approved preview/omission notices and preserved errors;
+  full output is recoverable only while the omission store retains it.
+- **Dropped:** no view, message, parts, or summary is emitted. These turns only contribute
+  to dropped IDs and `stage2_needed`; summaries remain a Stage 2 follow-up.
 
-**Phase 1 (this spec): neutral text render for all clients.** `_format_history`
-(`clients/base.py:1863`) renders `parts` as a text representation:
-`[Tool: name(args) → output_preview]`. This is backwards-compatible — every provider sees
-well-formed text messages. The `content` field stays the primary contract.
+**Phase 1 (this spec): neutral text render for all clients.** A single canonical formatter
+renders the selected parts into the assistant content during compaction, and the token
+counter measures that exact text before tier selection. `render_history` carries the
+parts alongside the already-rendered `content`, preserving alternation and agent labels.
+All client `_format_history` implementations consume `content` once; they must not append
+parts again or independently expand them. This avoids double-counting or bypassing the
+budget. For the disabled-compaction path, preserve the existing text-only output byte
+for byte and leave parts unset. Existing plain `ConversationHistory` callers remain valid.
 
 **Phase 2 (follow-up): native provider mapping.** Anthropic, OpenAI and Google clients
 override `_format_history` to emit native `tool_use`/`tool_result` blocks from `parts`.
@@ -227,7 +294,8 @@ This requires adding a `tool_call_id` to `ToolInvocation` (or synthesizing one).
 - BusCore gives retry+backoff+DLQ for free — better than AgentTalk's current
   fire-and-forget `create_task`.
 - Hydration is one-shot and atomic — no repeated reads, no state drift.
-- Auto-default memory means most agents get Redis when available without config changes.
+- Auto-default memory uses the host's explicit history Redis configuration; unconfigured
+  CLI/local agents keep in-memory behavior.
 - Rich turns in ChatStorage enable full conversation reconstruction including tool results.
 - Structured HistoryMessage lets the LLM see what tools were used and with what results,
   while remaining backwards-compatible (text fallback).
@@ -322,9 +390,9 @@ Leave writes as they are. On a miss in the agent's memory, seed from
 | Phase | Content | Standalone value |
 |---|---|---|
 | **P0 — Correctness fixes** | (a) AgentTalk stops injecting throw-away `RedisConversation()`. (b) Tool-call serialization uses `ToolCall.result`/`error`/`execution_time`. (c) `ask_stream` passes `compaction=`. (d) Use or remove `HOT_TTL_HOURS`; `delete_turn` also deletes from hot tier. | Bugs in production today |
-| **P1 — Event-driven turn persistence** | `TurnCompletedEvent`, `BusCore` wiring, ChatStorage subscriber with upsert, `ChatStorageTurn` model, AgentTalk's `save_turn` removed. | Single source of truth for audit; decoupled |
-| **P2 — Auto-default memory + hydration** | `"auto"` memory type, `HydrationSource` interface, `ChatStorageHydrationSource`, atomic NX write, per-session sequence numbers. | Agents survive restarts and multi-pod |
-| **P3 — Rich history messages** | `HistoryMessage.parts`, `MessagePart`, `render_history` extension, neutral text render in all `_format_history` overrides. | LLM sees structured tool activity |
+| **P1 — Event-driven turn persistence** | `TurnCompletedEvent`, `BusCore` wiring, ChatStorage subscriber with upsert, `ChatStorageTurn` model, backend failure propagation, idempotent tier writes, deletion fencing, AgentTalk's `save_turn` removed. | Single source of truth for audit; decoupled |
+| **P2 — Auto-default memory + hydration** | `"auto"` memory type, `HydrationSource` interface, `ChatStorageHydrationSource`, guarded atomic initialization, explicit Redis configuration signal, chronological backend indexes and legacy backfill, shared sequence allocation. | Agents survive restarts and multi-pod |
+| **P3 — Rich history messages** | `HistoryMessage.parts`, `MessagePart`, `TurnView.parts` and compaction/pruning changes, canonical budgeted text rendering, client compatibility. | LLM sees structured tool activity |
 
 **Follow-up specs (out of scope):**
 - **Stage 2 compaction (LLM summarizer):** summaries live in ConversationHistory only, never in ChatStorage. The event hook (`Stage2CompactionNeededEvent`) and the `TurnState.SUMMARIZED` enum are already in place.
@@ -342,9 +410,9 @@ Trade-offs accepted:
 
 ### User-Facing Behavior
 
-- Any conversation the history sidebar lists can be continued with full context. This
-  holds after a restart, a deploy, on another pod, and days later (within the cold tier's
-  retention).
+- A retained, non-deleted conversation can be continued with its newest budget-sized
+  context after restart, deploy, or a change of pod once its chronological index is ready.
+  Older dropped turns are not summarized in this phase.
 - Conversations show richer detail: tool calls with their results, LLM usage stats,
   response times.
 - Agents that don't need conversation persistence (CLI, code, sub-agents) work unchanged
@@ -354,15 +422,16 @@ Trade-offs accepted:
 
 1. **Round start.**
    - The bot asks its ConversationMemory for `(chatbot_id, user, session)`.
-   - Hit: same as today.
+   - Check the durable deletion guard before serving either cached or hydrated history.
+   - Hit for an active session: same rendering path as today.
    - Miss AND HydrationSource present: load the most recent turns from ChatStorage (up to
      the agent's budget/max_turns), write them to Redis atomically (NX — only if the key
-     doesn't already exist), return the hydrated history.
+     doesn't already exist), return the hydrated history after the deletion fence check.
+     Backend failure or an unready index must not be treated as an empty conversation.
    - Miss AND no HydrationSource: `create_history` (empty), same as today.
    - A change of `session_id` is a new key, so it naturally triggers hydration.
-2. **Render.** `render_context_history` calls `render_history` as today. When
-   `TurnView.tool_invocations` are present, `HistoryMessage.parts` is populated with
-   structured tool_use/tool_result. `_format_history` renders parts as text (Phase 1).
+2. **Render.** Compaction produces `TurnView.parts` and canonical text within the budget.
+   `render_history` preserves those parts and text; clients consume the text once (Phase 1).
 3. **Round end.**
    - `save_conversation_turn` calls `add_turn(compaction=)` on the ConversationMemory
      (direct, awaited — no change).
@@ -373,8 +442,22 @@ Trade-offs accepted:
      the hot tier. Upsert by `turn_id`.
 4. **UI reads.** The chat_interaction / threads handlers keep reading `ChatStorage`. They
    now see richer turns (tool results, usage stats).
-5. **Deletion.** Deleting a conversation in the UI deletes both the ChatStorage records
-   and the ConversationHistory Redis keys. The delete event propagates through the bus.
+5. **Deletion.** Commit a durable tombstone for the canonical conversation identity before
+   acknowledging deletion, then clear ChatStorage records, chronological companion items,
+   and every configured working-memory backend (including omission data). Publish a delete
+   event for idempotent cleanup retries; the event itself is not the deletion authority.
+   Keep the tombstone outside transcript TTL/cascade deletion and do not reuse session IDs.
+   Retain it indefinitely unless an enforced event/replay expiry makes retirement safe.
+
+   Cold upserts and tombstone creation must be serialized transactionally per conversation;
+   a check followed by an unguarded write is insufficient. Subscribers, DLQ replay, index
+   backfill, and hydration reject tombstoned identities. Cache/working-memory reads must
+   check the authoritative guard, and hydration must recheck after installation before
+   returning data. A late cache write is unreadable and is cleaned up idempotently. If the
+   guard cannot be checked, fail closed; do not return stale data or initialize a session.
+   In-flight requests may finish computation, but cannot persist or serve deleted history
+   on a subsequent request. Apply the same protocol to individual turn deletion using
+   turn-scoped tombstones so delayed upserts cannot undo P0's hot/cold deletion fix.
 
 ### Edge Cases & Error Handling
 
@@ -383,14 +466,15 @@ Trade-offs accepted:
 - **ChatStorage subscriber fails.** Retry with backoff (3 attempts). On exhaustion, the
   envelope goes to the DLQ. The user's response is NOT delayed — the bus is fully
   asynchronous.
-- **Cold tier unavailable.** The subscriber logs a warning and the DLQ catches the turn.
-  `DLQHandler.replay()` reprocesses when the tier comes back.
+- **Cold tier unavailable.** The backend raises and the subscriber propagates the error;
+  the bus retries and routes exhaustion to the DLQ. `DLQHandler.replay()` rechecks the
+  durable deletion guard before reprocessing. Read failures are not history misses.
 - **Hydration race (two first requests for same session).** Both try NX-write to Redis.
   The loser's NX fails silently; it reads what the winner wrote. No data loss.
 - **Old-shape cold rows (pre-P1).** The tolerant reader fills missing fields with defaults
   and marks them `schema_version=1`.
 - **Multi-worker with in-memory default.** Workers without Redis still lose context on
-  restart — this is the same as today. The auto-default gives them Redis when available.
+  restart — this is the same as today. Auto selects Redis only with explicit history configuration or host injection.
 - **Turn still in bus queue at pod crash.** Lost, same as today's `create_task`. Redis
   Streams' consumer groups cover transient backend failures, not process death.
 - **Streaming and cancellation.** On client disconnect mid-stream, a partial turn with
@@ -404,13 +488,43 @@ Trade-offs accepted:
 
 ---
 
+## Acceptance Checks for the Resulting Spec
+
+These are implementation gates, not claims that the brainstorm implements the feature:
+
+1. **Failure propagation and retries:** inject a disconnected backend and a failed durable
+   write in every supported backend; assert subscriber failure, retry, and DLQ exhaustion.
+   Simulate cold success followed by hot failure, then replay: exactly one turn remains
+   in each tier. Successful writes must not be retried as failures.
+2. **Automatic selection:** with only synthesized defaults, auto selects in-memory without
+   Redis I/O. Explicit history URL and host-injected connection select Redis. Explicit
+   memory/file/redis overrides remain authoritative. Configured Redis failure must surface,
+   not fall back to a divergent local history.
+3. **Chronological hydration:** use random/reverse-lexical IDs, equal timestamps, concurrent
+   workers, and more rows than the limit. Every backend must select the same newest window
+   before applying the limit and return it ascending. Verify stable retry ordering and
+   sequence allocation after restart. Test resumable legacy backfill, concurrent writes,
+   invalid timestamps, and not-ready outcomes without request-time full-table scans.
+4. **Deletion races:** pause a subscriber before its write, delete the session, then resume
+   it and replay its DLQ entry. No turn may become visible or hydrate again. Repeat while
+   hydration is installing a key, with hot-tier failure, during index backfill, and for a
+   deleted individual turn. Backend guard failure must fail closed. Tombstones survive
+   transcript cleanup, TTL expiry, worker restart, and repeated deletion.
+5. **Composer and budgets:** verify RAW, PRUNED, oversized/offloaded, and dropped turns.
+   Count exactly the text sent to each client, preserve omission notices/errors and role
+   alternation, and prove parts are not appended twice. Dropped turns produce no summaries.
+   Disabled compaction remains byte-identical to the existing plain path. Include coverage
+   for all `_format_history` overrides and custom prune policies.
+
+---
+
 ## Capabilities
 
 ### New Capabilities
 - `event-driven-turn-persistence`: `TurnCompletedEvent` + `BusCore` wiring + ChatStorage
   subscriber with upsert.
 - `conversation-hydration`: `HydrationSource` interface + `ChatStorageHydrationSource` +
-  atomic NX write to Redis + per-session sequence numbers.
+  guarded atomic initialization + chronological queries/backfill + shared sequence allocation.
 - `auto-memory-default`: `"auto"` storage type that resolves Redis/memory automatically.
 - `rich-history-messages`: `HistoryMessage.parts` + `MessagePart` + structured tool
   rendering in `render_history`.
@@ -421,7 +535,7 @@ Trade-offs accepted:
 - `conversation-history-ownership` (FEAT-524): hydration path added; ConversationHistory
   remains the sole owner of the active thread.
 - `per-turn-conversation-compaction` (FEAT-525): streaming path commits compaction;
-  `render_history` populates `parts` from `TurnView.tool_invocations`.
+  compaction produces budgeted `TurnView.parts` and canonical text consumed by `render_history`.
 - AgentTalk (`handlers/agent.py`): injected `RedisConversation()` removed; direct
   `save_turn` calls removed; handler-side metadata routed through the event.
 
@@ -433,15 +547,20 @@ Trade-offs accepted:
 |---|---|---|
 | `parrot/core/events/lifecycle/events/memory.py` | extends | new `TurnCompletedEvent` |
 | `parrot/memory/render.py` | modifies | `HistoryMessage.parts`, `MessagePart` |
-| `parrot/memory/abstract.py` | extends | `ConversationTurn` gains sequence number |
+| `parrot/memory/abstract.py` | extends | immutable ordering fields and guarded hydration contract |
+| `parrot/conf.py` | modifies | explicit history Redis configuration signal, preserve legacy URL defaults |
+| `parrot/memory/compaction/models.py`, `compact.py`, prune policies | modifies | `TurnView.parts`, shared part model, canonical text and token accounting |
+| Memory backends and omission stores | modifies | guarded atomic initialization and deletion cleanup |
 | `parrot/bots/abstract.py` | modifies | auto-default memory, bus publish, `HydrationSource` injection |
 | `parrot/bots/base.py` | modifies | hydration on miss in `get_history or create_history` |
 | `parrot/storage/chat.py` | modifies | new `ChatStorageTurn` model; subscriber mode |
-| `parrot/storage/backends/*` | unchanged | `put_turn` already takes a dict |
-| `parrot/clients/base.py` | modifies | `_format_history` handles `parts` (text render) |
+| `parrot/storage/backends/*` | modifies | raise on failed writes, chronological indexes/queries, transactional deletion guards |
+| Storage migration tooling | adds | resumable chronological backfill and per-session readiness |
+| Conversation/turn deletion handlers | modifies | durable tombstones before acknowledgement, idempotent cleanup |
+| `parrot/clients/base.py` | validates | `_format_history` consumes canonical content exactly once |
 | `ai-parrot-server/handlers/agent.py` | modifies | remove `RedisConversation()` injection and `save_turn` |
 | `ai-parrot-server/manager/manager.py` | modifies | bus setup in `on_startup` and `setup_registry_only` |
-| All `_format_history` overrides (bedrock, google, jev) | modifies | handle `parts` text fallback |
+| All `_format_history` overrides (bedrock, google, jev) | validates | preserve canonical text without duplicating parts |
 | Agent Studio (navigator-agent-studio) | depends on | bus subscriber replaces direct `save_turn` |
 
 ---
@@ -558,19 +677,18 @@ from parrot.conf import REDIS_HISTORY_URL                        # parrot/conf.p
 
 ## Parallelism Assessment
 
-- **Internal parallelism:** P0 items (a)–(d) are independent small fixes. P1–P4 have
-  dependencies: P1 (event bus) is the foundation; P2 (hydration) depends on P1 for the
-  ChatStorage turn model; P3 (rich turns) is independent of P1/P2 but shares
-  `render_history`; P4 (composer parts) depends on P3.
-  In practice: P0 can be a brief; P1 and P2 are sequential; P3 can run in parallel with
-  P2 if `render_history` changes are coordinated.
+- **Internal parallelism:** P0 items (a)–(d) are small fixes. P1 establishes the turn
+  model, backend error contract, and deletion guards; P2 depends on these for ordered,
+  fenced hydration and migration. P3 owns compaction/view/renderer changes and can run
+  alongside P2 only after shared memory-model contracts are settled. P0 can be a brief;
+  its deletion fix must integrate with P1 tombstones before event replay is enabled.
 - **Cross-feature independence:**
   - FEAT-571 (memory-dynamics) explicitly excludes history/compaction; no overlap.
-  - FEAT-538 task recall touches `_maybe_inject_task_recall`; P3/P4 must coexist with it.
+  - FEAT-538 task recall touches `_maybe_inject_task_recall`; P3 must coexist with it.
   - FEAT-525 Stage 2 follow-up builds on this spec's hooks.
   - Agent Studio FEAT-013 (other repo) consumes P1.
 - **Recommended isolation:** per-spec. P0 can be its own brief ahead of the rest.
-- **Rationale:** P0 fixes live bugs and should not wait. P1–P4 share enough surface that
+- **Rationale:** P0 fixes live bugs and should not wait. P1–P3 share enough surface that
   sequential execution in one worktree avoids merge conflicts.
 
 ---
@@ -583,7 +701,7 @@ from parrot.conf import REDIS_HISTORY_URL                        # parrot/conf.p
 - [x] Q4 — How much is re-hydrated from ChatStorage on a miss? — *Owner: Jesus Lara*: **Budget-sized window**, only if the key doesn't already exist in Redis (NX). One-shot, at first access or session change.
 - [x] Q5 — Does Stage 2 compaction (LLM summarizer) enter this spec? — *Owner: Jesus Lara*: **No — follow-up spec.** Summaries live in ConversationHistory only, never ChatStorage.
 - [x] Q6 — How do we guarantee delivery to ChatStorage? — *Owner: Jesus Lara*: **BusCore with Redis Streams** when ChatStorage is present. Retry+backoff+DLQ. At-least-once; subscriber upserts by `turn_id`.
-- [x] Q7 — What is the default `memory_type`? — *Owner: Jesus Lara*: **`"auto"`** — Redis when `REDIS_HISTORY_URL` is set, in-memory when not.
+- [x] Q7 — What is the default `memory_type`? — *Owner: Jesus Lara*: **`"auto"`** — Redis with an explicit history URL or host-injected connection; otherwise in-memory. Synthesized URL defaults do not opt in.
 - [ ] Q8 — Should P0 ship first as an independent fix? Verify finding 2 at runtime first. — *Owner: Jesus Lara*
 - [ ] Q9 — Key alignment: AgentTalk uses `agent_name` as `agent_id`, the bot uses `memory_key_id`. Are they always equal? — *Owner: Jesus Lara*
 - [ ] Q10 — Hot-tier TTL: use `HOT_TTL_HOURS` (48h) once hydration exists, or keep no TTL? — *Owner: Jesus Lara*
