@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-11T23:57:46+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-12T01:37:32+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -56,16 +56,17 @@
       "feature_id": "FEAT-713",
       "feature": "accounting-metrics-layer",
       "spec": "sdd/specs/accounting-metrics-layer.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Exclusive: edits the dependency manifest packages/ai-parrot/pyproject.toml (new optional extra duckdb).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5523-core-duckdb-engine.md"
+      "started_at": "2026-11-12T00:04:16+00:00",
+      "completed_at": "2026-11-12T00:33:43+00:00",
+      "file": "sdd/tasks/completed/TASK-5523-core-duckdb-engine.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5524",
@@ -74,16 +75,17 @@
       "feature_id": "FEAT-713",
       "feature": "accounting-metrics-layer",
       "spec": "sdd/specs/accounting-metrics-layer.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: touches only parrot/semantic/__init__.py and creates the accounting package, errors.py and its own tests.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5524-accounting-package-entry-and-errors.md"
+      "started_at": "2026-11-12T00:04:16+00:00",
+      "completed_at": "2026-11-12T00:35:35+00:00",
+      "file": "sdd/tasks/completed/TASK-5524-accounting-package-entry-and-errors.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5525",
@@ -92,7 +94,7 @@
       "feature_id": "FEAT-713",
       "feature": "accounting-metrics-layer",
       "spec": "sdd/specs/accounting-metrics-layer.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -101,9 +103,10 @@
       "parallel": false,
       "parallelism_notes": "Needs the parrot.semantic.accounting package from TASK-5524 (accounting/__init__.py). Exclusive: creates tests/accounting/conftest.py, loaded by every later accounting test.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5525-model-definition-contracts-and-fixtures.md"
+      "started_at": "2026-11-12T00:04:16+00:00",
+      "completed_at": "2026-11-12T00:39:28+00:00",
+      "file": "sdd/tasks/completed/TASK-5525-model-definition-contracts-and-fixtures.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5526",
@@ -112,7 +115,7 @@
       "feature_id": "FEAT-713",
       "feature": "accounting-metrics-layer",
       "spec": "sdd/specs/accounting-metrics-layer.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -121,9 +124,10 @@
       "parallel": true,
       "parallelism_notes": "Appends to models.py and test_models.py created by TASK-5525 (same files; uses ResolvedSet and the literals).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5526-request-plan-result-contracts.md"
+      "started_at": "2026-11-12T00:04:16+00:00",
+      "completed_at": "2026-11-12T00:41:38+00:00",
+      "file": "sdd/tasks/completed/TASK-5526-request-plan-result-contracts.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5527",
@@ -132,7 +136,7 @@
       "feature_id": "FEAT-713",
       "feature": "accounting-metrics-layer",
       "spec": "sdd/specs/accounting-metrics-layer.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -141,9 +145,10 @@
       "parallel": true,
       "parallelism_notes": "Imports GrammarError from TASK-5524 (accounting/errors.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5527-metric-expression-grammar.md"
+      "started_at": "2026-11-12T00:04:16+00:00",
+      "completed_at": "2026-11-12T00:40:53+00:00",
+      "file": "sdd/tasks/completed/TASK-5527-metric-expression-grammar.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5528",
@@ -152,7 +157,7 @@
       "feature_id": "FEAT-713",
       "feature": "accounting-metrics-layer",
       "spec": "sdd/specs/accounting-metrics-layer.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -162,9 +167,10 @@
       "parallel": true,
       "parallelism_notes": "Imports ChartSnapshot/AccountSet/AccountingModelSpec from TASK-5525 (models.py) and parse_expr/references from TASK-5527 (grammar.py); uses the chart_snapshot fixture.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5528-chart-snapshot-and-validation.md"
+      "started_at": "2026-11-12T00:04:16+00:00",
+      "completed_at": "2026-11-12T00:45:51+00:00",
+      "file": "sdd/tasks/completed/TASK-5528-chart-snapshot-and-validation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5529",
@@ -173,7 +179,7 @@
       "feature_id": "FEAT-713",
       "feature": "accounting-metrics-layer",
       "spec": "sdd/specs/accounting-metrics-layer.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -182,9 +188,10 @@
       "parallel": true,
       "parallelism_notes": "Calls partition_intervals and validate from TASK-5528 (validation.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5529-model-loader.md"
+      "started_at": "2026-11-12T00:04:16+00:00",
+      "completed_at": "2026-11-12T00:47:21+00:00",
+      "file": "sdd/tasks/completed/TASK-5529-model-loader.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5530",
@@ -193,7 +200,7 @@
       "feature_id": "FEAT-713",
       "feature": "accounting-metrics-layer",
       "spec": "sdd/specs/accounting-metrics-layer.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -203,9 +210,10 @@
       "parallel": true,
       "parallelism_notes": "Builds MetricPlan/PlanExpr from TASK-5526 (models.py) over models loaded by load_model from TASK-5529 (loader.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5530-compiler-plan.md"
+      "started_at": "2026-11-12T00:04:16+00:00",
+      "completed_at": "2026-11-12T00:51:11+00:00",
+      "file": "sdd/tasks/completed/TASK-5530-compiler-plan.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5531",
@@ -214,7 +222,7 @@
       "feature_id": "FEAT-713",
       "feature": "accounting-metrics-layer",
       "spec": "sdd/specs/accounting-metrics-layer.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -223,9 +231,10 @@
       "parallel": true,
       "parallelism_notes": "Appends to compiler.py and test_compiler.py created by TASK-5530 and renders its plan_metric/plan_assertion output; also extends test_import_isolation.py from TASK-5524 (reached through the chain).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5531-compiler-render-and-goldens.md"
+      "started_at": "2026-11-12T00:04:16+00:00",
+      "completed_at": "2026-11-12T00:59:01+00:00",
+      "file": "sdd/tasks/completed/TASK-5531-compiler-render-and-goldens.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5532",
@@ -234,7 +243,7 @@
       "feature_id": "FEAT-713",
       "feature": "accounting-metrics-layer",
       "spec": "sdd/specs/accounting-metrics-layer.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -243,9 +252,10 @@
       "parallel": true,
       "parallelism_notes": "Evaluates MetricPlan/PlanExpr defined by TASK-5526 (models.py); independent of the compiler.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5532-exact-formula-evaluator.md"
+      "started_at": "2026-11-12T00:04:16+00:00",
+      "completed_at": "2026-11-12T00:43:01+00:00",
+      "file": "sdd/tasks/completed/TASK-5532-exact-formula-evaluator.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5533",
@@ -254,7 +264,7 @@
       "feature_id": "FEAT-713",
       "feature": "accounting-metrics-layer",
       "spec": "sdd/specs/accounting-metrics-layer.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -265,9 +275,10 @@
       "parallel": true,
       "parallelism_notes": "Uses DuckDBEngine/to_arrow from TASK-5523 (interfaces/duckdb_engine.py), CompiledMetricQuery from compile_metric of TASK-5531 (compiler.py) and evaluate_rows from TASK-5532 (evaluation.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5533-accounting-runtimes.md"
+      "started_at": "2026-11-12T00:04:16+00:00",
+      "completed_at": "2026-11-12T01:04:31+00:00",
+      "file": "sdd/tasks/completed/TASK-5533-accounting-runtimes.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5534",
@@ -276,7 +287,7 @@
       "feature_id": "FEAT-713",
       "feature": "accounting-metrics-layer",
       "spec": "sdd/specs/accounting-metrics-layer.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -285,9 +296,10 @@
       "parallel": true,
       "parallelism_notes": "rebuild_lineage calls compile_metric/compile_assertion from TASK-5531 (compiler.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5534-audit-on-shared-ledger.md"
+      "started_at": "2026-11-12T00:04:16+00:00",
+      "completed_at": "2026-11-12T01:01:19+00:00",
+      "file": "sdd/tasks/completed/TASK-5534-audit-on-shared-ledger.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5535",
@@ -296,7 +308,7 @@
       "feature_id": "FEAT-713",
       "feature": "accounting-metrics-layer",
       "spec": "sdd/specs/accounting-metrics-layer.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -306,9 +318,10 @@
       "parallel": true,
       "parallelism_notes": "ModelCatalog calls load_model/load_spec from TASK-5529 (loader.py); the cache test stores a CompiledMetricQuery produced by compile_metric from TASK-5531.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5535-compile-cache-protocol-and-catalog.md"
+      "started_at": "2026-11-12T00:04:16+00:00",
+      "completed_at": "2026-11-12T01:07:48+00:00",
+      "file": "sdd/tasks/completed/TASK-5535-compile-cache-protocol-and-catalog.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5536",
@@ -317,7 +330,7 @@
       "feature_id": "FEAT-713",
       "feature": "accounting-metrics-layer",
       "spec": "sdd/specs/accounting-metrics-layer.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -328,9 +341,10 @@
       "parallel": true,
       "parallelism_notes": "Wires DatabaseRuntime/DuckDBRuntime from TASK-5533 (runtime/), audit_mode_from_env from TASK-5534 (accounting/audit.py) and ModelCatalog from TASK-5535 (catalog.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5536-accounting-toolkit-core.md"
+      "started_at": "2026-11-12T00:04:16+00:00",
+      "completed_at": "2026-11-12T01:12:40+00:00",
+      "file": "sdd/tasks/completed/TASK-5536-accounting-toolkit-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5537",
@@ -339,7 +353,7 @@
       "feature_id": "FEAT-713",
       "feature": "accounting-metrics-layer",
       "spec": "sdd/specs/accounting-metrics-layer.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -348,9 +362,10 @@
       "parallel": true,
       "parallelism_notes": "Appends query_metric/validate_model to toolkit.py and test_toolkit.py created by TASK-5536 and uses its private helpers (_ensure_loaded, _authorize).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5537-query-validate-and-live-validation.md"
+      "started_at": "2026-11-12T00:04:16+00:00",
+      "completed_at": "2026-11-12T01:18:40+00:00",
+      "file": "sdd/tasks/completed/TASK-5537-query-validate-and-live-validation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5538",
@@ -359,7 +374,7 @@
       "feature_id": "FEAT-713",
       "feature": "accounting-metrics-layer",
       "spec": "sdd/specs/accounting-metrics-layer.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -368,9 +383,10 @@
       "parallel": true,
       "parallelism_notes": "The job calls run_live_validation from TASK-5537 (accounting/live.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5538-scheduler-adapter.md"
+      "started_at": "2026-11-12T00:04:16+00:00",
+      "completed_at": "2026-11-12T01:21:21+00:00",
+      "file": "sdd/tasks/completed/TASK-5538-scheduler-adapter.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5539",
@@ -379,7 +395,7 @@
       "feature_id": "FEAT-713",
       "feature": "accounting-metrics-layer",
       "spec": "sdd/specs/accounting-metrics-layer.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -388,9 +404,10 @@
       "parallel": true,
       "parallelism_notes": "--live builds AccountingToolkit and calls live._validate_one from TASK-5537 (toolkit.py, live.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5539-finance-cli.md"
+      "started_at": "2026-11-12T00:04:16+00:00",
+      "completed_at": "2026-11-12T01:23:30+00:00",
+      "file": "sdd/tasks/completed/TASK-5539-finance-cli.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5540",
@@ -399,7 +416,7 @@
       "feature_id": "FEAT-713",
       "feature": "accounting-metrics-layer",
       "spec": "sdd/specs/accounting-metrics-layer.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -408,9 +425,10 @@
       "parallel": true,
       "parallelism_notes": "Drives AccountingToolkit.query_metric from TASK-5537 (toolkit.py) end to end.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5540-end-to-end-integration-tests.md"
+      "started_at": "2026-11-12T00:04:16+00:00",
+      "completed_at": "2026-11-12T01:34:16+00:00",
+      "file": "sdd/tasks/completed/TASK-5540-end-to-end-integration-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5541",
@@ -419,7 +437,7 @@
       "feature_id": "FEAT-713",
       "feature": "accounting-metrics-layer",
       "spec": "sdd/specs/accounting-metrics-layer.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -429,9 +447,10 @@
       "parallel": true,
       "parallelism_notes": "Documents register_accounting_schedules from TASK-5538 (scheduler/accounting_jobs.py) and the parrot finance CLI from TASK-5539 (accounting/cli.py); every other documented symbol is upstream of these.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5541-documentation.md"
+      "started_at": "2026-11-12T00:04:16+00:00",
+      "completed_at": "2026-11-12T01:37:32+00:00",
+      "file": "sdd/tasks/completed/TASK-5541-documentation.md",
+      "verification": "verified"
     }
   ]
 }
