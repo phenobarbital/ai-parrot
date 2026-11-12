@@ -1,0 +1,349 @@
+{
+  "feature": "db-upgrade",
+  "feature_id": "FEAT-884",
+  "spec": "sdd/specs/db-upgrade.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-12T23:00:11.073152+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/self_/test_self_cli.py",
+          "packages/ai-parrot-server/tests/studio/storage/test_storage_gates.py",
+          "packages/ai-parrot/tests/migrations/test_catalog.py",
+          "packages/ai-parrot/tests/migrations/test_runner.py",
+          "packages/ai-parrot/tests/migrations/test_cli.py",
+          "packages/ai-parrot/tests/migrations/test_startup.py",
+          "packages/ai-parrot/tests/migrations/test_bots_db.py",
+          "packages/ai-parrot/tests/migrations/test_runner_db.py",
+          "packages/ai-parrot/tests/migrations/test_packaging.py",
+          "packages/ai-parrot-server/tests/migrations/test_runtime_baselines.py",
+          "packages/ai-parrot-server/tests/migrations/test_runtime_db.py",
+          "packages/ai-parrot-server/tests/migrations/test_startup.py",
+          "packages/ai-parrot-server/tests/migrations/test_packaging.py",
+          "packages/ai-parrot/tests/migrations/test_checks.py",
+          "packages/ai-parrot/tests/migrations/test_bots_baseline.py",
+          "packages/ai-parrot/tests/migrations/test_legacy_conversion.py",
+          "packages/ai-parrot-server/tests/migrations/test_ui_crew_baselines.py",
+          "packages/ai-parrot/tests/migrations/test_documentation.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:27b8df925f2b910ab79d9076a623d200c0892d750477423c7608c71aa19c9b87"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5554",
+      "slug": "migration-catalog",
+      "title": "Migration catalog, immutable models and core provider",
+      "feature_id": "FEAT-884",
+      "feature": "db-upgrade",
+      "spec": "sdd/specs/db-upgrade.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Exclusive: edits packages/ai-parrot/pyproject.toml, a shared distribution manifest. No predecessor symbols are required.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5554-migration-catalog.md"
+    },
+    {
+      "id": "TASK-5555",
+      "slug": "migration-read-checks",
+      "title": "Read-only migration status and postcondition checks",
+      "feature_id": "FEAT-884",
+      "feature": "db-upgrade",
+      "spec": "sdd/specs/db-upgrade.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5554"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Consumes MigrationSet, MigrationFile, MigrationReport and catalog.load_migrations from TASK-5554.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5555-migration-read-checks.md"
+    },
+    {
+      "id": "TASK-5556",
+      "slug": "migration-runner",
+      "title": "Transactional upgrade and verified baseline runner",
+      "feature_id": "FEAT-884",
+      "feature": "db-upgrade",
+      "spec": "sdd/specs/db-upgrade.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5554",
+        "TASK-5555"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Consumes catalog/models from TASK-5554 and checks.verify_postconditions from TASK-5555.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5556-migration-runner.md"
+    },
+    {
+      "id": "TASK-5557",
+      "slug": "bots-migration-baseline",
+      "title": "Non-destructive bots baseline and schema checks",
+      "feature_id": "FEAT-884",
+      "feature": "db-upgrade",
+      "spec": "sdd/specs/db-upgrade.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5554",
+        "TASK-5556"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Consumes catalog.render_sql from TASK-5554 and runner.upgrade from TASK-5556 for disposable database tests.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5557-bots-migration-baseline.md"
+    },
+    {
+      "id": "TASK-5558",
+      "slug": "bots-migration-folds",
+      "title": "Bots folds, tool remapping and language preservation",
+      "feature_id": "FEAT-884",
+      "feature": "db-upgrade",
+      "spec": "sdd/specs/db-upgrade.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5554",
+        "TASK-5556",
+        "TASK-5557"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Consumes rendering from TASK-5554, runner.upgrade from TASK-5556, and 001_baseline SQL from TASK-5557; successor tests execute that baseline.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5558-bots-migration-folds.md"
+    },
+    {
+      "id": "TASK-5559",
+      "slug": "migration-legacy-conversion",
+      "title": "Retire converted scripts and preserve manual operations",
+      "feature_id": "FEAT-884",
+      "feature": "db-upgrade",
+      "spec": "sdd/specs/db-upgrade.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5557",
+        "TASK-5558"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Consumes packaged 001 baseline from TASK-5557 and 002–005 successors from TASK-5558 before retiring historical sources.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5559-migration-legacy-conversion.md"
+    },
+    {
+      "id": "TASK-5560",
+      "slug": "server-migration-providers",
+      "title": "Server providers and UI/crew baselines",
+      "feature_id": "FEAT-884",
+      "feature": "db-upgrade",
+      "spec": "sdd/specs/db-upgrade.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5554"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Consumes MigrationSet from TASK-5554. Exclusive: edits packages/ai-parrot-server/pyproject.toml, a shared distribution manifest.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5560-server-migration-providers.md"
+    },
+    {
+      "id": "TASK-5561",
+      "slug": "server-migration-baselines",
+      "title": "Metrics, recipes and scheduler baselines",
+      "feature_id": "FEAT-884",
+      "feature": "db-upgrade",
+      "spec": "sdd/specs/db-upgrade.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5554",
+        "TASK-5560"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Consumes MigrationSet/catalog from TASK-5554 and registered factories plus UI/crew resource pairs from TASK-5560; tests cover the complete five-set inventory.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5561-server-migration-baselines.md"
+    },
+    {
+      "id": "TASK-5562",
+      "slug": "migration-cli",
+      "title": "Migration CLI, DSN precedence and doctor wiring",
+      "feature_id": "FEAT-884",
+      "feature": "db-upgrade",
+      "spec": "sdd/specs/db-upgrade.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5554",
+        "TASK-5555",
+        "TASK-5556",
+        "TASK-5563"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Consumes catalog selection/scaffold from TASK-5554, status from TASK-5555, upgrade/baseline from TASK-5556, and migration_doctor_check from TASK-5563. Owns self_/cli.py and its existing CLI tests exclusively.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5562-migration-cli.md"
+    },
+    {
+      "id": "TASK-5563",
+      "slug": "migration-startup-probes",
+      "title": "Bounded read-only startup and doctor probes",
+      "feature_id": "FEAT-884",
+      "feature": "db-upgrade",
+      "spec": "sdd/specs/db-upgrade.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5554",
+        "TASK-5555"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Consumes bots_set from TASK-5554 and checks.status from TASK-5555. Doctor CLI attachment is owned by the CLI task, which consumes this API.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5563-migration-startup-probes.md"
+    },
+    {
+      "id": "TASK-5564",
+      "slug": "migration-runner-db-tests",
+      "title": "Live runner transaction, concurrency and role matrix",
+      "feature_id": "FEAT-884",
+      "feature": "db-upgrade",
+      "spec": "sdd/specs/db-upgrade.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5555",
+        "TASK-5556",
+        "TASK-5558"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Consumes checks.status from TASK-5555, upgrade/baseline from TASK-5556, and full bots chain from TASK-5558. Exclusive: intentional lock contention tests share a PostgreSQL database and role mutations require isolated test-instance access.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5564-migration-runner-db-tests.md"
+    },
+    {
+      "id": "TASK-5565",
+      "slug": "migration-runtime-db-tests",
+      "title": "Live runtime-set convergence and ownership tests",
+      "feature_id": "FEAT-884",
+      "feature": "db-upgrade",
+      "spec": "sdd/specs/db-upgrade.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5555",
+        "TASK-5556",
+        "TASK-5560",
+        "TASK-5561"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Consumes checks.status from TASK-5555, runner from TASK-5556, UI/crew providers/resources from TASK-5560, and remaining runtime SQL from TASK-5561. Exclusive: fixtures execute DDL and roles on a dedicated PostgreSQL test instance.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5565-migration-runtime-db-tests.md"
+    },
+    {
+      "id": "TASK-5566",
+      "slug": "migration-wheel-tests",
+      "title": "Built-wheel migration metadata and resource validation",
+      "feature_id": "FEAT-884",
+      "feature": "db-upgrade",
+      "spec": "sdd/specs/db-upgrade.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5554",
+        "TASK-5558",
+        "TASK-5560",
+        "TASK-5561"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Consumes core metadata/catalog from TASK-5554, complete bots SQL from TASK-5558, server metadata/providers from TASK-5560, and complete server resources from TASK-5561. Temporary build directories/venvs are task-local.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5566-migration-wheel-tests.md"
+    },
+    {
+      "id": "TASK-5567",
+      "slug": "migration-documentation",
+      "title": "Documentation — wiki/deployment/database-migrations.md",
+      "feature_id": "FEAT-884",
+      "feature": "db-upgrade",
+      "spec": "sdd/specs/db-upgrade.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5559",
+        "TASK-5561",
+        "TASK-5562",
+        "TASK-5563"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Consumes preserved manual operations from TASK-5559, complete optional set inventory from TASK-5561, CLI/DSN/doctor wiring from TASK-5562, and bounded probe behavior from TASK-5563. These paths transitively depend on all documented catalog/runner/check symbols.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5567-migration-documentation.md"
+    }
+  ]
+}
