@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-882 — Per-Agent Env LLM Credentials + AgentsFlow Default Key
 **Spec**: `sdd/specs/per-agent-env-llm-credentials.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -349,10 +349,15 @@ def test_no_key_value_logged(env, caplog): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-5548
+- Feature: per-agent-env-llm-credentials
+- Implementation SHA: 94a154b4811bc78229bd8ff2beafb99e0b6848f5
+- Closed at (UTC): 2026-11-12T19:19:54+00:00
+- Fix commits: none
 
-**Deviations from spec**: none
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 269s · Tokens: n/a |
