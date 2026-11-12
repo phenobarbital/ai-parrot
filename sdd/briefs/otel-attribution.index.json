@@ -47,15 +47,15 @@
       "feature_id": "BRIEF-otel-attribution",
       "feature": "otel-attribution",
       "spec": "sdd/briefs/otel-attribution.brief.md",
-      "status": "in-progress",
+      "status": "done-with-issues",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "events/client.py, clients/base.py, observability/attributes.py, subscribers/metrics.py — disjoint from tasks 2-5",
+      "parallelism_notes": "events/client.py, clients/base.py, observability/attributes.py, subscribers/metrics.py \u2014 disjoint from tasks 2-5",
       "assigned_to": null,
       "started_at": "2026-11-12T01:08:00+00:00",
-      "completed_at": null,
+      "completed_at": "2026-11-12T16:01:00+00:00",
       "file": "sdd/briefs/otel-attribution/tasks/HOTFIX-otel-attribution-1-tenant-on-otel-signals.md"
     },
     {
@@ -65,7 +65,7 @@
       "feature_id": "BRIEF-otel-attribution",
       "feature": "otel-attribution",
       "spec": "sdd/briefs/otel-attribution.brief.md",
-      "status": "in-progress",
+      "status": "done-with-issues",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -73,7 +73,7 @@
       "parallelism_notes": "bots/base.py only; task 3 consumes its helpers",
       "assigned_to": null,
       "started_at": "2026-11-12T01:08:00+00:00",
-      "completed_at": null,
+      "completed_at": "2026-11-12T16:01:00+00:00",
       "file": "sdd/briefs/otel-attribution/tasks/HOTFIX-otel-attribution-2-basebot-call-identity.md"
     },
     {
@@ -103,7 +103,7 @@
       "feature_id": "BRIEF-otel-attribution",
       "feature": "otel-attribution",
       "spec": "sdd/briefs/otel-attribution.brief.md",
-      "status": "in-progress",
+      "status": "done-with-issues",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -111,7 +111,7 @@
       "parallelism_notes": "ai-parrot-client-google live.py only; brief assumption, droppable",
       "assigned_to": null,
       "started_at": "2026-11-12T01:08:00+00:00",
-      "completed_at": null,
+      "completed_at": "2026-11-12T16:01:00+00:00",
       "file": "sdd/briefs/otel-attribution/tasks/HOTFIX-otel-attribution-4-gemini-live-stream-voice-events.md"
     },
     {
@@ -121,7 +121,7 @@
       "feature_id": "BRIEF-otel-attribution",
       "feature": "otel-attribution",
       "spec": "sdd/briefs/otel-attribution.brief.md",
-      "status": "in-progress",
+      "status": "done-with-issues",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -129,7 +129,7 @@
       "parallelism_notes": "ai-parrot-client-amazon nova/audio.py only",
       "assigned_to": null,
       "started_at": "2026-11-12T01:08:00+00:00",
-      "completed_at": null,
+      "completed_at": "2026-11-12T16:01:00+00:00",
       "file": "sdd/briefs/otel-attribution/tasks/HOTFIX-otel-attribution-5-nova-stream-voice-events.md"
     },
     {

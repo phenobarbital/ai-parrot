@@ -178,10 +178,13 @@ class GeminiLiveClient(...):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrator) with gpt-5.6-luna (codex), 1 attempt
+**Date**: 2026-11-12
+**Status**: done-with-issues
+**Notes**: GeminiLiveClient.stream_voice now emits before/after/failed client lifecycle events with token totals (google/live.py, telemetry in a finally); new tests/clients/test_live_stream_voice_events.py. Commits: merge 9ee9a26403.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+Merge-tier validation did NOT settle green: the engine runs ended `timed_out` (second run exit -15/SIGTERM after ~1 min, no pytest summary; the first two runs ended `timed_out` with exit 0). No failure was observed in the tests that did run, and the cause of the stall is unidentified. Accepted by the operator as done-with-issues.
 
-**Deviations from spec**: none | describe if any
+Three failing tests seen in the first validation log are NOT caused by this brief (static diff evidence vs origin/dev, not a baseline run): `test_agent_name_is_not_pii_field` -> issue:ea9f2f8ab334 (`user_id` already declared on AfterClientCallEvent on dev; this brief adds only `tenant`); `test_live_envelope.py::TestCanonicalRole` x2 -> issue:33b76e470d2b (stream_voice role handling untouched by this brief).
+
+**Deviations from spec**: none in scope
