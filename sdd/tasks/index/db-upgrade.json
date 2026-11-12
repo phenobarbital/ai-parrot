@@ -53,7 +53,7 @@
       "feature_id": "FEAT-884",
       "feature": "db-upgrade",
       "spec": "sdd/specs/db-upgrade.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -61,8 +61,9 @@
       "parallelism_notes": "Exclusive: edits packages/ai-parrot/pyproject.toml, a shared distribution manifest. No predecessor symbols are required.",
       "assigned_to": null,
       "started_at": "2026-11-12T23:12:58+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5554-migration-catalog.md"
+      "completed_at": "2026-11-12T23:20:45+00:00",
+      "file": "sdd/tasks/completed/TASK-5554-migration-catalog.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5555",

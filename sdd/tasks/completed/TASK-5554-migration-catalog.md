@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-884 — Packaged PostgreSQL migrations
 **Spec**: `sdd/specs/db-upgrade.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -329,4 +329,15 @@ def test_catalog_contract() -> None:
 
 ## Completion Note
 
-Populated by the task finalizer after verified implementation.
+
+- Task: TASK-5554
+- Feature: db-upgrade
+- Implementation SHA: 8c823b2f7af6ba353804e297db0b29ac50469ab4
+- Closed at (UTC): 2026-11-12T23:20:45+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 361s · Tokens: n/a |
