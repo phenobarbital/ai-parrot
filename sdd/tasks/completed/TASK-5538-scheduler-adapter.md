@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-713 — Accounting Metrics Layer
 **Spec**: `sdd/specs/accounting-metrics-layer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5537
@@ -199,10 +199,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker / native sonnet coder (attempt 47d8709068c94fc4a4d942a4205c85c5), commit fe8b69fb9f
+**Date**: 2026-11-12
+**Notes**: `parrot/scheduler/accounting_jobs.py` — AccountingValidationJobs (daily validate_accounting_models), register_accounting_schedules; run_live_validation imported lazily; logs only model/failure counts. 3 tests green (subprocess test reads the last stdout line only), ruff clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

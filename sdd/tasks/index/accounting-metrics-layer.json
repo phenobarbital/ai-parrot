@@ -374,7 +374,7 @@
       "feature_id": "FEAT-713",
       "feature": "accounting-metrics-layer",
       "spec": "sdd/specs/accounting-metrics-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -384,8 +384,9 @@
       "parallelism_notes": "The job calls run_live_validation from TASK-5537 (accounting/live.py).",
       "assigned_to": null,
       "started_at": "2026-11-12T00:04:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5538-scheduler-adapter.md"
+      "completed_at": "2026-11-12T01:21:21+00:00",
+      "file": "sdd/tasks/completed/TASK-5538-scheduler-adapter.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5539",
