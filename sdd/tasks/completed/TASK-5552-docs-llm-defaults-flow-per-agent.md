@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-882 — Per-Agent Env LLM Credentials + AgentsFlow Default Key
 **Spec**: `sdd/specs/per-agent-env-llm-credentials.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5548, TASK-5549, TASK-5550
@@ -194,10 +194,15 @@ The existing parametrized test covers it once the list is extended (see blueprin
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-5552
+- Feature: per-agent-env-llm-credentials
+- Implementation SHA: acc147616667144a605503672cffbb0423b1f990
+- Closed at (UTC): 2026-11-12T19:38:59+00:00
+- Fix commits: none
 
-**Deviations from spec**: none
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-sol · Backend: codex · Model: gpt-5.6-sol · Attempts: 1 · Duration: 184s · Tokens: n/a |
