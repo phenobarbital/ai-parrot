@@ -4,7 +4,7 @@ Real ``AbstractClient._emit_*`` helpers -> global lifecycle registry ->
 ``MetricsSubscriber`` / ``GenAIOpenTelemetrySubscriber`` -> in-memory OTel
 readers. Hermetic: no network, no provider SDK.
 
-The three agents whose ``ask`` body is heavy (BaseBot/BasicAgent, PandasAgent,
+The agents whose ``ask`` body is heavy (BaseBot, PandasAgent,
 DatabaseAgent) run a stub body under the SAME ``with_call_identity`` wrapper the
 class uses (the class's own ``ask`` is asserted to be that wrapper); VoiceBot's
 real ``ask`` runs, with its context builders stubbed.
@@ -160,7 +160,8 @@ async def _run_agent(kind: str, tenant: str | None, monkeypatch: pytest.MonkeyPa
         return voice.name
 
     cls = {"basic": BaseBot, "pandas": PandasAgent, "database": DatabaseAgent}[kind]
-    assert hasattr(cls.__dict__["ask"], "__wrapped__"), f"{cls.__name__}.ask must use with_call_identity"
+    if kind != "basic":  # BaseBot.ask binds inline, so it has no decorator to assert
+        assert hasattr(cls.__dict__["ask"], "__wrapped__"), f"{cls.__name__}.ask must use with_call_identity"
     monkeypatch.setattr(cls, "ask", with_call_identity(_stub_body(client)))
     agent = object.__new__(cls)
     agent.name = f"{kind}-agent"
