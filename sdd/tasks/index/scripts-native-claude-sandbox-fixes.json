@@ -98,7 +98,7 @@
       "feature_id": "FEAT-881",
       "feature": "scripts-native-claude-sandbox-fixes",
       "spec": "sdd/specs/scripts-native-claude-sandbox-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -107,7 +107,7 @@
       "parallel": true,
       "parallelism_notes": "Serialized behind TASK-5543: both modify prepare_shell_prefix/launch_worker in native_claude_sandbox.py and test_native_claude_sandbox.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-12T00:53:39Z",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5545-launcher-hardening.md"
     },
@@ -134,7 +134,7 @@
     {
       "id": "TASK-5547",
       "slug": "documentation-claude-native-sandbox",
-      "title": "Documentation — wiki/sdd-tooling/dev_loop/claude-native-sandbox.md",
+      "title": "Documentation \u2014 wiki/sdd-tooling/dev_loop/claude-native-sandbox.md",
       "feature_id": "FEAT-881",
       "feature": "scripts-native-claude-sandbox-fixes",
       "spec": "sdd/specs/scripts-native-claude-sandbox-fixes.spec.md",
