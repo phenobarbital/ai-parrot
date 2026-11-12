@@ -1,0 +1,52 @@
+{
+  "feature": "fixgroup-f545489af365",
+  "feature_id": "FEAT-883",
+  "spec": "sdd/specs/fixgroup-f545489af365.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-12T16:07:20+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/clients/test_live_envelope.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:aac7a5c2095f8b1cd1e9ef6b084945bf9dfc7a7792584a143a66ef34c957ab15"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5553",
+      "slug": "realign-live-envelope-role-tests",
+      "title": "Realign test_live_envelope TestCanonicalRole with the AUDIO-mode role contract",
+      "feature_id": "FEAT-883",
+      "feature": "fixgroup-f545489af365",
+      "spec": "sdd/specs/fixgroup-f545489af365.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "single task; only file: packages/ai-parrot/tests/clients/test_live_envelope.py; no shared resources",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "discovered_from": "issue:33b76e470d2b",
+      "file": "sdd/tasks/active/TASK-5553-realign-live-envelope-role-tests.md"
+    }
+  ]
+}

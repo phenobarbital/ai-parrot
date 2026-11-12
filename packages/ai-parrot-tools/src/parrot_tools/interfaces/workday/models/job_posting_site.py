@@ -1,5 +1,5 @@
 from typing import List, Optional, Union
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 
 class JobPostingSite(BaseModel):
@@ -37,14 +37,16 @@ class JobPostingSite(BaseModel):
     created_date: Optional[str] = None
     last_updated_date: Optional[str] = None
 
-    @validator('is_active', 'is_internal', 'is_external', pre=True)
+    @field_validator('is_active', 'is_internal', 'is_external', mode="before")
+    @classmethod
     def parse_boolean_fields(cls, v):
         """Convert boolean-like values to proper booleans."""
         if isinstance(v, str):
             return v.lower() in ('true', '1', 'yes', 'active')
         return v
 
-    @validator('integration_ids', pre=True)
+    @field_validator('integration_ids', mode="before")
+    @classmethod
     def parse_list_fields(cls, v):
         """Ensure list fields are properly parsed."""
         if v is None:
@@ -55,7 +57,8 @@ class JobPostingSite(BaseModel):
             return v
         return []
 
-    @validator('display_order', 'priority', pre=True)
+    @field_validator('display_order', 'priority', mode="before")
+    @classmethod
     def parse_integer_fields(cls, v):
         """Convert integer-like values to proper integers."""
         if v is None:
@@ -69,7 +72,8 @@ class JobPostingSite(BaseModel):
                 return None
         return None
 
-    @validator('created_date', 'last_updated_date', pre=True)
+    @field_validator('created_date', 'last_updated_date', mode="before")
+    @classmethod
     def parse_date_fields(cls, v):
         """Convert date objects to string format."""
         if v is None:
@@ -80,6 +84,7 @@ class JobPostingSite(BaseModel):
             return v
         return str(v)
 
-    class Config:
-        extra = "allow"
-        use_enum_values = True
+    model_config = ConfigDict(
+        extra="allow",
+        use_enum_values=True,
+    )

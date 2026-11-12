@@ -4,12 +4,13 @@ from typing import Any
 
 from .version import __version__
 
-__all__ = ["__version__", "SemanticQuery", "SemanticQueryResult", "SemanticLayerToolkit"]
+__all__ = ["__version__", "SemanticQuery", "SemanticQueryResult", "SemanticLayerToolkit", "SemanticDataSource"]
 
 _LAZY = {
     "SemanticQuery": ".models",
     "SemanticQueryResult": ".models",
     "SemanticLayerToolkit": ".toolkit",
+    "SemanticDataSource": ".dataset_source",
 }
 
 

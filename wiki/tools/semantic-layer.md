@@ -111,6 +111,106 @@ host adapter must declare guarded reads, immutable owner scope, async publish,
 and pass the sink conformance tests; without it the hand-off tool is not
 exposed.
 
+## Semantic datasets in DatasetManager
+
+The hand-off above pushes a retained result into a sink. The pull direction is
+a `SemanticDataSource`: a `DatasetManager` dataset whose rows come from one
+semantic model. Every fetch runs the full governed path of
+`SemanticLayerToolkit.query_metrics` (PBAC, member rights, compile, RLS, masks,
+limit cap, execution, audit). The semantic executor runs the SQL; the source
+only turns the governed rows into a DataFrame, and no SQL leaves the layer.
+
+Register it in either form. `add_semantic` imports `ai-parrot-semantic` lazily
+and raises `ImportError` when it is missing; pass exactly one of `toolkit` or
+`models_dir` with `dialect` (otherwise `ValueError`). A toolkit built from
+`models_dir` receives the manager's dataplane guard unless `dataplane_guard` is
+given in the extra keyword arguments.
+
+```python
+from parrot.semantic import SemanticDataSource
+
+dm.add_semantic("sales", model="orders", toolkit=semantic_toolkit)
+dm.add_semantic("sales", model="orders", models_dir=Path("models"), dialect="duckdb",
+                default_query={"metrics": ["revenue"]})
+dm.add_source(SemanticDataSource(name="sales", toolkit=semantic_toolkit, model="orders"))
+```
+
+An unknown model raises `SemanticPolicyError("model_not_found")`. A
+`default_query` with keys outside the query fields raises
+`invalid_default_query`.
+
+**Query shape.** The agent passes the query as `fetch_dataset` `conditions`;
+`sql` is ignored. Accepted keys are the `SemanticQuery` fields except `model`:
+`metrics`, `dimensions`, `time_dimensions`, `filters`, `order_by`, `limit`,
+`offset`, `saved_query`.
+
+```python
+fetch_dataset(name="sales", conditions={
+    "metrics": ["revenue"], "time_dimensions": [{"name": "ordered_at", "grain": "month"}],
+    "filters": {"op": "and", "items": [{"member": "region", "op": "equals", "values": ["EU"]}]},
+    "limit": 500})
+```
+
+Empty `conditions` fall back to `default_query`; with neither the fetch raises
+`SemanticValidationError("query_required")`. Passing `model` or an unknown key
+raises `invalid_params`; a value the query model rejects raises `invalid_query`.
+
+**Identity.** The source fails closed. It reads the semantic context bound by
+the host (`bind_semantic_context`) and the core permission context of the tool
+call. Both present and different → `SemanticAccessError("context_required")`.
+Only the semantic one → it is used. Only the core one → the source bridges it:
+it must be a `PermissionContext`, and it is bound as the semantic context for
+the duration of the governed call. A bridged call has no host-bound identity,
+so the toolkit retains no result handle for it. Neither present →
+`context_required`.
+
+**Per-subject frames.** The source is `self_governed`, so the manager never
+wraps it in `AuthorizingDataSource`. The entry keeps each loaded DataFrame in a
+slot keyed by `current_owner()`, the subject digest of the resolved context.
+`loaded`, `df` and the column types read the calling subject's slot only; for
+any other subject the dataset is not loaded. With no resolvable subject nothing
+is stored. Slots are bounded per entry (least-recently-used eviction). A denied
+fetch returns a correctable error and never marks the dataset unavailable for
+other subjects.
+
+**Session isolation.** Server sessions never share governed rows.
+`_clone_agent_dm` does not copy the frame or column types of a self-governed
+entry, and `UserObjectsHandler.configure_dataset_manager` builds a fresh,
+unloaded `DatasetEntry` with a request-scoped copy of the source instead of
+sharing the agent's entry.
+
+**Row cap and response fields.** The policy limit (`limits.default` /
+`limits.max`) applies unchanged; raise it in the model's policy file. The
+DataFrame carries `attrs["semantic"]`, and the `fetch_dataset` response
+returns the same four fields under `semantic`: `model`, `audit_id`,
+`truncated`, `row_count` (rows materialized, not an uncapped estimate). Two
+more fields are added for semantic responses only:
+
+- `inline_complete` — every materialized row fits in the inline response.
+- `complete` — `inline_complete` and not `semantic.truncated`.
+
+A truncated result always carries a warning, even when all its rows fit
+inline. Preview notes say "materialized result", never "FULL dataset".
+Non-semantic responses are unchanged.
+
+**Never cached.** Rows are never read from or written to the Redis Parquet
+cache; every `fetch_dataset` re-fetches, and `force_refresh` is not passed to
+the source. Frames are never copied to another manager or subject.
+
+**When to re-fetch.** A loaded semantic dataset is the result of one query.
+Call `fetch_dataset` again with new `conditions` whenever metrics, dimensions,
+grain, filters, ordering, limit, offset or saved query change, even if the
+dataset is loaded. Do not re-aggregate a previous result in pandas or with raw
+SQL. Reusing the same fetched result for further analysis in the same session
+is fine. The `DatasetManager` usage rules and the `fetch_dataset` description
+tell agents this.
+
+**When to prefer `sl_query_metrics`.** Use the dataset when the agent needs
+the governed rows as a DataFrame in the pandas workspace (joins with other
+datasets, charts, Python analysis). Use `sl_query_metrics` directly for a
+one-off answer, or when the result must be retained as a handle for
+`sl_save_result_as_dataset`; a bridged dataset fetch never retains one.
+
 ## MCP-local configuration
 
 Operator configuration is intentionally local. Copy this section into the

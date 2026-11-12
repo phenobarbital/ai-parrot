@@ -74,9 +74,10 @@ def _clone_agent_dm(agent: object, logger: object) -> DatasetManager | None:
                 auto_detect_types=entry.auto_detect_types,
                 cache_ttl=entry.cache_ttl,
             )
-            if entry.loaded and entry.df is not None:
+            governed = bool(entry.source is not None and getattr(entry.source, "self_governed", False))
+            if not governed and entry.loaded and entry.df is not None:
                 cloned_entry._df = entry.df.copy(deep=True)
-            if entry.column_types:
+            if not governed and entry.column_types:
                 cloned_entry._column_types = dict(entry.column_types)
             user_dm._datasets[name] = cloned_entry
         except Exception as exc:
