@@ -6,7 +6,7 @@ import hashlib
 import json
 from datetime import date
 from decimal import Decimal
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -212,3 +212,193 @@ class AccountingModel(BaseModel, frozen=True):
             if previous > current:
                 raise ValueError("natures must be sorted by account id")
         return self
+
+
+# --- Requests (spec §2, "Numeric and period contracts", revision 0.3) -------------------------------------------
+
+_CUMULATIVE_GRAINS: dict[str, frozenset[str]] = {
+    "mtd": frozenset({"day", "month"}),
+    "qtd": frozenset({"day", "month", "quarter"}),
+    "ytd": frozenset({"day", "month", "quarter", "year"}),
+}
+
+
+class Period(BaseModel):
+    """An inclusive ``[from, to]`` date window, optionally cumulative (period-to-date)."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    from_: date = Field(alias="from")
+    to: date  # inclusive
+    cumulative: Cumulative | None = None
+
+    @model_validator(mode="after")
+    def _ordered(self) -> "Period":
+        """Require ``from <= to``."""
+        if self.from_ > self.to:
+            raise ValueError("period 'from' must not be later than 'to'")
+        return self
+
+
+class MetricRequest(BaseModel, frozen=True):
+    """A request to compute one metric over a period."""
+
+    kind: Literal["metric"] = "metric"
+    metric: str
+    grain: AccountingGrain | None = None
+    dimensions: tuple[str, ...] = ()
+    filters: dict[str, str | int | tuple[str | int, ...]] = {}
+    period: Period
+
+    @model_validator(mode="after")
+    def _cumulative_fits_grain(self) -> "MetricRequest":
+        """Enforce the cumulative/grain matrix (AC8); week or no grain never fits a cumulative mode."""
+        cumulative = self.period.cumulative
+        if cumulative is not None and (self.grain is None or self.grain not in _CUMULATIVE_GRAINS[cumulative]):
+            allowed = ", ".join(sorted(_CUMULATIVE_GRAINS[cumulative]))
+            raise ValueError(f"cumulative {cumulative!r} requires grain in {{{allowed}}}, got {self.grain!r}")
+        return self
+
+
+class AssertionRequest(BaseModel, frozen=True):
+    """A request to evaluate one model assertion over a period."""
+
+    kind: Literal["assertion"] = "assertion"
+    assertion_index: int = Field(ge=0)
+    period: Period
+
+    @model_validator(mode="after")
+    def _not_cumulative(self) -> "AssertionRequest":
+        """Assertions are evaluated over plain periods only."""
+        if self.period.cumulative is not None:
+            raise ValueError("assertion requests do not accept a cumulative period")
+        return self
+
+
+AccountingRequest = Annotated[MetricRequest | AssertionRequest, Field(discriminator="kind")]
+
+
+# --- Portable plan IR (FEAT-742 contract) ------------------------------------------------------------------------
+
+
+class Lineage(BaseModel, frozen=True):
+    """How a result was derived: formula, resolved sets and checked assertions."""
+
+    metric: str | None
+    assertion_index: int | None = None
+    formula: str
+    sets: tuple[ResolvedSet, ...]
+    assertions: tuple[str, ...]
+    warnings: tuple[str, ...] = ()
+
+
+class PlanSet(BaseModel, frozen=True):
+    """An aliased account set referenced by plan expressions."""
+
+    alias: str
+    accounts: tuple[str, ...]
+
+
+class PlanExpr(BaseModel, frozen=True):
+    """A node of a plan arithmetic expression."""
+
+    op: Literal["set", "num", "neg", "add", "sub", "mul", "div"]
+    alias: str | None = None
+    value: str | None = None
+    args: tuple["PlanExpr", ...] = ()
+
+
+PlanExpr.model_rebuild()
+
+
+class MetricPlan(BaseModel, frozen=True):
+    """Portable IR — plain data, no sqlglot (FEAT-742 contract)."""
+
+    schema_version: Literal[1] = 1
+    table: str
+    account_key: str
+    posting_date: str
+    amount_convention: AmountConvention
+    amount: str | None
+    debit: str | None
+    credit: str | None
+    natures: tuple[tuple[str, Nature], ...]
+    result_scale: Literal[6] = 6
+    rounding: Literal["half_even"] = "half_even"
+    arithmetic_version: Literal[1] = 1
+    cast_decimal: bool
+    sets: tuple[PlanSet, ...]
+    columns: tuple[tuple[str, PlanExpr], ...]
+    grain: AccountingGrain | None
+    dimensions: tuple[str, ...]
+    filters: tuple[tuple[str, tuple[str | int, ...]], ...]
+    scan_from: date
+    output_from: date
+    to_exclusive: date
+    cumulative: Cumulative | None
+
+    @property
+    def plan_hash(self) -> str:
+        """sha256 hex of the plan's canonical JSON."""
+        return hashlib.sha256(
+            json.dumps(self.model_dump(mode="json"), sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+
+
+# --- Outputs -----------------------------------------------------------------------------------------------------
+
+
+class CompiledMetricQuery(BaseModel, frozen=True):
+    """A rendered metric (or assertion) query with its plan, request and lineage."""
+
+    sql: str
+    dialect: str
+    sql_hash: str
+    model_hash: str
+    plan_hash: str
+    plan: MetricPlan
+    request: AccountingRequest
+    lineage: Lineage
+    assertions: tuple["CompiledMetricQuery", ...] = ()
+
+    @property
+    def cache_key(self) -> str:
+        """Canonical JSON list ``[model_hash, canonical request, dialect]`` — CompileCache shape."""
+        request = json.dumps(self.request.model_dump(mode="json", by_alias=True), sort_keys=True, separators=(",", ":"))
+        return json.dumps([self.model_hash, request, self.dialect], separators=(",", ":"))
+
+
+CompiledMetricQuery.model_rebuild()
+
+
+class RuntimeResult(BaseModel, frozen=True):
+    """Raw rows returned by a runtime target."""
+
+    columns: tuple[str, ...]
+    rows: tuple[dict, ...]
+    target: Literal["database", "duckdb"]
+    duration_ms: int
+
+
+class AssertionResult(BaseModel, frozen=True):
+    """Outcome of one assertion check."""
+
+    expr: str
+    status: Literal["passed", "failed", "skipped"]
+    lhs: Decimal | None
+    rhs: Decimal | None
+    tolerance: Decimal
+    period: Period
+
+
+class MetricResult(BaseModel, frozen=True):
+    """Final metric result returned to callers."""
+
+    columns: tuple[str, ...]
+    rows: tuple[dict, ...]
+    row_count: int
+    compiled: CompiledMetricQuery
+    assertion_results: tuple[AssertionResult, ...]
+    chart_drift: bool
+    audit_id: str
+    duration_ms: int
