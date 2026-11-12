@@ -138,7 +138,9 @@ tests:
 - packages/ai-parrot/tests/flows/dev_loop/test_worktree_environment.py
 markers: none
 
-`test_shell_prefix_live.py` starts a real Claude session and stays out of the contract.
+### Out of the contract
+
+`test_shell_prefix_live.py` starts a real Claude session, so it is not a gate.
 
 ---
 

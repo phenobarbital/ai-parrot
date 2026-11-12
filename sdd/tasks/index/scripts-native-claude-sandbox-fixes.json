@@ -1,0 +1,153 @@
+{
+  "feature": "scripts-native-claude-sandbox-fixes",
+  "feature_id": "FEAT-881",
+  "spec": "sdd/specs/scripts-native-claude-sandbox-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-12T00:49:09Z",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/sdd/test_shell_prefix.py",
+          "packages/ai-parrot/tests/sdd/test_sdd_launch.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_native_claude_sandbox.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_worktree_environment.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:395d3800f13ca47f7a249ac5220ef1bf25a960eb67ace2e16cc0f19a4fe72071"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5542",
+      "slug": "prefix-mcp-from-primary",
+      "title": "Legacy prefix reads MCP servers from the primary checkout",
+      "feature_id": "FEAT-881",
+      "feature": "scripts-native-claude-sandbox-fixes",
+      "spec": "sdd/specs/scripts-native-claude-sandbox-fixes.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependency: first task to modify native_claude_sandbox.py; the later launcher tasks serialize behind it.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5542-prefix-mcp-from-primary.md"
+    },
+    {
+      "id": "TASK-5543",
+      "slug": "prefix-runtime-session-copy",
+      "title": "Run the shell prefix from an immutable copy in the session directory",
+      "feature_id": "FEAT-881",
+      "feature": "scripts-native-claude-sandbox-fixes",
+      "spec": "sdd/specs/scripts-native-claude-sandbox-fixes.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5542"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Serialized behind TASK-5542: both modify prepare_shell_prefix in native_claude_sandbox.py and test_native_claude_sandbox.py.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5543-prefix-runtime-session-copy.md"
+    },
+    {
+      "id": "TASK-5544",
+      "slug": "hook-policy-validation-token-scope",
+      "title": "Hook validates the prefix policy; token reaches hooks only",
+      "feature_id": "FEAT-881",
+      "feature": "scripts-native-claude-sandbox-fixes",
+      "spec": "sdd/specs/scripts-native-claude-sandbox-fixes.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependency: touches worktree_environment.py, shell_prefix.py and their own test files, none shared with TASK-5542/5543/5545.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5544-hook-policy-validation-token-scope.md"
+    },
+    {
+      "id": "TASK-5545",
+      "slug": "launcher-hardening",
+      "title": "Launcher hardening: version gate, session expiry, agent hooks, inherited prefix",
+      "feature_id": "FEAT-881",
+      "feature": "scripts-native-claude-sandbox-fixes",
+      "spec": "sdd/specs/scripts-native-claude-sandbox-fixes.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5543"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Serialized behind TASK-5543: both modify prepare_shell_prefix/launch_worker in native_claude_sandbox.py and test_native_claude_sandbox.py.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5545-launcher-hardening.md"
+    },
+    {
+      "id": "TASK-5546",
+      "slug": "shell-prefix-test-gaps",
+      "title": "Close shell-prefix test gaps (policy validation, live write assertion)",
+      "feature_id": "FEAT-881",
+      "feature": "scripts-native-claude-sandbox-fixes",
+      "spec": "sdd/specs/scripts-native-claude-sandbox-fixes.spec.md",
+      "status": "pending",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5544"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Serialized behind TASK-5544: both modify tests/sdd/test_shell_prefix.py, and the live test asserts TASK-5544's hook-only token.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5546-shell-prefix-test-gaps.md"
+    },
+    {
+      "id": "TASK-5547",
+      "slug": "documentation-claude-native-sandbox",
+      "title": "Documentation — wiki/sdd-tooling/dev_loop/claude-native-sandbox.md",
+      "feature_id": "FEAT-881",
+      "feature": "scripts-native-claude-sandbox-fixes",
+      "spec": "sdd/specs/scripts-native-claude-sandbox-fixes.spec.md",
+      "status": "pending",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5545",
+        "TASK-5546"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Documents prefix_mcp_config (TASK-5542), the session runtime copy (TASK-5543), the hook-only token (TASK-5544, via TASK-5546) and MIN_PREFIX_CLAUDE_VERSION (TASK-5545).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5547-documentation-claude-native-sandbox.md"
+    }
+  ]
+}
