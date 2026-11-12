@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-713 — Accounting Metrics Layer
 **Spec**: `sdd/specs/accounting-metrics-layer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5531
@@ -328,10 +328,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker / native sonnet coder (attempt 0a1334e3160745a2b065e96340a9ca5a), commit 97c37fc9e6
+**Date**: 2026-11-12
+**Notes**: Added `SignableAuditEntry` protocol + widened annotations in `semantic/audit.py`; created `accounting/audit.py` (AuditMode, audit_mode_from_env, subject_digest, AccountingAuditEntry, build_entry, append_entry, rebuild_lineage). New and existing audit tests pass (10 passed), ruff clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
