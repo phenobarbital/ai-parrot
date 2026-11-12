@@ -157,8 +157,7 @@ Decisions taken without a Q&A round; revisit before launching the worker if any 
 
 ### Validation Contract
 
-> Explicit pytest operands gating this brief in every tier. Files owned by tasks not yet merged (task 3's
-> `test_overriding_agents_identity.py`, task 6's `test_agent_tenant_attribution.py`) are added when they land.
+> Explicit pytest operands gating this brief in every tier.
 
 tests:
 - packages/ai-parrot/tests/unit/observability/test_tenant_attribution.py
@@ -172,5 +171,7 @@ tests:
 - packages/ai-parrot/tests/clients/test_live_usage_metadata.py
 - packages/ai-parrot/tests/clients/test_nova_stream_voice_events.py
 - packages/ai-parrot/tests/clients/test_nova_audio_sdk.py
+- packages/ai-parrot/tests/unit/bots/test_overriding_agents_identity.py
+- packages/ai-parrot/tests/integration/observability/test_agent_tenant_attribution.py
 - packages/ai-parrot/tests/integration/observability/test_poc.py
 markers: none

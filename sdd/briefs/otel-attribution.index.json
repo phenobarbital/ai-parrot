@@ -25,6 +25,8 @@
           "packages/ai-parrot/tests/clients/test_live_usage_metadata.py",
           "packages/ai-parrot/tests/clients/test_nova_stream_voice_events.py",
           "packages/ai-parrot/tests/clients/test_nova_audio_sdk.py",
+          "packages/ai-parrot/tests/unit/bots/test_overriding_agents_identity.py",
+          "packages/ai-parrot/tests/integration/observability/test_agent_tenant_attribution.py",
           "packages/ai-parrot/tests/integration/observability/test_poc.py"
         ],
         "settings": {
@@ -37,7 +39,7 @@
         ]
       }
     ],
-    "digest": "sha256:cdcd477a6008c77252c5e63e6db2f0472b0d60b98f27f2368282af156fadab01"
+    "digest": "sha256:632903a505fa4b2c1c8a5b80e5a44f5895934d0c927eb73e0d5c7b257f70a61b"
   },
   "tasks": [
     {
@@ -52,7 +54,7 @@
       "effort": "M",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "events/client.py, clients/base.py, observability/attributes.py, subscribers/metrics.py \u2014 disjoint from tasks 2-5",
+      "parallelism_notes": "events/client.py, clients/base.py, observability/attributes.py, subscribers/metrics.py — disjoint from tasks 2-5",
       "assigned_to": null,
       "started_at": "2026-11-12T01:08:00+00:00",
       "completed_at": "2026-11-12T16:01:00+00:00",
@@ -139,7 +141,7 @@
       "feature_id": "BRIEF-otel-attribution",
       "feature": "otel-attribution",
       "spec": "sdd/briefs/otel-attribution.brief.md",
-      "status": "in-progress",
+      "status": "done-with-issues",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -151,7 +153,7 @@
       "parallelism_notes": "test file only; runs after 1-3",
       "assigned_to": null,
       "started_at": "2026-11-12T01:08:00+00:00",
-      "completed_at": null,
+      "completed_at": "2026-11-12T20:22:56+00:00",
       "file": "sdd/briefs/otel-attribution/tasks/HOTFIX-otel-attribution-6-attribution-coverage-test.md"
     }
   ]

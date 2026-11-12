@@ -168,10 +168,9 @@ class GenAIOpenTelemetrySubscriber   # constructed with service_name=..., tracer
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (implemented directly in the feature worktree, not through the coder engine)
+**Date**: 2026-11-12
+**Commit**: 077a3d8302
+**Notes**: Created `tests/integration/observability/test_agent_tenant_attribution.py`: in-memory metric and span readers, `MetricsSubscriber` + `GenAIOpenTelemetrySubscriber` on a scoped global registry, a stub client that calls the real `_emit_before_call` / `_emit_after_call`. Parametrized over basic, pandas, database and voice, plus a missing-tenant -> `"unknown"` case. Task 3's and task 6's test files were added to the brief's Validation Contract.
+**Deviations from spec**: for BaseBot, PandasAgent and DatabaseAgent the test runs a stub body under the same `with_call_identity` wrapper (it asserts the class's own `ask` is decorated) instead of constructing and running the real, heavy `ask`. Only VoiceBot's real `ask` runs (context builders stubbed, instance built with `object.__new__`). So this does not catch a regression inside those bodies, only a missing decorator.
+**Issues**: the test was NOT run (pytest cannot load in the worker sandbox: navconfig ErrorFileHandler, read-only /tmp/navigator/log); only `ruff`, `black` and `py_compile` ran. Unverified assumptions: `AbstractClient.__aenter__` usage by `VoiceBot.ask`, metric/span attribute names `parrot.agent.name` / `parrot.tenant`, and the `"unknown"` sentinel. Task 1-3 dependencies are `done-with-issues`, not `done`.
