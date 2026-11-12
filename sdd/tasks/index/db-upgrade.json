@@ -72,7 +72,7 @@
       "feature_id": "FEAT-884",
       "feature": "db-upgrade",
       "spec": "sdd/specs/db-upgrade.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,8 +82,9 @@
       "parallelism_notes": "Consumes MigrationSet, MigrationFile, MigrationReport and catalog.load_migrations from TASK-5554.",
       "assigned_to": null,
       "started_at": "2026-11-12T23:12:58+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5555-migration-read-checks.md"
+      "completed_at": "2026-11-12T23:37:54+00:00",
+      "file": "sdd/tasks/completed/TASK-5555-migration-read-checks.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5556",
@@ -198,7 +199,7 @@
       "feature_id": "FEAT-884",
       "feature": "db-upgrade",
       "spec": "sdd/specs/db-upgrade.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -209,8 +210,9 @@
       "parallelism_notes": "Consumes MigrationSet/catalog from TASK-5554 and registered factories plus UI/crew resource pairs from TASK-5560; tests cover the complete five-set inventory.",
       "assigned_to": null,
       "started_at": "2026-11-12T23:12:58+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5561-server-migration-baselines.md"
+      "completed_at": "2026-11-12T23:37:55+00:00",
+      "file": "sdd/tasks/completed/TASK-5561-server-migration-baselines.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5562",
