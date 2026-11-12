@@ -136,11 +136,11 @@
     {
       "id": "TASK-5547",
       "slug": "documentation-claude-native-sandbox",
-      "title": "Documentation — wiki/sdd-tooling/dev_loop/claude-native-sandbox.md",
+      "title": "Documentation \u2014 wiki/sdd-tooling/dev_loop/claude-native-sandbox.md",
       "feature_id": "FEAT-881",
       "feature": "scripts-native-claude-sandbox-fixes",
       "spec": "sdd/specs/scripts-native-claude-sandbox-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -150,7 +150,7 @@
       "parallel": true,
       "parallelism_notes": "Documents prefix_mcp_config (TASK-5542), the session runtime copy (TASK-5543), the hook-only token (TASK-5544, via TASK-5546) and MIN_PREFIX_CLAUDE_VERSION (TASK-5545).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-12T00:57:24Z",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5547-documentation-claude-native-sandbox.md"
     }
