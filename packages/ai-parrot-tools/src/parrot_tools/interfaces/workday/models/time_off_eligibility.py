@@ -1,5 +1,5 @@
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class TimeOffEligibility(BaseModel):
@@ -14,5 +14,6 @@ class TimeOffEligibility(BaseModel):
     description: Optional[str] = None
     unit: Optional[str] = None
 
-    class Config:
-        extra = "ignore"
+    model_config = ConfigDict(
+        extra="ignore",
+    )

@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 
 class TimeBlock(BaseModel):
@@ -44,11 +44,13 @@ class TimeBlock(BaseModel):
     # Raw payload
     raw_data: dict[str, Any] = Field(..., exclude=True)
 
-    @validator("*", pre=True)
+    @field_validator("*", mode="before")
+    @classmethod
     def _convert_decimal(cls, v):
         if isinstance(v, Decimal):
             return float(v)
         return v
 
-    class Config:
-        extra = "ignore"
+    model_config = ConfigDict(
+        extra="ignore",
+    )
