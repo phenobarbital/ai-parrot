@@ -103,7 +103,9 @@ def env(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
     return values
 
 
-def _agent(*, llm: Any = "google", llm_kwargs: Optional[dict[str, Any]] = None, name: str = "feat882-agent") -> BasicAgent:
+def _agent(
+    *, llm: Any = "google", llm_kwargs: Optional[dict[str, Any]] = None, name: str = "feat882-agent"
+) -> BasicAgent:
     """Build an offline agent using the FEAT-882 default identity."""
     return BasicAgent(
         name=name,
