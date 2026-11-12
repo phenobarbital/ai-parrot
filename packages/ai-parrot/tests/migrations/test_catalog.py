@@ -1,4 +1,5 @@
 """Behavioral tests for packaged migration discovery and local authoring."""
+
 from __future__ import annotations
 
 from hashlib import sha256
@@ -181,12 +182,12 @@ def test_models_are_immutable() -> None:
 def test_render_replaces_only_identifier_tokens_and_preserves_json_braces() -> None:
     """Quote configured identifiers without treating JSON braces as formatting syntax."""
     rendered = render_sql(
-        "INSERT INTO {schema}.{bots_table} (config) VALUES ('{\"key\": {\"nested\": true}}');",
+        'INSERT INTO {schema}.{bots_table} (config) VALUES (\'{"key": {"nested": true}}\');',
         schema="navigator",
         bots_table="ai_bots",
     )
 
-    assert rendered == "INSERT INTO \"navigator\".\"ai_bots\" (config) VALUES ('{\"key\": {\"nested\": true}}');"
+    assert rendered == 'INSERT INTO "navigator"."ai_bots" (config) VALUES (\'{"key": {"nested": true}}\');'
     for identifier in ("Navigator", "ai-bots", "a" * 64):
         with pytest.raises(MigrationConfigurationError, match="Invalid"):
             render_sql("SELECT * FROM {schema}.{bots_table}", schema=identifier, bots_table="ai_bots")

@@ -4,6 +4,7 @@ Migration SQL may use only ``{schema}`` and ``{bots_table}`` replacement
 tokens.  Both are identifier contexts: callers replace them with PostgreSQL
 quoted identifiers, while JSON braces and all other SQL text remain literal.
 """
+
 from __future__ import annotations
 
 from hashlib import sha256
@@ -12,7 +13,6 @@ from pathlib import Path
 import re
 
 from .models import MigrationConfigurationError, MigrationFile, MigrationSet
-
 
 _IDENTIFIER_RE = re.compile(r"[a-z_][a-z0-9_]{0,62}\Z")
 _MIGRATION_RE = re.compile(r"(?P<sequence>[0-9]{3})_(?P<name>[a-z][a-z0-9_]*)\.sql\Z")
@@ -188,6 +188,8 @@ def scaffold(set_name: str, name: str, *, directory: Path) -> tuple[Path, Path]:
         with check_path.open("x", encoding="utf-8") as check_file:
             check_file.write("-- Replace with a query that verifies this migration's postcondition.\nSELECT FALSE;\n")
     except OSError as error:
-        raise _configuration_error(f"Partial migration scaffold created: {body_path}; check not created: {check_path}") from error
+        raise _configuration_error(
+            f"Partial migration scaffold created: {body_path}; check not created: {check_path}"
+        ) from error
 
     return body_path, check_path
