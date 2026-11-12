@@ -172,7 +172,9 @@ async def test_e2e_semantic_dataset_truncation(models_dir: Path, duckdb_warehous
     _prepare(models_dir, duckdb_warehouse, monkeypatch)
     policy_path = models_dir / "orders.policy.yaml"
     policy_path.write_text(
-        policy_path.read_text(encoding="utf-8").replace("limits: {default: 1000, max: 10000}", "limits: {default: 100, max: 100}"),
+        policy_path.read_text(encoding="utf-8").replace(
+            "limits: {default: 1000, max: 10000}", "limits: {default: 100, max: 100}"
+        ),
         encoding="utf-8",
     )
     toolkit = SemanticLayerToolkit(models_dir=models_dir, dialect="duckdb", dataplane_guard=_EvaluatorGuard())
