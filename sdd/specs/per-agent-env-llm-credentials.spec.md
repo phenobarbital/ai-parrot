@@ -71,7 +71,7 @@ mechanism for flows.
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:ceb15668b7e2dcd7d61647a261603e289ea0e4598e722645966003421a99d697 evaluation_digest=sha256:458581f77ad630e12b22c4e3724fec5b58fb5edc900ff5662349fb652dd6c073 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:5d29cdf2be8ffeda4deeac420d97d0de452e7f00b93099817b924bfe95f07842 evaluation_digest=sha256:490c87eaa9660cc19052ea8c3beccc0374d35fa0fa3e8878ce05fedc39fcde9b rules_version=1 status=pass -->
 
 ## 2. Architectural Design
 
@@ -106,6 +106,16 @@ outside `[A-Za-z0-9]` replaced by a single `_`, leading/trailing `_` stripped
 
 The key for #3 is resolved for the **provider that results from the model decision**
 (so `ODOO_HELPDESK_MODEL=openai:gpt-5` selects `ODOO_HELPDESK_OPENAI_API_KEY`).
+
+**Component-default keys are not "explicit" (rev 0.2).** `AgentCrew` (`apply_google_api_key`,
+`credentials.py:123`), the Agent HTTP handler (`AGENT_<P>_API_KEY`) and `ExpertAgent`
+(`EXPERT_<TIER>_<P>_API_KEY`) put their component default into `llm_kwargs["api_key"]` before
+`configure()`, and FLOW injection (M3) does the same. Precedence #2 must not swallow those, or #3
+could never beat #5. M1 therefore adds `COMPONENTS` and `is_component_default_key(api_key, provider)`:
+an `api_key` whose value equals a configured `<COMPONENT>_<TOKEN>_API_KEY` (any of `COMPONENTS`) or
+the legacy `CREW_AI_KEY` is treated as #5 and is replaced by `<AGENT>_<PROVIDER>_API_KEY` when that
+is set. `credentials_file` / `credentials` / `vertexai` and any other `api_key` value stay #2.
+Detection by value keeps the three existing injectors untouched.
 
 **Where each gap is wired.**
 
@@ -158,6 +168,7 @@ def agent_env_token(name: str) -> str: ...
 def resolve_agent_llm(name: str, *, default_provider: str) -> Optional[ComponentLLM]: ...
 def resolve_agent_api_key(name: str, provider: str) -> Optional[str]: ...
 def apply_component_api_key(agent: Any, component: str) -> bool: ...
+def is_component_default_key(api_key: Optional[str], provider: str) -> bool: ...
 ```
 
 ---
@@ -194,6 +205,18 @@ def apply_component_api_key(agent: Any, component: str) -> bool: ...
       """``<AGENT>_<PROVIDER_TOKEN>_API_KEY`` or None. Never logs the value."""
       # provider_key_token verified: llm_defaults.py:62
 
+  COMPONENTS: tuple[str, ...] = (
+      "AGENT", "CREW", "FLOW", "EXPERT_JUDGMENT", "EXPERT_BALANCED", "EXPERT_TEMPLATED",
+  )
+  """Every component with a ``<COMPONENT>_<PROVIDER>_API_KEY`` default (rev 0.2)."""
+
+  def is_component_default_key(api_key: Optional[str], provider: str) -> bool:
+      """True when ``api_key`` equals a configured component default for ``provider``.
+
+      Checks ``<C>_<TOKEN>_API_KEY`` for every C in ``COMPONENTS`` plus legacy ``CREW_AI_KEY``.
+      Falsy ``api_key`` -> False. Never logs a value.
+      """
+
   def apply_component_api_key(agent: Any, component: str) -> bool:
       """Inject ``<COMPONENT>_<PROVIDER>_API_KEY`` into an UNCONFIGURED agent's llm_kwargs.
 
@@ -221,9 +244,13 @@ def apply_component_api_key(agent: Any, component: str) -> bool: ...
 
 ### Module 3: AgentsFlow default key + usage tag
 - **Path**: `packages/ai-parrot/src/parrot/bots/flows/flow/flow.py`
-- **Responsibility**: call `apply_component_api_key(agent, "FLOW")` for every agent resolved in
-  `from_definition` (single agents and decision-group members); wrap `run_flow` in
-  `usage_component("FLOW")`; resolve `FLOW_LLM` for unconfigured agents without a declared `llm`.
+- **Responsibility**: apply FLOW defaults (`_apply_flow_defaults(agent)`) to every agent resolved in
+  `from_definition` (single agents and decision-group members) **and** to the agent of every
+  `AgentNode` passed to `add_node` (programmatic flows, rev 0.2); wrap `run_flow` in
+  `usage_component("FLOW")`. `_apply_flow_defaults` skips configured agents (one INFO log per agent
+  name per process), sets `_llm_raw` from `FLOW_LLM` only when the agent declares no `llm` **and**
+  `FLOW_LLM` itself is set (`source == "component"`; `DEFAULT_LLM` alone changes nothing — G4), then
+  calls `apply_component_api_key(agent, "FLOW")`.
 - **Depends on**: Module 1.
 - **Interface Skeleton**:
   ```python
@@ -275,6 +302,9 @@ tests:
 - packages/ai-parrot/tests/bots/flows/crew/test_crew_credentials.py
 - packages/ai-parrot/tests/bots/flows/crew/test_crew_llm_defaults.py
 - packages/ai-parrot-server/tests/handlers/test_agent_handler_llm_defaults.py
+- packages/ai-parrot/tests/test_per_agent_env_credentials.py
+- packages/ai-parrot/tests/bots/flows/test_flow_default_key.py
+- packages/ai-parrot/tests/bots/flows/test_flow_per_agent_env_integration.py
 markers: none
 
 ### Test Data / Fixtures
@@ -370,6 +400,10 @@ Verified against: `64dc31e39b`
 | `packages/ai-parrot/src/parrot/bots/flows/flow/flow.py` | MODIFY | `agent = agent_registry.get_bot_instance(agent_ref)` | `:635` | 1 |
 | `packages/ai-parrot/src/parrot/bots/flows/flow/flow.py` | MODIFY | `agent = agent_registry.get_bot_instance(ref)` | `:661` | 1 |
 | `packages/ai-parrot/src/parrot/bots/flows/flow/flow.py` | MODIFY | `async def run_flow(` | `:1226` | 1 |
+| `packages/ai-parrot/src/parrot/bots/flows/flow/flow.py` | MODIFY | `def add_node(self, node: Node) -> None:` | `:407` | 1 |
+| `packages/ai-parrot/src/parrot/bots/flows/flow/flow.py` | MODIFY | `import asyncio` | `:20` | 1 |
+| `packages/ai-parrot/tests/bots/flows/test_flow_per_agent_env_integration.py` | CREATE | — | — | — |
+| `packages/ai-parrot/tests/test_llm_defaults_documented.py` | MODIFY | `"name", ["DEFAULT_LLM", "CREW_LLM", "AGENT_LLM", "EXPERT_JUDGMENT_LLM", "CREW_GOOGLE_API_KEY", "CREW_AI_KEY"]` | `:11` | 1 |
 | `wiki/operations/configuration/llm-defaults.md` | MODIFY | `## API keys` | — | 1 |
 | `packages/ai-parrot/tests/unit/test_llm_defaults.py` | MODIFY | (append tests) | — | — |
 | `packages/ai-parrot/tests/bots/flows/test_flow_default_key.py` | CREATE | — | — | — |
@@ -388,6 +422,9 @@ Verified against: `64dc31e39b`
 - **Env-token collisions:** `odoo-helpdesk` and `odoo_helpdesk` normalize identically. Mitigation: document; first-match semantics, no attempt to disambiguate.
 - **Component-name collision:** an agent literally named `crew`, `flow` or `agent` would read `CREW_*`/`FLOW_*`/`AGENT_*` as *its own* per-agent vars. Mitigation: per-agent lookup suffix is `_MODEL` / `_<P>_API_KEY` — identical shape to component keys, so document that agents must not use reserved names, and log a WARNING at configure when `name` normalizes to `AGENT`, `CREW`, `FLOW`, `DEFAULT`, `EXPERT_*`.
 - **Already-configured registry agents** miss FLOW injection (D3). Mitigated by the per-agent path; surfaced in docs and a one-time INFO log.
+- **Value-equality detection (rev 0.2):** if an operator sets a component key to the same value as an
+  `api_key` hard-coded for an agent, that agent's key is treated as a component default and a
+  per-agent env key replaces it. Documented; the per-agent key is the operator's explicit intent anyway.
 - **Name changes:** `bot.name` is mutable in a few subclasses before `configure()`; the lookup uses the name at `configure()` time.
 - Interaction with FEAT-796 `AGENT_LLM` handler default (`abstract.py` handler `_create_agent`): the handler already resolves `AGENT_*` and passes `llm`/`llm_kwargs`; per-agent env then overrides *that* result (#3 > #5) by design.
 
@@ -426,7 +463,7 @@ entries:
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:ceb15668b7e2dcd7d61647a261603e289ea0e4598e722645966003421a99d697 evaluation_digest=sha256:458581f77ad630e12b22c4e3724fec5b58fb5edc900ff5662349fb652dd6c073 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:5d29cdf2be8ffeda4deeac420d97d0de452e7f00b93099817b924bfe95f07842 evaluation_digest=sha256:490c87eaa9660cc19052ea8c3beccc0374d35fa0fa3e8878ce05fedc39fcde9b rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -474,7 +511,7 @@ Coverage:
     ]
   },
   "diagnostics": [],
-  "evaluation_digest": "sha256:458581f77ad630e12b22c4e3724fec5b58fb5edc900ff5662349fb652dd6c073",
+  "evaluation_digest": "sha256:490c87eaa9660cc19052ea8c3beccc0374d35fa0fa3e8878ce05fedc39fcde9b",
   "exit_code": 0,
   "findings": [
     {
@@ -512,7 +549,7 @@ Coverage:
       "waived_by": null
     }
   ],
-  "input_digest": "sha256:ceb15668b7e2dcd7d61647a261603e289ea0e4598e722645966003421a99d697",
+  "input_digest": "sha256:5d29cdf2be8ffeda4deeac420d97d0de452e7f00b93099817b924bfe95f07842",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
@@ -541,7 +578,7 @@ Coverage:
 - [x] Does `<AGENT>_MODEL` beat the model declared in code/definition? — *Resolved with author*: env beats code, never a live client instance or explicit credentials (D2).
 - [x] Component name for AgentsFlow defaults? — *Resolved with author*: `FLOW` (`FLOW_LLM`, `FLOW_<PROVIDER>_API_KEY`), no legacy alias.
 - [x] D3 — Registry instances are already configured when `AgentsFlow` receives them, so FLOW key injection cannot reach their client. — *Resolved with author*: accept the limitation. `FLOW_<PROVIDER>_API_KEY` applies only to agents not yet configured (in practice, programmatic flows); registry-built agents use `<AGENT>_<PROVIDER>_API_KEY`. No `component` hint on `AgentRegistry.get_instance`.
-- [ ] Should per-agent env also apply to `AgentCrew` agents (it does implicitly, via `configure()`), with crew's `CREW_*` as the #5 default — confirm no crew-specific opt-out is wanted. — *Owner: Jesus Lara*
+- [x] Should per-agent env also apply to `AgentCrew` agents? — *Resolved with author*: yes, no opt-out. `<AGENT>_MODEL` / `<AGENT>_<PROVIDER>_API_KEY` apply to crew agents via `configure()` and beat `CREW_*` (#3 > #5); see rev 0.2 component-default detection.
 
 ---
 
@@ -571,3 +608,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-11-12 | Jesus Lara | Initial draft |
+| 0.2 | 2026-11-12 | Jesus Lara | Task-time amendment: component-default keys detected by value (`COMPONENTS`, `is_component_default_key`) so #3 beats #5 for CREW/AGENT/EXPERT/FLOW; FLOW defaults also applied in `add_node`; `FLOW_LLM` only when set; crew opt-out question closed |
