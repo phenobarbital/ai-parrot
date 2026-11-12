@@ -7,7 +7,7 @@ import logging
 import re
 from collections import deque
 from datetime import datetime
-from typing import Any, Awaitable, Callable, Literal
+from typing import Any, Awaitable, Callable, Literal, Protocol, TypeVar, runtime_checkable
 
 from pydantic import BaseModel
 
@@ -67,6 +67,25 @@ class SemanticAuditEntry(BaseModel):
         return json.dumps(data, sort_keys=True, separators=(",", ":")).encode()
 
 
+@runtime_checkable
+class SignableAuditEntry(Protocol):
+    """What the ledger needs from an entry: an id, a signature slot and a canonical byte form."""
+
+    entry_id: str
+    signature: str
+
+    def canonical_bytes(self) -> bytes:
+        """Return the bytes that are signed."""
+        ...
+
+    def model_dump_json(self) -> str:
+        """Return the JSON handed to the durable sink."""
+        ...
+
+
+_E = TypeVar("_E", bound=SignableAuditEntry)
+
+
 class SemanticAuditLedger:
     """Bounded in-memory signed ledger with an optional async durable sink.
 
@@ -84,7 +103,7 @@ class SemanticAuditLedger:
     ) -> None:
         self.signer: AbstractKMSSigner = signer or LocalHMACSigner()
         self.storage = storage
-        self.entries: deque[SemanticAuditEntry] = deque(maxlen=max_entries)
+        self.entries: deque[SignableAuditEntry] = deque(maxlen=max_entries)
         self.logger = logger
 
     @property
@@ -92,7 +111,7 @@ class SemanticAuditLedger:
         """True when a storage callable is configured (drives audit_required=None, §8 Q5)."""
         return self.storage is not None
 
-    async def append(self, entry: SemanticAuditEntry, *, required: bool = False) -> SemanticAuditEntry:
+    async def append(self, entry: _E, *, required: bool = False) -> _E:
         """Sign the entry, keep it in memory and forward it to storage.
 
         Args:
@@ -123,7 +142,7 @@ class SemanticAuditLedger:
                 ) from exc
         return entry
 
-    async def verify(self, entry: SemanticAuditEntry) -> bool:
+    async def verify(self, entry: SignableAuditEntry) -> bool:
         """Verify the entry's signature with the configured async signer.
 
         Args:
