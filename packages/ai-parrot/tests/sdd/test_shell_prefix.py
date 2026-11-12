@@ -196,6 +196,69 @@ def test_errors_exit_2_and_exec_nothing(
     assert "sdd shell prefix:" in capsys.readouterr().err
 
 
+def _assert_blocked(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], policy_path: Path
+) -> None:
+    """Run the prefix against ``policy_path`` and require a fail-closed exit."""
+    monkeypatch.setenv(shell_prefix.POLICY_ENV, str(policy_path))
+    captured = _capture_exec(monkeypatch)
+
+    with pytest.raises(SystemExit) as raised:
+        shell_prefix.main(["echo safe"])
+
+    assert raised.value.code == 2
+    assert captured == {}
+    assert "sdd shell prefix: invalid policy" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("contents", ["{not json", "[]", '"text"', '{"schema_version": 1}', "\xff\xfe"])
+def test_malformed_policy_contents_exit_2(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], contents: str
+) -> None:
+    """A policy that is not one complete JSON object blocks execution."""
+    policy_path = tmp_path / "policy.json"
+    policy_path.write_bytes(contents.encode("latin-1"))
+    policy_path.chmod(0o600)
+
+    _assert_blocked(monkeypatch, capsys, policy_path)
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"extra": True},
+        {"schema_version": True},
+        {"mode": "off"},
+        {"worktree": "relative/path"},
+        {"hook_commands": "echo hook"},
+        {"mcp_argv": [["ok"], "not-a-list"]},
+        {"mcp_argv": [[1]]},
+        {"rtk": 1},
+    ],
+)
+def test_policy_with_unknown_key_or_wrong_type_exit_2(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    overrides: dict[str, object],
+) -> None:
+    """Every schema field is checked; an unknown key or a wrong type blocks execution."""
+    policy_path, _document = _write_policy(tmp_path, **overrides)
+
+    _assert_blocked(monkeypatch, capsys, policy_path)
+
+
+def test_symlinked_policy_exit_2(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A valid policy reached through a symlink is refused: the link target could be swapped."""
+    policy_path, _document = _write_policy(tmp_path)
+    link = tmp_path / "link.json"
+    link.symlink_to(policy_path)
+
+    _assert_blocked(monkeypatch, capsys, link)
+
+
 def test_script_mode_does_not_import_parrot() -> None:
     """Direct script-mode import needs only stdlib sibling modules."""
     scripts = Path(shell_prefix.__file__).parent
