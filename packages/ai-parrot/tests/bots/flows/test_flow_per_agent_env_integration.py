@@ -9,7 +9,6 @@ from parrot.bots.flows.flow import flow as flow_module
 from parrot.bots.flows.flow.definition import EdgeDefinition, FlowDefinition, NodeDefinition
 from parrot.clients import factory
 
-
 AGENT_NAME = "feat882-flow-agent"
 
 
