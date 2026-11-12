@@ -123,6 +123,23 @@ def test_cli_snapshot_inputs(troc_pnl_yaml, chart_snapshot, journal_frame, tmp_p
     assert "assertion [failed] revenue == cogs" in failed.output
 
 
+def test_cli_live_defaults_to_best_effort_audit(
+    troc_pnl_yaml, chart_snapshot, journal_frame, tmp_path, monkeypatch
+) -> None:
+    """The CLI has no audit sink, so --live must not fail on the 'required' default unless the operator asks."""
+    monkeypatch.delenv("FINANCE_AUDIT_MODE", raising=False)
+    monkeypatch.setattr(finance_cli, "datetime", _March2025)
+    manifest = _manifest(chart_snapshot, tmp_path / "chart.yaml")
+    journal = _arrow_file(journal_frame, tmp_path / "journal.arrow")
+    args = ["validate", str(troc_pnl_yaml), "--snapshot", str(manifest), "--live", "--journal-arrow", str(journal)]
+    default = CliRunner().invoke(finance, args)
+    assert default.exit_code == 0, default.output
+
+    monkeypatch.setenv("FINANCE_AUDIT_MODE", "required")  # an explicit operator choice is honoured
+    strict = CliRunner().invoke(finance, args)
+    assert strict.exit_code == 1
+
+
 def test_cli_explain(troc_pnl_yaml, chart_snapshot, tmp_path) -> None:
     runner = CliRunner()
     manifest = _manifest(chart_snapshot, tmp_path / "chart.yaml")

@@ -163,6 +163,26 @@ async def test_toolkit_allows_without_guard_or_context(troc_pnl_yaml, chart_snap
     assert guard.filtered == [] and guard.checked == []
 
 
+async def test_require_context_refuses_guarded_calls_without_context(troc_pnl_yaml, chart_snapshot) -> None:
+    """With require_context a configured guard never silently degrades to allow-all."""
+    models_dir = troc_pnl_yaml.parent.parent
+    guard = _FakeGuard({"accounting:troc:troc_pnl:revenue"})
+    strict = _toolkit(models_dir, chart_snapshot, policy_guard=guard, require_context=True)
+    await strict._pre_execute("finance_list_metrics", _permission_context=None)
+    with pytest.raises(AuthorizationRequired):
+        await strict.list_metrics("troc")
+    with pytest.raises(AuthorizationRequired):
+        await strict.explain_metric("revenue", tenant="troc")
+    with pytest.raises(AuthorizationRequired):
+        await strict.query_metric("revenue", "2025-01-01", "2025-03-31", tenant="troc")
+    assert guard.filtered == [] and guard.checked == []
+
+    # Without a guard the option has nothing to enforce: the documented allow-all posture is unchanged.
+    no_guard = _toolkit(models_dir, chart_snapshot, require_context=True)
+    await no_guard._pre_execute("finance_list_metrics", _permission_context=None)
+    assert len(await no_guard.list_metrics("troc")) == len(METRICS)
+
+
 async def test_policy_resource_names(troc_pnl_yaml, chart_snapshot, permission_context) -> None:
     from navigator_auth.abac.policies.resources import ResourceType
 

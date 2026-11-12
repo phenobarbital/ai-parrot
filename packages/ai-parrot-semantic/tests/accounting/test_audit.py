@@ -44,6 +44,29 @@ def _entry(troc_pnl_yaml, chart_snapshot, context=None) -> tuple:
     return model, entry
 
 
+def test_entry_records_queried_tenant_not_caller_tenant(troc_pnl_yaml, chart_snapshot, permission_context) -> None:
+    """A caller of tenant A querying tenant B's model is audited against tenant B (caller kept in digest/user)."""
+    caller_tenant = str(permission_context.tenant_id)
+    queried = "not-" + caller_tenant
+    model = load_model(troc_pnl_yaml, chart_snapshot)
+    request = MetricRequest.model_validate({"metric": "gross_margin", "grain": "month", "period": _PERIOD})
+    entry = build_entry(
+        context=permission_context,
+        tenant=queried,
+        model=model,
+        compiled=compile_metric(model, request, "duckdb"),
+        target="duckdb",
+        tool="accounting_metric",
+        outcome="ok",
+        assertion_status="none",
+        row_count=1,
+        duration_ms=1,
+    )
+    assert entry.tenant_id == queried
+    assert entry.user_id == str(permission_context.user_id)
+    assert entry.subject_digest != subject_digest(None)
+
+
 async def test_ledger_accepts_both_entry_types(recording_storage, troc_pnl_yaml, chart_snapshot) -> None:
     storage, payloads = recording_storage
     ledger = SemanticAuditLedger(signer=LocalHMACSigner(), storage=storage)

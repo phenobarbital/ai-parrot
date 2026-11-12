@@ -163,11 +163,13 @@ Every executed query appends a signed `AccountingAuditEntry` to the shared `Sema
 
 - `entry_id`, `created_at`, `user_id`, `tenant_id`, `model`, `version`, `model_hash`, `snapshot_hash`, `sql_hash`, `plan_hash`, `dialect`, `target`, `tool`, `request_canonical`, `lineage_ref`, `assertion_status`, `outcome`, `row_count`, `duration_ms`, `signature`
 
+`tenant_id` is the *queried* tenant; the caller is identified by `user_id` and `subject_digest` (so a user of tenant A querying tenant B is audited against B). Only executed queries are audited: `outcome` is `ok` or `execution_error`; an authorization denial raises before any entry exists.
+
 `lineage_ref` is a string of the form `{model_hash}:{plan_hash}:{sql_hash}`. It is never inline. To rebuild lineage, parse the discriminated `request_canonical`, verify the hashes, and call `compile_metric` or `compile_assertion`.
 
 ### Governance posture
 
-Metrics are governed by default. Visibility is filtered through `DatasetPolicyGuard` with resource names `accounting:<tenant>:<model>:<metric>`. With no guard or no permission context, every metric is allowed.
+Metrics are governed by default. Visibility is filtered through `DatasetPolicyGuard` with resource names `accounting:<tenant>:<model>:<metric>`. With no guard or no permission context, every metric is allowed. Pass `require_context=True` to `AccountingToolkit` to make a configured guard refuse (with `AuthorizationRequired`) any call that carries no permission context instead of degrading to allow-all; it is off by default, and has no effect without a guard.
 
 The `sl_*` tools of the semantic layer fail closed instead.
 
@@ -265,7 +267,7 @@ Missing configuration/keys or provider failure fail closed. A failed refresh nev
 
 ### `FINANCE_*` settings
 
-- `FINANCE_AUDIT_MODE`: `required` (default) or `best_effort`. When `required`, a missing or failing audit sink prevents the result from being returned.
+- `FINANCE_AUDIT_MODE`: `required` (default) or `best_effort`. `parrot finance validate --live` has no audit sink, so it defaults to `best_effort` unless `FINANCE_AUDIT_MODE` is set explicitly. When `required`, a missing or failing audit sink prevents the result from being returned.
 - `FINANCE_MODELS_DIR`: root of the `<tenant>/<model>.yaml` specs when `models_dir` is not passed to the toolkit (default `./models`).
 
 The default tenant is not an environment setting: pass `default_tenant=` to `AccountingToolkit` (it is used when neither the tool argument nor the permission context names a tenant).

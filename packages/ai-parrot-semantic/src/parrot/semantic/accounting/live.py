@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
+from .errors import ModelValidationError
 from .loader import detect_drift
 from .models import AssertionResult, ChartSnapshot, Period
 
@@ -41,6 +42,11 @@ def last_closed_month(today: date) -> Period:
     first = today.replace(day=1)
     end = first - timedelta(days=1)
     return Period(from_=end.replace(day=1), to=end)
+
+
+def _describe(exc: BaseException) -> str:
+    """Caller-safe description: validation problem codes are public; any other text may carry driver or SQL detail."""
+    return str(exc) if isinstance(exc, ModelValidationError) else type(exc).__name__
 
 
 def _failed(tenant: str, model: str, checked_at: datetime, error: str) -> ModelLiveStatus:
@@ -81,7 +87,7 @@ async def _validate_one(toolkit: "AccountingToolkit", tenant: str, model: str, *
     try:
         loaded = await toolkit._ensure_loaded(tenant, model)
     except Exception as exc:  # noqa: BLE001 - reported per model, flags preserved
-        return _failed(tenant, model, checked_at, f"model load failed: {exc}")
+        return _failed(tenant, model, checked_at, f"model load failed ({_describe(exc)})")
     try:
         fresh = await toolkit._snapshot_provider(tenant, model, spec)
     except Exception as exc:  # noqa: BLE001 - provider failures are reported, never fatal for other models
@@ -94,7 +100,7 @@ async def _validate_one(toolkit: "AccountingToolkit", tenant: str, model: str, *
             tenant, loaded, last_closed_month(today), tool="finance_validate_model"
         )
     except Exception as exc:  # noqa: BLE001 - reported per model, flags preserved
-        return _failed(tenant, model, checked_at, f"assertion run failed: {exc}")
+        return _failed(tenant, model, checked_at, f"assertion run failed ({_describe(exc)})")
     assertions = loaded.spec.assertions
     blocked = any(
         result.status == "failed" and assertions[index].on_failure == "block" for index, result in enumerate(results)

@@ -128,6 +128,7 @@ class AccountingToolkit(AbstractToolkit):
         audit_mode: AuditMode | None = None,
         default_tenant: str | None = None,
         duckdb_threads: int = 4,
+        require_context: bool = False,
         result_limit: int = 10_000,
         **kwargs: Any,
     ) -> None:
@@ -146,6 +147,8 @@ class AccountingToolkit(AbstractToolkit):
             audit_mode: ``required`` or ``best_effort``; defaults to ``FINANCE_AUDIT_MODE``.
             default_tenant: Tenant used when neither the argument nor the permission context names one.
             duckdb_threads: Thread count for a lazily created DuckDB engine.
+            require_context: With a ``policy_guard``, refuse calls that carry no permission context instead of
+                allowing them (default ``False``: no guard or no context allows everything, per spec AC13).
             result_limit: Maximum result rows per query.
             **kwargs: Forwarded to ``AbstractToolkit``.
 
@@ -170,6 +173,7 @@ class AccountingToolkit(AbstractToolkit):
             Executor(database_toolkit or DatabaseQueryToolkit(), ConnectionResolver()), result_limit=result_limit
         )
         self._default_tenant = default_tenant
+        self._require_context = require_context
         self._load_lock = asyncio.Lock()
 
     @staticmethod
@@ -218,9 +222,19 @@ class AccountingToolkit(AbstractToolkit):
         return f"accounting:{tenant}:{model}:{metric}"
 
     def _guarded_context(self) -> Any:
-        """The permission context when both a guard and a context are present, else ``None`` (allow-all)."""
+        """The permission context when both a guard and a context are present, else ``None`` (allow-all).
+
+        Raises:
+            AuthorizationRequired: A guard is configured, ``require_context`` is set and no context was propagated.
+        """
         pctx = _pctx_var.get()
-        if self._policy_guard is None or not pctx:
+        if self._policy_guard is None:
+            return None
+        if not pctx:
+            if self._require_context:
+                raise AuthorizationRequired(
+                    tool_name="finance", message="a permission context is required when a policy guard is configured"
+                )
             return None
         return pctx
 

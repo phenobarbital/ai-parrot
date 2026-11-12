@@ -46,7 +46,7 @@ class AccountingAuditEntry(BaseModel):
     request_canonical: str
     lineage_ref: str
     assertion_status: Literal["passed", "failed", "skipped", "none"]
-    outcome: Literal["ok", "denied", "validation_error", "execution_error"]
+    outcome: Literal["ok", "execution_error"]
     row_count: int | None
     duration_ms: int | None
     signature: str = ""
@@ -93,7 +93,7 @@ def build_entry(
         entry_id=str(uuid.uuid4()),
         created_at=datetime.now(timezone.utc),
         user_id="anonymous" if context is None else str(context.user_id),
-        tenant_id=tenant if context is None else str(context.tenant_id),
+        tenant_id=tenant,  # the QUERIED tenant; the caller is identified by user_id and subject_digest
         subject_digest=subject_digest(context),
         model=model.spec.model,
         version=model.spec.version,

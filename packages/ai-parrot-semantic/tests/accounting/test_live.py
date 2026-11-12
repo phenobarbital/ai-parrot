@@ -104,6 +104,25 @@ async def test_live_validation_flags(troc_pnl_yaml, chart_snapshot, journal_fram
         await _close(toolkit)
 
 
+async def test_live_errors_do_not_leak_exception_text(troc_pnl_yaml, chart_snapshot, journal_frame) -> None:
+    """A failing assertion run reports only the exception type, never driver/SQL text from the message."""
+    secret = "password=hunter2 SELECT secret FROM vault"
+    toolkit = _toolkit(troc_pnl_yaml.parent.parent, chart_snapshot, journal_frame)
+    try:
+
+        async def boom(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+            raise AccountingExecutionError(secret)
+
+        toolkit._run_assertions = boom  # type: ignore[method-assign]
+        report = await run_live_validation(toolkit, today=date(2025, 3, 15))
+    finally:
+        await _close(toolkit)
+    errors = [status.error for status in report.models]
+    assert errors and all(error for error in errors)
+    assert all("hunter2" not in error and "SELECT" not in error for error in errors)
+    assert any("AccountingExecutionError" in error for error in errors)
+
+
 async def test_assertion_entries_replayable(troc_pnl_yaml, chart_snapshot, journal_frame, recording_storage) -> None:
     storage, payloads = recording_storage
     _write_model(

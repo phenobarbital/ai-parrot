@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import click
 
+from .audit import audit_mode_from_env
 from .errors import ModelValidationError, Problem
 from .loader import load_model
 from .models import AccountingModel, ChartSnapshot
@@ -98,6 +100,8 @@ async def _run_live(
         models_dir=models_dir,
         snapshot_manifests={tenant: {name: snapshot_path}},
         frame_provider=_arrow_frame_provider(journal_arrow) if journal_arrow is not None else None,
+        # The CLI has no audit sink: default to best_effort unless the operator set FINANCE_AUDIT_MODE explicitly.
+        audit_mode=audit_mode_from_env() if "FINANCE_AUDIT_MODE" in os.environ else "best_effort",
     )
     try:
         return await _validate_one(toolkit, tenant, name, today=today)
