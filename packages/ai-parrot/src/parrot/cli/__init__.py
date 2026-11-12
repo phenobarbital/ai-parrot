@@ -212,6 +212,8 @@ cli._lazy_commands = {
     "connect": "parrot.cli.connect",
     "connections": "parrot.cli.connect",
     "disconnect": "parrot.cli.connect",
+    # FEAT-713 — accounting metrics layer CLI, ships in ai-parrot-semantic.
+    "finance": "parrot.semantic.accounting.cli",
 }
 
 _AGENTD_INSTALL_HINT = "ai-parrot-integrations[agentd]: pip install ai-parrot-integrations[agentd]"
@@ -228,6 +230,7 @@ cli._lazy_extras = {
     "formdesigner": "parrot-formdesigner: pip install parrot-formdesigner[ai-parrot]",
     "jiratoolkit": "ai-parrot-tools: pip install ai-parrot-tools",
     "ontology": "ai-parrot[ontology-store]: pip install ai-parrot[ontology-store]",
+    "finance": "ai-parrot-semantic[duckdb]: pip install ai-parrot-semantic[duckdb]",
 }
 
 if __name__ == "__main__":
