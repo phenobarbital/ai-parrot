@@ -61,6 +61,40 @@ async def test_duplicate_slug(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_duplicate_slug_ignores_repeat_ordinals_of_one_symbol(tmp_path: Path) -> None:
+    """A property and its setter (``X`` / ``X~2``) share a title by construction — no finding."""
+    context = await _context(
+        tmp_path,
+        [
+            WikiPageRecord(concept_id="sym:pkg/base.py#Client.tool_manager", title="Client.tool_manager", body="g"),
+            WikiPageRecord(concept_id="sym:pkg/base.py#Client.tool_manager~2", title="Client.tool_manager", body="s"),
+        ],
+    )
+
+    assert await DuplicateSlugRule().check(context) == []
+
+
+@pytest.mark.asyncio
+async def test_duplicate_slug_keeps_every_id_when_distinct_symbols_collide(tmp_path: Path) -> None:
+    """Distinct symbols still collide; the finding lists every page id, ordinal variants included."""
+    ids = [
+        "sym:pkg/a.py#Client.tool_manager",
+        "sym:pkg/a.py#Client.tool_manager~2",
+        "sym:pkg/b.py#Client.tool_manager",
+    ]
+    context = await _context(
+        tmp_path,
+        [WikiPageRecord(concept_id=concept_id, title="Client.tool_manager", body="b") for concept_id in ids],
+    )
+
+    findings = await DuplicateSlugRule().check(context)
+
+    assert len(findings) == 1
+    assert findings[0].subjects == sorted(ids)
+    assert findings[0].data["slug"] == "client-tool-manager"
+
+
+@pytest.mark.asyncio
 async def test_orphan_page_skips_designated_roots(tmp_path: Path) -> None:
     """Only ordinary pages without inbound edges are reported as orphans."""
     context = await _context(
