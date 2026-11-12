@@ -206,7 +206,7 @@ class AccountingModel(BaseModel, frozen=True):
     def _natures_sorted_unique(self) -> "AccountingModel":
         """Require natures strictly increasing by account id (sorted and unique, spec §3 M2)."""
         ids = [account_id for account_id, _ in self.natures]
-        for previous, current in zip(ids, ids[1:]):
+        for previous, current in zip(ids, ids[1:], strict=False):
             if previous == current:
                 raise ValueError(f"duplicate nature for account {current!r}")
             if previous > current:
