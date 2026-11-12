@@ -297,8 +297,7 @@ async def test_e2e_postgres_parity(troc_pnl_yaml, chart_snapshot, journal_frame)
     async with psycopg.AsyncConnection(dsn) as conn:
         async with conn.cursor() as cur:
             # Create temp table
-            await cur.execute(
-                """
+            await cur.execute("""
                 CREATE TEMP TABLE journal (
                     account_id TEXT,
                     posting_date DATE,
@@ -307,8 +306,7 @@ async def test_e2e_postgres_parity(troc_pnl_yaml, chart_snapshot, journal_frame)
                     product_line TEXT,
                     cost_center TEXT
                 )
-                """
-            )
+                """)
 
             # Insert journal rows
             for row in journal_frame.to_pylist():
