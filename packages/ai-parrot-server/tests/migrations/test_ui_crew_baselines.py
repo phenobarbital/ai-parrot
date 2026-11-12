@@ -9,7 +9,6 @@ import pytest
 
 from parrot.server.migrations import providers
 
-
 _ROOT = Path(__file__).parents[2]
 _MIGRATIONS = _ROOT / "src" / "parrot" / "server" / "migrations"
 
@@ -17,16 +16,24 @@ _MIGRATIONS = _ROOT / "src" / "parrot" / "server" / "migrations"
 @pytest.mark.parametrize(
     ("factory", "name", "resource_dir", "tables"),
     [
-        (providers.ui_surfaces_set, "ui_surfaces", "sql/ui_surfaces", ("navigator.ui_surfaces", "navigator.ui_surface_shares")),
+        (
+            providers.ui_surfaces_set,
+            "ui_surfaces",
+            "sql/ui_surfaces",
+            ("navigator.ui_surfaces", "navigator.ui_surface_shares"),
+        ),
         (providers.crew_definitions_set, "crew_definitions", "sql/crew_definitions", ("navigator.crew_definitions",)),
-        (providers.metric_definitions_set, "metric_definitions", "sql/metric_definitions", ("navigator.metric_definitions",)),
+        (
+            providers.metric_definitions_set,
+            "metric_definitions",
+            "sql/metric_definitions",
+            ("navigator.metric_definitions",),
+        ),
         (providers.recipes_set, "recipes", "sql/recipes", ("navigator.infographic_recipes",)),
         (providers.scheduler_set, "scheduler", "sql/scheduler", ("navigator.service_scheduler",)),
     ],
 )
-def test_server_sets_are_fixed_metadata(
-    factory: object, name: str, resource_dir: str, tables: tuple[str, ...]
-) -> None:
+def test_server_sets_are_fixed_metadata(factory: object, name: str, resource_dir: str, tables: tuple[str, ...]) -> None:
     """Expose fixed navigator targets without importing runtime handler modules."""
     migration_set = factory()  # type: ignore[operator]
 
