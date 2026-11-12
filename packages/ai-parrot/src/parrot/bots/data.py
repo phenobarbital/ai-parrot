@@ -25,6 +25,7 @@ from ..tools.dataset_manager import DatasetManager
 from ..tools.pythonpandas import PythonPandasTool
 from ..tools.json_tool import ToJsonTool
 from .agent import BasicAgent
+from .base import with_call_identity
 from .mixins.intent_router import IntentRouterMixin
 from ..registry.capabilities.models import IntentRouterConfig
 from ..registry.routing.route_bank import resolve_route_banks
@@ -1358,6 +1359,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             return True
         return bool(self._CONVERSATIONAL_PATTERNS.search(q))
 
+    @with_call_identity
     async def ask(
         self,
         question: str,

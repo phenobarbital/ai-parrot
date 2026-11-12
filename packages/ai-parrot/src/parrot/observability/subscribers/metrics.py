@@ -28,7 +28,7 @@ from parrot.core.events.lifecycle.events import (
     InvokeFailedEvent,
     ToolCallFailedEvent,
 )
-from parrot.observability.attributes import resolve_gen_ai_system
+from parrot.observability.attributes import TENANT_ATTR, resolve_gen_ai_system, tenant_label
 
 if TYPE_CHECKING:
     from parrot.core.events.lifecycle import EventRegistry
@@ -211,6 +211,7 @@ class MetricsSubscriber:
                 "gen_ai.provider.name": system,  # new SemConv key — current OpenLIT reads this
                 "gen_ai.request.model": event.model,
                 "parrot.agent.name": event.agent_name or "unknown",  # FEAT-228
+                TENANT_ATTR: tenant_label(event.tenant),
             },
         )
 
@@ -226,6 +227,7 @@ class MetricsSubscriber:
             "gen_ai.response.model": event.model,
             "parrot.agent.name": event.agent_name or "unknown",  # FEAT-228
             "parrot.feat_id": _feat_label(event),  # FEAT-783: bounded, one series per feature
+            TENANT_ATTR: tenant_label(event.tenant),
         }
 
         # Operation duration histogram
@@ -280,6 +282,7 @@ class MetricsSubscriber:
             "gen_ai.request.model": event.model,
             "parrot.agent.name": event.agent_name or "unknown",  # FEAT-228
             "parrot.round.number": event.round_number,
+            TENANT_ATTR: tenant_label(event.tenant),
         }
 
         self._client_rounds.add(1, attributes=base)
@@ -311,6 +314,7 @@ class MetricsSubscriber:
                 "error.type": event.error_type,
                 "parrot.agent.name": event.agent_name or "unknown",  # FEAT-228
                 "parrot.feat_id": _feat_label(event),  # FEAT-783: bounded, one series per feature
+                TENANT_ATTR: tenant_label(event.tenant),
             },
         )
 
@@ -338,6 +342,7 @@ class MetricsSubscriber:
             attributes={
                 "parrot.agent.name": event.agent_name,
                 "parrot.invoke.method": event.method,
+                TENANT_ATTR: tenant_label(event.tenant),
             },
         )
 
@@ -348,5 +353,6 @@ class MetricsSubscriber:
             attributes={
                 "parrot.agent.name": event.agent_name,
                 "error.type": event.error_type,
+                TENANT_ATTR: tenant_label(event.tenant),
             },
         )
