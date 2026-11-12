@@ -84,13 +84,29 @@ output and passes it through unchanged, so the resend is approved. Each rewritte
 session policy and sets `CLAUDE_CODE_SHELL_PREFIX` to a launcher which receives **one command-string argument** from
 Claude Code.  The prefix passes through only the exact hook command strings and exact stdio-MCP argv entries recorded
 in that policy.  It wraps every other invocation — including each Bash-tool preamble — with `/usr/bin/bwrap`; this is
-the filesystem boundary in legacy mode.  Pass-through commands receive a SHA-256 policy token in
-`PARROT_SDD_SHELL_PREFIX_TOKEN`, which lets the hook prove that the prefix already supplied the boundary.  Missing,
-invalid, or unsafe policy state exits 2 rather than running an unguarded command.
+the filesystem boundary in legacy mode.  Hook pass-through commands receive a SHA-256 policy token in
+`PARROT_SDD_SHELL_PREFIX_TOKEN`, which lets the hook prove that the prefix already supplied the boundary; MCP
+servers pass through without it.  The hook honours the token only after validating the policy it names with the
+prefix's own loader (regular file, not group/world-writable, complete schema) and checking that its `worktree` is
+the session's frozen root; otherwise it wraps the command in Bubblewrap itself.  Missing, invalid, or unsafe policy
+state exits 2 rather than running an unguarded command.
+
+**MCP servers (FEAT-881).**  The pass-through allowlist is built from the **primary checkout's** `.mcp.json`, never
+from the worktree: that file is gitignored (a fresh worktree has none) and the primary checkout is read-only inside
+the legacy sandbox.  The launcher starts Claude Code with `--mcp-config <primary>/.mcp.json --strict-mcp-config`, so
+the session loads exactly the servers the policy records and ignores any `.mcp.json` found in the worktree.  Do not
+copy `.mcp.json` into a worktree.  When the primary checkout has no usable `.mcp.json`, the launcher prints
+`WARNING no MCP servers` and the session starts without MCP tools.
 
 The policy and executable live below `$XDG_STATE_HOME/parrot-sdd/shell-prefix/<session>/` (or
 `~/.local/state/parrot-sdd/shell-prefix/<session>/`), outside the worktree and session-writable cache roots.  The
-directory is mode 0700, its executable is 0500, and its policy is 0400.  RTK runs in the prefix against Claude's
+directory is mode 0700, its executable is 0500, and its policy is 0400.  The directory also holds read-only (0400)
+copies of `shell_prefix.py` and `worktree_environment.py`; the executable runs those copies, so a launcher started
+from a feature worktree never executes prefix code the session could edit.  `owner.pid` records the launcher
+process (which becomes Claude Code); a session directory is removed after 7 days only once that process is gone.
+A prefix launch requires Claude Code >= 2.1.321, the version on which Bash was verified live to go through the
+prefix; an older or unreadable `claude --version` makes the launcher exit 1.  A launch that prepares no prefix
+drops an inherited `CLAUDE_CODE_SHELL_PREFIX`.  RTK runs in the prefix against Claude's
 `eval` payload, so neither its optimization nor the legacy Bubblewrap boundary changes Bash input after auto mode
 has reviewed it.  The task-3 live probe on Claude Code 2.1.321 did not observe a prefix invocation while the native
 sandbox was active; native sessions therefore keep their established launcher/native-hook path and do not rely on
@@ -148,7 +164,7 @@ announced release once the FEAT-633 installer provisions the host prerequisites.
   `--setting-sources` must not include `user`.
 - `--sandbox-allow-domain HOST` (repeatable, or `=HOST`): exact DNS hostnames only.
 - Rejected caller options (the launcher owns them): `--settings`, `--add-dir`, `--dangerously-skip-permissions`,
-  `--plugin-dir`, `--mcp-config`, `--agents`, any `--agent` other than `sdd-worker`, a `--setting-sources`
+  `--plugin-dir`, `--mcp-config`, `--strict-mcp-config`, `--agents`, any `--agent` other than `sdd-worker`, a `--setting-sources`
   value containing `user`.
 - Exit codes: **1** — a host prerequisite is missing (`claude`, `bwrap` or `socat` not on `PATH`);
   **2** — the caller's input violates the policy (rejected option, invalid domain, or the cwd is not a
