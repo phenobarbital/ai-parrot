@@ -56,7 +56,7 @@
       "feature_id": "FEAT-713",
       "feature": "accounting-metrics-layer",
       "spec": "sdd/specs/accounting-metrics-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -64,8 +64,9 @@
       "parallelism_notes": "Exclusive: edits the dependency manifest packages/ai-parrot/pyproject.toml (new optional extra duckdb).",
       "assigned_to": null,
       "started_at": "2026-11-12T00:04:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5523-core-duckdb-engine.md"
+      "completed_at": "2026-11-12T00:33:43+00:00",
+      "file": "sdd/tasks/completed/TASK-5523-core-duckdb-engine.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5524",

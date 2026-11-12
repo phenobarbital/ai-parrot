@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-713 — Accounting Metrics Layer
 **Spec**: `sdd/specs/accounting-metrics-layer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -369,10 +369,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (adopted orphan attempt branch `...TASK-5523-a1-8ac7467d...`, commit c802c240c8)
+**Date**: 2026-11-12
+**Notes**: Implemented `FrameConversionError`, `to_arrow`, `DuckDBEngine` and the `duckdb` core extra; 7/7 tests pass. Q1 outcome: frames registered on a cursor are connection-local and invisible to other cursors (and root registrations are invisible to cursors), so the engine keeps tables in Python and re-registers them per call on a fresh cursor (no other fallback needed).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented; the Q1 outcome (cursor registrations isolated, or fallback used).
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
