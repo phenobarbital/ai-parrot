@@ -42,6 +42,7 @@ def tenant_label(tenant: Optional[str]) -> str:
     """
     return tenant or UNKNOWN_TENANT
 
+
 # ---------------------------------------------------------------------------
 # Provider → gen_ai.system mapping (spec §2 table)
 # ---------------------------------------------------------------------------

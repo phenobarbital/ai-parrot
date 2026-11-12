@@ -86,7 +86,9 @@ def _events(tenant: str | None = "acme") -> list[object]:
     trace_context = TraceContext.new_root()
     return [
         BeforeClientCallEvent(trace_context=trace_context, client_name="openai", model="gpt-4o", tenant=tenant),
-        AfterClientCallEvent(trace_context=trace_context, client_name="openai", model="gpt-4o", duration_ms=1.0, tenant=tenant),
+        AfterClientCallEvent(
+            trace_context=trace_context, client_name="openai", model="gpt-4o", duration_ms=1.0, tenant=tenant
+        ),
         ClientCallFailedEvent(
             trace_context=trace_context,
             client_name="openai",
@@ -137,7 +139,7 @@ async def test_before_and_round_events_capture_bound_tenant() -> None:
     finally:
         current_tenant.reset(token)
 
-    assert [getattr(event, "tenant") for event in captured] == ["acme", "acme"]
+    assert [event.tenant for event in captured] == ["acme", "acme"]
 
 
 @pytest.mark.asyncio
@@ -165,7 +167,7 @@ async def test_before_and_round_events_tenant_none_when_unbound() -> None:
     )
     await asyncio.sleep(0)
 
-    assert [getattr(event, "tenant") for event in captured] == [None, None]
+    assert [event.tenant for event in captured] == [None, None]
 
 
 @pytest.mark.parametrize(
@@ -236,7 +238,9 @@ async def test_tool_metrics_have_no_tenant_label() -> None:
     subscriber._tool_exec_duration = duration
     subscriber._tool_failure_count = failures
     trace_context = TraceContext.new_root()
-    await subscriber._on_tool_after(AfterToolCallEvent(trace_context=trace_context, tool_name="search", duration_ms=1.0))
+    await subscriber._on_tool_after(
+        AfterToolCallEvent(trace_context=trace_context, tool_name="search", duration_ms=1.0)
+    )
     await subscriber._on_tool_fail(
         ToolCallFailedEvent(
             trace_context=trace_context,
