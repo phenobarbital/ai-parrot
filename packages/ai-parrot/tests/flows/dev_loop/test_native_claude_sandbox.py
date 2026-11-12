@@ -396,6 +396,47 @@ def test_prepare_shell_prefix_writes_policy_and_launcher(
     assert prefix_path.parent.stat().st_mode & 0o777 == 0o700
 
 
+def test_prepare_shell_prefix_copies_runtime_into_session(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The stub execs a read-only copy of the prefix, never the (possibly writable) source tree."""
+    feature, _main = linked
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+
+    environment = native.prepare_shell_prefix(feature, {}, "legacy", rtk=False)
+
+    prefix_path = Path(environment["CLAUDE_CODE_SHELL_PREFIX"])
+    scripts = Path(native.__file__).resolve().parent
+    for name in ("shell_prefix.py", "worktree_environment.py"):
+        copy = prefix_path.parent / name
+        assert copy.read_bytes() == (scripts / name).read_bytes()
+        assert copy.stat().st_mode & 0o777 == 0o400
+    stub = prefix_path.read_text()
+    assert str(prefix_path.parent / "shell_prefix.py") in stub
+    assert str(scripts) not in stub
+
+
+def test_prefix_stub_runs_passthrough_from_session_copy(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The session copy is self-sufficient: it runs a recorded hook command with no source tree on the path."""
+    feature, _main = linked
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    settings = {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "printf hook-ran"}]}]}}
+    environment = native.prepare_shell_prefix(feature, settings, "legacy", rtk=False)
+
+    result = subprocess.run(
+        [environment["CLAUDE_CODE_SHELL_PREFIX"], "printf hook-ran"],
+        env={"PATH": os.environ["PATH"], "PARROT_SDD_SHELL_PREFIX_POLICY": environment["PARROT_SDD_SHELL_PREFIX_POLICY"]},
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert (result.returncode, result.stdout, result.stderr) == (0, "hook-ran", "")
+
+
 def test_prefix_mcp_config_requires_servers_in_the_primary_checkout(linked: tuple[Path, Path]) -> None:
     """Only a primary ``.mcp.json`` that declares a server is a usable MCP configuration."""
     feature, main = linked

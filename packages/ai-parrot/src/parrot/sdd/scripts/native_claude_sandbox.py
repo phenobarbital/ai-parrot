@@ -1005,6 +1005,10 @@ def _remove_expired_prefix_sessions(state_root: Path) -> None:
             shutil.rmtree(candidate)
 
 
+#: The prefix entry point and the one sibling module it imports; copied into every session directory.
+_PREFIX_RUNTIME_FILES = ("shell_prefix.py", "worktree_environment.py")
+
+
 def prefix_mcp_config(cwd: Path) -> Path | None:
     """Return the primary checkout's MCP configuration when it declares at least one server.
 
@@ -1023,7 +1027,7 @@ def prefix_mcp_config(cwd: Path) -> Path | None:
 
 
 def prepare_shell_prefix(cwd: Path, settings: dict, mode: str, *, rtk: bool) -> dict[str, str]:
-    """Write an immutable legacy shell-prefix policy and executable launcher.
+    """Write an immutable legacy shell-prefix policy, runtime copy and executable launcher.
 
     Args:
         cwd: The linked worker worktree.
@@ -1057,7 +1061,7 @@ def prepare_shell_prefix(cwd: Path, settings: dict, mode: str, *, rtk: bool) -> 
     policy = PrefixPolicy(
         schema_version=1,
         mode=mode,
-        worktree=str(_canonical(cwd)),
+        worktree=str(_native_roots(cwd)[0]),
         hook_commands=tuple(hook_commands),
         mcp_argv=tuple(tuple(argv) for argv in (_prefix_mcp_argv(mcp_config) if mcp_config else [])),
         rtk=rtk,
@@ -1079,7 +1083,14 @@ def prepare_shell_prefix(cwd: Path, settings: dict, mode: str, *, rtk: bool) -> 
     )
     policy_path.chmod(0o400)
     prefix_path = session_dir / "prefix"
-    shell_prefix = Path(__file__).resolve().with_name("shell_prefix.py")
+    # The prefix runs outside Bubblewrap on every shell call, so it must not execute from a source tree
+    # the session can write (a launcher started from a feature worktree). Run a private read-only copy.
+    scripts = Path(__file__).resolve().parent
+    for name in _PREFIX_RUNTIME_FILES:
+        runtime = session_dir / name
+        shutil.copyfile(scripts / name, runtime)
+        runtime.chmod(0o400)
+    shell_prefix = session_dir / _PREFIX_RUNTIME_FILES[0]
     prefix_path.write_text(
         f'#!/bin/sh\nexec {shlex.quote(str(Path(sys.executable).resolve()))} -E -s {shlex.quote(str(shell_prefix))} "$@"\n',
         encoding="utf-8",
