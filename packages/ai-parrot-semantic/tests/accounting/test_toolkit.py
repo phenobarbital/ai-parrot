@@ -183,6 +183,15 @@ async def test_require_context_refuses_guarded_calls_without_context(troc_pnl_ya
     assert len(await no_guard.list_metrics("troc")) == len(METRICS)
 
 
+async def test_permission_context_cleared_after_call(troc_pnl_yaml, chart_snapshot, permission_context) -> None:
+    toolkit = _toolkit(troc_pnl_yaml.parent.parent, chart_snapshot, policy_guard=_FakeGuard(set()))
+    await toolkit._pre_execute("finance_list_metrics", _permission_context=permission_context)
+    assert toolkit._resolve_tenant(None) == "troc"
+    assert await toolkit._post_execute("finance_list_metrics", ["x"]) == ["x"]
+    with pytest.raises(RequestValidationError):
+        toolkit._resolve_tenant(None)  # no context tenant and no default any more
+
+
 async def test_policy_resource_names(troc_pnl_yaml, chart_snapshot, permission_context) -> None:
     from navigator_auth.abac.policies.resources import ResourceType
 

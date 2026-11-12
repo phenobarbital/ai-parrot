@@ -196,6 +196,11 @@ class AccountingToolkit(AbstractToolkit):
         """Per-call PBAC hook (hook verified: toolkit.py:491; pattern: dataset_manager/tool.py:2846)."""
         _pctx_var.set(kwargs.get("_permission_context"))
 
+    async def _post_execute(self, tool_name: str, result: Any, **kwargs: Any) -> Any:
+        """Drop the request-scoped permission context once the tool call has finished."""
+        _pctx_var.set(None)
+        return result
+
     def _resolve_tenant(self, tenant: str | None) -> str:
         """Tenant from the argument, else the permission context, else the toolkit default.
 
