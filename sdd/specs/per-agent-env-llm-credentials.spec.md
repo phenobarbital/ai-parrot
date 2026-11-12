@@ -120,7 +120,7 @@ The key for #3 is resolved for the **provider that results from the model decisi
   `apply_component_api_key(agent, component)` called from `AgentsFlow.from_definition` for each
   resolved agent/agent-group member **only when the agent is not yet configured**
   (D3). Already-configured registry instances keep their client; for them the per-agent path
-  (G1) is the supported way to give a key. This limitation is logged at DEBUG once per agent and
+  (G1) is the supported way to give a key. This limitation is logged at INFO once per agent and
   documented, not papered over.
 - `AgentsFlow.run_flow` is wrapped in `usage_component("FLOW")` exactly like
   `_crew_usage_scope` (`crew.py:150`).
@@ -387,7 +387,7 @@ Verified against: `64dc31e39b`
 ### Known Risks / Gotchas
 - **Env-token collisions:** `odoo-helpdesk` and `odoo_helpdesk` normalize identically. Mitigation: document; first-match semantics, no attempt to disambiguate.
 - **Component-name collision:** an agent literally named `crew`, `flow` or `agent` would read `CREW_*`/`FLOW_*`/`AGENT_*` as *its own* per-agent vars. Mitigation: per-agent lookup suffix is `_MODEL` / `_<P>_API_KEY` — identical shape to component keys, so document that agents must not use reserved names, and log a WARNING at configure when `name` normalizes to `AGENT`, `CREW`, `FLOW`, `DEFAULT`, `EXPERT_*`.
-- **Already-configured registry agents** miss FLOW injection (D3). Mitigated by the per-agent path; surfaced in docs and a one-time DEBUG log.
+- **Already-configured registry agents** miss FLOW injection (D3). Mitigated by the per-agent path; surfaced in docs and a one-time INFO log.
 - **Name changes:** `bot.name` is mutable in a few subclasses before `configure()`; the lookup uses the name at `configure()` time.
 - Interaction with FEAT-796 `AGENT_LLM` handler default (`abstract.py` handler `_create_agent`): the handler already resolves `AGENT_*` and passes `llm`/`llm_kwargs`; per-agent env then overrides *that* result (#3 > #5) by design.
 
@@ -540,7 +540,7 @@ Coverage:
 - [x] What identifies the agent in `<AGENT_ID>_...`? — *Resolved with author*: `bot.name`, normalized to an env token (D1).
 - [x] Does `<AGENT>_MODEL` beat the model declared in code/definition? — *Resolved with author*: env beats code, never a live client instance or explicit credentials (D2).
 - [x] Component name for AgentsFlow defaults? — *Resolved with author*: `FLOW` (`FLOW_LLM`, `FLOW_<PROVIDER>_API_KEY`), no legacy alias.
-- [ ] D3 — Registry instances are already configured when `AgentsFlow` receives them, so FLOW key injection cannot reach their client. Accept the limitation (per-agent env covers them), or have `AgentRegistry.get_instance` accept a `component="FLOW"` hint so flow-bound agents are configured with the FLOW key? — *Owner: Jesus Lara*. Spec assumes "accept + document".
+- [x] D3 — Registry instances are already configured when `AgentsFlow` receives them, so FLOW key injection cannot reach their client. — *Resolved with author*: accept the limitation. `FLOW_<PROVIDER>_API_KEY` applies only to agents not yet configured (in practice, programmatic flows); registry-built agents use `<AGENT>_<PROVIDER>_API_KEY`. No `component` hint on `AgentRegistry.get_instance`.
 - [ ] Should per-agent env also apply to `AgentCrew` agents (it does implicitly, via `configure()`), with crew's `CREW_*` as the #5 default — confirm no crew-specific opt-out is wanted. — *Owner: Jesus Lara*
 
 ---
