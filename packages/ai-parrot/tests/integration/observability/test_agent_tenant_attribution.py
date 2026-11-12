@@ -55,6 +55,9 @@ class _EmittingClient(AbstractClient):
 
     async def _emit_cycle(self) -> None:
         tc = self._emit_before_call(client_name="stub", model="stub")
+        # The before-event is forwarded fire-and-forget while the after-event is awaited; a real
+        # provider call takes long enough for the span to open first, so model that latency.
+        await asyncio.sleep(0.05)
         await self._emit_after_call(
             tc, client_name="stub", model="stub", duration_ms=5.0, input_tokens=3, output_tokens=2
         )
@@ -135,7 +138,7 @@ async def _run_agent(kind: str, tenant: str | None, monkeypatch: pytest.MonkeyPa
     if kind == "voice":
         voice = object.__new__(VoiceBot)
         voice.name = "voice-agent"
-        voice.memory_key_id = "voice-agent"
+        monkeypatch.setattr(VoiceBot, "memory_key_id", "voice-agent")  # read-only property
         voice.conversation_memory = None
         voice._llm = _EmittingVoiceClient()
 
