@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-713 — Accounting Metrics Layer
 **Spec**: `sdd/specs/accounting-metrics-layer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5526
@@ -240,10 +240,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker / native sonnet coder (attempt c8336d859d9c4bd79c1fdc9fabbeb187), commit 55f5188a28
+**Date**: 2026-11-12
+**Notes**: `evaluate_rows` with exact Fraction arithmetic, one half-even rounding to scale 6, DECIMAL(38,6) bounds. Tests build MetricPlan via `model_construct`. Tests green, ruff clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
