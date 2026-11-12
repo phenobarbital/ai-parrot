@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-881 — Legacy shell-prefix fixes
 **Spec**: `sdd/specs/scripts-native-claude-sandbox-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5545, TASK-5546
@@ -138,8 +138,8 @@ Also: `parrot sdd techwiki check --spec sdd/specs/scripts-native-claude-sandbox-
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Code host session (/sdd-fix agent:sdd-fix:b338296a)
+**Date**: 2026-11-12
+**Notes**: Updated the Legacy shell prefix section (MCP servers from the primary .mcp.json, session runtime copy, hook-only token and hook-side validation, minimum Claude Code version, owner.pid expiry) and the rejected-options list. techwiki check: ok.
 
 **Deviations from spec**: none
