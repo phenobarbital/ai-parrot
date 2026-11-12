@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-880 — DatasetManager semantic source — add_semantic()
 **Spec**: `sdd/specs/datasetmanager-semantic-source.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5518, TASK-5520
@@ -205,10 +205,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (native opus seat); merged by hand (engine task-tier validation unavailable); tests run directly, green.
+**Date**: 2026-11-12
+**Notes**: add_semantic added; e2e against DuckDB fixture. Registered tool name is dataset_fetch_dataset (manager prefixes tools with dataset_).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
