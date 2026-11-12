@@ -566,6 +566,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         _user_token = current_user_id.set(user_id)
         _session_token = current_session_id.set(session_id)
         _memkey_token = current_memory_key_id.set(self.memory_key_id)
+        _identity = self._bind_call_identity(kwargs.get("tenant"))
 
         try:
             # Handle different input types
@@ -730,6 +731,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
                 text=f"I'm sorry, I encountered an error: {str(e)}", is_complete=True, metadata={"error": str(e)}
             )
         finally:
+            self._reset_call_identity(_identity)
             current_memory_key_id.reset(_memkey_token)
             current_session_id.reset(_session_token)
             current_user_id.reset(_user_token)
@@ -805,6 +807,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         _user_token = current_user_id.set(user_id)
         _session_token = current_session_id.set(session_id)
         _memkey_token = current_memory_key_id.set(self.memory_key_id)
+        _identity = self._bind_call_identity(kwargs.get("tenant"))
 
         try:
             # Build context for system prompt
@@ -867,6 +870,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
                 ):
                     yield response
         finally:
+            self._reset_call_identity(_identity)
             current_memory_key_id.reset(_memkey_token)
             current_session_id.reset(_session_token)
             current_user_id.reset(_user_token)

@@ -18,6 +18,7 @@ from ...models.outputs import OutputMode, StructuredOutputConfig
 from ...outputs.a2ui.artifacts import attach_structured_artifact
 from ...stores.abstract import AbstractStore
 from ..agent import BasicAgent
+from ..base import with_call_identity
 from ..prompts.builder import PromptBuilder
 from .cache import CacheManager, CachePartitionConfig
 from .models import (
@@ -408,6 +409,7 @@ class DatabaseAgent(BasicAgent):
         """
         return get_default_components(user_role)
 
+    @with_call_identity
     async def ask(
         self,
         question: str,
