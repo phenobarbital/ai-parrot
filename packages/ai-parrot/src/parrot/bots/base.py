@@ -5,8 +5,10 @@ This module provides BaseBot, a concrete implementation of the AbstractBot
 abstract base class. It implements all required abstract methods.
 """
 
-from typing import Optional, Union, Type, AsyncIterator, Any, List
+from typing import Optional, Union, Type, AsyncIterator, Any, List, NamedTuple
 from collections.abc import Callable
+from contextvars import Token
+import functools
 import inspect
 import logging
 import uuid
@@ -59,6 +61,40 @@ def _resolve_call_tenant(tenant: Optional[str], ctx: Any) -> Optional[str]:
     return None
 
 
+class CallIdentityTokens(NamedTuple):
+    """Context tokens created while binding one bot call's identity."""
+
+    agent: Token
+    tenant: Optional[Token]
+
+
+def with_call_identity(method: Callable[..., Any]) -> Callable[..., Any]:
+    """Bind agent and tenant identity around a coroutine entry point."""
+    signature = inspect.signature(method)
+    var_keyword_name = next(
+        (
+            parameter.name
+            for parameter in signature.parameters.values()
+            if parameter.kind is inspect.Parameter.VAR_KEYWORD
+        ),
+        None,
+    )
+
+    @functools.wraps(method)
+    async def wrapper(self: "BaseBot", *args: Any, **kwargs: Any) -> Any:
+        bound = signature.bind_partial(self, *args, **kwargs)
+        call_kwargs = bound.arguments.get(var_keyword_name, {}) if var_keyword_name is not None else {}
+        tenant = bound.arguments.get("tenant") if "tenant" in signature.parameters else call_kwargs.get("tenant")
+        ctx = bound.arguments.get("ctx") if "ctx" in signature.parameters else call_kwargs.get("ctx")
+        tokens = self._bind_call_identity(tenant, ctx)
+        try:
+            return await method(self, *args, **kwargs)
+        finally:
+            self._reset_call_identity(tokens)
+
+    return wrapper
+
+
 # FEAT-176: Lifecycle Events
 # FEAT-317: TraceContext moved to navigator_eventbus.lifecycle; imported here
 # via the parrot.core.events.lifecycle re-export facade.
@@ -109,6 +145,32 @@ class BaseBot(AbstractBot):
     Subclasses can override these methods to customize behavior or use them
     as-is for standard bot functionality.
     """
+
+    def _bind_call_tenant(self, tenant: Optional[str], ctx: Any) -> Optional[Token]:
+        """Bind the tenant resolved for a call, preserving an enclosing value."""
+        call_tenant = _resolve_call_tenant(tenant, ctx)
+        if call_tenant is None:
+            return None
+        return current_tenant.set(call_tenant)
+
+    def _bind_call_identity(
+        self, tenant: Optional[str] = None, ctx: Any = None
+    ) -> CallIdentityTokens:
+        """Bind this bot's agent name and resolved tenant for one call."""
+        if ctx is None:
+            ctx = _current_ctx.get()
+        agent_token = current_agent_name.set(self.name)
+        tenant_token = self._bind_call_tenant(tenant, ctx)
+        return CallIdentityTokens(agent=agent_token, tenant=tenant_token)
+
+    @staticmethod
+    def _reset_call_identity(tokens: Optional[CallIdentityTokens]) -> None:
+        """Reset call identity tokens in reverse binding order."""
+        if tokens is None:
+            return
+        if tokens.tenant is not None:
+            current_tenant.reset(tokens.tenant)
+        current_agent_name.reset(tokens.agent)
 
     def _resolve_metric_type(self, metric_type: Optional[str]) -> str:
         """Resolve which vector-search metric to use.
@@ -241,6 +303,9 @@ class BaseBot(AbstractBot):
         _user_token = current_user_id.set(user_id)
         _session_token = current_session_id.set(session_id)
         _memkey_token = current_memory_key_id.set(self.memory_key_id)
+        _tenant_token = self._bind_call_tenant(
+            kwargs.get("tenant"), ctx if ctx is not None else _current_ctx.get()
+        )
         try:
             return await self._conversation_body(
                 question=question,
@@ -265,6 +330,8 @@ class BaseBot(AbstractBot):
                 **kwargs,
             )
         finally:
+            if _tenant_token is not None:
+                current_tenant.reset(_tenant_token)
             current_memory_key_id.reset(_memkey_token)
             current_session_id.reset(_session_token)
             current_user_id.reset(_user_token)
@@ -699,10 +766,12 @@ class BaseBot(AbstractBot):
         # raised before the ContextVars are bound (they are bound AFTER the
         # id defaults, per the FEAT-525 binding-order fix, spec §7).
         _user_token = _session_token = _memkey_token = None
+        _tenant_token = None
         _task_turn = None  # FEAT-538: safe for the `finally` even if the try raises early
         try:
             if ctx is None:
                 ctx = _current_ctx.get()
+            _tenant_token = self._bind_call_tenant(kwargs.get("tenant"), ctx)
             # Generate session ID if not provided
             session_id = session_id or str(uuid.uuid4())
             user_id = user_id or "anonymous"
@@ -866,6 +935,8 @@ class BaseBot(AbstractBot):
         finally:
             self._exit_task_turn(_task_turn)
             self.status = AgentStatus.IDLE
+            if _tenant_token is not None:
+                current_tenant.reset(_tenant_token)
             if _memkey_token is not None:
                 current_memory_key_id.reset(_memkey_token)
             if _session_token is not None:
@@ -1148,9 +1219,7 @@ class BaseBot(AbstractBot):
         try:
             if ctx is None:
                 ctx = _current_ctx.get()
-            _call_tenant = _resolve_call_tenant(tenant, ctx)
-            if _call_tenant is not None:
-                _generic_tenant_token = current_tenant.set(_call_tenant)
+            _generic_tenant_token = self._bind_call_tenant(tenant, ctx)
             _enter = getattr(self, "_enter_skill_tenant", None)
             if _enter is not None:
                 _tenant_token = _enter(tenant, ctx)
@@ -1924,9 +1993,7 @@ class BaseBot(AbstractBot):
         try:
             if ctx is None:
                 ctx = _current_ctx.get()
-            _call_tenant = _resolve_call_tenant(tenant, ctx)
-            if _call_tenant is not None:
-                _generic_tenant_token = current_tenant.set(_call_tenant)
+            _generic_tenant_token = self._bind_call_tenant(tenant, ctx)
             _enter = getattr(self, "_enter_skill_tenant", None)
             if _enter is not None:
                 _tenant_token = _enter(tenant, ctx)
