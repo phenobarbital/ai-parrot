@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-881 — Legacy shell-prefix fixes
 **Spec**: `sdd/specs/scripts-native-claude-sandbox-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -216,8 +216,8 @@ def test_mcp_passthrough_receives_no_token(tmp_path, monkeypatch): ...
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Code host session (/sdd-fix agent:sdd-fix:b338296a)
+**Date**: 2026-11-12
+**Notes**: _shell_prefix_policy now loads through shell_prefix.load_policy (lazy sibling import in both modes), checks digest == token and that the frozen root equals policy.worktree; _wrap_bash reads policy attributes; shell_prefix.main exports the token only for hook commands. Added rejection tests (schema, group-writable, symlink, other worktree) and a script-mode hook test. 168 tests pass.
 
 **Deviations from spec**: none

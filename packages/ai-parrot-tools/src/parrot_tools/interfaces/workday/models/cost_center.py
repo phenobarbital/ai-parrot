@@ -1,5 +1,5 @@
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 
 class CostCenter(BaseModel):
@@ -70,14 +70,16 @@ class CostCenter(BaseModel):
     org_last_updated: str | None = None
     org_hierarchy_chain: str | None = None
 
-    @validator('organization_active', 'include_organization_code_in_name', 'inactive', pre=True)
+    @field_validator('organization_active', 'include_organization_code_in_name', 'inactive', mode="before")
+    @classmethod
     def parse_boolean_fields(cls, v):
         """Convert boolean-like values to proper booleans."""
         if isinstance(v, str):
             return v.lower() in ('true', '1', 'yes')
         return v
     
-    @validator('worktags', 'integration_ids', pre=True)
+    @field_validator('worktags', 'integration_ids', mode="before")
+    @classmethod
     def parse_list_fields(cls, v):
         """Ensure list fields are properly parsed."""
         if v is None:
@@ -88,7 +90,8 @@ class CostCenter(BaseModel):
             return v
         return []
     
-    @validator('effective_date', 'availability_date', 'last_updated_datetime', 'inactive_date', pre=True)
+    @field_validator('effective_date', 'availability_date', 'last_updated_datetime', 'inactive_date', mode="before")
+    @classmethod
     def parse_date_fields(cls, v):
         """Convert date objects to string format."""
         if v is None:
@@ -99,8 +102,9 @@ class CostCenter(BaseModel):
             return v
         return str(v)
     
-    class Config:
+    model_config = ConfigDict(
         # Allow extra fields that might come from the API
-        extra = "allow"
+        extra="allow",
         # Use enum values for validation
-        use_enum_values = True 
+        use_enum_values=True,
+    )

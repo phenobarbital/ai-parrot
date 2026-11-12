@@ -1109,6 +1109,13 @@ def test_non_tmux_launch_hands_the_pre_import_environment_to_launch_worker(
     assert captured["base_env"] == {"PATH": "/usr/bin", "PARROT_SDD_SANDBOX_MODE": "legacy"}
 
 
+@pytest.fixture(autouse=True)
+def _qualified_claude_version(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Report a prefix-qualified Claude Code without running the CLI."""
+    native = launcher.native_claude_sandbox
+    monkeypatch.setattr(native, "_claude_version", lambda claude: native.MIN_PREFIX_CLAUDE_VERSION)
+
+
 def test_launch_worker_starts_claude_from_base_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """native launch_worker builds the claude env from base_env, not from os.environ."""
     native = launcher.native_claude_sandbox
@@ -1852,3 +1859,113 @@ def test_agy_hook_bare_and_baked_forms_require_runnable_commands(
     )
     with pytest.raises(launcher.LaunchError, match="not runnable"):
         launcher._require_agy_hooks(tmp_path)
+
+
+def _legacy_launch_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, argv: list[str], prompt: str | None = None
+) -> list[str]:
+    """Run a stubbed legacy ``launch_worker`` and return the Claude argv it would exec."""
+    native = launcher.native_claude_sandbox
+    exported = {"CLAUDE_CODE_SHELL_PREFIX": "/state/prefix", "PARROT_SDD_SHELL_PREFIX_POLICY": "/state/policy"}
+    primary = tmp_path / "primary"
+    primary.mkdir(exist_ok=True)
+    monkeypatch.setattr(native.shutil, "which", lambda name: "/usr/bin/claude" if name == "claude" else None)
+    monkeypatch.setattr(native, "_native_roots", lambda cwd: (tmp_path, primary / ".git", primary))
+    monkeypatch.setattr(native, "resolve_sandbox_mode", lambda root: "legacy")
+    monkeypatch.setattr(native, "plan_native_launch", lambda *args, **kwargs: ("legacy", False, "", {"hooks": {}}))
+    monkeypatch.setattr(native, "native_root_env", lambda cwd: {})
+    monkeypatch.setattr(native, "_allocate_session_cache", lambda: tmp_path / "cache")
+    monkeypatch.setattr(native, "prepare_shell_prefix", lambda cwd, settings, mode, *, rtk: exported)
+    monkeypatch.setattr(native.os, "chdir", lambda path: None)
+    commands: list[list[str]] = []
+    monkeypatch.setattr(native.os, "execvpe", lambda file, args, env: commands.append(args))
+    assert native.launch_worker(argv, cwd=tmp_path, initial_prompt=prompt, base_env={"PATH": "/usr/bin"}) == 1
+    return commands[0]
+
+
+def test_launch_worker_legacy_passes_primary_mcp_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A legacy session loads exactly the primary checkout's MCP servers."""
+    config = tmp_path / "primary" / ".mcp.json"
+    config.parent.mkdir()
+    config.write_text(json.dumps({"mcpServers": {"tool": {"command": "mcp", "args": ["x"]}}}), encoding="utf-8")
+
+    command = _legacy_launch_command(tmp_path, monkeypatch, ["--", "--verbose"], prompt="run FEAT-881")
+
+    index = command.index("--mcp-config")
+    # `--mcp-config` is variadic: an option must follow the path, never a forwarded argument or the prompt.
+    assert command[index : index + 3] == ["--mcp-config", str(config), "--strict-mcp-config"]
+    assert index < command.index("--settings")
+    assert command[-1] == "run FEAT-881"
+
+
+def test_launch_worker_legacy_warns_without_mcp_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Without a primary ``.mcp.json`` the session starts with no MCP server and says so."""
+    command = _legacy_launch_command(tmp_path, monkeypatch, [])
+
+    assert "--mcp-config" not in command
+    assert "--strict-mcp-config" in command
+    assert "WARNING no MCP servers" in capsys.readouterr().err
+
+
+def test_launch_worker_rejects_caller_strict_mcp_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``--strict-mcp-config`` belongs to the launcher."""
+    native = launcher.native_claude_sandbox
+    assert native.launch_worker(["--strict-mcp-config"], cwd=tmp_path, base_env={"PATH": "/usr/bin"}) == 2
+    assert "controlled by the native launcher" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("version", [(2, 1, 320), None])
+def test_launch_worker_legacy_refuses_unqualified_claude(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    version: tuple[int, int, int] | None,
+) -> None:
+    """Below the verified version, or with an unknown one, the prefix boundary is not trusted."""
+    native = launcher.native_claude_sandbox
+    monkeypatch.setattr(native.shutil, "which", lambda name: "/usr/bin/claude" if name == "claude" else None)
+    monkeypatch.setattr(native, "_native_roots", lambda cwd: (tmp_path, tmp_path / ".git", tmp_path))
+    monkeypatch.setattr(native, "resolve_sandbox_mode", lambda root: "legacy")
+    monkeypatch.setattr(native, "plan_native_launch", lambda *args, **kwargs: ("legacy", False, "", {"hooks": {}}))
+    monkeypatch.setattr(native, "native_root_env", lambda cwd: {})
+    monkeypatch.setattr(native, "_allocate_session_cache", lambda: tmp_path / "cache")
+    monkeypatch.setattr(native, "_claude_version", lambda claude: version)
+    monkeypatch.setattr(native, "prepare_shell_prefix", lambda *args, **kwargs: pytest.fail("prefix prepared"))
+    monkeypatch.setattr(native.os, "chdir", lambda path: None)
+    monkeypatch.setattr(native.os, "execvpe", lambda *args: pytest.fail("claude started"))
+
+    assert native.launch_worker([], cwd=tmp_path, base_env={"PATH": "/usr/bin"}) == 1
+    assert "shell prefix unavailable" in capsys.readouterr().err
+
+
+def test_native_launch_drops_inherited_shell_prefix(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A parent session's prefix, policy and token never reach a session that prepares no prefix."""
+    native = launcher.native_claude_sandbox
+    monkeypatch.setattr(native.shutil, "which", lambda name: "/usr/bin/claude" if name == "claude" else None)
+    monkeypatch.setattr(native, "_native_roots", lambda cwd: (tmp_path, tmp_path / ".git", tmp_path))
+    monkeypatch.setattr(native, "resolve_sandbox_mode", lambda root: "required")
+    monkeypatch.setattr(native, "plan_native_launch", lambda *args, **kwargs: ("required", False, "", {}))
+    monkeypatch.setattr(native, "native_root_env", lambda cwd: {})
+    monkeypatch.setattr(native, "sandbox_platform", lambda: "linux")
+    monkeypatch.setattr(native, "native_command_environment", lambda cwd, env: {"TIKTOKEN_CACHE_DIR": str(tmp_path)})
+    monkeypatch.setattr(native, "warm_tiktoken_cache", lambda target, environ: None)
+    monkeypatch.setattr(native, "_allocate_session_cache", lambda: tmp_path / "cache")
+    monkeypatch.setattr(native.os, "chdir", lambda path: None)
+    execs: list[tuple[list[str], dict[str, str]]] = []
+    monkeypatch.setattr(native.os, "execvpe", lambda file, args, env: execs.append((args, env)))
+    inherited = {
+        "PATH": "/usr/bin",
+        "CLAUDE_CODE_SHELL_PREFIX": "/parent/prefix",
+        "PARROT_SDD_SHELL_PREFIX_POLICY": "/parent/policy.json",
+        "PARROT_SDD_SHELL_PREFIX_TOKEN": "parent-token",
+    }
+
+    native.launch_worker([], cwd=tmp_path, base_env=inherited)
+
+    command, environment = execs[0]
+    assert not {key for key in environment if "SHELL_PREFIX" in key}
+    assert "--strict-mcp-config" not in command

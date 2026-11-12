@@ -1,5 +1,5 @@
 from typing import List, Optional, Union
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 
 class JobPosting(BaseModel):
@@ -128,8 +128,9 @@ class JobPosting(BaseModel):
     integration_ids: Optional[List[str]] = Field(default_factory=list)
     external_integration_id: Optional[str] = None
 
-    @validator('is_posted', 'is_internal', 'is_external', 'primary_posting', 'spotlight_job',
-               'available_for_recruiting', 'confidential_job_requisition', 'academic_tenure_eligible', pre=True)
+    @field_validator('is_posted', 'is_internal', 'is_external', 'primary_posting', 'spotlight_job',
+                     'available_for_recruiting', 'confidential_job_requisition', 'academic_tenure_eligible', mode="before")
+    @classmethod
     def parse_boolean_fields(cls, v):
         """Convert boolean-like values to proper booleans."""
         if isinstance(v, str):
@@ -138,7 +139,8 @@ class JobPosting(BaseModel):
             return bool(v)
         return v
 
-    @validator('job_posting_sites', 'job_posting_site_ids', 'integration_ids', 'competencies', pre=True)
+    @field_validator('job_posting_sites', 'job_posting_site_ids', 'integration_ids', 'competencies', mode="before")
+    @classmethod
     def parse_list_fields(cls, v):
         """Ensure list fields are properly parsed."""
         if v is None:
@@ -149,7 +151,8 @@ class JobPosting(BaseModel):
             return v
         return []
 
-    @validator('number_of_openings', 'positions_allocated', 'positions_available', pre=True)
+    @field_validator('number_of_openings', 'positions_allocated', 'positions_available', mode="before")
+    @classmethod
     def parse_integer_fields(cls, v):
         """Convert integer-like values to proper integers."""
         if v is None:
@@ -163,7 +166,8 @@ class JobPosting(BaseModel):
                 return None
         return None
 
-    @validator('forecasted_payout', 'scheduled_weekly_hours', pre=True)
+    @field_validator('forecasted_payout', 'scheduled_weekly_hours', mode="before")
+    @classmethod
     def parse_numeric_fields(cls, v):
         """Convert numeric-like values to proper numbers (int or float)."""
         if v is None:
@@ -179,9 +183,10 @@ class JobPosting(BaseModel):
                 return None
         return None
 
-    @validator('posting_date', 'removal_date', 'job_posting_start_date', 'job_posting_end_date',
-               'expiration_date', 'created_date', 'last_updated_date', 'recruiting_start_date',
-               'target_hire_date', pre=True)
+    @field_validator('posting_date', 'removal_date', 'job_posting_start_date', 'job_posting_end_date',
+                     'expiration_date', 'created_date', 'last_updated_date', 'recruiting_start_date',
+                     'target_hire_date', mode="before")
+    @classmethod
     def parse_date_fields(cls, v):
         """Convert date objects to string format."""
         if v is None:
@@ -192,6 +197,7 @@ class JobPosting(BaseModel):
             return v
         return str(v)
 
-    class Config:
-        extra = "allow"
-        use_enum_values = True
+    model_config = ConfigDict(
+        extra="allow",
+        use_enum_values=True,
+    )
