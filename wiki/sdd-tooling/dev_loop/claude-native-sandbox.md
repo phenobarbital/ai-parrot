@@ -100,10 +100,12 @@ with `--mcp-config <session>/mcp.json --strict-mcp-config`, so later edits to th
 loaded servers. Do not copy `.mcp.json` into a worktree.
 
 The allowlist expands `${VAR}` and `${VAR:-default}` in stdio `command` and `args` using the environment passed
-to Claude. Expansion is single-pass: an empty variable stays empty, and an unset variable without a default stays
-literal. The snapshot retains variable references, letting Claude perform the same expansion without persisting
-expanded header/env credentials or expanding substituted text twice. When the primary checkout has no usable
-`.mcp.json`, the launcher prints `WARNING no MCP servers` and passes an empty server snapshot.
+to Claude.  Expansion is single-pass, follows bash `:-` semantics (an empty or unset variable with a `:-` default
+uses the default), and an unset variable without a default stays literal.  The snapshot retains variable references,
+letting Claude perform the same expansion without persisting expanded header/env credentials or expanding
+substituted text twice. A malformed `.mcp.json` (JSON parse error) is reported on stderr and treated as absent.
+When the primary checkout has no usable `.mcp.json`, the launcher prints `WARNING no MCP servers` and passes an
+empty server snapshot.
 
 The policy and executable live below `$XDG_STATE_HOME/parrot-sdd/shell-prefix/<session>/` (or
 `~/.local/state/parrot-sdd/shell-prefix/<session>/`), outside the worktree and session-writable cache roots.  The

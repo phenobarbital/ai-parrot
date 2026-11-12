@@ -1128,7 +1128,7 @@ def test_prefix_mcp_config_rejects_nonregular_sources(linked: tuple[Path, Path],
     [
         ("${BIN}", {"BIN": "/opt/bin/server"}, "/opt/bin/server"),
         ("${BIN:-server}", {}, "server"),
-        ("${BIN:-server}", {"BIN": ""}, ""),
+        ("${BIN:-server}", {"BIN": ""}, "server"),
         ("${BIN}", {}, "${BIN}"),
         ("${BIN:-}", {}, ""),
         ("${BIN}/${ARG}", {"BIN": "/opt/bin", "ARG": "two words"}, "/opt/bin/two words"),
@@ -1182,8 +1182,8 @@ def test_prefix_snapshot_and_policy_share_one_config_read(
     assert json.loads(snapshot.read_text()) == original
     assert snapshot.stat().st_mode & 0o777 == 0o400
     assert "test-secret" not in snapshot.read_text()
-    assert loaded.mcp_argv == (("/opt/tools/server", "two words", ""),)
-    command = "/opt/tools/server 'two words' ''"
+    assert loaded.mcp_argv == (("/opt/tools/server", "two words", "fallback"),)
+    command = "/opt/tools/server 'two words' fallback"
     assert shell_prefix.decide(command, loaded, feature).kind == "passthrough"
 
 

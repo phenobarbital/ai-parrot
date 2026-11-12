@@ -993,7 +993,11 @@ _MCP_VARIABLE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
 
 
 def _expand_mcp_argument(value: str, environ: Mapping[str, str]) -> str:
-    """Expand Claude's variable syntax once; empty values win over defaults.
+    """Expand Claude's ``${VAR}`` / ``${VAR:-default}`` variable syntax once.
+
+    Follows bash ``:-`` semantics: the default is used when the variable is
+    **unset or empty**.  Unset variables without a default are preserved
+    verbatim.  Expansion is single-pass (non-recursive).
 
     Args:
         value: A command or argument from the MCP configuration.
@@ -1004,7 +1008,14 @@ def _expand_mcp_argument(value: str, environ: Mapping[str, str]) -> str:
     """
 
     def substitute(match: re.Match[str]) -> str:
-        return environ.get(match[1], match[2] if match[2] is not None else match[0])
+        raw = environ.get(match[1])
+        if raw is None:
+            # Unset: use the default if one was given, otherwise keep the literal.
+            return match[2] if match[2] is not None else match[0]
+        if raw == "" and match[2] is not None:
+            # Empty with a ``:-`` default: use the default (bash ``:-`` semantics).
+            return match[2]
+        return raw
 
     return _MCP_VARIABLE.sub(substitute, value)
 
@@ -1076,7 +1087,10 @@ def _remove_expired_prefix_sessions(state_root: Path) -> None:
         if session.version != 4 or str(session) != candidate.name or metadata.st_mtime >= cutoff:
             continue
         if candidate.is_dir() and not candidate.is_symlink() and not _prefix_session_owner_alive(candidate):
-            shutil.rmtree(candidate)
+            try:
+                shutil.rmtree(candidate)
+            except OSError:
+                pass
 
 
 #: The prefix entry point and the one sibling module it imports; copied into every session directory.
@@ -1112,7 +1126,9 @@ def load_prefix_mcp_config(cwd: Path) -> dict[str, Any]:
     with os.fdopen(descriptor, "r", encoding="utf-8") as source:
         try:
             document = json.load(source)
-        except (UnicodeDecodeError, json.JSONDecodeError):
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            sys.stderr.write(f"launch_worker: WARNING {path} is malformed ({exc.__class__.__name__}); "
+                             "treating as absent\n")
             return empty
     if not isinstance(document, dict) or not isinstance(document.get("mcpServers"), dict):
         return empty
