@@ -395,7 +395,7 @@
       "feature_id": "FEAT-713",
       "feature": "accounting-metrics-layer",
       "spec": "sdd/specs/accounting-metrics-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -405,8 +405,9 @@
       "parallelism_notes": "--live builds AccountingToolkit and calls live._validate_one from TASK-5537 (toolkit.py, live.py).",
       "assigned_to": null,
       "started_at": "2026-11-12T00:04:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5539-finance-cli.md"
+      "completed_at": "2026-11-12T01:23:30+00:00",
+      "file": "sdd/tasks/completed/TASK-5539-finance-cli.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5540",

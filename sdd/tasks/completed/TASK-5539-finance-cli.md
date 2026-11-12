@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-713 — Accounting Metrics Layer
 **Spec**: `sdd/specs/accounting-metrics-layer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5537
@@ -230,10 +230,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker / native opus coder (attempt 892ca317f15143aea70e15f0cef9c233), commit 24556c5634
+**Date**: 2026-11-12
+**Notes**: `parrot finance` group (`validate`, `validate --live`, `explain`) in `accounting/cli.py`; `finance` registered in the core CLI's `_lazy_commands` / `_lazy_extras`. 4 tests green, ruff clean.
+**OPEN for review**: (1) `explain` builds its text from the structurally loaded model and imports the toolkit's private `_render`/`_metric_closure` (the contract said toolkit import only inside --live) so it never touches a live journal. (2) `--live` follows `FINANCE_AUDIT_MODE`, default `required`; the CLI has no audit storage, so `--live` may exit 1 on an audit failure unless `FINANCE_AUDIT_MODE=best_effort` - decide whether the CLI should expose an audit option or default to best_effort. (3) CLI drift is effectively always none: the structural load and the live refresh read the same `--snapshot` file.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: (1) above.
