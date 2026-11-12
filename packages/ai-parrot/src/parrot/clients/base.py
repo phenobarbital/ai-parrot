@@ -685,6 +685,7 @@ $backstory
             agent_name=current_agent_name.get(),
             user_id=current_user_id.get(),
             session_id=current_session_id.get(),
+            tenant=current_tenant.get(),
         )
         self.events.emit_nowait(event)
         # Client registries are isolated (forward_to_global=False). Forward the
@@ -764,6 +765,7 @@ $backstory
             agent_name=current_agent_name.get(),
             user_id=current_user_id.get(),
             session_id=current_session_id.get(),
+            tenant=current_tenant.get(),
         )
         self.events.emit_nowait(event)
         # Client registries are isolated (forward_to_global=False). Forward the

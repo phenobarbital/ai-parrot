@@ -27,6 +27,21 @@ from parrot.core.events.lifecycle.events import (
 
 logger = logging.getLogger(__name__)
 
+TENANT_ATTR = "parrot.tenant"
+UNKNOWN_TENANT = "unknown"
+
+
+def tenant_label(tenant: Optional[str]) -> str:
+    """Return a bounded tenant label for OpenTelemetry signals.
+
+    Args:
+        tenant: The server-resolved tenant identifier, if available.
+
+    Returns:
+        The tenant identifier or the sentinel for unbound calls.
+    """
+    return tenant or UNKNOWN_TENANT
+
 # ---------------------------------------------------------------------------
 # Provider → gen_ai.system mapping (spec §2 table)
 # ---------------------------------------------------------------------------
@@ -161,6 +176,7 @@ def build_after_invoke_attrs(event: AfterInvokeEvent) -> dict[str, Any]:
         "parrot.agent.name": event.agent_name,
         "parrot.invoke.method": event.method,
         "parrot.invoke.duration_ms": event.duration_ms,
+        TENANT_ATTR: tenant_label(event.tenant),
     }
     if event.input_tokens is not None:
         attrs["gen_ai.usage.input_tokens"] = event.input_tokens
@@ -198,6 +214,7 @@ def build_before_client_attrs(event: BeforeClientCallEvent) -> dict[str, Any]:
         # Hardcoded "chat" covers 95%+ of calls today; a future enhancement
         # could derive this from event metadata (e.g. "embed").
         "gen_ai.operation.name": "chat",
+        TENANT_ATTR: tenant_label(event.tenant),
     }
     if event.temperature is not None:
         attrs["gen_ai.request.temperature"] = event.temperature
@@ -234,6 +251,7 @@ def build_after_client_attrs(
         "gen_ai.provider.name": system,  # new SemConv key — current OpenLIT reads this
         "gen_ai.response.model": event.model,
         "parrot.client.duration_ms": event.duration_ms,
+        TENANT_ATTR: tenant_label(event.tenant),
     }
     if event.input_tokens is not None:
         attrs["gen_ai.usage.input_tokens"] = event.input_tokens
@@ -271,6 +289,7 @@ def build_client_failed_attrs(event: ClientCallFailedEvent) -> dict[str, Any]:
         "parrot.client.duration_ms": event.duration_ms,
         "error.type": event.error_type,
         "error.message": event.error_message,
+        TENANT_ATTR: tenant_label(event.tenant),
     }
     if event.agent_name:  # FEAT-228: omit when None/empty
         attrs["parrot.agent.name"] = event.agent_name
@@ -345,6 +364,7 @@ def build_invoke_failed_attrs(event: InvokeFailedEvent) -> dict[str, Any]:
         "parrot.invoke.duration_ms": event.duration_ms,
         "error.type": event.error_type,
         "error.message": event.error_message,
+        TENANT_ATTR: tenant_label(event.tenant),
     }
 
 
