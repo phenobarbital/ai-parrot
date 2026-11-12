@@ -1573,6 +1573,92 @@ class DatasetManager(AbstractToolkit):
         self.logger.debug("DataSource '%s' registered via add_source()", name)
         return f"DataSource '{name}' registered."
 
+    def add_semantic(
+        self,
+        name: str,
+        *,
+        model: str,
+        toolkit: Optional[Any] = None,
+        models_dir: Optional[Union[str, Path]] = None,
+        dialect: Optional[str] = None,
+        default_query: Optional[Dict[str, Any]] = None,
+        description: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        is_active: bool = True,
+        usage_guidance: Optional[Dict[str, List[str]]] = None,
+        **toolkit_kwargs: Any,
+    ) -> str:
+        """Register a dataset backed by a governed Semantic Layer model (FEAT-880).
+
+        Exactly one of ``toolkit`` or (``models_dir`` and ``dialect``) is required.
+        When the toolkit is built here and ``toolkit_kwargs`` carries no
+        ``dataplane_guard``, the manager's own guard is passed to it.
+
+        Args:
+            name: Name/identifier for the dataset.
+            model: Semantic model the dataset is bound to.
+            toolkit: An existing ``SemanticLayerToolkit`` to bind.
+            models_dir: Directory of semantic model definitions (builds a toolkit).
+            dialect: SQL dialect of the toolkit built from ``models_dir``.
+            default_query: Query used when ``fetch_dataset`` gets no conditions.
+            description: Optional description (defaults to the source's own text).
+            metadata: Optional metadata dictionary.
+            is_active: Whether dataset is active (default True).
+            usage_guidance: Optional ``do``/``dont`` lists for the LLM.
+            **toolkit_kwargs: Extra keyword arguments for the built toolkit.
+
+        Returns:
+            Confirmation message.
+
+        Raises:
+            ImportError: when ai-parrot-semantic is not installed.
+            ValueError: when both or neither source of the toolkit is given.
+        """
+        try:
+            from parrot.semantic.dataset_source import SemanticDataSource
+        except ImportError as exc:
+            raise ImportError("add_semantic requires the 'ai-parrot-semantic' package") from exc
+
+        from_dir = models_dir is not None or dialect is not None
+        if toolkit is not None and from_dir:
+            raise ValueError("add_semantic: pass either 'toolkit' or 'models_dir' and 'dialect', not both")
+        if toolkit is None and (models_dir is None or dialect is None):
+            raise ValueError("add_semantic: 'toolkit' or both 'models_dir' and 'dialect' are required")
+
+        if toolkit is not None:
+            source = SemanticDataSource(
+                name=name,
+                toolkit=toolkit,
+                model=model,
+                default_query=default_query,
+                description=description,
+            )
+        else:
+            if "dataplane_guard" not in toolkit_kwargs:
+                toolkit_kwargs["dataplane_guard"] = self._dataplane_guard
+            source = SemanticDataSource.from_models_dir(
+                name=name,
+                model=model,
+                models_dir=Path(models_dir),
+                dialect=dialect,
+                default_query=default_query,
+                description=description,
+                **toolkit_kwargs,
+            )
+        entry = DatasetEntry(
+            name=name,
+            description=description or source.describe(),
+            source=self._make_source(source),
+            metadata=metadata or {},
+            is_active=is_active,
+            auto_detect_types=self.auto_detect_types,
+            usage_guidance=usage_guidance,
+            protected=True,
+        )
+        self._datasets[name] = entry
+        self.logger.debug("Semantic dataset '%s' registered (model: %s)", name, model)
+        return f"Semantic dataset '{name}' registered (model: {model})"
+
     def add_query(
         self,
         name: str,
