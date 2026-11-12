@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-713 — Accounting Metrics Layer
 **Spec**: `sdd/specs/accounting-metrics-layer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5524
@@ -249,10 +249,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker / native sonnet coder (attempt 5852d78036444a59a74d5ab9a983b84c), commit 4d8cde61a1
+**Date**: 2026-11-12
+**Notes**: Closed metric grammar (AST, tokenizer, Pratt parser, parse_expr, parse_assertion, references); 10 tests green, ruff clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
