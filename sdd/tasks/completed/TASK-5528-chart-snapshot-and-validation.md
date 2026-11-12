@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-713 — Accounting Metrics Layer
 **Spec**: `sdd/specs/accounting-metrics-layer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5525, TASK-5527
@@ -291,10 +291,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker / native opus coder (attempt 2f89f94e6bb54d9592e89b6e69f64b2c), commit cae9565319
+**Date**: 2026-11-12
+**Notes**: snapshot.py (3 builders) and validation.py (partition_intervals, validate, metric_order); 7 tests green. Open-spec decisions the TASK-5529 loader author should know: (1) accounts covered in some intervals but not others -> `interval_gap`; only never-covered accounts -> `unassigned_account`; (2) `selector_no_match` when resolved accounts add nothing beyond the explicit list; (3) cycle problems list the cycle's metric names in Problem.accounts; (4) under natural_balance an explicit nature.accounts map gives `nature_ambiguous`; (5) unparameterised DECIMAL/NUMERIC and integer amount types accepted, non-numeric -> `numeric_type`, column names matched case-insensitively; (6) snapshot tags sorted/deduped; (7) YAML manifest without taken_at uses file mtime. Extra test test_nature_checks added.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
