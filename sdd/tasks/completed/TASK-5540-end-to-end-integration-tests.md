@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-713 — Accounting Metrics Layer
 **Spec**: `sdd/specs/accounting-metrics-layer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5537
@@ -172,10 +172,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator over MCP seat glm (nova / zai.glm-4.7-flash; attempt 1 salvaged, attempt 2 `f4a38f3d22d94a8495e497db90149e60` completed) + orchestrator review fix `a0adbaf5f0`
+**Date**: 2026-11-12
+**Notes**: `tests/accounting/test_e2e_duckdb.py` — six tests: pnl, cumulative, weekly-cumulative-rejected, file-through-executor, postgres parity (skipped without `PARROT_TEST_PG_DSN`; also needs `PARROT_TEST_PG_MODELS_DIR`, never run here), audit trail. The glm delivery was hollow (expected values computed but never compared; the executor test never used a table source; the audit test never rebuilt lineage), so the orchestrator rewrote the file with an independent per-month Decimal oracle, a real table-source model over the DuckDB file, and a rebuild_lineage check; a mutation of the oracle fails 3 tests. 100 passed, 1 skipped for the accounting directory. Feedback recorded: coder-feedback:5849b0409c6c9b1cc3aec999. No production file modified.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
