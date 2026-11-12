@@ -7,7 +7,6 @@ a Claude hook, even when importing the rest of Parrot is unavailable.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import math
 import os
@@ -649,18 +648,42 @@ def _branch(then: str, otherwise: str) -> str:
     return f"if {_native_check()}; then {then}{_ELSE}{otherwise}{_FI}"
 
 
-def _shell_prefix_policy() -> dict[str, Any] | None:
-    """Return a token-authenticated shell-prefix policy, or ``None`` without proof."""
+def _load_shell_prefix() -> Any:
+    """Return the sibling ``shell_prefix`` module without importing Parrot in script mode.
+
+    ``shell_prefix`` imports this module back, so the import is lazy and, in script mode, the running
+    module is pre-seeded under its sibling name to keep one copy of the policy helpers.
+    """
+    if __package__:
+        from . import shell_prefix
+    else:  # run as a script: this file's directory is sys.path[0]
+        sys.modules.setdefault("worktree_environment", sys.modules[__name__])
+        import shell_prefix
+    return shell_prefix
+
+
+def _shell_prefix_policy() -> Any | None:
+    """Return the validated, token-authenticated shell-prefix policy, or ``None`` without proof.
+
+    The token only proves that this hook ran through the prefix. The policy it names must also pass the
+    prefix's own validation (regular file, not group/world-writable, complete schema) and describe this
+    session's worktree; anything else leaves the hook on its own Bubblewrap wrapper.
+
+    Returns:
+        The ``shell_prefix.PrefixPolicy``, or ``None`` when any proof is missing or invalid.
+    """
     policy_path = os.environ.get("PARROT_SDD_SHELL_PREFIX_POLICY")
     token = os.environ.get("PARROT_SDD_SHELL_PREFIX_TOKEN")
     if not policy_path or not token:
         return None
     try:
-        contents = Path(policy_path).read_bytes()
-        policy = json.loads(contents)
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        policy, digest = _load_shell_prefix().load_policy(policy_path)
+    except (OSError, ValueError):
         return None
-    if not isinstance(policy, dict) or hashlib.sha256(contents).hexdigest() != token:
+    if digest != token:
+        return None
+    frozen_root = os.environ.get(LAUNCHER_MARKERS[0], "").split(os.pathsep)[0]
+    if frozen_root and frozen_root != policy.worktree:
         return None
     return policy
 
@@ -693,7 +716,7 @@ def _wrap_bash(command: str, cwd: Path, tool_input: dict[str, Any], native: Any,
     # After the guard, which must see the raw runner (`pytest`, not `rtk pytest`).
     # A token-authenticated RTK prefix already handles the exact command payload.
     prefix_policy = _shell_prefix_policy()
-    if not (prefix_policy and prefix_policy.get("rtk") is True):
+    if not (prefix_policy and prefix_policy.rtk):
         if optimized := rtk_rewrite(command):
             command = optimized
     degraded = bool(native) and os.environ.get(native.DEGRADED_ENV) == "1"
@@ -711,7 +734,7 @@ def _wrap_bash(command: str, cwd: Path, tool_input: dict[str, Any], native: Any,
             return command
         shell = bounded_shell_argv(command, tool_input) if explicit else ["/bin/bash", "-c", command]
         return shlex.join(["env", *(f"{key}={value}" for key, value in diff.items()), *shell])
-    if backend == "bubblewrap" and (policy := _shell_prefix_policy()) and policy.get("mode") == "legacy":
+    if backend == "bubblewrap" and (policy := _shell_prefix_policy()) and policy.mode == "legacy":
         if tool_input.get("timeout") or tool_input.get("run_in_background"):
             return shlex.join(bounded_shell_argv(command, tool_input))
         return command

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-881 — Legacy shell-prefix fixes
 **Spec**: `sdd/specs/scripts-native-claude-sandbox-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5543
@@ -194,8 +194,8 @@ def test_native_launch_drops_inherited_shell_prefix(tmp_path, monkeypatch): ...
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Code host session (/sdd-fix agent:sdd-fix:b338296a)
+**Date**: 2026-11-12
+**Notes**: Added MIN_PREFIX_CLAUDE_VERSION and _claude_version (prefix launches below 2.1.321 or with an unknown version exit 1); owner.pid in prefix session directories and a liveness check before expiry; _agent_hook_commands limited to the frontmatter hooks: block; inherited CLAUDE_CODE_SHELL_PREFIX / policy dropped when no prefix is prepared and the token dropped always. 197 tests pass; the real CLI here reports 2.1.322.
 
 **Deviations from spec**: none

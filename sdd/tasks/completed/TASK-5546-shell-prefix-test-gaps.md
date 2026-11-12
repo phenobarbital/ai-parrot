@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-881 — Legacy shell-prefix fixes
 **Spec**: `sdd/specs/scripts-native-claude-sandbox-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5544
@@ -159,8 +159,8 @@ def test_policy_with_unknown_key_or_wrong_type_exit_2(...): ...
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Code host session (/sdd-fix agent:sdd-fix:b338296a)
+**Date**: 2026-11-12
+**Notes**: Added malformed-contents, unknown-key/wrong-type and symlink policy tests (31 pass). The live test now builds a real linked worktree, loads the primary .mcp.json through --mcp-config/--strict-mcp-config, asserts a positive in-worktree write and an empty MCP token; it passed once with PARROT_TEST_REAL_LLM=1 on Claude Code 2.1.322.
 
 **Deviations from spec**: none

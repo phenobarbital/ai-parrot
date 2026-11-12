@@ -937,12 +937,9 @@ def test_bubblewrap_hook_is_idempotent_on_own_output(
     assert second == {"hookSpecificOutput": {"hookEventName": "PreToolUse"}}
 
 
-def test_bubblewrap_hook_skips_wrap_only_with_valid_prefix_token(
-    checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Legacy prefix proof avoids a redundant rewrite; absent or forged proof still fails closed to bwrap."""
-    worktree, _environment = checkout
-    document = {
+def _write_prefix_policy(tmp_path: Path, worktree: Path, **overrides: object) -> Path:
+    """Write a complete shell-prefix policy with launcher-like permissions."""
+    document: dict[str, object] = {
         "schema_version": 1,
         "mode": "legacy",
         "worktree": str(worktree),
@@ -950,8 +947,88 @@ def test_bubblewrap_hook_skips_wrap_only_with_valid_prefix_token(
         "mcp_argv": [],
         "rtk": False,
     }
+    document.update(overrides)
     policy_path = tmp_path / "policy.json"
     policy_path.write_text(json.dumps(document))
+    policy_path.chmod(0o600)
+    return policy_path
+
+
+def _prefix_token(policy_path: Path) -> str:
+    """Return the token the prefix would hand to a hook for ``policy_path``."""
+    return hashlib.sha256(policy_path.read_bytes()).hexdigest()
+
+
+@pytest.mark.parametrize("defect", ["schema", "group-writable", "symlink", "other-worktree"])
+def test_bubblewrap_hook_rejects_unvalidated_prefix_policy(
+    checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path, defect: str
+) -> None:
+    """A matching token is not enough: the policy must validate and describe this session's worktree."""
+    worktree, _environment = checkout
+    policy_path = _write_prefix_policy(tmp_path, worktree)
+    if defect == "schema":
+        policy_path.write_text(json.dumps({"schema_version": 1, "mode": "legacy"}))
+    elif defect == "group-writable":
+        policy_path.chmod(0o620)
+    elif defect == "symlink":
+        link = tmp_path / "link.json"
+        link.symlink_to(policy_path)
+        policy_path = link
+    else:
+        monkeypatch.setenv("PARROT_SDD_SANDBOX_ROOTS", os.pathsep.join((str(tmp_path / "other"), "git", "primary")))
+    monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_POLICY", str(policy_path))
+    monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_TOKEN", _prefix_token(policy_path))
+    monkeypatch.setattr(policy.shutil, "which", lambda name: f"/usr/bin/{name}")
+
+    assert policy._shell_prefix_policy() is None
+    payload = {"cwd": str(worktree), "tool_name": "Bash", "tool_input": {"command": "git status"}}
+    wrapped = policy.hook_response(payload, backend="bubblewrap")["hookSpecificOutput"]["updatedInput"]["command"]
+    assert "bwrap" in wrapped
+
+
+def test_prefix_policy_accepted_for_the_frozen_worktree(
+    checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The launcher's frozen root and the policy worktree agree for a genuine session."""
+    worktree, _environment = checkout
+    policy_path = _write_prefix_policy(tmp_path, worktree)
+    monkeypatch.setenv("PARROT_SDD_SANDBOX_ROOTS", os.pathsep.join((str(worktree), "git", "primary")))
+    monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_POLICY", str(policy_path))
+    monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_TOKEN", _prefix_token(policy_path))
+
+    loaded = policy._shell_prefix_policy()
+
+    assert loaded is not None and loaded.mode == "legacy" and loaded.worktree == str(worktree)
+
+
+def test_script_mode_hook_validates_prefix_policy_without_parrot(checkout: tuple[Path, Path], tmp_path: Path) -> None:
+    """Run as a script (how Claude invokes it), the hook loads its ``shell_prefix`` sibling and honours the policy."""
+    worktree, _environment = checkout
+    policy_path = _write_prefix_policy(tmp_path, worktree, rtk=True)
+    result = subprocess.run(
+        [sys.executable, "-E", "-s", str(Path(policy.__file__).resolve()), "--hook"],
+        input=json.dumps({"cwd": str(worktree), "tool_name": "Bash", "tool_input": {"command": "git status"}}),
+        env={
+            "PATH": os.environ["PATH"],
+            "PARROT_SDD_SANDBOX_BACKEND": "bubblewrap",
+            "PARROT_SDD_SHELL_PREFIX_POLICY": str(policy_path),
+            "PARROT_SDD_SHELL_PREFIX_TOKEN": _prefix_token(policy_path),
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {"hookSpecificOutput": {"hookEventName": "PreToolUse"}}
+
+
+def test_bubblewrap_hook_skips_wrap_only_with_valid_prefix_token(
+    checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Legacy prefix proof avoids a redundant rewrite; absent or forged proof still fails closed to bwrap."""
+    worktree, _environment = checkout
+    policy_path = _write_prefix_policy(tmp_path, worktree)
     payload = {"cwd": str(worktree), "tool_name": "Bash", "tool_input": {"command": "git status"}}
     monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_POLICY", str(policy_path))
     monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_TOKEN", hashlib.sha256(policy_path.read_bytes()).hexdigest())
@@ -970,8 +1047,7 @@ def test_bubblewrap_prefix_output_is_fixed_point(
 ) -> None:
     """The bounded explicit-call shape emitted under the prefix is idempotent."""
     worktree, _environment = checkout
-    policy_path = tmp_path / "policy.json"
-    policy_path.write_text(json.dumps({"schema_version": 1, "mode": "legacy"}))
+    policy_path = _write_prefix_policy(tmp_path, worktree)
     monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_POLICY", str(policy_path))
     monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_TOKEN", hashlib.sha256(policy_path.read_bytes()).hexdigest())
     payload = {"cwd": str(worktree), "tool_name": "Bash", "tool_input": {"command": "sleep 1", "timeout": 30_000}}
@@ -985,8 +1061,7 @@ def test_hook_skips_rtk_under_prefix_policy(
 ) -> None:
     """An authenticated RTK prefix owns the rewrite after the scope guard."""
     worktree, _environment = checkout
-    policy_path = tmp_path / "policy.json"
-    policy_path.write_text(json.dumps({"schema_version": 1, "mode": "legacy", "rtk": True}))
+    policy_path = _write_prefix_policy(tmp_path, worktree, rtk=True)
     monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_POLICY", str(policy_path))
     monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_TOKEN", hashlib.sha256(policy_path.read_bytes()).hexdigest())
     monkeypatch.setattr(policy, "rtk_rewrite", lambda command: pytest.fail(f"unexpected RTK rewrite: {command}"))
@@ -1004,8 +1079,7 @@ def test_scope_guard_still_blocks_under_prefix_policy(
 ) -> None:
     """Prefix RTK suppression does not run before the raw-command scope guard."""
     worktree, _environment = checkout
-    policy_path = tmp_path / "policy.json"
-    policy_path.write_text(json.dumps({"schema_version": 1, "mode": "legacy", "rtk": True}))
+    policy_path = _write_prefix_policy(tmp_path, worktree, rtk=True)
     monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_POLICY", str(policy_path))
     monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_TOKEN", hashlib.sha256(policy_path.read_bytes()).hexdigest())
     seen: list[str] = []

@@ -694,6 +694,7 @@ _REJECTED_OPTIONS = (
     "--dangerously-skip-permissions",
     "--plugin-dir",
     "--mcp-config",
+    "--strict-mcp-config",
     "--agents",
 )
 _DEFAULT_MODEL = "sonnet"
@@ -955,13 +956,30 @@ def _load_json(path: Path) -> dict[str, Any]:
 
 
 def _agent_hook_commands(path: Path) -> list[str]:
-    """Extract literal command values from the agent's YAML frontmatter without a YAML dependency."""
+    """Extract literal hook command values from the agent's YAML frontmatter without a YAML dependency.
+
+    Only ``command:`` lines inside the top-level ``hooks:`` block count: every collected string is
+    allowed to run outside the sandbox, so a ``command:`` key anywhere else must not be picked up.
+
+    Args:
+        path: The agent definition file.
+
+    Returns:
+        The hook command strings, unquoted, in file order.
+    """
     try:
         frontmatter = path.read_text(encoding="utf-8").split("---", 2)[1]
     except (OSError, IndexError):
         return []
     commands: list[str] = []
-    for match in re.finditer(r"^\s*command:\s*(.*?)\s*$", frontmatter, re.MULTILINE):
+    in_hooks = False
+    for line in frontmatter.splitlines():
+        if line and not line[0].isspace() and not line.startswith("#"):
+            in_hooks = line.rstrip() == "hooks:"
+            continue
+        match = re.match(r"^\s+(?:-\s+)?command:\s*(.*?)\s*$", line) if in_hooks else None
+        if match is None:
+            continue
         raw = match.group(1)
         if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in {"'", '"'}:
             raw = raw[1:-1]
@@ -971,7 +989,7 @@ def _agent_hook_commands(path: Path) -> list[str]:
 
 
 def _prefix_mcp_argv(path: Path) -> list[list[str]]:
-    """Collect command argv values from an optional worktree MCP configuration."""
+    """Collect the stdio command argv values from an MCP configuration file."""
     servers = _load_json(path).get("mcpServers")
     if not isinstance(servers, dict):
         return []
@@ -985,8 +1003,44 @@ def _prefix_mcp_argv(path: Path) -> list[list[str]]:
     return result
 
 
+#: Oldest Claude Code on which the prefix was verified live to receive every Bash call
+#: (HOTFIX-legacy-sandbox-shell-prefix-3). An older CLI could run hooks through the prefix but not Bash.
+MIN_PREFIX_CLAUDE_VERSION = (2, 1, 321)
+
+
+def _claude_version(claude: str) -> tuple[int, int, int] | None:
+    """Return the Claude Code version reported by ``claude --version``.
+
+    Args:
+        claude: Path of the ``claude`` executable.
+
+    Returns:
+        ``(major, minor, patch)``, or ``None`` when the command fails or prints no version.
+    """
+    try:
+        result = subprocess.run([claude, "--version"], capture_output=True, text=True, timeout=10, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    match = re.search(r"(\d+)\.(\d+)\.(\d+)", result.stdout) if result.returncode == 0 else None
+    if match is None:
+        return None
+    return int(match.group(1)), int(match.group(2)), int(match.group(3))
+
+
+def _prefix_session_owner_alive(session_dir: Path) -> bool:
+    """Return whether the launcher process recorded in ``owner.pid`` still exists.
+
+    ``launch_worker`` replaces itself with Claude Code, so the recorded pid is the session's own.
+    """
+    try:
+        owner_pid = int((session_dir / "owner.pid").read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return False
+    return owner_pid > 0 and _process_is_alive(owner_pid)
+
+
 def _remove_expired_prefix_sessions(state_root: Path) -> None:
-    """Remove old session directories without following links outside the state root."""
+    """Remove old session directories of dead sessions without following links outside the state root."""
     cutoff = time.time() - 7 * 24 * 60 * 60
     try:
         candidates = tuple(state_root.iterdir())
@@ -1000,12 +1054,33 @@ def _remove_expired_prefix_sessions(state_root: Path) -> None:
             continue
         if session.version != 4 or str(session) != candidate.name or metadata.st_mtime >= cutoff:
             continue
-        if candidate.is_dir() and not candidate.is_symlink():
+        if candidate.is_dir() and not candidate.is_symlink() and not _prefix_session_owner_alive(candidate):
             shutil.rmtree(candidate)
 
 
+#: The prefix entry point and the one sibling module it imports; copied into every session directory.
+_PREFIX_RUNTIME_FILES = ("shell_prefix.py", "worktree_environment.py")
+
+
+def prefix_mcp_config(cwd: Path) -> Path | None:
+    """Return the primary checkout's MCP configuration when it declares at least one server.
+
+    The worktree's own ``.mcp.json`` is never consulted: it is gitignored (so normally absent) and
+    writable by the session, while the primary checkout is read-only inside the legacy sandbox.
+
+    Args:
+        cwd: A path inside the linked worker worktree.
+
+    Returns:
+        ``<primary>/.mcp.json``, or ``None`` when it is absent, malformed or declares no server.
+    """
+    path = _native_roots(cwd)[2] / ".mcp.json"
+    servers = _load_json(path).get("mcpServers")
+    return path if path.is_file() and isinstance(servers, dict) and servers else None
+
+
 def prepare_shell_prefix(cwd: Path, settings: dict, mode: str, *, rtk: bool) -> dict[str, str]:
-    """Write an immutable legacy shell-prefix policy and executable launcher.
+    """Write an immutable legacy shell-prefix policy, runtime copy and executable launcher.
 
     Args:
         cwd: The linked worker worktree.
@@ -1030,17 +1105,19 @@ def prepare_shell_prefix(cwd: Path, settings: dict, mode: str, *, rtk: bool) -> 
     _remove_expired_prefix_sessions(state_root)
     session_dir = state_root / str(uuid.uuid4())
     session_dir.mkdir(mode=0o700)
+    (session_dir / "owner.pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
 
     hook_commands = _hook_commands(settings.get("hooks", {}))
     for path in (cwd / ".claude" / "settings.json", cwd / ".claude" / "settings.local.json"):
         hook_commands.extend(_hook_commands(_load_json(path).get("hooks", {})))
     hook_commands.extend(_agent_hook_commands(cwd / ".claude" / "agents" / "sdd-worker.md"))
+    mcp_config = prefix_mcp_config(cwd)
     policy = PrefixPolicy(
         schema_version=1,
         mode=mode,
-        worktree=str(_canonical(cwd)),
+        worktree=str(_native_roots(cwd)[0]),
         hook_commands=tuple(hook_commands),
-        mcp_argv=tuple(tuple(argv) for argv in _prefix_mcp_argv(cwd / ".mcp.json")),
+        mcp_argv=tuple(tuple(argv) for argv in (_prefix_mcp_argv(mcp_config) if mcp_config else [])),
         rtk=rtk,
     )
     policy_path = session_dir / "policy.json"
@@ -1060,7 +1137,14 @@ def prepare_shell_prefix(cwd: Path, settings: dict, mode: str, *, rtk: bool) -> 
     )
     policy_path.chmod(0o400)
     prefix_path = session_dir / "prefix"
-    shell_prefix = Path(__file__).resolve().with_name("shell_prefix.py")
+    # The prefix runs outside Bubblewrap on every shell call, so it must not execute from a source tree
+    # the session can write (a launcher started from a feature worktree). Run a private read-only copy.
+    scripts = Path(__file__).resolve().parent
+    for name in _PREFIX_RUNTIME_FILES:
+        runtime = session_dir / name
+        shutil.copyfile(scripts / name, runtime)
+        runtime.chmod(0o400)
+    shell_prefix = session_dir / _PREFIX_RUNTIME_FILES[0]
     prefix_path.write_text(
         f'#!/bin/sh\nexec {shlex.quote(str(Path(sys.executable).resolve()))} -E -s {shlex.quote(str(shell_prefix))} "$@"\n',
         encoding="utf-8",
@@ -1180,13 +1264,43 @@ def launch_worker(
                 )
                 env["PARROT_SDD_NOTIFY_PYTHON"] = str(Path(sys.executable).absolute())
                 env["PARROT_SDD_NOTIFY_HELPER"] = str(helper_path)
-    if mode == "legacy" or (not degraded and _NATIVE_PREFIX_RTK_QUALIFIED):
+    uses_prefix = mode == "legacy" or (not degraded and _NATIVE_PREFIX_RTK_QUALIFIED)
+    # A token is only ever minted by the prefix for one hook invocation; never inherit one.
+    env.pop("PARROT_SDD_SHELL_PREFIX_TOKEN", None)
+    if uses_prefix:
+        version = _claude_version(claude)
+        if version is None or version < MIN_PREFIX_CLAUDE_VERSION:
+            found = ".".join(map(str, version)) if version else "unknown"
+            required = ".".join(map(str, MIN_PREFIX_CLAUDE_VERSION))
+            print(
+                f"launch_worker: shell prefix unavailable (Claude Code {found}; the prefix boundary needs "
+                f">= {required})",
+                file=sys.stderr,
+            )
+            return 1
         try:
             env.update(prepare_shell_prefix(cwd, settings, mode, rtk=True))
         except RuntimeError as exc:
             print(f"launch_worker: shell prefix unavailable ({exc})", file=sys.stderr)
             return 1
+    else:
+        # A prefix inherited from a parent session belongs to that session's policy, not this one.
+        env.pop("CLAUDE_CODE_SHELL_PREFIX", None)
+        env.pop("PARROT_SDD_SHELL_PREFIX_POLICY", None)
     command = [claude, "--agent", "sdd-worker"]
+    if uses_prefix:
+        # The prefix passes through only the servers recorded in its policy, so the session must load
+        # exactly that file. `--mcp-config` is variadic: the next option has to follow it directly.
+        mcp_config = prefix_mcp_config(cwd)
+        if mcp_config is None:
+            print(
+                "launch_worker: WARNING no MCP servers: the primary checkout has no usable .mcp.json; "
+                "the session starts without MCP tools",
+                file=sys.stderr,
+            )
+        else:
+            command += ["--mcp-config", str(mcp_config)]
+        command.append("--strict-mcp-config")
     if not has_sources:
         command += ["--setting-sources", "project,local"]
     if not has_model:
