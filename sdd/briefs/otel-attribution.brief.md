@@ -154,3 +154,23 @@ Decisions taken without a Q&A round; revisit before launching the worker if any 
 - `pytest packages/ai-parrot/tests/clients/test_nova_audio_sdk.py -q`
 - `pytest packages/ai-parrot/tests/integration/observability/test_agent_tenant_attribution.py -q`
 - `pytest packages/ai-parrot/tests/integration/observability/test_poc.py -q`
+
+### Validation Contract
+
+> Explicit pytest operands gating this brief in every tier. Files owned by tasks not yet merged (task 3's
+> `test_overriding_agents_identity.py`, task 6's `test_agent_tenant_attribution.py`) are added when they land.
+
+tests:
+- packages/ai-parrot/tests/unit/observability/test_tenant_attribution.py
+- packages/ai-parrot/tests/unit/observability/test_attributes.py
+- packages/ai-parrot/tests/unit/observability/test_metrics_subscriber.py
+- packages/ai-parrot/tests/unit/observability/test_metrics_label_whitelist.py
+- packages/ai-parrot/tests/unit/clients/test_client_emits_agent_name.py
+- packages/ai-parrot/tests/unit/bots/test_current_tenant_binding.py
+- packages/ai-parrot/tests/bots/test_voicebot_contract.py
+- packages/ai-parrot/tests/clients/test_live_stream_voice_events.py
+- packages/ai-parrot/tests/clients/test_live_usage_metadata.py
+- packages/ai-parrot/tests/clients/test_nova_stream_voice_events.py
+- packages/ai-parrot/tests/clients/test_nova_audio_sdk.py
+- packages/ai-parrot/tests/integration/observability/test_poc.py
+markers: none

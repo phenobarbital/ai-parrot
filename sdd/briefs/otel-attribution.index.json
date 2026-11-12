@@ -8,6 +8,37 @@
   "completed_at": null,
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/unit/observability/test_tenant_attribution.py",
+          "packages/ai-parrot/tests/unit/observability/test_attributes.py",
+          "packages/ai-parrot/tests/unit/observability/test_metrics_subscriber.py",
+          "packages/ai-parrot/tests/unit/observability/test_metrics_label_whitelist.py",
+          "packages/ai-parrot/tests/unit/clients/test_client_emits_agent_name.py",
+          "packages/ai-parrot/tests/unit/bots/test_current_tenant_binding.py",
+          "packages/ai-parrot/tests/bots/test_voicebot_contract.py",
+          "packages/ai-parrot/tests/clients/test_live_stream_voice_events.py",
+          "packages/ai-parrot/tests/clients/test_live_usage_metadata.py",
+          "packages/ai-parrot/tests/clients/test_nova_stream_voice_events.py",
+          "packages/ai-parrot/tests/clients/test_nova_audio_sdk.py",
+          "packages/ai-parrot/tests/integration/observability/test_poc.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:cdcd477a6008c77252c5e63e6db2f0472b0d60b98f27f2368282af156fadab01"
+  },
   "tasks": [
     {
       "id": "HOTFIX-otel-attribution-1",
