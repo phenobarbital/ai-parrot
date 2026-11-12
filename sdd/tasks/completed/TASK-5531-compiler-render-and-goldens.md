@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-713 — Accounting Metrics Layer
 **Spec**: `sdd/specs/accounting-metrics-layer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5530
@@ -304,10 +304,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker / native opus coder (attempt 9977ee6a70f946e8ac149b06638d916e), commit 9cdf0d46fc
+**Date**: 2026-11-12
+**Notes**: compiler.py render_plan/self_check/compile_metric/compile_assertion built only from sqlglot `exp.*` constructors; 16 golden files (4 cases x duckdb/postgres/bigquery SQL + 4 plan JSON); tests green. Task-file edit by the orchestrator: golden globs expanded to 16 explicit paths because the complexity contract rejects globs. Choices outside the blueprint: NULL debit/credit treated as 0; each set's CASE lists only its own accounts' natures; buckets cast to DATE, BigQuery weeks use ISOWEEK; default NULL ordering per dialect; lineage.assertions lists assertions whose references overlap the metric's dependency closure.
+**OPEN for review**: `Lineage.formula` holds the raw model expression (blueprint), whereas the spec's models comment says "fully inlined expression" - blueprint and spec disagree; decide at code review.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: possible Lineage.formula mismatch noted above.
