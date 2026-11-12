@@ -265,6 +265,9 @@ audio = [
     "pydub==0.25.1",
 ]
 
+# In-process DuckDB engine (parrot.interfaces.duckdb_engine)
+duckdb = ["duckdb>=1.0"]
+
 # Financial analysis (ta-lib requires libta-lib-dev)
 finance = [
     "ta-lib==0.6.8",
