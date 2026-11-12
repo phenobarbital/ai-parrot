@@ -151,9 +151,7 @@ async def test_with_call_identity_named_and_var_keyword_tenant(make_bot: Any) ->
     seen: list[tuple[str | None, str | None, tuple[Any, ...]]] = []
 
     @with_call_identity
-    async def named(
-        self: Any, value: str, tenant: str | None = None, ctx: Any = None
-    ) -> tuple[str, str | None, Any]:
+    async def named(self: Any, value: str, tenant: str | None = None, ctx: Any = None) -> tuple[str, str | None, Any]:
         seen.append((current_agent_name.get(), current_tenant.get(), (value, tenant, ctx)))
         return value, tenant, ctx
 

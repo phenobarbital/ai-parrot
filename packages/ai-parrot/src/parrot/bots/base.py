@@ -153,9 +153,7 @@ class BaseBot(AbstractBot):
             return None
         return current_tenant.set(call_tenant)
 
-    def _bind_call_identity(
-        self, tenant: Optional[str] = None, ctx: Any = None
-    ) -> CallIdentityTokens:
+    def _bind_call_identity(self, tenant: Optional[str] = None, ctx: Any = None) -> CallIdentityTokens:
         """Bind this bot's agent name and resolved tenant for one call."""
         if ctx is None:
             ctx = _current_ctx.get()
@@ -303,9 +301,7 @@ class BaseBot(AbstractBot):
         _user_token = current_user_id.set(user_id)
         _session_token = current_session_id.set(session_id)
         _memkey_token = current_memory_key_id.set(self.memory_key_id)
-        _tenant_token = self._bind_call_tenant(
-            kwargs.get("tenant"), ctx if ctx is not None else _current_ctx.get()
-        )
+        _tenant_token = self._bind_call_tenant(kwargs.get("tenant"), ctx if ctx is not None else _current_ctx.get())
         try:
             return await self._conversation_body(
                 question=question,
