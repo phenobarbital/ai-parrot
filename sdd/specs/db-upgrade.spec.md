@@ -493,7 +493,18 @@ tests:
 - packages/ai-parrot-server/tests/migrations/test_runtime_db.py
 - packages/ai-parrot-server/tests/migrations/test_startup.py
 - packages/ai-parrot-server/tests/migrations/test_packaging.py
+- packages/ai-parrot/tests/migrations/test_checks.py
+- packages/ai-parrot/tests/migrations/test_bots_baseline.py
+- packages/ai-parrot/tests/migrations/test_legacy_conversion.py
+- packages/ai-parrot-server/tests/migrations/test_ui_crew_baselines.py
+- packages/ai-parrot/tests/migrations/test_documentation.py
 markers: none
+
+### Validation Contract Notes
+
+The task decomposition splits checks, baseline, legacy-conversion and UI/crew parity tests into
+the additional files listed above. The documentation test runs the required techwiki CLI check
+through pytest because the task graph does not register that CLI as a test runner.
 
 The first two operands exist and guard CLI integration and the frozen database loader. The migration
 operands are explicit CREATE deliverables in §6, not claims of existing tests. Task decomposition must
@@ -638,6 +649,11 @@ CREATE paths are planned, not claims that the files already exist. Downstream ta
 | `packages/ai-parrot-server/tests/migrations/test_packaging.py` | CREATE | — | — | — |
 | `sdd/migrations/users-bots-fold-embedding.sql` | CREATE | — | — | — |
 | `sdd/migrations/manual-bot-language-reset.sql` | CREATE | — | — | — |
+| `packages/ai-parrot/tests/migrations/test_checks.py` | CREATE | — | — | — |
+| `packages/ai-parrot/tests/migrations/test_bots_baseline.py` | CREATE | — | — | — |
+| `packages/ai-parrot/tests/migrations/test_legacy_conversion.py` | CREATE | — | — | — |
+| `packages/ai-parrot-server/tests/migrations/test_ui_crew_baselines.py` | CREATE | — | — | — |
+| `packages/ai-parrot/tests/migrations/test_documentation.py` | CREATE | — | — | — |
 | `wiki/deployment/database-migrations.md` | CREATE | — | — | — |
 
 ## 7. Implementation Notes & Constraints
