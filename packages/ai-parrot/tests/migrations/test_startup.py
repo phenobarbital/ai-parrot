@@ -14,9 +14,7 @@ from parrot.migrations.models import MigrationItem, MigrationReport
 from parrot.migrations.startup import migration_doctor_check, warn_pending_migrations
 
 
-def _report(
-    state: str = "APPLIED", *, failed: bool = False, diagnostics: list[str] | None = None
-) -> MigrationReport:
+def _report(state: str = "APPLIED", *, failed: bool = False, diagnostics: list[str] | None = None) -> MigrationReport:
     """Build a safe migration report for one bots migration."""
     identity = "bots/001_baseline.sql"
     return MigrationReport(
@@ -77,7 +75,9 @@ async def test_doctor_distinguishes_pending_changed_and_drift(
 
 
 @pytest.mark.asyncio
-async def test_unavailable_output_is_sanitized(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
+async def test_unavailable_output_is_sanitized(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
     """Never expose credentials, SQL, parameters, or raw driver errors."""
     secret = "postgresql://user:secret@db/runtime SELECT private FROM vault parameters=('token',)"
     monkeypatch.setattr("parrot.migrations.checks.status", AsyncMock(side_effect=RuntimeError(secret)))
