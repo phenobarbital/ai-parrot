@@ -1846,6 +1846,17 @@ class NovaAudio:
         next_event_task: "asyncio.Task" = asyncio.create_task(_read_next_event())
         exited_via_explicit_break = False  # True for reconnect/completionEnd breaks; False for _STREAM_END
 
+        _lc_tc = self._emit_before_call(
+            client_name=self.client_name,
+            model=self.model or "",
+            temperature=None,
+            system_prompt=system_prompt,
+            has_tools=self._build_tool_configuration() is not None,
+            parent_trace=None,
+        )
+        _lc_t0 = time.perf_counter()
+        _lc_error: Optional[BaseException] = None
+
         try:
             while True:
                 done, _pending_set = await asyncio.wait(
@@ -2194,6 +2205,7 @@ class NovaAudio:
                     session_id,
                 )
             else:
+                _lc_error = exc
                 self.logger.exception("Nova Sonic session %s error: %s", session_id, error_message)
             yield LiveVoiceResponse(
                 text="",
@@ -2204,6 +2216,28 @@ class NovaAudio:
                 user_id=user_id,
             )
         finally:
+            try:
+                if _lc_error is not None:
+                    await self._emit_failed_call(
+                        _lc_tc,
+                        client_name=self.client_name,
+                        model=self.model or "",
+                        duration_ms=(time.perf_counter() - _lc_t0) * 1000,
+                        exc=_lc_error,
+                    )
+                else:
+                    await self._emit_after_call(
+                        _lc_tc,
+                        client_name=self.client_name,
+                        model=self.model or "",
+                        duration_ms=(time.perf_counter() - _lc_t0) * 1000,
+                        input_tokens=usage.input_tokens or None,
+                        output_tokens=usage.output_tokens or None,
+                        finish_reason=None,
+                    )
+            except Exception:  # noqa: BLE001 — telemetry must not mask stream termination
+                self.logger.debug("Failed to emit Nova Sonic session lifecycle event", exc_info=True)
+
             # FEAT-536 TASK-2940/2941: cancellation-safe coordinator
             # cleanup — release ownership of the event-reader task and any
             # tool tasks still in flight ("never leak a task, never write
