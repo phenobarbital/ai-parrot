@@ -4,16 +4,18 @@ Real ``AbstractClient._emit_*`` helpers -> global lifecycle registry ->
 ``MetricsSubscriber`` / ``GenAIOpenTelemetrySubscriber`` -> in-memory OTel
 readers. Hermetic: no network, no provider SDK.
 
-The agents whose ``ask`` body is heavy (BaseBot, PandasAgent,
-DatabaseAgent) run a stub body under the SAME ``with_call_identity`` wrapper the
-class uses (the class's own ``ask`` is asserted to be that wrapper); VoiceBot's
-real ``ask`` runs, with its context builders stubbed.
+Every agent runs its REAL ``ask`` body, so the test proves the identity each
+body binds reaches the client call it makes: BaseBot (binds inline) and
+PandasAgent (``with_call_identity``) with tools, history and vector context
+off; DatabaseAgent (``with_call_identity``) over an in-memory toolkit; VoiceBot
+with its context builders stubbed. Only the LLM client is a stub.
 """
 
 from __future__ import annotations
 
 import asyncio
-from typing import Any, AsyncIterator, List
+import uuid
+from typing import Any, AsyncIterator, List, Optional
 
 import pytest
 from navigator_eventbus.lifecycle.global_registry import scope
@@ -24,11 +26,15 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-from parrot.bots.base import BaseBot, with_call_identity
+from parrot.bots.base import BaseBot
 from parrot.bots.data import PandasAgent
 from parrot.bots.database.agent import DatabaseAgent
+from parrot.bots.database.models import QueryExecutionResponse, TableMetadata
+from parrot.bots.database.toolkits.base import DatabaseToolkit
 from parrot.bots.voice import VoiceBot
 from parrot.clients.base import AbstractClient
+from parrot.models import AIMessage
+from parrot.models.responses import CompletionUsage
 from parrot.models.voice import LiveVoiceResponse
 from parrot.observability.subscribers.metrics import MetricsSubscriber
 from parrot.observability.subscribers.trace import GenAIOpenTelemetrySubscriber
@@ -62,9 +68,17 @@ class _EmittingClient(AbstractClient):
             tc, client_name="stub", model="stub", duration_ms=5.0, input_tokens=3, output_tokens=2
         )
 
-    async def ask(self, prompt: str = "", **kwargs: Any) -> str:
+    async def ask(self, prompt: str = "", **kwargs: Any) -> AIMessage:
         await self._emit_cycle()
-        return "ok"
+        return AIMessage(
+            input=prompt,
+            output="ok",
+            response="ok",
+            model="stub",
+            provider="stub",
+            usage=CompletionUsage(),
+            turn_id=str(uuid.uuid4()),
+        )
 
     async def ask_stream(self, prompt: str, **kwargs: Any):
         yield "ok"
@@ -88,6 +102,24 @@ class _EmittingVoiceClient(_EmittingClient):
 
     async def __aexit__(self, *exc: Any) -> None:
         return None
+
+
+class _InMemoryToolkit(DatabaseToolkit):
+    """DatabaseToolkit with no connection: no schema matches, every query returns no rows."""
+
+    async def start(self) -> None:
+        return None
+
+    async def stop(self) -> None:
+        return None
+
+    async def search_schema(
+        self, search_term: str, schema_name: Optional[str] = None, limit: int = 10
+    ) -> List[TableMetadata]:
+        return []
+
+    async def execute_query(self, query: str, limit: int = 1000, timeout: int = 30) -> QueryExecutionResponse:
+        return QueryExecutionResponse(success=True, data=[], row_count=0, execution_time_ms=0.0, schema_used="public")
 
 
 @pytest.fixture
@@ -125,15 +157,7 @@ async def _drain(reader: InMemoryMetricReader, exporter: InMemorySpanExporter) -
         await asyncio.sleep(0.01)
 
 
-def _stub_body(client: _EmittingClient):
-    async def body(self: Any, question: str, ctx: Any = None, **kwargs: Any) -> str:
-        return await client.ask(question)
-
-    return body
-
-
 async def _run_agent(kind: str, tenant: str | None, monkeypatch: pytest.MonkeyPatch) -> str:
-    client = _EmittingClient()
     kwargs = {"tenant": tenant} if tenant else {}
     if kind == "voice":
         voice = object.__new__(VoiceBot)
@@ -162,13 +186,30 @@ async def _run_agent(kind: str, tenant: str | None, monkeypatch: pytest.MonkeyPa
             pass
         return voice.name
 
-    cls = {"basic": BaseBot, "pandas": PandasAgent, "database": DatabaseAgent}[kind]
-    if kind != "basic":  # BaseBot.ask binds inline, so it has no decorator to assert
-        assert hasattr(cls.__dict__["ask"], "__wrapped__"), f"{cls.__name__}.ask must use with_call_identity"
-    monkeypatch.setattr(cls, "ask", with_call_identity(_stub_body(client)))
-    agent = object.__new__(cls)
-    agent.name = f"{kind}-agent"
-    await agent.ask("hello", **kwargs)
+    if kind == "basic":
+        bot = BaseBot(
+            name="basic-agent", llm=_EmittingClient(), memory_type="memory", injection_detection=False, model="stub"
+        )
+        await bot.configure()
+        await bot.ask("hello", use_conversation_history=False, use_tools=False, use_vector_context=False, **kwargs)
+        return bot.name
+
+    if kind == "pandas":
+        agent = PandasAgent(name="pandas-agent", llm=_EmittingClient(), injection_detection=False)
+        await agent.ask("hello", use_tools=False, return_structured=False, use_conversation_history=False, **kwargs)
+        return agent.name
+
+    assert kind == "database", kind
+    toolkit = _InMemoryToolkit(
+        dsn="postgresql://stub:stub@localhost:5432/stub",
+        allowed_schemas=["public"],
+        primary_schema="public",
+        database_type="postgresql",
+    )
+    agent = DatabaseAgent(name="database-agent", toolkits=[toolkit])
+    await agent.configure()
+    agent._llm = _EmittingClient()  # configure() resolves its own client; swap in the stub afterwards
+    await agent.ask("list tables", **kwargs)
     return agent.name
 
 
