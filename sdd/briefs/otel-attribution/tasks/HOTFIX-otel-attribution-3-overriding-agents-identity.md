@@ -203,3 +203,4 @@ Verbatim anchors in `voice.py`: `:566-568` and `:805-807` are the
 **Notes**: Decorated `PandasAgent.ask` and `DatabaseAgent.ask` with `@with_call_identity`; inlined `_bind_call_identity` / `_reset_call_identity` in `VoiceBot.ask` and `VoiceBot.ask_stream` (reset is the first statement of each `finally`). Added `tests/unit/bots/test_overriding_agents_identity.py`.
 **Why direct**: the engine only counts `done` dependencies as met; task 2 is `done-with-issues`, so task 3 was reported as blocked.
 **Issues**: the new tests were NOT run (pytest cannot load in the worker sandbox: navconfig ErrorFileHandler, read-only /tmp/navigator/log). Only `py_compile` and `ruff` ran. The VoiceBot test is a source-structure check, not a behavioural one. Pre-existing ruff F841 at voice.py:693 left untouched.
+**Host run (2026-11-12)**: `test_overriding_agents_identity.py` passed on the user's host (reported 10 passed together with task 6's file; per-file split not reported).
