@@ -405,8 +405,8 @@ async def shutdown_turn_persistence(handle: TurnPersistence) -> None: ...
   on error keeps `compaction=None`).
   (c) `ChatStorage.delete_turn` also removes the turn from the hot tier.
   (d) `HOT_TTL_HOURS` is read from the new setting `CHAT_HOT_TTL_HOURS` and passed as
-  `history_ttl` to the hot-tier `RedisConversation`; the default is `0` (no TTL), so
-  behavior is unchanged until §8 Q10 is decided.
+  `history_ttl` to the hot-tier `RedisConversation`; the default is `48` hours (§8 Q10),
+  and `0` disables the TTL.
 - **Depends on**: nothing
 - **Interface Skeleton**:
   ```python
@@ -677,7 +677,8 @@ async def shutdown_turn_persistence(handle: TurnPersistence) -> None: ...
 - **Responsibility**: build the Streams bus with its outbox and DLQ callback, subscribe
   the ChatStorage handlers, and tear it down. Settings: `PARROT_TURN_BUS_REDIS_URL`,
   `PARROT_TURN_BUS_OUTBOX_DIR` (required, writable), `PARROT_TURN_BUS_CHANNEL_PREFIX`
-  (default `parrot:turns:`), `PARROT_TURN_BUS_DLQ_DSN` (optional).
+  (default `parrot:turns:`), `PARROT_TURN_BUS_DLQ_DSN` (optional; without it exhausted
+  envelopes are retained as dead letters in the SQLite outbox, never dropped — §8 Q15).
 - **Depends on**: M2, M9
 - **Interface Skeleton**:
   ```python
@@ -1620,11 +1621,11 @@ Coverage:
 - [x] Q9 — Key alignment: AgentTalk uses `agent_name` as `agent_id`, the bot uses `memory_key_id`. Are they always equal? — *Resolved at spec time (Jesus Lara, 2026-11-13)*: **They are not** (`handlers/agent.py:1593` vs `bots/abstract.py:2258`). **The event carries both**; ChatStorage stays keyed by agent name; hydration queries by agent name and installs under `memory_key_id`.
 - [x] Q11 — Backpressure policy for the audit bus? — *Resolved at spec time (Jesus Lara, 2026-11-13)*: **Durable outbox + `block`.** Publish goes to the SQLite outbox first; `block` applies to the relay only.
 - [x] Q12 — Handler-side metadata: move into `ConversationTurn` or inject via middleware? — *Resolved at spec time (Jesus Lara, 2026-11-13)*: **Neither — the bot builds a separate `TurnPresentation` from the `AIMessage`** and the event carries it next to the raw turn. `ConversationTurn` stays lean. The handler passes only `output_mode` and the client `turn_id`.
-- [ ] Q10 — Hot-tier TTL: use `HOT_TTL_HOURS` (48h) once hydration exists, or keep no TTL? M1 wires the setting with a default of `0` (no TTL), so this can be decided at any time without a code change. — *Owner: Jesus Lara*
-- [ ] Q13 — Stage 2 rendering: when the follow-up adds `SUMMARIZED` turns, should they render as an assistant-side context block, a system-adjacent block, or a pseudo user/assistant pair? Belongs to the follow-up spec; not needed here. — *Owner: Jesus Lara*
-- [ ] Q14 — Hydration while the source is unavailable or the index is unready: this spec lets the round proceed with an empty history marked `pending` and merges the hydrated window on a later round. The brainstorm only says such an outcome "must not be treated as an empty conversation". The alternative is to fail the request (HTTP 503) until the source is ready. Confirm before M13 / M15 start. — *Owner: Jesus Lara*
+- [x] Q10 — Hot-tier TTL? — *Resolved (Jesus Lara, 2026-11-13)*: **48h.** `CHAT_HOT_TTL_HOURS` defaults to `48`; the hot tier is a cache and hydration from the cold tier covers expired keys. Operators can set `0` to disable the TTL.
+- [ ] Q13 — Stage 2 rendering: when the follow-up adds `SUMMARIZED` turns, should they render as an assistant-side context block, a system-adjacent block, or a pseudo user/assistant pair? — *Deferred to the Stage 2 follow-up spec (2026-11-13); not needed by any module here.* — *Owner: Jesus Lara*
+- [x] Q14 — Hydration while the source is unavailable or the index is unready? — *Resolved (Jesus Lara, 2026-11-13)*: **Continue as `pending`.** The round proceeds with an empty history marked `metadata['hydration']['state'] = 'pending'` (never treated as an empty conversation) and the hydrated window is merged on a later round, as specified in M13 / M15. A deleted session and an unverifiable deletion guard still fail closed.
 - [x] Q16 — Turn bus startup failure? — *Resolved (Jesus Lara, 2026-11-13)*: **Report and continue.** A bus that fails to start is logged at ERROR and the server keeps serving; agents operate without ChatStorage (no publisher, no hydration source attached). This tolerance does NOT extend to conversation history: when Redis history is selected (explicit `memory_type="redis"`, explicit `REDIS_HISTORY_URL` or a host-injected connection), a failure surfaces and never falls back to in-memory (M12). Agent Studio must still be coordinated as a consumer of the subscriber.
-- [ ] Q15 — DLQ persistence needs a Postgres DSN (`DLQHandler` default driver). Is a Postgres DSN available in every environment that runs ChatStorage, or should exhausted envelopes without one stay in the SQLite outbox instead of being dropped? — *Owner: Jesus Lara*
+- [x] Q15 — DLQ persistence without a Postgres DSN? — *Resolved (Jesus Lara, 2026-11-13)*: **Keep them in the SQLite outbox.** With `PARROT_TURN_BUS_DLQ_DSN` set, exhausted envelopes go to the Postgres `DLQHandler`; without it they are retained in the per-pod SQLite outbox as dead letters (never dropped), and `replay_dead_letters` reads from whichever store holds them.
 
 ---
 
