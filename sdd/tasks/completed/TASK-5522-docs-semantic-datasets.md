@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-880 — DatasetManager semantic source — add_semantic()
 **Spec**: `sdd/specs/datasetmanager-semantic-source.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5517, TASK-5518, TASK-5519, TASK-5520, TASK-5521
@@ -153,10 +153,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (native opus seat); merged by hand.
+**Date**: 2026-11-12
+**Notes**: Added 'Semantic datasets in DatasetManager' section to wiki/tools/semantic-layer.md; techwiki check ok.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-880 — DatasetManager semantic source — add_semantic()
 **Spec**: `sdd/specs/datasetmanager-semantic-source.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5515
@@ -241,10 +241,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (native seat); merged by hand because engine task-tier validation returned no_report (0 tests) — task tests run directly, all green.
+**Date**: 2026-11-12
+**Notes**: Implemented per blueprint; tests pass (see merge commit).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

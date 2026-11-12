@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-880 — DatasetManager semantic source — add_semantic()
 **Spec**: `sdd/specs/datasetmanager-semantic-source.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5517
@@ -255,10 +255,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (native opus seat); merged by hand (engine task-tier validation unavailable) — task tests run directly, green.
+**Date**: 2026-11-12
+**Notes**: DatasetEntry per-subject LRU frame slots (32). Deviation: added helper _compute_columns_on(frame) so computed columns run on a local frame; _apply_computed_columns keeps its signature. 2 pre-existing failures in test_dataset_manager.py (test_get_tools_returns_tools, test_get_metadata_with_array_columns) reproduce on unmodified HEAD.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: minor helper extraction (see Notes)
