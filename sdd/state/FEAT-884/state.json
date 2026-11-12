@@ -3,7 +3,7 @@
   "feat_id": "FEAT-884",
   "feature_slug": "db-upgrade",
   "started_at": "2026-11-12T19:16:11Z",
-  "updated_at": "2026-11-12T20:53:20Z",
+  "updated_at": "2026-11-12T20:53:28Z",
   "source": {
     "kind": "inline",
     "jira_key": null,
@@ -14,7 +14,7 @@
     "summary_oneline": "parrot self migration \u2014 versioned DB schema migrations for parrot tables (starting with navigator.ai_bots), mirroring navauth self upgrade"
   },
   "mode": "auto",
-  "phase": "proposal_drafted",
+  "phase": "committed",
   "phases": {
     "source": {
       "status": "completed",
@@ -126,7 +126,7 @@
       "started_at": "2026-11-12T20:53:20Z",
       "completed_at": "2026-11-12T20:53:20Z",
       "proposal_path": "sdd/proposals/db-upgrade.proposal.md",
-      "commit_sha": null,
+      "commit_sha": "e12820cae3",
       "next_command_recommended": "sdd-spec",
       "next_command_rationale": "Localization is high-confidence and the reference design is concrete; runner base (U1) and scope (U2) were settled in Q&A, remaining items are spec-level details."
     }
@@ -147,8 +147,8 @@
   },
   "errors": [],
   "resume_hint": {
-    "next_phase": "committed",
-    "next_action": "commit proposal + state"
+    "next_phase": "done",
+    "next_action": "/sdd-spec FEAT-884"
   },
   "detected_mode": "enrichment"
 }
