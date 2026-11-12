@@ -1,0 +1,116 @@
+{
+  "account_key": "account_id",
+  "amount": "amount",
+  "amount_convention": "debit_positive",
+  "arithmetic_version": 1,
+  "cast_decimal": false,
+  "columns": [
+    [
+      "m_revenue",
+      {
+        "alias": null,
+        "args": [
+          {
+            "alias": "set_product_sales",
+            "args": [],
+            "op": "set",
+            "value": null
+          },
+          {
+            "alias": "set_returns",
+            "args": [],
+            "op": "set",
+            "value": null
+          }
+        ],
+        "op": "sub",
+        "value": null
+      }
+    ]
+  ],
+  "credit": null,
+  "cumulative": null,
+  "debit": null,
+  "dimensions": [
+    "entity"
+  ],
+  "filters": [],
+  "grain": "month",
+  "natures": [
+    [
+      "4000",
+      "credit"
+    ],
+    [
+      "4010",
+      "credit"
+    ],
+    [
+      "4020",
+      "credit"
+    ],
+    [
+      "4030",
+      "credit"
+    ],
+    [
+      "4040",
+      "credit"
+    ],
+    [
+      "4050",
+      "credit"
+    ],
+    [
+      "4060",
+      "credit"
+    ],
+    [
+      "4070",
+      "credit"
+    ],
+    [
+      "4080",
+      "credit"
+    ],
+    [
+      "4090",
+      "credit"
+    ],
+    [
+      "4900",
+      "debit"
+    ]
+  ],
+  "output_from": "2025-01-01",
+  "posting_date": "posting_date",
+  "result_scale": 6,
+  "rounding": "half_even",
+  "scan_from": "2025-01-01",
+  "schema_version": 1,
+  "sets": [
+    {
+      "accounts": [
+        "4000",
+        "4010",
+        "4020",
+        "4030",
+        "4040",
+        "4050",
+        "4060",
+        "4070",
+        "4080",
+        "4090"
+      ],
+      "alias": "set_product_sales"
+    },
+    {
+      "accounts": [
+        "4900"
+      ],
+      "alias": "set_returns"
+    }
+  ],
+  "table": "journal",
+  "to_exclusive": "2025-07-01"
+}
