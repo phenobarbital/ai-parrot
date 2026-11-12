@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import time
+import uuid
 
 import pytest
 
@@ -30,6 +32,15 @@ _REAL_WARM_TIKTOKEN_CACHE = native.warm_tiktoken_cache
 def no_tiktoken_warmup(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep launcher tests off the network; the warm-up has its own tests below."""
     monkeypatch.setattr(native, "warm_tiktoken_cache", lambda target, environ: None)
+
+
+_REAL_CLAUDE_VERSION = native._claude_version
+
+
+@pytest.fixture(autouse=True)
+def qualified_claude_version(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Report a prefix-qualified Claude Code without running the CLI; the gate has its own tests."""
+    monkeypatch.setattr(native, "_claude_version", lambda claude: native.MIN_PREFIX_CLAUDE_VERSION)
 
 
 @pytest.fixture
@@ -435,6 +446,84 @@ def test_prefix_stub_runs_passthrough_from_session_copy(
     )
 
     assert (result.returncode, result.stdout, result.stderr) == (0, "hook-ran", "")
+
+
+@pytest.mark.parametrize(
+    ("script", "expected"),
+    [
+        ("echo '2.1.322 (Claude Code)'", (2, 1, 322)),
+        ("echo 'no version here'", None),
+        ("echo 2.1.322; exit 3", None),
+    ],
+)
+def test_claude_version_parses_the_cli_output(
+    tmp_path: Path, script: str, expected: tuple[int, int, int] | None
+) -> None:
+    """Only a successful ``--version`` run that prints X.Y.Z yields a version."""
+    claude = tmp_path / "claude"
+    claude.write_text(f"#!/bin/sh\n{script}\n")
+    claude.chmod(0o700)
+
+    assert _REAL_CLAUDE_VERSION(str(claude)) == expected
+    assert _REAL_CLAUDE_VERSION(str(tmp_path / "absent")) is None
+
+
+def test_expired_prefix_session_survives_while_its_owner_is_alive(tmp_path: Path) -> None:
+    """Age alone never removes the policy of a session whose launcher process still exists."""
+    old = time.time() - 8 * 24 * 60 * 60
+    sessions = {}
+    for label, pid in (("alive", os.getpid()), ("dead", 2**22 + 12345), ("legacy", None)):
+        session = tmp_path / str(uuid.uuid4())
+        session.mkdir()
+        if pid is not None:
+            (session / "owner.pid").write_text(f"{pid}\n")
+        os.utime(session, (old, old))
+        sessions[label] = session
+
+    native._remove_expired_prefix_sessions(tmp_path)
+
+    assert sessions["alive"].is_dir()
+    assert not sessions["dead"].exists()
+    assert not sessions["legacy"].exists()
+
+
+def test_prepare_shell_prefix_records_its_owner(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The session directory names the launcher process that owns it."""
+    feature, _main = linked
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+
+    environment = native.prepare_shell_prefix(feature, {}, "legacy", rtk=False)
+
+    owner = Path(environment["PARROT_SDD_SHELL_PREFIX_POLICY"]).with_name("owner.pid")
+    assert owner.read_text().strip() == str(os.getpid())
+
+
+def test_agent_hook_commands_only_inside_hooks_block(tmp_path: Path) -> None:
+    """A ``command:`` key outside the frontmatter's ``hooks:`` block is never allowlisted."""
+    agent = tmp_path / "sdd-worker.md"
+    agent.write_text(
+        "---\n"
+        "name: sdd-worker\n"
+        "command: 'top-level'\n"
+        "mcpServers:\n"
+        "  tool:\n"
+        "    command: other-block\n"
+        "hooks:\n"
+        "  PreToolUse:\n"
+        "    - matcher: Bash\n"
+        "      hooks:\n"
+        "        - type: command\n"
+        "          command: 'guard --hook || exit 2'\n"
+        "        - command: \"second\"\n"
+        "color: blue\n"
+        "---\n"
+        "command: body\n"
+    )
+
+    assert native._agent_hook_commands(agent) == ["guard --hook || exit 2", "second"]
+    assert native._agent_hook_commands(tmp_path / "absent.md") == []
 
 
 def test_prefix_mcp_config_requires_servers_in_the_primary_checkout(linked: tuple[Path, Path]) -> None:
