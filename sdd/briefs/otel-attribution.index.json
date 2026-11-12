@@ -83,7 +83,7 @@
       "feature_id": "BRIEF-otel-attribution",
       "feature": "otel-attribution",
       "spec": "sdd/briefs/otel-attribution.brief.md",
-      "status": "in-progress",
+      "status": "done-with-issues",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -93,7 +93,7 @@
       "parallelism_notes": "bots/data.py, bots/database/agent.py, bots/voice.py; needs task 2's with_call_identity",
       "assigned_to": null,
       "started_at": "2026-11-12T01:08:00+00:00",
-      "completed_at": null,
+      "completed_at": "2026-11-12T19:15:28+00:00",
       "file": "sdd/briefs/otel-attribution/tasks/HOTFIX-otel-attribution-3-overriding-agents-identity.md"
     },
     {
