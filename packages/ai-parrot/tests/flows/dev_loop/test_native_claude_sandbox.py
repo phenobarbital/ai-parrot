@@ -371,7 +371,7 @@ def test_prepare_shell_prefix_writes_policy_and_launcher(
     linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """The launcher records every hook and MCP command in an immutable session policy."""
-    feature, _main = linked
+    feature, main = linked
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     settings = {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "launch-stop"}]}]}}
     claude = feature / ".claude"
@@ -379,7 +379,9 @@ def test_prepare_shell_prefix_writes_policy_and_launcher(
     (claude / "settings.json").write_text(json.dumps({"hooks": {"PreToolUse": [{"command": "project"}]}}))
     (claude / "settings.local.json").write_text(json.dumps({"hooks": {"Stop": [{"command": "local"}]}}))
     (claude / "agents" / "sdd-worker.md").write_text("---\nhooks:\n  Stop:\n    command: 'agent-stop'\n---\n")
-    (feature / ".mcp.json").write_text(json.dumps({"mcpServers": {"tool": {"command": "mcp", "args": ["x"]}}}))
+    (main / ".mcp.json").write_text(json.dumps({"mcpServers": {"tool": {"command": "mcp", "args": ["x"]}}}))
+    # A worktree copy is worker-writable: it must never reach the pass-through allowlist.
+    (feature / ".mcp.json").write_text(json.dumps({"mcpServers": {"planted": {"command": "evil", "args": []}}}))
 
     environment = native.prepare_shell_prefix(feature, settings, "legacy", rtk=False)
 
@@ -392,6 +394,35 @@ def test_prepare_shell_prefix_writes_policy_and_launcher(
     assert policy_path.stat().st_mode & 0o777 == 0o400
     assert prefix_path.stat().st_mode & 0o777 == 0o500
     assert prefix_path.parent.stat().st_mode & 0o777 == 0o700
+
+
+def test_prefix_mcp_config_requires_servers_in_the_primary_checkout(linked: tuple[Path, Path]) -> None:
+    """Only a primary ``.mcp.json`` that declares a server is a usable MCP configuration."""
+    feature, main = linked
+    (feature / ".mcp.json").write_text(json.dumps({"mcpServers": {"planted": {"command": "evil"}}}))
+    assert native.prefix_mcp_config(feature) is None
+
+    (main / ".mcp.json").write_text(json.dumps({"mcpServers": {}}))
+    assert native.prefix_mcp_config(feature) is None
+
+    (main / ".mcp.json").write_text("{not json")
+    assert native.prefix_mcp_config(feature) is None
+
+    (main / ".mcp.json").write_text(json.dumps({"mcpServers": {"tool": {"command": "mcp"}}}))
+    assert native.prefix_mcp_config(feature) == main.resolve() / ".mcp.json"
+
+
+def test_prepare_shell_prefix_without_primary_mcp_config_records_no_server(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A worktree-only ``.mcp.json`` leaves the pass-through allowlist empty."""
+    feature, _main = linked
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    (feature / ".mcp.json").write_text(json.dumps({"mcpServers": {"planted": {"command": "evil", "args": []}}}))
+
+    environment = native.prepare_shell_prefix(feature, {}, "legacy", rtk=False)
+
+    assert json.loads(Path(environment["PARROT_SDD_SHELL_PREFIX_POLICY"]).read_text())["mcp_argv"] == []
 
 
 def test_prepare_shell_prefix_refuses_writable_root(linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:

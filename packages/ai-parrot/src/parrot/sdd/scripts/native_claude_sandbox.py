@@ -694,6 +694,7 @@ _REJECTED_OPTIONS = (
     "--dangerously-skip-permissions",
     "--plugin-dir",
     "--mcp-config",
+    "--strict-mcp-config",
     "--agents",
 )
 _DEFAULT_MODEL = "sonnet"
@@ -971,7 +972,7 @@ def _agent_hook_commands(path: Path) -> list[str]:
 
 
 def _prefix_mcp_argv(path: Path) -> list[list[str]]:
-    """Collect command argv values from an optional worktree MCP configuration."""
+    """Collect the stdio command argv values from an MCP configuration file."""
     servers = _load_json(path).get("mcpServers")
     if not isinstance(servers, dict):
         return []
@@ -1002,6 +1003,23 @@ def _remove_expired_prefix_sessions(state_root: Path) -> None:
             continue
         if candidate.is_dir() and not candidate.is_symlink():
             shutil.rmtree(candidate)
+
+
+def prefix_mcp_config(cwd: Path) -> Path | None:
+    """Return the primary checkout's MCP configuration when it declares at least one server.
+
+    The worktree's own ``.mcp.json`` is never consulted: it is gitignored (so normally absent) and
+    writable by the session, while the primary checkout is read-only inside the legacy sandbox.
+
+    Args:
+        cwd: A path inside the linked worker worktree.
+
+    Returns:
+        ``<primary>/.mcp.json``, or ``None`` when it is absent, malformed or declares no server.
+    """
+    path = _native_roots(cwd)[2] / ".mcp.json"
+    servers = _load_json(path).get("mcpServers")
+    return path if path.is_file() and isinstance(servers, dict) and servers else None
 
 
 def prepare_shell_prefix(cwd: Path, settings: dict, mode: str, *, rtk: bool) -> dict[str, str]:
@@ -1035,12 +1053,13 @@ def prepare_shell_prefix(cwd: Path, settings: dict, mode: str, *, rtk: bool) -> 
     for path in (cwd / ".claude" / "settings.json", cwd / ".claude" / "settings.local.json"):
         hook_commands.extend(_hook_commands(_load_json(path).get("hooks", {})))
     hook_commands.extend(_agent_hook_commands(cwd / ".claude" / "agents" / "sdd-worker.md"))
+    mcp_config = prefix_mcp_config(cwd)
     policy = PrefixPolicy(
         schema_version=1,
         mode=mode,
         worktree=str(_canonical(cwd)),
         hook_commands=tuple(hook_commands),
-        mcp_argv=tuple(tuple(argv) for argv in _prefix_mcp_argv(cwd / ".mcp.json")),
+        mcp_argv=tuple(tuple(argv) for argv in (_prefix_mcp_argv(mcp_config) if mcp_config else [])),
         rtk=rtk,
     )
     policy_path = session_dir / "policy.json"
@@ -1180,13 +1199,27 @@ def launch_worker(
                 )
                 env["PARROT_SDD_NOTIFY_PYTHON"] = str(Path(sys.executable).absolute())
                 env["PARROT_SDD_NOTIFY_HELPER"] = str(helper_path)
-    if mode == "legacy" or (not degraded and _NATIVE_PREFIX_RTK_QUALIFIED):
+    uses_prefix = mode == "legacy" or (not degraded and _NATIVE_PREFIX_RTK_QUALIFIED)
+    if uses_prefix:
         try:
             env.update(prepare_shell_prefix(cwd, settings, mode, rtk=True))
         except RuntimeError as exc:
             print(f"launch_worker: shell prefix unavailable ({exc})", file=sys.stderr)
             return 1
     command = [claude, "--agent", "sdd-worker"]
+    if uses_prefix:
+        # The prefix passes through only the servers recorded in its policy, so the session must load
+        # exactly that file. `--mcp-config` is variadic: the next option has to follow it directly.
+        mcp_config = prefix_mcp_config(cwd)
+        if mcp_config is None:
+            print(
+                "launch_worker: WARNING no MCP servers: the primary checkout has no usable .mcp.json; "
+                "the session starts without MCP tools",
+                file=sys.stderr,
+            )
+        else:
+            command += ["--mcp-config", str(mcp_config)]
+        command.append("--strict-mcp-config")
     if not has_sources:
         command += ["--setting-sources", "project,local"]
     if not has_model:
