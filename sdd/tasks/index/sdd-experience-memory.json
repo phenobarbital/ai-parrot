@@ -316,7 +316,7 @@
       "feature_id": "FEAT-887",
       "feature": "sdd-experience-memory",
       "spec": "sdd/specs/sdd-experience-memory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -328,8 +328,9 @@
       "parallelism_notes": "claude-install: TASK-5594: serializes writes to packages/ai-parrot/src/parrot/sdd/scripts/native_claude_sandbox.py, packages/ai-parrot/tests/flows/dev_loop/test_native_claude_sandbox.py; TASK-5596: consumes the hooks contract in packages/ai-parrot/src/parrot/sdd/scripts/experience_hook.py, packages/ai-parrot/src/parrot/launcher.py; TASK-5599: consumes the cli contract in packages/ai-parrot/src/parrot/sdd/scripts/experience_cli.py, packages/ai-parrot/src/parrot/sdd/cli.py",
       "assigned_to": null,
       "started_at": "2026-11-13T19:26:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5600-claude-install.md"
+      "completed_at": "2026-11-13T23:22:30+00:00",
+      "file": "sdd/tasks/completed/TASK-5600-claude-install.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5601",
@@ -464,7 +465,7 @@
       "feature_id": "FEAT-887",
       "feature": "sdd-experience-memory",
       "spec": "sdd/specs/sdd-experience-memory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -476,8 +477,9 @@
       "parallelism_notes": "engine: TASK-5593: consumes the service contract in packages/ai-parrot/src/parrot/knowledge/wiki/experience/service.py; TASK-5599: consumes the cli contract in packages/ai-parrot/src/parrot/sdd/scripts/experience_cli.py, packages/ai-parrot/src/parrot/sdd/cli.py; TASK-5606: consumes the output-models contract in packages/ai-parrot/src/parrot/flows/dev_loop/models/base.py, packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/models.py",
       "assigned_to": null,
       "started_at": "2026-11-13T19:26:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5607-engine.md"
+      "completed_at": "2026-11-13T23:22:31+00:00",
+      "file": "sdd/tasks/completed/TASK-5607-engine.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5608",
