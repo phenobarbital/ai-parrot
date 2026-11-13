@@ -61,9 +61,7 @@ def test_reinstall_is_idempotent(empty_repo: Path) -> None:
     assert not any(a.endswith((" — installed", " — upgraded")) or "overwritten" in a for a in actions)
 
 
-def test_worker_hook_ignores_worktree_pythonpath(
-    empty_repo: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_worker_hook_ignores_worktree_pythonpath(empty_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Installed hook commands stay portable even with a hostile worktree PYTHONPATH."""
     monkeypatch.setenv("PYTHONPATH", str(empty_repo / "packages" / "ai-parrot" / "src"))
     install_sdd_integration(empty_repo, dangerous_guard=False, sdd_coder=False, portable=False)
@@ -98,9 +96,7 @@ def test_experience_install_idempotent(empty_repo: Path) -> None:
     actions = install_sdd_integration(empty_repo, dangerous_guard=False, sdd_coder=False, portable=False)
     upgraded = json.loads(settings_path.read_text(encoding="utf-8"))
     post_hooks = upgraded["hooks"]["PostToolUse"]
-    assert post_hooks[0]["hooks"][0]["command"] == (
-        "parrot sdd experience hook --host claude --event post"
-    )
+    assert post_hooks[0]["hooks"][0]["command"] == ("parrot sdd experience hook --host claude --event post")
     assert any(hook["command"] == "foreign-command" for entry in post_hooks for hook in entry["hooks"])
     assert any("Claude experience hooks updated" in action for action in actions)
 

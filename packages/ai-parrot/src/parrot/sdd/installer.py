@@ -563,9 +563,7 @@ def _remove_experience_hooks(root: Path, receipt: dict[str, Any]) -> list[str]:
 
     path = root / SETTINGS_PATH
     settings = _load_settings(path)
-    receipt["settings_hooks"] = [
-        hook for hook in receipt.get("settings_hooks", []) if hook != _EXPERIENCE_RECEIPT_NAME
-    ]
+    receipt["settings_hooks"] = [hook for hook in receipt.get("settings_hooks", []) if hook != _EXPERIENCE_RECEIPT_NAME]
     if settings is None:
         return []
     hooks = settings.get("hooks")

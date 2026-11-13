@@ -482,9 +482,7 @@ def native_sandbox_settings(
     # `-m` keeps the command free of monorepo paths (C16): the shared interpreter can import
     # parrot in every supported context (venv editable install, wheel install in a foreign repo).
     python = _shared_python(primary)
-    hook_command = (
-        shlex.join([str(python), "-m", "parrot.sdd.scripts.worktree_environment", "--hook"]) + " || exit 2"
-    )
+    hook_command = shlex.join([str(python), "-m", "parrot.sdd.scripts.worktree_environment", "--hook"]) + " || exit 2"
     settings: dict[str, Any] = {
         "hooks": {
             "PreToolUse": [

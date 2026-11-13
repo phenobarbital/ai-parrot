@@ -368,9 +368,7 @@ def test_launch_worker_prints_macos_seatbelt_notice(
 ) -> None:
     """A strict macOS launch makes the unqualified backend visible to the operator."""
     feature, _main = linked
-    monkeypatch.setattr(
-        native.shutil, "which", lambda name, **_kwargs: "/usr/bin/claude" if name == "claude" else None
-    )
+    monkeypatch.setattr(native.shutil, "which", lambda name, **_kwargs: "/usr/bin/claude" if name == "claude" else None)
     monkeypatch.setattr(native, "_native_roots", lambda cwd: (feature, feature / ".git", feature))
     monkeypatch.setattr(native, "plan_native_launch", lambda *args, **kwargs: ("required", False, "", {}))
     monkeypatch.setattr(native, "native_root_env", lambda cwd: {})
@@ -1036,13 +1034,8 @@ def test_native_settings_experience_hooks(linked: tuple[Path, Path]) -> None:
     failure_command = settings["hooks"]["PostToolUseFailure"][0]["hooks"][0]["command"]
     assert "--event post-failure" in failure_command
     assert "|| exit 2" not in failure_command
-    assert all(
-        "experience_hook" not in hook.get("command", "")
-        for hook in settings["hooks"]["PreToolUse"][0]["hooks"]
-    )
-    assert str(feature / ".venv" / "bin" / "python") not in settings["hooks"]["PostToolUse"][0]["hooks"][0][
-        "command"
-    ]
+    assert all("experience_hook" not in hook.get("command", "") for hook in settings["hooks"]["PreToolUse"][0]["hooks"])
+    assert str(feature / ".venv" / "bin" / "python") not in settings["hooks"]["PostToolUse"][0]["hooks"][0]["command"]
 
 
 def test_agent_frontmatter_has_no_experience_hooks() -> None:
