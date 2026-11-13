@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import socket
 import sqlite3
 import time
@@ -20,6 +21,7 @@ from typing import Any, Callable, Dict, List, Optional
 from navconfig.logging import logging
 from navigator_eventbus import DLQHandler, EventBus, EventEnvelope
 from navigator_eventbus.backends.redis_streams import RedisStreamsBackend
+from navigator_eventbus.outbox import OutboxLockedError, SqliteOutbox
 
 from parrot import conf
 from parrot.memory.persistence import CONVERSATION_DELETED_TOPIC, TURN_COMPLETED_TOPIC, BusTurnPublisher
@@ -181,6 +183,48 @@ async def _attach_dlq(bus: Any, holder: Dict[str, Any]) -> Any:
     return dlq
 
 
+async def recover_abandoned_outboxes(bus: Any, directory: Path, *, own_pid: Optional[int] = None) -> int:
+    """Drain the outboxes of dead workers of this host into ``bus`` (a replacement pod has a new PID).
+
+    Every ``<hostname>-<pid>.db`` in ``directory`` other than this process's own is opened through
+    ``SqliteOutbox``, which takes the exclusive file lock: a file whose owner is still alive raises
+    ``OutboxLockedError`` and is skipped, so two relays never share one file. Each pending envelope is
+    re-published through ``bus.core.publish`` (the bus dedups on ``event_id`` and the handlers upsert
+    by turn id, so a crash between publish and ack only duplicates a delivery that is already idempotent)
+    and acknowledged in the old file; a drained file is removed.
+
+    Returns:
+        The number of envelopes re-published.
+    """
+    own = own_pid if own_pid is not None else os.getpid()
+    pattern = re.compile(rf"^{re.escape(socket.gethostname())}-(\d+)\.db$")
+    recovered = 0
+    for path in sorted(directory.glob("*.db")):
+        match = pattern.match(path.name)
+        if not match or int(match.group(1)) == own:
+            continue
+        try:
+            old = SqliteOutbox(path)
+        except OutboxLockedError:
+            continue  # a live worker owns it
+        try:
+            while True:
+                due = await old.due(now=time.time(), limit=100)
+                if not due:
+                    break
+                for envelope in due:
+                    await bus.core.publish(envelope)
+                    await old.ack(envelope.event_id)
+                    recovered += 1
+        finally:
+            await old.close()
+        for leftover in (path, Path(f"{path}.lock"), Path(f"{path}-wal"), Path(f"{path}-shm")):
+            leftover.unlink(missing_ok=True)
+    if recovered:
+        logger.warning("recovered %d turn event(s) from abandoned outboxes", recovered)
+    return recovered
+
+
 async def setup_turn_persistence(chat_storage: ChatStorage, *, bus: Any = None) -> TurnPersistence:
     """Build (or accept) the turn bus and subscribe ``ChatStorage``.
 
@@ -208,6 +252,8 @@ async def setup_turn_persistence(chat_storage: ChatStorage, *, bus: Any = None) 
 
     chat_storage.attach_deletion_publisher(_publish_deletion)
     await bus.connect()
+    if owns_bus:
+        await recover_abandoned_outboxes(bus, _resolve_outbox_dir())
     return TurnPersistence(bus=bus, publisher=BusTurnPublisher(bus), subscription_ids=ids, dlq=dlq)
 
 

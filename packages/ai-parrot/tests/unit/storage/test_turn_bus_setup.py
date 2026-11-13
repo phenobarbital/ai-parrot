@@ -225,3 +225,47 @@ async def test_shutdown_is_idempotent_and_keeps_files(chat_storage, tmp_path):
     await shutdown_turn_persistence(handle)
     assert handle.subscription_ids == [] and (tmp_path / "outbox.db").exists()
     assert isinstance(handle, TurnPersistence)
+
+
+async def test_replacement_worker_delivers_the_turn_a_dead_worker_outboxed(backend, chat_storage, tmp_path):
+    """Process A outboxes a turn and dies before relay; process B (other PID) delivers it exactly once."""
+    import socket
+    from navigator_eventbus.outbox import SqliteOutbox
+    from parrot.storage.turn_bus import recover_abandoned_outboxes
+
+    dead_file = tmp_path / f"{socket.gethostname()}-424242.db"
+    dead = SqliteOutbox(dead_file)
+    envelope = EventEnvelope(topic=TURN_COMPLETED_TOPIC, event_id="orphan-1", payload=_event("orphan-1").to_dict())
+    await dead.append(envelope)
+    await dead.close()  # the owner "died": its lock is released, the row is still pending
+
+    handle = await setup_turn_persistence(chat_storage, bus=_memory_bus(tmp_path))
+    try:
+        assert await recover_abandoned_outboxes(handle.bus, tmp_path, own_pid=os.getpid()) == 1
+
+        async def stored():
+            return bool(await backend.query_turns(USER, AGENT, "s1"))
+
+        assert await _eventually(stored)
+        assert len(await backend.query_turns(USER, AGENT, "s1")) == 1
+        assert not dead_file.exists()  # drained and removed
+        assert await recover_abandoned_outboxes(handle.bus, tmp_path, own_pid=os.getpid()) == 0
+    finally:
+        await shutdown_turn_persistence(handle)
+
+
+async def test_live_workers_outbox_is_never_drained(chat_storage, tmp_path):
+    import socket
+    from navigator_eventbus.outbox import SqliteOutbox
+    from parrot.storage.turn_bus import recover_abandoned_outboxes
+
+    live_file = tmp_path / f"{socket.gethostname()}-777777.db"
+    live = SqliteOutbox(live_file)  # holds the exclusive lock, like a running worker
+    await live.append(EventEnvelope(topic=TURN_COMPLETED_TOPIC, event_id="mine", payload=_event("mine").to_dict()))
+    handle = await setup_turn_persistence(chat_storage, bus=_memory_bus(tmp_path))
+    try:
+        assert await recover_abandoned_outboxes(handle.bus, tmp_path, own_pid=os.getpid()) == 0
+        assert live_file.exists()
+    finally:
+        await shutdown_turn_persistence(handle)
+        await live.close()
