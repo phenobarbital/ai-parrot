@@ -71,14 +71,14 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Creates independent capability/scope contracts and the FEAT-571 ownership amendment; no other task produces these inputs.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T21:48:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5653-agent-memory-config.md"
     },
@@ -89,7 +89,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -98,7 +98,7 @@
       "parallel": true,
       "parallelism_notes": "Consumes MemoryRequestScope in memory/agent_memory/models.py from TASK-5653",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T21:48:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5654-agent-memory-runtime.md"
     },
@@ -152,7 +152,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -161,7 +161,7 @@
       "parallel": true,
       "parallelism_notes": "Consumes Grade/MemoryState/MemoryParameters from TASK-5655",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T21:48:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5657-agent-memory-fsrs.md"
     },
@@ -172,7 +172,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -181,7 +181,7 @@
       "parallel": true,
       "parallelism_notes": "Consumes MemoryRequestScope and capability/budget policies from TASK-5653",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T21:48:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5658-agent-memory-candidates.md"
     },
@@ -192,7 +192,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -203,7 +203,7 @@
       "parallel": true,
       "parallelism_notes": "Consumes ReviewSignal from TASK-5656; Consumes retrievability from TASK-5657; Consumes MemoryCandidate from TASK-5658",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T21:48:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5659-agent-memory-grade-rank.md"
     },
@@ -256,7 +256,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -266,7 +266,7 @@
       "parallel": true,
       "parallelism_notes": "Consumes SQLiteEpisodeBackend connection/schema and overlapping file from TASK-5661; Consumes ReviewCommand/ReviewReceipt/ReviewBackend from TASK-5656",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T21:48:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5662-agent-memory-transactions.md"
     },
@@ -277,7 +277,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -286,7 +286,7 @@
       "parallel": true,
       "parallelism_notes": "Consumes MemoryNamespace.model_id and accepted serialization/filter contract from TASK-5660",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T21:48:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5663-agent-memory-legacy-backends.md"
     },
@@ -297,7 +297,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -308,7 +308,7 @@
       "parallel": true,
       "parallelism_notes": "Consumes atomic ReviewBackend.apply_review from TASK-5662; Consumes select_grade from TASK-5659; Consumes current_memory_scope from TASK-5654",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T21:48:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5664-agent-memory-store-reviews.md"
     },
@@ -319,7 +319,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -330,7 +330,7 @@
       "parallel": true,
       "parallelism_notes": "Consumes review-driven invalidation and overlapping store.py from TASK-5664; Consumes rank_candidates from TASK-5659; Consumes scope-correct backend retrieval from TASK-5663",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T21:48:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5665-agent-memory-recall.md"
     },
@@ -341,7 +341,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -350,7 +350,7 @@
       "parallel": true,
       "parallelism_notes": "Consumes MemoryEvent and trusted MemoryRequestScope contract from TASK-5653",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T21:48:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5666-agent-memory-user-models.md"
     },
@@ -361,7 +361,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -371,7 +371,7 @@
       "parallel": true,
       "parallelism_notes": "Consumes UserKnowledge/Candidate/Command/Receipt from TASK-5666; Consumes accepted shared database schema/connection ownership contract, without constructing SQLiteEpisodeBackend in user-only mode from TASK-5661",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T21:48:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5667-agent-memory-user-store.md"
     },
@@ -382,7 +382,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -391,7 +391,7 @@
       "parallel": true,
       "parallelism_notes": "Consumes UserMemoryStore tables/event transactions and overlapping file from TASK-5667",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T21:48:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5668-agent-memory-forget.md"
     },
@@ -402,7 +402,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -412,7 +412,7 @@
       "parallel": true,
       "parallelism_notes": "Consumes MemoryCandidate and extended MemoryContext from TASK-5658; Consumes versioned MemoryExposure/MemoryCitation schema from TASK-5656",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T21:48:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5669-agent-memory-context.md"
     },
@@ -423,7 +423,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -435,7 +435,7 @@
       "parallel": true,
       "parallelism_notes": "Consumes assemble_candidates from TASK-5669; Consumes UserMemoryStore and suppression semantics from TASK-5668; Consumes scope-correct episodic routes and store review/event behavior from TASK-5665; Consumes extract_user_knowledge from TASK-5666",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T21:48:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5670-agent-memory-manager.md"
     },
@@ -446,7 +446,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -457,7 +457,7 @@
       "parallel": true,
       "parallelism_notes": "Consumes UnifiedMemoryManager constructor and cleanup contract from TASK-5670; Consumes SQLiteEpisodeBackend from TASK-5661; Consumes independent UserMemoryStore from TASK-5667",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T21:48:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5671-agent-memory-factory.md"
     },
@@ -468,7 +468,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -479,7 +479,7 @@
       "parallel": true,
       "parallelism_notes": "Consumes create_memory_manager from TASK-5671; Consumes request-local scope contract from TASK-5654; Consumes lightweight package initializer; shared-file serialization from TASK-5653",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T21:48:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5672-agent-memory-facade.md"
     },
@@ -490,7 +490,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -501,7 +501,7 @@
       "parallel": true,
       "parallelism_notes": "Consumes AgentMemoryMixin and shared brain-contract tests from TASK-5672; Consumes bind_memory_scope/reset_memory_scope from TASK-5654; Consumes single prepare_context/record_event path from TASK-5670",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T21:48:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5673-agent-memory-lifecycle.md"
     },
@@ -537,7 +537,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -548,7 +548,7 @@
       "parallel": true,
       "parallelism_notes": "Consumes scope-correct ranked episodic retrieval from TASK-5665; Consumes durable dedupe/archive replay from TASK-5662; Consumes verified evidence admission contract from TASK-5674",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T21:48:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5675-agent-memory-feedback.md"
     },
@@ -559,7 +559,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -570,7 +570,7 @@
       "parallel": true,
       "parallelism_notes": "Consumes permanent feedback adapter from TASK-5675; Consumes CheckedPattern/ReviewSignal from TASK-5656; Consumes versioned exposure and trusted checks from TASK-5674",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T21:48:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5676-agent-memory-coder.md"
     },
@@ -581,7 +581,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -590,7 +590,7 @@
       "parallel": true,
       "parallelism_notes": "Consumes DevelopmentOutput.checked_patterns and verified review API from TASK-5676",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T21:48:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5677-agent-memory-prompts.md"
     },
@@ -601,7 +601,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -613,7 +613,7 @@
       "parallel": true,
       "parallelism_notes": "Consumes create_memory_manager from TASK-5671; Consumes import_feedback from TASK-5675; Consumes trusted evidence admission from TASK-5674; Consumes authorized forget/suppression service from TASK-5668",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T21:48:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5678-agent-memory-operations.md"
     },
@@ -624,7 +624,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -634,7 +634,7 @@
       "parallel": true,
       "parallelism_notes": "Consumes lazy command group and overlapping cli.py from TASK-5678; Consumes durable review/archive source from TASK-5662",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T21:48:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5679-agent-memory-export.md"
     },
@@ -645,7 +645,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -656,7 +656,7 @@
       "parallel": true,
       "parallelism_notes": "Consumes BasicAgent built-in AgentMemoryMixin and real invocation paths from TASK-5673; Consumes single tool/response ownership from TASK-5674; Consumes legacy preference/room behavior from TASK-5665",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T21:48:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5680-agent-memory-migration.md"
     },
@@ -667,7 +667,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -703,7 +703,7 @@
       "parallel": true,
       "parallelism_notes": "Consumes documented public symbols, configuration or migration behavior from A0/X1 from TASK-5653; Consumes documented public symbols, configuration or migration behavior from A0 from TASK-5654; Consumes documented public symbols, configuration or migration behavior from M1 from TASK-5655; Consumes documented public symbols, configuration or migration behavior from M1/M3 from TASK-5656; Consumes documented public symbols, configuration or migration behavior from M1 from TASK-5657; Consumes documented public symbols, configuration or migration behavior from A1/M3 from TASK-5658; Consumes documented public symbols, configuration or migration behavior from M1 from TASK-5659; Consumes documented public symbols, configuration or migration behavior from M2 from TASK-5660; Consumes documented public symbols, configuration or migration behavior from M2 from TASK-5661; Consumes documented public symbols, configuration or migration behavior from M2 from TASK-5662; Consumes documented public symbols, configuration or migration behavior from M2 from TASK-5663; Consumes documented public symbols, configuration or migration behavior from M2 from TASK-5664; Consumes documented public symbols, configuration or migration behavior from M2 from TASK-5665; Consumes documented public symbols, configuration or migration behavior from U1 from TASK-5666; Consumes documented public symbols, configuration or migration behavior from U1 from TASK-5667; Consumes documented public symbols, configuration or migration behavior from U1 from TASK-5668; Consumes documented public symbols, configuration or migration behavior from A1/M3 from TASK-5669; Consumes documented public symbols, configuration or migration behavior from A1 from TASK-5670; Consumes documented public symbols, configuration or migration behavior from M6/A1 from TASK-5671; Consumes documented public symbols, configuration or migration behavior from A1 from TASK-5672; Consumes documented public symbols, configuration or migration behavior from A1 from TASK-5673; Consumes documented public symbols, configuration or migration behavior from M3 from TASK-5674; Consumes documented public symbols, configuration or migration behavior from M5 from TASK-5675; Consumes documented public symbols, configuration or migration behavior from M5 from TASK-5676; Consumes documented public symbols, configuration or migration behavior from M5 from TASK-5677; Consumes documented public symbols, configuration or migration behavior from M6 from TASK-5678; Consumes documented public symbols, configuration or migration behavior from M6 from TASK-5679; Consumes documented public symbols, configuration or migration behavior from X1 from TASK-5680",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T21:48:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5681-agent-memory-docs.md"
     }
