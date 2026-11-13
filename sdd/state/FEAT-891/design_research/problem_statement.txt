@@ -1,0 +1,27 @@
+
+An agent needs three kinds of knowledge: what is true (knowledge), what matters now (context) and
+what to do next (procedure). AI-Parrot answers the first well (Ontology, GraphIndex, PageIndex,
+the wikitoolkit code graph) and the second partly (`GraphContextBuilder`, `UnifiedMemoryManager`,
+the Experts `KnowledgeResolver`). The third is scattered and not queryable:
+
+- **Skills** are text. An agent can load one, but cannot ask "which procedures apply to this
+  state, and which step is valid next?".
+- **Flows and crews** (`AgentsFlow`, `AgentCrew`) are executable code. They run, but nothing
+  links them to the intent that should trigger them.
+- **Governance rules** (Experts, `ALWAYS tool:x before tool:y`) are constraints with no link to
+  the procedures they govern.
+- **The SDD workflow** itself (`spec → task → start → codereview → done`) lives in prose
+  (`WORKFLOW.md`, command files). Agents re-derive the valid next step from prose every session,
+  and skip obligatory steps (reserve ids with the script, close a task with the script) when the
+  prose is not in front of them.
+
+Who is affected: SDD agents first (wrong step order, hand-rolled moves instead of the mandated
+script), and later product agents, where some user intents need a fixed multi-step procedure that
+an LLM does not get right at the first attempt.
+
+What we want: procedures as nodes of one graph with typed edges, derived from files, with a
+deterministic query — "given this state, which procedure applies and what is the valid next
+step" — and an advisory injection of the answer where the agent is about to act. The SDD workflow
+is the first graph, because its live state (per-spec index, ledger, git) is deterministic and
+measurable.
+
