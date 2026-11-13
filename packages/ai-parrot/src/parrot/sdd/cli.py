@@ -324,7 +324,9 @@ VERBS: dict[str, dict[str, tuple[str, tuple[str, ...], str]]] = {
         "check": ("techwiki_check", (), "Report a spec's declared documentation pages (never blocking)."),
         "sidebar": ("techwiki_bundle", ("--sidebar-only",), "Render Home.md and _Sidebar.md only."),
     },
-    "procedure": {v: ("procedure", (v,), f"Procedure graph: {v}") for v in ("build", "list", "show", "next", "check", "brief")},
+    "procedure": {
+        v: ("procedure", (v,), f"Procedure graph: {v}") for v in ("build", "list", "show", "next", "check", "brief")
+    },
     "hooks": {
         "install": ("install_hooks", (), "Install the SDD git hooks."),
         "dangerous-actions": ("dangerous_actions", (), "Serve the PreToolUse dangerous-actions guard (--hook)."),

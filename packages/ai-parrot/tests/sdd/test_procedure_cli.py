@@ -163,7 +163,7 @@ def test_next_no_remote_marks_remote_probes_unknown(
     """The no-remote mode reports remote results as unknown without running subprocesses."""
     (repo / MANIFEST_DIR / "demo.yaml").write_text(
         MANIFEST
-        + "  - {id: remote, title: Remote, kind: command, command: \"git push\", preconditions: [{probe: branch.pushed}]}\n",
+        + '  - {id: remote, title: Remote, kind: command, command: "git push", preconditions: [{probe: branch.pushed}]}\n',
         encoding="utf-8",
     )
     assert procedure.main(["build"]) == 0
@@ -191,7 +191,8 @@ def test_brief_prints_block_or_nothing(repo: Path, capsys: pytest.CaptureFixture
     """Brief returns zero and emits either its block or no output."""
     task_file = _seed_feature(repo)
     (repo / MANIFEST_DIR / "demo.yaml").write_text(
-        MANIFEST + '  - {id: start, title: Start, kind: command, command: "/sdd-start TASK-1", requires_procedures: [task]}\n',
+        MANIFEST
+        + '  - {id: start, title: Start, kind: command, command: "/sdd-start TASK-1", requires_procedures: [task]}\n',
         encoding="utf-8",
     )
     assert procedure.main(["build"]) == 0
