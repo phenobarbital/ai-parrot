@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from parrot.experts.cli import EXPERT_GATE_KINDS
 from parrot.bots.flows.core.gates import register_gate_kind
 from parrot.bots.flows.flow.flow import AgentsFlow
 from parrot.experts.grid.compiler import compile_scope
@@ -34,7 +35,7 @@ class FakeRegistry:
 @pytest.fixture
 def registry() -> FakeRegistry:
     """Provide the bundled scope experts with their real capabilities."""
-    register_gate_kind("approval", description="scope approval")
+    register_gate_kind("approval", description=EXPERT_GATE_KINDS["approval"])
     return FakeRegistry({"cve-analyst": ["validate", "write", "review"], "cve-remediation": ["write"]})
 
 

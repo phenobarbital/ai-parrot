@@ -17,6 +17,7 @@ from parrot.flows.dev_loop.gate_adapter import DevLoopGateAdapter, register_devl
 from parrot.flows.dev_loop.session_state import (
     ActionEnvelope,
     ApprovalGate,
+    GateAlreadyResolvedError,
     DevLoopSessionState,
     SessionHost,
     session_channel,
@@ -249,3 +250,73 @@ def test_session_host_gate_lifecycle() -> None:
 
     # Verify the gate status changed.
     assert host.state.gates["test-gate-001"].status == "approved"
+
+
+def _loaded_host() -> SessionHost:
+    """A SessionHost that has replayed every recorded legacy envelope (the upgraded process's view)."""
+    host = SessionHost(run_id="legacy-gates-run")
+    for envelope in _recorded_envelopes():
+        host.apply(envelope.action, origin=envelope.origin)
+    return host
+
+
+def _pending(host: SessionHost, *, kind: str | None = None, not_kind: str | None = None) -> list[ApprovalGate]:
+    return [
+        g
+        for g in host.state.gates.values()
+        if g.status == "pending" and (kind is None or g.kind == kind) and (not_kind is None or g.kind != not_kind)
+    ]
+
+
+def test_inflight_gate_resolves_through_the_migrated_session_host() -> None:
+    """The real legacy command path (SessionHost.resolve_gate) resolves a gate recorded before the upgrade."""
+    host = _loaded_host()
+    gate = _pending(host, not_kind="open_questions")[0]
+
+    envelope = host.resolve_gate(gate.gate_id, "approved", "user:test", "after upgrade")
+
+    assert envelope.action.type == "gate/resolved"
+    resolved = host.state.gates[gate.gate_id]
+    assert resolved.status == "approved"
+    assert resolved.resolved_by == "user:test"
+    assert resolved.comment == "after upgrade"
+    # The generic record behind it agrees, so the generic host and the legacy host cannot diverge.
+    assert host._gate_store.records[gate.gate_id].status == "approved"
+
+
+def test_first_writer_wins_after_the_upgrade() -> None:
+    """A second resolution of the same in-flight gate raises instead of becoming an action."""
+    host = _loaded_host()
+    gate = _pending(host, not_kind="open_questions")[0]
+    host.resolve_gate(gate.gate_id, "approved", "user:first")
+
+    with pytest.raises(GateAlreadyResolvedError):
+        host.resolve_gate(gate.gate_id, "rejected", "user:second")
+
+    assert host.state.gates[gate.gate_id].resolved_by == "user:first"
+
+
+def test_open_questions_gate_still_needs_answers_after_the_upgrade() -> None:
+    """The legacy answers rule survives the migration for a recorded open_questions gate."""
+    host = _loaded_host()
+    gate = _pending(host, kind="open_questions")[0]
+
+    with pytest.raises(ValueError, match="at least one answer"):
+        host.resolve_gate(gate.gate_id, "approved", "user:test")
+    assert host.state.gates[gate.gate_id].status == "pending"
+
+    host.resolve_gate(gate.gate_id, "approved", "user:test", answers={"Which store?": "pgvector"})
+    assert host.state.gates[gate.gate_id].answers == {"Which store?": "pgvector"}
+
+
+def test_replaying_the_resolution_on_a_fresh_host_reaches_the_same_state() -> None:
+    """Replay equivalence: a client that missed the resolution rebuilds identical gate state from envelopes."""
+    host = _loaded_host()
+    gate = _pending(host, not_kind="open_questions")[0]
+    resolution = host.resolve_gate(gate.gate_id, "approved", "user:test")
+
+    replica = _loaded_host()
+    replica.apply(resolution.action, origin=resolution.origin)
+
+    assert replica.state.gates[gate.gate_id].status == host.state.gates[gate.gate_id].status
+    assert replica.state.gates[gate.gate_id].resolved_by == "user:test"

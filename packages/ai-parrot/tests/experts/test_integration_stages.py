@@ -7,16 +7,23 @@ Tests the security-patch pipeline: run → paused at gate → simulated restart
 from __future__ import annotations
 
 import asyncio
+import re
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from click.testing import CliRunner
 
 from parrot.bots.flows.core.gates import GateHost, GateRecord, GateSpec, register_gate_kind
+from parrot.experts import cli as experts_cli
+from parrot.experts.cli import EXPERT_GATE_KINDS
 from parrot.experts.lease_store import LeaseDurableCheckpointStore
+from parrot.experts.stages import node as stage_node
 
-# Register a test gate kind for the security-patch pipeline.
-register_gate_kind("approval", description="Manual approval gate")
+# The gate kind registry is process-wide and rejects a different description for the same kind,
+# so every test registers the CLI's canonical one.
+register_gate_kind("approval", description=EXPERT_GATE_KINDS["approval"])
 
 
 class InMemoryGateStore:
@@ -57,70 +64,94 @@ def checkpoint_store(tmp_path: Path) -> LeaseDurableCheckpointStore:
     return LeaseDurableCheckpointStore(tmp_path / "cp.sqlite")
 
 
-@pytest.mark.asyncio
-async def test_security_patch_pipeline_pause_resume(
-    gate_host: GateHost,
-    checkpoint_store: LeaseDurableCheckpointStore,
-    tmp_path: Path,
-) -> None:
-    """Run security-patch pipeline, pause at gate, simulate restart, approve, resume."""
-    # Step 1: Open a gate (simulating the intake stage pausing at approval)
-    gate_spec = GateSpec(
-        kind="approval",
-        title="Approve CVE remediation planning",
-        instructions="Review the CVE analysis and approve remediation.",
-        questions=[],
-        ttl_seconds=None,
-        on_expiry="fail",
-    )
+class FakeExpert:
+    """ExpertAgent stand-in with a canned answer (no LLM)."""
 
-    run_id = "test-security-patch-run"
-    owner = f"{run_id}:intake"
+    def __init__(self, name: str, answer: str, capabilities: list[str]) -> None:
+        self.bundle = SimpleNamespace(
+            manifest=SimpleNamespace(name=name, tier=SimpleNamespace(value="balanced"), capabilities=capabilities)
+        )
+        self.answer = answer
+        self.prompts: list[str] = []
+        self.model_config = SimpleNamespace(model="fake-model")
 
-    # Open the gate - this is what happens when the intake stage runs
-    gate_record = await gate_host.open(gate_spec, owner=owner, payload_ref="stage:intake")
+    async def ask(self, question: str, **kwargs: Any) -> Any:
+        self.prompts.append(question)
+        return SimpleNamespace(content=self.answer)
 
-    # Verify the gate is pending
-    assert gate_record.status == "pending"
-    assert gate_record.owner == owner
 
-    # Step 2: Simulate a process restart - create new objects
-    # In a real scenario, the checkpoint store persists the state
-    # and a new process would resume from it
+class FakeRegistry:
+    """ExpertRegistry stand-in with a sync ``get``."""
 
-    # Acquire a lease on the checkpoint store (simulating resume)
-    lease_acquired = await checkpoint_store.acquire_lease(run_id, "new-process", ttl=60)
-    assert lease_acquired is True, "Failed to acquire lease for resume"
+    def __init__(self, *experts: FakeExpert) -> None:
+        self.experts = {expert.bundle.manifest.name: expert for expert in experts}
+        self.wiki_toolkit = None
 
-    # Step 3: Create a new gate host with fresh store (simulating new process)
-    new_gate_store = InMemoryGateStore()
-    # Copy the gate record to the new store (simulating loading from persistence)
-    await new_gate_store.put(gate_record)
+    def get(self, name: str, *, tenant: str | None = None) -> FakeExpert:
+        return self.experts[name]
 
-    new_gate_host = GateHost(new_gate_store)
 
-    # Step 4: Approve the gate (simulating human approval after restart)
-    resolved = await new_gate_host.resolve(
-        gate_record.gate_id,
-        resolution="approved",
-        resolved_by="user:security-team",
-        comment="CVE is valid, proceed with remediation.",
-    )
+class FakeAgentRegistry:
+    """AgentRegistry stand-in (compiled scopes carry no ``agent`` nodes)."""
 
-    # Verify the gate is now approved
-    assert resolved.status == "approved"
-    assert resolved.resolved_by == "user:security-team"
+    def get_bot_instance(self, name: str) -> Any:
+        return None
 
-    # Step 5: Verify the plan stage can now run (gate is approved)
-    # In a real flow, the edge condition "result.metadata.gate.status == 'approved'"
-    # would allow the plan stage to execute
 
-    # Verify no pending gates remain
-    pending = await new_gate_store.pending()
-    assert len(pending) == 0
+def test_security_patch_pipeline_pause_resume(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Bundled scope, real SQLite gate + checkpoint stores: run pauses at the gate, a restart, approve, resume.
 
-    # Release the lease
-    await checkpoint_store.release_lease(run_id, "new-process")
+    Every CLI invocation builds all of its objects afresh, so each one is a process restart. The only fakes
+    are the experts (no LLM) and the registries that hand them out.
+    """
+    analyst = FakeExpert("cve-analyst", "triage: CVE-2024-0001 is exploitable", ["validate", "write", "review"])
+    remediation = FakeExpert("cve-remediation", "plan: upgrade libfoo to 2.1", ["write"])
+    registry = FakeRegistry(analyst, remediation)
+
+    async def _registries(agents_dir: Path | None) -> tuple[Any, Any]:
+        return FakeAgentRegistry(), registry
+
+    async def _no_episode(*args: Any, **kwargs: Any) -> None:
+        return None
+
+    monkeypatch.setattr(experts_cli, "_build_registries", _registries)
+    monkeypatch.setattr(stage_node, "record_episode", _no_episode)
+    agents_dir = tmp_path / "agents"
+    agents_dir.mkdir()
+    base = [
+        "--agents-dir",
+        str(agents_dir),
+        "--gate-db",
+        str(tmp_path / "gates.sqlite"),
+        "--checkpoint-store",
+        "sqlite",
+    ]
+    runner = CliRunner()
+
+    def invoke(*args: str) -> Any:
+        return runner.invoke(experts_cli.experts, [*base, *args], catch_exceptions=False)
+
+    run = invoke("run", "--scope", "security-patch", "--input", "patch CVE-2024-0001")
+    assert run.exit_code == 0, run.output
+    run_id = re.search(r"run ([0-9a-f]{32}) paused", run.output).group(1)
+    gate_id = re.search(r"gate ([0-9a-f]{32}) \[approval\]", run.output).group(1)
+    # Paused at the gate: the analyst ran, the remediation stage did not.
+    assert len(analyst.prompts) == 1
+    assert remediation.prompts == []
+
+    # Resuming before approval is refused and still runs nothing.
+    refused = runner.invoke(experts_cli.experts, [*base, "resume", "--run-id", run_id])
+    assert refused.exit_code != 0
+    assert remediation.prompts == []
+
+    assert invoke("approve", gate_id, "--comment", "CVE is valid").exit_code == 0
+    resumed = invoke("resume", "--run-id", run_id)
+
+    assert resumed.exit_code == 0, resumed.output
+    assert f"run {run_id} completed" in resumed.output
+    assert len(analyst.prompts) == 1  # the gated stage is not re-run after the restart
+    assert len(remediation.prompts) == 1  # cve-remediation runs once the gate is approved
+    assert "CVE-2024-0001 is exploitable" in remediation.prompts[0]  # and it received the analyst's output
 
 
 @pytest.mark.asyncio
@@ -177,12 +208,8 @@ async def test_gate_host_recover_expired(
     # Verify it's pending
     assert gate_record.status == "pending"
 
-    # Wait for TTL to expire and recover
-    import time
-
-    time.sleep(1.1)
-
-    recovered = await gate_host.recover(now=time.time())
+    # Recover at a clock past the TTL instead of sleeping: recover() takes an explicit ``now``.
+    recovered = await gate_host.recover(now=gate_record.expires_at + 1)
 
     # Should have recovered one gate
     assert len(recovered) == 1
@@ -209,12 +236,8 @@ async def test_gate_host_recover_auto_approve(
     # Verify it's pending
     assert gate_record.status == "pending"
 
-    # Wait for TTL to expire and recover
-    import time
-
-    time.sleep(1.1)
-
-    recovered = await gate_host.recover(now=time.time())
+    # Recover at a clock past the TTL instead of sleeping: recover() takes an explicit ``now``.
+    recovered = await gate_host.recover(now=gate_record.expires_at + 1)
 
     # Should have recovered one gate with approved status
     assert len(recovered) == 1
