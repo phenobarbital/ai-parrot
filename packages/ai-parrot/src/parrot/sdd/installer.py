@@ -139,7 +139,7 @@ _GUARD_MARKERS = ("worktree guard --hook", "worktree_environment")
 
 FileState = Literal["missing", "current", "outdated", "edited", "foreign"]
 #: Plan vocabulary (C5). install: write | upgrade | overwrite | skip-current | skip-edited | skip-foreign |
-#: seed | skip-seed | gitignore | gitattributes | ledger-hooks | ledger-seed | config-seed | base-branch | dangerous-guard | toolkits. uninstall: remove |
+#: seed | skip-seed | gitignore | gitattributes | ledger-hooks | ledger-seed | config-seed | base-branch | dangerous-guard | toolkits | procedure-index. uninstall: remove |
 #: keep-edited | keep-foreign | skip-missing | keep-shared | gitignore-remove | gitattributes-remove |
 #: keep-gitattributes | ledger-hooks-remove | keep-ledger-hooks | toolkits-remove | receipt-remove.
 #: stale: stale-remove | keep-stale | skip-symlink.   [rev 0.5 C23 / D5]
@@ -163,6 +163,7 @@ PlanAction = Literal[
     "agy-permissions",
     "agy-permissions-remove",
     "toolkits",
+    "procedure-index",
     "toolkits-remove",
     "remove",
     "keep-edited",
@@ -947,6 +948,7 @@ def plan_install(
         plan.append(PlannedAction(action="agy-permissions", target=AGY_HOOKS_PATH.as_posix(), note=note))
     if sdd_coder:
         plan.append(PlannedAction(action="toolkits", target=", ".join(SDD_TOOLKITS)))  # C34
+    plan.append(PlannedAction(action="procedure-index", target=".parrot/procedure/procedures.json"))  # FEAT-891
     return plan
 
 
@@ -1277,6 +1279,23 @@ def _install_gitattributes(root: Path, receipt: dict[str, Any]) -> str:
         return ".gitattributes — ledger merge=union block up to date"
     path.write_text(updated, encoding="utf-8")
     return ".gitattributes — managed ledger merge=union block written"
+
+
+def _install_procedure_index_step(root: Path, receipt: dict[str, Any]) -> list[str]:
+    """FEAT-891: build the procedure plane from deployed manifests; return a one-line action.
+
+    Never fails the install: an error becomes the action text ``procedure index: skipped (<reason>)``.
+    ``receipt`` is unused — the plane is derived state under the git-ignored ``.parrot/``.
+    """
+    try:
+        import asyncio
+
+        from parrot.sdd.scripts import procedure
+
+        counts = asyncio.run(procedure.build(root))
+    except Exception as exc:  # noqa: BLE001 — a derived index must never block an install
+        return [f"procedure index: skipped ({type(exc).__name__}: {exc})"]
+    return [f".parrot/procedure/procedures.json — built ({counts['pages']} procedures)"]
 
 
 def _install_ledger_hooks_step(root: Path, receipt: dict[str, Any]) -> list[str]:
@@ -1621,6 +1640,8 @@ def install_sdd_integration(
             actions.extend(_install_agy_permissions(root, receipt, portable=portable))
         elif step.action == "toolkits":
             actions.extend(_install_toolkits_step(root, hosts, receipt, portable=portable))
+        elif step.action == "procedure-index":
+            actions.extend(_install_procedure_index_step(root, receipt))
     _save_receipt(root, receipt)
     actions.append(f"{RECEIPT_PATH} — written; commit it with the installed files (it drives upgrades and uninstall)")
     actions.append(_test_command_warning(config) or "")
