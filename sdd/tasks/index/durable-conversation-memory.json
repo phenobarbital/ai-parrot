@@ -336,7 +336,7 @@
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -348,8 +348,9 @@
       "parallelism_notes": "Uses ConversationTurn.sequence from TASK-5569 (memory/abstract.py); memory/redis.py after TASK-5579; memory/__init__.py after TASK-5572.",
       "assigned_to": null,
       "started_at": "2026-11-13T03:25:54+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5580-hydration-core.md"
+      "completed_at": "2026-11-13T04:28:53+00:00",
+      "file": "sdd/tasks/completed/TASK-5580-hydration-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5581",

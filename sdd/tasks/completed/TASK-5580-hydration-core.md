@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-886 — Durable Conversation Memory
 **Spec**: `sdd/specs/durable-conversation-memory.spec.md` (Module 13)
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: XL (> 8h)
 **Depends-on**: TASK-5569, TASK-5579, TASK-5572
@@ -779,10 +779,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added parrot/memory/hydration.py (HydrationSource + 3 typed errors, SequenceAllocator, LocalSequenceAllocator, RedisSequenceAllocator); ConversationMemory._prepare_turn (moved from add_turn, behavior-neutral), install_history template + abstract _install_history, turn_order_key / is_hydration_pending / merge_pending_history; _install_history on InMemory, File and Redis (Lua EXISTS-guarded HSET / SET NX, CAS pending merge, legacy-key guard); removed TASK-5579's temporary RedisConversation._prepare_turn; exports.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (sequential fallback)
+**Date**: 2026-11-13
+**Tests**: test_hydration_core 24 passed — four backends (in-memory, file, Redis hash mode, Redis string mode; Redis is a real throw-away `redis-server` subprocess); tests/unit/memory (minus the two hypothesis files) 124 passed, 4 skipped; TASK-5579 subscriber suite, test_bot_history_wiring, test_chat_storage still green. ruff clean.
+**NOT RUN**: tests/unit/memory/compaction/test_compact.py and test_normalize.py (`hypothesis` not installable here).
+**Mutation evidence**: Lua without NX / in-memory always overwrites / merge keeps newer+duplicate turns / any hydration marker counts as pending / no floor recovery / create_history not persisted -> each RED. Restored by re-applying edits.
+**Finding acted on**: RedisConversation.create_history persisted nothing in hash mode (it built the mapping but never wrote it); fixed via _history_mapping + hset and covered by test_redis_create_history_persists_metadata_in_hash_mode (also visible in the 3 failures of the last mutation).
+**Notes**: the spec's "HSETNX-guarded" is implemented as an EXISTS-guarded Lua HSET because _append_turn creates hashes without a session_id field (an HSETNX sentinel would overwrite them); the NX guarantee is what matters.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Lua EXISTS guard instead of HSETNX (reason above)
