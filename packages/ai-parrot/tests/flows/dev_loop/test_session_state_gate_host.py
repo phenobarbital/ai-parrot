@@ -73,10 +73,13 @@ def test_expiry_delegates_to_gate_host_recovery() -> None:
         ttl_seconds=10,
         on_expiry="approve",
     )
-    expiry_time = max(
-        host.state.gates[fail_id].expires_at or 0,
-        host.state.gates[approve_id].expires_at or 0,
-    ) + 1
+    expiry_time = (
+        max(
+            host.state.gates[fail_id].expires_at or 0,
+            host.state.gates[approve_id].expires_at or 0,
+        )
+        + 1
+    )
     envelopes = host.expire_due_gates(now=expiry_time)
 
     assert [envelope.action.type for envelope in envelopes] == ["gate/expired", "gate/resolved"]
