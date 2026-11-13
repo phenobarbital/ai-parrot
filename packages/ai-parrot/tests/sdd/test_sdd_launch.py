@@ -56,6 +56,48 @@ def _primary(tmp_path: Path) -> Path:
     return primary
 
 
+def test_native_allow_write_includes_experience(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Native and prefix policies include experience without granting wiki or HOME."""
+    native = launcher.native_claude_sandbox
+    primary = tmp_path / "primary"
+    git_dir = primary / ".git"
+    admin = git_dir / "worktrees" / "feature"
+    admin.mkdir(parents=True)
+    (admin / "commondir").write_text("../..\n", encoding="utf-8")
+    worktree_root = primary / ".parrot" / "worktrees"
+    feature = worktree_root / "feature"
+    feature.mkdir(parents=True)
+    (feature / ".git").write_text(f"gitdir: {admin}\n", encoding="utf-8")
+    (primary / ".parrot" / "ledger").mkdir()
+    scratch = tmp_path / "claude-scratch"
+    home = tmp_path / "home"
+    monkeypatch.setattr(native._we, "CLAUDE_SCRATCH_ROOT", scratch)
+    monkeypatch.setenv("HOME", str(home))
+
+    allow = native.native_sandbox_settings(feature)["sandbox"]["filesystem"]["allowWrite"]
+    experience = (primary / ".parrot" / "experience").resolve()
+    assert allow == [
+        str(feature.resolve()),
+        str(git_dir.resolve()),
+        str(scratch.resolve()),
+        str(worktree_root.resolve()),
+        str((primary / ".parrot" / "ledger").resolve()),
+        str((primary / "artifacts" / "logs" / "sdd-coder-usage").resolve()),
+        str(experience),
+    ]
+    assert str((primary / ".parrot" / "wiki").resolve()) not in allow
+    assert str(home.resolve()) not in allow
+    assert native._prefix_writable_roots(feature) == (
+        feature.resolve(),
+        admin.resolve(),
+        primary.resolve(),
+        (primary / ".parrot" / "ledger").resolve(),
+        (primary / "artifacts" / "logs" / "sdd-coder-usage").resolve(),
+        experience,
+        scratch.resolve(),
+    )
+
+
 def test_resolve_feature_is_case_insensitive_and_skips_orphans(tmp_path: Path) -> None:
     """Feature ids and slugs are both valid case-insensitive launch keys."""
     primary = _primary(tmp_path)
