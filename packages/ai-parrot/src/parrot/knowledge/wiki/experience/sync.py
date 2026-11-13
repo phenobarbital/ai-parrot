@@ -20,9 +20,7 @@ from parrot.launcher import parrot_home
 
 SHARED_DIR = Path("sdd") / "experience" / "lessons"
 DEFINITION_KINDS = frozenset({"lesson.recorded"})
-ATTESTATION_KINDS = frozenset(
-    {"lesson.confirmed", "lesson.quarantined", "lesson.retired", "lesson.graduated"}
-)
+ATTESTATION_KINDS = frozenset({"lesson.confirmed", "lesson.quarantined", "lesson.retired", "lesson.graduated"})
 
 _EVENTS_FILE = "events.jsonl"
 _MAX_SOURCE_BYTES = 8 * 1024 * 1024
@@ -122,9 +120,7 @@ def export_shared(repo_plane: Path, checkout: Path) -> Path | None:
         elif event.kind == "lesson.graduated" and event.event_id not in known_ids:
             pending[event.event_id] = event
 
-    shared_state_keys = {
-        _state_key(event) for event in shared_events if event.kind in _STATE_ATTESTATION_KINDS
-    }
+    shared_state_keys = {_state_key(event) for event in shared_events if event.kind in _STATE_ATTESTATION_KINDS}
     local_retirements = _retirement_events(repo_events)
     for lesson_id, lesson in lessons.items():
         if lesson.state not in _DERIVED_STATES:
@@ -320,7 +316,9 @@ def _event_tier(event: ExperienceEvent, tiers: dict[tuple[str, str], str]) -> st
     solution_rev = event.payload.get("solution_rev")
     if isinstance(solution_rev, str):
         return tiers.get((event.lesson_id, solution_rev))
-    candidates = sorted((revision, tier) for (lesson_id, revision), tier in tiers.items() if lesson_id == event.lesson_id)
+    candidates = sorted(
+        (revision, tier) for (lesson_id, revision), tier in tiers.items() if lesson_id == event.lesson_id
+    )
     unique = {tier for _, tier in candidates}
     return next(iter(unique)) if len(unique) == 1 else None
 

@@ -87,7 +87,9 @@ def _write_shared(path: Path, *events: dict[str, object]) -> None:
     """Write one immutable shared fixture file."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        "".join(json.dumps(event, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n" for event in events),
+        "".join(
+            json.dumps(event, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n" for event in events
+        ),
         encoding="utf-8",
     )
 
@@ -307,9 +309,7 @@ def test_register_namespace_absolute(tmp_path: Path) -> None:
     assert config["wiki_name"] == "preserved"
     assert config["custom"] == {"preserve": True}
     assert config["namespaces"]["other"] == {"store": "/srv/other"}
-    assert config["namespaces"]["experience"] == {
-        "store": str((primary / ".parrot" / "experience").resolve())
-    }
+    assert config["namespaces"]["experience"] == {"store": str((primary / ".parrot" / "experience").resolve())}
 
 
 @pytest.mark.asyncio
