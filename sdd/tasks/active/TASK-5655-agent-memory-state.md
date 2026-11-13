@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-892 - Agent Memory — Unified Integration, User Knowledge and Dynamics
 **Spec**: `sdd/specs/agent-memory-mixin.spec.md`
-**Status**: blocked
+**Status**: pending
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-5653
@@ -18,7 +18,7 @@ These are planning artifacts, not evidence that carried G1–G4 gates passed.
 
 ## Release Preconditions
 
-G1/G2: accepted production reference/time policy and canonical namespace/content-version encoding must be amended into the spec before release.
+G1/G2: ACCEPTED in the spec section "Gate amendment accepted for TASK-5655" (rev 0.4): A1–A5 reference/time policy/parameters/bounds/state and B1–B3 content version/canonical key. Released.
 
 Before releasing any blocked task, record the accepted amendment in the spec, expand its
 Validation Contract with the released module test paths, regenerate the index test contract

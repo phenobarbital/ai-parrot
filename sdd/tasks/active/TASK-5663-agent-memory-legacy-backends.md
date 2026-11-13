@@ -31,9 +31,9 @@ the task executor must stop before code if its release preconditions are unmet.
 ## Scope
 
 - Scoped SQL columns/filtering and compatibility (`packages/ai-parrot/src/parrot/memory/episodic/backends/pgvector.py`).
-- Scoped vector and recent/failure routes (`packages/ai-parrot/src/parrot/memory/episodic/backends/redis_vector.py`).
+- Scoped vector and recent/failure routes (`packages/ai-parrot/src/parrot/memory/episodic/backends/redis_vector.py`); write-once episode store: a second `store` of an existing `episode_id` is a no-op that keeps the first content (spec gate amendment B1; `hset` at `redis_vector.py:289` currently lets the last write win).
 - Scoped serialized records and pre-limit filtering (`packages/ai-parrot/src/parrot/memory/episodic/backends/faiss.py`).
-- Backend route contract and data migration checks (`packages/ai-parrot/tests/memory/dynamics/test_backend_scope.py`).
+- Backend route contract and data migration checks (`packages/ai-parrot/tests/memory/dynamics/test_backend_scope.py`), including a write-once test for every backend you touch.
 
 **NOT in scope:** FEAT-889 brain stores/schedulers/HTTP/PBAC; optimizer/fitting; provider SDK
 or clients/base.py changes; dependency additions; deletion of persisted user/episode data
@@ -213,6 +213,12 @@ def test_unsupported_reviews_fail_visible() -> None:
     # FILL IN: real subject/isolated fixture and observable assertions — task acceptance criteria below.
     # Use pytest.mark.asyncio and async def for async subject calls; never run paid/shared services.
     raise NotImplementedError
+
+def test_second_store_of_same_episode_id_keeps_first_content() -> None:
+    """Verify episodes are write-once on PG, Redis and FAISS (spec gate amendment B1)."""
+    # FILL IN: store an episode, store the same episode_id with different content fields, read it back and
+    # assert the first content survives; metadata may still merge. Disclose backends without a live service.
+    raise NotImplementedError
 ```
 
 **Why:** Applying identity filters before limits prevents cross-tenant or cross-model leakage and loss of relevant scoped candidates.
@@ -231,6 +237,7 @@ def test_unsupported_reviews_fail_visible() -> None:
 - [ ] AC05/AC14: PG/Redis/FAISS preserve tenant/agent/user/session/room/crew/model scope before top-k and fallback limits.
 - [ ] AC08: existing snapshots/rows are preserved; migrations are additive and backend-specific tests disclose missing service coverage.
 - [ ] AC12: never advertise transactional review capability unless it is truly implemented; unsupported review-enabled configurations fail visibly.
+- [ ] B1 (spec gate amendment): a second store of an existing `episode_id` with different content keeps the first content on PG, Redis and FAISS; Redis no longer overwrites with `hset`. `metadata` merges stay allowed.
 - [ ] Narrow task checks pass; scoped black/ruff pass for touched Python; validation logs identify skipped external coverage explicitly.
 
 ## Validation Commands
@@ -242,6 +249,7 @@ def test_unsupported_reviews_fail_visible() -> None:
 - `backend_filters_before_limits`: AC05/AC14: PG/Redis/FAISS preserve tenant/agent/user/session/room/crew/model scope before top-k and fallback limits.
 - `legacy_data_survives_optional_dimension`: AC08: existing snapshots/rows are preserved; migrations are additive and backend-specific tests disclose missing service coverage.
 - `unsupported_reviews_fail_visible`: AC12: never advertise transactional review capability unless it is truly implemented; unsupported review-enabled configurations fail visibly.
+- `second_store_of_same_episode_id_keeps_first_content`: B1: a second store of an existing `episode_id` with different content keeps the first content on PG, Redis and FAISS.
 
 Use deterministic clocks, runtime-derived identities and isolated temporary stores. Preserve
 CancelledError. Use subprocesses for crash/multiprocess checks, never shared production data.
