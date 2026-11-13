@@ -16,7 +16,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from navconfig.logging import logging
 from navigator_eventbus import DLQHandler, EventBus, EventEnvelope
@@ -183,15 +183,65 @@ async def _attach_dlq(bus: Any, holder: Dict[str, Any]) -> Any:
     return dlq
 
 
+def _read_outbox_rows(path: Path) -> List[Tuple[str, str]]:
+    """Every pending ``(event_id, envelope_json)`` of an outbox file, whatever its retry deadline."""
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5)
+    try:
+        return conn.execute("SELECT event_id, envelope FROM evb_outbox ORDER BY created_at").fetchall()
+    finally:
+        conn.close()
+
+
+def _count_outbox_rows(path: Path) -> int:
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5)
+    try:
+        return int(conn.execute("SELECT COUNT(*) FROM evb_outbox").fetchone()[0])
+    finally:
+        conn.close()
+
+
+async def _drain_one_outbox(bus: Any, old: SqliteOutbox, path: Path) -> Tuple[int, bool]:
+    """Re-publish every pending row of ``old``; returns ``(republished, fully_drained)``. Never raises."""
+    recovered = 0
+    try:
+        rows = await asyncio.to_thread(_read_outbox_rows, path)
+        for event_id, raw in rows:
+            try:
+                envelope = EventEnvelope.from_dict(json.loads(raw))
+            except Exception:  # noqa: BLE001 - never log the payload
+                logger.error("abandoned outbox %s: row %s is undecodable; file kept", path.name, event_id)
+                continue
+            try:
+                await bus.core.publish(envelope)
+            except Exception as exc:  # noqa: BLE001
+                logger.error("abandoned outbox %s: publishing %s failed (%s); file kept", path.name, event_id,
+                             type(exc).__name__)
+                break  # the row stays pending: it was NOT acked
+            try:
+                await old.ack(event_id)
+            except Exception as exc:  # noqa: BLE001
+                logger.error("abandoned outbox %s: ack of %s failed (%s); file kept", path.name, event_id,
+                             type(exc).__name__)
+                break
+            recovered += 1
+        remaining = await asyncio.to_thread(_count_outbox_rows, path)
+    except Exception as exc:  # noqa: BLE001 - a corrupt file must not abort startup
+        logger.error("abandoned outbox %s could not be drained (%s); file kept", path.name, type(exc).__name__)
+        return recovered, False
+    return recovered, remaining == 0
+
+
 async def recover_abandoned_outboxes(bus: Any, directory: Path, *, own_pid: Optional[int] = None) -> int:
     """Drain the outboxes of dead workers of this host into ``bus`` (a replacement pod has a new PID).
 
     Every ``<hostname>-<pid>.db`` in ``directory`` other than this process's own is opened through
     ``SqliteOutbox``, which takes the exclusive file lock: a file whose owner is still alive raises
-    ``OutboxLockedError`` and is skipped, so two relays never share one file. Each pending envelope is
-    re-published through ``bus.core.publish`` (the bus dedups on ``event_id`` and the handlers upsert
-    by turn id, so a crash between publish and ack only duplicates a delivery that is already idempotent)
-    and acknowledged in the old file; a drained file is removed.
+    ``OutboxLockedError`` and is skipped, so two relays never share one file. EVERY pending row is
+    re-published through ``bus.core.publish`` (including rows still in retry backoff; the bus dedups on
+    ``event_id`` and the handlers upsert by turn id, so a crash between publish and ack only duplicates a
+    delivery that is already idempotent) and acknowledged in the old file only after its publish succeeded.
+    A file is removed only when it holds no pending row; a failing or corrupt file is kept, logged, and the
+    remaining files are still drained.
 
     Returns:
         The number of envelopes re-published.
@@ -207,19 +257,17 @@ async def recover_abandoned_outboxes(bus: Any, directory: Path, *, own_pid: Opti
             old = SqliteOutbox(path)
         except OutboxLockedError:
             continue  # a live worker owns it
+        except Exception as exc:  # noqa: BLE001 - a corrupt file must not abort startup
+            logger.error("abandoned outbox %s could not be opened (%s); file kept", path.name, type(exc).__name__)
+            continue
         try:
-            while True:
-                due = await old.due(now=time.time(), limit=100)
-                if not due:
-                    break
-                for envelope in due:
-                    await bus.core.publish(envelope)
-                    await old.ack(envelope.event_id)
-                    recovered += 1
+            count, drained = await _drain_one_outbox(bus, old, path)
+            recovered += count
         finally:
             await old.close()
-        for leftover in (path, Path(f"{path}.lock"), Path(f"{path}-wal"), Path(f"{path}-shm")):
-            leftover.unlink(missing_ok=True)
+        if drained:
+            for leftover in (path, Path(f"{path}.lock"), Path(f"{path}-wal"), Path(f"{path}-shm")):
+                leftover.unlink(missing_ok=True)
     if recovered:
         logger.warning("recovered %d turn event(s) from abandoned outboxes", recovered)
     return recovered
@@ -253,7 +301,10 @@ async def setup_turn_persistence(chat_storage: ChatStorage, *, bus: Any = None) 
     chat_storage.attach_deletion_publisher(_publish_deletion)
     await bus.connect()
     if owns_bus:
-        await recover_abandoned_outboxes(bus, _resolve_outbox_dir())
+        try:
+            await recover_abandoned_outboxes(bus, _resolve_outbox_dir())
+        except Exception as exc:  # noqa: BLE001 - recovery must never block startup
+            logger.error("outbox recovery failed (%s); the server continues without it", type(exc).__name__)
     return TurnPersistence(bus=bus, publisher=BusTurnPublisher(bus), subscription_ids=ids, dlq=dlq)
 
 

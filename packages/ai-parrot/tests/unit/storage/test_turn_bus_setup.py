@@ -269,3 +269,144 @@ async def test_live_workers_outbox_is_never_drained(chat_storage, tmp_path):
     finally:
         await shutdown_turn_persistence(handle)
         await live.close()
+
+
+def _host_file(tmp_path, pid: int):
+    import socket
+
+    return tmp_path / f"{socket.gethostname()}-{pid}.db"
+
+
+async def _dead_outbox(tmp_path, pid, ids, *, nack_future=False):
+    import time
+    from navigator_eventbus.outbox import SqliteOutbox
+
+    path = _host_file(tmp_path, pid)
+    outbox = SqliteOutbox(path)
+    for tid in ids:
+        env = EventEnvelope(topic=TURN_COMPLETED_TOPIC, event_id=tid, payload=_event(tid).to_dict())
+        await outbox.append(env)
+        if nack_future:  # the relay had failed: the row sits in retry backoff
+            await outbox.nack(tid, error="relay failed", next_try_at=time.time() + 3600)
+    await outbox.close()
+    return path
+
+
+async def test_rows_in_retry_backoff_are_delivered_and_the_file_removed(backend, chat_storage, tmp_path):
+    from parrot.storage.turn_bus import recover_abandoned_outboxes
+
+    path = await _dead_outbox(tmp_path, 515151, ["b1", "b2", "b3"], nack_future=True)
+    handle = await setup_turn_persistence(chat_storage, bus=_memory_bus(tmp_path))
+    try:
+        assert await recover_abandoned_outboxes(handle.bus, tmp_path, own_pid=os.getpid()) == 3
+
+        async def stored():
+            return len(await backend.query_turns(USER, AGENT, "s1")) == 3
+
+        assert await _eventually(stored)
+        assert not path.exists()
+    finally:
+        await shutdown_turn_persistence(handle)
+
+
+async def test_a_failing_publish_keeps_the_file_and_the_rows(chat_storage, tmp_path):
+    import sqlite3
+    from parrot.storage.turn_bus import recover_abandoned_outboxes
+
+    path = await _dead_outbox(tmp_path, 525252, ["f1", "f2"], nack_future=True)
+    handle = await setup_turn_persistence(chat_storage, bus=_memory_bus(tmp_path))
+
+    async def boom(envelope):
+        raise RuntimeError("bus down")
+
+    real = handle.bus.core.publish
+    handle.bus.core.publish = boom
+    try:
+        assert await recover_abandoned_outboxes(handle.bus, tmp_path, own_pid=os.getpid()) == 0
+    finally:
+        handle.bus.core.publish = real
+        await shutdown_turn_persistence(handle)
+    assert path.exists()
+    assert sqlite3.connect(str(path)).execute("SELECT COUNT(*) FROM evb_outbox").fetchone()[0] == 2  # nothing acked
+
+
+async def test_a_corrupt_file_and_a_partial_failure_do_not_abort_recovery(backend, chat_storage, tmp_path):
+    import sqlite3
+    from parrot.storage.turn_bus import recover_abandoned_outboxes
+
+    corrupt = _host_file(tmp_path, 535353)
+    corrupt.write_bytes(b"this is not a sqlite database at all" * 40)
+    partial = await _dead_outbox(tmp_path, 545454, ["p1", "p2"])
+    good = await _dead_outbox(tmp_path, 555555, ["ok1"])
+    handle = await setup_turn_persistence(chat_storage, bus=_memory_bus(tmp_path))
+    real = handle.bus.core.publish
+
+    async def flaky(envelope):
+        if envelope.event_id == "p2":
+            raise RuntimeError("only this one fails")
+        await real(envelope)
+
+    handle.bus.core.publish = flaky
+    try:
+        assert await recover_abandoned_outboxes(handle.bus, tmp_path, own_pid=os.getpid()) == 2  # p1 + ok1
+    finally:
+        handle.bus.core.publish = real
+    try:
+        async def stored():
+            return len(await backend.query_turns(USER, AGENT, "s1")) == 2
+
+        assert await _eventually(stored)
+    finally:
+        await shutdown_turn_persistence(handle)
+    assert corrupt.exists() and partial.exists() and not good.exists()
+    left = [r[0] for r in sqlite3.connect(str(partial)).execute("SELECT event_id FROM evb_outbox").fetchall()]
+    assert left == ["p2"]  # the envelope whose publish raised was never acked
+
+
+@pytest.fixture(scope="module")
+def redis_url_module(tmp_path_factory):
+    import shutil
+    import socket
+    import subprocess
+    import time
+
+    binary = shutil.which("redis-server")
+    if not binary:
+        pytest.skip("redis-server not installed")
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    proc = subprocess.Popen([binary, "--port", str(port), "--save", "", "--appendonly", "no",
+                             "--dir", str(tmp_path_factory.mktemp("redis"))],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    for _ in range(50):
+        try:
+            socket.create_connection(("127.0.0.1", port), timeout=0.2).close()
+            break
+        except OSError:
+            time.sleep(0.1)
+    else:
+        proc.kill()
+        pytest.skip("redis-server did not start")
+    yield f"redis://127.0.0.1:{port}/0"
+    proc.terminate()
+    proc.wait(timeout=5)
+
+
+async def test_setup_turn_persistence_itself_drains_abandoned_outboxes(
+        backend, chat_storage, tmp_path, monkeypatch, redis_url_module):
+    """Goes through setup_turn_persistence (owning the bus): removing its recovery call must fail this test."""
+    monkeypatch.setattr(conf, "PARROT_TURN_BUS_REDIS_URL", redis_url_module, raising=False)
+    monkeypatch.setattr(conf, "PARROT_TURN_BUS_OUTBOX_DIR", str(tmp_path), raising=False)
+    monkeypatch.setattr(conf, "PARROT_TURN_BUS_CHANNEL_PREFIX", "wiring:turns:", raising=False)
+    monkeypatch.setattr(conf, "PARROT_TURN_BUS_DLQ_DSN", None, raising=False)
+    path = await _dead_outbox(tmp_path, 565656, ["w1"], nack_future=True)
+    handle = await setup_turn_persistence(chat_storage)
+    try:
+        async def stored():
+            return len(await backend.query_turns(USER, AGENT, "s1")) == 1
+
+        assert await _eventually(stored, timeout=8.0)
+        assert not path.exists()
+    finally:
+        await shutdown_turn_persistence(handle)
