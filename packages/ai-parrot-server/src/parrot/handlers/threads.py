@@ -243,6 +243,9 @@ class ThreadDetailView(BaseView):
         qs = self.get_arguments(self.request)
         agent_id = qs.get("agent_id", "")
         limit = int(qs.get("limit", 10))
+        if not agent_id:
+            # tombstones are keyed by the real agent: checking under "" would be a false "not deleted"
+            return self.error(response={"message": "agent_id is required"}, status=400)
 
         try:
             messages = await storage.load_conversation(
@@ -306,13 +309,19 @@ class ThreadDetailView(BaseView):
 
         # Build update kwargs from body
         title = body.get("title")
+        try:
+            await storage.assert_conversation_active(user_id, agent_id, session_id)
+            updated = True
+            if title:
+                updated = await storage.update_conversation_title(
+                    session_id=session_id,
+                    title=title,
+                    user_id=user_id,
+                    agent_id=agent_id,
+                )
+        except StorageError as exc:
+            return _storage_error_response(self, exc)
         if title:
-            updated = await storage.update_conversation_title(
-                session_id=session_id,
-                title=title,
-                user_id=user_id,
-                agent_id=agent_id,
-            )
             if not updated:
                 return self.error(
                     response={"message": "Failed to update thread"},

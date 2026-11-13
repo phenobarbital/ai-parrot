@@ -145,6 +145,9 @@ class ChatInteractionHandler(BaseView):
         qs = self.get_arguments(self.request)
         agent_id = qs.get("agent_id")
         limit = int(qs.get("limit", 50))
+        if not agent_id:
+            # tombstones are keyed by the real agent: checking under "" would be a false "not deleted"
+            return self.error(response={"message": "agent_id is required"}, status=400)
 
         try:
             messages = await storage.load_conversation(
@@ -267,12 +270,15 @@ class ChatInteractionHandler(BaseView):
                 status=400,
             )
 
-        updated = await storage.update_conversation_title(
-            session_id=session_id,
-            title=title,
-            user_id=user_id,
-            agent_id=agent_id,
-        )
+        try:
+            updated = await storage.update_conversation_title(
+                session_id=session_id,
+                title=title,
+                user_id=user_id,
+                agent_id=agent_id,
+            )
+        except StorageError as exc:
+            return _storage_error_response(self, exc)
 
         if updated:
             return self.json_response({
@@ -326,11 +332,14 @@ class ChatInteractionHandler(BaseView):
                 status=400,
             )
 
-        deleted = await storage.delete_conversation(
-            user_id=user_id,
-            session_id=session_id,
-            agent_id=agent_id,
-        )
+        try:
+            deleted = await storage.delete_conversation(
+                user_id=user_id,
+                session_id=session_id,
+                agent_id=agent_id,
+            )
+        except StorageError as exc:
+            return _storage_error_response(self, exc)
 
         if deleted:
             return self.json_response({
@@ -400,12 +409,15 @@ class ChatInteractionHandler(BaseView):
                 status=400,
             )
 
-        deleted = await storage.delete_turn(
-            session_id=session_id,
-            turn_id=turn_id,
-            user_id=user_id,
-            agent_id=agent_id,
-        )
+        try:
+            deleted = await storage.delete_turn(
+                session_id=session_id,
+                turn_id=turn_id,
+                user_id=user_id,
+                agent_id=agent_id,
+            )
+        except StorageError as exc:
+            return _storage_error_response(self, exc)
 
         if deleted:
             return self.json_response({
