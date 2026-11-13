@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-891 — Procedural Graph Plane
 **Spec**: `sdd/specs/procedural-graph-plane.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5644, TASK-5645, TASK-5646, TASK-5648
@@ -227,4 +227,15 @@ dedicated test asserts the install-built index exists, which the generic invocat
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+
+- Task: TASK-5651
+- Feature: procedural-graph-plane
+- Implementation SHA: e95afcb29bb25de4bd5e95aa34e1622752392cc6
+- Closed at (UTC): 2026-11-13T23:23:14+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 345.8s · Tokens: n/a |

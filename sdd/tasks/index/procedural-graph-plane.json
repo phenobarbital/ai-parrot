@@ -435,7 +435,7 @@
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -448,8 +448,9 @@
       "parallelism_notes": "Runs `procedure build/next` from TASK-5644; exercises the guard of TASK-5645 (dangerous_actions.py) and of TASK-5646 (and modifies its test_procedure_guards.py); the smoke asserts the index built by the install step of TASK-5648.",
       "assigned_to": null,
       "started_at": "2026-11-13T21:47:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5651-procedure-smoke-and-pilot-e2e.md"
+      "completed_at": "2026-11-13T23:23:14+00:00",
+      "file": "sdd/tasks/completed/TASK-5651-procedure-smoke-and-pilot-e2e.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5652",
@@ -458,7 +459,7 @@
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "M",
       "depends_on": [
@@ -473,8 +474,9 @@
       "parallelism_notes": "Documents symbols created by TASK-5642 (lint pack), TASK-5644 (the six CLI verbs), TASK-5645 and TASK-5646 (guard behavior), TASK-5648 (install step) and TASK-5649 (MCP tool); last in the graph.",
       "assigned_to": null,
       "started_at": "2026-11-13T21:47:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5652-procedure-documentation.md"
+      "completed_at": "2026-11-13T23:23:16+00:00",
+      "file": "sdd/tasks/completed/TASK-5652-procedure-documentation.md",
+      "verification": "verified"
     }
   ]
 }
