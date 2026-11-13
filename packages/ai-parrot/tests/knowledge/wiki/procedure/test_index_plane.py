@@ -168,8 +168,7 @@ async def test_plane_specs_round_trip(tmp_path: Path) -> None:
     """The stored JSON round-trips every procedure spec sorted by id."""
     source = _source(tmp_path)
     specs = [
-        spec.model_copy(update={"origin_path": source.relative_to(tmp_path).as_posix()})
-        for spec in reversed(_specs())
+        spec.model_copy(update={"origin_path": source.relative_to(tmp_path).as_posix()}) for spec in reversed(_specs())
     ]
     plane = ProcedurePlane(tmp_path / PLANE_DIR)
 

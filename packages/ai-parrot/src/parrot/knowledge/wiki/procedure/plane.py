@@ -124,9 +124,7 @@ class ProcedurePlane:
             result = await store.replace_source_slice(source_id, source_pages)
             pages += result["pages_written"]
 
-        edge_records = [
-            (*edge, spec.id.split(":", maxsplit=1)[0]) for spec in specs for edge in spec.edges()
-        ]
+        edge_records = [(*edge, spec.id.split(":", maxsplit=1)[0]) for spec in specs for edge in spec.edges()]
         edges = await store.add_edges(edge_records)
         publish_index(self.plane_dir, compile_index(specs, sources, root=root, probe_costs=probe_costs))
         self.logger.info("procedure plane built: %d pages, %d edges", pages, edges)
