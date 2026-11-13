@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-890 — Expert stages, dispatch modes, generic gate host and SDD expert delegation
 **Spec**: `sdd/specs/expert-stages-and-delegation.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M
 **Depends-on**: TASK-5624
@@ -173,4 +173,15 @@ def compile_scope(grid: ScopeGrid, *, registry: "ExpertRegistry") -> "FlowDefini
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+
+- Task: TASK-5625
+- Feature: expert-stages-and-delegation
+- Implementation SHA: 31e0ea2b745843b140f368d0018cac3a5207c864
+- Closed at (UTC): 2026-11-13T22:37:38+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 558.4s · Tokens: n/a |

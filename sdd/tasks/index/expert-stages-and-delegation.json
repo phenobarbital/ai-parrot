@@ -343,7 +343,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -353,8 +353,9 @@
       "parallelism_notes": "emits node type 'expert_stage' registered by TASK-5624 (stages/node.py) and uses ScopeGrid from TASK-5620; edits pyproject package-data",
       "assigned_to": null,
       "started_at": "2026-11-13T18:41:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5625-expert-scope-compiler.md"
+      "completed_at": "2026-11-13T22:37:38+00:00",
+      "file": "sdd/tasks/completed/TASK-5625-expert-scope-compiler.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5626",
