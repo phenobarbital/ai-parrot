@@ -1,0 +1,55 @@
+{
+  "feature": "bots-abstract-tech-debt",
+  "feature_id": "FEAT-894",
+  "spec": "sdd/specs/bots-abstract-tech-debt.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-13T23:17:47+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/unit/bots/test_finalize_persist_turn.py",
+          "packages/ai-parrot/tests/unit/bots/test_turn_publish_after_save.py",
+          "packages/ai-parrot/tests/integration/test_guardrails_output.py",
+          "packages/ai-parrot/tests/integration/test_security_guardrails_e2e.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:096ed35c811577b7fd54ca0a76f5c9ffa53d2a24b40d531d7f68c9f057795322"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5683",
+      "slug": "scan-passing-output-wrapper",
+      "title": "Scan a presentation wrapper in response.response when the OUTPUT pipeline passes",
+      "feature_id": "FEAT-894",
+      "feature": "bots-abstract-tech-debt",
+      "spec": "sdd/specs/bots-abstract-tech-debt.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "single task; files: bots/abstract.py, tests/unit/bots/test_finalize_persist_turn.py; no shared resources",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "discovered_from": "issue:a20713dc67a6",
+      "file": "sdd/tasks/active/TASK-5683-scan-passing-output-wrapper.md"
+    }
+  ]
+}
