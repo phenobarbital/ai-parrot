@@ -104,6 +104,8 @@ forks (Claude Code). Codex has no forks: research always runs sequentially and
    - This is optional and non-blocking — it gathers advisory contributions from domain experts
      before synthesis. The command writes findings to `sdd/state/.contributions/<doc-slug>/`.
    - List findings: read each `<expert>.json` in the contributions directory.
+   - Record each decision with `parrot sdd experts triage <contribution> <finding-id> confirm|reject|escalate --reason "..."`;
+     a confirmed finding can later become an unreviewed decision with `parrot sdd experts promote <contribution> <finding-id>`.
    - Triage each finding as CONFIRM, REJECT, or ESCALATE:
      - CONFIRM: fold the finding into the synthesis with a reference to the contribution file.
      - REJECT: note the rejection reason in a brief comment; do not include in synthesis.
