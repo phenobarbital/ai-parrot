@@ -165,7 +165,7 @@
       "feature_id": "FEAT-887",
       "feature": "sdd-experience-memory",
       "spec": "sdd/specs/sdd-experience-memory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -175,8 +175,9 @@
       "parallelism_notes": "service: TASK-5592: consumes the index contract in packages/ai-parrot/src/parrot/knowledge/wiki/experience/index.py, packages/ai-parrot/src/parrot/knowledge/wiki/project.py",
       "assigned_to": null,
       "started_at": "2026-11-13T19:26:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5593-service.md"
+      "completed_at": "2026-11-13T20:40:41+00:00",
+      "file": "sdd/tasks/completed/TASK-5593-service.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5594",
