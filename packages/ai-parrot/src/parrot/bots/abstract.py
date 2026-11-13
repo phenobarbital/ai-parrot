@@ -3001,6 +3001,8 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         if self.turn_publisher is None and allocator is None:
             return
         if turn.timestamp.tzinfo is None:
+            # A naive timestamp produced by this process (``datetime.now()``) is LOCAL time: ``astimezone`` keeps
+            # the instant. (Stored rows are different: the readers treat a naive stored value as UTC, spec §7.)
             turn.timestamp = turn.timestamp.astimezone(timezone.utc)
         if turn.sequence is not None:
             return
@@ -3008,7 +3010,12 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
             allocator = self._local_sequence_allocator()
         source = self.hydration_source
         floor = None if source is None else (lambda: source.max_sequence(self.name, user_id, session_id))
-        turn.sequence = await allocator.next(self.name, user_id, session_id, floor=floor)
+        try:
+            turn.sequence = await allocator.next(self.name, user_id, session_id, floor=floor)
+        except Exception as exc:  # noqa: BLE001 - a counter/floor outage must not lose the user's answer
+            self.logger.warning(
+                "sequence allocation failed for %s/%s (%s); using the local allocator", user_id, session_id, exc)
+            turn.sequence = await self._local_sequence_allocator().next(self.name, user_id, session_id)
 
     async def _publish_turn_completed(
         self,

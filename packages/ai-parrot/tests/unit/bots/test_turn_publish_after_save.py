@@ -239,3 +239,40 @@ async def test_stream_and_conversation_publish_with_history_disabled():
                            use_conversation_history=False)
     assert len(bot.turn_publisher.events) == 2
 
+
+
+async def test_sequence_floor_failure_does_not_fail_the_round(caplog):
+    """A durable-maximum lookup that fails must degrade to the local allocator, not lose the answer."""
+    from parrot.memory import LocalSequenceAllocator
+    from parrot.memory.hydration import HydrationSource, HydrationUnavailableError
+
+    class _BrokenFloor(HydrationSource):
+        async def load_turns(self, *a, **kw):
+            return None
+
+        async def is_deleted(self, *a, **kw):
+            return False
+
+        async def max_sequence(self, *a, **kw):
+            raise HydrationUnavailableError("cold store down")
+
+    bot = await _bot(lambda mem: RecordingPublisher(mem, "uuid-1"))
+    bot.hydration_source = _BrokenFloor()
+    bot.sequence_allocator = LocalSequenceAllocator()
+    response = await _round(bot)
+    assert response.output == "reply" or response.response == "reply"
+    assert bot.turn_publisher.events[0].turn["sequence"] >= 1
+    assert any("sequence allocation failed" in r.getMessage() for r in caplog.records)
+
+
+async def test_naive_local_timestamp_keeps_its_instant():
+    from datetime import datetime, timezone
+    from parrot.memory import ConversationTurn
+
+    bot = await _bot(lambda mem: RecordingPublisher(mem, "uuid-1"))
+    naive = datetime.now()  # what the ConversationTurn default factory produces: local time
+    turn = ConversationTurn(turn_id="t", user_id="u", user_message="q", assistant_response="a",
+                            chatbot_id="uuid-1", timestamp=naive)
+    await bot._stamp_turn_ordering("u", "s", turn)
+    assert turn.timestamp.tzinfo is not None
+    assert turn.timestamp == naive.astimezone(timezone.utc)
