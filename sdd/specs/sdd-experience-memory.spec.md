@@ -1081,7 +1081,7 @@ session scratchpad, trivial `ls /nonexistent…` / `echo` prompts) unless marked
 - ~~`hooks` field on `ClaudeAgentRunOptions`~~ — the `claude-code` seat gets hooks only through settings JSON
 - ~~`aggregated_output` parsing in the codex dispatcher~~ — today only `command`, `exit_code`, `status` are read; the field is present in the stream (verified) and M8 adds the read
 - ~~a structured exit code in agy / gemini stream events~~ — agy 1.5.8 reports it only as the text `Command exited with code N.` in `tool_info.output`; gemini: only `error` / `status == "error"`
-- ~~`step_type == "tool_call"` / `"tool_response"` in agy 1.5.8 stream-json~~ — 1.5.8 emits `step_type: "tool"` with `tool_info`; the existing branches at `google_coding.py:493–495` and `:549`/`:564` never match (pre-existing drift, outside this feature)
+- ~~`step_type == "tool_call"` / `"tool_response"` in agy 1.5.8 stream-json~~ — 1.5.8 emits `step_type: "tool"` with `tool_info`; the existing branches at `google_coding.py:493–495` and `:549`/`:564` never match (pre-existing drift, outside this feature: `issue:339fbb135e7f`; share the parser with M8)
 - ~~the command outcome in agy's `PostToolUse` payload~~ — `error` is empty for a non-zero exit; read it from `transcriptPath` at `PostInvocation`
 - ~~an exit code in codex's `PostToolUse` payload~~ — `tool_response` is the bare output string; read `exit_code` from the rollout at `transcript_path` by `tool_use_id`
 - ~~experience hooks in agent frontmatter~~ — settings-level hooks reach subagents; frontmatter would double-record
