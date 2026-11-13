@@ -352,11 +352,19 @@ def _dispatch(script: str, load_entry: Callable[[], Callable[[], Any]]) -> int:
 
 SDD_HOOK_ARGV = ["sdd", "worktree", "guard", "--hook"]
 DANGEROUS_HOOK_ARGV = ["sdd", "hooks", "dangerous-actions", "--hook"]  # FEAT-633 C32
+EXPERIENCE_HOOK_ARGV = ["sdd", "experience", "hook"]
 
 
 def main_parrot() -> int:
     """``parrot`` console script (real entry ``parrot.cli:cli``; keeps the C16 sdd-hook fast path)."""
     def load() -> Callable[[], Any]:
+        if sys.argv[1:4] == EXPERIENCE_HOOK_ARGV:
+            try:
+                from parrot.sdd.scripts.experience_hook import main
+
+                return lambda: main(sys.argv[4:])
+            except Exception:
+                return lambda: 0
         if sys.argv[1:] == SDD_HOOK_ARGV:
             from parrot.sdd.scripts.worktree_environment import main as hook_main
 
