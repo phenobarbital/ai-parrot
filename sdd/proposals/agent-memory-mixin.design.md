@@ -402,6 +402,7 @@ Requisitos que FEAT-889 espera de este spec (su §2, «Incoming requirements»):
 | R6 | El manager unificado llama a `BrainService.search()` y no retiene `BrainStore`. |
 | R7 | La operación `forget` de memoria de usuario llama a `BrainService.forget_derived()`. |
 | R8 | Los episodios de herramientas y resultados se graban en la ruta unificada. Sin ellos nada es elegible: FEAT-889 excluye de la consolidación los turnos conversacionales sin resultado verificado. |
-| R9 | Registrar `BrainAdminToolkit` en un agente es un opt-in explícito. |
+| R9 | Nada registra `BrainAdminToolkit` en el `ToolManager` del agente. Lo monta solo el handler HTTP, por petición y cuando PBAC lo permite (FEAT-889 M6). |
+| R10 | El mixin expone el servicio como `self.brain_service` (`BrainService \| None`) para que el handler pueda alcanzarlo. |
 
 Este documento tampoco menciona FEAT-886 (`durable-conversation-memory`), que tiene tareas abiertas sobre el historial conversacional; conviene comprobar el solape con el §3 antes de redactar el spec rector.
