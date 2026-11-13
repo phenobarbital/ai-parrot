@@ -2250,7 +2250,9 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 # PandasAgent has NO output pipeline; its post-processed `answer_text` stays authoritative over
                 # `response.to_text` (which would dump a whole DataFrame for an empty answer). The answer is
                 # already computed: a failed save does not fail the request, as before FEAT-886, but it is
-                # logged at ERROR (ids only), never hidden at debug.
+                # logged at ERROR (ids only), never hidden at debug. The persisted text still carries an OUTPUT
+                # verdict: `_stored_turn_text` scans it (inside the try, so a failing guardrail skips the save
+                # instead of storing unscanned text).
                 _commit = None
                 if compaction_result is not None:
                     _commit = self.build_compaction_commit(
@@ -2258,11 +2260,12 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                         self.estimate_prompt_tokens(rendered_history, system_prompt, question),
                     )
                 try:
+                    _stored_text = (await self._stored_turn_text(response, str(answer_text))) if answer_text else None
                     await self._persist_finalized_turn(
                         response, question=question, user_id=user_id, session_id=session_id,
                         turn_id=response.turn_id or turn_id,
                         use_history=bool(use_conversation_history and memory), compaction=_commit,
-                        assistant_text=answer_text or "",
+                        assistant_text=_stored_text or "",
                     )
                 except Exception as _save_exc:  # noqa: BLE001 - the answer is returned regardless
                     self.logger.error(

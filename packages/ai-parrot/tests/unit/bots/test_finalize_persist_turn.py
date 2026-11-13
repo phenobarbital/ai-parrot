@@ -217,6 +217,30 @@ async def test_pandas_agent_save_failure_returns_the_answer_and_is_logged_at_err
     assert any(r.levelname == "ERROR" and "persisting turn_id" in r.getMessage() for r in caplog.records)
 
 
+class _PandasSecretClient(_PandasClient):
+    async def ask(self, prompt: str, **kwargs: Any) -> AIMessage:
+        text = f"your key is API_KEY={SECRET}"
+        return AIMessage(input=prompt, output=text, response=text, model="fake", provider="fake",
+                         usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0))
+
+
+async def test_pandas_agent_persisted_text_carries_an_output_verdict():
+    """PandasAgent runs no output pipeline; the text it stores and publishes is still scanned."""
+    from parrot.bots.guardrails.base import GuardrailStage
+    from parrot.bots.guardrails.builtin.secrets import SecretsGuardrail
+
+    agent = _pandas()
+    agent._llm = _PandasSecretClient()  # type: ignore[assignment]
+    agent._guardrail_pipelines[GuardrailStage.OUTPUT].add(SecretsGuardrail())
+    await agent.ask("hola", user_id="u", session_id="s", return_structured=False)
+    history = await agent.conversation_memory.get_history("u", "s", chatbot_id=agent.memory_key_id)
+    stored = history.turns[0].assistant_response
+    published = agent.turn_publisher.events[0].turn["assistant_response"]
+    for text in (stored, published):
+        assert SECRET not in text, text
+        assert "REDACTED" in text, text
+
+
 def test_voice_saves_run_the_deletion_guard_first():
     """Every `save_conversation_turn` in bots/voice.py is immediately preceded by `_guard_session`."""
     import parrot.bots.voice as voice
