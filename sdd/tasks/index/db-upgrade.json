@@ -289,7 +289,7 @@
       "feature_id": "FEAT-884",
       "feature": "db-upgrade",
       "spec": "sdd/specs/db-upgrade.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -302,8 +302,9 @@
       "parallelism_notes": "Consumes checks.status from TASK-5555, runner from TASK-5556, UI/crew providers/resources from TASK-5560, and remaining runtime SQL from TASK-5561. Exclusive: fixtures execute DDL and roles on a dedicated PostgreSQL test instance.",
       "assigned_to": null,
       "started_at": "2026-11-12T23:12:58+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5565-migration-runtime-db-tests.md"
+      "completed_at": "2026-11-13T00:06:02+00:00",
+      "file": "sdd/tasks/completed/TASK-5565-migration-runtime-db-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5566",

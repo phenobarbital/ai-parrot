@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-884 — Packaged PostgreSQL migrations
 **Spec**: `sdd/specs/db-upgrade.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5555, TASK-5556, TASK-5560, TASK-5561
@@ -161,4 +161,15 @@ async def test_runtime_db_contract() -> None:
 
 ## Completion Note
 
-Populated by the task finalizer after verified implementation.
+
+- Task: TASK-5565
+- Feature: db-upgrade
+- Implementation SHA: fef9e4da7bd599f139c8793e526cbe413570eac2
+- Closed at (UTC): 2026-11-13T00:06:02+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: glm (retry after glm5 timeout) · Backend: nova · Model: zai.glm-4.7-flash · Attempts: 2 · Duration: 965s · Tokens: 2410760/10152 |
