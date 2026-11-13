@@ -80,9 +80,10 @@ def test_hook_envelopes_per_host(tmp_path: Path) -> None:
     assert experience_hook.render(advice, host="agy", event="post-invocation") == {
         "injectSteps": [{"systemMessage": {"systemMessage": advice}}]
     }
-    assert experience_hook.command_of(
-        {"tool_name": "Bash", "tool_input": {"command": "gh pr edit 12"}}, "claude"
-    ) == "gh pr edit 12"
+    assert (
+        experience_hook.command_of({"tool_name": "Bash", "tool_input": {"command": "gh pr edit 12"}}, "claude")
+        == "gh pr edit 12"
+    )
     assert experience_hook.outcome_of(
         {"tool_name": "Bash", "tool_input": {"command": "gh pr edit 12"}, "error": "denied"},
         "claude",
@@ -98,12 +99,15 @@ def test_hook_envelopes_per_host(tmp_path: Path) -> None:
         "codex",
         "post",
     ) == (False, "permission denied")
-    assert experience_hook.handle_post(
-        {"tool_name": "Bash", "tool_input": {"command": "gh pr edit 12"}},
-        host="codex",
-        event="post",
-        plane_dir=plane,
-    ) is None
+    assert (
+        experience_hook.handle_post(
+            {"tool_name": "Bash", "tool_input": {"command": "gh pr edit 12"}},
+            host="codex",
+            event="post",
+            plane_dir=plane,
+        )
+        is None
+    )
 
 
 def test_hook_session_key_includes_agent_id(tmp_path: Path) -> None:

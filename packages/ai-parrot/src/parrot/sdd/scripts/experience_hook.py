@@ -306,7 +306,12 @@ def handle_post_invocation(payload: Mapping[str, Any], *, plane_dir: Path) -> st
         step = pending.get("step_idx")
         command = pending.get("command")
         observation = pending.get("observation_id")
-        if not isinstance(step, int) or isinstance(step, bool) or not isinstance(command, str) or not isinstance(observation, str):
+        if (
+            not isinstance(step, int)
+            or isinstance(step, bool)
+            or not isinstance(command, str)
+            or not isinstance(observation, str)
+        ):
             continue
         outcome = agy_outcome(Path(transcript), step, max_bytes=_MAX_TRANSCRIPT_TAIL_BYTES)
         if outcome is None:
@@ -424,7 +429,9 @@ def _trigger_matcher(plane_dir: Path):
             if not isinstance(stub, Mapping) or stub.get("subcommand") != subcommand:
                 continue
             tokens = stub.get("error_tokens")
-            if isinstance(tokens, list) and all(isinstance(token, str) and token.casefold() in normalized_error for token in tokens):
+            if isinstance(tokens, list) and all(
+                isinstance(token, str) and token.casefold() in normalized_error for token in tokens
+            ):
                 return stub
         return None
 
