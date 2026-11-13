@@ -346,9 +346,9 @@ def _settings(root: Path) -> dict[str, Any]:
         return {
             "enabled": procedure.get("enabled", True) if isinstance(procedure.get("enabled", True), bool) else True,
             "enforce": procedure.get("enforce", True) if isinstance(procedure.get("enforce", True), bool) else True,
-            "hotfix_base": payload.get("hotfix_base", "main")
-            if isinstance(payload.get("hotfix_base", "main"), str)
-            else "main",
+            "hotfix_base": (
+                payload.get("hotfix_base", "main") if isinstance(payload.get("hotfix_base", "main"), str) else "main"
+            ),
         }
     except (AttributeError, OSError, TypeError, ValueError):
         return defaults
@@ -395,9 +395,7 @@ def _probe_task_depends_done(checkout: Path, scope: Mapping[str, str], args: Map
     tasks = index.get("tasks", [])
     if not isinstance(tasks, list):
         return None
-    statuses = {
-        item.get("id"): item.get("status") for item in tasks if isinstance(item, Mapping) and item.get("id")
-    }
+    statuses = {item.get("id"): item.get("status") for item in tasks if isinstance(item, Mapping) and item.get("id")}
     dependencies = task.get("depends_on", [])
     if not isinstance(dependencies, list) or not all(isinstance(item, str) for item in dependencies):
         return None
@@ -412,9 +410,7 @@ def _probe_feature_tasks_done(checkout: Path, scope: Mapping[str, str], args: Ma
     tasks = index.get("tasks", [])
     if not isinstance(tasks, list):
         return None
-    return all(
-        isinstance(item, Mapping) and item.get("status") in {"done", "done-with-issues"} for item in tasks
-    )
+    return all(isinstance(item, Mapping) and item.get("status") in {"done", "done-with-issues"} for item in tasks)
 
 
 def _probe_flow_base_allowed(checkout: Path, scope: Mapping[str, str], args: Mapping[str, str]) -> bool | None:

@@ -190,7 +190,9 @@ def _repo(tmp_path: Path, *, status: str = "in-progress", config: dict | None = 
                 "preconditions": [{"probe": "env.not_worker_sandbox", "expect": True, "cost": "local"}],
             },
         },
-        "sources": [{"path": "sdd/procedures/sdd-workflow.yaml", "sha1": hashlib.sha1(source.read_bytes()).hexdigest()}],
+        "sources": [
+            {"path": "sdd/procedures/sdd-workflow.yaml", "sha1": hashlib.sha1(source.read_bytes()).hexdigest()}
+        ],
     }
     index_path = root / "sdd" / "tasks" / "index" / "demo.json"
     index_path.write_text(json.dumps({"feature": "demo", "tasks": index["tasks"]}), encoding="utf-8")
@@ -207,10 +209,14 @@ def _repo(tmp_path: Path, *, status: str = "in-progress", config: dict | None = 
 def test_guard_decision_table(tmp_path: Path) -> None:
     """Exercise every local row of the guard decision table."""
     root = _repo(tmp_path)
-    assert advice.evaluate_command("git mv sdd/tasks/active/TASK-1.md sdd/tasks/completed/", root, env={}).decision == "deny"
-    assert "parrot sdd task close" in advice.evaluate_command(
-        "git mv sdd/tasks/active/TASK-1.md sdd/tasks/completed/", root, env={}
-    ).text
+    assert (
+        advice.evaluate_command("git mv sdd/tasks/active/TASK-1.md sdd/tasks/completed/", root, env={}).decision
+        == "deny"
+    )
+    assert (
+        "parrot sdd task close"
+        in advice.evaluate_command("git mv sdd/tasks/active/TASK-1.md sdd/tasks/completed/", root, env={}).text
+    )
     assert advice.evaluate_command("parrot sdd task close TASK-2 demo verified", root, env={}).decision == "deny"
     assert advice.evaluate_command("parrot sdd task close TASK-1 demo verified", root, env={}).decision == "none"
     assert advice.evaluate_command("parrot sdd task close TASK-9 demo verified", root, env={}).decision == "advise"
@@ -225,7 +231,12 @@ def test_escape_downgrades_deny(tmp_path: Path, switch: str) -> None:
     """Each supported escape switch changes a denial into an advisory."""
     config = {"procedure": {"enforce": False}} if switch == "enforce-false" else None
     env = {} if config else {switch: "1"}
-    assert advice.evaluate_command("git mv sdd/tasks/active/TASK-1.md sdd/tasks/completed/", _repo(tmp_path, config=config), env=env).decision == "advise"
+    assert (
+        advice.evaluate_command(
+            "git mv sdd/tasks/active/TASK-1.md sdd/tasks/completed/", _repo(tmp_path, config=config), env=env
+        ).decision
+        == "advise"
+    )
 
 
 def test_stale_index_is_silent(tmp_path: Path) -> None:
@@ -233,15 +244,24 @@ def test_stale_index_is_silent(tmp_path: Path) -> None:
     root = _repo(tmp_path)
     source = root / "sdd" / "procedures" / "sdd-workflow.yaml"
     source.write_text("changed\n", encoding="utf-8")
-    assert advice.evaluate_command("git mv sdd/tasks/active/TASK-1.md sdd/tasks/completed/", root, env={}).decision == "none"
+    assert (
+        advice.evaluate_command("git mv sdd/tasks/active/TASK-1.md sdd/tasks/completed/", root, env={}).decision
+        == "none"
+    )
     source.unlink()
-    assert advice.evaluate_command("git mv sdd/tasks/active/TASK-1.md sdd/tasks/completed/", root, env={}).decision == "none"
+    assert (
+        advice.evaluate_command("git mv sdd/tasks/active/TASK-1.md sdd/tasks/completed/", root, env={}).decision
+        == "none"
+    )
 
 
 def test_disabled_and_absent_plane_are_silent(tmp_path: Path) -> None:
     """A disabled or absent procedure plane never emits advice."""
     disabled = _repo(tmp_path / "disabled", config={"procedure": {"enabled": False}})
-    assert advice.evaluate_command("git mv sdd/tasks/active/TASK-1.md sdd/tasks/completed/", disabled, env={}).decision == "none"
+    assert (
+        advice.evaluate_command("git mv sdd/tasks/active/TASK-1.md sdd/tasks/completed/", disabled, env={}).decision
+        == "none"
+    )
     absent = tmp_path / "absent"
     (absent / ".git").mkdir(parents=True)
     (absent / ".git" / "HEAD").write_text("ref: refs/heads/feat-demo\n", encoding="utf-8")
@@ -256,7 +276,16 @@ def test_apply_check_semantics(tmp_path: Path) -> None:
         seen["expect"] = args["expect"]
         return args["expect"] == "in-progress|done"
 
-    assert advice.apply_check({"probe": "custom", "expect": "in-progress|done"}, tmp_path, {}, probes={"custom": probe}) is True
+    assert (
+        advice.apply_check({"probe": "custom", "expect": "in-progress|done"}, tmp_path, {}, probes={"custom": probe})
+        is True
+    )
     assert seen["expect"] == "in-progress|done"
-    assert advice.apply_check({"probe": "custom", "expect": True}, tmp_path, {}, probes={"custom": lambda *_: True}) is True
-    assert advice.apply_check({"probe": "custom", "expect": True}, tmp_path, {}, probes={"custom": lambda *_: None}) is None
+    assert (
+        advice.apply_check({"probe": "custom", "expect": True}, tmp_path, {}, probes={"custom": lambda *_: True})
+        is True
+    )
+    assert (
+        advice.apply_check({"probe": "custom", "expect": True}, tmp_path, {}, probes={"custom": lambda *_: None})
+        is None
+    )
