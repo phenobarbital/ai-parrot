@@ -386,6 +386,12 @@ def build_framework_tools(context: WikiOperationContext) -> tuple[list[Any], lis
 
         tools = tools + create_schema_tools(read_store, root, config, context.schema_service)
 
+    # FEAT-891: procedure-plane tool; [] when no plane has been built.
+    with contextlib.redirect_stdout(sys.stderr):
+        from parrot_tools.wiki.procedure import create_procedure_tools
+
+        tools = tools + create_procedure_tools(read_store, root, config)
+
     # Obsidian vault exposure: when the project has a vault, register the full
     # ObsidianToolkit plus the wiki-side vault_ingest tool.
     vault_tools: list[Any] = []
