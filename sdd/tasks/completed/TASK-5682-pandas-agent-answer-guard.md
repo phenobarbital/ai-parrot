@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-893 — PandasAgent.ask — OUTPUT guardrails on the returned answer
 **Spec**: `sdd/specs/bots-data-fixes-2.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -279,10 +279,26 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Code (/sdd-fix, actor agent:sdd-fix:6f7cf2c8)
+**Date**: 2026-11-14
+**Notes**: Implemented in commits 2de001b1fb and 088db53801 (codex review fixes). `PandasAgent._guard_answer`
+runs `_run_output_pipeline`, then judges every other copy of the answer text: `response.response`, the
+`explanation` of each structured `PandasAgentResponse` (`data_response` and a distinct `structured_output`
+instance), and `metadata["explanation"]`, which the infographic and interactive finalizers record. Each distinct
+text is judged once, and texts `_run_output_pipeline` / `_propagate_output_verdict` already judged reuse that
+verdict. A BLOCK replaces every answer text with `_OUTPUT_BLOCKED_TEXT` and sets `security_block`. The guard
+runs on all six return sites. The main path calls it after the markdown repair and before `answer_memory`, and
+the persisted turn reuses the judged text without a second `_stored_turn_text` scan.
+Validation (worktree, `PYTHONPATH=packages/ai-parrot/src`): `test_pandasagent_output_guardrails.py` and
+`test_finalize_persist_turn.py`: 33 passed. The 5 sibling `test_pandasagent_*.py` modules: 49 passed (on
+2de001b1fb). On an unmodified `origin/dev` baseline, 6 of the first 9 new tests failed. `ruff check` is clean on
+both files. `black` leaves the new lines alone; its 30-line diff on `data.py` is pre-existing and identical to the
+base.
+Codex adversarial review, triaged: #1 metadata explanation CONFIRM (fixed); #3 separate `structured_output`
+instance CONFIRM (hardening, fixed); #4 rescans after a TRANSFORM CONFIRM (fixed). #2, a BLOCK on a wrapper
+scanned by `_propagate_output_verdict` not surfaced in metadata, is REJECTED for this task: it is shared
+`AbstractBot` behaviour, out of scope, with no leak. Filed as `issue:eabc58316d0a`.
 **Resolves**: `issue:3e29dbe2f16a`
-**Deviations from spec**:
+**Deviations from spec**: one widening of spec §2 item 1: the guard also covers `metadata["explanation"]` and a
+distinct `structured_output` instance (review findings #1 and #3). The early-return paths still do not persist the
+turn (spec Non-Goal); this is filed as `issue:8c0bd89928bc`.
