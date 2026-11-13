@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-884 — Packaged PostgreSQL migrations
 **Spec**: `sdd/specs/db-upgrade.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5555, TASK-5556, TASK-5558
@@ -160,4 +160,15 @@ async def test_runner_db_contract() -> None:
 
 ## Completion Note
 
-Populated by the task finalizer after verified implementation.
+
+- Task: TASK-5564
+- Feature: db-upgrade
+- Implementation SHA: 68fbc249556dc6259abee6f93811b4194ff6668f
+- Closed at (UTC): 2026-11-13T00:33:18+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-luna · Backend: codex · Model: gpt-5.6-luna · Attempts: 1 · Duration: 362s · Tokens: n/a · CAVEAT: all 10 live-DB tests SKIPPED (PARROT_MIGRATION_TEST_DSN unset) - no live execution evidence |

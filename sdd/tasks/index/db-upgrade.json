@@ -270,7 +270,7 @@
       "feature_id": "FEAT-884",
       "feature": "db-upgrade",
       "spec": "sdd/specs/db-upgrade.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -282,8 +282,9 @@
       "parallelism_notes": "Consumes checks.status from TASK-5555, upgrade/baseline from TASK-5556, and full bots chain from TASK-5558. Exclusive: intentional lock contention tests share a PostgreSQL database and role mutations require isolated test-instance access.",
       "assigned_to": null,
       "started_at": "2026-11-12T23:12:58+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5564-migration-runner-db-tests.md"
+      "completed_at": "2026-11-13T00:33:18+00:00",
+      "file": "sdd/tasks/completed/TASK-5564-migration-runner-db-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5565",
