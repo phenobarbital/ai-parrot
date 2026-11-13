@@ -61,6 +61,51 @@ def test_reinstall_is_idempotent(empty_repo: Path) -> None:
     assert not any(a.endswith((" — installed", " — upgraded")) or "overwritten" in a for a in actions)
 
 
+def test_worker_hook_ignores_worktree_pythonpath(empty_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Installed hook commands stay portable even with a hostile worktree PYTHONPATH."""
+    monkeypatch.setenv("PYTHONPATH", str(empty_repo / "packages" / "ai-parrot" / "src"))
+    install_sdd_integration(empty_repo, dangerous_guard=False, sdd_coder=False, portable=False)
+    settings = json.loads((empty_repo / ".claude/settings.json").read_text(encoding="utf-8"))
+    commands = [
+        hook["command"]
+        for event in ("PostToolUse", "PostToolUseFailure")
+        for entry in settings["hooks"][event]
+        for hook in entry["hooks"]
+        if hook.get("type") == "command"
+    ]
+    assert commands == [
+        "parrot sdd experience hook --host claude --event post",
+        "parrot sdd experience hook --host claude --event post-failure",
+    ]
+    assert all(str(empty_repo) not in command for command in commands)
+
+
+def test_experience_install_idempotent(empty_repo: Path) -> None:
+    """Upgrade a foreign wheel-shaped command once, then preserve the stable managed settings."""
+    install_sdd_integration(empty_repo, dangerous_guard=False, sdd_coder=False, portable=False)
+    settings_path = empty_repo / ".claude/settings.json"
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    settings["hooks"]["PostToolUse"][0]["hooks"][0][
+        "command"
+    ] = "/foreign-wheel/bin/parrot sdd experience hook --host claude --event post"
+    settings["hooks"]["PostToolUse"].append(
+        {"matcher": "Bash", "hooks": [{"type": "command", "command": "foreign-command"}]}
+    )
+    settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+
+    actions = install_sdd_integration(empty_repo, dangerous_guard=False, sdd_coder=False, portable=False)
+    upgraded = json.loads(settings_path.read_text(encoding="utf-8"))
+    post_hooks = upgraded["hooks"]["PostToolUse"]
+    assert post_hooks[0]["hooks"][0]["command"] == ("parrot sdd experience hook --host claude --event post")
+    assert any(hook["command"] == "foreign-command" for entry in post_hooks for hook in entry["hooks"])
+    assert any("Claude experience hooks updated" in action for action in actions)
+
+    stable = settings_path.read_bytes()
+    repeat = install_sdd_integration(empty_repo, dangerous_guard=False, sdd_coder=False, portable=False)
+    assert settings_path.read_bytes() == stable
+    assert any("Claude experience hooks already registered" in action for action in repeat)
+
+
 def _tree_digest(root: Path) -> dict[str, str]:
     """{relative path: sha256} for every file under root except .git/ (C5 no-write assertion)."""
     return {

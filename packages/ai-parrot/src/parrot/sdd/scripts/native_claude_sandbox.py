@@ -414,6 +414,48 @@ def native_sandbox_available() -> tuple[bool, str]:
     return outcome
 
 
+def _shared_python(primary: Path) -> Path:
+    """Resolve the primary checkout's shared virtual-environment interpreter."""
+    candidates = (primary / ".venv" / "bin" / "python", primary / ".venv" / "bin" / "python3")
+    for candidate in candidates:
+        try:
+            if candidate.is_file():
+                return candidate.resolve()
+        except OSError:
+            continue
+    return Path(sys.executable).absolute()
+
+
+def _experience_hook_entries(python: Path) -> dict[str, list[dict[str, Any]]]:
+    """Build the two advisory Bash hooks using the absolute shared interpreter."""
+    return {
+        event_name: [
+            {
+                "matcher": "Bash",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": shlex.join(
+                            [
+                                str(python),
+                                "-I",
+                                "-m",
+                                "parrot.sdd.scripts.experience_hook",
+                                "--host",
+                                "claude",
+                                "--event",
+                                event,
+                            ]
+                        ),
+                        "timeout": 5,
+                    }
+                ],
+            }
+        ]
+        for event_name, event in (("PostToolUse", "post"), ("PostToolUseFailure", "post-failure"))
+    }
+
+
 def native_sandbox_settings(
     cwd: Path, *, allowed_domains: Sequence[str] = (), include_sandbox: bool = True
 ) -> dict[str, Any]:
@@ -427,7 +469,7 @@ def native_sandbox_settings(
         The complete native Claude sandbox settings object.
     """
     domains = validate_allowed_domains(allowed_domains)
-    root, git_dir, _primary = _native_roots(cwd)
+    root, git_dir, primary = _native_roots(cwd)
     allow_paths = [root, git_dir, _we.claude_scratch_root(), *_we.worktree_admin_dirs(root, git_dir)]
     allow_paths.extend(_we.shared_ledger_dirs(root, git_dir))
     allow_paths.extend(_we.coder_evidence_dirs(root, git_dir))
@@ -437,11 +479,10 @@ def native_sandbox_settings(
         canonical = str(_canonical(path))
         if canonical not in allow_write:
             allow_write.append(canonical)
-    # `-m` keeps the command free of monorepo paths (C16): the launching interpreter can import
+    # `-m` keeps the command free of monorepo paths (C16): the shared interpreter can import
     # parrot in every supported context (venv editable install, wheel install in a foreign repo).
-    hook_command = (
-        shlex.join([sys.executable, "-m", "parrot.sdd.scripts.worktree_environment", "--hook"]) + " || exit 2"
-    )
+    python = _shared_python(primary)
+    hook_command = shlex.join([str(python), "-m", "parrot.sdd.scripts.worktree_environment", "--hook"]) + " || exit 2"
     settings: dict[str, Any] = {
         "hooks": {
             "PreToolUse": [
@@ -452,6 +493,7 @@ def native_sandbox_settings(
             ]
         }
     }
+    settings["hooks"].update(_experience_hook_entries(python))
     if include_sandbox:
         settings["sandbox"] = {
             "enabled": True,
