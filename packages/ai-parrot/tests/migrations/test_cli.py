@@ -77,9 +77,7 @@ def test_default_repeated_and_all_selection(installed_sets, monkeypatch) -> None
     runner = CliRunner()
 
     default = runner.invoke(migration_group, ["status", "--dsn", "test"])
-    repeated = runner.invoke(
-        migration_group, ["status", "--set", "recipes", "--set", "bots", "--dsn", "test"]
-    )
+    repeated = runner.invoke(migration_group, ["status", "--set", "recipes", "--set", "bots", "--dsn", "test"])
     all_sets = runner.invoke(migration_group, ["status", "--all", "--dsn", "test"])
 
     assert default.exit_code == repeated.exit_code == all_sets.exit_code == 0
@@ -167,9 +165,7 @@ def test_new_scaffolds_locally_without_connection(tmp_path: Path, monkeypatch) -
 def test_baseline_requires_explicit_set_and_valid_prefix(installed_sets, monkeypatch) -> None:
     """Baseline requires one explicit set and maps an invalid prefix to configuration exit 3."""
     missing = CliRunner().invoke(migration_group, ["baseline", "--through", "1", "--dsn", "test"])
-    invalid = CliRunner().invoke(
-        migration_group, ["baseline", "--set", "bots", "--through", "0", "--dsn", "test"]
-    )
+    invalid = CliRunner().invoke(migration_group, ["baseline", "--set", "bots", "--through", "0", "--dsn", "test"])
     assert missing.exit_code == invalid.exit_code == 3
     assert "--set" in missing.output
     assert "positive migration sequence" in invalid.output
