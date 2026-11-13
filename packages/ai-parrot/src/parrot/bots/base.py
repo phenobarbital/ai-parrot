@@ -638,33 +638,6 @@ class BaseBot(AbstractBot):
                         if extracted_data and not response.data:
                             response.data = extracted_data
 
-                    # Save conversation turn
-                    if (use_conversation_history and memory) or self._publishes_turns(user_id, session_id):
-                        turn = ConversationTurn.from_ai_message(
-                            user_message=question,
-                            response=response,
-                            user_id=user_id,
-                            chatbot_id=self.memory_key_id,
-                            turn_id=turn_id,
-                            context_used=vector_context if use_vector_context else None,
-                            # FEAT-538: when the turn was observed these
-                            # REPLACE the tool_calls conversion, so a call
-                            # is never listed twice. None keeps the legacy
-                            # derivation for an unobserved turn.
-                            tool_invocations=self.observed_tool_invocations(),
-                        )
-                        commit = None
-                        if compaction_result is not None:
-                            commit = self.build_compaction_commit(
-                                compaction_result,
-                                self.estimate_prompt_tokens(rendered_history, system_prompt, question),
-                            )
-                        _snapshot = await self._save_or_snapshot_turn(
-                            user_id, session_id, turn, use_history=bool(use_conversation_history and memory),
-                            compaction=commit, publish=True,
-                            presentation=self._turn_presentation(response, output_mode=output_mode, started=_conv_started_ms),
-                        )
-
                     # FEAT-176: emit AfterInvokeEvent on success.
                     _conv_duration_ms = (time.perf_counter() - _conv_started_ms) * 1000
                     await self.events.emit(
@@ -680,8 +653,22 @@ class BaseBot(AbstractBot):
                             session_id=current_session_id.get(),
                         )
                     )
-                    # return the response Object:
-                    return await self.get_response(response, return_sources, return_context)
+                    # `get_response` runs the output pipeline: save + publish AFTER it, once, from the response
+                    # the caller receives (single shared step, FEAT-886).
+                    final = await self.get_response(response, return_sources, return_context)
+                    _commit = None
+                    if compaction_result is not None:
+                        _commit = self.build_compaction_commit(
+                            compaction_result,
+                            self.estimate_prompt_tokens(rendered_history, system_prompt, question),
+                        )
+                    await self._persist_finalized_turn(
+                        final, question=question, user_id=user_id, session_id=session_id, turn_id=turn_id,
+                        use_history=bool(use_conversation_history and memory),
+                        context_used=vector_context if use_vector_context else None,
+                        compaction=_commit, output_mode=output_mode, started=_conv_started_ms,
+                    )
+                    return final
             finally:
                 await self._llm.close()
 
@@ -894,36 +881,25 @@ class BaseBot(AbstractBot):
                 if response_model:
                     return response  # return structured response directly
 
-                # Return the response
-                # Save conversation turn
-                if (use_conversation_history and memory) or self._publishes_turns(user_id, session_id):
-                    turn = ConversationTurn.from_ai_message(
-                        user_message=question,
-                        response=response,
-                        user_id=user_id,
-                        chatbot_id=self.memory_key_id,
-                        turn_id=turn_id,
-                        context_used=None,  # invoke does not use vector context,
-                        # FEAT-538: see the note at the ordinary save site.
-                        tool_invocations=self.observed_tool_invocations(),
-                    )
-                    commit = None
-                    if compaction_result is not None:
-                        commit = self.build_compaction_commit(
-                            compaction_result,
-                            self.estimate_prompt_tokens(rendered_history, system_prompt, question),
-                        )
-                    _snapshot = await self._save_or_snapshot_turn(
-                        user_id, session_id, turn, use_history=bool(use_conversation_history and memory),
-                        compaction=commit, publish=True,
-                        presentation=self._turn_presentation(response, output_mode=None, started=_invoke_started),
-                    )
-
                 self._trigger_event(
                     self.EVENT_TASK_COMPLETED, agent_name=self.name, session_id=session_id, result=response.output
                 )
 
-                return await self.get_response(response, return_sources=False, return_context=False)
+                final = await self.get_response(response, return_sources=False, return_context=False)
+                # save + publish AFTER the output pipeline, once, from the response the caller receives
+                _commit = None
+                if compaction_result is not None:
+                    _commit = self.build_compaction_commit(
+                        compaction_result,
+                        self.estimate_prompt_tokens(rendered_history, system_prompt, question),
+                    )
+                await self._persist_finalized_turn(
+                    final, question=question, user_id=user_id, session_id=session_id, turn_id=turn_id,
+                    use_history=bool(use_conversation_history and memory),
+                    context_used=None,  # invoke does not use vector context
+                    compaction=_commit, output_mode=None, started=_invoke_started,
+                )
+                return final
 
         except asyncio.CancelledError:
             self.logger.info("Conversation task was cancelled.")
@@ -1597,29 +1573,7 @@ class BaseBot(AbstractBot):
                 # does for OUTPUT-stage ones.
                 self._merge_guardrail_reports(response, _input_outcome.flag_reports)
 
-                # Build the turn now (the text of the round as produced); it is SAVED and PUBLISHED together,
-                # after the output pipeline, so working memory and the bus never hold text the pipeline
-                # transformed (FEAT-886) and a failure in between can never leave one without the other.
                 phase_started = time.perf_counter()
-                _pending_turn = None
-                if (use_conversation_history and memory) or self._publishes_turns(user_id, session_id):
-                    turn = ConversationTurn.from_ai_message(
-                        user_message=question,
-                        response=response,
-                        user_id=user_id,
-                        chatbot_id=self.memory_key_id,
-                        turn_id=turn_id,
-                        context_used=vector_context if use_vector_context else None,
-                        # FEAT-538: see the note at the ordinary save site.
-                        tool_invocations=self.observed_tool_invocations(),
-                    )
-                    commit = None
-                    if compaction_result is not None:
-                        commit = self.build_compaction_commit(
-                            compaction_result,
-                            self.estimate_prompt_tokens(rendered_history, system_prompt, question),
-                        )
-                    _pending_turn = (turn, commit)
 
                 # Enhance response with metadata
                 vector_info = vector_metadata.get("vector", {})
@@ -1808,36 +1762,20 @@ class BaseBot(AbstractBot):
                 # FEAT-396 (TASK-2029): unified OUTPUT guardrail pipeline —
                 # runs for every output_mode (supersedes the old 4-chat-mode-only
                 # channel-egress scrub branch above).
-                _pre_pipeline = (response.output, response.response)
                 response = await self._run_output_pipeline(response, method="ask")
-                if _pre_pipeline[1] == _pre_pipeline[0] and response.output != _pre_pipeline[0]:
-                    # the pipeline only rewrites `output`; keep the plain-text alias consistent so the redacted
-                    # text is the only one anywhere (caller response, stored turn, published presentation)
-                    response.response = response.output
-                if _pending_turn is not None:
-                    turn, commit = _pending_turn
-                    if (response.output, response.response) != _pre_pipeline:
-                        # a TRANSFORM verdict (e.g. redaction) changed the answer: neither working memory nor the
-                        # bus may keep the pre-pipeline text
-                        turn = ConversationTurn.from_ai_message(
-                            user_message=question,
-                            response=response,
-                            user_id=user_id,
-                            chatbot_id=self.memory_key_id,
-                            turn_id=turn_id,
-                            context_used=vector_context if use_vector_context else None,
-                            tool_invocations=self.observed_tool_invocations(),
-                        )
-                    # one shielded unit: the working-memory write and the publication succeed or are cancelled
-                    # together with the request, never one without the other
-                    await asyncio.shield(
-                        self._save_or_snapshot_turn(
-                            user_id, session_id, turn, use_history=bool(use_conversation_history and memory),
-                            compaction=commit,
-                            presentation=self._turn_presentation(
-                                response, output_mode=output_mode, started=_ask_started_ms),
-                        )
+                # Save + publish ONCE, from the finalized response (single shared step, FEAT-886).
+                _commit = None
+                if compaction_result is not None:
+                    _commit = self.build_compaction_commit(
+                        compaction_result,
+                        self.estimate_prompt_tokens(rendered_history, system_prompt, question),
                     )
+                await self._persist_finalized_turn(
+                    response, question=question, user_id=user_id, session_id=session_id, turn_id=turn_id,
+                    use_history=bool(use_conversation_history and memory),
+                    context_used=vector_context if use_vector_context else None,
+                    compaction=_commit, output_mode=output_mode, started=_ask_started_ms,
+                )
                 self.logger.debug(
                     "[%s] ask timing: memory_add_turn_ms=%.1f",
                     self.name,
@@ -2265,7 +2203,10 @@ class BaseBot(AbstractBot):
                             tool_invocations=self.observed_tool_invocations() or [],
                             error=error_text,
                         )
-                        await self._save_or_snapshot_turn(
+                        # What is stored is what was STREAMED: a TRANSFORM verdict at stream close cannot
+                        # unsend chunks the caller already has, so `full_response` stays authoritative
+                        # (single shared save+publish unit, FEAT-886).
+                        await self._persist_turn_unit(
                             user_id, session_id, turn, use_history=bool(use_conversation_history and memory),
                             compaction=commit,
                             presentation=self._turn_presentation(

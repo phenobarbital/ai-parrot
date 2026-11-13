@@ -1428,10 +1428,11 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             compaction_result = None
             memory = memory or self.conversation_memory
 
+            if not (use_conversation_history and memory):
+                await self._guard_session(user_id, session_id)
             if use_conversation_history and memory:
-                conversation_history = await self.get_conversation_history(
-                    user_id, session_id
-                ) or await self.create_conversation_history(user_id, session_id)
+                # deletion guard + hydration, same as BaseBot (FEAT-886)
+                conversation_history = await self._load_or_hydrate_history(memory, user_id, session_id)
                 # FEAT-524: history goes to the provider as alternating messages.
                 # FEAT-525: budgeted when a context_budget is active; byte
                 # identical to the FEAT-524 plain render otherwise.
@@ -2247,33 +2248,20 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 # this, render_history() always sees an empty history because
                 # PandasAgent reads from conversation_memory but ChatStorage
                 # writes to a separate Redis namespace.
-                if (use_conversation_history and memory) or self._publishes_turns(user_id, session_id):
-                    try:
-                        turn = ConversationTurn.from_ai_message(
-                            user_message=question,
-                            response=response,
-                            user_id=user_id,
-                            chatbot_id=self.memory_key_id,
-                            turn_id=response.turn_id or turn_id,
-                            # PandasAgent's answer text is post-processed, so it
-                            # stays authoritative over response.to_text.
-                            assistant_text=answer_text or "",
-                        )
-                        commit = None
-                        if compaction_result is not None:
-                            commit = self.build_compaction_commit(
-                                compaction_result,
-                                self.estimate_prompt_tokens(rendered_history, system_prompt, question),
-                            )
-                        await self._save_or_snapshot_turn(
-                            user_id, session_id, turn, use_history=bool(use_conversation_history and memory),
-                            compaction=commit, presentation=self._turn_presentation(response, started=None),
-                        )
-                    except Exception as _save_exc:
-                        self.logger.debug(
-                            "Failed to persist conversation turn: %s",
-                            _save_exc,
-                        )
+                # PandasAgent has NO output pipeline: `response.response` (== answer_text) is already the
+                # text the caller receives, so the shared step stores exactly that. A save failure is handled
+                # as in BaseBot (logged at ERROR and raised), never swallowed (FEAT-886).
+                _commit = None
+                if compaction_result is not None:
+                    _commit = self.build_compaction_commit(
+                        compaction_result,
+                        self.estimate_prompt_tokens(rendered_history, system_prompt, question),
+                    )
+                await self._persist_finalized_turn(
+                    response, question=question, user_id=user_id, session_id=session_id,
+                    turn_id=response.turn_id or turn_id,
+                    use_history=bool(use_conversation_history and memory), compaction=_commit,
+                )
 
                 # Post-response: episodic / mixin-provided hook
                 _post_q, _post_resp = question, response

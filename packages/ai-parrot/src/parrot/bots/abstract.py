@@ -2779,6 +2779,82 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
             await self._publish_turn_completed(user_id, session_id, snapshot, presentation)
         return snapshot
 
+    async def _persist_finalized_turn(
+        self,
+        response: AIMessage,
+        *,
+        question: str,
+        user_id: Optional[str],
+        session_id: Optional[str],
+        turn_id: Optional[str],
+        use_history: bool,
+        context_used: Optional[str] = None,
+        compaction: Optional[CompactionCommit] = None,
+        output_mode: Any = None,
+        started: Optional[float] = None,
+        assistant_text: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """The ONE "finalize then persist" step shared by every entry point (FEAT-886).
+
+        Contract: call it AFTER the entry point's output pipeline has run (``_run_output_pipeline`` /
+        ``get_response``). The turn is built here, from the response as the caller will receive it, so the
+        text that is stored, published and later hydrated is ``response.to_text`` — the single
+        "caller-visible text of this response" — and never a pre-pipeline copy. ``assistant_text`` overrides it
+        only for the streaming path, where the streamed text is authoritative.
+
+        Save + publish run as one unit shielded from cancellation: a cancelled request cannot leave working
+        memory and the bus disagreeing. A failure inside the detached unit is logged (ids only, no payload)
+        and re-raised to the awaiting caller; it never surfaces as "Task exception was never retrieved".
+        """
+        use_history = bool(use_history and self.conversation_memory)
+        if not (use_history or self._publishes_turns(user_id, session_id)):
+            return None
+        turn = ConversationTurn.from_ai_message(
+            user_message=question,
+            response=response,
+            user_id=user_id,
+            chatbot_id=self.memory_key_id,
+            turn_id=turn_id,
+            context_used=context_used,
+            assistant_text=assistant_text,
+            # FEAT-538: observed invocations REPLACE the tool_calls conversion (None keeps the legacy derivation).
+            tool_invocations=self.observed_tool_invocations(),
+        )
+        return await self._persist_turn_unit(
+            user_id, session_id, turn, use_history=use_history, compaction=compaction,
+            presentation=self._turn_presentation(response, output_mode=output_mode, started=started),
+        )
+
+    async def _persist_turn_unit(
+        self,
+        user_id: Optional[str],
+        session_id: Optional[str],
+        turn: ConversationTurn,
+        *,
+        use_history: bool,
+        compaction: Optional[CompactionCommit] = None,
+        presentation: Optional[TurnPresentation] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Save + publish ``turn`` as one cancellation-shielded unit (see :meth:`_persist_finalized_turn`)."""
+        unit = asyncio.ensure_future(
+            self._save_or_snapshot_turn(
+                user_id, session_id, turn, use_history=use_history, compaction=compaction,
+                presentation=presentation,
+            )
+        )
+
+        def _log_failure(task: "asyncio.Future[Any]") -> None:
+            if task.cancelled():
+                return
+            exc = task.exception()  # retrieving it also silences "exception was never retrieved"
+            if exc is not None:
+                self.logger.error(
+                    "persisting turn_id=%s failed: %s", turn.turn_id, type(exc).__name__, exc_info=exc
+                )
+
+        unit.add_done_callback(_log_failure)
+        return await asyncio.shield(unit)
+
     async def save_conversation_turn(
         self,
         user_id: str,
@@ -2851,17 +2927,20 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         _user_len = len(getattr(turn, "user_message", "") or "")
         _asst_len = len(getattr(turn, "assistant_response", "") or "")
         _has_tools = bool(getattr(turn, "tools_used", None))
-        await self.events.emit(
-            MessageAddedEvent(
-                trace_context=trace_ctx,
-                agent_name=self.name,
-                role="turn",
-                content_length=_user_len + _asst_len,
-                has_tool_calls=_has_tools,
-                source_type="agent",
-                source_name=self.name,
+        try:  # the turn is already saved (and published): a failing listener must not fail the request
+            await self.events.emit(
+                MessageAddedEvent(
+                    trace_context=trace_ctx,
+                    agent_name=self.name,
+                    role="turn",
+                    content_length=_user_len + _asst_len,
+                    has_tool_calls=_has_tools,
+                    source_type="agent",
+                    source_name=self.name,
+                )
             )
-        )
+        except Exception:  # pylint: disable=broad-except
+            self.logger.error("MessageAddedEvent emit failed turn_id=%s", turn.turn_id, exc_info=True)
 
         # FEAT-525: Stage-2 trigger surface — fires exactly once per session,
         # on the first False -> True flip of the persisted stage2_needed flag.
@@ -3232,8 +3311,10 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         )
         outcome = await pipeline.run(response.output, ctx)
 
+        original = response.output
         if outcome.blocked:
             response.output = "This response could not be delivered due to a content policy violation."
+            await self._propagate_output_verdict(response, original, pipeline, ctx, blocked_text=response.output)
             response.metadata["error"] = "security_block"
             if outcome.reason:
                 response.metadata["block_reason"] = outcome.reason
@@ -3241,11 +3322,41 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
 
         if outcome.content is not None:
             response.output = outcome.content
+            await self._propagate_output_verdict(response, original, pipeline, ctx)
 
         if outcome.flag_reports:
             response.metadata.setdefault("guardrails", {}).update(outcome.flag_reports)
 
         return response
+
+    async def _propagate_output_verdict(
+        self,
+        response: AIMessage,
+        original: str,
+        pipeline: Any,
+        ctx: GuardrailContext,
+        blocked_text: Optional[str] = None,
+    ) -> None:
+        """Make a TRANSFORM/BLOCK verdict reach ``response.response`` too (FEAT-886).
+
+        ``response.response`` is what ``to_text`` (the caller-visible and stored text) prefers. It is either an
+        alias of the pre-pipeline ``output`` or a formatter-wrapped string that embeds it: either way an
+        unredacted copy must not survive there. An alias is replaced; a wrapped string goes through the same
+        pipeline (its report is discarded, only the rewritten text is used).
+        """
+        alias = getattr(response, "response", None)
+        if not isinstance(alias, str) or not alias or alias == response.output:
+            return
+        if blocked_text is not None:
+            response.response = blocked_text
+        elif alias == original:
+            response.response = response.output
+        else:
+            wrapped = await pipeline.run(alias, ctx)
+            if wrapped.blocked:
+                response.response = response.output
+            else:
+                response.response = wrapped.content if wrapped.content is not None else alias
 
     def _merge_guardrail_reports(self, response: AIMessage, flag_reports: Dict[str, Dict[str, Any]]) -> None:
         """Merge FLAG-stage guardrail reports onto ``response.metadata['guardrails']``.

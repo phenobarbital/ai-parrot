@@ -683,6 +683,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
                                     metadata={"timestamp": str(datetime.now())},
                                     chatbot_id=self.memory_key_id,
                                 )
+                                await self._guard_session(user_id, session_id)  # a deleted session is not revived
                                 await self.save_conversation_turn(user_id, session_id, turn)
                                 self.logger.debug(f"Saved turn {current_turn_id} to memory")
 
@@ -722,6 +723,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
                         metadata={"timestamp": str(datetime.now())},
                         chatbot_id=self.memory_key_id,
                     )
+                    await self._guard_session(user_id, session_id)  # a deleted session is not revived
                     await self.save_conversation_turn(user_id, session_id, turn)
                     self.logger.debug(f"Saved final turn {current_turn_id} to memory")
 
