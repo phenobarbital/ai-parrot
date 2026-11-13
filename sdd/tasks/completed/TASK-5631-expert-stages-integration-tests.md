@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-890 — Expert stages, dispatch modes, generic gate host and SDD expert delegation
 **Spec**: `sdd/specs/expert-stages-and-delegation.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M
 **Depends-on**: TASK-5627, TASK-5618
@@ -124,4 +124,15 @@ Spec §4 Integration Tests, AC6, AC9.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+
+- Task: TASK-5631
+- Feature: expert-stages-and-delegation
+- Implementation SHA: da506d454408f72be2a2e0fd492868cb840c8e6c
+- Closed at (UTC): 2026-11-13T23:30:59+00:00
+- Fix commits: ee6b47099854ef530c71350a0f193c2897c6016f
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 1 |
+| seat_summary | Seat: minimax · Backend: nova · Model: minimax.minimax-m2.5 · Attempts: 1 · Duration: 626.6s · Tokens: n/a |

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-890 — Expert stages, dispatch modes, generic gate host and SDD expert delegation
 **Spec**: `sdd/specs/expert-stages-and-delegation.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M
 **Depends-on**: TASK-5628
@@ -139,4 +139,15 @@ async def promote_finding(contribution_path: "Path", finding_id: str, *, repo_ro
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+
+- Task: TASK-5629
+- Feature: expert-stages-and-delegation
+- Implementation SHA: da506d454408f72be2a2e0fd492868cb840c8e6c
+- Closed at (UTC): 2026-11-13T23:30:54+00:00
+- Fix commits: 7955e73b68a208c7fd870de3115c445461d494b2
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 1 |
+| seat_summary | Seat: qwen · Backend: nova · Model: qwen.qwen3-coder-480b-a35b-instruct · Attempts: 3 (glm failed x2, qwen completed) · Duration: ~641s · Tokens: n/a |

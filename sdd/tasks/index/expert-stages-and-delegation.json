@@ -221,7 +221,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -231,8 +231,9 @@
       "parallelism_notes": "relies on runner GateError mapping from TASK-5618 (dev_loop/runner.py)",
       "assigned_to": null,
       "started_at": "2026-11-13T18:41:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5619-devloop-integrations-gate.md"
+      "completed_at": "2026-11-13T23:30:50+00:00",
+      "file": "sdd/tasks/completed/TASK-5619-devloop-integrations-gate.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5620",
@@ -427,7 +428,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -437,8 +438,9 @@
       "parallelism_notes": "extends experts_cli.py and uses Contribution io from TASK-5628 (sdd/experts_cli.py, experts/contributions.py)",
       "assigned_to": null,
       "started_at": "2026-11-13T18:41:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5629-sdd-experts-triage-promote.md"
+      "completed_at": "2026-11-13T23:30:54+00:00",
+      "file": "sdd/tasks/completed/TASK-5629-sdd-experts-triage-promote.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5630",
@@ -467,7 +469,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -478,8 +480,9 @@
       "parallelism_notes": "drives `parrot experts run` from TASK-5627 (experts/cli.py) and the runner gate store from TASK-5618 (dev_loop/runner.py)",
       "assigned_to": null,
       "started_at": "2026-11-13T18:41:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5631-expert-stages-integration-tests.md"
+      "completed_at": "2026-11-13T23:30:59+00:00",
+      "file": "sdd/tasks/completed/TASK-5631-expert-stages-integration-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5632",

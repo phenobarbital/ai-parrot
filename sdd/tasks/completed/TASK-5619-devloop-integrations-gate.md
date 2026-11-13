@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-890 — Expert stages, dispatch modes, generic gate host and SDD expert delegation
 **Spec**: `sdd/specs/expert-stages-and-delegation.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S
 **Depends-on**: TASK-5618
@@ -134,4 +134,15 @@ from parrot.bots.flows.core.gates import GateError, GateErrorCode  # TASK-5612
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+
+- Task: TASK-5619
+- Feature: expert-stages-and-delegation
+- Implementation SHA: da506d454408f72be2a2e0fd492868cb840c8e6c
+- Closed at (UTC): 2026-11-13T23:30:50+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1 · Duration: n/a · Tokens: n/a |
