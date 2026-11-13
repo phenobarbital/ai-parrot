@@ -131,9 +131,7 @@ def _project_shared_data(ctx: FlowContext) -> dict[str, Any]:
     return projected
 
 
-def _build_flow(
-    definition: FlowDefinition, agent_registry: Any, store: CheckpointStore, run_id: str
-) -> AgentsFlow:
+def _build_flow(definition: FlowDefinition, agent_registry: Any, store: CheckpointStore, run_id: str) -> AgentsFlow:
     """Materialize a checkpointed flow for one run.
 
     Args:
@@ -262,9 +260,7 @@ async def _run_scope(
     host = GateHost(_gate_store(gate_db))
     flow = _build_flow(definition, agent_registry, _checkpoint_store(checkpoint_store), run_id)
     ctx = FlowContext(initial_task=text, agent_registry=agent_registry)
-    ctx.shared_data.update(
-        _shared_data({SCOPE_KEY: scope}, registry=registry, host=host, run_id=run_id, tenant=tenant)
-    )
+    ctx.shared_data.update(_shared_data({SCOPE_KEY: scope}, registry=registry, host=host, run_id=run_id, tenant=tenant))
     click.echo(f"run {run_id} started (scope {scope})")
     await flow.run_flow(ctx)
     await _report(run_id, ctx, host)
@@ -411,7 +407,9 @@ def gates_cmd(ctx: click.Context) -> None:
         click.echo(f"{record.gate_id}  [{record.kind}]  {record.owner}  {record.spec.title}")
 
 
-def _resolve_command(ctx: click.Context, gate_id: str, resolution: Literal["approved", "rejected"], comment: str) -> None:
+def _resolve_command(
+    ctx: click.Context, gate_id: str, resolution: Literal["approved", "rejected"], comment: str
+) -> None:
     """Shared body of `approve` / `reject`."""
     resolved_by = f"cli:{getpass.getuser()}"
     record = asyncio.run(_resolve_gate(gate_id, resolution, comment, resolved_by, ctx.obj["gate_db"]))
