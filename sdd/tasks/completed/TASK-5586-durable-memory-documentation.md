@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-886 — Durable Conversation Memory
 **Spec**: sdd/specs/durable-conversation-memory.spec.md (Module 18; §10 Documentation; frontmatter `docs.pages`)
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5585, TASK-5578 (documents storage/backfill.py)
@@ -429,10 +429,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Created wiki/memory/durable-conversation-memory.md (all mandatory headings; no release number, per the repo owner's rule that releases are theirs to announce), added FEAT-886 sections to conversation-history-ownership.md, per-turn-conversation-compaction.md (+ updated its ChatStorage non-goal) and storage-backends.md (MODIFY, the file already existed), and tests/docs/test_durable_memory_docs.py.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered. Include the §7-vs-Q15 DLQ contradiction and the docstring-gap list.
+**Completed by**: sdd-worker (sequential fallback)
+**Date**: 2026-11-13
+**Tests**: test_durable_memory_docs 9 passed (pages exist and are clean, mandatory headings, every documented symbol / method / setting exists and is named, `save_turn` only mentioned as removed). `parrot sdd techwiki check --spec ...` -> "Docs: required — ok". Mutation: renaming a documented symbol in the page -> RED.
+**Notes**: (1) spec §7 "DLQ needs Postgres" says exhausted envelopes are dropped without a DSN; that predates spec §8 Q15 / M10, and the page documents the decided behavior (retained as dead letters in a local SQLite store, never dropped). (2) Docstring review of the seven api_modules: only LocalSequenceAllocator.next and RedisSequenceAllocator.next lack their own docstring (they inherit the ABC's); left as is (code is out of this task's scope). (3) The docs say "SQLite dead-letter store next to the outbox" — that is what turn_bus implements. (4) Items documented as NOT covered: DynamoDB backend (TASK-5577) is described by its design in storage-backends.md but was not implemented/verified in this run if still pending — see the DONE file.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

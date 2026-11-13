@@ -476,7 +476,7 @@
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "M",
       "depends_on": [
@@ -487,8 +487,9 @@
       "parallelism_notes": "Documents the final behavior verified by TASK-5585's integration suite. Also documents the backfill tool parrot/storage/backfill.py created by TASK-5578.",
       "assigned_to": null,
       "started_at": "2026-11-13T03:25:54+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5586-durable-memory-documentation.md"
+      "completed_at": "2026-11-13T04:51:47+00:00",
+      "file": "sdd/tasks/completed/TASK-5586-durable-memory-documentation.md",
+      "verification": "verified"
     }
   ]
 }
