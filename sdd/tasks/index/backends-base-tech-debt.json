@@ -1,0 +1,81 @@
+{
+  "feature": "backends-base-tech-debt",
+  "feature_id": "FEAT-897",
+  "spec": "sdd/specs/backends-base-tech-debt.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-13T23:40:57+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/storage/backends/test_sqlite_durable_contract.py",
+          "packages/ai-parrot/tests/storage/backends/test_postgres_durable_contract.py",
+          "packages/ai-parrot/tests/storage/backends/test_mongo_durable_contract.py",
+          "packages/ai-parrot/tests/storage/backends/test_dynamodb_durable_contract.py",
+          "packages/ai-parrot/tests/storage/backends/test_base_abc.py",
+          "packages/ai-parrot/tests/storage/test_storage_errors.py",
+          "packages/ai-parrot/tests/storage/test_instrumented_backend.py",
+          "packages/ai-parrot/tests/storage/test_leaky_abstractions_repaired.py",
+          "packages/ai-parrot/tests/unit/storage/test_chat_storage_subscriber.py",
+          "packages/ai-parrot/tests/test_chat_storage.py",
+          "packages/ai-parrot/tests/docs/test_durable_memory_docs.py",
+          "tests/storage/test_chat_storage_dynamodb.py",
+          "tests/storage/test_integration_artifact_persistence.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:c7d4cf516d18a5d3e45cf685621123960bf81a5f37c9277704a3f83ca5acf60d"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5687",
+      "slug": "deleted-session-ids-contract",
+      "title": "Backend contract — batched deleted_session_ids and session-or-turn is_deleted",
+      "feature_id": "FEAT-897",
+      "feature": "backends-base-tech-debt",
+      "spec": "sdd/specs/backends-base-tech-debt.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "backend files + storage test stubs; TASK-5688 depends on the new abstract method",
+      "assigned_to": null,
+      "discovered_from": "issue:6393789b3d37",
+      "file": "sdd/tasks/active/TASK-5687-deleted-session-ids-contract.md"
+    },
+    {
+      "id": "TASK-5688",
+      "slug": "chatstorage-batched-listing-guard",
+      "title": "ChatStorage — batched listing guard, limit after filtering, one-read fence, docs",
+      "feature_id": "FEAT-897",
+      "feature": "backends-base-tech-debt",
+      "spec": "sdd/specs/backends-base-tech-debt.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5687"
+      ],
+      "parallel": false,
+      "parallelism_notes": "chat.py + its tests + two wiki pages; needs deleted_session_ids from TASK-5687",
+      "assigned_to": null,
+      "discovered_from": "issue:6393789b3d37",
+      "file": "sdd/tasks/active/TASK-5688-chatstorage-batched-listing-guard.md"
+    }
+  ]
+}
