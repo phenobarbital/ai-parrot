@@ -102,9 +102,9 @@ class MyAgent(AgentMemoryMixin, Agent):
 Recomendaciones pendientes de formalizar:
 
 - Usar un `AgentMemoryConfig` Pydantic v2 como configuración normalizada; resolver atributos/kwargs una vez al configurar.
-- Mantener las capacidades opt-in y evitar que una flag active implícitamente otra.
+- Mantener las capacidades opt-in y evitar que una flag active implícitamente otra. **Excepción decidida por el propietario (2026-11-13):** `enable_brain` implica memoria episódica, porque el brain no puede existir sin episodios; activarlo construye el store episódico sin exigir una segunda flag.
 - Preservar controles útiles de backend, reflexión, registro, avisos, límites y presupuesto; decidir expresamente qué sustituye a `enable_long_term_memory`.
-- Conservar la configuración de skills y brain, definiendo sus dependencias. Una configuración de brain que requiera episodios debe validarse de forma visible.
+- Conservar la configuración de skills y brain, definiendo sus dependencias. `enable_brain` es una flag de constructor que cualquier `Agent` puede activar (`BasicAgent` hereda el mixin); el cableado se limita a construir un `BrainService` y llamar a `start()`, `stop()` y `search()`. El comportamiento del brain se especifica en [FEAT-889 `agent-brain`](../specs/agent-brain.spec.md).
 - `memory_dynamics`, previsto por FEAT-571, controla las reviews y retención dinámica. No equivale a `enable_user_memory` ni habilita por sí mismo conocimientos personales.
 - El default-on de dynamics sigue condicionado por los gates de FEAT-571; este documento no lo activa.
 
@@ -296,7 +296,7 @@ Estas precisiones son requisitos propuestos para formalizar M2/M4 y sus pruebas,
 |---|---|
 | §1 excluye un cuarto subsistema y un perfil bitemporal; §8 U6 deja pendiente si `USER_PREFERENCE` es suficiente | Reabrir U6. Incorporar conocimiento explícito de usuario como nueva dirección; decidir si vive sobre episodios o en un almacenamiento especializado. No declarar un perfil bitemporal completo aprobado. |
 | M3 modifica ambos mixins y pide evitar doble grade | Sustituir esas integraciones por `AgentMemoryMixin` y una ruta única de registro/atribución. |
-| M4 configura brain en el mixin de largo plazo | Trasladar el cableado al nuevo mixin sin mover la política de dinámica fuera de los stores. |
+| M4 configura brain en el mixin de largo plazo | El cableado pasa al nuevo mixin a través de `BrainService`; el resto de M4 se traslada a [FEAT-889 `agent-brain`](../specs/agent-brain.spec.md). |
 | M3 preserva `get_memory_context(...) -> str` | Mantener, si resulta útil, la API de texto con una representación estructurada interna; eliminar el segundo camino de inyección. |
 | Compatibilidad de herramientas, feedback e históricos | El hard-cut acordado se limita a mixins/consumidores y su configuración; no autoriza borrar históricos ni retirar contratos CLI/MCP. |
 | Olvido recuperable FSRS | Separarlo de caducidad/corrección de hechos y de una solicitud explícita de borrado de conocimientos del usuario. |
@@ -312,9 +312,9 @@ La incorporación es de alcance y planificación: no concentra la implementació
 | M1 — Dynamics | Modelos comunes de dinámica, FSRS, grading, ranking y protocolos puros | G1; G3 para fijar el esquema de evidencia |
 | M2 — Storage/reviews | Persistencia, aislamiento, aplicación atómica, idempotencia y replay de reviews | M1, G2, G3; U4 para retención |
 | M3 — Runtime attribution | `AgentMemoryMixin`, contexto estructurado, exposición final, atribución y resultados verificados | M0, M1, M2, G3; contratos comunes de contexto/eventos |
-| M4 — Brain dynamics | Consolidación, versiones, promoción, olvido recuperable y cableado mediante el nuevo mixin | M1, G2, G4; integración con M2 antes de completar el flujo |
+| M4 — Brain dynamics | **Trasladado a [FEAT-889 `agent-brain`](../specs/agent-brain.spec.md), fase 2 (módulos M8–M9).** Este spec conserva solo el cableado mediante el nuevo mixin | En FEAT-889: M1, G1, G2, G4 e interfaces M1/M2 fijadas |
 | M5 — SDD feedback | Adaptación e importación de feedback, evidencia del coder y contratos públicos existentes | M2, M3, G2; U2/U5 |
-| M6 — CLI/MCP/operación | Construcción del mismo sistema de memoria, operaciones, exportación y fitting | Interfaces M2/M4 fijadas; G1/U4 y aprobación de dependencia para fitting |
+| M6 — CLI/MCP/operación | Construcción del mismo sistema de memoria, operaciones, exportación y fitting | Interfaces M2 (este spec) y M4 (FEAT-889) fijadas; G1/U4 y aprobación de dependencia para fitting |
 
 Las dependencias anteriores proceden de FEAT-571 y deben conciliarse al redactar el nuevo spec. La fachada básica puede entregarse antes de la atribución dinámica completa de M3 si se separan sus contratos y pruebas; esa separación no permite saltarse los gates de reviews.
 
@@ -376,8 +376,32 @@ El hard-cut no exige cambiar de backend ni borrar o regenerar memorias. Cualquie
 5. Firmas de configuración/hooks y equivalencias de las flags actuales, incluidos controles de skills y brain.
 6. Resolución de U6 y conciliación de los contratos trasladados de FEAT-571; aceptación separada de sus enmiendas S1–S4. La incorporación de M1–M6 al spec rector ya es la dirección acordada.
 7. Comportamiento de streaming, invocaciones alternativas y persistencia asíncrona.
-8. Estado autoritativo de brain y atomicidad G2–G4, con reconciliación de proyecciones, archivado y logs externos si existen.
+8. Estado autoritativo de brain y atomicidad G2–G4, con reconciliación de proyecciones, archivado y logs externos si existen. La parte de brain se decide en FEAT-889 (§8 Q4); aquí permanece el protocolo de reviews de M2 del que depende.
 9. Estrategia de recuperación vectorial que cierre el fallo de latencia de G2 y evidencia canónica de sus ejecuciones; cualquier nueva dependencia requiere decisión explícita.
 10. Objetivos U3, evaluación con trazas reales, validación de umbrales provisionales y métricas separadas de olvido/sustitución.
 
 No se eligen silenciosamente valores FSRS, umbrales de atribución, backends nuevos ni dependencias. El siguiente paso es redactar el spec rector, conciliar los gates y formalizar la sustitución del alcance pendiente de FEAT-571. La descomposición restante se hará en el nuevo spec, preservando la trazabilidad y los bloqueos heredados.
+
+## 12. Enmienda 2026-11-13 — el brain se especifica en FEAT-889
+
+Decisión del propietario: la unificación y el brain son dos specs. Este documento cubre la unificación; [FEAT-889 `agent-brain`](../specs/agent-brain.spec.md) cubre el brain y es dueño de `parrot/memory/dream/*`, del toolkit de administrador y de su política PBAC. El corte es por propiedad de ficheros.
+
+- **M4 de FEAT-571 se traslada a FEAT-889** (fase 2, módulos M8–M9), con sus gates G1, G2 y G4. Las referencias a M4 de los §8 y §11 remiten a ese spec.
+- **Orden:** FEAT-889 no se descompone ni se lanza hasta que `AgentMemoryMixin` esté en `dev`.
+- **Contrato entre ambos:** el mixin construye un `BrainService` por agente y solo usa `start()`, `stop()`, `search(query, tenant_id)` y `forget_derived(tenant_id, episodes)`. No construye stores, runners ni schedulers.
+
+Requisitos que FEAT-889 espera de este spec (su §2, «Incoming requirements»):
+
+| # | Requisito |
+|---|---|
+| R1 | `enable_brain` es una flag de constructor que cualquier `Agent` puede activar. |
+| R2 | `enable_brain` implica store episódico; no hace falta una segunda flag. |
+| R3 | `BrainService.start()` en `configure()` y `stop()` en `shutdown()`, de forma idempotente. |
+| R4 | El tenant que se pasa a `search()` y se graba en los episodios es el de la petición, resuelto por el servidor; hoy es el atributo estático de la instancia. |
+| R5 | `ask_stream()` lee y graba memoria igual que `ask()`. |
+| R6 | El manager unificado llama a `BrainService.search()` y no retiene `BrainStore`. |
+| R7 | La operación `forget` de memoria de usuario llama a `BrainService.forget_derived()`. |
+| R8 | Los episodios de herramientas y resultados se graban en la ruta unificada. Sin ellos nada es elegible: FEAT-889 excluye de la consolidación los turnos conversacionales sin resultado verificado. |
+| R9 | Registrar `BrainAdminToolkit` en un agente es un opt-in explícito. |
+
+Este documento tampoco menciona FEAT-886 (`durable-conversation-memory`), que tiene tareas abiertas sobre el historial conversacional; conviene comprobar el solape con el §3 antes de redactar el spec rector.
