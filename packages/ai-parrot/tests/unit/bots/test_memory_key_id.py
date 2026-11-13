@@ -147,7 +147,7 @@ async def test_save_conversation_turn_takes_no_chatbot_id_argument():
     parameters = inspect.signature(AbstractBot.save_conversation_turn).parameters
 
     assert "chatbot_id" not in parameters
-    assert list(parameters) == ["self", "user_id", "session_id", "turn", "compaction", "presentation"]
+    assert list(parameters) == ["self", "user_id", "session_id", "turn", "compaction", "presentation", "publish"]
     assert parameters["compaction"].kind is inspect.Parameter.KEYWORD_ONLY
     assert parameters["compaction"].default is None
 

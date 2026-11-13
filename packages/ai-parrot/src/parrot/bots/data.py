@@ -2247,7 +2247,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 # this, render_history() always sees an empty history because
                 # PandasAgent reads from conversation_memory but ChatStorage
                 # writes to a separate Redis namespace.
-                if use_conversation_history and memory:
+                if (use_conversation_history and memory) or self._publishes_turns(user_id, session_id):
                     try:
                         turn = ConversationTurn.from_ai_message(
                             user_message=question,
@@ -2265,7 +2265,10 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                                 compaction_result,
                                 self.estimate_prompt_tokens(rendered_history, system_prompt, question),
                             )
-                        await self.save_conversation_turn(user_id, session_id, turn, compaction=commit)
+                        await self._save_or_snapshot_turn(
+                            user_id, session_id, turn, use_history=bool(use_conversation_history and memory),
+                            compaction=commit, presentation=self._turn_presentation(response, started=None),
+                        )
                     except Exception as _save_exc:
                         self.logger.debug(
                             "Failed to persist conversation turn: %s",

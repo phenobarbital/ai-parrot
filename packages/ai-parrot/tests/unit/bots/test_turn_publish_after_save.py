@@ -196,3 +196,46 @@ def test_bots_package_never_imports_chat_storage():
             if any("storage.chat" in n or n.endswith("storage.ChatStorage") for n in names):
                 offenders.append(str(path))
     assert not offenders
+
+
+class _ToolClient(Client):
+    def _msg(self, prompt: str) -> AIMessage:
+        from parrot.models.basic import ToolCall
+
+        msg = super()._msg(prompt)
+        msg.tool_calls = [ToolCall(id="t1", name="lookup", arguments={"q": "x"}, result={"answer": 42},
+                                   execution_time=0.1)]
+        return msg
+
+
+async def test_ask_publishes_the_finalized_response():
+    """The presentation is built after sources / tool data / formatting are applied, not before."""
+    bot = await _bot(lambda mem: RecordingPublisher(mem, "uuid-1"))
+    bot.llm = _ToolClient()
+    response = await _round(bot)
+    assert response.data is not None  # ask() lifted the tool result into response.data after the save point
+    event = bot.turn_publisher.events[0]
+    assert event.presentation["data"] == response.data
+    # the raw turn snapshot is unaffected by that post-processing
+    assert event.turn["assistant_response"] == "reply"
+
+
+async def test_history_flag_does_not_disable_durable_publication():
+    """use_conversation_history=False controls only what reaches the LLM; the turn is still published."""
+    bot = await _bot(lambda mem: RecordingPublisher(mem, "uuid-1"))
+    response = await bot.ask("hi", user_id="u", session_id="s", use_vector_context=False,
+                             use_conversation_history=False)
+    assert [e.turn["turn_id"] for e in bot.turn_publisher.events] == [response.turn_id]
+    assert bot.turn_publisher.events[0].turn["sequence"] >= 1
+    assert await bot.conversation_memory.get_history("u", "s", chatbot_id="uuid-1") is None  # working memory untouched
+
+
+async def test_stream_and_conversation_publish_with_history_disabled():
+    bot = await _bot(lambda mem: RecordingPublisher(mem, "uuid-1"))
+    async for _ in bot.ask_stream("q", user_id="u", session_id="s", use_vector_context=False,
+                                  use_conversation_history=False):
+        pass
+    await bot.conversation("hi", user_id="u", session_id="s2", use_vector_context=False,
+                           use_conversation_history=False)
+    assert len(bot.turn_publisher.events) == 2
+

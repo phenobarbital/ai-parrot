@@ -637,7 +637,7 @@ class BaseBot(AbstractBot):
                             response.data = extracted_data
 
                     # Save conversation turn
-                    if use_conversation_history and memory:
+                    if (use_conversation_history and memory) or self._publishes_turns(user_id, session_id):
                         turn = ConversationTurn.from_ai_message(
                             user_message=question,
                             response=response,
@@ -657,11 +657,10 @@ class BaseBot(AbstractBot):
                                 compaction_result,
                                 self.estimate_prompt_tokens(rendered_history, system_prompt, question),
                             )
-                        await self.save_conversation_turn(
-                            user_id, session_id, turn, compaction=commit,
-                            presentation=self._turn_presentation(
-                                response, output_mode=output_mode, started=_conv_started_ms
-                            ),
+                        _snapshot = await self._save_or_snapshot_turn(
+                            user_id, session_id, turn, use_history=bool(use_conversation_history and memory),
+                            compaction=commit, publish=True,
+                            presentation=self._turn_presentation(response, output_mode=output_mode, started=_conv_started_ms),
                         )
 
                     # FEAT-176: emit AfterInvokeEvent on success.
@@ -893,7 +892,7 @@ class BaseBot(AbstractBot):
 
                 # Return the response
                 # Save conversation turn
-                if use_conversation_history and memory:
+                if (use_conversation_history and memory) or self._publishes_turns(user_id, session_id):
                     turn = ConversationTurn.from_ai_message(
                         user_message=question,
                         response=response,
@@ -910,11 +909,10 @@ class BaseBot(AbstractBot):
                             compaction_result,
                             self.estimate_prompt_tokens(rendered_history, system_prompt, question),
                         )
-                    await self.save_conversation_turn(
-                        user_id, session_id, turn, compaction=commit,
-                        presentation=self._turn_presentation(
-                            response, output_mode=None, started=_invoke_started
-                        ),
+                    _snapshot = await self._save_or_snapshot_turn(
+                        user_id, session_id, turn, use_history=bool(use_conversation_history and memory),
+                        compaction=commit, publish=True,
+                        presentation=self._turn_presentation(response, output_mode=None, started=_invoke_started),
                     )
 
                 self._trigger_event(
@@ -1595,7 +1593,8 @@ class BaseBot(AbstractBot):
 
                 # Save conversation turn
                 phase_started = time.perf_counter()
-                if use_conversation_history and memory:
+                _snapshot = None
+                if (use_conversation_history and memory) or self._publishes_turns(user_id, session_id):
                     turn = ConversationTurn.from_ai_message(
                         user_message=question,
                         response=response,
@@ -1612,11 +1611,10 @@ class BaseBot(AbstractBot):
                             compaction_result,
                             self.estimate_prompt_tokens(rendered_history, system_prompt, question),
                         )
-                    await self.save_conversation_turn(
-                        user_id, session_id, turn, compaction=commit,
-                        presentation=self._turn_presentation(
-                            response, output_mode=output_mode, started=_ask_started_ms
-                        ),
+                    _snapshot = await self._save_or_snapshot_turn(
+                        user_id, session_id, turn, use_history=bool(use_conversation_history and memory),
+                        compaction=commit, publish=False,
+                        presentation=self._turn_presentation(response, output_mode=output_mode, started=_ask_started_ms),
                     )
                 self.logger.debug(
                     "[%s] ask timing: memory_add_turn_ms=%.1f",
@@ -1862,6 +1860,12 @@ class BaseBot(AbstractBot):
                     "[%s] ask timing: total_ms=%.1f",
                     self.name,
                     (time.perf_counter() - ask_started) * 1000,
+                )
+                # FEAT-886: publish the turn from the FINALIZED response (sources, tool data and the
+                # formatted output are applied by now); the raw snapshot was taken before any of it.
+                await self._publish_turn_completed(
+                    user_id, session_id, _snapshot,
+                    self._turn_presentation(response, output_mode=output_mode, started=_ask_started_ms),
                 )
                 # FEAT-176: emit AfterInvokeEvent on success.
                 _ask_duration_ms = (time.perf_counter() - _ask_started_ms) * 1000
@@ -2209,7 +2213,10 @@ class BaseBot(AbstractBot):
                     async def _save_stream_turn(error_text: Optional[str], commit: Any = None) -> None:
                         """Persist the (possibly partial) streamed turn exactly once (FEAT-524 single writer)."""
                         nonlocal _stream_saved
-                        if _stream_saved or not (use_conversation_history and memory and full_response):
+                        if _stream_saved or not (
+                            (use_conversation_history and memory or self._publishes_turns(user_id, session_id))
+                            and full_response
+                        ):
                             return
                         _stream_saved = True
                         # `full_response` — the text actually streamed to the caller — stays
@@ -2229,8 +2236,9 @@ class BaseBot(AbstractBot):
                             tool_invocations=self.observed_tool_invocations() or [],
                             error=error_text,
                         )
-                        await self.save_conversation_turn(
-                            user_id, session_id, turn, compaction=commit,
+                        await self._save_or_snapshot_turn(
+                            user_id, session_id, turn, use_history=bool(use_conversation_history and memory),
+                            compaction=commit,
                             presentation=self._turn_presentation(
                                 ai_message, output_mode=output_mode, started=_stream_started_ms,
                                 fallback_output=full_response,
@@ -2313,7 +2321,7 @@ class BaseBot(AbstractBot):
 
                     # Save conversation turn — also runs on partial/error so the
                     # accumulated text is not lost from memory.
-                    if use_conversation_history and memory and full_response:
+                    if (use_conversation_history and memory or self._publishes_turns(user_id, session_id)) and full_response:
                         commit = None
                         if compaction_result is not None and stream_error is None:
                             commit = self.build_compaction_commit(

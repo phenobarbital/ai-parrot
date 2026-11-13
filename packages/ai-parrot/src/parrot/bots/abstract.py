@@ -2737,6 +2737,48 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         chatbot_key = str(chatbot_id) if chatbot_id else self.memory_key_id
         return await self.conversation_memory.create_history(user_id, session_id, metadata, chatbot_id=chatbot_key)
 
+    def _publishes_turns(self, user_id: Optional[str], session_id: Optional[str]) -> bool:
+        """Whether a turn of this round is published to the turn bus (a publisher is attached and the ids exist).
+
+        ``use_conversation_history`` only controls what is sent to the LLM / hydrated; durable publication does
+        not depend on it.
+        """
+        return self.turn_publisher is not None and bool(user_id) and bool(session_id)
+
+    async def _snapshot_turn(
+        self, user_id: str, session_id: str, turn: ConversationTurn
+    ) -> Optional[Dict[str, Any]]:
+        """Stamp ordering and take the raw snapshot WITHOUT writing working memory (history disabled)."""
+        if not self._publishes_turns(user_id, session_id):
+            return None
+        await self._stamp_turn_ordering(user_id, session_id, turn)
+        return copy.deepcopy(turn.to_dict())
+
+    async def _save_or_snapshot_turn(
+        self,
+        user_id: str,
+        session_id: str,
+        turn: ConversationTurn,
+        *,
+        use_history: bool,
+        compaction: Optional[CompactionCommit] = None,
+        presentation: Optional[TurnPresentation] = None,
+        publish: bool = True,
+    ) -> Optional[Dict[str, Any]]:
+        """Save the turn to working memory when history is on, and publish it whenever a publisher is attached.
+
+        Returns the raw snapshot (``None`` when nothing is published); with ``publish=False`` the caller
+        publishes it later through :meth:`_publish_turn_completed` once the response is final.
+        """
+        if use_history:
+            return await self.save_conversation_turn(
+                user_id, session_id, turn, compaction=compaction, presentation=presentation, publish=publish
+            )
+        snapshot = await self._snapshot_turn(user_id, session_id, turn)
+        if publish:
+            await self._publish_turn_completed(user_id, session_id, snapshot, presentation)
+        return snapshot
+
     async def save_conversation_turn(
         self,
         user_id: str,
@@ -2745,7 +2787,8 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         *,
         compaction: Optional[CompactionCommit] = None,
         presentation: Optional[TurnPresentation] = None,
-    ) -> None:
+        publish: bool = True,
+    ) -> Optional[Dict[str, Any]]:
         """Persist one conversation turn — the single writer (FEAT-524, FEAT-525).
 
         Every bot entry point routes its turn through here. The turn is always
@@ -2798,7 +2841,8 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         await self.conversation_memory.add_turn(
             user_id, session_id, turn, chatbot_id=chatbot_key, compaction=compaction
         )
-        await self._publish_turn_completed(user_id, session_id, snapshot, presentation)
+        if publish:
+            await self._publish_turn_completed(user_id, session_id, snapshot, presentation)
         # FEAT-176: emit MessageAddedEvent after persisting to memory.
         # Use the active invocation's trace context when available.
         # ConversationTurn stores both user_message and assistant_response;
@@ -2835,6 +2879,7 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
                     source_name=self.name,
                 )
             )
+        return snapshot
 
     @staticmethod
     def _hydration_pending(history: Optional[ConversationHistory]) -> bool:
