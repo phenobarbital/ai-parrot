@@ -262,9 +262,7 @@ _SANCTIONED_REWRITES: tuple[tuple[str, str], ...] = (
         "-- The CREATE TABLE below tracks parrot.models.bots.BotModel field-for-field (49 columns).\n",
     ),
     (
-        "    use_conversation_history BOOLEAN DEFAULT TRUE,\n"
-        "\n"
-        "    -- Advanced: bot class\n",
+        "    use_conversation_history BOOLEAN DEFAULT TRUE,\n" "\n" "    -- Advanced: bot class\n",
         "    use_conversation_history BOOLEAN DEFAULT TRUE,\n"
         "\n"
         "    -- Follow-up suggestion chip settings (FEAT-752)\n"

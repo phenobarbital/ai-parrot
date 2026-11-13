@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-
 ROOT = Path(__file__).resolve().parents[4]
 LEGACY_MIGRATIONS = (
     "ai-bots-homologate-botmodel.sql",
@@ -29,9 +28,7 @@ def test_superseded_scripts_are_retired_after_packaged_chain_exists(filename: st
     """Retire each legacy script only when the packaged bots chain is complete."""
     assert not (MANUAL_MIGRATIONS / filename).exists()
     assert [
-        path.name
-        for path in AUTOMATIC_BOTS_SQL.glob("[0-9][0-9][0-9]_*.sql")
-        if not path.name.endswith(".check.sql")
+        path.name for path in AUTOMATIC_BOTS_SQL.glob("[0-9][0-9][0-9]_*.sql") if not path.name.endswith(".check.sql")
     ] == [
         "001_baseline.sql",
         "002_fold_embedding.sql",
