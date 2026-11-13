@@ -139,11 +139,7 @@ class MemoryContext(BaseModel):
             )
 
         if self.user_knowledge:
-            sections.append(
-                "<user_knowledge>\n"
-                f"{self.user_knowledge}\n"
-                "</user_knowledge>"
-            )
+            sections.append("<user_knowledge>\n" f"{self.user_knowledge}\n" "</user_knowledge>")
 
         return "\n\n".join(sections)
 
