@@ -121,9 +121,7 @@ async def test_recover_applies_both_expiry_policies_after_downtime() -> None:
     """Recovery transitions elapsed fail-closed and fail-open records."""
     store = InMemoryGateStore()
     host = GateHost(store)
-    fail_closed = await host.open(
-        gate_spec("test-host-expire-fail", ttl_seconds=1, on_expiry="fail"), owner="flow-1"
-    )
+    fail_closed = await host.open(gate_spec("test-host-expire-fail", ttl_seconds=1, on_expiry="fail"), owner="flow-1")
     fail_open = await host.open(
         gate_spec("test-host-expire-approve", ttl_seconds=1, on_expiry="approve"), owner="flow-1"
     )
@@ -140,6 +138,7 @@ async def test_recover_applies_both_expiry_policies_after_downtime() -> None:
 @pytest.mark.asyncio
 async def test_pre_review_is_advisory_and_errors_are_captured() -> None:
     """Pre-review results never resolve gates, including reviewer failures."""
+
     async def reviewer(record: GateRecord) -> PreReviewVerdict:
         return PreReviewVerdict(expert="reviewer", recommendation="reject", summary=record.gate_id)
 
