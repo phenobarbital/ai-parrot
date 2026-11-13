@@ -37,6 +37,12 @@ Spec §2.6 / Module 9, AC14. Twins must stay in sync (memory: edit both suites; 
 | `.agents/skills/sdd-proposal/SKILL.md` | MODIFY | twin |
 | `.agents/skills/sdd-spec/SKILL.md` | MODIFY | twin |
 | `packages/ai-parrot/tests/sdd/test_consult_step_twins.py` | CREATE | asserts the step and the experts_cli.py commands appear in all six files |
+| `packages/ai-parrot/src/parrot/sdd/_assets/claude/commands/sdd-proposal.md` | MODIFY | packaged mirror, required by check_asset_sync |
+| `packages/ai-parrot/src/parrot/sdd/_assets/claude/commands/sdd-spec.md` | MODIFY | packaged mirror, required by check_asset_sync |
+| `packages/ai-parrot/src/parrot/sdd/_assets/agent/workflows/sdd-proposal.md` | MODIFY | packaged mirror, required by check_asset_sync |
+| `packages/ai-parrot/src/parrot/sdd/_assets/agent/workflows/sdd-spec.md` | MODIFY | packaged mirror, required by check_asset_sync |
+| `packages/ai-parrot/src/parrot/sdd/_assets/agents/skills/sdd-proposal/SKILL.md` | MODIFY | packaged mirror, required by check_asset_sync |
+| `packages/ai-parrot/src/parrot/sdd/_assets/agents/skills/sdd-spec/SKILL.md` | MODIFY | packaged mirror, required by check_asset_sync |
 
 ---
 
