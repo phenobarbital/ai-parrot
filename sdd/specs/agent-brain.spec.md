@@ -17,7 +17,7 @@ docs:
 **Feature ID**: FEAT-889
 **Date**: 2026-11-13
 **Author**: Jesus Lara, with Claude
-**Status**: draft
+**Status**: approved
 **Target version**: next release after `AgentMemoryMixin` lands on `dev`; release number unassigned
 
 > **Decomposition gate.** This spec is the sibling of the memory-unification spec
