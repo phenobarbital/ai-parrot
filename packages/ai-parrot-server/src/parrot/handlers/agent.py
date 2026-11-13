@@ -39,7 +39,6 @@ from ..bots.search import WebSearchAgent
 from ..models.responses import AIMessage, AgentResponse
 from ..outputs import OutputMode, OutputFormatter
 from ..mcp.integration import MCPServerConfig
-from ..memory import RedisConversation
 from ..tools.manager import ToolManager, get_toolkit_owner
 from .user_objects import UserObjectsHandler
 from .scope import resolve_request_tenant
@@ -1729,14 +1728,6 @@ class AgentTalk(BaseView):
                     list(_ws_originals.keys()),
                 )
 
-        # Use RedisConversation for history management if session_id is present
-        memory = None
-        if user_id and session_id:
-            try:
-                memory = RedisConversation()
-            except Exception as ex:
-                self.logger.warning(f"Failed to initialize RedisConversation: {ex}")
-
         # Temporarily swap in user's ToolManager if configured via PATCH
         original_tool_manager = agent.tool_manager
         original_enable_tools = agent.enable_tools
@@ -1837,7 +1828,6 @@ class AgentTalk(BaseView):
                         use_conversation_history=use_conversation_history,
                         output_mode=output_mode,
                         format_kwargs=format_kwargs,
-                        memory=memory,
                         llm=llm,
                         agent_name=agent_name,
                         client_message_id=client_message_id,
@@ -1858,7 +1848,6 @@ class AgentTalk(BaseView):
                         use_conversation_history=use_conversation_history,
                         output_mode=output_mode,
                         format_kwargs=format_kwargs,
-                        memory=memory,
                         **data,
                     )
                 else:
@@ -1877,7 +1866,6 @@ class AgentTalk(BaseView):
                         use_conversation_history=use_conversation_history,
                         output_mode=output_mode,
                         format_kwargs=format_kwargs,
-                        memory=memory,
                         llm=llm,
                         tenant=tenant,
                         **data,
@@ -2681,7 +2669,6 @@ class AgentTalk(BaseView):
         use_conversation_history: bool,
         output_mode: OutputMode,
         format_kwargs: Dict[str, Any],
-        memory: Optional[Any],
         llm: Optional[Any],
         agent_name: str = "",
         client_message_id: Optional[str] = None,
@@ -2735,7 +2722,6 @@ class AgentTalk(BaseView):
                 use_vector_context=use_vector_context,
                 use_conversation_history=use_conversation_history,
                 output_mode=output_mode,
-                memory=memory,
                 llm=llm,
                 tenant=tenant,
                 defer_suggestions=suggestions_trailer,

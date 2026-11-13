@@ -334,6 +334,9 @@ REDIS_SERVICES_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/4"
 REDIS_DATASET_DB = config.get("REDIS_DATASET_DB", fallback=3)
 REDIS_DATASET_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DATASET_DB}"
 
+# FEAT-886: hot-tier (ChatStorage Redis) history TTL in hours. 0 disables the TTL.
+CHAT_HOT_TTL_HOURS = int(config.get("CHAT_HOT_TTL_HOURS", fallback=48))
+
 
 def resolve_cert(crt):
     cert = Path(crt)

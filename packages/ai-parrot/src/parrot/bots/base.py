@@ -2294,7 +2294,13 @@ class BaseBot(AbstractBot):
                             # shape exactly as it was.
                             tool_invocations=self.observed_tool_invocations() or [],
                         )
-                        await self.save_conversation_turn(user_id, session_id, turn)
+                        commit = None
+                        if compaction_result is not None and stream_error is None:
+                            commit = self.build_compaction_commit(
+                                compaction_result,
+                                self.estimate_prompt_tokens(rendered_history, system_prompt, question),
+                            )
+                        await self.save_conversation_turn(user_id, session_id, turn, compaction=commit)
 
                     if ai_message is None:
                         # Defensive fallback: client did not yield an AIMessage sentinel

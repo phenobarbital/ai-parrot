@@ -14,10 +14,10 @@ from datetime import datetime, timedelta, timezone
 from navconfig.logging import logging
 
 from ..memory.render import render_history
+from ..conf import CHAT_HOT_TTL_HOURS
 from .models import ChatMessage, MessageRole, ToolCall, Source
 
 # Default limits
-HOT_TTL_HOURS = 48
 DEFAULT_LIST_LIMIT = 50
 DEFAULT_CONTEXT_TURNS = 10
 
@@ -52,7 +52,10 @@ class ChatStorage:
             try:
                 from parrot.memory import RedisConversation  # noqa: E501 pylint: disable=import-outside-toplevel
 
-                self._redis = RedisConversation(key_prefix="chat")
+                self._redis = RedisConversation(
+                    key_prefix="chat",
+                    history_ttl=CHAT_HOT_TTL_HOURS * 3600 if CHAT_HOT_TTL_HOURS > 0 else None,
+                )
             except Exception as exc:
                 self.logger.warning("RedisConversation unavailable, hot cache disabled: %s", exc)
 
@@ -604,10 +607,43 @@ class ChatStorage:
                 session_id=session_id,
                 updated_at=datetime.now(timezone.utc),
             )
+            await self._delete_turn_from_hot_tier(user_id, session_id, turn_id, agent_id)
             self.logger.debug("Deleted turn %s from session %s", turn_id, session_id)
             return True
         except Exception as exc:
             self.logger.warning("delete_turn failed for %s in %s: %s", turn_id, session_id, exc)
+            return False
+
+    async def _delete_turn_from_hot_tier(
+        self, user_id: str, session_id: str, turn_id: str, agent_id: str
+    ) -> bool:
+        """Remove ``turn_id`` from the hot-tier history, if it holds one.
+
+        Args:
+            user_id: Conversation owner.
+            session_id: Conversation session.
+            turn_id: The turn to drop.
+            agent_id: ChatStorage key (agent NAME); the hot tier stores it as ``chatbot_id``.
+
+        Returns:
+            True when the hot tier no longer holds the turn (including "never held it" and
+            "no hot tier configured"); False when the hot tier could not be updated. A failure is
+            logged, never raised — the cold-tier result stays the method's return value.
+        """
+        if not self._redis:
+            return True
+        try:
+            history = await self._redis.get_history(user_id, session_id, chatbot_id=agent_id)
+            if history is None:
+                return True
+            kept = [t for t in history.turns if t.turn_id != turn_id]
+            if len(kept) == len(history.turns):
+                return True
+            history.turns = kept
+            await self._redis.update_history(history)
+            return True
+        except Exception as exc:  # hot tier is a cache; the M9 cleanup path retries
+            self.logger.warning("hot-tier delete_turn failed for %s in %s: %s", turn_id, session_id, exc)
             return False
 
     async def get_context_for_agent(
