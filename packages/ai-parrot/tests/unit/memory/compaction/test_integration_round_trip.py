@@ -153,7 +153,11 @@ async def test_round_trip_chat_session_unchanged():
     for i in range(40):
         await disabled_bot.ask(f"hi {i}", user_id="u", session_id="s", use_vector_context=False)
         await budgeted_bot.ask(f"hi {i}", user_id="u", session_id="s", use_vector_context=False)
-        assert disabled_client.calls[-1]["history"] == budgeted_client.calls[-1]["history"]
+        # turn ids are per-bot random (ask() now stores the id it returns to the caller): compare the rendering
+        def shape(history):
+            return [(m.role, m.content, m.chatbot_id) for m in history]
+
+        assert shape(disabled_client.calls[-1]["history"]) == shape(budgeted_client.calls[-1]["history"])
 
 
 def _redis_available() -> bool:

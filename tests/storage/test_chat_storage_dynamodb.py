@@ -5,10 +5,11 @@ All tests use mocked DynamoDB and Redis backends.
 
 import asyncio
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from parrot.storage.chat import ChatStorage
+from parrot.storage.models import ChatStorageTurn
 
 
 @pytest.fixture
@@ -17,6 +18,7 @@ def mock_redis():
     redis.get_history = AsyncMock(return_value=None)
     redis.create_history = AsyncMock()
     redis.add_turn = AsyncMock()
+    redis.upsert_turn = AsyncMock()
     redis.delete_history = AsyncMock(return_value=True)
     redis.close = AsyncMock()
     return redis
@@ -26,10 +28,13 @@ def mock_redis():
 def mock_dynamo():
     dynamo = AsyncMock()
     dynamo.put_turn = AsyncMock()
+    dynamo.is_deleted = AsyncMock(return_value=False)
+    dynamo.put_tombstone = AsyncMock()
     dynamo.put_thread = AsyncMock()
     dynamo.update_thread = AsyncMock()
     dynamo.query_threads = AsyncMock(return_value=[])
     dynamo.query_turns = AsyncMock(return_value=[])
+    dynamo.query_turn_window = AsyncMock(return_value=[])
     dynamo.delete_thread_cascade = AsyncMock(return_value=0)
     dynamo.delete_session_artifacts = AsyncMock(return_value=0)
     dynamo.close = AsyncMock()
@@ -47,54 +52,38 @@ def storage(mock_redis, mock_dynamo):
     return s
 
 
-class TestSaveTurn:
-    """Tests for save_turn with DynamoDB backend."""
+def _turn(turn_id: str = "t-1") -> ChatStorageTurn:
+    return ChatStorageTurn(
+        turn_id=turn_id, user_id="u1", session_id="sess1", agent_id="bot1",
+        timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc), sequence=1,
+        user_message="hello", assistant_response="hi",
+    )
+
+
+class TestStoreTurn:
+    """Tests for store_turn with the DynamoDB-shaped cold backend."""
 
     @pytest.mark.asyncio
-    async def test_returns_turn_id(self, storage):
-        turn_id = await storage.save_turn(
-            user_id="u1",
-            session_id="sess1",
-            agent_id="bot1",
-            user_message="hello",
-            assistant_response="hi",
-        )
-        assert turn_id is not None
-        assert len(turn_id) > 0
+    async def test_stores_turn_in_both_tiers(self, storage, mock_dynamo, mock_redis):
+        await storage.store_turn(_turn())
+        mock_dynamo.put_turn.assert_awaited_once()
+        user_id, agent_id, session_id, turn_id, data = mock_dynamo.put_turn.call_args.args
+        assert (user_id, agent_id, session_id, turn_id) == ("u1", "bot1", "sess1", "t-1")
+        assert data["user_message"] == "hello" and data["assistant_response"] == "hi"
+        mock_redis.upsert_turn.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_uses_provided_turn_id(self, storage):
-        turn_id = await storage.save_turn(
-            turn_id="custom-123",
-            user_id="u1",
-            session_id="sess1",
-            agent_id="bot1",
-            user_message="hello",
-            assistant_response="hi",
-        )
-        assert turn_id == "custom-123"
+    async def test_uses_provided_turn_id(self, storage, mock_dynamo):
+        await storage.store_turn(_turn("custom-123"))
+        assert mock_dynamo.put_turn.call_args.args[3] == "custom-123"
+        assert mock_dynamo.put_turn.call_args.args[4]["turn_id"] == "custom-123"
 
     @pytest.mark.asyncio
-    async def test_fires_dynamodb_background_task(self, storage, mock_dynamo):
-        turn_id = await storage.save_turn(
-            user_id="u1",
-            session_id="sess1",
-            agent_id="bot1",
-            user_message="hello",
-            assistant_response="hi",
-        )
-        # Allow background task to run
-        await asyncio.sleep(0.05)
-
-        # The background task should have called put_turn
-        mock_dynamo.put_turn.assert_called_once()
-        call_kwargs = mock_dynamo.put_turn.call_args.kwargs
-        assert call_kwargs["user_id"] == "u1"
-        assert call_kwargs["agent_id"] == "bot1"
-        assert call_kwargs["session_id"] == "sess1"
-        data = call_kwargs["data"]
-        assert data["user_message"] == "hello"
-        assert data["assistant_response"] == "hi"
+    async def test_cold_write_is_awaited_not_backgrounded(self, storage, mock_dynamo):
+        await storage.store_turn(_turn())
+        # no sleep: the write has already completed when store_turn returns
+        assert mock_dynamo.put_turn.await_count == 1
+        assert mock_dynamo.update_thread.await_count == 1
 
 
 class TestLoadConversation:
@@ -103,7 +92,7 @@ class TestLoadConversation:
     @pytest.mark.asyncio
     async def test_falls_back_to_dynamodb(self, storage, mock_dynamo, mock_redis):
         mock_redis.get_history.return_value = None
-        mock_dynamo.query_turns.return_value = [
+        mock_dynamo.query_turn_window.return_value = [
             {
                 "turn_id": "t001",
                 "user_message": "hello",

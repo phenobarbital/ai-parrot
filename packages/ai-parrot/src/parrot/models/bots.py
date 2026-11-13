@@ -363,7 +363,7 @@ class BotModel(Model):
             raise ValueError(f"operation_mode must be one of {valid_modes}")
 
         # Validate memory_type
-        valid_memory_types = ["memory", "file", "redis"]
+        valid_memory_types = ["auto", "memory", "file", "redis"]
         if self.memory_type not in valid_memory_types:
             raise ValueError(f"memory_type must be one of {valid_memory_types}")
 

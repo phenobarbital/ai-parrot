@@ -9,14 +9,91 @@ to the original; the only additions are:
 FEAT-116: dynamodb-fallback-redis — Module 3 (ConversationDynamoDB refactor).
 """
 
+import asyncio
+import json
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from decimal import Decimal
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import aioboto3
 from botocore.exceptions import ClientError, BotoCoreError
+from boto3.dynamodb.conditions import Attr, Key as DKey
 from navconfig.logging import logging
 
-from parrot.storage.backends.base import ConversationBackend
+from parrot.storage.backends.base import BackfillBatch, ConversationBackend
+from parrot.storage.errors import (
+    ConversationDeletedError,
+    IndexNotReadyError,
+    InvalidTurnPayloadError,
+    StorageUnavailableError,
+    StorageWriteError,
+)
+
+_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+_ONE_US = timedelta(microseconds=1)
+_TS_WIDTH, _SEQ_WIDTH = 20, 12
+_RESERVED_KEYS = frozenset({"PK", "SK", "type", "session_id", "turn_id", "ttl", "chrono_sk"})
+_INTERNAL_KEYS = ("PK", "SK", "type", "ttl", "chrono_sk")
+
+
+class _OrderingRace(Exception):
+    """Internal: the canonical turn appeared between our read and our write — re-read and retry."""
+
+
+def _chrono_fields(data: dict) -> Tuple[Optional[int], int]:
+    """Return ``(timestamp_microseconds_utc, sequence)`` from a payload or stored item."""
+    raw = data.get("timestamp")
+    ts: Optional[datetime] = None
+    if isinstance(raw, datetime):
+        ts = raw
+    elif isinstance(raw, str) and raw.strip():
+        try:
+            ts = datetime.fromisoformat(raw.strip())
+        except ValueError:
+            ts = None
+    micros: Optional[int] = None
+    if ts is not None:
+        ts = (ts.replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts).astimezone(timezone.utc)
+        micros = (ts - _EPOCH) // _ONE_US
+        micros = micros if micros >= 0 else None
+    seq = data.get("sequence")
+    if isinstance(seq, Decimal):
+        seq = int(seq)
+    valid_seq = isinstance(seq, int) and not isinstance(seq, bool) and seq >= 0
+    return micros, (seq if valid_seq else 0)
+
+
+def _chrono_sk(session_id: str, micros: int, seq: int, turn_id: str) -> str:
+    """Companion sort key: fixed-width timestamp and sequence so lexical order == chronological order."""
+    if micros >= 10 ** _TS_WIDTH or seq >= 10 ** _SEQ_WIDTH:
+        raise InvalidTurnPayloadError(f"turn {turn_id}: timestamp/sequence out of range for the chrono key")
+    return f"THREAD#{session_id}#CHRONO#{micros:0{_TS_WIDTH}d}#{seq:0{_SEQ_WIDTH}d}#{turn_id}"
+
+
+def _to_dynamo(value: Any) -> Any:
+    """Recursively make ``value`` storable: ``float`` → ``Decimal`` (NaN/inf → ``None``), datetimes → ISO."""
+    if isinstance(value, bool) or value is None or isinstance(value, (int, str, Decimal)):
+        return value
+    if isinstance(value, float):
+        return Decimal(str(value)) if value == value and value not in (float("inf"), float("-inf")) else None
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {str(k): _to_dynamo(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_to_dynamo(v) for v in value]
+    return str(value)
+
+
+def _from_dynamo(value: Any) -> Any:
+    """Recursively turn ``Decimal`` back into ``int`` (when integral) or ``float``."""
+    if isinstance(value, Decimal):
+        return int(value) if value == value.to_integral_value() else float(value)
+    if isinstance(value, dict):
+        return {k: _from_dynamo(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_from_dynamo(v) for v in value]
+    return value
 
 
 class ConversationDynamoDB(ConversationBackend):
@@ -121,6 +198,82 @@ class ConversationDynamoDB(ConversationBackend):
     def _ttl_epoch(updated_at: datetime, days: int = 180) -> int:
         """Calculate TTL epoch seconds from a datetime."""
         return int((updated_at + timedelta(days=days)).timestamp())
+
+    @staticmethod
+    def _sk_turn(session_id: str, turn_id: str) -> str:
+        return f"THREAD#{session_id}#TURN#{turn_id}"
+
+    @staticmethod
+    def _sk_tomb(session_id: str, turn_id: Optional[str] = None) -> str:
+        """Tombstone SKs deliberately live OUTSIDE ``THREAD#<session>`` so the cascade cannot delete them."""
+        return f"TOMB#{session_id}" if turn_id is None else f"TOMB#{session_id}#TURN#{turn_id}"
+
+    @staticmethod
+    def _sk_state(session_id: str) -> str:
+        return f"INDEXSTATE#{session_id}"
+
+    def _require_connection(self) -> None:
+        """Raise ``StorageUnavailableError`` when the backend is not connected."""
+        if not self.is_connected:
+            raise StorageUnavailableError("DynamoDB conversation backend is not connected")
+
+    def _require_resource(self) -> Any:
+        """The boto resource (needed for transactions and batch reads), or ``StorageUnavailableError``."""
+        if self._resource is None:
+            raise StorageUnavailableError("DynamoDB resource is not available")
+        return self._resource
+
+    async def _get_item(self, pk: str, sk: str) -> Optional[dict]:
+        """Strongly consistent ``GetItem``; transport/API failures are ``StorageUnavailableError``."""
+        try:
+            response = await self._conv_table.get_item(Key={"PK": pk, "SK": sk}, ConsistentRead=True)
+        except (ClientError, BotoCoreError) as exc:
+            raise StorageUnavailableError(f"DynamoDB get_item failed for {sk}: {exc}") from exc
+        return response.get("Item") or None
+
+    async def _has_unindexed(self, pk: str, session_id: str) -> bool:
+        """Whether any turn item of the session lacks ``chrono_sk`` (session-bounded paginated Query)."""
+        kwargs: Dict[str, Any] = {
+            "KeyConditionExpression": DKey("PK").eq(pk) & DKey("SK").begins_with(f"THREAD#{session_id}#TURN#"),
+            "FilterExpression": Attr("chrono_sk").not_exists(),
+            "ProjectionExpression": "SK",
+            "ConsistentRead": True,
+        }
+        try:
+            while True:
+                response = await self._conv_table.query(**kwargs)
+                if response.get("Items"):
+                    return True
+                if not response.get("LastEvaluatedKey"):
+                    return False
+                kwargs["ExclusiveStartKey"] = response["LastEvaluatedKey"]
+        except (ClientError, BotoCoreError) as exc:
+            raise StorageUnavailableError(f"DynamoDB index-state probe failed: {exc}") from exc
+
+    async def _transact(self, labelled: List[Tuple[str, dict]]) -> None:
+        """Run ``TransactWriteItems``; decode cancellations into typed errors (labels are positional)."""
+        try:
+            await self._require_resource().meta.client.transact_write_items(
+                TransactItems=[item for _, item in labelled])
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") == "TransactionCanceledException":
+                self._raise_for_cancellation(exc, [label for label, _ in labelled])
+            raise StorageWriteError(f"DynamoDB transaction failed: {exc}") from exc
+        except BotoCoreError as exc:
+            raise StorageUnavailableError(f"DynamoDB transport failure: {exc}") from exc
+
+    @staticmethod
+    def _raise_for_cancellation(exc: ClientError, labels: List[str]) -> None:
+        reasons = exc.response.get("CancellationReasons") or []
+        codes = [r.get("Code") for r in reasons]
+        for label, code in zip(labels, codes):
+            if code != "ConditionalCheckFailed":
+                continue
+            if label.startswith("tombstone"):
+                raise ConversationDeletedError("session or turn is tombstoned; write rejected") from exc
+            if label == "canonical":
+                raise _OrderingRace() from exc
+        raise StorageWriteError(f"DynamoDB transaction cancelled: {codes}") from exc
 
     def _now(self) -> datetime:
         """Return current UTC datetime."""
@@ -281,34 +434,94 @@ class ConversationDynamoDB(ConversationBackend):
         turn_id: str,
         data: dict,
     ) -> None:
-        """Store a conversation turn."""
-        if not self.is_connected:
-            return
+        """Idempotent transactional upsert of a turn and its chronological companion.
+
+        Raises:
+            StorageUnavailableError: not connected / transport failure.
+            ConversationDeletedError: the session or this turn is tombstoned (nothing is written).
+            InvalidTurnPayloadError: timestamp/sequence outside the chrono key range.
+            StorageWriteError: the transaction failed (nothing is swallowed).
+        """
+        self._require_connection()
         pk = self._build_pk(user_id, agent_id)
-        sk = f"THREAD#{session_id}#TURN#{turn_id}"
-        now = self._now()
-        timestamp = data.get("timestamp", now)
-        if isinstance(timestamp, str):
-            timestamp = datetime.fromisoformat(timestamp)
-        item = {
-            "PK": pk,
-            "SK": sk,
-            "type": "turn",
-            "session_id": session_id,
-            "turn_id": turn_id,
-            "ttl": self._ttl_epoch(timestamp, self.DEFAULT_TTL_DAYS),
-            **data,
+        for _ in range(3):
+            existing = await self._get_item(pk, self._sk_turn(session_id, turn_id))
+            marker = await self._get_item(pk, self._sk_state(session_id))
+            payload, micros, seq = self._resolve_ordering(data, existing)
+            state_op = await self._state_op(pk, session_id, marker, indexed=micros is not None)
+            items = self._plan_put(pk, session_id, turn_id, payload, micros, seq, existing, state_op)
+            try:
+                await self._transact(items)
+                return
+            except _OrderingRace:
+                continue  # a concurrent first write won: re-read, reuse its ordering
+        raise StorageWriteError(f"turn {turn_id}: lost the ordering race 3 times")
+
+    @staticmethod
+    def _resolve_ordering(data: dict, existing: Optional[dict]) -> Tuple[dict, Optional[int], int]:
+        """Payload to store + the ordering to use (an existing turn's ordering always wins)."""
+        payload = {k: (v.isoformat() if isinstance(v, datetime) else v)
+                   for k, v in data.items() if k not in _RESERVED_KEYS}
+        micros, seq = _chrono_fields(data)
+        if existing is not None:
+            e_micros, e_seq = _chrono_fields(existing)
+            if e_micros is not None:
+                micros, seq = e_micros, e_seq
+                for name in ("timestamp", "sequence"):
+                    if name in existing:
+                        payload[name] = _from_dynamo(existing[name])
+                    else:
+                        payload.pop(name, None)
+        return payload, micros, seq
+
+    async def _state_op(self, pk: str, session_id: str, marker: Optional[dict], *, indexed: bool):
+        """Marker update this write needs: ``None``, ``('set', state)`` or ``('init', state)``."""
+        current = marker.get("state") if marker else None
+        if not indexed:
+            return None if current == "invalid" else ("set", "pending")
+        if current is not None:
+            return None
+        return ("init", "pending" if await self._has_unindexed(pk, session_id) else "ready")
+
+    def _plan_put(self, pk, session_id, turn_id, payload, micros, seq, existing, state_op):
+        """Positional ``[(label, transact_item)]`` — see ``_raise_for_cancellation``."""
+        table = self._conversations_table
+        chrono_sk = _chrono_sk(session_id, micros, seq, turn_id) if micros is not None else None
+        ts = _EPOCH + timedelta(microseconds=micros) if micros is not None else self._now()
+        ttl = self._ttl_epoch(ts, self.DEFAULT_TTL_DAYS)
+        item = {**_to_dynamo(payload), "PK": pk, "SK": self._sk_turn(session_id, turn_id), "type": "turn",
+                "session_id": session_id, "turn_id": turn_id, "ttl": ttl}
+        if chrono_sk is not None:
+            item["chrono_sk"] = chrono_sk
+        canonical: Dict[str, Any] = {"TableName": table, "Item": item}
+        if existing is None:
+            canonical["ConditionExpression"] = "attribute_not_exists(PK)"
+        absent = "attribute_not_exists(PK)"
+        planned = [
+            ("tombstone-session", {"ConditionCheck": {"TableName": table, "ConditionExpression": absent,
+                                   "Key": {"PK": pk, "SK": self._sk_tomb(session_id)}}}),
+            ("tombstone-turn", {"ConditionCheck": {"TableName": table, "ConditionExpression": absent,
+                                "Key": {"PK": pk, "SK": self._sk_tomb(session_id, turn_id)}}}),
+            ("canonical", {"Put": canonical}),
+        ]
+        if chrono_sk is not None:
+            companion = {"PK": pk, "SK": chrono_sk, "type": "chrono", "session_id": session_id,
+                         "turn_id": turn_id, "timestamp": payload.get("timestamp"), "sequence": seq, "ttl": ttl}
+            planned.append(("companion", {"Put": {"TableName": table, "Item": _to_dynamo(companion)}}))
+        if state_op is not None:
+            planned.append(("state", {"Update": self._state_update(pk, session_id, *state_op)}))
+        return planned
+
+    def _state_update(self, pk: str, session_id: str, mode: str, state: str) -> dict:
+        """``set`` overwrites the state; ``init`` only fills an absent one. No ``ttl`` attribute, ever."""
+        assign = "#s = :v" if mode == "set" else "#s = if_not_exists(#s, :v)"
+        return {
+            "TableName": self._conversations_table,
+            "Key": {"PK": pk, "SK": self._sk_state(session_id)},
+            "UpdateExpression": f"SET {assign}, #u = :now, #t = :t",
+            "ExpressionAttributeNames": {"#s": "state", "#u": "updated_at", "#t": "type"},
+            "ExpressionAttributeValues": {":v": state, ":now": self._now().isoformat(), ":t": "index_state"},
         }
-        for key in ("timestamp", "created_at", "updated_at"):
-            if key in item and isinstance(item[key], datetime):
-                item[key] = item[key].isoformat()
-        try:
-            await self._conv_table.put_item(Item=item)
-        except (ClientError, BotoCoreError) as exc:
-            self.logger.warning(
-                "DynamoDB put_turn failed for session %s turn %s: %s",
-                session_id, turn_id, exc,
-            )
 
     async def query_turns(
         self,
@@ -319,12 +532,10 @@ class ConversationDynamoDB(ConversationBackend):
         newest_first: bool = True,
     ) -> List[dict]:
         """Query conversation turns for a session."""
-        if not self.is_connected:
-            return []
+        self._require_connection()
         pk = self._build_pk(user_id, agent_id)
         prefix = f"THREAD#{session_id}#TURN#"
         try:
-            from boto3.dynamodb.conditions import Key as DKey  # noqa: E501 pylint: disable=import-outside-toplevel
             response = await self._conv_table.query(
                 KeyConditionExpression=DKey("PK").eq(pk) & DKey("SK").begins_with(prefix),
                 ScanIndexForward=not newest_first,
@@ -332,10 +543,7 @@ class ConversationDynamoDB(ConversationBackend):
             )
             return response.get("Items", [])
         except (ClientError, BotoCoreError) as exc:
-            self.logger.warning(
-                "DynamoDB query_turns failed for session %s: %s", session_id, exc
-            )
-            return []
+            raise StorageUnavailableError(f"DynamoDB query_turns failed for session {session_id}: {exc}") from exc
 
     async def delete_turn(
         self,
@@ -362,12 +570,241 @@ class ConversationDynamoDB(ConversationBackend):
                 Key={"PK": pk, "SK": sk},
                 ReturnValues="ALL_OLD",
             )
-            return bool(response.get("Attributes"))
+            attrs = response.get("Attributes")
+            if attrs and attrs.get("chrono_sk"):
+                await self._delete_companion(pk, attrs["chrono_sk"])
+            return bool(attrs)
         except (ClientError, BotoCoreError) as exc:
             self.logger.warning(
                 "DynamoDB delete_turn failed for %s: %s", turn_id, exc,
             )
             return False
+
+    async def _delete_companion(self, pk: str, chrono_sk: str) -> None:
+        """Best-effort: an orphan companion is harmless (the window skips companions without a canonical turn)."""
+        try:
+            await self._conv_table.delete_item(Key={"PK": pk, "SK": chrono_sk})
+        except (ClientError, BotoCoreError) as exc:
+            self.logger.warning("DynamoDB could not delete companion %s: %s", chrono_sk, exc)
+
+    # ------------------------------------------------------------------
+    # FEAT-886: ordered window, tombstones, index state, backfill
+    # ------------------------------------------------------------------
+
+    async def query_turn_window(
+        self, user_id: str, agent_id: str, session_id: str, limit: int
+    ) -> List[dict]:
+        """Newest ``limit`` turns by (timestamp, sequence, turn_id), limit applied descending, returned ascending."""
+        self._require_connection()
+        if await self.is_deleted(user_id, agent_id, session_id):
+            raise ConversationDeletedError(f"session {session_id} is tombstoned")
+        if await self.get_index_state(user_id, agent_id, session_id) != "ready":
+            raise IndexNotReadyError(f"chronological index of session {session_id} is not ready")
+        if limit <= 0:
+            return []
+        pk = self._build_pk(user_id, agent_id)
+        kwargs: Dict[str, Any] = {
+            "KeyConditionExpression": DKey("PK").eq(pk) & DKey("SK").begins_with(f"THREAD#{session_id}#CHRONO#"),
+            "ScanIndexForward": False, "Limit": limit, "ConsistentRead": True,
+        }
+        newest_first: List[dict] = []
+        try:
+            while len(newest_first) < limit:
+                page = await self._conv_table.query(**kwargs)
+                newest_first.extend(await self._load_turns(pk, session_id, page.get("Items", []),
+                                                           limit - len(newest_first)))
+                if not page.get("LastEvaluatedKey"):
+                    break
+                kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
+        except (ClientError, BotoCoreError) as exc:
+            raise StorageUnavailableError(f"DynamoDB query_turn_window failed: {exc}") from exc
+        newest_first.reverse()
+        return newest_first
+
+    async def _load_turns(self, pk: str, session_id: str, companions: List[dict], room: int) -> List[dict]:
+        """Resolve companions to canonical turns (newest first), dropping orphans and tombstoned turns."""
+        found: Dict[str, dict] = {}
+        for start in range(0, len(companions), 50):  # 2 keys per turn -> <= 100 per request
+            chunk = companions[start:start + 50]
+            keys = [{"PK": pk, "SK": self._sk_turn(session_id, c["turn_id"])} for c in chunk]
+            keys += [{"PK": pk, "SK": self._sk_tomb(session_id, c["turn_id"])} for c in chunk]
+            found.update(await self._batch_get(keys))
+        turns: List[dict] = []
+        for comp in companions:
+            turn = found.get(self._sk_turn(session_id, comp["turn_id"]))
+            if turn is None or self._sk_tomb(session_id, comp["turn_id"]) in found:
+                continue  # orphan companion / tombstoned turn
+            turns.append({k: _from_dynamo(v) for k, v in turn.items() if k not in _INTERNAL_KEYS})
+            if len(turns) == room:
+                break
+        return turns
+
+    async def _batch_get(self, keys: List[dict]) -> Dict[str, dict]:
+        """``BatchGetItem`` (consistent) with bounded retry of ``UnprocessedKeys``; maps SK -> item."""
+        table, out = self._conversations_table, {}
+        request = {table: {"Keys": keys, "ConsistentRead": True}}
+        for attempt in range(5):
+            response = await self._require_resource().batch_get_item(RequestItems=request)
+            out.update({i["SK"]: i for i in response.get("Responses", {}).get(table, [])})
+            request = response.get("UnprocessedKeys") or {}
+            if not request:
+                return out
+            await asyncio.sleep(0.05 * 2 ** attempt)
+        raise StorageUnavailableError("DynamoDB batch_get_item left unprocessed keys")
+
+    async def max_sequence(self, user_id: str, agent_id: str, session_id: str) -> int:
+        """Highest stored sequence (companion items; session-bounded paginated Query), ``0`` when none."""
+        self._require_connection()
+        pk = self._build_pk(user_id, agent_id)
+        kwargs: Dict[str, Any] = {
+            "KeyConditionExpression": DKey("PK").eq(pk) & DKey("SK").begins_with(f"THREAD#{session_id}#CHRONO#"),
+            "ProjectionExpression": "#q", "ExpressionAttributeNames": {"#q": "sequence"},  # SEQUENCE is reserved
+            "ConsistentRead": True,
+        }
+        highest = 0
+        try:
+            while True:
+                page = await self._conv_table.query(**kwargs)
+                highest = max([highest] + [int(i.get("sequence", 0)) for i in page.get("Items", [])])
+                if not page.get("LastEvaluatedKey"):
+                    return highest
+                kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
+        except (ClientError, BotoCoreError) as exc:
+            raise StorageUnavailableError(f"DynamoDB max_sequence failed: {exc}") from exc
+
+    async def put_tombstone(
+        self, user_id: str, agent_id: str, session_id: str, turn_id: Optional[str] = None
+    ) -> None:
+        """Durably record a session (``turn_id=None``) or turn deletion. Idempotent; NO ``ttl`` attribute."""
+        self._require_connection()
+        if turn_id == "":
+            raise ValueError("turn_id must be non-empty (use None for a session tombstone)")
+        item = {"PK": self._build_pk(user_id, agent_id), "SK": self._sk_tomb(session_id, turn_id),
+                "type": "tombstone", "session_id": session_id, "created_at": self._now().isoformat()}
+        if turn_id is not None:
+            item["turn_id"] = turn_id
+        try:
+            await self._conv_table.put_item(Item=item, ConditionExpression="attribute_not_exists(PK)")
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+                return  # already tombstoned: first created_at wins
+            raise StorageWriteError(f"DynamoDB put_tombstone failed: {exc}") from exc
+        except BotoCoreError as exc:
+            raise StorageUnavailableError(f"DynamoDB transport failure: {exc}") from exc
+
+    async def deleted_turn_ids(self, user_id: str, agent_id: str, session_id: str) -> Set[str]:
+        """Every turn-scoped tombstone of the session: ONE paginated, consistent Query (not a GetItem per turn)."""
+        self._require_connection()
+        kwargs: Dict[str, Any] = {
+            "KeyConditionExpression": DKey("PK").eq(self._build_pk(user_id, agent_id))
+            & DKey("SK").begins_with(f"TOMB#{session_id}#TURN#"),
+            "ProjectionExpression": "turn_id", "ConsistentRead": True,
+        }
+        gone: Set[str] = set()
+        try:
+            while True:
+                page = await self._conv_table.query(**kwargs)
+                gone.update(i["turn_id"] for i in page.get("Items", []) if i.get("turn_id"))
+                if not page.get("LastEvaluatedKey"):
+                    return gone
+                kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
+        except (ClientError, BotoCoreError) as exc:
+            raise StorageUnavailableError(f"DynamoDB deleted_turn_ids failed: {exc}") from exc
+
+    async def is_deleted(
+        self, user_id: str, agent_id: str, session_id: str, turn_id: Optional[str] = None
+    ) -> bool:
+        """Whether the session (or session OR this turn) is tombstoned; raises when it cannot be determined."""
+        self._require_connection()
+        pk = self._build_pk(user_id, agent_id)
+        if await self._get_item(pk, self._sk_tomb(session_id)) is not None:
+            return True
+        return turn_id is not None and await self._get_item(pk, self._sk_tomb(session_id, turn_id)) is not None
+
+    async def get_index_state(self, user_id: str, agent_id: str, session_id: str) -> str:
+        """``'ready'`` | ``'pending'`` | ``'invalid'`` (marker fast path, otherwise derived)."""
+        self._require_connection()
+        pk = self._build_pk(user_id, agent_id)
+        marker = await self._get_item(pk, self._sk_state(session_id))
+        state = marker.get("state") if marker else None
+        if state == "ready" or not await self._has_unindexed(pk, session_id):
+            return "ready"
+        return "invalid" if state == "invalid" else "pending"
+
+    @staticmethod
+    def _split_pk(pk: str) -> Tuple[str, str]:
+        user_id, _, agent_id = pk[len("USER#"):].partition("#AGENT#")
+        return user_id, agent_id
+
+    async def _index_legacy_item(self, item: dict) -> str:
+        """Index one legacy canonical turn: ``'indexed'`` | ``'invalid'`` | ``'skipped'`` (tombstoned / raced)."""
+        micros, seq = _chrono_fields(item)
+        if micros is None:
+            return "invalid"
+        pk, session_id, turn_id = item["PK"], item["session_id"], item["turn_id"]
+        chrono_sk = _chrono_sk(session_id, micros, seq, turn_id)
+        table, absent = self._conversations_table, "attribute_not_exists(PK)"
+        companion = {"PK": pk, "SK": chrono_sk, "type": "chrono", "session_id": session_id, "turn_id": turn_id,
+                     "timestamp": item.get("timestamp"), "sequence": seq, "ttl": item.get("ttl")}
+        labelled = [
+            ("tombstone-session", {"ConditionCheck": {"TableName": table, "ConditionExpression": absent,
+                                   "Key": {"PK": pk, "SK": self._sk_tomb(session_id)}}}),
+            ("tombstone-turn", {"ConditionCheck": {"TableName": table, "ConditionExpression": absent,
+                                "Key": {"PK": pk, "SK": self._sk_tomb(session_id, turn_id)}}}),
+            ("canonical", {"Update": {"TableName": table, "Key": {"PK": pk, "SK": item["SK"]},
+                           "UpdateExpression": "SET chrono_sk = :c",
+                           "ConditionExpression": "attribute_not_exists(chrono_sk)",
+                           "ExpressionAttributeValues": {":c": chrono_sk}}}),
+            ("companion", {"Put": {"TableName": table, "Item": _to_dynamo(companion)}}),
+        ]
+        try:
+            await self._transact(labelled)
+        except (ConversationDeletedError, _OrderingRace):
+            return "skipped"
+        return "indexed"
+
+    async def _finalize_session(self, pk: str, session_id: str, saw_invalid: bool) -> None:
+        """Write the marker ``invalid`` / ``ready`` for a session touched by a batch (else leave it pending)."""
+        if saw_invalid:
+            state = "invalid"
+        elif not await self._has_unindexed(pk, session_id):
+            state = "ready"
+        else:
+            return
+        await self._conv_table.put_item(Item={"PK": pk, "SK": self._sk_state(session_id), "type": "index_state",
+                                              "state": state, "updated_at": self._now().isoformat()})
+
+    async def backfill_batch(self, cursor: Optional[str], batch_size: int) -> BackfillBatch:
+        """Index up to ``batch_size`` scanned items after ``cursor`` (resumable; offline, never a request path).
+
+        ``invalid_sessions`` entries are ``"<user_id>/<agent_id>/<session_id>"``; the cursor is the JSON-encoded
+        ``LastEvaluatedKey`` of the ``Scan`` page.
+        """
+        self._require_connection()
+        kwargs: Dict[str, Any] = {
+            "FilterExpression": Attr("type").eq("turn") & Attr("chrono_sk").not_exists(),
+            "Limit": batch_size, "ConsistentRead": True,
+        }
+        if cursor is not None:
+            kwargs["ExclusiveStartKey"] = json.loads(cursor)
+        touched: Dict[Tuple[str, str], bool] = {}
+        indexed = 0
+        try:
+            page = await self._conv_table.scan(**kwargs)
+            for item in page.get("Items", []):
+                outcome = await self._index_legacy_item(item)
+                key = (item["PK"], item["session_id"])
+                indexed += outcome == "indexed"
+                if outcome != "skipped":
+                    touched[key] = touched.get(key, False) or outcome == "invalid"
+            for (pk, session_id), saw_invalid in touched.items():
+                await self._finalize_session(pk, session_id, saw_invalid)
+        except (ClientError, BotoCoreError) as exc:
+            raise StorageWriteError(f"DynamoDB backfill_batch failed: {exc}") from exc
+        invalid = tuple("/".join((*self._split_pk(pk), session)) for (pk, session), bad in touched.items() if bad)
+        last = page.get("LastEvaluatedKey")
+        return BackfillBatch(processed=indexed, next_cursor=json.dumps(last, default=str) if last else None,
+                             invalid_sessions=invalid)
 
     async def delete_thread_cascade(
         self,

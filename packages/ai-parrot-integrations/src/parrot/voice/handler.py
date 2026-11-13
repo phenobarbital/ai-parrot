@@ -174,6 +174,7 @@ def resolve_voice_client_class(provider: "VoiceProvider"):
 
 
 @dataclass
+
 class BotConfig:
     """Configuration for VoiceBot creation."""
 
@@ -224,6 +225,33 @@ class BotConfig:
 # =============================================================================
 # Connection State
 # =============================================================================
+
+
+def configure_voice_memory(bot, logger, session_id) -> None:
+    """Best-effort conversation memory for a voice session: Redis, falling back to in-memory.
+
+    ``memory_type`` defaults to ``"auto"`` (FEAT-886), which may resolve to in-memory; voice wants cross-turn
+    persistence, so ``None`` / ``"memory"`` / ``"auto"`` become ``"redis"``. A Redis failure now raises from
+    ``configure_conversation_memory`` (no silent fallback), so the in-memory fallback is made here, explicitly.
+    """
+    if getattr(bot, "conversation_memory", None) is not None:
+        return
+    if not getattr(bot, "memory_type", None) or bot.memory_type in ("memory", "auto"):
+        bot.memory_type = "redis"
+    try:
+        bot.configure_conversation_memory()
+        return
+    except Exception:  # noqa: BLE001 - memory is best-effort, never block voice
+        logger.warning(
+            "VoiceChatHandler: Redis conversation memory unavailable for session %s; "
+            "falling back to in-memory.", session_id, exc_info=True,
+        )
+    try:
+        bot.memory_type = "memory"
+        bot.configure_conversation_memory()
+    except Exception:  # noqa: BLE001
+        logger.warning("VoiceChatHandler: could not configure any conversation memory for session %s.",
+                       session_id, exc_info=True)
 
 
 @dataclass
@@ -1880,18 +1908,7 @@ class VoiceChatHandler:
         # the built-in in-memory fallback if Redis is unavailable.  Keyed by
         # connection.session_id, so turns accumulate across the session and
         # survive a GoAway reconnect.
-        try:
-            if getattr(connection.bot, "conversation_memory", None) is None:
-                if not getattr(connection.bot, "memory_type", None) or connection.bot.memory_type == "memory":
-                    connection.bot.memory_type = "redis"
-                connection.bot.configure_conversation_memory()
-        except Exception:  # noqa: BLE001 - memory is best-effort, never block voice
-            self.logger.warning(
-                "VoiceChatHandler: could not configure conversation memory "
-                "for session %s; continuing without cross-turn memory.",
-                connection.session_id,
-                exc_info=True,
-            )
+        configure_voice_memory(connection.bot, self.logger, connection.session_id)
 
         # Start voice task only for streaming mode
         connection.shutdown_event.clear()

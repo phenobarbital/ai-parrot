@@ -13,24 +13,34 @@ MONGO_DSN = os.environ.get("MONGO_TEST_DSN")
 
 
 def _dynamodb_backend():
-    """Return a ConversationDynamoDB with moto mocks, or skip if moto not available."""
+    """Return a ConversationDynamoDB served by a moto SERVER (aioboto3 talks aiohttp, which ``mock_aws()`` does
+    not intercept), or skip if moto is not available."""
     try:
         import moto  # noqa: F401
+        from moto.server import ThreadedMotoServer
     except ImportError:
-        pytest.skip("moto not installed — skipping DynamoDB contract tests")
+        pytest.skip("moto[server] not installed — skipping DynamoDB contract tests")
 
     try:
+        import socket
+        import uuid
+
         import boto3
-        from moto import mock_aws
         from parrot.storage.backends.dynamodb import ConversationDynamoDB
 
-        # Start moto mock
-        mock = mock_aws()
-        mock.start()
-
-        # Create fake tables
-        client = boto3.client("dynamodb", region_name="us-east-1")
-        for table_name in ("parrot-conversations", "parrot-artifacts"):
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            port = s.getsockname()[1]
+        server = ThreadedMotoServer(port=port, verbose=False)
+        server.start()
+        endpoint = f"http://127.0.0.1:{port}"
+        os.environ.setdefault("AWS_ACCESS_KEY_ID", "x")
+        os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "x")
+        os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
+        client = boto3.client("dynamodb", endpoint_url=endpoint, region_name="us-east-1")
+        suffix = uuid.uuid4().hex[:8]
+        names = (f"parrot-conversations-{suffix}", f"parrot-artifacts-{suffix}")
+        for table_name in names:
             client.create_table(
                 TableName=table_name,
                 KeySchema=[
@@ -45,12 +55,13 @@ def _dynamodb_backend():
             )
 
         backend = ConversationDynamoDB(
-            conversations_table="parrot-conversations",
-            artifacts_table="parrot-artifacts",
-            dynamo_params={"region_name": "us-east-1"},
+            conversations_table=names[0],
+            artifacts_table=names[1],
+            dynamo_params={"region_name": "us-east-1", "endpoint_url": endpoint,
+                           "aws_access_key_id": "x", "aws_secret_access_key": "x"},
         )
-        # Store mock handle so we can stop it later
-        backend._moto_mock = mock
+        # Store the server handle (``stop()``) so the fixture can stop it later
+        backend._moto_mock = server
         return backend
     except Exception as exc:
         pytest.skip(f"DynamoDB moto setup failed: {exc}")

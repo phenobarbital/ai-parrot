@@ -1,62 +1,40 @@
-"""FEAT-710 TASK-4551 — hot tier keeps caller metadata."""
+"""FEAT-710 TASK-4551 / FEAT-886 — the hot tier keeps the slim presentation subset (usage, tenant, ...)."""
+from datetime import datetime, timezone
+from unittest.mock import AsyncMock
 
 import pytest
 
+from parrot.memory.persistence import TurnPresentation
 from parrot.storage.chat import ChatStorage
-from parrot.storage.models import ChatMessage, MessageRole
+from parrot.storage.models import ChatStorageTurn
 
 
 @pytest.mark.asyncio
 async def test_hot_tier_turn_contains_usage_and_tenant() -> None:
-    """AC-1: Redis ConversationTurn.metadata contains caller keys and fixed keys."""
-    # Create a ChatStorage with a stubbed Redis conversation memory
-    from unittest.mock import AsyncMock
-
+    """AC-1: the hot-tier ConversationTurn.metadata carries usage/tenant and the four fixed keys."""
     mock_redis = AsyncMock()
-    mock_redis.get_history = AsyncMock(return_value=None)
-    mock_redis.create_history = AsyncMock()
-    mock_redis.add_turn = AsyncMock()
+    mock_redis.upsert_turn = AsyncMock()
 
-    storage = ChatStorage(
-        redis_conversation=mock_redis,
-        dynamodb=None,
-    )
+    storage = ChatStorage(redis_conversation=mock_redis, dynamodb=None)
 
-    # Call save_turn with caller metadata
-    turn_id = await storage.save_turn(
-        user_id="user1",
-        session_id="session1",
-        agent_id="agent1",
-        user_message="Hello",
-        assistant_response="Hi there",
-        metadata={"usage": {"total_tokens": 3}, "tenant": "t1"},
-    )
+    await storage.store_turn(ChatStorageTurn(
+        turn_id="t-1", user_id="user1", session_id="session1", agent_id="agent1",
+        timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc), sequence=1,
+        user_message="Hello", assistant_response="Hi there",
+        presentation=TurnPresentation(usage={"total_tokens": 3}, tenant="t1"),
+    ))
 
-    # Verify the turn was added to Redis
-    assert mock_redis.add_turn.called
-    call_args = mock_redis.add_turn.call_args
-    assert len(call_args.args) == 3
-    turn = call_args.args[2]  # The third argument is the ConversationTurn
+    mock_redis.upsert_turn.assert_awaited_once()
+    call_args = mock_redis.upsert_turn.call_args
+    assert call_args.args[:2] == ("user1", "session1")
+    assert call_args.kwargs == {"chatbot_id": "agent1"}
+    turn = call_args.args[2]
 
-    # AC-1: metadata should contain both caller keys and fixed keys
-    assert turn.metadata is not None
     assert isinstance(turn.metadata, dict)
-
-    # Check caller keys are present
-    assert "usage" in turn.metadata
     assert turn.metadata["usage"] == {"total_tokens": 3}
-    assert "tenant" in turn.metadata
     assert turn.metadata["tenant"] == "t1"
-
-    # Check fixed keys are present
-    assert "output_mode" in turn.metadata
-    assert "model" in turn.metadata
-    assert "provider" in turn.metadata
-    assert "response_time_ms" in turn.metadata
-
-    # Verify fixed keys win on conflict (caller metadata should not override fixed keys)
-    # The fixed keys should have their original values
-    assert turn.metadata["output_mode"] is None  # Not provided in metadata
-    assert turn.metadata["model"] is None  # Not provided in metadata
-    assert turn.metadata["provider"] is None  # Not provided in metadata
-    assert turn.metadata["response_time_ms"] is None  # Not provided in metadata
+    for key in ("output_mode", "model", "provider", "response_time_ms"):
+        assert key in turn.metadata and turn.metadata[key] is None
+    assert "cost_usd" not in turn.metadata  # only present when set
+    for heavy in ("output", "data", "code", "sources"):
+        assert heavy not in turn.metadata  # the hot tier is a cache; the cold row has everything

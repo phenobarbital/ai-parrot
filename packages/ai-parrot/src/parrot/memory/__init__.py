@@ -22,9 +22,28 @@ from .episodic import (
     EpisodicMemoryToolkit,
 )
 from .file import FileConversationMemory
+from .persistence import (
+    CONVERSATION_DELETED_TOPIC,
+    TURN_COMPLETED_TOPIC,
+    BusTurnPublisher,
+    TurnPresentation,
+    TurnPublisher,
+    turn_event_id,
+)
 from .mem import InMemoryConversation
 from .redis import RedisConversation
+from .hydration import (
+    HydrationError,
+    HydrationNotReadyError,
+    HydrationSource,
+    HydrationUnavailableError,
+    LocalSequenceAllocator,
+    RedisSequenceAllocator,
+    SequenceAllocator,
+    SessionDeletedError,
+)
 from .render import HistoryMessage, render_history
+from .parts import MessagePart, render_parts_text
 from .unified import (
     ContextAssembler,
     LongTermMemoryMixin,
@@ -91,6 +110,7 @@ def __dir__() -> list[str]:
 __all__ = [
     "AgentMemory",
     "AnswerMemory",
+    "BusTurnPublisher",
     "BrainStore",
     "CompactionCommit",
     "CompactionResult",
@@ -99,6 +119,7 @@ __all__ = [
     "ConversationHistory",
     "ConversationMemory",
     "ConversationTurn",
+    "CONVERSATION_DELETED_TOPIC",
     "DistilledKnowledge",
     "DreamConfig",
     "DreamCycleReport",
@@ -110,22 +131,36 @@ __all__ = [
     "EpisodicMemoryToolkit",
     "FileConversationMemory",
     "HistoryMessage",
+    "HydrationError",
+    "HydrationNotReadyError",
+    "HydrationSource",
+    "HydrationUnavailableError",
+    "LocalSequenceAllocator",
+    "RedisSequenceAllocator",
+    "SequenceAllocator",
+    "SessionDeletedError",
     "InMemoryConversation",
     "Limit",
     "LongTermMemoryMixin",
     "MemoryConfig",
     "MemoryContext",
+    "MessagePart",
     "OmissionStore",
     "RedisConversation",
     "TokenCount",
     "TokenCounter",
+    "TURN_COMPLETED_TOPIC",
     "ToolInvocation",
     "ToolStatus",
+    "TurnPresentation",
+    "TurnPublisher",
     "TurnState",
     "TurnView",
     "UnifiedMemoryManager",
     "compact_history",
     "render_history",
+    "render_parts_text",
+    "turn_event_id",
     "load_state",
     "save_state",
 ]

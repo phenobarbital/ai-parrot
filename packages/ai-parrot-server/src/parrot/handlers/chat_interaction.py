@@ -12,10 +12,19 @@ from navigator.views import BaseView
 from navigator_session import get_session
 from navigator_auth.decorators import is_authenticated, user_session
 from navigator_auth.conf import AUTH_SESSION_OBJECT
+from parrot.storage.errors import ConversationDeletedError, StorageError
+
+
+def _storage_error_response(view: BaseView, exc: StorageError) -> web.Response:
+    """Map a typed storage failure to an HTTP status (never an empty 200)."""
+    if isinstance(exc, ConversationDeletedError):
+        return view.error(response={"message": "Conversation was deleted"}, status=410)
+    return view.error(response={"message": "Conversation storage is unavailable"}, status=503)
 
 
 @is_authenticated()
 @user_session()
+
 class ChatInteractionHandler(BaseView):
     """Manage persisted chat interactions.
 
@@ -115,12 +124,15 @@ class ChatInteractionHandler(BaseView):
                     status=400,
                 )
 
-        conversations = await storage.list_user_conversations(
-            user_id=user_id,
-            agent_id=agent_id,
-            limit=limit,
-            since=since,
-        )
+        try:
+            conversations = await storage.list_user_conversations(
+                user_id=user_id,
+                agent_id=agent_id,
+                limit=limit,
+                since=since,
+            )
+        except StorageError as exc:
+            return _storage_error_response(self, exc)
         return self.json_response({
             "conversations": conversations,
             "count": len(conversations),
@@ -133,13 +145,19 @@ class ChatInteractionHandler(BaseView):
         qs = self.get_arguments(self.request)
         agent_id = qs.get("agent_id")
         limit = int(qs.get("limit", 50))
+        if not agent_id:
+            # tombstones are keyed by the real agent: checking under "" would be a false "not deleted"
+            return self.error(response={"message": "agent_id is required"}, status=400)
 
-        messages = await storage.load_conversation(
-            user_id=user_id,
-            session_id=session_id,
-            agent_id=agent_id,
-            limit=limit,
-        )
+        try:
+            messages = await storage.load_conversation(
+                user_id=user_id,
+                session_id=session_id,
+                agent_id=agent_id,
+                limit=limit,
+            )
+        except StorageError as exc:
+            return _storage_error_response(self, exc)
 
         metadata = await storage.get_conversation_metadata(session_id)
 
@@ -181,12 +199,15 @@ class ChatInteractionHandler(BaseView):
                 status=400,
             )
 
-        result = await storage.create_conversation(
-            user_id=user_id,
-            session_id=session_id,
-            agent_id=agent_id,
-            title=title,
-        )
+        try:
+            result = await storage.create_conversation(
+                user_id=user_id,
+                session_id=session_id,
+                agent_id=agent_id,
+                title=title,
+            )
+        except StorageError as exc:  # a deleted session is 410, an unreachable store 503
+            return _storage_error_response(self, exc)
 
         if result is not None:
             return self.json_response({
@@ -252,12 +273,15 @@ class ChatInteractionHandler(BaseView):
                 status=400,
             )
 
-        updated = await storage.update_conversation_title(
-            session_id=session_id,
-            title=title,
-            user_id=user_id,
-            agent_id=agent_id,
-        )
+        try:
+            updated = await storage.update_conversation_title(
+                session_id=session_id,
+                title=title,
+                user_id=user_id,
+                agent_id=agent_id,
+            )
+        except StorageError as exc:
+            return _storage_error_response(self, exc)
 
         if updated:
             return self.json_response({
@@ -311,11 +335,14 @@ class ChatInteractionHandler(BaseView):
                 status=400,
             )
 
-        deleted = await storage.delete_conversation(
-            user_id=user_id,
-            session_id=session_id,
-            agent_id=agent_id,
-        )
+        try:
+            deleted = await storage.delete_conversation(
+                user_id=user_id,
+                session_id=session_id,
+                agent_id=agent_id,
+            )
+        except StorageError as exc:
+            return _storage_error_response(self, exc)
 
         if deleted:
             return self.json_response({
@@ -385,12 +412,15 @@ class ChatInteractionHandler(BaseView):
                 status=400,
             )
 
-        deleted = await storage.delete_turn(
-            session_id=session_id,
-            turn_id=turn_id,
-            user_id=user_id,
-            agent_id=agent_id,
-        )
+        try:
+            deleted = await storage.delete_turn(
+                session_id=session_id,
+                turn_id=turn_id,
+                user_id=user_id,
+                agent_id=agent_id,
+            )
+        except StorageError as exc:
+            return _storage_error_response(self, exc)
 
         if deleted:
             return self.json_response({

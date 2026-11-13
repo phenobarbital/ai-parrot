@@ -5,7 +5,7 @@ TASK-831: Observability Hooks — FEAT-116.
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from parrot.storage.backends.base import ConversationBackend
+from parrot.storage.backends.base import BackfillBatch, ConversationBackend
 from parrot.storage.metrics import NoopStorageMetrics, StorageMetrics
 from parrot.storage.instrumented import InstrumentedBackend
 
@@ -42,6 +42,13 @@ class _Stub(ConversationBackend):
     async def query_artifacts(self, *a, **kw): return []
     async def delete_artifact(self, *a, **kw): ...
     async def delete_session_artifacts(self, *a, **kw): return 0
+    async def query_turn_window(self, *a, **kw): return []
+    async def max_sequence(self, *a, **kw): return 0
+    async def put_tombstone(self, *a, **kw): ...
+    async def deleted_turn_ids(self, *a, **kw): return set()
+    async def is_deleted(self, *a, **kw): raise RuntimeError("guard-boom")
+    async def get_index_state(self, *a, **kw): return "ready"
+    async def backfill_batch(self, *a, **kw): return BackfillBatch(0, None, ())
 
 
 async def test_noop_metrics_does_nothing():
@@ -105,3 +112,21 @@ async def test_default_metrics_is_noop():
     b = InstrumentedBackend(_Stub())
     # Should not raise
     await b.put_thread("u", "a", "s", {})
+
+
+async def test_new_operations_are_delegated_and_measured():
+    """Each FEAT-886 operation reaches the inner backend, is timed, and errors propagate + are counted."""
+    metrics = _CountingMetrics()
+    b = InstrumentedBackend(_Stub(), metrics=metrics)
+    assert await b.query_turn_window("u", "a", "s", 5) == []
+    assert await b.max_sequence("u", "a", "s") == 0
+    assert await b.get_index_state("u", "a", "s") == "ready"
+    assert (await b.backfill_batch(None, 10)).next_cursor is None
+    await b.put_tombstone("u", "a", "s")
+    with pytest.raises(RuntimeError, match="guard-boom"):
+        await b.is_deleted("u", "a", "s")
+    assert [c[1] for c in metrics.error_calls] == ["is_deleted"]
+    assert [c[1] for c in metrics.latency_calls] == [
+        "query_turn_window", "max_sequence", "get_index_state",
+        "backfill_batch", "put_tombstone", "is_deleted",
+    ]

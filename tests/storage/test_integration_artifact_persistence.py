@@ -17,6 +17,7 @@ from parrot.storage.s3_overflow import S3OverflowManager
 from parrot.storage.artifacts import ArtifactStore
 from parrot.storage.chat import ChatStorage
 from parrot.storage.models import (
+    ChatStorageTurn,
     Artifact,
     ArtifactType,
     ArtifactCreator,
@@ -56,7 +57,10 @@ def mock_dynamo():
     backend.update_thread = AsyncMock()
     backend.query_threads = AsyncMock(return_value=[])
     backend.put_turn = AsyncMock()
+    backend.is_deleted = AsyncMock(return_value=False)
+    backend.put_tombstone = AsyncMock()
     backend.query_turns = AsyncMock(return_value=[])
+    backend.query_turn_window = AsyncMock(return_value=[])
     backend.delete_thread_cascade = AsyncMock(return_value=0)
     backend.put_artifact = AsyncMock()
     backend.get_artifact = AsyncMock(return_value=None)
@@ -96,6 +100,7 @@ def mock_redis():
     redis.get_history = AsyncMock(return_value=None)
     redis.create_history = AsyncMock()
     redis.add_turn = AsyncMock()
+    redis.upsert_turn = AsyncMock()
     redis.delete_history = AsyncMock(return_value=True)
     redis.close = AsyncMock()
     return redis
@@ -106,6 +111,14 @@ def chat_storage(mock_redis, mock_dynamo):
     storage = ChatStorage(redis_conversation=mock_redis, dynamodb=mock_dynamo)
     storage._initialized = True
     return storage
+
+
+def _stored_turn(user_message: str, assistant_response: str) -> ChatStorageTurn:
+    return ChatStorageTurn(
+        turn_id="t-1", user_id="u1", session_id="sess1", agent_id="bot1",
+        timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc), sequence=1,
+        user_message=user_message, assistant_response=assistant_response,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -127,15 +140,8 @@ class TestConversationLifecycle:
         mock_dynamo.put_thread.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_save_turn_and_fire_dynamodb(self, chat_storage, mock_dynamo):
-        turn_id = await chat_storage.save_turn(
-            user_id="u1", session_id="sess1", agent_id="bot1",
-            user_message="What are Q4 sales?",
-            assistant_response="Q4 sales were $2.5M",
-        )
-        assert turn_id is not None
-        # Allow background task to run
-        await asyncio.sleep(0.05)
+    async def test_store_turn_writes_dynamodb(self, chat_storage, mock_dynamo):
+        await chat_storage.store_turn(_stored_turn("What are Q4 sales?", "Q4 sales were $2.5M"))
         mock_dynamo.put_turn.assert_called_once()
 
     @pytest.mark.asyncio
@@ -171,7 +177,7 @@ class TestConversationLifecycle:
     @pytest.mark.asyncio
     async def test_load_conversation_from_dynamodb(self, chat_storage, mock_dynamo, mock_redis):
         mock_redis.get_history.return_value = None
-        mock_dynamo.query_turns.return_value = [
+        mock_dynamo.query_turn_window.return_value = [
             {
                 "turn_id": "t001",
                 "user_message": "Hello",
@@ -381,18 +387,14 @@ class TestGracefulDegradation:
     """Bot keeps working when DynamoDB is unavailable."""
 
     @pytest.mark.asyncio
-    async def test_no_dynamo_save_turn_still_works(self, mock_redis):
-        """ChatStorage with no DynamoDB still saves to Redis."""
+    async def test_no_dynamo_store_turn_still_works(self, mock_redis):
+        """ChatStorage with no DynamoDB still stores to Redis."""
         storage = ChatStorage(redis_conversation=mock_redis)
         storage._initialized = True
 
-        turn_id = await storage.save_turn(
-            user_id="u1", session_id="sess1", agent_id="bot1",
-            user_message="hello", assistant_response="hi",
-        )
-        assert turn_id is not None
+        await storage.store_turn(_stored_turn("hello", "hi"))
         # Redis should have been called
-        mock_redis.add_turn.assert_called_once()
+        mock_redis.upsert_turn.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_no_dynamo_load_returns_empty(self):
@@ -410,9 +412,9 @@ class TestGracefulDegradation:
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_dynamo_error_doesnt_crash_query(self, mock_dynamo, mock_redis):
+    async def test_dynamo_error_is_raised_not_swallowed_on_query(self, mock_dynamo, mock_redis):
         from botocore.exceptions import ClientError
-        mock_dynamo.query_turns.side_effect = ClientError(
+        mock_dynamo.query_turn_window.side_effect = ClientError(
             {"Error": {"Code": "500", "Message": "Internal"}}, "Query"
         )
         mock_redis.get_history.return_value = None
@@ -420,9 +422,11 @@ class TestGracefulDegradation:
         storage = ChatStorage(redis_conversation=mock_redis, dynamodb=mock_dynamo)
         storage._initialized = True
 
-        # Should not raise
-        messages = await storage.load_conversation("u1", "sess1", agent_id="bot1")
-        assert messages == []
+        # FEAT-886: a failed read is raised as a typed error, never reported as an empty conversation
+        from parrot.storage.errors import StorageUnavailableError
+
+        with pytest.raises(StorageUnavailableError):
+            await storage.load_conversation("u1", "sess1", agent_id="bot1")
 
 
 # ---------------------------------------------------------------------------

@@ -382,7 +382,7 @@ class BaseBot(AbstractBot):
         if not session_id:
             session_id = str(uuid.uuid4())
         user_id = user_id or "anonymous"
-        turn_id = str(uuid.uuid4())
+        turn_id = kwargs.pop("turn_id", None) or str(uuid.uuid4())
 
         # FEAT-176: resolve trace context and emit BeforeInvokeEvent.
         _trace_ctx_conv = trace_context or TraceContext.new_root()
@@ -430,12 +430,10 @@ class BaseBot(AbstractBot):
 
             memory = memory or self.conversation_memory
 
+            if not (use_conversation_history and memory):
+                await self._guard_session(user_id, session_id)
             if use_conversation_history and memory:
-                conversation_history = await memory.get_history(
-                    user_id, session_id, chatbot_id=self.memory_key_id
-                ) or await memory.create_history(
-                    user_id, session_id, chatbot_id=self.memory_key_id
-                )  # noqa
+                conversation_history = await self._load_or_hydrate_history(memory, user_id, session_id)
                 # FEAT-524: history reaches the provider exactly once, as
                 # alternating user/assistant messages — never as a system-prompt
                 # digest. `rendered_history` also feeds the AIMessage's
@@ -640,28 +638,6 @@ class BaseBot(AbstractBot):
                         if extracted_data and not response.data:
                             response.data = extracted_data
 
-                    # Save conversation turn
-                    if use_conversation_history and memory:
-                        turn = ConversationTurn.from_ai_message(
-                            user_message=question,
-                            response=response,
-                            user_id=user_id,
-                            chatbot_id=self.memory_key_id,
-                            context_used=vector_context if use_vector_context else None,
-                            # FEAT-538: when the turn was observed these
-                            # REPLACE the tool_calls conversion, so a call
-                            # is never listed twice. None keeps the legacy
-                            # derivation for an unobserved turn.
-                            tool_invocations=self.observed_tool_invocations(),
-                        )
-                        commit = None
-                        if compaction_result is not None:
-                            commit = self.build_compaction_commit(
-                                compaction_result,
-                                self.estimate_prompt_tokens(rendered_history, system_prompt, question),
-                            )
-                        await self.save_conversation_turn(user_id, session_id, turn, compaction=commit)
-
                     # FEAT-176: emit AfterInvokeEvent on success.
                     _conv_duration_ms = (time.perf_counter() - _conv_started_ms) * 1000
                     await self.events.emit(
@@ -677,8 +653,24 @@ class BaseBot(AbstractBot):
                             session_id=current_session_id.get(),
                         )
                     )
-                    # return the response Object:
-                    return await self.get_response(response, return_sources, return_context)
+                    # `get_response` runs the output pipeline: save + publish AFTER it, once, from the response
+                    # the caller receives (single shared step, FEAT-886).
+                    _plain_answer = response.to_text  # before get_response writes its markdown wrapper
+                    final = await self.get_response(response, return_sources, return_context)
+                    _commit = None
+                    if compaction_result is not None:
+                        _commit = self.build_compaction_commit(
+                            compaction_result,
+                            self.estimate_prompt_tokens(rendered_history, system_prompt, question),
+                        )
+                    await self._persist_finalized_turn(
+                        final, question=question, user_id=user_id, session_id=session_id, turn_id=turn_id,
+                        use_history=bool(use_conversation_history and memory),
+                        context_used=vector_context if use_vector_context else None,
+                        compaction=_commit, output_mode=output_mode, started=_conv_started_ms,
+                        assistant_text=await self._stored_turn_text(final, _plain_answer),
+                    )
+                    return final
             finally:
                 await self._llm.close()
 
@@ -776,7 +768,8 @@ class BaseBot(AbstractBot):
             # method's existing `finally`, so scope cannot survive an
             # exception or a cancelled stream.
             _task_turn = self._enter_task_turn(user_id, session_id)
-            turn_id = str(uuid.uuid4())
+            turn_id = kwargs.pop("turn_id", None) or str(uuid.uuid4())
+            _invoke_started = time.perf_counter()
             # FEAT-525: bind AFTER defaulting (binding-order hazard, spec §7) —
             # user_id/session_id ContextVars: per-user usage attribution in OTEL spans.
             _user_token = current_user_id.set(user_id)
@@ -829,12 +822,10 @@ class BaseBot(AbstractBot):
 
             memory = memory or self.conversation_memory
 
+            if not (use_conversation_history and memory):
+                await self._guard_session(user_id, session_id)
             if use_conversation_history and memory:
-                conversation_history = await memory.get_history(
-                    user_id, session_id, chatbot_id=self.memory_key_id
-                ) or await memory.create_history(
-                    user_id, session_id, chatbot_id=self.memory_key_id
-                )  # noqa
+                conversation_history = await self._load_or_hydrate_history(memory, user_id, session_id)
                 # FEAT-524: history reaches the provider exactly once, as
                 # alternating user/assistant messages — never as a system-prompt
                 # digest. `rendered_history` also feeds the AIMessage's
@@ -892,31 +883,27 @@ class BaseBot(AbstractBot):
                 if response_model:
                     return response  # return structured response directly
 
-                # Return the response
-                # Save conversation turn
-                if use_conversation_history and memory:
-                    turn = ConversationTurn.from_ai_message(
-                        user_message=question,
-                        response=response,
-                        user_id=user_id,
-                        chatbot_id=self.memory_key_id,
-                        context_used=None,  # invoke does not use vector context,
-                        # FEAT-538: see the note at the ordinary save site.
-                        tool_invocations=self.observed_tool_invocations(),
-                    )
-                    commit = None
-                    if compaction_result is not None:
-                        commit = self.build_compaction_commit(
-                            compaction_result,
-                            self.estimate_prompt_tokens(rendered_history, system_prompt, question),
-                        )
-                    await self.save_conversation_turn(user_id, session_id, turn, compaction=commit)
-
                 self._trigger_event(
                     self.EVENT_TASK_COMPLETED, agent_name=self.name, session_id=session_id, result=response.output
                 )
 
-                return await self.get_response(response, return_sources=False, return_context=False)
+                _plain_answer = response.to_text  # before get_response writes its markdown wrapper
+                final = await self.get_response(response, return_sources=False, return_context=False)
+                # save + publish AFTER the output pipeline, once, from the response the caller receives
+                _commit = None
+                if compaction_result is not None:
+                    _commit = self.build_compaction_commit(
+                        compaction_result,
+                        self.estimate_prompt_tokens(rendered_history, system_prompt, question),
+                    )
+                await self._persist_finalized_turn(
+                    final, question=question, user_id=user_id, session_id=session_id, turn_id=turn_id,
+                    use_history=bool(use_conversation_history and memory),
+                    context_used=None,  # invoke does not use vector context
+                    compaction=_commit, output_mode=None, started=_invoke_started,
+                    assistant_text=await self._stored_turn_text(final, _plain_answer),
+                )
+                return final
 
         except asyncio.CancelledError:
             self.logger.info("Conversation task was cancelled.")
@@ -1240,7 +1227,7 @@ class BaseBot(AbstractBot):
             # method's existing `finally`, so scope cannot survive an
             # exception or a cancelled stream.
             _task_turn = self._enter_task_turn(user_id, session_id)
-            turn_id = str(uuid.uuid4())
+            turn_id = kwargs.pop("turn_id", None) or str(uuid.uuid4())
             # FEAT-525: bind AFTER defaulting (binding-order hazard, spec §7) —
             # user_id/session_id ContextVars: per-user usage attribution in OTEL spans.
             _user_token = current_user_id.set(user_id)
@@ -1326,12 +1313,10 @@ class BaseBot(AbstractBot):
             memory = memory or self.conversation_memory
 
             phase_started = time.perf_counter()
+            if not (use_conversation_history and memory):
+                await self._guard_session(user_id, session_id)
             if use_conversation_history and memory:
-                conversation_history = await memory.get_history(
-                    user_id, session_id, chatbot_id=self.memory_key_id
-                ) or await memory.create_history(
-                    user_id, session_id, chatbot_id=self.memory_key_id
-                )  # noqa
+                conversation_history = await self._load_or_hydrate_history(memory, user_id, session_id)
                 # FEAT-524: history reaches the provider exactly once, as
                 # alternating user/assistant messages — never as a system-prompt
                 # digest. `rendered_history` also feeds the AIMessage's
@@ -1592,30 +1577,10 @@ class BaseBot(AbstractBot):
                 # does for OUTPUT-stage ones.
                 self._merge_guardrail_reports(response, _input_outcome.flag_reports)
 
-                # Save conversation turn
                 phase_started = time.perf_counter()
-                if use_conversation_history and memory:
-                    turn = ConversationTurn.from_ai_message(
-                        user_message=question,
-                        response=response,
-                        user_id=user_id,
-                        chatbot_id=self.memory_key_id,
-                        context_used=vector_context if use_vector_context else None,
-                        # FEAT-538: see the note at the ordinary save site.
-                        tool_invocations=self.observed_tool_invocations(),
-                    )
-                    commit = None
-                    if compaction_result is not None:
-                        commit = self.build_compaction_commit(
-                            compaction_result,
-                            self.estimate_prompt_tokens(rendered_history, system_prompt, question),
-                        )
-                    await self.save_conversation_turn(user_id, session_id, turn, compaction=commit)
-                self.logger.debug(
-                    "[%s] ask timing: memory_add_turn_ms=%.1f",
-                    self.name,
-                    (time.perf_counter() - phase_started) * 1000,
-                )
+                # The answer as the LLM gave it, before a formatter / envelope finalizer writes its
+                # presentation wrapper to `response.response` (what the conversation keeps, FEAT-886).
+                _plain_answer = response.to_text if isinstance(response.output, str) or response.response else None
 
                 # Enhance response with metadata
                 vector_info = vector_metadata.get("vector", {})
@@ -1805,6 +1770,25 @@ class BaseBot(AbstractBot):
                 # runs for every output_mode (supersedes the old 4-chat-mode-only
                 # channel-egress scrub branch above).
                 response = await self._run_output_pipeline(response, method="ask")
+                # Save + publish ONCE, from the finalized response (single shared step, FEAT-886).
+                _commit = None
+                if compaction_result is not None:
+                    _commit = self.build_compaction_commit(
+                        compaction_result,
+                        self.estimate_prompt_tokens(rendered_history, system_prompt, question),
+                    )
+                await self._persist_finalized_turn(
+                    response, question=question, user_id=user_id, session_id=session_id, turn_id=turn_id,
+                    use_history=bool(use_conversation_history and memory),
+                    context_used=vector_context if use_vector_context else None,
+                    compaction=_commit, output_mode=output_mode, started=_ask_started_ms,
+                    assistant_text=await self._stored_turn_text(response, _plain_answer),
+                )
+                self.logger.debug(
+                    "[%s] ask timing: memory_add_turn_ms=%.1f",
+                    self.name,
+                    (time.perf_counter() - phase_started) * 1000,
+                )
                 # FEAT-752: follow-up chips, attached once the answer is final.
                 response = await self._attach_suggestions(
                     question, response, output_mode=output_mode, user_id=user_id, session_id=session_id
@@ -2010,7 +1994,7 @@ class BaseBot(AbstractBot):
             _session_token = current_session_id.set(session_id)
             _memkey_token = current_memory_key_id.set(self.memory_key_id)
             # Maintain turn identifier generation for parity with ask()
-            _turn_id = str(uuid.uuid4())
+            _turn_id = kwargs.pop("turn_id", None) or str(uuid.uuid4())
             _trusted_source = kwargs.pop("_trusted_source", False)
             # FEAT-752 rev 0.3: stream trailer — compute chips after the final envelope (handler opt-in).
             _defer_suggestions = bool(kwargs.pop("defer_suggestions", False))
@@ -2068,12 +2052,10 @@ class BaseBot(AbstractBot):
             compaction_result = None
             memory = memory or self.conversation_memory
 
+            if not (use_conversation_history and memory):
+                await self._guard_session(user_id, session_id)
             if use_conversation_history and memory:
-                conversation_history = await memory.get_history(
-                    user_id, session_id, chatbot_id=self.memory_key_id
-                ) or await memory.create_history(
-                    user_id, session_id, chatbot_id=self.memory_key_id
-                )  # noqa
+                conversation_history = await self._load_or_hydrate_history(memory, user_id, session_id)
                 # FEAT-524: history reaches the provider exactly once, as
                 # alternating user/assistant messages — never as a system-prompt
                 # digest. `rendered_history` also feeds the AIMessage's
@@ -2201,6 +2183,45 @@ class BaseBot(AbstractBot):
                     full_response = ""
                     ai_message = None
                     stream_error: Optional[Exception] = None
+                    _stream_saved = False
+
+                    async def _save_stream_turn(error_text: Optional[str], commit: Any = None) -> None:
+                        """Persist the (possibly partial) streamed turn exactly once (FEAT-524 single writer)."""
+                        nonlocal _stream_saved
+                        if _stream_saved or not (
+                            (use_conversation_history and memory or self._publishes_turns(user_id, session_id))
+                            and full_response
+                        ):
+                            return
+                        _stream_saved = True
+                        # `full_response` — the text actually streamed to the caller — stays
+                        # authoritative, which preserves the partial-save-on-error behaviour: this
+                        # runs even when the stream died before an AIMessage sentinel arrived.
+                        turn = ConversationTurn(
+                            turn_id=_turn_id,
+                            user_id=user_id,
+                            user_message=question,
+                            assistant_response=full_response,
+                            context_used=vector_context if use_vector_context else None,
+                            tools_used=[],
+                            metadata={"model": kwargs.get("model", self._llm_model)},
+                            chatbot_id=self.memory_key_id,
+                            # FEAT-538: this path builds the turn by hand, so without this an observed
+                            # stream would persist no invocations at all.
+                            tool_invocations=self.observed_tool_invocations() or [],
+                            error=error_text,
+                        )
+                        # What is stored is what was STREAMED: a TRANSFORM verdict at stream close cannot
+                        # unsend chunks the caller already has, so `full_response` stays authoritative
+                        # (single shared save+publish unit, FEAT-886).
+                        await self._persist_turn_unit(
+                            user_id, session_id, turn, use_history=bool(use_conversation_history and memory),
+                            compaction=commit,
+                            presentation=self._turn_presentation(
+                                ai_message, output_mode=output_mode, started=_stream_started_ms,
+                                fallback_output=full_response,
+                            ),
+                        )
                     # FEAT-550: True only when this ask_stream() ended via the
                     # BudgetExhausted->partial-AIMessage translation below —
                     # NOT whenever `ai_message` merely holds a normal terminal
@@ -2259,7 +2280,12 @@ class BaseBot(AbstractBot):
                             if _stream_tail:
                                 full_response += _stream_tail
                                 yield _stream_tail
-                    except asyncio.CancelledError:
+                    except (asyncio.CancelledError, GeneratorExit):
+                        # The caller went away mid-stream: the handler persists nothing, so the bot
+                        # saves the partial turn (error state), shielded so the save and the publish
+                        # complete, then re-raises the cancellation.
+                        if full_response:
+                            await asyncio.shield(_save_stream_turn("stream cancelled by the caller"))
                         raise
                     except Exception as exc:
                         # Capture so the partial text already yielded to the caller
@@ -2273,28 +2299,14 @@ class BaseBot(AbstractBot):
 
                     # Save conversation turn — also runs on partial/error so the
                     # accumulated text is not lost from memory.
-                    if use_conversation_history and memory and full_response:
-                        # FEAT-524: single writer here too. `full_response` — the text
-                        # actually streamed to the caller — stays authoritative, which
-                        # is what preserves the partial-save-on-error behaviour: this
-                        # runs even when the stream died before an AIMessage sentinel
-                        # arrived (`ai_message` may still be None).
-                        turn = ConversationTurn(
-                            turn_id=_turn_id,
-                            user_id=user_id,
-                            user_message=question,
-                            assistant_response=full_response,
-                            context_used=vector_context if use_vector_context else None,
-                            tools_used=[],
-                            metadata={"model": kwargs.get("model", self._llm_model)},
-                            chatbot_id=self.memory_key_id,
-                            # FEAT-538: this path builds the turn by hand, so
-                            # without this an observed stream would persist no
-                            # invocations at all. `or []` keeps the unobserved
-                            # shape exactly as it was.
-                            tool_invocations=self.observed_tool_invocations() or [],
-                        )
-                        await self.save_conversation_turn(user_id, session_id, turn)
+                    if (use_conversation_history and memory or self._publishes_turns(user_id, session_id)) and full_response:
+                        commit = None
+                        if compaction_result is not None and stream_error is None:
+                            commit = self.build_compaction_commit(
+                                compaction_result,
+                                self.estimate_prompt_tokens(rendered_history, system_prompt, question),
+                            )
+                        await _save_stream_turn(str(stream_error) if stream_error else None, commit)
 
                     if ai_message is None:
                         # Defensive fallback: client did not yield an AIMessage sentinel

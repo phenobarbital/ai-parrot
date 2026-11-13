@@ -7,7 +7,10 @@ import pytest
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from botocore.exceptions import ClientError
+
 from parrot.storage.dynamodb import ConversationDynamoDB
+from parrot.storage.errors import ConversationDeletedError, StorageUnavailableError, StorageWriteError
 
 
 @pytest.fixture
@@ -80,13 +83,13 @@ class TestGracefulDegradation:
 
     @pytest.mark.asyncio
     async def test_not_initialized_query_turns(self, dynamo_backend):
-        result = await dynamo_backend.query_turns("u1", "agent1", "sess1")
-        assert result == []
+        with pytest.raises(StorageUnavailableError):
+            await dynamo_backend.query_turns("u1", "agent1", "sess1")
 
     @pytest.mark.asyncio
     async def test_not_initialized_put_turn(self, dynamo_backend):
-        # Should not raise
-        await dynamo_backend.put_turn("u1", "agent1", "sess1", "t001", {})
+        with pytest.raises(StorageUnavailableError):
+            await dynamo_backend.put_turn("u1", "agent1", "sess1", "t001", {})
 
     @pytest.mark.asyncio
     async def test_not_initialized_put_thread(self, dynamo_backend):
@@ -117,57 +120,73 @@ class TestGracefulDegradation:
         assert dynamo_backend.is_connected is False
 
 
+def _connected(dynamo_backend):
+    """A backend wired to mocked boto objects (the network client call is the only seam replaced)."""
+    dynamo_backend._conv_table = _make_mock_table()
+    dynamo_backend._art_table = _make_mock_table()
+    dynamo_backend._resource = MagicMock()
+    dynamo_backend._resource.meta.client.transact_write_items = AsyncMock()
+    return dynamo_backend._resource.meta.client.transact_write_items
+
+
+_TURN = {"user_message": "hello", "timestamp": "2026-11-01T10:00:00+00:00", "sequence": 3}
+
+
 class TestPutTurn:
-    """Tests for put_turn method."""
+    """put_turn builds ONE TransactWriteItems: tombstone checks, canonical, companion, marker."""
 
     @pytest.mark.asyncio
-    async def test_constructs_correct_keys(self, dynamo_backend):
-        mock_table = _make_mock_table()
-        dynamo_backend._conv_table = mock_table
-        dynamo_backend._art_table = _make_mock_table()
-
-        await dynamo_backend.put_turn("u1", "agent1", "sess1", "t001", {
-            "user_message": "hello",
-            "assistant_response": "hi",
-        })
-
-        mock_table.put_item.assert_called_once()
-        item = mock_table.put_item.call_args.kwargs["Item"]
-        assert item["PK"] == "USER#u1#AGENT#agent1"
-        assert item["SK"] == "THREAD#sess1#TURN#t001"
-        assert item["type"] == "turn"
-        assert item["session_id"] == "sess1"
-        assert item["turn_id"] == "t001"
-        assert "ttl" in item
-        assert item["user_message"] == "hello"
+    async def test_builds_transaction_with_canonical_and_companion(self, dynamo_backend):
+        transact = _connected(dynamo_backend)
+        await dynamo_backend.put_turn("u1", "agent1", "sess1", "t001", dict(_TURN))
+        items = transact.call_args.kwargs["TransactItems"]
+        assert [next(iter(i)) for i in items] == ["ConditionCheck", "ConditionCheck", "Put", "Put", "Update"]
+        assert items[0]["ConditionCheck"]["Key"]["SK"] == "TOMB#sess1"
+        assert items[1]["ConditionCheck"]["Key"]["SK"] == "TOMB#sess1#TURN#t001"
+        canonical = items[2]["Put"]["Item"]
+        assert canonical["PK"] == "USER#u1#AGENT#agent1"
+        assert canonical["SK"] == "THREAD#sess1#TURN#t001"
+        assert canonical["type"] == "turn" and "ttl" in canonical and canonical["user_message"] == "hello"
+        micros = 1_793_527_200_000_000  # 2026-11-01T10:00:00Z in microseconds
+        expected_sk = f"THREAD#sess1#CHRONO#{micros:020d}#{3:012d}#t001"
+        assert canonical["chrono_sk"] == expected_sk == items[3]["Put"]["Item"]["SK"]
+        assert items[4]["Update"]["Key"]["SK"] == "INDEXSTATE#sess1"
+        assert "ttl" not in items[4]["Update"]["ExpressionAttributeValues"]
 
     @pytest.mark.asyncio
-    async def test_ttl_is_set(self, dynamo_backend):
-        mock_table = _make_mock_table()
-        dynamo_backend._conv_table = mock_table
-        dynamo_backend._art_table = _make_mock_table()
-
-        now = datetime(2025, 4, 16, 12, 0, 0)
-        await dynamo_backend.put_turn("u1", "agent1", "sess1", "t001", {
-            "timestamp": now,
-        })
-
-        item = mock_table.put_item.call_args.kwargs["Item"]
-        expected_ttl = ConversationDynamoDB._ttl_epoch(now, 180)
-        assert item["ttl"] == expected_ttl
+    async def test_ttl_is_derived_from_timestamp(self, dynamo_backend):
+        transact = _connected(dynamo_backend)
+        when = datetime(2025, 4, 16, 12, 0, 0, tzinfo=timezone.utc)
+        await dynamo_backend.put_turn("u1", "agent1", "sess1", "t001", {"timestamp": when})
+        canonical = transact.call_args.kwargs["TransactItems"][2]["Put"]["Item"]
+        assert canonical["ttl"] == ConversationDynamoDB._ttl_epoch(when, 180)
 
     @pytest.mark.asyncio
-    async def test_handles_exception(self, dynamo_backend):
-        from botocore.exceptions import ClientError
-        mock_table = _make_mock_table()
-        mock_table.put_item.side_effect = ClientError(
-            {"Error": {"Code": "500", "Message": "Internal"}}, "PutItem"
-        )
-        dynamo_backend._conv_table = mock_table
-        dynamo_backend._art_table = _make_mock_table()
+    async def test_client_error_is_raised_as_storage_write_error(self, dynamo_backend):
+        transact = _connected(dynamo_backend)
+        transact.side_effect = ClientError({"Error": {"Code": "500", "Message": "Internal"}}, "TransactWriteItems")
+        with pytest.raises(StorageWriteError):
+            await dynamo_backend.put_turn("u1", "agent1", "sess1", "t001", dict(_TURN))
 
-        # Should not raise
-        await dynamo_backend.put_turn("u1", "agent1", "sess1", "t001", {})
+    @pytest.mark.asyncio
+    async def test_tombstone_cancellation_raises_conversation_deleted(self, dynamo_backend):
+        transact = _connected(dynamo_backend)
+        transact.side_effect = ClientError(
+            {"Error": {"Code": "TransactionCanceledException", "Message": "x"},
+             "CancellationReasons": [{"Code": "ConditionalCheckFailed"}, {"Code": "None"}, {"Code": "None"},
+                                     {"Code": "None"}, {"Code": "None"}]},
+            "TransactWriteItems")
+        with pytest.raises(ConversationDeletedError):
+            await dynamo_backend.put_turn("u1", "agent1", "sess1", "t001", dict(_TURN))
+
+    @pytest.mark.asyncio
+    async def test_untimestamped_write_has_no_companion_and_marks_pending(self, dynamo_backend):
+        transact = _connected(dynamo_backend)
+        await dynamo_backend.put_turn("u1", "agent1", "sess1", "t001", {"user_message": "x"})
+        items = transact.call_args.kwargs["TransactItems"]
+        assert [next(iter(i)) for i in items] == ["ConditionCheck", "ConditionCheck", "Put", "Update"]
+        assert "chrono_sk" not in items[2]["Put"]["Item"]
+        assert items[3]["Update"]["ExpressionAttributeValues"][":v"] == "pending"
 
 
 class TestPutThread:
@@ -373,3 +392,51 @@ class TestArtifactCRUD:
 
         deleted = await dynamo_backend.delete_session_artifacts("u1", "agent1", "sess1")
         assert deleted == 2
+
+
+class TestChronoHelpers:
+    """Pure helpers behind the chronological companion layout (FEAT-886)."""
+
+    def test_companion_sort_key_orders_chronologically(self):
+        from parrot.storage.backends.dynamodb import _chrono_sk, _chrono_fields
+
+        stamps = [("2026-11-01T10:00:00+00:00", 2, "b"), ("2026-11-01T10:00:00+00:00", 10, "a"),
+                  ("2026-11-01T09:59:59.999999+00:00", 99, "z"), ("2026-11-01T10:00:00+00:00", 2, "a")]
+        keys = []
+        for ts, seq, tid in stamps:
+            micros, s = _chrono_fields({"timestamp": ts, "sequence": seq})
+            keys.append((_chrono_sk("s", micros, s, tid), (ts, seq, tid)))
+        ordered = [meta for _, meta in sorted(keys)]
+        assert ordered == [("2026-11-01T09:59:59.999999+00:00", 99, "z"), ("2026-11-01T10:00:00+00:00", 2, "a"),
+                           ("2026-11-01T10:00:00+00:00", 2, "b"), ("2026-11-01T10:00:00+00:00", 10, "a")]
+
+    def test_chrono_fields_naive_is_utc_and_bad_values_are_safe(self):
+        from decimal import Decimal
+        from parrot.storage.backends.dynamodb import _chrono_fields
+
+        assert _chrono_fields({"timestamp": "2026-11-01T10:00:00"}) == _chrono_fields(
+            {"timestamp": "2026-11-01T10:00:00+00:00"})
+        assert _chrono_fields({"timestamp": "garbage", "sequence": -1}) == (None, 0)
+        assert _chrono_fields({"timestamp": "2026-11-01T10:00:00", "sequence": Decimal(7)})[1] == 7
+
+    def test_chrono_sk_rejects_out_of_range(self):
+        from parrot.storage.backends.dynamodb import _chrono_sk
+        from parrot.storage.errors import InvalidTurnPayloadError
+
+        with pytest.raises(InvalidTurnPayloadError):
+            _chrono_sk("s", 10 ** 20, 0, "t")
+        with pytest.raises(InvalidTurnPayloadError):
+            _chrono_sk("s", 1, 10 ** 12, "t")
+
+    def test_floats_become_decimals_and_back(self):
+        from decimal import Decimal
+        from parrot.storage.backends.dynamodb import _from_dynamo, _to_dynamo
+
+        stored = _to_dynamo({"cost_usd": 0.42, "usage": {"n": 3, "f": [1.5]}, "bad": float("nan")})
+        assert stored["cost_usd"] == Decimal("0.42") and stored["bad"] is None
+        assert _from_dynamo(stored) == {"cost_usd": 0.42, "usage": {"n": 3, "f": [1.5]}, "bad": None}
+
+    def test_tombstone_and_state_keys_live_outside_the_thread_prefix(self):
+        assert not ConversationDynamoDB._sk_tomb("s1").startswith("THREAD#s1")
+        assert not ConversationDynamoDB._sk_tomb("s1", "t1").startswith("THREAD#s1")
+        assert not ConversationDynamoDB._sk_state("s1").startswith("THREAD#s1")

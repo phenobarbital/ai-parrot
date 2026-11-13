@@ -3,7 +3,13 @@ import asyncio
 import json
 import aiofiles
 from pathlib import Path
-from .abstract import ConversationMemory, ConversationHistory, ConversationTurn
+from .abstract import (
+    ConversationMemory,
+    ConversationHistory,
+    ConversationTurn,
+    is_hydration_pending,
+    merge_pending_history,
+)
 from .compaction.omission import FileOmissionStore, OmissionStore
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -140,6 +146,21 @@ class FileConversationMemory(ConversationMemory):
         """Update a conversation history."""
         async with self._lock:
             await self._write_history(history)
+
+    async def _install_history(self, history: ConversationHistory) -> bool:
+        """Install ``history`` iff absent (or pending) — one file write under ``self._lock``."""
+        async with self._lock:
+            existing = await self._read_history(history.user_id, history.session_id, history.chatbot_id)
+            if existing is None and history.chatbot_id:
+                if await self._read_history(history.user_id, history.session_id, None) is not None:
+                    return False  # a legacy un-segmented history exists; get_history() re-keys it on the next read
+            if existing is None:
+                await self._write_history(history)
+                return True
+            if is_hydration_pending(existing.metadata):
+                await self._write_history(merge_pending_history(existing, history))
+                return True
+            return False
 
     async def _store_turn(
         self,

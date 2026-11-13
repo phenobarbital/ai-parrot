@@ -209,6 +209,36 @@ export PARROT_STORAGE_METRICS=example_prometheus_metrics:metrics
 
 ---
 
+## Durable conversation contract (FEAT-886)
+
+Every `ConversationBackend` implements the same durable contract; the shared checks live in
+`tests/storage/durable_contract.py`.
+
+- **Failure contract.** `put_turn` returns only after a durable write or raises a typed `StorageError`
+  (`StorageUnavailableError` when disconnected, `StorageWriteError` when the write fails,
+  `ConversationDeletedError` when the session or turn is tombstoned). `query_turns` raises
+  `StorageUnavailableError` instead of returning `[]` for a failure. Writes are idempotent upserts by `turn_id`;
+  the ordering fields (timestamp, sequence) of an existing turn never change.
+- **Ordered window.** `query_turn_window(user_id, agent_id, session_id, limit)` returns the newest `limit` turns
+  by `(timestamp, sequence, turn_id)`, `limit` applied descending at the backend, returned ascending. SQLite and
+  Postgres use a composite index and `ORDER BY ... DESC LIMIT` (Postgres orders `turn_id` with the `C` collation);
+  MongoDB a compound index on `(user_id, agent_id, session_id, kind, ts_utc, seq, turn_id)` with `ts_utc` stored
+  as integer microseconds; DynamoDB a chronological companion item per turn in the same partition, written
+  transactionally with the canonical turn and a tombstone `ConditionCheck`.
+- **Tombstones.** `put_tombstone` / `is_deleted` record session- and turn-scoped deletions durably, outside
+  transcript TTL and `delete_thread_cascade`, retained indefinitely. `put_turn` is atomic with the tombstone check
+  (one SQL statement on SQLite, an advisory-lock transaction on Postgres, a guarded two-phase write on MongoDB,
+  one transaction on DynamoDB).
+- **Index state.** `get_index_state` is `ready`, `pending` or `invalid`. Sessions written after this feature are
+  `ready`; legacy sessions are `pending` until `backfill_batch` indexes them, and `invalid` when a turn has a
+  missing or unparseable timestamp. `query_turn_window` on a session that is not `ready` raises
+  `IndexNotReadyError`; it never scans. `python -m parrot.storage.backfill` drives `backfill_batch` (see the
+  runbook in [Durable Conversation Memory](../memory/durable-conversation-memory.md)).
+- **Additive migration.** SQLite and Postgres add their columns, index and the tombstone / index-state tables in
+  `initialize()`; no manual step is required.
+
+---
+
 ## Known Limitations
 
 - **SQLite is single-writer.** Not suitable for multi-process deployments. For

@@ -1,7 +1,7 @@
 # parrot/storage — conversation and artifact storage layer.
 # See wiki/stores/storage-backends.md for the backend selection matrix and env var reference.
 from .chat import ChatStorage
-from .models import ChatMessage, Conversation
+from .models import ChatMessage, ChatStorageTurn, Conversation
 from .models import (
     ArtifactType,
     ArtifactCreator,
@@ -16,7 +16,7 @@ from .dynamodb import ConversationDynamoDB
 from .s3_overflow import S3OverflowManager
 from .overflow import OverflowStore                                   # FEAT-116
 from .artifacts import ArtifactStore
-from .backends.base import ConversationBackend                        # FEAT-116
+from .backends.base import BackfillBatch, ConversationBackend                        # FEAT-116
 from .backends import (                                               # FEAT-116
     ConversationSQLiteBackend,
     ConversationPostgresBackend,
@@ -25,11 +25,20 @@ from .backends import (                                               # FEAT-116
     build_overflow_store,
 )
 from .metrics import StorageMetrics, NoopStorageMetrics               # FEAT-116
+from .errors import (                                                 # FEAT-886
+    ConversationDeletedError,
+    IndexNotReadyError,
+    InvalidTurnPayloadError,
+    StorageError,
+    StorageUnavailableError,
+    StorageWriteError,
+)
 from .instrumented import InstrumentedBackend                         # FEAT-116
 
 __all__ = [
     "ChatStorage",
     "ChatMessage",
+    "ChatStorageTurn",
     "Conversation",
     # FEAT-103 artifact & thread models
     "ArtifactType",
@@ -59,6 +68,14 @@ __all__ = [
     "StorageMetrics",
     "NoopStorageMetrics",
     "InstrumentedBackend",
+    # FEAT-886 durable backend contract
+    "BackfillBatch",
+    "StorageError",
+    "StorageUnavailableError",
+    "StorageWriteError",
+    "ConversationDeletedError",
+    "IndexNotReadyError",
+    "InvalidTurnPayloadError",
     # FEAT-103 ArtifactStore
     "ArtifactStore",
 ]
