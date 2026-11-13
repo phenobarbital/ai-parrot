@@ -3002,6 +3002,28 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
             allocator = self._fallback_sequence_allocator = LocalSequenceAllocator()
         return allocator
 
+    async def _fallback_sequence(self, user_id: str, session_id: str) -> int:
+        """Sequence from the local allocator, starting ABOVE the durable maximum when that can be read.
+
+        If the durable maximum cannot be read either, the local allocator still keeps the sequence monotonic
+        per session within this process; across processes the ordering then relies on the emitter timestamp
+        (``(timestamp, sequence, turn_id)``), and a sequence may repeat one issued by another worker.
+        """
+        durable: Optional[int] = None
+        source = self.hydration_source
+        if source is not None:
+            try:
+                durable = max(0, int(await source.max_sequence(self.name, user_id, session_id)))
+            except Exception:  # noqa: BLE001 - best effort; ordering falls back to the timestamp
+                durable = None
+
+        async def floor() -> int:
+            return durable or 0
+
+        return await self._local_sequence_allocator().next(
+            self.name, user_id, session_id, floor=floor if durable is not None else None
+        )
+
     async def _stamp_turn_ordering(self, user_id: str, session_id: str, turn: ConversationTurn) -> None:
         """Stamp a UTC-aware timestamp and a monotonic sequence on ``turn`` (spec §2 "Sequence allocation").
 
@@ -3025,7 +3047,7 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         except Exception as exc:  # noqa: BLE001 - a counter/floor outage must not lose the user's answer
             self.logger.warning(
                 "sequence allocation failed for %s/%s (%s); using the local allocator", user_id, session_id, exc)
-            turn.sequence = await self._local_sequence_allocator().next(self.name, user_id, session_id)
+            turn.sequence = await self._fallback_sequence(user_id, session_id)
 
     async def _publish_turn_completed(
         self,

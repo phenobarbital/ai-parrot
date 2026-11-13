@@ -354,3 +354,44 @@ async def test_failure_after_the_save_still_leaves_memory_and_bus_equal():
     history = await bot.conversation_memory.get_history("u", "s", chatbot_id="uuid-1")
     assert [t.turn_id for t in history.turns] == [e.turn["turn_id"] for e in bot.turn_publisher.events]
     assert len(bot.turn_publisher.events) == 1
+
+
+async def test_fallback_sequence_starts_above_the_durable_floor_when_it_is_known():
+    from parrot.memory.hydration import HydrationSource, SequenceAllocator
+
+    class _Source(HydrationSource):
+        floor_ok = True
+
+        async def load_turns(self, *a, **kw):
+            return None
+
+        async def is_deleted(self, *a, **kw):
+            return False
+
+        async def max_sequence(self, *a, **kw):
+            if not self.floor_ok:
+                raise RuntimeError("cold store down")
+            return 41
+
+    class _DownAllocator(SequenceAllocator):
+        async def next(self, *a, **kw):
+            raise ConnectionError("redis down")
+
+    bot = await _bot(lambda mem: RecordingPublisher(mem, "uuid-1"))
+    bot.hydration_source = _Source()
+    bot.sequence_allocator = _DownAllocator()
+    await _round(bot, "one")
+    await _round(bot, "two")
+    seqs = [e.turn["sequence"] for e in bot.turn_publisher.events]
+    assert seqs == [42, 43]  # above the known floor, strictly increasing
+
+    # when the floor cannot be read either: still monotonic per session in this process
+    other = await _bot(lambda mem: RecordingPublisher(mem, "uuid-1"))
+    src = _Source()
+    src.floor_ok = False
+    other.hydration_source = src
+    other.sequence_allocator = _DownAllocator()
+    await _round(other, "one")
+    await _round(other, "two")
+    seqs = [e.turn["sequence"] for e in other.turn_publisher.events]
+    assert seqs[0] >= 1 and seqs[1] == seqs[0] + 1
