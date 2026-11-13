@@ -25,15 +25,15 @@ from navigator_auth.conf import AUTH_SESSION_OBJECT
 from parrot.storage.errors import ConversationDeletedError, StorageError
 
 
-@is_authenticated()
-@user_session()
-
 def _storage_error_response(view: BaseView, exc: StorageError) -> web.Response:
     """Map a typed storage failure to an HTTP status (never an empty 200)."""
     if isinstance(exc, ConversationDeletedError):
         return view.error(response={"message": "Conversation was deleted"}, status=410)
     return view.error(response={"message": "Conversation storage is unavailable"}, status=503)
 
+
+@is_authenticated()
+@user_session()
 
 class ThreadListView(BaseView):
     """List and create conversation threads.
