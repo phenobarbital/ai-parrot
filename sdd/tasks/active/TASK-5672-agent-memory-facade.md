@@ -18,6 +18,10 @@ These are planning artifacts, not evidence that carried G1–G4 gates passed.
 
 ## Release Preconditions
 
+**FEAT-886 merged (spec rev 0.3).** PR #2121 must be merged into `dev` before this task writes code: it moves
+`AbstractBot.configure`/`cleanup` and makes the host's conversation-memory configuration raise when Redis was
+selected (spec F8). If it is not on `dev`, stop. Once it is, re-verify the post-merge anchors below.
+
 No additional owner decision is required beyond completed dependency contracts. Do not bypass a blocked dependency.
 
 Before releasing any blocked task, record the accepted amendment in the spec, expand its
@@ -77,6 +81,7 @@ import pytest
 - `packages/ai-parrot/src/parrot/memory/unified/manager.py`: 53:class UnifiedMemoryManager:
 - `packages/ai-parrot/src/parrot/bots/abstract.py:1681` — `AbstractBot.configure`: `async def configure(self, app=None) -> None:`
 - `packages/ai-parrot/src/parrot/bots/abstract.py:5527` — `AbstractBot.cleanup`: `async def cleanup(self) -> None:`
+- With PR #2121 merged (`git merge-tree` of `dev` `a24a820a41` and #2121 head `b0ac554835`; re-verify after the real merge): `AbstractBot.configure` abstract.py:1724, `AbstractBot.cleanup` :6011, and `AbstractBot.configure_conversation_memory(self) -> None` at :1470, which re-raises a configuration error when `memory_type` is `"redis"` or `"auto"` with an explicit history URL (spec F8).
 - `packages/ai-parrot/src/parrot/memory/unified/manager.py:83` — `UnifiedMemoryManager.__init__`: `def __init__(self, namespace: MemoryNamespace, conversation_memory: Optional[ConversationMemory]=None, episodic_store: Optional[EpisodicMemoryStore]=None, skill_registry: Optional[Any]=None, config: Optional[MemoryConfig]=None, cross_domain_router: Optional[CrossDomainRouter]=None, brain: Optional[BrainStore]=None, org_brain: Optional[BrainStore]=None) -> None:`
 - `packages/ai-parrot/src/parrot/memory/unified/manager.py:109` — `UnifiedMemoryManager.configure`: `async def configure(self, **kwargs: Any) -> None:`
 - `packages/ai-parrot/src/parrot/memory/unified/manager.py:124` — `UnifiedMemoryManager.cleanup`: `async def cleanup(self) -> None:`
@@ -167,6 +172,8 @@ class AgentMemoryMixin:
     async def configure(self, app: Any = None) -> None:
         """Await host setup, respect configure_skipped and initialize/rebind owned resources once."""
         # FILL IN: cooperative super, explicit precedence, genuine app rebind and rollback — AC07.
+        # Spec F8: host configuration may raise (Redis selected, no in-memory fallback). Acquire nothing before it
+        # succeeds, release anything acquired if it raises, and propagate the error unchanged.
         # Lazy brain construction uses only the future sibling service; absence -> invalid_configuration.
         raise NotImplementedError
 
@@ -266,7 +273,7 @@ def test_stop_drain_before_host_cleanup() -> None:
 
 ## Acceptance Criteria
 
-- [ ] AC07: repeated configure skips duplicate toolkit/service registration, changed app triggers needed rebinding, and partial initialization unwinds.
+- [ ] AC07: repeated configure skips duplicate toolkit/service registration, changed app triggers needed rebinding, and partial initialization unwinds, including when the host's conversation-memory configuration raises; that error propagates unchanged (spec F8).
 - [ ] AC15/R1–R10: one public brain_service with start/stop/search/forget_derived only; disabled brain imports no missing service; unavailable enabled service reports invalid_configuration.
 - [ ] AC07/AC15: stop/drain precede host resource cleanup; no direct brain stores/runners or agent-side BrainAdminToolkit. This task tests a cooperative facade host; the dependent lifecycle task moves the boundary test onto real Agent.
 - [ ] Narrow task checks pass; scoped black/ruff pass for touched Python; validation logs identify skipped external coverage explicitly.

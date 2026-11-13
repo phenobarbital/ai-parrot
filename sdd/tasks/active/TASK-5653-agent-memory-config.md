@@ -170,6 +170,8 @@ class MemoryRequestScope(BaseModel):
     turn_id: str
     identity_provenance: str
     # FILL IN: validate trusted provenance and nonempty required dimensions — AC05/Q4.
+    # Spec F6: agent_id is the agent name (AbstractBot.name), the key existing episodes and FEAT-886 ChatStorage use;
+    #   memory_key_id is the conversation-history key only. Spec F3: turn_id is the turn FEAT-886 persists.
 
 class MemoryEvent(BaseModel):
     """Identify one observed tool attempt, response or knowledge event."""
@@ -181,6 +183,8 @@ class MemoryEvent(BaseModel):
     evidence_refs: tuple[str, ...] = ()
     payload: dict[str, Any] = Field(default_factory=dict)
     # FILL IN: aware UTC time, bounded payload and retry identity validation — AC05/AC09.
+    # Spec F3: a response event_id derives deterministically from (agent_id, user_id, session_id, turn_id).
+    # Spec F7: an evidence ref into ChatStorage names tenant_id plus (agent_name, user_id, session_id, turn_id).
 
 class MemoryWriteReceipt(BaseModel):
     """Report committed effects and constituent failures without false acknowledgement."""
@@ -249,7 +253,7 @@ def test_frozen_scope_and_bounded_event() -> None:
 
 - [ ] AC01: FEAT-571 explicitly transfers only pending M1/M2/M3/M5/M6; M4 stays with FEAT-889 and completed tasks/index/evidence are unchanged.
 - [ ] AC04/Q4: all four user/episode combinations are representable; brain implies effective episodes but never user knowledge; constructor kwargs override class defaults then model defaults.
-- [ ] AC05: scope/events reject untrusted or malformed identities and mutable request rebinding; missing user identity is distinct from anonymous history fallback.
+- [ ] AC05: scope/events reject untrusted or malformed identities and mutable request rebinding; missing user identity is distinct from anonymous history fallback. A response event's ID is a deterministic function of (agent_id, user_id, session_id, turn_id), and ChatStorage evidence refs carry tenant_id (spec F3/F7).
 - [ ] AC07: legacy flags are rejected with replacement names; section budgets are bounded and no existing storage path is deleted or implicitly flushed.
 - [ ] Narrow task checks pass; scoped black/ruff pass for touched Python; validation logs identify skipped external coverage explicitly.
 
@@ -261,7 +265,7 @@ def test_frozen_scope_and_bounded_event() -> None:
 
 - `capability_matrix_and_brain_implication`: AC01: FEAT-571 explicitly transfers only pending M1/M2/M3/M5/M6; M4 stays with FEAT-889 and completed tasks/index/evidence are unchanged.
 - `constructor_precedence_and_legacy_flag_error`: AC04/Q4: all four user/episode combinations are representable; brain implies effective episodes but never user knowledge; constructor kwargs override class defaults then model defaults.
-- `frozen_scope_and_bounded_event`: AC05: scope/events reject untrusted or malformed identities and mutable request rebinding; missing user identity is distinct from anonymous history fallback.
+- `frozen_scope_and_bounded_event`: AC05: scope/events reject untrusted or malformed identities and mutable request rebinding; missing user identity is distinct from anonymous history fallback. A response event's ID is a deterministic function of (agent_id, user_id, session_id, turn_id), and ChatStorage evidence refs carry tenant_id (spec F3/F7).
 
 Use deterministic clocks, runtime-derived identities and isolated temporary stores. Preserve
 CancelledError. Use subprocesses for crash/multiprocess checks, never shared production data.
