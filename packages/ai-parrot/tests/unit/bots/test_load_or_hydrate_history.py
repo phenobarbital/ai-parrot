@@ -159,3 +159,19 @@ async def test_a_round_through_ask_uses_hydrated_history():
     await bot.ask("next", user_id="u", session_id="s", use_vector_context=False)
     history_arg = bot.get_client().calls[-1]["history"]
     assert any("qa" in m.content for m in history_arg)
+
+
+async def test_pending_marker_never_overwrites_a_history_installed_meanwhile():
+    """Review finding: the not-ready path must be NX like the success path."""
+    mem = InMemoryConversation()
+
+    class _Racy(ScriptedSource):
+        async def load_turns(self, agent_name, user_id, session_id, max_turns):
+            # another worker installs a hydrated history while this worker waits on the source
+            await mem.install_history(user_id, session_id, [_turn("won", 5)], chatbot_id="uuid-1")
+            raise HydrationNotReadyError("backfilling")
+
+    bot = await _bot(_Racy())
+    bot.conversation_memory = mem
+    history = await bot._load_or_hydrate_history(mem, "u", "s")
+    assert [t.turn_id for t in history.turns] == ["won"]

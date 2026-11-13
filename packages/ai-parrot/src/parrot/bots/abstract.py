@@ -2898,8 +2898,14 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
             turns = await source.load_turns(self.name, user_id, session_id, self._hydration_window())
         except (HydrationNotReadyError, HydrationUnavailableError) as exc:
             self.logger.warning("hydration pending for %s/%s: %s", user_id, session_id, exc)
-            return existing or await memory.create_history(
-                user_id, session_id, metadata={"hydration": {"state": "pending"}}, chatbot_id=key
+            if existing is not None:
+                return existing
+            # NX: never overwrite a history another worker installed while we waited on the source.
+            await memory.install_history(
+                user_id, session_id, [], chatbot_id=key, metadata={"hydration": {"state": "pending"}}
+            )
+            return await memory.get_history(user_id, session_id, chatbot_id=key) or await memory.create_history(
+                user_id, session_id, chatbot_id=key
             )
         # SessionDeletedError from load_turns propagates untouched.
         installed = await memory.install_history(user_id, session_id, turns or [], chatbot_id=key)
