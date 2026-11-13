@@ -471,9 +471,9 @@ New files below are planned delivery paths, not tests already executed. Gate rep
 | Existing `memory/unified/test_{models,context,manager,mixin,imports,bot_integration}.py` | Extend/migrate tests to new entry point while retaining store/text contracts; replace mirrored stub-only assertions with actual BaseBot integration where needed |
 | Existing `test_episodic_memory.py` | Migrate old mixin coverage; preserve episodic preference/sala/tools behavior through new capability contracts |
 
-### Validation Contract
+The following contract includes legacy regressions and all planned task-owned tests. New paths are supplied by their tasks; listing them does not release a blocked module or declare a gate passed. Task validation runs only its owned checks; full acceptance requires all released module tests.
 
-The existing regression operands below remain valid paths through the hard-cut. New module-specific files above are mandatory task checks and feature acceptance checks; amend this contract to include them when their owning modules are released for decomposition, before task generation. Do not declare a passing legacy-only run sufficient for full feature acceptance.
+### Validation Contract
 
 tests:
 - packages/ai-parrot/tests/memory/unified/test_manager_real_store.py
@@ -484,6 +484,33 @@ tests:
 - packages/ai-parrot/tests/memory/unified/test_imports.py
 - packages/ai-parrot/tests/memory/unified/test_bot_integration.py
 - packages/ai-parrot/tests/test_episodic_memory.py
+- packages/ai-parrot/tests/memory/agent_memory/test_config.py
+- packages/ai-parrot/tests/memory/agent_memory/test_scope.py
+- packages/ai-parrot/tests/memory/dynamics/test_models.py
+- packages/ai-parrot/tests/memory/dynamics/test_evidence_models.py
+- packages/ai-parrot/tests/memory/dynamics/test_core.py
+- packages/ai-parrot/tests/memory/dynamics/test_reviews.py
+- packages/ai-parrot/tests/memory/dynamics/test_ranking.py
+- packages/ai-parrot/tests/memory/dynamics/test_episode_scope.py
+- packages/ai-parrot/tests/memory/dynamics/test_sqlite_backend.py
+- packages/ai-parrot/tests/memory/dynamics/test_storage.py
+- packages/ai-parrot/tests/memory/dynamics/test_backend_scope.py
+- packages/ai-parrot/tests/memory/dynamics/test_store_reviews.py
+- packages/ai-parrot/tests/memory/dynamics/test_recall.py
+- packages/ai-parrot/tests/memory/user/test_extraction.py
+- packages/ai-parrot/tests/memory/user/test_store.py
+- packages/ai-parrot/tests/memory/user/test_forget.py
+- packages/ai-parrot/tests/memory/agent_memory/test_factory.py
+- packages/ai-parrot/tests/memory/agent_memory/test_brain_contract.py
+- packages/ai-parrot/tests/memory/agent_memory/test_facade.py
+- packages/ai-parrot/tests/memory/agent_memory/test_lifecycle.py
+- packages/ai-parrot/tests/memory/dynamics/test_attribution.py
+- packages/ai-parrot/tests/memory/dynamics/test_feedback.py
+- packages/ai-parrot/tests/memory/dynamics/test_coder_evidence.py
+- packages/ai-parrot/tests/memory/dynamics/test_prompt_contract.py
+- packages/ai-parrot/tests/memory/agent_memory/test_operations.py
+- packages/ai-parrot/tests/memory/dynamics/test_export.py
+- packages/ai-parrot/tests/memory/agent_memory/test_documentation.py
 markers: none
 
 ### Fixtures and evidence
