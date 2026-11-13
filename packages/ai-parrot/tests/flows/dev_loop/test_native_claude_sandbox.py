@@ -83,6 +83,28 @@ def test_native_allow_write_includes_coder_evidence_dir(linked: tuple[Path, Path
     assert str((main / "artifacts").resolve()) not in allow
 
 
+def test_protected_argv_binds_experience(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, scratch_root: Path
+) -> None:
+    """Bubblewrap grants the exact shared roots, including experience but excluding wiki and HOME."""
+    feature, main = linked
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+
+    argv = policy.protected_argv(feature, ["true"])
+    binds = [Path(argv[index + 1]) for index, token in enumerate(argv) if token == "--bind"]
+
+    assert binds == [
+        scratch_root.resolve(),
+        (main / ".parrot" / "worktrees").resolve(),
+        (main / ".git").resolve(),
+        (main / ".parrot" / "ledger").resolve(),
+        (main / "artifacts" / "logs" / "sdd-coder-usage").resolve(),
+        (main / ".parrot" / "experience").resolve(),
+    ]
+    assert (main / ".parrot" / "wiki").resolve() not in binds
+    assert Path.home().resolve() not in binds
+
+
 def test_settings_are_strict_and_explicit(linked: tuple[Path, Path]) -> None:
     """All security keys are present with strict values."""
     feature, main = linked

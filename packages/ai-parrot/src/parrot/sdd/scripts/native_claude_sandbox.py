@@ -215,11 +215,18 @@ def _control_files(root: Path) -> list[Path]:
     """
     here = Path(__file__).resolve().parent
     parrot_dir = root / "packages" / "ai-parrot" / "src" / "parrot"
-    names = ("native_claude_sandbox.py", "worktree_environment.py")
+    names = ("native_claude_sandbox.py", "worktree_environment.py", "experience_hook.py")
     found: list[Path] = []
     shim_dir = here.parent.parent / "flows" / "dev_loop"
     for directory in (here, parrot_dir / "sdd" / "scripts", parrot_dir / "flows" / "dev_loop", shim_dir):
         found.extend(directory / name for name in names)
+    for package_root in (here.parent.parent, parrot_dir):
+        found.extend(
+            (
+                package_root / "knowledge" / "wiki" / "experience" / "fastpath.py",
+                package_root / "launcher.py",
+            )
+        )
     return list(dict.fromkeys(found))
 
 
@@ -424,6 +431,7 @@ def native_sandbox_settings(
     allow_paths = [root, git_dir, _we.claude_scratch_root(), *_we.worktree_admin_dirs(root, git_dir)]
     allow_paths.extend(_we.shared_ledger_dirs(root, git_dir))
     allow_paths.extend(_we.coder_evidence_dirs(root, git_dir))
+    allow_paths.extend(_we.experience_dirs(root, git_dir))
     allow_write: list[str] = []
     for path in allow_paths:
         canonical = str(_canonical(path))
@@ -928,6 +936,7 @@ def _prefix_writable_roots(cwd: Path) -> tuple[Path, ...]:
         _canonical(primary),
         _canonical(primary / ".parrot" / "ledger"),
         _canonical(primary / "artifacts" / "logs" / "sdd-coder-usage"),
+        _canonical(primary / ".parrot" / "experience"),
         _canonical(_we.claude_scratch_root()),
     )
 
