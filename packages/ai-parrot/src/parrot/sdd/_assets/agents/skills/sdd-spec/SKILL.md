@@ -86,7 +86,7 @@ stay with the thinking model — eligibility never delegates a design choice.
    - unresolved questions that block design
    - contradictions discovered during codebase research
 7b. Consult experts (optional, advisory — FEAT-890):
-   - Run `parrot sdd experts consult --doc sdd/specs/<feature-slug>.spec.md [--feature <FEAT-ID>]`.
+   - Run `parrot sdd experts consult --doc <source-doc> [--feature <FEAT-ID>]`, where `<source-doc>` is the brainstorm or proposal the spec derives from (the spec itself does not exist yet).
    - This is optional and non-blocking — it gathers advisory contributions from domain experts
      before drafting the spec. The command writes findings to `sdd/state/.contributions/<doc-slug>/`.
    - List findings: read each `<expert>.json` in the contributions directory.

@@ -100,7 +100,7 @@ forks (Claude Code). Codex has no forks: research always runs sequentially and
      (`:`, `*`, `|`, quotes break Windows checkouts and fail
      the repository's portable-path CI check).
 5b. Consult experts (optional, advisory — FEAT-890):
-   - Run `parrot sdd experts consult --doc sdd/proposals/<slug>.proposal.md [--feature <FEAT-ID>]`.
+   - Run `parrot sdd experts consult --doc <source-doc> [--feature <FEAT-ID>]`, where `<source-doc>` is the existing document the proposal is built from; skip this step when the request has no document yet.
    - This is optional and non-blocking — it gathers advisory contributions from domain experts
      before synthesis. The command writes findings to `sdd/state/.contributions/<doc-slug>/`.
    - List findings: read each `<expert>.json` in the contributions directory.

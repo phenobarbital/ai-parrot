@@ -58,18 +58,14 @@ def test_consult_step_present(rel_path: str) -> None:
 def test_experts_command_reference(rel_path: str) -> None:
     """Each twin file must reference the experts CLI command."""
     content = _read_file(rel_path)
-    assert "parrot sdd experts consult" in content, (
-        f"{rel_path} missing 'parrot sdd experts consult' command"
-    )
+    assert "parrot sdd experts consult" in content, f"{rel_path} missing 'parrot sdd experts consult' command"
 
 
 @pytest.mark.parametrize("rel_path", _TWIN_FILES)
 def test_contribution_path_reference(rel_path: str) -> None:
     """Each twin file must reference the contributions path."""
     content = _read_file(rel_path)
-    assert "sdd/state/.contributions/" in content, (
-        f"{rel_path} missing 'sdd/state/.contributions/' path"
-    )
+    assert "sdd/state/.contributions/" in content, f"{rel_path} missing 'sdd/state/.contributions/' path"
 
 
 @pytest.mark.parametrize("rel_path", _TWIN_FILES)
@@ -111,9 +107,7 @@ def test_proposal_files_have_consult_step() -> None:
             synthesis_pos = content.find("## Synthesis")
         assert consult_pos != -1, f"{rel_path} missing consult step"
         if synthesis_pos != -1:
-            assert consult_pos < synthesis_pos, (
-                f"{rel_path}: consult step must appear before synthesis"
-            )
+            assert consult_pos < synthesis_pos, f"{rel_path}: consult step must appear before synthesis"
 
 
 def test_spec_files_have_consult_step_before_research() -> None:
@@ -130,9 +124,7 @@ def test_spec_files_have_consult_step_before_research() -> None:
         research_pos = content.find("Research the Codebase")
         assert consult_pos != -1, f"{rel_path} missing consult step"
         if research_pos != -1:
-            assert consult_pos < research_pos, (
-                f"{rel_path}: consult step must appear before research"
-            )
+            assert consult_pos < research_pos, f"{rel_path}: consult step must appear before research"
 
 
 def test_spec_commit_promotes_contributions() -> None:
@@ -144,10 +136,21 @@ def test_spec_commit_promotes_contributions() -> None:
     for rel_path in spec_files:
         content = _read_file(rel_path)
         # The commit step should promote contributions
-        assert "contributions" in content.lower(), (
-            f"{rel_path} missing contributions promotion in commit step"
-        )
+        assert "contributions" in content.lower(), f"{rel_path} missing contributions promotion in commit step"
         # Should have the staging path
-        assert "sdd/state/.contributions" in content, (
-            f"{rel_path} missing .contributions staging path"
-        )
+        assert "sdd/state/.contributions" in content, f"{rel_path} missing .contributions staging path"
+
+
+@pytest.mark.parametrize("rel_path", _TWIN_FILES)
+def test_triage_and_promote_commands_are_taught(rel_path: str) -> None:
+    """The step tells the agent how to record a decision and how to promote a confirmed finding."""
+    content = _read_file(rel_path)
+    assert "parrot sdd experts triage" in content, f"{rel_path} does not teach 'parrot sdd experts triage'"
+    assert "parrot sdd experts promote" in content, f"{rel_path} does not teach 'parrot sdd experts promote'"
+
+
+@pytest.mark.parametrize("rel_path", _TWIN_FILES)
+def test_consult_never_points_at_a_document_that_does_not_exist_yet(rel_path: str) -> None:
+    """The spec is not written when the step runs, so it must not be the consulted document."""
+    content = _read_file(rel_path)
+    assert "--doc sdd/specs/<feature-slug>.spec.md" not in content
