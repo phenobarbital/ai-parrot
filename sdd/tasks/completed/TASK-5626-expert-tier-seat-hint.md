@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-890 — Expert stages, dispatch modes, generic gate host and SDD expert delegation
 **Spec**: `sdd/specs/expert-stages-and-delegation.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S
 **Depends-on**: none
@@ -144,4 +144,15 @@ def eligible_seats_for_tier(tier: str, seats: List[RosterSeat], policy: Complexi
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+
+- Task: TASK-5626
+- Feature: expert-stages-and-delegation
+- Implementation SHA: 7e4d0f8a3f9850cff4030e5520e3cb07fafb10bb
+- Closed at (UTC): 2026-11-13T22:24:26+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1 · Duration: n/a · Tokens: n/a |

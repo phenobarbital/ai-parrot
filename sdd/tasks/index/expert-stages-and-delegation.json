@@ -135,7 +135,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -145,8 +145,9 @@
       "parallelism_notes": "resolve_gate_store imports RedisGateStore from TASK-5614 (core/gates/stores/redis.py); contract suite runs it",
       "assigned_to": null,
       "started_at": "2026-11-13T18:41:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5615-gate-store-sqlite-resolver.md"
+      "completed_at": "2026-11-13T22:24:17+00:00",
+      "file": "sdd/tasks/completed/TASK-5615-gate-store-sqlite-resolver.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5616",
@@ -176,7 +177,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -187,8 +188,9 @@
       "parallelism_notes": "uses GateHost from TASK-5613 (core/gates/host.py) and DevLoopGateAdapter from TASK-5616 (dev_loop/gate_adapter.py)",
       "assigned_to": null,
       "started_at": "2026-11-13T18:41:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5617-devloop-sessionhost-migration.md"
+      "completed_at": "2026-11-13T22:24:20+00:00",
+      "file": "sdd/tasks/completed/TASK-5617-devloop-sessionhost-migration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5618",
@@ -316,7 +318,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -330,8 +332,9 @@
       "parallelism_notes": "uses GateHost (TASK-5613 host.py), ExpertStageConfig (TASK-5620 grid/models.py), activate_expert(mode=) (TASK-5621 activation.py), record_episode (TASK-5622 sources/episodes.py), build_inline_conductor (TASK-5623 stages/inline.py)",
       "assigned_to": null,
       "started_at": "2026-11-13T18:41:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5624-expert-stage-node.md"
+      "completed_at": "2026-11-13T22:24:23+00:00",
+      "file": "sdd/tasks/completed/TASK-5624-expert-stage-node.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5625",
@@ -360,7 +363,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -368,8 +371,9 @@
       "parallelism_notes": "root task: touches only sdd_coder models/roster, no new-symbol dependency",
       "assigned_to": null,
       "started_at": "2026-11-13T18:41:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5626-expert-tier-seat-hint.md"
+      "completed_at": "2026-11-13T22:24:27+00:00",
+      "file": "sdd/tasks/completed/TASK-5626-expert-tier-seat-hint.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5627",
