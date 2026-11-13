@@ -229,6 +229,7 @@ class TestGeminiCommandAndEvents:
 class TestGeminiFailures:
     @pytest.mark.asyncio
     async def test_missing_cli_raises_execution_error(self, dispatcher, brief, _patch_worktree_base, monkeypatch):
+
         async def _missing(_command: Sequence[str], cwd: str, *, env: dict[str, str] | None = None):
             raise FileNotFoundError("gemini")
 
@@ -246,6 +247,7 @@ class TestGeminiFailures:
 
     @pytest.mark.asyncio
     async def test_nonzero_exit_raises_execution_error(self, dispatcher, brief, _patch_worktree_base, monkeypatch):
+
         async def _fake_create(command: Sequence[str], cwd: str, *, env: dict[str, str] | None = None):
             return _FakeGeminiProcess(stderr="some error occurred", return_code=1)
 
@@ -263,6 +265,7 @@ class TestGeminiFailures:
 
     @pytest.mark.asyncio
     async def test_invalid_output_raises_validation_error(self, dispatcher, brief, _patch_worktree_base, monkeypatch):
+
         async def _fake_create(command: Sequence[str], cwd: str, *, env: dict[str, str] | None = None):
             assistant_event = {
                 "type": "message",
