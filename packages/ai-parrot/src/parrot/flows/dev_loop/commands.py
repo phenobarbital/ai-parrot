@@ -114,16 +114,13 @@ async def resolve_gate_handler(request: web.Request) -> web.Response:
         )
     except GateError as exc:
         if exc.code is GateErrorCode.NOT_FOUND:
-            logger.info(
-                "resolve_gate: unknown gate_id=%s for run_id=%s", gate_id, run_id
-            )
+            logger.info("resolve_gate: unknown gate_id=%s for run_id=%s", gate_id, run_id)
             return web.json_response({"error": "unknown_gate"}, status=404)
         if exc.code is GateErrorCode.NOT_PENDING:
             host = runner.get_host(run_id)
             gate = host.state.gates.get(gate_id) if host is not None else None
             logger.info(
-                "resolve_gate: gate_id=%s on run_id=%s is not pending "
-                "(attempted by %s)",
+                "resolve_gate: gate_id=%s on run_id=%s is not pending " "(attempted by %s)",
                 gate_id,
                 run_id,
                 body.resolved_by,

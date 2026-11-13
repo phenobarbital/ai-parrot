@@ -91,9 +91,7 @@ async def test_command_maps_generic_gate_errors(
     request = MagicMock()
     request.app = {"dev_loop_runner": FailingRunner()}
     request.match_info = {"run_id": "run-errors", "gate_id": "gate-errors"}
-    request.json = AsyncMock(
-        return_value={"resolution": "approved", "resolved_by": "human:alice"}
-    )
+    request.json = AsyncMock(return_value={"resolution": "approved", "resolved_by": "human:alice"})
 
     response = await resolve_gate_handler(request)
 
