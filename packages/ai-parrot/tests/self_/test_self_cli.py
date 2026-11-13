@@ -13,8 +13,57 @@ from parrot.cli import cli
 def test_self_is_registered() -> None:
     result = CliRunner().invoke(cli, ["self", "--help"])
     assert result.exit_code == 0, result.output
-    for sub in ("add", "update", "doctor", "env", "uninstall"):
+    for sub in ("add", "update", "doctor", "env", "migration", "uninstall"):
         assert sub in result.output
+
+
+def test_migration_help_is_lazy() -> None:
+    """Subgroup help lists verbs without requiring the database driver."""
+    with mock.patch.dict("sys.modules", {"asyncpg": None}):
+        result = CliRunner().invoke(cli, ["self", "migration", "--help"])
+    assert result.exit_code == 0, result.output
+    for verb in ("baseline", "new", "status", "upgrade"):
+        assert verb in result.output
+
+
+def test_doctor_appends_migration_check_outside_runtime_only(tmp_path: Path, monkeypatch) -> None:
+    """Full doctor appends the informational migration result using the runtime DSN."""
+    import parrot.migrations.startup as migration_startup
+
+    from parrot.self_.doctor import DoctorCheck
+
+    migration_check = DoctorCheck(name="database migrations", ok=True, detail="healthy", informational=True)
+    probe = mock.AsyncMock(return_value=migration_check)
+    monkeypatch.setattr("parrot.launcher.explicit_project_pin", lambda *args: None)
+    monkeypatch.setattr("parrot.launcher.install_root", lambda *args, **kwargs: mock.Mock(root=tmp_path))
+    monkeypatch.setattr("parrot.self_.doctor.run_doctor", lambda *args, **kwargs: [])
+    monkeypatch.setattr("parrot.self_.doctor.failed", lambda checks: [])
+    monkeypatch.setattr(migration_startup, "migration_doctor_check", probe)
+    monkeypatch.setattr("parrot.conf.default_dsn", "postgresql://user:secret@localhost/database")
+
+    result = CliRunner().invoke(cli, ["self", "doctor"])
+
+    assert result.exit_code == 0, result.output
+    assert "database migrations: healthy" in result.output
+    probe.assert_awaited_once_with("postgresql://user:secret@localhost/database")
+    assert "secret" not in result.output
+
+
+def test_runtime_only_doctor_excludes_migration_check(tmp_path: Path, monkeypatch) -> None:
+    """Runtime-only bootstrap diagnostics never perform the database probe."""
+    import parrot.migrations.startup as migration_startup
+
+    probe = mock.AsyncMock()
+    monkeypatch.setattr("parrot.launcher.explicit_project_pin", lambda *args: None)
+    monkeypatch.setattr("parrot.launcher.install_root", lambda *args, **kwargs: mock.Mock(root=tmp_path))
+    monkeypatch.setattr("parrot.self_.doctor.run_doctor", lambda *args, **kwargs: [])
+    monkeypatch.setattr("parrot.self_.doctor.failed", lambda checks: [])
+    monkeypatch.setattr(migration_startup, "migration_doctor_check", probe)
+
+    result = CliRunner().invoke(cli, ["self", "doctor", "--runtime-only"])
+
+    assert result.exit_code == 0, result.output
+    probe.assert_not_awaited()
 
 
 def test_self_env_rule_report(tmp_path: Path, monkeypatch) -> None:
