@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-890 — Expert stages, dispatch modes, generic gate host and SDD expert delegation
 **Spec**: `sdd/specs/expert-stages-and-delegation.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M
 **Depends-on**: TASK-5612
@@ -159,4 +159,15 @@ class DevLoopGateAdapter:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+
+- Task: TASK-5616
+- Feature: expert-stages-and-delegation
+- Implementation SHA: 4319639d30bc3aae191b789f6740894f15bb5a25
+- Closed at (UTC): 2026-11-13T22:08:49+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: opus · Backend: native · Model: opus · Attempts: 1 · Duration: n/a · Tokens: n/a |

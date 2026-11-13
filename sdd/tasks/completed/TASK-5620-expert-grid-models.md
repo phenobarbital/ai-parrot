@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-890 — Expert stages, dispatch modes, generic gate host and SDD expert delegation
 **Spec**: `sdd/specs/expert-stages-and-delegation.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S
 **Depends-on**: TASK-5612
@@ -175,4 +175,15 @@ class ScopeGridError(Exception):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+
+- Task: TASK-5620
+- Feature: expert-stages-and-delegation
+- Implementation SHA: 4319639d30bc3aae191b789f6740894f15bb5a25
+- Closed at (UTC): 2026-11-13T22:08:50+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1 · Duration: n/a · Tokens: n/a |

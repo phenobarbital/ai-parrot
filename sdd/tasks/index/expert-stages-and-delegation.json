@@ -93,7 +93,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -103,8 +103,9 @@
       "parallelism_notes": "imports GateSpec/GateRecord/GateStore/GateError and is_registered from TASK-5612 (core/gates/models.py, kinds.py)",
       "assigned_to": null,
       "started_at": "2026-11-13T18:41:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5613-gate-host.md"
+      "completed_at": "2026-11-13T22:08:47+00:00",
+      "file": "sdd/tasks/completed/TASK-5613-gate-host.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5614",
@@ -113,7 +114,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -123,8 +124,9 @@
       "parallelism_notes": "implements GateStore protocol + GateRecord from TASK-5612 (core/gates/models.py)",
       "assigned_to": null,
       "started_at": "2026-11-13T18:41:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5614-gate-store-redis.md"
+      "completed_at": "2026-11-13T22:08:48+00:00",
+      "file": "sdd/tasks/completed/TASK-5614-gate-store-redis.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5615",
@@ -153,7 +155,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -163,8 +165,9 @@
       "parallelism_notes": "converts to GateRecord/GateSpec and calls register_gate_kind from TASK-5612 (core/gates)",
       "assigned_to": null,
       "started_at": "2026-11-13T18:41:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5616-devloop-gate-adapter.md"
+      "completed_at": "2026-11-13T22:08:49+00:00",
+      "file": "sdd/tasks/completed/TASK-5616-devloop-gate-adapter.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5617",
@@ -235,7 +238,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -245,8 +248,9 @@
       "parallelism_notes": "ExpertStageConfig.gate is a GateSpec from TASK-5612 (core/gates/models.py)",
       "assigned_to": null,
       "started_at": "2026-11-13T18:41:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5620-expert-grid-models.md"
+      "completed_at": "2026-11-13T22:08:50+00:00",
+      "file": "sdd/tasks/completed/TASK-5620-expert-grid-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5621",
