@@ -1,4 +1,5 @@
 """Live behavioral coverage for the non-destructive bots baseline."""
+
 from __future__ import annotations
 
 import importlib
@@ -89,8 +90,7 @@ async def test_legacy_row_is_preserved_and_missing_tooling_is_added(
 ) -> None:
     """Catch up a partial legacy table without changing its stored row or UUID default."""
     connection, schema, table = migration_target
-    await connection.execute(
-        f'''CREATE TABLE "{schema}"."{table}" (
+    await connection.execute(f"""CREATE TABLE "{schema}"."{table}" (
             chatbot_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             name VARCHAR NOT NULL,
             description TEXT,
@@ -98,8 +98,7 @@ async def test_legacy_row_is_preserved_and_missing_tooling_is_added(
             goal TEXT NOT NULL DEFAULT 'goal',
             backstory TEXT NOT NULL DEFAULT 'backstory',
             rationale TEXT NOT NULL DEFAULT 'rationale'
-        )'''
-    )
+        )""")
     identifier = uuid.uuid4()
     await connection.execute(
         f'INSERT INTO "{schema}"."{table}" (chatbot_id, name, description) VALUES ($1, $2, $3)',
@@ -111,7 +110,7 @@ async def test_legacy_row_is_preserved_and_missing_tooling_is_added(
     report = await _upgrade()
     assert report.exit_code == 0
     row = await connection.fetchrow(
-        f'SELECT chatbot_id, name, description, toolkit_config, mcp_servers, enable_suggestions '
+        f"SELECT chatbot_id, name, description, toolkit_config, mcp_servers, enable_suggestions "
         f'FROM "{schema}"."{table}" WHERE chatbot_id = $1',
         identifier,
     )
@@ -123,9 +122,12 @@ async def test_legacy_row_is_preserved_and_missing_tooling_is_added(
         "mcp_servers": [],
         "enable_suggestions": False,
     }
-    assert await connection.fetchval(
-        f'INSERT INTO "{schema}"."{table}" (name) VALUES ($1) RETURNING chatbot_id', "uuid-default"
-    ) is not None
+    assert (
+        await connection.fetchval(
+            f'INSERT INTO "{schema}"."{table}" (name) VALUES ($1) RETURNING chatbot_id', "uuid-default"
+        )
+        is not None
+    )
 
 
 @pytest.mark.asyncio
