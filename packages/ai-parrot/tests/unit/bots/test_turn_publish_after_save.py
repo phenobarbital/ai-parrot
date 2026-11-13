@@ -395,3 +395,33 @@ async def test_fallback_sequence_starts_above_the_durable_floor_when_it_is_known
     await _round(other, "two")
     seqs = [e.turn["sequence"] for e in other.turn_publisher.events]
     assert seqs[0] >= 1 and seqs[1] == seqs[0] + 1
+
+
+async def test_fallback_sequence_reads_the_durable_floor_once_per_session():
+    from parrot.memory.hydration import HydrationSource, SequenceAllocator
+
+    class _Source(HydrationSource):
+        def __init__(self, ok):
+            self.ok, self.calls = ok, 0
+
+        async def load_turns(self, *a, **kw):
+            return None
+
+        async def is_deleted(self, *a, **kw):
+            return False
+
+        async def max_sequence(self, *a, **kw):
+            self.calls += 1
+            if not self.ok:
+                raise RuntimeError("cold store down")
+            return 41
+
+    for ok in (True, False):
+        bot = await _bot(lambda mem: RecordingPublisher(mem, "uuid-1"))
+        bot.hydration_source = _Source(ok)
+        seqs = [await bot._fallback_sequence("u1", "s1") for _ in range(3)]
+        assert bot.hydration_source.calls == 1, ok  # a known floor is cached; a failed read is not retried at once
+        assert seqs == ([42, 43, 44] if ok else [1, 2, 3])
+        await bot._fallback_sequence("u1", "other-session")
+        assert bot.hydration_source.calls == 2  # per session
+

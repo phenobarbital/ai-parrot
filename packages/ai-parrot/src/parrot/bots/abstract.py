@@ -227,6 +227,11 @@ _RENDERED_SYSTEM_PROMPT: ContextVar[Optional[Dict[int, Optional[str]]]] = Contex
     "parrot_rendered_system_prompt", default=None
 )
 
+#: `_fallback_sequence`: seconds before a FAILED read of the durable sequence floor is tried again, and the
+#: number of sessions whose floor state one bot remembers (cleared when exceeded).
+_FALLBACK_FLOOR_RETRY_S = 30.0
+_FALLBACK_FLOOR_CACHE_MAX = 10_000
+
 
 class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin, ToolInterface, VectorInterface, ABC):
     """AbstractBot.
@@ -3090,11 +3095,21 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         """
         durable: Optional[int] = None
         source = self.hydration_source
-        if source is not None:
+        # The durable maximum is read ONCE per session: the local allocator keeps its own counter above the
+        # floor afterwards. A failed read is not repeated for ``_FALLBACK_FLOOR_RETRY_S`` seconds, so a turn
+        # served while the store is degraded does not hit the same failing dependency again on every turn.
+        floors: Dict[Tuple[str, str], float] = self.__dict__.setdefault("_fallback_floor_state", {})
+        key = (user_id, session_id)
+        retry_at = floors.get(key)
+        if source is not None and (retry_at is None or (retry_at != float("inf") and time.monotonic() >= retry_at)):
+            if len(floors) >= _FALLBACK_FLOOR_CACHE_MAX:
+                floors.clear()  # bounded: a cleared entry only costs one more durable read
             try:
                 durable = max(0, int(await source.max_sequence(self.name, user_id, session_id)))
+                floors[key] = float("inf")  # known: never read again for this session in this process
             except Exception:  # noqa: BLE001 - best effort; ordering falls back to the timestamp
                 durable = None
+                floors[key] = time.monotonic() + _FALLBACK_FLOOR_RETRY_S
 
         async def floor() -> int:
             return durable or 0
