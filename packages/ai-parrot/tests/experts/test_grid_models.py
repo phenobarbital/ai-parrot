@@ -1,4 +1,5 @@
 """Tests for scope grid models."""
+
 import pytest
 from pydantic import ValidationError
 

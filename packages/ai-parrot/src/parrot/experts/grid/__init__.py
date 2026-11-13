@@ -1,4 +1,5 @@
 """Scope grid models for expert stages (FEAT-890)."""
+
 from .models import (
     ExpertStageConfig,
     ScopeGrid,
