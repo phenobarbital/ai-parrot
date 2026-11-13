@@ -14,7 +14,7 @@ docs:
 **Feature ID**: FEAT-890
 **Date**: 2026-11-13
 **Author**: Jesus Lara (with Claude Opus 5.5)
-**Status**: draft
+**Status**: approved
 **Target version**: 1.4.0
 
 Source: `sdd/proposals/expert-stages-and-delegation.brainstorm.md` (Option B). Extends FEAT-778
