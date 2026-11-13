@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-887 — SDD Experience Memory (experience.pitfall)
 **Spec**: `sdd/specs/sdd-experience-memory.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5590
@@ -206,3 +206,18 @@ Use the spec §4 payload fixtures, with deterministic temporary Git roots and PA
 2. Verify dependencies are done in `sdd/tasks/index/sdd-experience-memory.json` and recheck this contract after they land.
 3. Implement only the declared files, run validation, and commit scoped changes.
 4. Use `parrot sdd task finalize` with real TaskCompletionEvidence and the exact implementation HEAD. The finalizer owns the completion note and active-to-completed move; never edit them manually.
+
+## Completion Note
+
+- Task: TASK-5606
+- Feature: sdd-experience-memory
+- Implementation SHA: f5256dabeb9c78a82cdbc99dc1d42b5516296e57
+- Closed at (UTC): 2026-11-13T20:14:44+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-sol · Backend: codex · Model: gpt-5.6-sol · Attempts: 1 · Duration: 281.49s · Tokens: n/a |
+| validation_note | Engine merge-tier run timed_out (known environmental failures, group cut ~60s). Hand run of experience, sdd_coder and worker_prompt tests: 793 passed, 1 failed (test_engine_usage_attribution, subprocess import hits read-only navconfig log dir; unrelated). |

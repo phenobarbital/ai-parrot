@@ -123,7 +123,7 @@
       "feature_id": "FEAT-887",
       "feature": "sdd-experience-memory",
       "spec": "sdd/specs/sdd-experience-memory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -133,8 +133,9 @@
       "parallelism_notes": "reducer: TASK-5590: consumes the event-schemas contract in packages/ai-parrot/src/parrot/knowledge/wiki/experience/models.py",
       "assigned_to": null,
       "started_at": "2026-11-13T19:26:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5591-reducer.md"
+      "completed_at": "2026-11-13T20:14:43+00:00",
+      "file": "sdd/tasks/completed/TASK-5591-reducer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5592",
@@ -431,7 +432,7 @@
       "feature_id": "FEAT-887",
       "feature": "sdd-experience-memory",
       "spec": "sdd/specs/sdd-experience-memory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -441,8 +442,9 @@
       "parallelism_notes": "output-models: TASK-5590: consumes the event-schemas contract in packages/ai-parrot/src/parrot/knowledge/wiki/experience/models.py",
       "assigned_to": null,
       "started_at": "2026-11-13T19:26:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5606-output-models.md"
+      "completed_at": "2026-11-13T20:14:45+00:00",
+      "file": "sdd/tasks/completed/TASK-5606-output-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5607",
