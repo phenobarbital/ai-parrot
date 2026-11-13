@@ -1,5 +1,5 @@
 ---
-title: "Agent as a Local MCP Server (`parrot toolkits install --agent`)"
+title: "Agent as a Local MCP Server (parrot toolkits install agent)"
 summary: Serve a registered agent's own async methods as a local stdio MCP server for Claude Code, Codex and Antigravity.
 ---
 
