@@ -276,3 +276,81 @@ async def test_naive_local_timestamp_keeps_its_instant():
     await bot._stamp_turn_ordering("u", "s", turn)
     assert turn.timestamp.tzinfo is not None
     assert turn.timestamp == naive.astimezone(timezone.utc)
+
+
+SECRET = "sk-1234abcdefghij"
+
+
+class _SecretClient(Client):
+    def _msg(self, prompt: str) -> AIMessage:
+        msg = super()._msg(prompt)
+        msg.output = msg.response = f"your key is API_KEY={SECRET}"
+        return msg
+
+
+async def _bot_with_secrets_guardrail(publisher_factory) -> BaseBot:
+    from parrot.bots.guardrails.base import GuardrailStage
+    from parrot.bots.guardrails.builtin.secrets import SecretsGuardrail
+
+    bot = await _bot(publisher_factory)
+    bot._guardrail_pipelines[GuardrailStage.OUTPUT].add(SecretsGuardrail())
+    bot.llm = _SecretClient()
+    return bot
+
+
+async def test_transformed_output_is_what_working_memory_and_the_bus_keep():
+    """A TRANSFORM verdict (redaction) must reach the stored turn and the published turn, never the raw text."""
+    bot = await _bot_with_secrets_guardrail(lambda mem: RecordingPublisher(mem, "uuid-1"))
+    response = await _round(bot)
+    assert SECRET not in str(response.output)  # the caller got the redacted text
+    event = bot.turn_publisher.events[0]
+    assert SECRET not in event.turn["assistant_response"] and "REDACTED" in event.turn["assistant_response"]
+    stored = (await bot.conversation_memory.get_history("u", "s", chatbot_id="uuid-1")).turns[0]
+    assert SECRET not in stored.assistant_response  # working memory does not retain the raw text either
+    assert event.presentation["output"] == response.response or SECRET not in str(event.presentation["output"])
+
+
+async def test_failure_before_the_save_leaves_neither_memory_nor_bus_with_the_turn():
+    bot = await _bot(lambda mem: RecordingPublisher(mem, "uuid-1"))
+
+    async def explode(response, method):
+        raise RuntimeError("pipeline blew up")
+
+    bot._run_output_pipeline = explode
+    with pytest.raises(RuntimeError):
+        await _round(bot)
+    assert bot.turn_publisher.events == []
+    assert await bot.conversation_memory.get_history("u", "s", chatbot_id="uuid-1") in (None,) or \
+        (await bot.conversation_memory.get_history("u", "s", chatbot_id="uuid-1")).turns == []
+
+
+async def test_cancellation_before_the_save_leaves_neither_memory_nor_bus_with_the_turn():
+    bot = await _bot(lambda mem: RecordingPublisher(mem, "uuid-1"))
+
+    async def hang(response, method):
+        await asyncio.sleep(30)
+
+    bot._run_output_pipeline = hang
+    task = asyncio.create_task(_round(bot))
+    await asyncio.sleep(0.3)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert bot.turn_publisher.events == []
+    history = await bot.conversation_memory.get_history("u", "s", chatbot_id="uuid-1")
+    assert history is None or history.turns == []
+
+
+async def test_failure_after_the_save_still_leaves_memory_and_bus_equal():
+    """The save and the publication are ONE unit: a later failure (suggestions) cannot split them."""
+    bot = await _bot(lambda mem: RecordingPublisher(mem, "uuid-1"))
+
+    async def explode(question, response, **kw):
+        raise RuntimeError("suggestions LLM down")
+
+    bot._attach_suggestions = explode
+    with pytest.raises(RuntimeError):
+        await _round(bot)
+    history = await bot.conversation_memory.get_history("u", "s", chatbot_id="uuid-1")
+    assert [t.turn_id for t in history.turns] == [e.turn["turn_id"] for e in bot.turn_publisher.events]
+    assert len(bot.turn_publisher.events) == 1

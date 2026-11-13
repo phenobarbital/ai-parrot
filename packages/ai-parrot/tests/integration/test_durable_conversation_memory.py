@@ -393,3 +393,29 @@ async def test_stream_disconnect_stores_partial_turn(stack):
     await _eventually(lambda: stack.has_turns(1, session="s2"))
     row2 = (await stack.stored_turns(session="s2"))[0]
     assert row2["assistant_response"] == "par" and "boom" in row2["error"]
+
+
+async def test_redacted_output_is_what_storage_and_hydration_keep(stack):
+    """A TRANSFORM verdict reaches the cold row and the hydrated history of a restarted worker."""
+    from parrot.bots.guardrails.base import GuardrailStage
+    from parrot.bots.guardrails.builtin.secrets import SecretsGuardrail
+
+    secret = "sk-1234abcdefghij"
+
+    class _SecretClient(RecordingClient):
+        def _msg(self, prompt):
+            msg = super()._msg(prompt)
+            msg.output = msg.response = f"your key is API_KEY={secret}"
+            return msg
+
+    bot = await stack.make_bot(client=_SecretClient())
+    bot._guardrail_pipelines[GuardrailStage.OUTPUT].add(SecretsGuardrail())
+    await _ask(bot, "what is my key?")
+    await _eventually(lambda: stack.has_turns(1))
+    row = (await stack.stored_turns())[0]
+    assert secret not in row["assistant_response"] and secret not in str(row["presentation"]["output"])
+    client_b = RecordingClient()
+    bot_b = await stack.make_bot(memory=InMemoryConversation(), client=client_b)
+    await _ask(bot_b, "again")
+    served = " ".join(m.content for m in client_b.calls[-1]["history"])
+    assert secret not in served and "REDACTED" in served
