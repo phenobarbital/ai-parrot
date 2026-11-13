@@ -410,3 +410,142 @@ async def test_setup_turn_persistence_itself_drains_abandoned_outboxes(
         assert not path.exists()
     finally:
         await shutdown_turn_persistence(handle)
+
+
+async def test_recovery_loads_bounded_batches_not_the_whole_file(chat_storage, tmp_path, monkeypatch):
+    import parrot.storage.turn_bus as tb
+
+    path = await _dead_outbox(tmp_path, 535353, [f"k{i}" for i in range(5)], nack_future=True)
+    monkeypatch.setattr(tb, "RECOVERY_BATCH_SIZE", 2)
+    sizes = []
+    real = tb._read_outbox_rows
+
+    def spy(*a, **kw):
+        rows = real(*a, **kw)
+        sizes.append(len(rows))
+        return rows
+
+    monkeypatch.setattr(tb, "_read_outbox_rows", spy)
+    handle = await setup_turn_persistence(chat_storage, bus=_memory_bus(tmp_path))
+    try:
+        assert await tb.recover_abandoned_outboxes(handle.bus, tmp_path, own_pid=os.getpid()) == 5
+    finally:
+        await shutdown_turn_persistence(handle)
+    assert max(sizes) <= 2 and sum(sizes) == 5  # never more than a batch in memory
+    assert not path.exists()
+
+
+async def test_a_failing_row_does_not_loop_forever_across_batches(chat_storage, tmp_path, monkeypatch):
+    import parrot.storage.turn_bus as tb
+
+    path = await _dead_outbox(tmp_path, 545454, [f"x{i}" for i in range(4)], nack_future=True)
+    monkeypatch.setattr(tb, "RECOVERY_BATCH_SIZE", 1)
+    handle = await setup_turn_persistence(chat_storage, bus=_memory_bus(tmp_path))
+
+    async def boom(envelope):
+        raise RuntimeError("bus down")
+
+    real = handle.bus.core.publish
+    handle.bus.core.publish = boom
+    try:
+        assert await asyncio.wait_for(tb.recover_abandoned_outboxes(handle.bus, tmp_path, own_pid=os.getpid()), 10) == 0
+    finally:
+        handle.bus.core.publish = real
+        await shutdown_turn_persistence(handle)
+    assert path.exists()
+
+
+async def test_the_files_are_removed_while_the_outbox_lock_is_still_held(chat_storage, tmp_path, monkeypatch):
+    from navigator_eventbus.outbox import SqliteOutbox
+    import parrot.storage.turn_bus as tb
+
+    path = await _dead_outbox(tmp_path, 555555, ["l1"])
+    existed_at_close = []
+    real_close = SqliteOutbox.close
+
+    async def close(self):
+        if self._path == path:
+            existed_at_close.append(path.exists())  # the lock is released by THIS call
+        return await real_close(self)
+
+    monkeypatch.setattr(SqliteOutbox, "close", close)
+    handle = await setup_turn_persistence(chat_storage, bus=_memory_bus(tmp_path))
+    try:
+        assert await tb.recover_abandoned_outboxes(handle.bus, tmp_path, own_pid=os.getpid()) == 1
+    finally:
+        await shutdown_turn_persistence(handle)
+    assert existed_at_close == [False]
+
+
+async def test_an_outbox_left_by_a_worker_killed_with_sigkill_is_drained(backend, chat_storage, tmp_path):
+    """A real second process appends rows (WAL + SHM + lock present) and is SIGKILLed: nothing was closed cleanly."""
+    import json
+    import signal
+    import socket
+    import subprocess
+    import sys
+    import textwrap
+
+    from parrot.storage.turn_bus import recover_abandoned_outboxes
+
+    envelopes = [EventEnvelope(topic=TURN_COMPLETED_TOPIC, event_id=f"kill-{i}",
+                               payload=_event(f"kill-{i}").to_dict()).to_dict() for i in range(3)]
+    payload = tmp_path / "envelopes.json"
+    payload.write_text(json.dumps(envelopes))
+    script = tmp_path / "worker.py"
+    script.write_text(textwrap.dedent("""
+        import asyncio, json, os, socket, sys
+        from navigator_eventbus import EventEnvelope
+        from navigator_eventbus.outbox import SqliteOutbox
+
+        async def main():
+            outbox = SqliteOutbox(os.path.join(sys.argv[1], f"{socket.gethostname()}-{os.getpid()}.db"))
+            for raw in json.load(open(sys.argv[2])):
+                await outbox.append(EventEnvelope.from_dict(raw))
+            print("ready", flush=True)
+            await asyncio.sleep(120)  # never closes the outbox
+
+        asyncio.run(main())
+    """))
+    proc = subprocess.Popen([sys.executable, str(script), str(tmp_path), str(payload)], stdout=subprocess.PIPE,
+                            text=True)
+    try:
+        assert proc.stdout.readline().strip() == "ready"
+        proc.send_signal(signal.SIGKILL)
+        proc.wait(timeout=10)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+    dead = tmp_path / f"{socket.gethostname()}-{proc.pid}.db"
+    assert dead.exists() and Path(f"{dead}-wal").exists()  # an unclean death: WAL left behind
+    handle = await setup_turn_persistence(chat_storage, bus=_memory_bus(tmp_path))
+    try:
+        assert await recover_abandoned_outboxes(handle.bus, tmp_path, own_pid=os.getpid()) == 3
+
+        async def stored():
+            return len(await backend.query_turns(USER, AGENT, "s1")) == 3
+
+        assert await _eventually(stored)
+    finally:
+        await shutdown_turn_persistence(handle)
+    for suffix in ("", ".lock", "-wal", "-shm"):
+        assert not Path(f"{dead}{suffix}").exists(), suffix
+
+
+async def test_an_undecodable_row_is_skipped_across_batches_and_keeps_the_file(chat_storage, tmp_path, monkeypatch):
+    import sqlite3
+    import parrot.storage.turn_bus as tb
+
+    path = await _dead_outbox(tmp_path, 565656, ["u1", "u2", "u3"], nack_future=True)
+    conn = sqlite3.connect(str(path))
+    conn.execute("UPDATE evb_outbox SET envelope='{not json' WHERE event_id='u1'")
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(tb, "RECOVERY_BATCH_SIZE", 1)
+    handle = await setup_turn_persistence(chat_storage, bus=_memory_bus(tmp_path))
+    try:
+        assert await asyncio.wait_for(tb.recover_abandoned_outboxes(handle.bus, tmp_path, own_pid=os.getpid()), 10) == 2
+    finally:
+        await shutdown_turn_persistence(handle)
+    left = sqlite3.connect(str(path)).execute("SELECT event_id FROM evb_outbox").fetchall()
+    assert left == [("u1",)]  # only the undecodable row stays, and the file with it

@@ -183,11 +183,19 @@ async def _attach_dlq(bus: Any, holder: Dict[str, Any]) -> Any:
     return dlq
 
 
-def _read_outbox_rows(path: Path) -> List[Tuple[str, str]]:
-    """Every pending ``(event_id, envelope_json)`` of an outbox file, whatever its retry deadline."""
+#: Rows loaded into memory at once while draining an abandoned outbox (the file may hold a million rows).
+RECOVERY_BATCH_SIZE = 200
+
+
+def _read_outbox_rows(path: Path, after_rowid: int = 0, limit: int = RECOVERY_BATCH_SIZE) -> List[Tuple[int, str, str]]:
+    """The next ``limit`` pending ``(rowid, event_id, envelope_json)`` after ``after_rowid`` (insertion order),
+    whatever their retry deadline. Keyset-paginated: a row that stays (failed publish) never repeats."""
     conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5)
     try:
-        return conn.execute("SELECT event_id, envelope FROM evb_outbox ORDER BY created_at").fetchall()
+        return conn.execute(
+            "SELECT rowid, event_id, envelope FROM evb_outbox WHERE rowid > ? ORDER BY rowid LIMIT ?",
+            (after_rowid, limit),
+        ).fetchall()
     finally:
         conn.close()
 
@@ -204,26 +212,34 @@ async def _drain_one_outbox(bus: Any, old: SqliteOutbox, path: Path) -> Tuple[in
     """Re-publish every pending row of ``old``; returns ``(republished, fully_drained)``. Never raises."""
     recovered = 0
     try:
-        rows = await asyncio.to_thread(_read_outbox_rows, path)
-        for event_id, raw in rows:
-            try:
-                envelope = EventEnvelope.from_dict(json.loads(raw))
-            except Exception:  # noqa: BLE001 - never log the payload
-                logger.error("abandoned outbox %s: row %s is undecodable; file kept", path.name, event_id)
-                continue
-            try:
-                await bus.core.publish(envelope)
-            except Exception as exc:  # noqa: BLE001
-                logger.error("abandoned outbox %s: publishing %s failed (%s); file kept", path.name, event_id,
-                             type(exc).__name__)
-                break  # the row stays pending: it was NOT acked
-            try:
-                await old.ack(event_id)
-            except Exception as exc:  # noqa: BLE001
-                logger.error("abandoned outbox %s: ack of %s failed (%s); file kept", path.name, event_id,
-                             type(exc).__name__)
+        cursor = 0
+        stop = False
+        while not stop:
+            rows = await asyncio.to_thread(_read_outbox_rows, path, cursor, RECOVERY_BATCH_SIZE)
+            if not rows:
                 break
-            recovered += 1
+            for rowid, event_id, raw in rows:
+                cursor = rowid
+                try:
+                    envelope = EventEnvelope.from_dict(json.loads(raw))
+                except Exception:  # noqa: BLE001 - never log the payload
+                    logger.error("abandoned outbox %s: row %s is undecodable; file kept", path.name, event_id)
+                    continue
+                try:
+                    await bus.core.publish(envelope)
+                except Exception as exc:  # noqa: BLE001
+                    logger.error("abandoned outbox %s: publishing %s failed (%s); file kept", path.name, event_id,
+                                 type(exc).__name__)
+                    stop = True  # the row stays pending: it was NOT acked
+                    break
+                try:
+                    await old.ack(event_id)
+                except Exception as exc:  # noqa: BLE001
+                    logger.error("abandoned outbox %s: ack of %s failed (%s); file kept", path.name, event_id,
+                                 type(exc).__name__)
+                    stop = True
+                    break
+                recovered += 1
         remaining = await asyncio.to_thread(_count_outbox_rows, path)
     except Exception as exc:  # noqa: BLE001 - a corrupt file must not abort startup
         logger.error("abandoned outbox %s could not be drained (%s); file kept", path.name, type(exc).__name__)
@@ -263,11 +279,13 @@ async def recover_abandoned_outboxes(bus: Any, directory: Path, *, own_pid: Opti
         try:
             count, drained = await _drain_one_outbox(bus, old, path)
             recovered += count
+            if drained:
+                # Unlink WHILE the exclusive file lock is still held (``old.close()`` releases it): a worker that
+                # reused ``<host>-<pid>.db`` meanwhile could never have its live file removed under it.
+                for leftover in (path, Path(f"{path}.lock"), Path(f"{path}-wal"), Path(f"{path}-shm")):
+                    leftover.unlink(missing_ok=True)
         finally:
             await old.close()
-        if drained:
-            for leftover in (path, Path(f"{path}.lock"), Path(f"{path}-wal"), Path(f"{path}-shm")):
-                leftover.unlink(missing_ok=True)
     if recovered:
         logger.warning("recovered %d turn event(s) from abandoned outboxes", recovered)
     return recovered
