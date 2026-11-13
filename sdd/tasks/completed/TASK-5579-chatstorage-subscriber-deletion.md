@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-886 — Durable Conversation Memory
 **Spec**: `sdd/specs/durable-conversation-memory.spec.md` (Module 9)
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: XL (> 8h)
 **Depends-on**: TASK-5568, TASK-5573, TASK-5570, TASK-5574
@@ -834,10 +834,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Replaced ChatStorage.save_turn with store_turn/handle_turn_completed (retryable StorageError propagates, ConversationDeletedError/InvalidTurnPayloadError acknowledged), tombstone-first delete_conversation/delete_turn with post-tombstone cleanup, cleaners, deletion publisher hook, handle_conversation_deleted, cold_backend/hot_redis_client properties, tolerant-reader load_conversation; added RedisConversation.upsert_turn (CAS replace-or-append, both storage modes) + temporary _prepare_turn mirror.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (sequential fallback)
+**Date**: 2026-11-13
+**Tests**: new test_chat_storage_subscriber 13 passed — real SQLite cold tier + real RedisConversation against a throw-away `redis-server` subprocess (hash mode and string mode were also checked by a one-off script); ported suites pass: tests/test_chat_storage.py (17), unit/storage/test_chat_hot_tier_metadata + test_delete_turn_hot_tier (4), root tests/storage/test_chat_storage_dynamodb.py + test_integration_artifact_persistence.py (36). ruff clean.
+**Mutation evidence**: no tombstone -> RED (3); no post-write fence -> RED; swallow retryable StorageError -> RED; append instead of replace -> RED; hot-tier ordering fields overwritten -> RED after adding the hot-tier assertion (it survived the first time). Restored by re-applying edits.
+**Notes / decisions**: (1) test_integration_artifact_persistence.py had a SECOND save_turn caller (test_no_dynamo_save_turn_still_works) not listed in the task; ported too. (2) TASK-5568's `_delete_turn_from_hot_tier` became `_delete_hot_turn`: it now RAISES (callers collect errors and retry through the deletion event) and returns True only when it removed a turn; test_delete_turn_hot_tier's failure test now accepts WARNING-or-higher log. (3) Deleting with an empty agent id tombstones the "" identity and logs a WARNING; it does not fence turns stored under a real agent name (out of scope). (4) handlers/agent.py still calls save_turn until TASK-5584 removes it.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
