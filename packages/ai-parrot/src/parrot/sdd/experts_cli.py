@@ -113,6 +113,53 @@ def _read_doc(doc: Path, repo_root: Path) -> tuple[str, str]:
     return text, rel
 
 
+def _ungated(grid: ScopeGrid) -> ScopeGrid:
+    """Return a copy of ``grid`` with every stage gate removed."""
+    return grid.model_copy(update={"stages": [stage.model_copy(update={"gate": None}) for stage in grid.stages]})
+
+
+async def _run_scope(grid: ScopeGrid, registry: Any, prompt: str) -> dict[str, list[Finding]]:
+    """Run one scope through the real compiled flow and collect findings per expert.
+
+    The grid is compiled with :func:`compile_scope` and executed by ``AgentsFlow``, so each stage runs
+    in its declared mode (subagent / mob / pipeline / inline). Consultation is advisory, so gates are
+    auto-skipped: every stage gate is stripped before compiling (no gate host is bound, nothing waits).
+    A stage that fails is logged and skipped; findings come from the ``metadata["experts"]`` outcomes of
+    the stages that did run. The mob synthesis node needs an LLM synthesis client, which consult does not
+    bind, so it fails (logged) and any stage downstream of a mob stage is skipped; the mob stage's own
+    per-expert answers are still used.
+    """
+    from parrot.bots.flows.core.context import FlowContext
+    from parrot.bots.flows.flow.flow import AgentsFlow
+    from parrot.experts.grid.compiler import compile_scope
+    from parrot.experts.stages.node import EXPERT_REGISTRY_KEY
+
+    definition = compile_scope(_ungated(grid), registry=registry)
+    flow = AgentsFlow.from_definition(definition, agent_registry=object())
+    ctx = FlowContext(initial_task=prompt)
+    ctx.shared_data[EXPERT_REGISTRY_KEY] = registry
+    result = await flow.run_flow(ctx)
+    for node_id, error in result.errors.items():
+        logger.warning("scope %s: node %s failed and was skipped: %s", grid.scope, node_id, error)
+    found: dict[str, list[Finding]] = {}
+    for node_id, node_result in ctx.results.items():
+        outcomes = (getattr(node_result, "metadata", None) or {}).get("experts")
+        if not isinstance(outcomes, dict):
+            continue
+        for expert, outcome in outcomes.items():
+            if outcome.get("status") != "ok":
+                logger.warning("scope %s: expert %s failed in stage %s", grid.scope, expert, node_id)
+                continue
+            bucket = found.setdefault(expert, [])
+            taken = {f.id for f in bucket}
+            for finding in parse_findings(str(outcome.get("output", ""))):
+                if finding.id in taken:
+                    finding = finding.model_copy(update={"id": f"{node_id}:{finding.id}"})
+                taken.add(finding.id)
+                bucket.append(finding)
+    return found
+
+
 async def consult(
     *,
     repo_root: Path,
@@ -121,7 +168,7 @@ async def consult(
     registry: Any,
     scopes: dict[str, ScopeGrid],
 ) -> list[Path]:
-    """Run matching scopes' experts over a document and persist their contributions.
+    """Run matching scopes' flows over a document and persist per-expert contributions.
 
     Returns:
         The contribution files written (empty when no scope matches).
@@ -133,31 +180,23 @@ async def consult(
     text, rel = await asyncio.to_thread(_read_doc, doc, Path(repo_root))
     digest = _digest(text)
     out_dir = contribution_dir(repo_root, feature_id=feature_id, doc_slug=_slug(doc.name))
-    experts: list[str] = []
-    for grid in grids:
-        for stage in grid.stages:
-            for name in [*stage.experts, *([stage.conductor] if stage.conductor else [])]:
-                if name not in experts:
-                    experts.append(name)
     prompt = _PROMPT.format(path=rel, text=text)
-    written: list[Path] = []
-    for name in experts:
+    merged: dict[str, list[Finding]] = {}
+    for grid in grids:
         try:
-            answer = await _ask(registry, name, prompt)
-        except Exception as exc:  # noqa: BLE001 - advisory: one failing expert never blocks
-            logger.warning("expert %s failed to consult on %s: %s", name, rel, exc)
+            per_expert = await _run_scope(grid, registry, prompt)
+        except Exception as exc:  # noqa: BLE001 - advisory: a failing scope never blocks
+            logger.warning("scope %s failed for %s: %s", grid.scope, rel, exc)
             continue
-        path = out_dir / f"{_slug(name)}.json"
-        if path.exists():
-            try:
-                if load_contribution(path).doc_digest != digest:
-                    logger.info("existing contribution %s is stale (doc changed)", path)
-            except Exception:  # noqa: BLE001 - unreadable previous file is simply replaced
-                pass
+        for expert, findings in per_expert.items():
+            merged.setdefault(expert, []).extend(findings)
+    written: list[Path] = []
+    for name, findings in merged.items():
         try:
             tier = str(registry.get(name).bundle.manifest.tier.value)
         except Exception:  # noqa: BLE001
             tier = "unknown"
+        path = out_dir / f"{_slug(name)}.json"
         save_contribution(
             path,
             Contribution(
@@ -167,7 +206,7 @@ async def consult(
                 doc_digest=digest,
                 feature_id=feature_id,
                 created_at=datetime.now(timezone.utc).isoformat(),
-                findings=parse_findings(answer),
+                findings=findings,
             ),
         )
         written.append(path)

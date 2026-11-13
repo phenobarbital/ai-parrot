@@ -18,20 +18,31 @@ FINDINGS = [{"id": "f1", "severity": "major", "section": "2", "statement": "bad"
 
 
 class FakeExpert:
-    def __init__(self, answer: str) -> None:
+    def __init__(self, answer: str, name: str = "e") -> None:
         self.answer = answer
-        self.bundle = SimpleNamespace(manifest=SimpleNamespace(tier=SimpleNamespace(value="balanced")))
+        self.bundle = SimpleNamespace(manifest=SimpleNamespace(name=name, tier=SimpleNamespace(value="balanced")))
 
-    async def ask(self, prompt: str) -> SimpleNamespace:
+    async def ask(self, prompt: str, **kwargs: object) -> SimpleNamespace:
         return SimpleNamespace(content=self.answer)
 
 
-class FakeRegistry:
-    def __init__(self, answer: str) -> None:
-        self.expert = FakeExpert(answer)
+async def _boom(prompt: str, **kwargs: object) -> None:
+    raise RuntimeError("expert down")
 
-    def get(self, name: str) -> FakeExpert:
-        return self.expert
+
+class FakeRegistry:
+    wiki_toolkit = None
+
+    def __init__(self, answer: str, *, fail: set[str] | None = None) -> None:
+        self.answer = answer
+        self.fail = fail or set()
+
+    def get(self, name: str, *, tenant: str | None = None) -> FakeExpert:
+        if name in self.fail:
+            expert = FakeExpert(self.answer, name)
+            expert.ask = _boom  # type: ignore[method-assign]
+            return expert
+        return FakeExpert(self.answer, name)
 
 
 def _scope(projects: list[str], tags: list[str]) -> ScopeGrid:
@@ -68,13 +79,50 @@ async def test_consult_writes_and_marks_stale(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_modes_gates_and_failures(tmp_path: Path) -> None:
+    """A gated mob stage runs without a gate host; a failing expert is skipped; pipeline stages chain."""
+    doc = _doc(tmp_path)
+    grid = ScopeGrid.model_validate(
+        {
+            "scope": "s2",
+            "match": {"projects": ["ai-parrot"]},
+            "stages": [
+                {
+                    "stage": "m",
+                    "experts": ["e1", "e2"],
+                    "mode": "mob",
+                    "gate": {"kind": "approval", "title": "t"},
+                },
+            ],
+        }
+    )
+    reg = FakeRegistry(json.dumps(FINDINGS), fail={"e2"})
+    written = await experts_cli.consult(
+        repo_root=tmp_path, doc=doc, feature_id="FEAT-2", registry=reg, scopes={"s2": grid}
+    )
+    assert [p.name for p in written] == ["e1.json"]
+    assert load_contribution(written[0]).findings[0].id == "f1"
+
+
+@pytest.mark.asyncio
 async def test_no_match_and_fallback_and_no_feature(tmp_path: Path) -> None:
     doc = _doc(tmp_path)
-    assert await experts_cli.consult(
-        repo_root=tmp_path, doc=doc, feature_id=None, registry=FakeRegistry("[]"), scopes={"s": _scope(["other"], [])}
-    ) == []
+    assert (
+        await experts_cli.consult(
+            repo_root=tmp_path,
+            doc=doc,
+            feature_id=None,
+            registry=FakeRegistry("[]"),
+            scopes={"s": _scope(["other"], [])},
+        )
+        == []
+    )
     written = await experts_cli.consult(
-        repo_root=tmp_path, doc=doc, feature_id=None, registry=FakeRegistry("not json"), scopes={"s1": _scope([], ["security"])}
+        repo_root=tmp_path,
+        doc=doc,
+        feature_id=None,
+        registry=FakeRegistry("not json"),
+        scopes={"s1": _scope([], ["security"])},
     )
     assert ".contributions" in written[0].as_posix()
     assert load_contribution(written[0]).findings[0].severity == "info"
