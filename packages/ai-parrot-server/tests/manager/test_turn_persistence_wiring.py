@@ -149,7 +149,7 @@ async def test_add_bot_attaches_durable_memory(wired):
         mgr.add_bot(keeps)
         assert keeps.turn_publisher is own  # an injected collaborator wins
         mgr.add_bot(late)  # idempotent: no second cleaner
-        assert len(app["chat_storage"]._memory_cleaners) == 3
+        assert len(app["chat_storage"]._memory_cleaners) == 1  # one cleaner for the manager, not one per bot
     finally:
         await runner.cleanup()
 
@@ -266,5 +266,39 @@ async def test_per_user_bots_are_attached_on_build_and_on_retrieval(wired, monke
         bot._durable_memory_attached = False
         again = await mgr.get_user_bot(request, "ub-1")
         assert again is built and calls["n"] == 1 and again.turn_publisher is handle.publisher
+    finally:
+        await runner.cleanup()
+
+
+async def test_one_cleaner_serves_many_bots_and_clears_the_right_memory(wired, storage):
+    import gc
+    import weakref
+
+    app, mgr = web.Application(), _manager()
+    mgr.setup_registry_only(app, turn_persistence=True)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    try:
+        bots = []
+        for i in range(25):  # per-user / temporary bots
+            b = _bot("alpha", chatbot_id=f"uuid-{i}")
+            b.conversation_memory = InMemoryConversation()
+            mgr._attach_durable_memory(b)
+            await b.conversation_memory.create_history("u", "s", chatbot_id=b.memory_key_id)
+            bots.append(b)
+        other = _bot("beta", chatbot_id="uuid-beta")
+        other.conversation_memory = InMemoryConversation()
+        mgr._attach_durable_memory(other)
+        await other.conversation_memory.create_history("u", "s", chatbot_id=other.memory_key_id)
+        assert len(storage._memory_cleaners) == 1  # attaching N bots registers nothing new
+        await storage.delete_conversation("u", "s", agent_id="alpha")
+        for b in bots:
+            assert await b.conversation_memory.get_history("u", "s", chatbot_id=b.memory_key_id) is None
+        assert await other.conversation_memory.get_history("u", "s", chatbot_id=other.memory_key_id) is not None
+        # an evicted bot is not kept alive by the manager
+        ref = weakref.ref(bots[0])
+        bots.clear()
+        gc.collect()
+        assert ref() is None
     finally:
         await runner.cleanup()

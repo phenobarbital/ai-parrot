@@ -10,6 +10,7 @@ import importlib.util
 from importlib import import_module
 from pathlib import Path
 import contextlib
+import weakref
 import os
 import time
 import asyncio
@@ -210,17 +211,6 @@ class _DurableMemory:
     sequence_allocator: Any
 
 
-def _memory_cleaner_for(bot: "AbstractBot"):
-    """Working-memory cleaner for ``ChatStorage.register_memory_cleaner`` bound to one bot."""
-
-    async def _clean(user_id: str, agent_id: str, session_id: str) -> None:
-        memory = getattr(bot, "conversation_memory", None)
-        if memory is None or agent_id != bot.name:
-            return
-        await memory.delete_history(user_id, session_id, chatbot_id=bot.memory_key_id)
-
-    return _clean
-
 _STUDIO_PREFIXES = ("studio:", "studio-agent:")
 _cleanup_logger = logging.getLogger("Parrot.Manager")
 
@@ -285,6 +275,7 @@ class BotManager:
         """
         self.app = None
         self._bots: Dict[str, AbstractBot] = {}
+        self._durable_bots = weakref.WeakSet()
         self._botdef: Dict[str, Type] = {}  # Store class definitions for each bot
         self._bot_expiration: Dict[str, float] = {}  # Track expiration timestamps for temporary bots
         self._cleanup_task: Optional[asyncio.Task] = None  # Background cleanup task
@@ -3208,6 +3199,8 @@ Available documentation UIs:
         install_user_store_hooks(app)
 
     _durable_memory: Optional[_DurableMemory] = None
+    #: Live bots wired to the turn bus (weak: an evicted per-user / temporary bot is collectable).
+    _durable_bots: "weakref.WeakSet[AbstractBot]"
     _registry_only_chat_storage: Optional[ChatStorage] = None
 
     def _build_durable_memory(self, chat_storage: ChatStorage, handle: TurnPersistence) -> _DurableMemory:
@@ -3230,6 +3223,8 @@ Available documentation UIs:
             return
         app["turn_persistence"] = handle
         self._durable_memory = self._build_durable_memory(chat_storage, handle)
+        # ONE working-memory cleaner for the whole manager; it resolves the bots by agent name at call time
+        chat_storage.register_memory_cleaner(self._clean_working_memory)
         for bot in list(self._bots.values()):  # bots loaded before the bus existed
             self._attach_durable_memory(bot)
         self.logger.info("Turn persistence started")
@@ -3260,8 +3255,20 @@ Available documentation UIs:
             bot.hydration_source = durable.hydration_source
         if bot.sequence_allocator is None:
             bot.sequence_allocator = durable.sequence_allocator
-        durable.chat_storage.register_memory_cleaner(_memory_cleaner_for(bot))
-        bot._durable_memory_attached = True  # noqa: SLF001 - idempotency marker, one cleaner per bot
+        self._durable_bots.add(bot)
+        bot._durable_memory_attached = True  # noqa: SLF001 - idempotency marker
+
+    async def _clean_working_memory(self, user_id: str, agent_id: str, session_id: str) -> None:
+        """The single ``ChatStorage`` memory cleaner: clear the history of every live bot named ``agent_id``.
+
+        Resolves the bots at call time (shared bots, cached per-user bots, temporary bots) through a weak set,
+        so an evicted bot is neither kept alive nor awaited.
+        """
+        for bot in list(self._durable_bots):
+            memory = getattr(bot, "conversation_memory", None)
+            if memory is None or getattr(bot, "name", None) != agent_id:
+                continue
+            await memory.delete_history(user_id, session_id, chatbot_id=bot.memory_key_id)
 
     async def _start_registry_only_persistence(self, app: web.Application) -> None:
         """Registry-only hosts have no on_startup: create + initialize ChatStorage, then start the bus."""
