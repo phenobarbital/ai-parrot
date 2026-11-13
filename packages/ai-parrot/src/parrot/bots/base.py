@@ -655,6 +655,7 @@ class BaseBot(AbstractBot):
                     )
                     # `get_response` runs the output pipeline: save + publish AFTER it, once, from the response
                     # the caller receives (single shared step, FEAT-886).
+                    _plain_answer = response.to_text  # before get_response writes its markdown wrapper
                     final = await self.get_response(response, return_sources, return_context)
                     _commit = None
                     if compaction_result is not None:
@@ -667,6 +668,7 @@ class BaseBot(AbstractBot):
                         use_history=bool(use_conversation_history and memory),
                         context_used=vector_context if use_vector_context else None,
                         compaction=_commit, output_mode=output_mode, started=_conv_started_ms,
+                        assistant_text=await self._stored_turn_text(final, _plain_answer),
                     )
                     return final
             finally:
@@ -885,6 +887,7 @@ class BaseBot(AbstractBot):
                     self.EVENT_TASK_COMPLETED, agent_name=self.name, session_id=session_id, result=response.output
                 )
 
+                _plain_answer = response.to_text  # before get_response writes its markdown wrapper
                 final = await self.get_response(response, return_sources=False, return_context=False)
                 # save + publish AFTER the output pipeline, once, from the response the caller receives
                 _commit = None
@@ -898,6 +901,7 @@ class BaseBot(AbstractBot):
                     use_history=bool(use_conversation_history and memory),
                     context_used=None,  # invoke does not use vector context
                     compaction=_commit, output_mode=None, started=_invoke_started,
+                    assistant_text=await self._stored_turn_text(final, _plain_answer),
                 )
                 return final
 
@@ -1574,6 +1578,9 @@ class BaseBot(AbstractBot):
                 self._merge_guardrail_reports(response, _input_outcome.flag_reports)
 
                 phase_started = time.perf_counter()
+                # The answer as the LLM gave it, before a formatter / envelope finalizer writes its
+                # presentation wrapper to `response.response` (what the conversation keeps, FEAT-886).
+                _plain_answer = response.to_text if isinstance(response.output, str) or response.response else None
 
                 # Enhance response with metadata
                 vector_info = vector_metadata.get("vector", {})
@@ -1775,6 +1782,7 @@ class BaseBot(AbstractBot):
                     use_history=bool(use_conversation_history and memory),
                     context_used=vector_context if use_vector_context else None,
                     compaction=_commit, output_mode=output_mode, started=_ask_started_ms,
+                    assistant_text=await self._stored_turn_text(response, _plain_answer),
                 )
                 self.logger.debug(
                     "[%s] ask timing: memory_add_turn_ms=%.1f",

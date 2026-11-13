@@ -205,15 +205,15 @@ async def test_pandas_agent_refuses_a_deleted_session(history: bool):
     assert agent.turn_publisher.events == []
 
 
-async def test_pandas_agent_save_failure_is_not_swallowed(caplog):
+async def test_pandas_agent_save_failure_returns_the_answer_and_is_logged_at_error(caplog):
     agent = _pandas()
 
     async def boom(*a: Any, **kw: Any):
         raise RuntimeError("store down")
 
     agent.conversation_memory.add_turn = boom
-    with pytest.raises(RuntimeError):
-        await agent.ask("hola", user_id="u", session_id="s", return_structured=False)
+    response = await agent.ask("hola", user_id="u", session_id="s", return_structured=False)
+    assert response is not None  # the computed answer is not thrown away (behaviour before FEAT-886)
     assert any(r.levelname == "ERROR" and "persisting turn_id" in r.getMessage() for r in caplog.records)
 
 
@@ -226,3 +226,41 @@ def test_voice_saves_run_the_deletion_guard_first():
     assert len(saves) == 2
     for i in saves:
         assert lines[i - 1].startswith("await self._guard_session("), lines[i - 1]
+
+
+
+@pytest.mark.parametrize("entry", ["invoke", "conversation"])
+async def test_the_stored_text_is_the_answer_not_the_markdown_wrapper(entry: str):
+    """`get_response` writes a "**Question** / **Answer**" block to `response.response` for the caller;
+    the conversation (working memory, bus, next LLM call) keeps the answer itself."""
+    bot = await _guarded_bot(_SecretClient())
+    call = bot.invoke if entry == "invoke" else bot.conversation
+    kwargs = {} if entry == "invoke" else {"use_vector_context": False}
+    response = await call("what is the key?", user_id="u", session_id="s", **kwargs)
+    stored, event = await _stored(bot), bot.turn_publisher.events[0]
+    assert "**Question**" in response.response  # the caller still gets the rendered block
+    for text in (stored.assistant_response, event.turn["assistant_response"]):
+        assert "**Question**" not in text and "what is the key?" not in text, text
+        assert SECRET not in text and "REDACTED" in text
+
+
+@pytest.mark.parametrize("entry", ["ask", "invoke", "conversation"])
+async def test_a_passing_response_runs_the_output_guardrails_once(entry: str):
+    from parrot.bots.guardrails.base import GuardrailStage
+
+    bot = await _guarded_bot(Client())  # no secret in the answer: the verdict is PASS
+    pipeline = bot._guardrail_pipelines[GuardrailStage.OUTPUT]
+    runs, real_run = [], pipeline.run
+
+    async def counting_run(content, ctx):
+        runs.append(content)
+        return await real_run(content, ctx)
+
+    pipeline.run = counting_run
+    if entry == "ask":
+        await bot.ask("hi", user_id="u", session_id="s", use_vector_context=False)
+    elif entry == "invoke":
+        await bot.invoke("hi", user_id="u", session_id="s")
+    else:
+        await bot.conversation("hi", user_id="u", session_id="s", use_vector_context=False)
+    assert len(runs) == 1, runs

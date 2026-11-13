@@ -227,6 +227,13 @@ _RENDERED_SYSTEM_PROMPT: ContextVar[Optional[Dict[int, Optional[str]]]] = Contex
     "parrot_rendered_system_prompt", default=None
 )
 
+#: The last OUTPUT verdict that actually REWROTE a response in this task: ``(id(response), original, rewritten,
+#: pipeline, ctx)``. Set by `_run_output_pipeline` only on a TRANSFORM/BLOCK; read by `_stored_turn_text` so the
+#: persisted text gets the same verdict without running the guardrails again when nothing was rewritten.
+_OUTPUT_REWRITE: ContextVar[Optional[Tuple[int, str, str, Any, Any]]] = ContextVar(
+    "parrot_output_rewrite", default=None
+)
+
 #: `_fallback_sequence`: seconds before a FAILED read of the durable sequence floor is tried again, and the
 #: number of sessions whose floor state one bot remembers (cleared when exceeded).
 _FALLBACK_FLOOR_RETRY_S = 30.0
@@ -2803,9 +2810,11 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
 
         Contract: call it AFTER the entry point's output pipeline has run (``_run_output_pipeline`` /
         ``get_response``). The turn is built here, from the response as the caller will receive it, so the
-        text that is stored, published and later hydrated is ``response.to_text`` — the single
-        "caller-visible text of this response" — and never a pre-pipeline copy. ``assistant_text`` overrides it
-        only for the streaming path, where the streamed text is authoritative.
+        text that is stored, published and later hydrated is never a pre-pipeline copy. Entry points pass
+        ``assistant_text=await self._stored_turn_text(response, plain)`` — the plain answer with the OUTPUT
+        verdict applied — so a presentation wrapper written to ``response.response`` is not what the
+        conversation keeps; without it the text is ``response.to_text``. The streaming path passes the
+        streamed text, which is authoritative there.
 
         Save + publish run as one unit shielded from cancellation: a cancelled request cannot leave working
         memory and the bus disagreeing. A failure inside the detached unit is logged (ids only, no payload)
@@ -3305,6 +3314,7 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         Returns:
             The same ``response`` instance, mutated in place.
         """
+        _OUTPUT_REWRITE.set(None)
         pipeline = self._guardrail_pipelines[GuardrailStage.OUTPUT]
         if not pipeline.has_guardrails or not isinstance(response.output, str):
             return response
@@ -3329,14 +3339,18 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         original = response.output
         if outcome.blocked:
             response.output = "This response could not be delivered due to a content policy violation."
+            _OUTPUT_REWRITE.set((id(response), original, response.output, pipeline, ctx))
             await self._propagate_output_verdict(response, original, pipeline, ctx, blocked_text=response.output)
             response.metadata["error"] = "security_block"
             if outcome.reason:
                 response.metadata["block_reason"] = outcome.reason
             return response
 
-        if outcome.content is not None:
+        # `pipeline.run` returns the working content on every non-blocked pass: only an actual rewrite
+        # (TRANSFORM) is propagated, so a PASS never runs the guardrails a second time.
+        if outcome.content is not None and outcome.content != original:
             response.output = outcome.content
+            _OUTPUT_REWRITE.set((id(response), original, outcome.content, pipeline, ctx))
             await self._propagate_output_verdict(response, original, pipeline, ctx)
 
         if outcome.flag_reports:
@@ -3372,6 +3386,30 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
                 response.response = response.output
             else:
                 response.response = wrapped.content if wrapped.content is not None else alias
+
+    async def _stored_turn_text(self, response: AIMessage, plain: Optional[str]) -> Optional[str]:
+        """The assistant text persisted for a turn: the plain answer with the OUTPUT verdict applied (FEAT-886).
+
+        ``plain`` is the answer text captured BEFORE any presentation wrapper is written to
+        ``response.response`` (``get_response``'s markdown "Question/Answer/Sources" block, a formatter's
+        wrapped string). The wrapper is what the caller renders; the conversation keeps the answer itself, so
+        the next LLM call and the stored history do not carry the question echoed inside the assistant turn.
+        A TRANSFORM/BLOCK verdict of ``_run_output_pipeline`` is applied to it: the already rewritten text
+        when ``plain`` is what the pipeline scanned, otherwise the same pipeline run on ``plain``. With no
+        rewrite the guardrails are not run again. ``None`` (non-text answer) keeps ``response.to_text``.
+        """
+        if not isinstance(plain, str) or not plain:
+            return None
+        rewrite = _OUTPUT_REWRITE.get()
+        if rewrite is None or rewrite[0] != id(response):
+            return plain
+        _, original, rewritten, pipeline, ctx = rewrite
+        if plain == original:
+            return rewritten
+        outcome = await pipeline.run(plain, ctx)
+        if outcome.blocked:
+            return rewritten
+        return outcome.content if outcome.content is not None else plain
 
     def _merge_guardrail_reports(self, response: AIMessage, flag_reports: Dict[str, Dict[str, Any]]) -> None:
         """Merge FLAG-stage guardrail reports onto ``response.metadata['guardrails']``.

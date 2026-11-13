@@ -37,7 +37,6 @@ from ..outputs.a2ui.artifacts import attach_structured_artifact
 from ..outputs.a2ui.catalog._model import component_model
 from ..outputs.a2ui.inline.emitter import emit_inline_component
 from ..outputs.a2ui.inline.prompt import build_component_prompt
-from ..memory.abstract import ConversationTurn
 from ..observability.context import (
     current_memory_key_id,
     current_session_id,
@@ -2248,20 +2247,28 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 # this, render_history() always sees an empty history because
                 # PandasAgent reads from conversation_memory but ChatStorage
                 # writes to a separate Redis namespace.
-                # PandasAgent has NO output pipeline: `response.response` (== answer_text) is already the
-                # text the caller receives, so the shared step stores exactly that. A save failure is handled
-                # as in BaseBot (logged at ERROR and raised), never swallowed (FEAT-886).
+                # PandasAgent has NO output pipeline; its post-processed `answer_text` stays authoritative over
+                # `response.to_text` (which would dump a whole DataFrame for an empty answer). The answer is
+                # already computed: a failed save does not fail the request, as before FEAT-886, but it is
+                # logged at ERROR (ids only), never hidden at debug.
                 _commit = None
                 if compaction_result is not None:
                     _commit = self.build_compaction_commit(
                         compaction_result,
                         self.estimate_prompt_tokens(rendered_history, system_prompt, question),
                     )
-                await self._persist_finalized_turn(
-                    response, question=question, user_id=user_id, session_id=session_id,
-                    turn_id=response.turn_id or turn_id,
-                    use_history=bool(use_conversation_history and memory), compaction=_commit,
-                )
+                try:
+                    await self._persist_finalized_turn(
+                        response, question=question, user_id=user_id, session_id=session_id,
+                        turn_id=response.turn_id or turn_id,
+                        use_history=bool(use_conversation_history and memory), compaction=_commit,
+                        assistant_text=answer_text or "",
+                    )
+                except Exception as _save_exc:  # noqa: BLE001 - the answer is returned regardless
+                    self.logger.error(
+                        "persisting turn_id=%s failed (%s); the answer is still returned",
+                        response.turn_id or turn_id, type(_save_exc).__name__,
+                    )
 
                 # Post-response: episodic / mixin-provided hook
                 _post_q, _post_resp = question, response
