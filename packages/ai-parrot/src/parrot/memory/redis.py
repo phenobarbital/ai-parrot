@@ -6,7 +6,13 @@ import random
 from redis.asyncio import Redis
 from redis.exceptions import WatchError
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
-from .abstract import ConversationMemory, ConversationHistory, ConversationTurn, _preview
+from .abstract import (
+    ConversationMemory,
+    ConversationHistory,
+    ConversationTurn,
+    is_hydration_pending,
+    merge_pending_history,
+)
 from .compaction.omission import OmissionStore, RedisOmissionStore
 from ..conf import REDIS_HISTORY_URL
 
@@ -60,6 +66,13 @@ def _upsert_turn_dict(turns: List[Dict[str, Any]], new: Dict[str, Any]) -> List[
             break
     result.insert(insert_at, new)
     return result
+
+
+_INSTALL_NX_LUA = """
+if redis.call('EXISTS', KEYS[1]) == 1 then return 0 end
+redis.call('HSET', KEYS[1], unpack(ARGV))
+return 1
+"""
 
 
 async def _merge_backoff(attempt: int) -> None:
@@ -204,19 +217,7 @@ class RedisConversation(ConversationMemory):
         if self.use_hash_storage:
             # Method 1: Using Redis Hash (RECOMMENDED for objects)
             key = self._get_key(user_id, session_id, chatbot_id)
-            history_dict = history.to_dict()
-
-            # Store each field separately in a hash
-            mapping = {
-                "session_id": str(history_dict["session_id"]),
-                "user_id": str(history_dict["user_id"]),
-                "turns": self._serialize_data(history_dict["turns"]),
-                "created_at": history_dict["created_at"],
-                "updated_at": history_dict["updated_at"],
-                "metadata": self._serialize_data(history_dict["metadata"]),
-            }
-            if chatbot_id:
-                mapping["chatbot_id"] = str(chatbot_id)
+            await self.redis.hset(key, mapping=self._history_mapping(history))
         else:
             # Method 2: Using simple key-value storage
             key = self._get_key(user_id, session_id, chatbot_id)
@@ -320,6 +321,85 @@ class RedisConversation(ConversationMemory):
                     print(f"Error deserializing conversation history: {e}")
                     return None
             return None
+
+    def _history_mapping(self, history: ConversationHistory) -> Dict[str, str]:
+        """The hash fields of one history (single source for create / install / merge)."""
+        data = history.to_dict()
+        mapping = {
+            "session_id": str(data["session_id"]),
+            "user_id": str(data["user_id"]),
+            "turns": self._serialize_data(data["turns"]),
+            "created_at": data["created_at"],
+            "updated_at": data["updated_at"],
+            "metadata": self._serialize_data(data["metadata"]),
+        }
+        if data.get("chatbot_id") is not None:
+            mapping["chatbot_id"] = str(data["chatbot_id"])
+        return mapping
+
+    async def _install_history(self, history: ConversationHistory) -> bool:
+        """Atomic NX install (single Lua script in hash mode, ``SET NX`` in string mode); pending histories merge by CAS."""
+        key = self._get_key(history.user_id, history.session_id, history.chatbot_id)
+        if history.chatbot_id:
+            legacy = self._get_key(history.user_id, history.session_id, None)
+            if legacy != key and not await self.redis.exists(key) and await self.redis.exists(legacy):
+                await self.get_history(history.user_id, history.session_id, history.chatbot_id)  # FEAT-524 re-key
+                return False  # never shadow a legacy history
+        if self.use_hash_storage:
+            flat = [x for item in self._history_mapping(history).items() for x in item]
+            installed = bool(await self.redis.eval(_INSTALL_NX_LUA, 1, key, *flat))
+        else:
+            installed = bool(await self.redis.set(key, self._serialize_data(history.to_dict()), nx=True))
+        if installed:
+            await self.redis.sadd(self._get_user_sessions_key(history.user_id, history.chatbot_id), history.session_id)
+            await self._refresh_ttl(history.user_id, history.session_id, history.chatbot_id)
+            return True
+        return await self._merge_pending(key, history)
+
+    def _merged_or_none(
+        self, existing: Optional[ConversationHistory], history: ConversationHistory
+    ) -> Optional[ConversationHistory]:
+        """The history to write for a pending merge, or ``None`` when the existing one is not pending."""
+        if existing is None:
+            return history
+        if is_hydration_pending(existing.metadata):
+            return merge_pending_history(existing, history)
+        return None
+
+    async def _write_merged(self, conn: Any, key: str, merged: ConversationHistory) -> None:
+        if self.use_hash_storage:
+            conn.hset(key, mapping=self._history_mapping(merged))
+        else:
+            conn.set(key, self._serialize_data(merged.to_dict()))
+
+    async def _merge_pending(self, key: str, history: ConversationHistory) -> bool:
+        """CAS-merge ``history`` into an existing PENDING history; ``False`` when the existing one is not pending."""
+        if not self._supports_cas():
+            merged = self._merged_or_none(
+                await self._load_history(history.user_id, history.session_id, history.chatbot_id), history)
+            if merged is None:
+                return False
+            await self.update_history(merged)
+            await self._refresh_ttl(history.user_id, history.session_id, history.chatbot_id)
+            return True
+        for attempt in range(_MERGE_MAX_ATTEMPTS):
+            async with self.redis.pipeline() as pipe:
+                try:
+                    await pipe.watch(key)
+                    existing = await self._load_history(history.user_id, history.session_id, history.chatbot_id)
+                    merged = self._merged_or_none(existing, history)
+                    if merged is None:
+                        await pipe.unwatch()
+                        return False
+                    pipe.multi()
+                    await self._write_merged(pipe, key, merged)
+                    await pipe.execute()
+                    await self._refresh_ttl(history.user_id, history.session_id, history.chatbot_id)
+                    return True
+                except WatchError:
+                    pass
+            await _merge_backoff(attempt)
+        raise RuntimeError(f"history install for {key} still conflicting after {_MERGE_MAX_ATTEMPTS} attempts")
 
     async def update_history(self, history: ConversationHistory) -> None:
         """Update a conversation history."""
@@ -596,33 +676,6 @@ class RedisConversation(ConversationMemory):
             await conn.execute()
         else:
             await conn.set(key, data)
-
-    async def _prepare_turn(
-        self, user_id: str, session_id: str, turn: ConversationTurn, chatbot_id: Optional[str] = None
-    ) -> ConversationTurn:
-        """TEMPORARY mirror of the ``add_turn`` steps (TASK-5580 moves this to ``ConversationMemory``)."""
-        from .compaction.tokens import count_turn, needs_recount
-
-        counter = self.token_counter
-        if self._normalize:
-            from .compaction.normalize import normalize_turn
-
-            turn = normalize_turn(turn)
-        if needs_recount(turn, counter):
-            turn.token_count = count_turn(turn, counter)
-        key = self.omission_key(user_id, session_id, chatbot_id)
-        offloaded = False
-        for inv in turn.tool_invocations:
-            if inv.output and "output" not in inv.omitted and counter.count(inv.output) > self._oversize_tool_tokens:
-                cid = await self.omission_store.put(key, inv.output, turn_id=turn.turn_id)
-                inv.output_chars = len(inv.output)
-                inv.output = _preview(inv.output)
-                inv.omitted["output"] = cid
-                offloaded = True
-        if offloaded:
-            turn.token_count = count_turn(turn, counter)
-        turn.schema_version = 2
-        return turn
 
     async def _append_turn(
         self,

@@ -1,5 +1,12 @@
+import asyncio
 from typing import Dict, List, Optional, Any, TYPE_CHECKING
-from .abstract import ConversationMemory, ConversationHistory, ConversationTurn
+from .abstract import (
+    ConversationMemory,
+    ConversationHistory,
+    ConversationTurn,
+    is_hydration_pending,
+    merge_pending_history,
+)
 from .compaction.omission import InMemoryOmissionStore, OmissionStore
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -31,6 +38,7 @@ class InMemoryConversation(ConversationMemory):
             normalize=normalize,
         )
         self._histories: Dict[str, Dict[str, Dict[str, ConversationHistory]]] = {}
+        self._install_lock = asyncio.Lock()
 
     def _get_chatbot_key(self, chatbot_id: Optional[str]) -> str:
         return str(chatbot_id) if chatbot_id else "_default"
@@ -74,6 +82,18 @@ class InMemoryConversation(ConversationMemory):
         self._histories.setdefault(history.user_id, {})
         self._histories[history.user_id].setdefault(chatbot_key, {})
         self._histories[history.user_id][chatbot_key][history.session_id] = history
+
+    async def _install_history(self, history: ConversationHistory) -> bool:
+        """Install ``history`` iff absent (or pending) — one dict assignment under an in-process lock."""
+        async with self._install_lock:
+            existing = await self.get_history(history.user_id, history.session_id, history.chatbot_id)
+            if existing is None:
+                await self.update_history(history)
+                return True
+            if is_hydration_pending(existing.metadata):
+                await self.update_history(merge_pending_history(existing, history))
+                return True
+            return False
 
     async def _store_turn(
         self,

@@ -1,8 +1,8 @@
 import uuid
 import orjson
-from typing import TYPE_CHECKING, List, Dict, Any, Optional
+from typing import TYPE_CHECKING, List, Dict, Any, Optional, Sequence, Tuple
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from abc import ABC, abstractmethod
 from datamodel.parsers.json import JSONContent  # pylint: disable=E0611 # noqa
 from navconfig.logging import logging
@@ -338,6 +338,44 @@ class ConversationHistory:
         return history
 
 
+def turn_order_key(turn: "ConversationTurn") -> Tuple[datetime, int, str]:
+    """Chronological sort key: ``(UTC timestamp, sequence or 0, turn_id)``.
+
+    A naive timestamp is treated as UTC (spec FEAT-886 §7). Never raises on mixed naive/aware input.
+    """
+    stamp = turn.timestamp
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    return (stamp, turn.sequence if turn.sequence is not None else 0, turn.turn_id)
+
+
+def is_hydration_pending(metadata: Optional[Dict[str, Any]]) -> bool:
+    """``True`` when ``metadata['hydration']['state'] == 'pending'`` (an install may still merge into it)."""
+    hydration = (metadata or {}).get("hydration")
+    return isinstance(hydration, dict) and hydration.get("state") == "pending"
+
+
+def merge_pending_history(existing: "ConversationHistory", hydrated: "ConversationHistory") -> "ConversationHistory":
+    """Prepend the hydrated turns older than ``existing``'s first turn; clear the pending marker.
+
+    Pure and idempotent. Hydrated turns whose ``turn_id`` already exists, or that are not strictly older than the
+    first existing turn, are dropped. Other metadata keys of ``existing`` (e.g. ``compaction``) are preserved.
+    Neither input is mutated.
+    """
+    first = turn_order_key(existing.turns[0]) if existing.turns else None
+    known = {t.turn_id for t in existing.turns}
+    older = [t for t in hydrated.turns if t.turn_id not in known and (first is None or turn_order_key(t) < first)]
+    return ConversationHistory(
+        session_id=existing.session_id,
+        user_id=existing.user_id,
+        chatbot_id=existing.chatbot_id,
+        turns=older + list(existing.turns),
+        created_at=existing.created_at,
+        updated_at=datetime.now(),
+        metadata={k: v for k, v in existing.metadata.items() if k != "hydration"},
+    )
+
+
 class ConversationMemory(ABC):
     """Abstract base class for conversation memory storage.
 
@@ -482,6 +520,30 @@ class ConversationMemory(ABC):
                 writers that do not participate in the budget round-trip
                 (e.g. a partial-save on error, or the ``ChatStorage`` tier).
         """
+        turn = await self._prepare_turn(user_id, session_id, turn, chatbot_id)
+        counter = self.token_counter
+
+        state: Optional[Dict[str, Any]] = None
+        if compaction is not None:
+            prev = await self._get_compaction_state(user_id, session_id, chatbot_id)
+            state = apply_commit(
+                CompactionState.from_dict(prev) if prev else None,
+                compaction,
+                counter.name,
+                _provider_prompt_tokens(turn),
+            ).to_dict()
+
+        await self._store_turn(user_id, session_id, turn, chatbot_id, compaction_state=state)
+
+    async def _prepare_turn(
+        self, user_id: str, session_id: str, turn: ConversationTurn, chatbot_id: Optional[str] = None
+    ) -> ConversationTurn:
+        """Stage 0 normalize, Stage 0.5 count, oversize offload, ``schema_version = 2`` — no write.
+
+        Shared by :meth:`add_turn`, :meth:`install_history` and ``RedisConversation.upsert_turn`` so every
+        writer gets the same treatment. Returns the (possibly rebound, normalized) turn; the caller's object
+        is untouched when ``normalize=True``.
+        """
         from .compaction.tokens import count_turn, needs_recount
 
         counter = self.token_counter
@@ -505,18 +567,41 @@ class ConversationMemory(ABC):
             turn.token_count = count_turn(turn, counter)
 
         turn.schema_version = 2
+        return turn
 
-        state: Optional[Dict[str, Any]] = None
-        if compaction is not None:
-            prev = await self._get_compaction_state(user_id, session_id, chatbot_id)
-            state = apply_commit(
-                CompactionState.from_dict(prev) if prev else None,
-                compaction,
-                counter.name,
-                _provider_prompt_tokens(turn),
-            ).to_dict()
+    async def install_history(
+        self,
+        user_id: str,
+        session_id: str,
+        turns: Sequence[ConversationTurn],
+        chatbot_id: Optional[str] = None,
+        *,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Stage ``turns`` through the ``add_turn`` steps, then install the complete history only if none exists.
 
-        await self._store_turn(user_id, session_id, turn, chatbot_id, compaction_state=state)
+        Returns ``True`` when this call installed it, ``False`` when a history already existed (the caller then
+        reads the existing one). Never exposes a partial history. A history whose
+        ``metadata['hydration']['state'] == 'pending'`` counts as absent: staged turns older than its first turn
+        are prepended atomically.
+
+        Custom ``ConversationMemory`` subclasses must now implement :meth:`_install_history`.
+        """
+        staged: List[ConversationTurn] = []
+        for turn in turns:
+            staged.append(await self._prepare_turn(user_id, session_id, turn, chatbot_id))
+        history = ConversationHistory(
+            session_id=session_id, user_id=user_id, chatbot_id=chatbot_id, turns=staged,
+            metadata=dict(metadata or {}),
+        )
+        return await self._install_history(history)
+
+    @abstractmethod
+    async def _install_history(self, history: ConversationHistory) -> bool:
+        """Backend primitive: write ``history`` iff the key is absent (or its hydration state is pending). ONE write.
+
+        Returns ``True`` when written (fresh install or pending merge), ``False`` when a non-pending history exists.
+        """
 
     @abstractmethod
     async def _store_turn(

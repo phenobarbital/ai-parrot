@@ -31,6 +31,16 @@ from .persistence import (
 )
 from .mem import InMemoryConversation
 from .redis import RedisConversation
+from .hydration import (
+    HydrationError,
+    HydrationNotReadyError,
+    HydrationSource,
+    HydrationUnavailableError,
+    LocalSequenceAllocator,
+    RedisSequenceAllocator,
+    SequenceAllocator,
+    SessionDeletedError,
+)
 from .render import HistoryMessage, render_history
 from .parts import MessagePart, render_parts_text
 from .unified import (
@@ -120,6 +130,14 @@ __all__ = [
     "EpisodicMemoryToolkit",
     "FileConversationMemory",
     "HistoryMessage",
+    "HydrationError",
+    "HydrationNotReadyError",
+    "HydrationSource",
+    "HydrationUnavailableError",
+    "LocalSequenceAllocator",
+    "RedisSequenceAllocator",
+    "SequenceAllocator",
+    "SessionDeletedError",
     "InMemoryConversation",
     "Limit",
     "LongTermMemoryMixin",
