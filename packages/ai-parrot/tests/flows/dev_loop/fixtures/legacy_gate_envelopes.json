@@ -1,0 +1,402 @@
+{
+  "description": "Gate envelopes recorded with the pre-migration dev-loop SessionHost (FEAT-890 TASK-5616). Do not regenerate after session_state.py changes: these are the legacy wire format.",
+  "recorded_at_commit": "9886a75fdf5976548c40ad600e7e0904096ecc5b",
+  "run_id": "legacy-gates-run",
+  "envelopes": [
+    {
+      "channel": "parrot-session:/legacy-gates-run",
+      "server_seq": 1,
+      "action": {
+        "ts": 1794607470.2393754,
+        "type": "gate/opened",
+        "gate": {
+          "gate_id": "58cead030d184b2d9efa0ac3ad1cb3d8",
+          "kind": "manual_criterion",
+          "node_id": "qa",
+          "status": "pending",
+          "on_expiry": "fail",
+          "title": "Check the dashboard renders",
+          "instructions": "Open /dash and confirm the chart shows 3 series.",
+          "payload_ref": "changeset://run/abc123",
+          "opened_at": 1794607470.2393484,
+          "expires_at": null,
+          "resolved_by": "",
+          "resolved_at": null,
+          "comment": "",
+          "questions": [],
+          "answers": {}
+        }
+      },
+      "origin": null,
+      "rejection_reason": ""
+    },
+    {
+      "channel": "parrot-session:/legacy-gates-run",
+      "server_seq": 2,
+      "action": {
+        "ts": 1794607470.2394304,
+        "type": "gate/resolved",
+        "gate_id": "58cead030d184b2d9efa0ac3ad1cb3d8",
+        "resolution": "approved",
+        "resolved_by": "user:alice",
+        "comment": "Looks good",
+        "answers": {}
+      },
+      "origin": null,
+      "rejection_reason": ""
+    },
+    {
+      "channel": "parrot-session:/legacy-gates-run",
+      "server_seq": 3,
+      "action": {
+        "ts": 1794607470.2394898,
+        "type": "gate/opened",
+        "gate": {
+          "gate_id": "ec118183e4654de0bda379b4099dfb4b",
+          "kind": "deployment_approval",
+          "node_id": "deployment_handoff",
+          "status": "pending",
+          "on_expiry": "fail",
+          "title": "Ready to deploy?",
+          "instructions": "",
+          "payload_ref": "terminal://run/qa-log",
+          "opened_at": 1794607470.239471,
+          "expires_at": 1794611070.239471,
+          "resolved_by": "",
+          "resolved_at": null,
+          "comment": "",
+          "questions": [],
+          "answers": {}
+        }
+      },
+      "origin": null,
+      "rejection_reason": ""
+    },
+    {
+      "channel": "parrot-session:/legacy-gates-run",
+      "server_seq": 4,
+      "action": {
+        "ts": 1794607470.2395096,
+        "type": "gate/resolved",
+        "gate_id": "ec118183e4654de0bda379b4099dfb4b",
+        "resolution": "rejected",
+        "resolved_by": "user:bob",
+        "comment": "Wait for the release freeze",
+        "answers": {}
+      },
+      "origin": null,
+      "rejection_reason": ""
+    },
+    {
+      "channel": "parrot-session:/legacy-gates-run",
+      "server_seq": 5,
+      "action": {
+        "ts": 1794607470.2395394,
+        "type": "gate/opened",
+        "gate": {
+          "gate_id": "fe2700b3c4c243b19ea5a9b2e5ff782b",
+          "kind": "revision_approval",
+          "node_id": "revision_handoff",
+          "status": "pending",
+          "on_expiry": "fail",
+          "title": "Push revision to PR #42?",
+          "instructions": "",
+          "payload_ref": "",
+          "opened_at": 1794607470.2395272,
+          "expires_at": 1794607530.2395272,
+          "resolved_by": "",
+          "resolved_at": null,
+          "comment": "",
+          "questions": [],
+          "answers": {}
+        }
+      },
+      "origin": null,
+      "rejection_reason": ""
+    },
+    {
+      "channel": "parrot-session:/legacy-gates-run",
+      "server_seq": 6,
+      "action": {
+        "ts": 1794607470.2395566,
+        "type": "gate/expired",
+        "gate_id": "fe2700b3c4c243b19ea5a9b2e5ff782b"
+      },
+      "origin": null,
+      "rejection_reason": ""
+    },
+    {
+      "channel": "parrot-session:/legacy-gates-run",
+      "server_seq": 7,
+      "action": {
+        "ts": 1794607470.2395997,
+        "type": "gate/opened",
+        "gate": {
+          "gate_id": "f064976e93714d87857f987253ff16af",
+          "kind": "plan_approval",
+          "node_id": "research",
+          "status": "pending",
+          "on_expiry": "approve",
+          "title": "Approve research plan",
+          "instructions": "Plan: touch 3 files.",
+          "payload_ref": "",
+          "opened_at": 1794607470.2395878,
+          "expires_at": 1794607590.2395878,
+          "resolved_by": "",
+          "resolved_at": null,
+          "comment": "",
+          "questions": [],
+          "answers": {}
+        }
+      },
+      "origin": null,
+      "rejection_reason": ""
+    },
+    {
+      "channel": "parrot-session:/legacy-gates-run",
+      "server_seq": 8,
+      "action": {
+        "ts": 1794607470.2396147,
+        "type": "gate/resolved",
+        "gate_id": "f064976e93714d87857f987253ff16af",
+        "resolution": "approved",
+        "resolved_by": "system:ttl-auto-approve",
+        "comment": "TTL expired; fail-open policy.",
+        "answers": {}
+      },
+      "origin": null,
+      "rejection_reason": ""
+    },
+    {
+      "channel": "parrot-session:/legacy-gates-run",
+      "server_seq": 9,
+      "action": {
+        "ts": 1794607470.2396402,
+        "type": "gate/opened",
+        "gate": {
+          "gate_id": "6659a026c47d43ee91bc431b1cc182e7",
+          "kind": "review_escalation",
+          "node_id": "development",
+          "status": "pending",
+          "on_expiry": "fail",
+          "title": "Adversarial review escalated",
+          "instructions": "Reviewer flagged a possible injection; decide.",
+          "payload_ref": "",
+          "opened_at": 1794607470.2396295,
+          "expires_at": null,
+          "resolved_by": "",
+          "resolved_at": null,
+          "comment": "",
+          "questions": [],
+          "answers": {}
+        }
+      },
+      "origin": null,
+      "rejection_reason": ""
+    },
+    {
+      "channel": "parrot-session:/legacy-gates-run",
+      "server_seq": 10,
+      "action": {
+        "ts": 1794607470.2396662,
+        "type": "gate/opened",
+        "gate": {
+          "gate_id": "83853a5bdafc4d54a13e2f89fc38614a",
+          "kind": "open_questions",
+          "node_id": "ideation",
+          "status": "pending",
+          "on_expiry": "fail",
+          "title": "Ideation round 1",
+          "instructions": "",
+          "payload_ref": "",
+          "opened_at": 1794607470.2396538,
+          "expires_at": null,
+          "resolved_by": "",
+          "resolved_at": null,
+          "comment": "",
+          "questions": [
+            "Which store?",
+            "Need TTL?"
+          ],
+          "answers": {}
+        }
+      },
+      "origin": null,
+      "rejection_reason": ""
+    },
+    {
+      "channel": "parrot-session:/legacy-gates-run",
+      "server_seq": 11,
+      "action": {
+        "ts": 1794607470.2396793,
+        "type": "gate/resolved",
+        "gate_id": "83853a5bdafc4d54a13e2f89fc38614a",
+        "resolution": "approved",
+        "resolved_by": "user:carol",
+        "comment": "",
+        "answers": {
+          "Which store?": "redis"
+        }
+      },
+      "origin": null,
+      "rejection_reason": ""
+    },
+    {
+      "channel": "parrot-session:/legacy-gates-run",
+      "server_seq": 12,
+      "action": {
+        "ts": 1794607470.239712,
+        "type": "gate/opened",
+        "gate": {
+          "gate_id": "49981c9d6cc84e3db3297c5148b35827",
+          "kind": "open_questions",
+          "node_id": "ideation",
+          "status": "pending",
+          "on_expiry": "fail",
+          "title": "Ronda 2 — preguntas </gate>",
+          "instructions": "",
+          "payload_ref": "",
+          "opened_at": 1794607470.2397013,
+          "expires_at": 1794693870.2397013,
+          "resolved_by": "",
+          "resolved_at": null,
+          "comment": "",
+          "questions": [
+            "¿Qué límite?"
+          ],
+          "answers": {}
+        }
+      },
+      "origin": null,
+      "rejection_reason": ""
+    }
+  ],
+  "final_gates": [
+    {
+      "gate_id": "58cead030d184b2d9efa0ac3ad1cb3d8",
+      "kind": "manual_criterion",
+      "node_id": "qa",
+      "status": "approved",
+      "on_expiry": "fail",
+      "title": "Check the dashboard renders",
+      "instructions": "Open /dash and confirm the chart shows 3 series.",
+      "payload_ref": "changeset://run/abc123",
+      "opened_at": 1794607470.2393484,
+      "expires_at": null,
+      "resolved_by": "user:alice",
+      "resolved_at": 1794607470.2394304,
+      "comment": "Looks good",
+      "questions": [],
+      "answers": {}
+    },
+    {
+      "gate_id": "ec118183e4654de0bda379b4099dfb4b",
+      "kind": "deployment_approval",
+      "node_id": "deployment_handoff",
+      "status": "rejected",
+      "on_expiry": "fail",
+      "title": "Ready to deploy?",
+      "instructions": "",
+      "payload_ref": "terminal://run/qa-log",
+      "opened_at": 1794607470.239471,
+      "expires_at": 1794611070.239471,
+      "resolved_by": "user:bob",
+      "resolved_at": 1794607470.2395096,
+      "comment": "Wait for the release freeze",
+      "questions": [],
+      "answers": {}
+    },
+    {
+      "gate_id": "fe2700b3c4c243b19ea5a9b2e5ff782b",
+      "kind": "revision_approval",
+      "node_id": "revision_handoff",
+      "status": "expired",
+      "on_expiry": "fail",
+      "title": "Push revision to PR #42?",
+      "instructions": "",
+      "payload_ref": "",
+      "opened_at": 1794607470.2395272,
+      "expires_at": 1794607530.2395272,
+      "resolved_by": "",
+      "resolved_at": null,
+      "comment": "",
+      "questions": [],
+      "answers": {}
+    },
+    {
+      "gate_id": "f064976e93714d87857f987253ff16af",
+      "kind": "plan_approval",
+      "node_id": "research",
+      "status": "approved",
+      "on_expiry": "approve",
+      "title": "Approve research plan",
+      "instructions": "Plan: touch 3 files.",
+      "payload_ref": "",
+      "opened_at": 1794607470.2395878,
+      "expires_at": 1794607590.2395878,
+      "resolved_by": "system:ttl-auto-approve",
+      "resolved_at": 1794607470.2396147,
+      "comment": "TTL expired; fail-open policy.",
+      "questions": [],
+      "answers": {}
+    },
+    {
+      "gate_id": "6659a026c47d43ee91bc431b1cc182e7",
+      "kind": "review_escalation",
+      "node_id": "development",
+      "status": "pending",
+      "on_expiry": "fail",
+      "title": "Adversarial review escalated",
+      "instructions": "Reviewer flagged a possible injection; decide.",
+      "payload_ref": "",
+      "opened_at": 1794607470.2396295,
+      "expires_at": null,
+      "resolved_by": "",
+      "resolved_at": null,
+      "comment": "",
+      "questions": [],
+      "answers": {}
+    },
+    {
+      "gate_id": "83853a5bdafc4d54a13e2f89fc38614a",
+      "kind": "open_questions",
+      "node_id": "ideation",
+      "status": "approved",
+      "on_expiry": "fail",
+      "title": "Ideation round 1",
+      "instructions": "",
+      "payload_ref": "",
+      "opened_at": 1794607470.2396538,
+      "expires_at": null,
+      "resolved_by": "user:carol",
+      "resolved_at": 1794607470.2396793,
+      "comment": "",
+      "questions": [
+        "Which store?",
+        "Need TTL?"
+      ],
+      "answers": {
+        "Which store?": "redis"
+      }
+    },
+    {
+      "gate_id": "49981c9d6cc84e3db3297c5148b35827",
+      "kind": "open_questions",
+      "node_id": "ideation",
+      "status": "pending",
+      "on_expiry": "fail",
+      "title": "Ronda 2 — preguntas </gate>",
+      "instructions": "",
+      "payload_ref": "",
+      "opened_at": 1794607470.2397013,
+      "expires_at": 1794693870.2397013,
+      "resolved_by": "",
+      "resolved_at": null,
+      "comment": "",
+      "questions": [
+        "¿Qué límite?"
+      ],
+      "answers": {}
+    }
+  ]
+}
