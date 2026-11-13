@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-898 — OUTPUT guardrails — scan the text answer beside a structured output
 **Spec**: `sdd/specs/bots-abstract-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -241,10 +241,19 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: Claude Opus 5.5 (/sdd-fix, actor `agent:sdd-fix:d9977aca`)
+**Date**: 2026-11-14
 **Notes**:
+- Code commit `b7e47a4308`. `_run_output_pipeline` picks the text to scan (`output` for a `str`, `response.response`
+  otherwise), keeps the early return for no guardrails and for a structured output with no non-empty `str` text, and
+  hands a structured outcome to the new `_apply_verdict_beside_structured_output`. The `str` path is unchanged apart
+  from the variable passed to `pipeline.run`.
+- Mutation check: on the unmodified code the redaction test, both echo cases and the BLOCK test failed on the leaked
+  secret / missing block; the two no-text-answer cases passed on both, as specified.
+- Validation Commands: the four contract files pass (82 tests) with `PYTHONPATH=packages/ai-parrot/src`.
+- Wider check: every other test file that touches the guardrail pipeline (16 core files + 2 `ai-parrot-server` studio
+  files) passes, 169 passed / 23 skipped (optional ONNX dependencies). Bots without configured guardrails never reach
+  the new branch (`enable_redaction` defaults to `False`, `abstract.py:428`).
+- `ruff check` clean; `black -l 120 --check` leaves both files unchanged.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
