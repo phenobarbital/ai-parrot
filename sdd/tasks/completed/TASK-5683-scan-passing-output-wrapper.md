@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-894 — OUTPUT guardrails — scan a presentation wrapper when the output passes
 **Spec**: `sdd/specs/bots-abstract-tech-debt.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -206,4 +206,20 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed**: 2026-11-14 · **Verification**: verified · **Code commit**: `d4f24dc697`
+
+- `_run_output_pipeline` now calls `_propagate_output_verdict` on every non-blocked outcome. Before, it called it
+  only inside the TRANSFORM `if`. The comment and both docstrings say the verdict reaches a distinct wrapper on
+  PASS too. The BLOCK branch, `_OUTPUT_VERDICT` and `_stored_turn_text` are unchanged.
+- Tests: `test_a_passing_response_runs_the_output_guardrails_once` became
+  `test_a_passing_response_scans_each_distinct_text_once` (`ask` → 1 run; `invoke` / `conversation` → 2, the second
+  being the markdown block). Added `test_a_passing_output_still_scans_its_wrapper`,
+  `test_a_question_echoed_in_the_markdown_wrapper_is_redacted[invoke|conversation]` and
+  `test_a_blocked_wrapper_falls_back_to_the_passing_output`.
+- Mutation check: on the unfixed code the 6 new or changed wrapper cases FAIL, and `[ask-1]` passes. With the fix,
+  the four Validation Contract files pass: 76 passed (`PYTHONPATH=packages/ai-parrot/src`).
+- `ruff check` passes. `black --check -l 120` reports both files, but both were already non-conformant on
+  `origin/dev` (same hunk count before and after: 7 in `abstract.py`, 8 in the test file). No hunk touches a
+  changed line.
+- Out of scope, as the spec says: `issue:8f65307982dd` (not claimed), and the structured-output early return at
+  `abstract.py:3321`. The latter is filed as its own ledger issue.
