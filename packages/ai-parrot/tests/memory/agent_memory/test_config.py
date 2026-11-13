@@ -4,7 +4,13 @@ from datetime import UTC, datetime
 
 import pytest
 
-from parrot.memory.agent_memory import AgentMemoryConfig, MemoryEvent, MemoryRequestScope, MemoryWriteReceipt
+from parrot.memory.agent_memory import (
+    AgentMemoryConfig,
+    ChatStorageEvidenceRef,
+    MemoryEvent,
+    MemoryRequestScope,
+    MemoryWriteReceipt,
+)
 
 
 def test_capability_matrix_and_brain_implication() -> None:
@@ -90,4 +96,69 @@ def test_frozen_scope_and_bounded_event() -> None:
             scope=scope,
             observed_at=datetime(2026, 11, 13, tzinfo=UTC),
             payload={str(index): index for index in range(33)},
+        )
+
+
+def _scope(**overrides: str | None) -> MemoryRequestScope:
+    values = {
+        "tenant_id": "tenant-1",
+        "agent_id": "agent-1",
+        "user_id": "user-1",
+        "session_id": "session-1",
+        "turn_id": "turn-1",
+        "identity_provenance": "server_resolved",
+    }
+    values.update(overrides)
+    return MemoryRequestScope(**values)
+
+
+def test_response_event_id_is_deterministic_function_of_turn_identity() -> None:
+    """Verify a retried turn yields the same event ID and any identity change yields another (spec F3)."""
+    base = _scope().response_event_id()
+
+    assert base == _scope(tenant_id="tenant-2", room_id="room-1").response_event_id()
+    for field, other in (
+        ("agent_id", "agent-2"),
+        ("user_id", "user-2"),
+        ("session_id", "session-2"),
+        ("turn_id", "turn-2"),
+    ):
+        assert _scope(**{field: other}).response_event_id() != base
+    assert _scope(user_id=None).response_event_id() != base
+    assert _scope(user_id=None).response_event_id() != _scope(session_id=None).response_event_id()
+    # Field boundaries cannot be shifted to forge a collision.
+    assert (
+        _scope(agent_id="a", user_id="bc").response_event_id() != _scope(agent_id="ab", user_id="c").response_event_id()
+    )
+
+
+def test_chat_storage_evidence_ref_carries_tenant() -> None:
+    """Verify ChatStorage evidence refs round-trip with tenant and reject tenant-less refs (spec F7)."""
+    ref = ChatStorageEvidenceRef(
+        tenant_id="tenant-1", agent_name="agent/1", user_id="user-1", session_id="session-1", turn_id="turn-1"
+    )
+    rendered = ref.to_reference()
+
+    assert ChatStorageEvidenceRef.parse(rendered) == ref
+    with pytest.raises(ValueError, match="tenant, agent, user, session and turn"):
+        ChatStorageEvidenceRef.parse("chatstorage/v1/agent-1/user-1/session-1/turn-1")
+    with pytest.raises(ValueError, match="non-blank"):
+        ChatStorageEvidenceRef(tenant_id=" ", agent_name="a", user_id="u", session_id="s", turn_id="t")
+
+    scope = _scope()
+    event = MemoryEvent(
+        event_id=scope.response_event_id(),
+        kind="response",
+        scope=scope,
+        observed_at=datetime(2026, 11, 13, tzinfo=UTC),
+        evidence_refs=(rendered,),
+    )
+    assert event.evidence_refs == (rendered,)
+    with pytest.raises(ValueError, match="tenant, agent, user, session and turn"):
+        MemoryEvent(
+            event_id="event-4",
+            kind="response",
+            scope=scope,
+            observed_at=datetime(2026, 11, 13, tzinfo=UTC),
+            evidence_refs=("chatstorage/v1/agent-1/user-1/session-1/turn-1",),
         )
