@@ -130,7 +130,11 @@ class ExperienceInterceptor:
                 expected = normalize_error(" ".join(str(token) for token in stub.get("error_tokens", [])))
                 expected_tokens = set(expected.split())
                 union = expected_tokens | observed_tokens
-                score = 1.0 if expected == observed else len(expected_tokens & observed_tokens) / len(union) if union else 0.0
+                score = (
+                    1.0
+                    if expected == observed
+                    else len(expected_tokens & observed_tokens) / len(union) if union else 0.0
+                )
                 if score >= threshold:
                     lesson_id = stub.get("lesson_id")
                     if isinstance(lesson_id, str):
