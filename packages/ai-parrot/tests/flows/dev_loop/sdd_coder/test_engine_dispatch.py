@@ -1492,3 +1492,150 @@ def test_attempt_record_accepts_attempt_above_three():
     from parrot.flows.dev_loop.sdd_coder.models import AttemptRecord
 
     assert AttemptRecord(attempt=4, seat_label="a", started_at="2026-11-05T00:00:00+00:00").attempt == 4
+
+
+class _FakeExperienceService:
+    """Stands in for ExperienceService; records every call so attempt identity can be asserted."""
+
+    briefs: list[tuple[str, list[str]]] = []
+    recorded: list[dict] = []
+    refreshed = 0
+    brief_text = "- [experience:abc] known pitfall"
+    fail_record_on: set[str] = set()
+
+    @classmethod
+    def reset(cls) -> None:
+        cls.briefs = []
+        cls.recorded = []
+        cls.refreshed = 0
+        cls.brief_text = "- [experience:abc] known pitfall"
+        cls.fail_record_on = set()
+
+    @classmethod
+    def from_root(cls, root=None):
+        return cls()
+
+    async def refresh(self) -> None:
+        type(self).refreshed += 1
+
+    async def brief(self, title, files, *, max_entries=None) -> str:
+        type(self).briefs.append((title, list(files)))
+        return type(self).brief_text
+
+    async def record(self, draft, *, session, source, seat="") -> str:
+        if draft.solution in type(self).fail_record_on:
+            raise RuntimeError("record boom")
+        type(self).recorded.append({"draft": draft, "session": session, "source": source, "seat": seat})
+        return f"lesson-{len(type(self).recorded)}"
+
+
+def _draft(solution: str):
+    from parrot.knowledge.wiki.experience.models import LessonDraft, LessonTrigger
+
+    return LessonDraft(trigger=LessonTrigger(executable="pytest"), symptom="red", solution=solution)
+
+
+@pytest.fixture
+def fake_experience(monkeypatch):
+    _FakeExperienceService.reset()
+    monkeypatch.setattr("parrot.flows.dev_loop.sdd_coder.engine.ExperienceService", _FakeExperienceService)
+    return _FakeExperienceService
+
+
+def _bare_engine(noop_probe, base_path) -> SddCoderEngine:
+    return SddCoderEngine(
+        roster=_roster(("a", "nova")),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+        dispatcher_builder=fake_builder_factory({}),
+    )
+
+
+@pytest.mark.asyncio
+async def test_record_lessons_from_output(tmp_path: Path, noop_probe, fake_experience, monkeypatch) -> None:
+    """Authored candidates carry the real attempt session and seat; one bad draft never drops the rest."""
+    from types import SimpleNamespace
+
+    engine = _bare_engine(noop_probe, tmp_path)
+    ctx = SimpleNamespace(worktree=str(tmp_path))
+    task = SimpleNamespace(task_id="TASK-0001")
+
+    output = DevelopmentOutput(
+        files_changed=[], commit_shas=[], summary="x", lessons=[_draft("ok-1"), _draft("bad"), _draft("ok-2")]
+    )
+    fake_experience.fail_record_on = {"bad"}
+    stored = await engine._record_lessons(ctx, task, output, session="uid-123", seat="seat-a")
+
+    assert stored == 2
+    assert [r["draft"].solution for r in fake_experience.recorded] == ["ok-1", "ok-2"]
+    assert {(r["session"], r["source"], r["seat"]) for r in fake_experience.recorded} == {
+        ("uid-123", "authored", "seat-a")
+    }
+
+    # No lessons -> no service work; a service that cannot even be built never raises.
+    empty = DevelopmentOutput(files_changed=[], commit_shas=[], summary="x")
+    assert await engine._record_lessons(ctx, task, empty, session="s", seat="t") == 0
+
+    def _boom(cls, root=None):
+        raise RuntimeError("no plane")
+
+    monkeypatch.setattr(fake_experience, "from_root", classmethod(_boom))
+    assert await engine._record_lessons(ctx, task, output, session="s", seat="t") == 0
+
+
+@pytest.mark.asyncio
+async def test_engine_briefing_both_seats(git_sandbox_feature, noop_probe, fake_experience, monkeypatch) -> None:
+    """The briefing reaches the MCP TaskScopedBrief and NativePrep; failures degrade to empty text."""
+    worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+    builder = fake_builder_factory({})
+    roster = RosterConfig(
+        seats=[
+            RosterSeat(label="h", kind="native"),
+            RosterSeat(label="a", backend="nova", model="model-a"),
+            RosterSeat(label="b", backend="codex", model="model-b"),
+        ]
+    )
+    engine = SddCoderEngine(
+        roster=roster, probe=noop_probe, worktree_base_path=str(base_path), dispatcher_builder=builder
+    )
+    plan = await engine.plan("demo", str(worktree))
+    native_id = next(t.task_id for t in plan.chunks[0].tasks if t.native)
+    prep = await engine.prepare_native("demo", str(worktree), native_id)
+    assert prep.experience_briefing == fake_experience.brief_text
+    assert fake_experience.refreshed >= 1
+
+    mcp_id = next(t.task_id for t in plan.chunks[0].tasks if not t.native)
+    job = await engine.run_chunk("demo", str(worktree), [mcp_id])
+    await engine.wait(job.job_id, 5)
+    calls = [c for d in builder.dispatchers.values() for c in d.calls]
+    assert calls and all(c["brief"].experience_briefing == fake_experience.brief_text for c in calls)
+
+    # Service failure: empty briefing, dispatch unaffected.
+    def _down(cls, root=None):
+        raise RuntimeError("down")
+
+    monkeypatch.setattr(fake_experience, "from_root", classmethod(_down))
+    ctx = await engine._resolve_feature("demo", str(worktree))
+    task = next(t for t in plan.chunks[0].tasks if t.task_id == mcp_id)
+    assert await engine._experience_briefing_for(ctx, task) == ""
+
+
+@pytest.mark.asyncio
+async def test_engine_feedback_unchanged(git_sandbox_feature, noop_probe, fake_experience) -> None:
+    """coder_feedback is byte-identical with and without experience; the briefing never leaks into it."""
+    worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+    builder = fake_builder_factory({})
+    engine = SddCoderEngine(
+        roster=_roster(("a", "nova")),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+        dispatcher_builder=builder,
+    )
+    job = await engine.run_chunk("demo", str(worktree), ["TASK-0001"])
+    await engine.wait(job.job_id, 5)
+    call = next(c for d in builder.dispatchers.values() for c in d.calls)
+    brief = call["brief"]
+
+    assert brief.experience_briefing == fake_experience.brief_text
+    assert fake_experience.brief_text not in brief.coder_feedback
+    assert brief.coder_feedback in engine._feedback_contexts.values()
