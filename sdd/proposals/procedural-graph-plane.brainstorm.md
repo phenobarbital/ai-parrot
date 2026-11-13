@@ -68,6 +68,12 @@ Decisions already taken by the owner during discovery (not to be re-litigated by
   a system-of-record API: as a cache with provenance and expiry. Inferences: only as candidates
   (`origin: inferred`, unreviewed) until promoted. For this feature: a learned procedure is never
   served as mandatory.
+- **The SDD graph is declared in a manifest**, not in command frontmatter (accepted deviation
+  from "skills with typed edges" for the SDD case; skill frontmatter stays the producer for
+  parrot skills).
+- **Preconditions are named, deterministic probes**, validated by lint. No free-form expressions.
+- **Prompt-submit injection is out of the pilot.** The pilot injects at task start and before a
+  guarded command only.
 
 Hard constraints from the codebase:
 
@@ -164,7 +170,7 @@ executor for a mandatory node), and advisory injection through FEAT-887's shared
   as excluded.
 - More new code than A: model, two producers, resolver, index, probes, CLI noun, lint pack.
 - One more database file under the wiki storage directory.
-- Deviates from the literal "frontmatter" wording for the SDD case (flagged as an open question).
+- Deviates from the literal "frontmatter" wording for the SDD case (accepted by the owner).
 
 📊 **Effort:** Medium–High
 
@@ -291,8 +297,6 @@ For an agent:
 - **Before a guarded command** (a Bash command that a procedure node declares as its entry, for
   example `parrot sdd task close`, `gh pr create`, `git push`), an advisory when a precondition
   does not hold ("`depends_on` TASK-5583 is not done"). The command still runs as written.
-- **On prompt submit**, when the prompt names an SDD command or an intent a node declares, the
-  applicable procedure and its unmet preconditions. Advisory only.
 - A mandatory node is announced as mandatory. Nothing is dispatched in the pilot.
 
 ### Internal Behavior
@@ -325,8 +329,7 @@ name), keeps the procedures whose preconditions hold or are the nearest unmet, o
 
 **Injection.** No new hook registration. The shared FEAT-887 entry point calls the resolver on
 its pre-tool path when the leading executable is in the index's guarded-command set, and the
-task-start briefing gains a procedure block. The prompt-submit injection needs one more event on
-that shared entry (see Open Questions). Every injection is `additionalContext`, bounded and
+task-start briefing gains a procedure block. Every injection is `additionalContext`, bounded and
 templated.
 
 **Link to FEAT-887.** A confirmed pitfall whose scope matches a procedure's guarded command gets
@@ -359,6 +362,7 @@ stored, linted and shown. They change the wording of the advisory and nothing el
 
 ### Out of scope — follow-ups to record
 
+- Prompt-submit injection (needs an event that neither the wiki hook nor FEAT-887 registers).
 - Mandatory dispatch with HITL confirmation in product agents (procedure-level grant covering
   the declared tools).
 - In-process delegation between agents without A2A: a `delegate` outcome of the pipeline through
@@ -382,7 +386,7 @@ stored, linted and shown. They change the wording of the advisory and nothing el
 - `procedure-resolver`: deterministic "applicable procedures and valid next steps" over named probes.
 - `procedure-lint`: broken edges, `requires` cycles, unknown probes, missing executors, manifest coverage.
 - `sdd-procedure-graph`: the SDD workflow manifest and the SDD probe set.
-- `procedure-advisory-injection`: procedure block at task start, pre-command advisory, prompt-submit advisory.
+- `procedure-advisory-injection`: procedure block at task start and pre-command advisory.
 
 ### Modified Capabilities
 - `agent-skill-system`: optional graph fields in skill frontmatter and `SkillDefinition`.
@@ -412,7 +416,8 @@ Verified at `f3d1b420b6` by reading the files. Imports were checked as module pa
 ### User-Provided Code
 
 ```yaml
-# Source: discussion (illustrative frontmatter agreed with the owner; not existing code)
+# Source: discussion (illustrative frontmatter agreed with the owner; not existing code).
+# Superseded on one point: preconditions are named probes, not expressions like the one below.
 mode: mandatory            # or advisory
 intents: [refund_request]
 applies_to: [Order, Customer]
@@ -519,8 +524,7 @@ from parrot_tools.wiki.tools import create_wiki_tools                  # ai-parr
   lint pack and the SDD probe set are independent of each other; the plane and resolver depend on
   the model only; CLI, MCP tool and injection depend on the resolver.
 - **Cross-feature independence**: conflicts with FEAT-887 on the shared hook entry, the
-  task-start briefing (`TaskScopedBrief`, `sdd-start.md` and twins) and
-  `native_claude_sandbox.py` / `installer.py` if a prompt-submit event is added. The injection
+  task-start briefing (`TaskScopedBrief`, `sdd-start.md` and twins). The injection
   tasks must start after FEAT-887's hook runtime and briefing are merged. `skills/models.py` and
   `parsers.py` are also touched by skill features; the change there is additive.
 - **Recommended isolation**: `per-spec`.
@@ -539,9 +543,9 @@ from parrot_tools.wiki.tools import create_wiki_tools                  # ai-parr
 - [x] Pilot: SDD workflow or a product expert? — *Owner: Jesus Lara*: the SDD workflow; it is deterministic and measurable.
 - [x] One feature with FEAT-887 or two? — *Owner: Jesus Lara*: two; this one depends on FEAT-887's hook pipeline.
 - [x] When may an agent write facts? — *Owner: Jesus Lara*: never in the authoritative tier; own episodes yes, system-of-record API results as cache, inferences only as candidates.
-- [ ] Option B declares the SDD graph in a manifest instead of command frontmatter (commands have four or more copies and host-owned frontmatter). Is that deviation from "skills with typed edges" accepted for the SDD case? — *Owner: Jesus Lara*
-- [ ] Prompt-submit injection needs an event neither the wiki hook nor FEAT-887 registers. Add it to FEAT-887's shared entry (a change to an approved spec), add it in this feature on top of that entry, or drop it from the pilot and keep task-start plus pre-command? — *Owner: Jesus Lara*
-- [ ] Preconditions as named probes (recommended: deterministic, lintable) or as expressions (`order.status == 'delivered'`, as in the illustrative frontmatter)? — *Owner: Jesus Lara*
+- [x] Option B declares the SDD graph in a manifest instead of command frontmatter (commands have four or more copies and host-owned frontmatter). Is that deviation from "skills with typed edges" accepted for the SDD case? — *Owner: Jesus Lara*: accepted.
+- [x] Prompt-submit injection needs an event neither the wiki hook nor FEAT-887 registers. Where does it go? — *Owner: Jesus Lara*: out of the pilot; the pilot injects at task start and before a guarded command only.
+- [x] Preconditions as named probes or as expressions? — *Owner: Jesus Lara*: named probes with deterministic validation; no free-form expressions.
 - [ ] Which commands are guarded in v1 (candidates: `parrot sdd task close`, `parrot sdd ids reserve`, `parrot sdd worktree ensure`, `gh pr create`, `git push`)? — *Owner: Jesus Lara*
 - [ ] How is the pilot measured: task-state violations and hand-rolled closes before and after, advisories fired versus followed, or both? — *Owner: Jesus Lara*
 - [ ] Does the manifest ship in the package assets (so `parrot sdd install` gives every repo the SDD graph) or stay repo-local in the pilot? — *Owner: Jesus Lara*
