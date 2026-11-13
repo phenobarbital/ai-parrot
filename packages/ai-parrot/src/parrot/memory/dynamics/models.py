@@ -9,7 +9,6 @@ from enum import IntEnum
 from parrot.memory.episodic.models import MemoryNamespace
 from pydantic import BaseModel, ConfigDict, Field
 
-
 FSRS6_REFERENCE = "fsrs-6@v6.3.2:9446cb06605c597a063aeee49f7d188d42e34dc2"
 DEFAULT_PARAMETERS = (
     0.212,
@@ -114,9 +113,10 @@ class MemoryParameters(BaseModel):
             raise ValueError("reference must pin the accepted FSRS-6 version")
         if len(self.weights) != len(DEFAULT_PARAMETERS):
             raise ValueError("weights must contain exactly 21 values")
-        if any(not lower <= weight <= upper for weight, lower, upper in zip(
-            self.weights, LOWER_BOUNDS_PARAMETERS, UPPER_BOUNDS_PARAMETERS
-        )):
+        if any(
+            not lower <= weight <= upper
+            for weight, lower, upper in zip(self.weights, LOWER_BOUNDS_PARAMETERS, UPPER_BOUNDS_PARAMETERS)
+        ):
             raise ValueError("weights must be finite and within the accepted FSRS-6 bounds")
 
 
@@ -137,7 +137,9 @@ class MemoryState(BaseModel):
         """Validate neutral legacy state and bounded reviewed state."""
         super().__init__(**data)
         if self.status == "uninitialized":
-            if any(value is not None for value in (self.difficulty, self.stability, self.reviewed_at, self.parameter_id)):
+            if any(
+                value is not None for value in (self.difficulty, self.stability, self.reviewed_at, self.parameter_id)
+            ):
                 raise ValueError("uninitialized state cannot carry review state or parameter identity")
             if self.review_count != 0:
                 raise ValueError("uninitialized state cannot carry earned reviews")
