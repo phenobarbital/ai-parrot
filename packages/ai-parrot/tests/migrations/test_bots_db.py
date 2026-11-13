@@ -102,8 +102,7 @@ async def test_legacy_values_fold_without_overwriting_explicit_destinations(
     connection, schema, table, dsn = migration_target
     target = f'"{schema}"."{table}"'
     users_target = f'"{schema}"."users_bots"'
-    await connection.execute(
-        f"""CREATE TABLE {target} (
+    await connection.execute(f"""CREATE TABLE {target} (
             chatbot_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             name VARCHAR NOT NULL UNIQUE,
             embedding_model JSONB,
@@ -116,10 +115,8 @@ async def test_legacy_values_fold_without_overwriting_explicit_destinations(
             model_config JSONB,
             tools JSONB,
             language VARCHAR(10) NOT NULL DEFAULT 'en'
-        )"""
-    )
-    await connection.execute(
-        f"""INSERT INTO {target} (
+        )""")
+    await connection.execute(f"""INSERT INTO {target} (
             name, embedding_model, vector_store_config, model_name, temperature,
             max_tokens, top_k, top_p, model_config, tools, language
         ) VALUES
@@ -137,8 +134,7 @@ async def test_legacy_values_fold_without_overwriting_explicit_destinations(
         (
             'sql-null', '{{"model":"embed-null"}}', NULL,
             'null-model', NULL, NULL, NULL, NULL, NULL, NULL, NULL
-        )"""
-    )
+        )""")
     await connection.execute(
         f"CREATE TABLE {users_target} (marker TEXT, embedding_model JSONB, vector_config JSONB, language TEXT)"
     )
@@ -153,9 +149,12 @@ async def test_legacy_values_fold_without_overwriting_explicit_destinations(
     report = await _upgrade(dsn)
 
     assert report.exit_code == 0
-    rows = {row["name"]: dict(row) for row in await connection.fetch(
-        f"SELECT name, vector_store_config, model_config, tools, language FROM {target}"
-    )}
+    rows = {
+        row["name"]: dict(row)
+        for row in await connection.fetch(
+            f"SELECT name, vector_store_config, model_config, tools, language FROM {target}"
+        )
+    }
     assert _json_value(rows["legacy"]["vector_store_config"]) == {
         "other": 1,
         "embedding_model": {"provider": "local", "model_name": "embed-column"},
@@ -186,9 +185,7 @@ async def test_legacy_values_fold_without_overwriting_explicit_destinations(
         "top_p": False,
     }
     assert _json_value(rows["explicit"]["tools"]) == "incompatible-but-preserved"
-    assert _json_value(rows["sql-null"]["vector_store_config"]) == {
-        "embedding_model": {"model_name": "embed-null"}
-    }
+    assert _json_value(rows["sql-null"]["vector_store_config"]) == {"embedding_model": {"model_name": "embed-null"}}
     assert _json_value(rows["sql-null"]["model_config"]) == {"model_name": "null-model", "model": "null-model"}
     languages_after = [
         tuple(row) for row in await connection.fetch(f"SELECT name, language FROM {target} ORDER BY name")
@@ -212,20 +209,18 @@ async def test_partially_dropped_sources_normalize_independently(
     """Normalize aliases and fold each remaining scalar when other legacy columns are absent."""
     connection, schema, table, dsn = migration_target
     target = f'"{schema}"."{table}"'
-    await connection.execute(
-        f"""CREATE TABLE {target} (
+    await connection.execute(f"""CREATE TABLE {target} (
             chatbot_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             name VARCHAR NOT NULL UNIQUE,
             vector_store_config JSONB,
             model_config JSONB,
             temperature DOUBLE PRECISION,
             language VARCHAR(10)
-        )"""
-    )
+        )""")
     await connection.execute(
         f"INSERT INTO {target} (name, vector_store_config, model_config, temperature) VALUES ("
-        "'partial', '{\"embedding_model\":{\"model\":\"embed-only\"}}', "
-        "'{\"model_name\":\"llm-only\"}', 0.4)"
+        '\'partial\', \'{"embedding_model":{"model":"embed-only"}}\', '
+        '\'{"model_name":"llm-only"}\', 0.4)'
     )
 
     report = await _upgrade(dsn)
@@ -247,15 +242,13 @@ async def test_incompatible_config_rolls_back_backfill_and_drop_atomically(
     """Retain the source column and value when its destination cannot safely accept a backfill."""
     connection, schema, table, dsn = migration_target
     target = f'"{schema}"."{table}"'
-    await connection.execute(
-        f"""CREATE TABLE {target} (
+    await connection.execute(f"""CREATE TABLE {target} (
             chatbot_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             name VARCHAR NOT NULL UNIQUE,
             embedding_model JSONB,
             vector_store_config JSONB,
             language VARCHAR(10)
-        )"""
-    )
+        )""")
     await connection.execute(
         f"INSERT INTO {target} (name, embedding_model, vector_store_config) "
         "VALUES ('broken', '{\"model\":\"must-survive\"}', '7')"
@@ -270,11 +263,14 @@ async def test_incompatible_config_rolls_back_backfill_and_drop_atomically(
         "bots/004_tool_names.sql",
         "bots/005_language_schema.sql",
     ]
-    assert await connection.fetchval(
-        "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
-        "WHERE table_schema = $1 AND table_name = $2 AND column_name = 'embedding_model')",
-        schema,
-        table,
-    ) is True
+    assert (
+        await connection.fetchval(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
+            "WHERE table_schema = $1 AND table_name = $2 AND column_name = 'embedding_model')",
+            schema,
+            table,
+        )
+        is True
+    )
     assert await connection.fetchval(f"SELECT embedding_model->>'model' FROM {target}") == "must-survive"
     assert _json_value(await connection.fetchval(f"SELECT vector_store_config FROM {target}")) == 7
