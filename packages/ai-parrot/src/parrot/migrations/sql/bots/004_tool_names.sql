@@ -1,5 +1,5 @@
 -- Source: FEAT-fix-stale-bot-tool-names.sql; retain order and unrelated JSON elements.
-UPDATE "{schema}"."{bots_table}" AS b
+UPDATE {schema}.{bots_table} AS b
 SET tools = (
     SELECT jsonb_agg(
         CASE elem #>> '{}'

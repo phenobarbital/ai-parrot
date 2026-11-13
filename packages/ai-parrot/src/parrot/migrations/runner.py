@@ -53,7 +53,15 @@ def _target_identity(migration_set: MigrationSet) -> tuple[str, ...]:
 
 
 def _recorded_identity(value: object) -> tuple[str, ...] | None:
-    """Decode a structured ledger identity without accepting arbitrary JSON."""
+    """Decode a structured ledger identity without accepting arbitrary JSON.
+
+    asyncpg returns jsonb columns as JSON text unless a codec is registered, so decode text first.
+    """
+    if isinstance(value, (str, bytes)):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return None
     tables = value.get("tables") if isinstance(value, Mapping) else value
     if not isinstance(tables, Sequence) or isinstance(tables, (str, bytes)):
         return None
@@ -275,7 +283,6 @@ async def upgrade(
                     skipped.append(identity)
                     continue
                 if current_state == "APPLIED":
-                    applied.append(identity)
                     continue
                 if current_state == "CHANGED" and not reapply_changed:
                     diagnostics.append(f"Migration changed and requires explicit reapply: {identity}")

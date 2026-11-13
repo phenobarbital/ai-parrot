@@ -1,5 +1,5 @@
 -- Provenance: BotModel documented DDL and historical additive scripts.
-CREATE TABLE IF NOT EXISTS "{schema}"."{bots_table}" (
+CREATE TABLE IF NOT EXISTS {schema}.{bots_table} (
     chatbot_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR NOT NULL,
     description TEXT,
@@ -109,7 +109,7 @@ BEGIN
 END;
 $baseline$;
 
-ALTER TABLE "{schema}"."{bots_table}"
+ALTER TABLE {schema}.{bots_table}
     ADD COLUMN IF NOT EXISTS chatbot_id UUID DEFAULT gen_random_uuid(),
     ADD COLUMN IF NOT EXISTS name VARCHAR NOT NULL,
     ADD COLUMN IF NOT EXISTS description TEXT,

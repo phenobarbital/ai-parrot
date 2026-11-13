@@ -45,18 +45,18 @@ WITH target AS (
 ), keys_ok AS (
     SELECT
         EXISTS (
-            SELECT 1 FROM pg_catalog.pg_constraint AS constraint
+            SELECT 1 FROM pg_catalog.pg_constraint AS con
             JOIN pg_catalog.pg_attribute AS attribute
-                ON attribute.attrelid = constraint.conrelid AND attribute.attnum = constraint.conkey[1]
+                ON attribute.attrelid = con.conrelid AND attribute.attnum = con.conkey[1]
             CROSS JOIN target
-            WHERE constraint.conrelid = target.table_oid AND constraint.contype = 'p' AND attribute.attname = 'chatbot_id'
+            WHERE con.conrelid = target.table_oid AND con.contype = 'p' AND attribute.attname = 'chatbot_id'
         )
         AND EXISTS (
-            SELECT 1 FROM pg_catalog.pg_constraint AS constraint
+            SELECT 1 FROM pg_catalog.pg_constraint AS con
             JOIN pg_catalog.pg_attribute AS attribute
-                ON attribute.attrelid = constraint.conrelid AND attribute.attnum = constraint.conkey[1]
+                ON attribute.attrelid = con.conrelid AND attribute.attnum = con.conkey[1]
             CROSS JOIN target
-            WHERE constraint.conrelid = target.table_oid AND constraint.contype = 'u' AND attribute.attname = 'name'
+            WHERE con.conrelid = target.table_oid AND con.contype = 'u' AND attribute.attname = 'name'
         ) AS ok
 ), indexes_ok AS (
     SELECT bool_and(EXISTS (

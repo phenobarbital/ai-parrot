@@ -13,7 +13,7 @@ WITH target AS (
 ), destinations_normalized AS (
     SELECT NOT EXISTS (
         SELECT 1
-        FROM "{schema}"."{bots_table}"
+        FROM {schema}.{bots_table}
         WHERE jsonb_typeof(vector_store_config->'embedding_model') = 'object'
           AND (vector_store_config->'embedding_model') ? 'model'
           AND NOT ((vector_store_config->'embedding_model') ? 'model_name')

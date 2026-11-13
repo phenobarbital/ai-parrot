@@ -13,7 +13,7 @@ BEGIN
         ) THEN
             IF EXISTS (
                 SELECT 1
-                FROM "{schema}"."{bots_table}"
+                FROM {schema}.{bots_table}
                 WHERE model_config IS NOT NULL AND jsonb_typeof(model_config) <> 'object'
             ) THEN
                 RAISE EXCEPTION 'bots LLM fold requires object model_config';
@@ -33,7 +33,7 @@ BEGIN
         END IF;
     END LOOP;
 
-    UPDATE "{schema}"."{bots_table}"
+    UPDATE {schema}.{bots_table}
     SET model_config = jsonb_set(model_config, '{model}', model_config->'model_name', TRUE)
     WHERE jsonb_typeof(model_config) = 'object'
       AND model_config ? 'model_name'

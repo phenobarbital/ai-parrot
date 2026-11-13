@@ -13,7 +13,7 @@ WITH target AS (
 ), aliases_complete AS (
     SELECT NOT EXISTS (
         SELECT 1
-        FROM "{schema}"."{bots_table}"
+        FROM {schema}.{bots_table}
         WHERE jsonb_typeof(model_config) = 'object'
           AND model_config ? 'model_name'
           AND NOT (model_config ? 'model')

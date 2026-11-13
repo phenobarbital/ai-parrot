@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
@@ -64,7 +65,15 @@ def _expected_identity(migration_set: MigrationSet) -> tuple[str, ...]:
 
 
 def _recorded_identity(value: object) -> tuple[str, ...] | None:
-    """Read a ledger identity without accepting unstructured values."""
+    """Read a ledger identity without accepting unstructured values.
+
+    asyncpg returns jsonb columns as JSON text unless a codec is registered, so decode text first.
+    """
+    if isinstance(value, (str, bytes)):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return None
     tables = value.get("tables") if isinstance(value, Mapping) else value
     if not isinstance(tables, Sequence) or isinstance(tables, (str, bytes)):
         return None
