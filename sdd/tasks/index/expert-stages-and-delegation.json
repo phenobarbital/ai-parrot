@@ -199,7 +199,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -210,8 +210,9 @@
       "parallelism_notes": "builds on SessionHost delegation from TASK-5617 (session_state.py) and resolve_gate_store from TASK-5615 (core/gates/stores)",
       "assigned_to": null,
       "started_at": "2026-11-13T18:41:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5618-devloop-runner-commands-streaming.md"
+      "completed_at": "2026-11-13T22:45:59+00:00",
+      "file": "sdd/tasks/completed/TASK-5618-devloop-runner-commands-streaming.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5619",
@@ -383,7 +384,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -394,8 +395,9 @@
       "parallelism_notes": "uses load_scopes/compile_scope from TASK-5625 (experts/grid) and resolve_gate_store from TASK-5615 (core/gates/stores)",
       "assigned_to": null,
       "started_at": "2026-11-13T18:41:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5627-experts-run-cli.md"
+      "completed_at": "2026-11-13T22:46:03+00:00",
+      "file": "sdd/tasks/completed/TASK-5627-experts-run-cli.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5628",
@@ -404,7 +406,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -414,8 +416,9 @@
       "parallelism_notes": "matches documents against ScopeGrid.match via load_scopes from TASK-5625 and runs the mob stage via compile_scope (TASK-5625)",
       "assigned_to": null,
       "started_at": "2026-11-13T18:41:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5628-sdd-experts-consult.md"
+      "completed_at": "2026-11-13T22:46:06+00:00",
+      "file": "sdd/tasks/completed/TASK-5628-sdd-experts-consult.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5629",

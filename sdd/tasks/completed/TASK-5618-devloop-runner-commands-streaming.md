@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-890 — Expert stages, dispatch modes, generic gate host and SDD expert delegation
 **Spec**: `sdd/specs/expert-stages-and-delegation.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M
 **Depends-on**: TASK-5617, TASK-5615
@@ -148,4 +148,15 @@ self._actions_key = f"flow:{run_id}:actions"  # streaming.py:106
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+
+- Task: TASK-5618
+- Feature: expert-stages-and-delegation
+- Implementation SHA: a3f3dd4e7fd06d749643547a0699ea9965993d02
+- Closed at (UTC): 2026-11-13T22:45:59+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-sol · Backend: codex · Model: gpt-5.6-sol · Attempts: 1 · Duration: 341.2s · Tokens: n/a |

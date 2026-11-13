@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-890 — Expert stages, dispatch modes, generic gate host and SDD expert delegation
 **Spec**: `sdd/specs/expert-stages-and-delegation.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M
 **Depends-on**: TASK-5625
@@ -150,4 +150,15 @@ def save_contribution(path: "Path", c: "Contribution") -> None: ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+
+- Task: TASK-5628
+- Feature: expert-stages-and-delegation
+- Implementation SHA: a3f3dd4e7fd06d749643547a0699ea9965993d02
+- Closed at (UTC): 2026-11-13T22:46:06+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1 · Duration: n/a · Tokens: n/a |
