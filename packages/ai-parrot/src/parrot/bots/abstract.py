@@ -3303,6 +3303,12 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         OUTPUT guardrail blocks today — `SecretsGuardrail` only TRANSFORMs/
         PASSes — but future guardrails, e.g. moderation, may).
 
+        On every non-blocked run the verdict also reaches a distinct
+        presentation wrapper in ``response.response`` (a formatter's wrapped
+        string, ``get_response``'s markdown block) through
+        ``_propagate_output_verdict``, whether ``output`` passed or was
+        transformed (FEAT-894).
+
         Mirrors the pre-migration channel-egress guard
         (`isinstance(response.output, str)`, `bots/base.py`): structured/
         DataFrame outputs are left untouched — only plain-text responses are
@@ -3348,12 +3354,14 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
                 response.metadata["block_reason"] = outcome.reason
             return response
 
-        # `pipeline.run` returns the working content on every non-blocked pass: only an actual rewrite
-        # (TRANSFORM) is propagated, so a PASS never runs the guardrails a second time.
+        # `pipeline.run` returns the working content on every non-blocked pass. A TRANSFORM rewrites `output`; on
+        # PASS and TRANSFORM alike the verdict then reaches a distinct presentation wrapper in `response.response`
+        # (issue:a20713dc67a6). `_propagate_output_verdict` skips an alias or an empty wrapper, so a plain PASS still
+        # runs the guardrails once.
         _OUTPUT_VERDICT.set((id(response), original, outcome.content if outcome.content is not None else original, ctx))
         if outcome.content is not None and outcome.content != original:
             response.output = outcome.content
-            await self._propagate_output_verdict(response, original, pipeline, ctx)
+        await self._propagate_output_verdict(response, original, pipeline, ctx)
 
         if outcome.flag_reports:
             response.metadata.setdefault("guardrails", {}).update(outcome.flag_reports)
@@ -3368,12 +3376,15 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         ctx: GuardrailContext,
         blocked_text: Optional[str] = None,
     ) -> None:
-        """Make a TRANSFORM/BLOCK verdict reach ``response.response`` too (FEAT-886).
+        """Make the OUTPUT verdict reach ``response.response`` too (FEAT-886, FEAT-894).
 
         ``response.response`` is what ``to_text`` (the caller-visible and stored text) prefers. It is either an
         alias of the pre-pipeline ``output`` or a formatter-wrapped string that embeds it: either way an
         unredacted copy must not survive there. An alias is replaced; a wrapped string goes through the same
-        pipeline (its report is discarded, only the rewritten text is used).
+        pipeline (its report is discarded, only the rewritten text is used). That holds when ``output`` passed
+        too: a wrapper can carry text ``output`` does not, such as ``get_response``'s echoed question and source
+        titles. A missing, empty or non-string ``response.response``, or one equal to ``output``, costs no second
+        run.
         """
         alias = getattr(response, "response", None)
         if not isinstance(alias, str) or not alias or alias == response.output:

@@ -268,8 +268,12 @@ async def test_the_stored_text_is_the_answer_not_the_markdown_wrapper(entry: str
         assert SECRET not in text and "REDACTED" in text
 
 
-@pytest.mark.parametrize("entry", ["ask", "invoke", "conversation"])
-async def test_a_passing_response_runs_the_output_guardrails_once(entry: str):
+@pytest.mark.parametrize(("entry", "expected_runs"), [("ask", 1), ("invoke", 2), ("conversation", 2)])
+async def test_a_passing_response_scans_each_distinct_text_once(entry: str, expected_runs: int):
+    """A PASS scans the answer once, and a distinct presentation wrapper (`get_response`'s markdown block) once more.
+
+    `ask()` without a formatter has no wrapper, so it still runs the OUTPUT guardrails exactly once.
+    """
     from parrot.bots.guardrails.base import GuardrailStage
 
     bot = await _guarded_bot(Client())  # no secret in the answer: the verdict is PASS
@@ -287,7 +291,64 @@ async def test_a_passing_response_runs_the_output_guardrails_once(entry: str):
         await bot.invoke("hi", user_id="u", session_id="s")
     else:
         await bot.conversation("hi", user_id="u", session_id="s", use_vector_context=False)
-    assert len(runs) == 1, runs
+    assert len(runs) == expected_runs, runs
+    assert "**Question**" not in runs[0], runs
+    if expected_runs == 2:
+        assert "**Question**" in runs[1], runs
+
+
+def _passing_message(response: str) -> AIMessage:
+    return AIMessage(
+        input="hi",
+        output="reply",
+        response=response,
+        model="stub",
+        provider="stub",
+        usage=CompletionUsage(prompt_tokens=0, completion_tokens=0),
+    )
+
+
+async def test_a_passing_output_still_scans_its_wrapper():
+    """issue:a20713dc67a6 — the answer passes, but the wrapper `to_text` prefers carries a secret the answer lacks."""
+    bot = await _guarded_bot(Client())
+    response = await bot._run_output_pipeline(_passing_message(f"<div>reply API_KEY={SECRET}</div>"), method="ask")
+    assert response.output == "reply"
+    assert SECRET not in response.response and SECRET not in response.to_text, response.response
+    assert "REDACTED" in response.response
+
+
+@pytest.mark.parametrize("entry", ["invoke", "conversation"])
+async def test_a_question_echoed_in_the_markdown_wrapper_is_redacted(entry: str):
+    """`get_response` echoes the question in its "**Question**" block: the answer passes, the echo is still scanned."""
+    bot = await _guarded_bot(Client())
+    call = bot.invoke if entry == "invoke" else bot.conversation
+    kwargs = {} if entry == "invoke" else {"use_vector_context": False}
+    response = await call(f"my key is API_KEY={SECRET}", user_id="u", session_id="s", **kwargs)
+    assert "**Question**" in response.response  # the caller still gets the rendered block
+    assert SECRET not in response.response and SECRET not in response.to_text, response.response
+
+
+async def test_a_blocked_wrapper_falls_back_to_the_passing_output():
+    """A wrapper the OUTPUT guardrails block is replaced by the answer that passed; the response is not blocked."""
+    from parrot.bots.guardrails.base import Guardrail, GuardrailAction, GuardrailResult, GuardrailStage
+
+    class BlockDiv(Guardrail):
+        name = "block_div"
+        stages = {GuardrailStage.OUTPUT}
+        priority = 50
+        on_error = "fail_closed"
+
+        async def check(self, content: str, ctx: Any) -> GuardrailResult:
+            if "<div>" in content:
+                return GuardrailResult(action=GuardrailAction.BLOCK, reason="div")
+            return GuardrailResult(action=GuardrailAction.PASS)
+
+    bot = await _bot()
+    bot._guardrail_pipelines[GuardrailStage.OUTPUT].add(BlockDiv())
+    response = await bot._run_output_pipeline(_passing_message("<div>reply</div>"), method="ask")
+    assert response.output == "reply"
+    assert response.response == "reply"
+    assert "error" not in response.metadata
 
 
 class _ExplanationSecretClient(Client):
