@@ -609,6 +609,17 @@ PARROT_OVERFLOW_LOCAL_PATH = config.get(
 )
 PARROT_STORAGE_METRICS = config.get("PARROT_STORAGE_METRICS", fallback=None)
 
+# --- Durable conversation memory: turn bus (FEAT-886 M10) ---
+# Redis Streams bus that carries conversation.turn.completed to ChatStorage. Separate from the
+# observability fan-out bus. The outbox directory is REQUIRED (writable; one SQLite file per pod/pid).
+# PARROT_TURN_BUS_CHANNEL_PREFIX is the Redis STREAM prefix (a Streams EventBus ignores channel_prefix).
+# PARROT_TURN_BUS_DLQ_DSN is optional: without it, exhausted envelopes are retained as dead letters in a
+# local SQLite store next to the outbox (never dropped).
+PARROT_TURN_BUS_REDIS_URL = config.get("PARROT_TURN_BUS_REDIS_URL", fallback=None)
+PARROT_TURN_BUS_OUTBOX_DIR = config.get("PARROT_TURN_BUS_OUTBOX_DIR", fallback=None)
+PARROT_TURN_BUS_CHANNEL_PREFIX = config.get("PARROT_TURN_BUS_CHANNEL_PREFIX", fallback="parrot:turns:")
+PARROT_TURN_BUS_DLQ_DSN = config.get("PARROT_TURN_BUS_DLQ_DSN", fallback=None)
+
 ## Tools:
 OPENWEATHER_APPID = config.get("OPENWEATHER_APPID")
 
