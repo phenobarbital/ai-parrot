@@ -31,6 +31,7 @@ Spec §4 Integration Tests, AC6, AC9.
 |---|---|---|
 | `packages/ai-parrot/tests/experts/test_integration_stages.py` | CREATE | pipeline test |
 | `packages/ai-parrot/tests/flows/dev_loop/test_gate_upgrade_inflight.py` | CREATE | upgrade test |
+| `packages/ai-parrot/tests/experts/test_scope_compiler.py` | MODIFY | register the shared `approval` gate kind with the canonical description (the registry is process-wide; added in the TASK-5631 review fix) |
 
 ---
 
