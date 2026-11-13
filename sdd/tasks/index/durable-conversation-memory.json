@@ -143,7 +143,7 @@
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -153,8 +153,9 @@
       "parallelism_notes": "Serialized after TASK-5568: both modify parrot/conf.py (CHAT_HOT_TTL_HOURS vs REDIS_HISTORY_EXPLICIT).",
       "assigned_to": null,
       "started_at": "2026-11-13T03:25:54+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5571-auto-memory-default.md"
+      "completed_at": "2026-11-13T03:54:25+00:00",
+      "file": "sdd/tasks/completed/TASK-5571-auto-memory-default.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5572",

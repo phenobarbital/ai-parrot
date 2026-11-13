@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-886 — Durable Conversation Memory
 **Spec**: `sdd/specs/durable-conversation-memory.spec.md` (Module 12)
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5568 (conf.py)
@@ -396,10 +396,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented REDIS_HISTORY_EXPLICIT (+ REDIS_HISTORY_URL follows the operator when explicit), "auto" default and factory branch (Redis-only kwargs dropped on the in-memory branch), re-raise when Redis was selected, VoiceBot/BotModel/UI "auto" support.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (sequential fallback)
+**Date**: 2026-11-12
+**Tests**: test_auto_memory_resolution 5 passed; test_bot_history_wiring + test_context_budget green; ruff (E9,F63,F7,F82,F401) clean.
+**Mutation evidence**: ignore EXPLICIT / ignore redis_url / remove raise / keep f-string -> each RED, restored.
+**Notes**: RedisConversation has no `redis=` kwarg, so only a non-empty `redis_url` kwarg is the host-injected signal. The VoiceBot check is a source-level pin (building a VoiceBot offline is not practical); the behavioural change is the one-line condition at bots/voice.py.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none (follows the task's spec clarifications)
