@@ -56,7 +56,7 @@ Agents need durable, correctable knowledge about the user across sessions, indep
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:c6a2a432ca2f3b89515a7b3a520e1c84707652c2b735318742a167b339fcdb40 evaluation_digest=sha256:61b9d95fbe56ed83fdbad29576e5bca23da8cf7eb2dee5f631e70cd1651d50fd rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:10ab8ac217cc9379e797542badcc02ec55b2936f4ac0df6120da5018830e08b1 evaluation_digest=sha256:54ddd1efae3f987a28fdf790e9bdbcf38dcdd8bf09120004f80519b044e30327 rules_version=1 status=pass -->
 
 ## 2. Architectural Design
 
@@ -174,7 +174,7 @@ FEAT-886 (durable conversation memory, PR #2121) rewrites the BaseBot sites A1/M
 - **F2 — One finalize site and one text.** `complete_memory()` runs where FEAT-886's `AbstractBot._persist_finalized_turn` runs: once, after the entry point's output pipeline (`_run_output_pipeline` / `get_response`). The response event's text is the turn's stored text — `AbstractBot._stored_turn_text(response, plain)`, the plain answer with the OUTPUT guardrail verdict applied — never `response.content`/`output`, which can differ (an explanation kept apart from structured or HTML output is scanned only by `_stored_turn_text`). On `ask_stream` the stored text is the streamed text. Episodes, user-knowledge candidates and evidence never carry text the stored conversation redacted.
 - **F3 — Turn identity.** `MemoryRequestScope.turn_id` is the `turn_id` the entry point persists (caller-supplied through the `turn_id=` kwarg FEAT-886 accepts on all entry points, or minted once per invocation). The response event ID derives deterministically from `(agent_id, user_id, session_id, turn_id)` — the scope of FEAT-886's bus dedup key — so a retried turn is the same event. Tool events keep distinct IDs derived from the same turn.
 - **F4 — Completed response, not saved turn.** FEAT-886 also saves a partial turn when the caller abandons a stream (`CancelledError` or `GeneratorExit`, `ConversationTurn.error = "stream cancelled by the caller"`) or the stream fails (`error` = the exception text). Memory finalization keys on a completed response: a turn persisted with `error` set produces no response event, review or user-knowledge extraction, while its history save is untouched.
-- **F5 — Deleted conversations.** FEAT-886 tombstones deleted sessions and turns in ChatStorage, filters them on every read path and purges working memory. A conversation delete is not a Q2 forget: it neither deletes user facts nor writes suppression markers. Evidence references that resolve to a tombstoned session or turn are unavailable evidence — never re-read, never re-extracted. What a delete does to knowledge or episodes derived from that conversation is Q7 (§8).
+- **F5 — Deleted conversations.** FEAT-886 tombstones deleted sessions and turns in ChatStorage, filters them on every read path and purges working memory. A conversation delete is not a Q2 forget: it neither deletes user facts nor writes suppression markers. Evidence references that resolve to a tombstoned session or turn are unavailable evidence — never re-read, never re-extracted. Per Q7 (accepted), a delete removes nothing learned: episodes and user knowledge derived from the conversation remain, and only their evidence links to it become unavailable. FEAT-892 adds no deletion cascade. Removing learned content is a separate explicit act — a Q2 forget for user knowledge.
 - **F6 — Agent key.** `MemoryRequestScope.agent_id` is `AbstractBot.name`: the key existing episodic namespaces use (`episodic/mixin.py` `_get_agent_id`, `unified/mixin.py` `_create_namespace`) and FEAT-886 uses for ChatStorage rows, tombstones and hydration. Changing it would orphan persisted episodes (AC08). `memory_key_id` stays the working-memory history key only. Inherited limitation, documented: agents sharing a `name` share episodes, user knowledge and ChatStorage rows.
 - **F7 — Tenant on evidence.** The ChatStorage key carries no tenant; each stored assistant message records the request tenant (`tenant`, from `current_tenant`). An evidence reference into ChatStorage carries the scope's `tenant_id` and the turn key `(agent_name, user_id, session_id, turn_id)`; resolution compares the stored `tenant` with the scope tenant and treats a mismatch or a missing value as unavailable, revealing nothing.
 - **F8 — Host configure can raise.** With FEAT-886, `configure_conversation_memory` re-raises when Redis was selected (`memory_type="redis"`, or `"auto"` with an explicit history URL) instead of falling back to in-memory. `AgentMemoryMixin.configure` acquires nothing before the host configuration succeeds, releases anything acquired if it raises, and propagates the error unchanged.
@@ -473,7 +473,7 @@ New files below are planned delivery paths, not tests already executed. Gate rep
 | `memory/agent_memory/test_lifecycle.py` (new) | Real BaseBot preparation with stub client for ask/stream/invoke and `PandasAgent.ask` (F1); one context/write; event text equals the stored turn text and event ID derives from the persisted turn_id (F2/F3); caller cancellation, `GeneratorExit` and stream error save history but produce no event (F4); the scope's `agent_id` is the agent name even when `memory_key_id` differs (F6); configure repeated and changed app; no duplicate toolkit registration; history written once; cancellation and shutdown |
 | `memory/agent_memory/test_scope.py` (new) | Concurrent users/tenants/rooms; nested calls; anonymous fallback; ContextVar cleanup and tool-manager clones |
 | `memory/user/test_store.py` (new) | Real selected backend; cross-session facts, explicit correction, context-specific constraint, inference pending, CAS conflict, duplicate event, missing identity |
-| `memory/user/test_forget.py` (new) | Disable retains data; explicit forget prevents replay/re-extraction from evidence and derivatives under accepted erasure policy; evidence resolving to a tombstoned session/turn or another tenant is unavailable (F5/F7) |
+| `memory/user/test_forget.py` (new) | Disable retains data; explicit forget prevents replay/re-extraction from evidence and derivatives under accepted erasure policy; evidence resolving to a tombstoned session/turn or another tenant is unavailable, and the delete leaves learned knowledge and episodes in place (F5/F7, Q7) |
 | `memory/dynamics/test_core.py` (new) | Pinned reference parity, all grades, same-day clamp, bounded state, injected clock, neutral legacy, immutable parameter versions |
 | `memory/dynamics/test_reviews.py` (new) | Ordered admission/grades, synthetic evidence rejected, unrelated outcome no-review, duplicate/revised/conflicting outcomes, scoped IDs |
 | `memory/dynamics/test_storage.py` (new) | Eight-process zero-loss; duplicate/CAS concurrency; pre/post-commit crash and replay; real-store lesson persistence and import/retraction idempotency |
@@ -538,7 +538,7 @@ Use isolated temporary databases, fake clocks, deterministic UUID/event fixtures
 - [ ] **AC03** One memory context and one event owner per invocation; ask, ask_stream, invoke and `PandasAgent.ask` pass real bot integration tests. Finalization shares FEAT-886's finalize-then-persist site and stored text, and the response event derives from the persisted turn_id (F1–F3). No second history injection or writer, including the unified conversation section (F9).
 - [ ] **AC04** All four user/episodic flag combinations work; user-only mode persists across sessions without episodic construction. Disabled mode preserves existing non-memory behavior.
 - [ ] **AC05** Request scopes isolate tenants/agents/users, including parallel calls, anonymous defaults, room participants, cache/fallback routes and cancellation. `agent_id` is the agent name and evidence into ChatStorage is tenant-checked (F6/F7).
-- [ ] **AC06** User correction, contextual validity, inference status, CAS and idempotency pass against a real backend; explicit forgetting cannot silently resurrect through retained evidence/derivatives; evidence in a FEAT-886-tombstoned session or turn is never re-read (F5).
+- [ ] **AC06** User correction, contextual validity, inference status, CAS and idempotency pass against a real backend; explicit forgetting cannot silently resurrect through retained evidence/derivatives; evidence in a FEAT-886-tombstoned session or turn is never re-read, and deleting a conversation leaves the episodes and user knowledge learned from it in place (F5, Q7).
 - [ ] **AC07** Configuration is idempotent, preserves genuine reconfiguration, registers tools once and releases partial resources, including when the host's conversation-memory configuration raises (F8); shutdown drains or durably queues owned writes.
 - [ ] **AC08** Old mixin classes/exports and live consumer imports are removed without shims; `AgentMemory/AnswerMemory`, store APIs and public feedback/MCP contracts remain compatible. Migration preserves persisted data and documents flag/path changes plus manager brain-constructor changes.
 - [ ] **AC09** M0 remains correct: a no-signal conversation records one PARTIAL episode, no tool duplicates and no invented review. Explicit lesson text is durable before acknowledgement. A turn FEAT-886 persists with `error` set (caller cancellation, `GeneratorExit`, stream failure) produces no memory event (F4).
@@ -762,7 +762,7 @@ These entries encode the agreed direction for review, not gate approval. The gov
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:c6a2a432ca2f3b89515a7b3a520e1c84707652c2b735318742a167b339fcdb40 evaluation_digest=sha256:61b9d95fbe56ed83fdbad29576e5bca23da8cf7eb2dee5f631e70cd1651d50fd rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:10ab8ac217cc9379e797542badcc02ec55b2936f4ac0df6120da5018830e08b1 evaluation_digest=sha256:54ddd1efae3f987a28fdf790e9bdbcf38dcdd8bf09120004f80519b044e30327 rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -808,10 +808,10 @@ Coverage:
     ]
   },
   "diagnostics": [],
-  "evaluation_digest": "sha256:61b9d95fbe56ed83fdbad29576e5bca23da8cf7eb2dee5f631e70cd1651d50fd",
+  "evaluation_digest": "sha256:54ddd1efae3f987a28fdf790e9bdbcf38dcdd8bf09120004f80519b044e30327",
   "exit_code": 0,
   "findings": [],
-  "input_digest": "sha256:c6a2a432ca2f3b89515a7b3a520e1c84707652c2b735318742a167b339fcdb40",
+  "input_digest": "sha256:10ab8ac217cc9379e797542badcc02ec55b2936f4ac0df6120da5018830e08b1",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
@@ -861,9 +861,9 @@ Coverage:
 - [x] **U6 reopened:** Accepted by Jesus, 2026-11-13. User knowledge is its own plane of user facts (Q1), not the `USER_PREFERENCE` episode category, which is not treated as a profile store.
 - [x] **Anti-pattern representation:** Accepted by Jesus, 2026-11-13. Episode metadata, not a new `EpisodeCategory`; no schema migration.
 
-### Open — raised by the FEAT-886 integration (rev 0.3)
+### Raised by the FEAT-886 integration (rev 0.3, resolved rev 0.4)
 
-- [ ] **Q7 — Conversation deletion and derived memory:** when a user deletes a conversation or turn (FEAT-886 tombstone), what happens to user knowledge and episodes whose evidence lies in it? Already fixed regardless of the answer (F5): a delete is not a Q2 forget, and tombstoned content is never re-read or re-extracted. Options: (a) derived knowledge and episodes remain, and only the evidence link becomes unavailable; (b) inferred/pending facts whose only evidence is tombstoned are invalidated, while explicit facts remain until corrected or forgotten; (c) a delete cascades a Q2 forget over every fact and episode it evidences. Recommendation: (b), since explicit statements keep their own validity policy and an unconfirmed inference loses its only basis. Blocks only the deletion-cascade behavior of TASK-5668; nothing else waits on it.
+- [x] **Q7 — Conversation deletion and derived memory:** Accepted by Jesus, 2026-11-13: “delete a conversation is not deleting the episodes learned.” Deleting a conversation or turn (FEAT-886 tombstone) leaves the episodes and user knowledge learned from it in place; only their evidence links to it become unavailable (F5). User knowledge follows the same rule as episodes. FEAT-892 adds no deletion cascade, and a delete is not a Q2 forget. Rejected: invalidating inferences whose only evidence was deleted; cascading a Q2 forget over everything the conversation evidenced.
 
 ### Deferred roadmap
 
@@ -895,3 +895,4 @@ Summary: **0 confirmed · 0 rejected · 0 escalated** from an independent review
 | 0.1 | 2026-11-13 | Jesus Lara / Codex | Review draft: independent user memory, hard-cut integration, M1/M2/M3/M5/M6 and carried gates; source §12 R1–R10 reserves brain/M4 for FEAT-889 and orders its launch after this feature |
 | 0.2 | 2026-11-13 | Jesus Lara / Claude | §8 resolved: Q1–Q5, U1–U6 and anti-pattern representation accepted with stated defaults; Q6 (parameter fitting/optimizer) moved to a follow-up, `fit.py` and the optimizer dependency removed from M6/AC18 |
 | 0.3 | 2026-11-13 | Jesus Lara / Claude | FEAT-886 alignment from the review of PR #2121: §2 "FEAT-886 integration contract" F1–F9 (PandasAgent entry point, shared finalize site and stored text, turn_id event identity, partial turns earn nothing, conversation deletion, agent-name key, tenant-checked evidence, raising host configure, no second conversation source); AC03/05/06/07/09 and §4 cases extended; C1/C2 anchors with #2121 merged, new C1b/C18 and a `bots/data.py` edit site; #2121 is a merge prerequisite for TASK-5672/5673/5674; Q7 opened |
+| 0.4 | 2026-11-13 | Jesus Lara / Claude | Q7 accepted: deleting a conversation does not delete the episodes or user knowledge learned from it; only its evidence links become unavailable; no deletion cascade (F5) |
