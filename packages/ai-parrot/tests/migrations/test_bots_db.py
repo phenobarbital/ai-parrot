@@ -106,14 +106,14 @@ async def test_legacy_values_fold_without_overwriting_explicit_destinations(
             chatbot_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             name VARCHAR NOT NULL UNIQUE,
             embedding_model JSONB,
-            vector_store_config JSONB,
+            vector_store_config JSONB DEFAULT '{{}}'::JSONB,
             model_name VARCHAR,
             temperature DOUBLE PRECISION,
             max_tokens INTEGER,
             top_k INTEGER,
             top_p DOUBLE PRECISION,
-            model_config JSONB,
-            tools JSONB,
+            model_config JSONB DEFAULT '{{}}'::JSONB,
+            tools JSONB DEFAULT '[]'::JSONB,
             language VARCHAR(10) NOT NULL DEFAULT 'en'
         )""")
     await connection.execute(f"""INSERT INTO {target} (
@@ -133,7 +133,7 @@ async def test_legacy_values_fold_without_overwriting_explicit_destinations(
         ),
         (
             'sql-null', '{{"model":"embed-null"}}', NULL,
-            'null-model', NULL, NULL, NULL, NULL, NULL, NULL, NULL
+            'null-model', NULL, NULL, NULL, NULL, NULL, NULL, 'en'
         )""")
     await connection.execute(
         f"CREATE TABLE {users_target} (marker TEXT, embedding_model JSONB, vector_config JSONB, language TEXT)"
@@ -212,8 +212,8 @@ async def test_partially_dropped_sources_normalize_independently(
     await connection.execute(f"""CREATE TABLE {target} (
             chatbot_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             name VARCHAR NOT NULL UNIQUE,
-            vector_store_config JSONB,
-            model_config JSONB,
+            vector_store_config JSONB DEFAULT '{{}}'::JSONB,
+            model_config JSONB DEFAULT '{{}}'::JSONB,
             temperature DOUBLE PRECISION,
             language VARCHAR(10)
         )""")
@@ -246,7 +246,7 @@ async def test_incompatible_config_rolls_back_backfill_and_drop_atomically(
             chatbot_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             name VARCHAR NOT NULL UNIQUE,
             embedding_model JSONB,
-            vector_store_config JSONB,
+            vector_store_config JSONB DEFAULT '{{}}'::JSONB,
             language VARCHAR(10)
         )""")
     await connection.execute(

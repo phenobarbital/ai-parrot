@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import os
 import uuid
 from collections.abc import AsyncIterator
@@ -40,11 +41,33 @@ async def _upgrade() -> object:
     return await upgrade(dsn, sets=(bots_set(),))
 
 
+def _json_value(value: object) -> object:
+    """Decode asyncpg's default JSON text representation when necessary."""
+    return json.loads(value) if isinstance(value, str) else value
+
+
+async def _column_names(connection: object, schema: str, table: str) -> list[str]:
+    """Return the ordered column names of one target table."""
+    rows = await connection.fetch(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_schema = $1 AND table_name = $2 ORDER BY ordinal_position",
+        schema,
+        table,
+    )
+    return [row["column_name"] for row in rows]
+
+
 def test_bots_baseline_resources_are_discoverable() -> None:
-    """Expose one executable body/check pair through the packaged bots provider."""
+    """Expose the contiguous body/check chain through the packaged bots provider, baseline first."""
     migrations = load_migrations(bots_set())
 
-    assert [(migration.filename, migration.sequence) for migration in migrations] == [("001_baseline.sql", 1)]
+    assert [(migration.filename, migration.sequence) for migration in migrations] == [
+        ("001_baseline.sql", 1),
+        ("002_fold_embedding.sql", 2),
+        ("003_fold_llm.sql", 3),
+        ("004_tool_names.sql", 4),
+        ("005_language_schema.sql", 5),
+    ]
     assert "CREATE TABLE IF NOT EXISTS" in migrations[0].sql
     assert migrations[0].check_sql.lstrip().startswith("-- FEAT-884")
     assert "SELECT COALESCE(" in migrations[0].check_sql
@@ -59,7 +82,13 @@ async def test_fresh_baseline_has_full_shape_no_seeds_and_replays(
 
     first = await _upgrade()
     assert first.exit_code == 0
-    assert first.applied == ["bots/001_baseline.sql"]
+    assert first.applied == [
+        "bots/001_baseline.sql",
+        "bots/002_fold_embedding.sql",
+        "bots/003_fold_llm.sql",
+        "bots/004_tool_names.sql",
+        "bots/005_language_schema.sql",
+    ]
     columns = await connection.fetch(
         "SELECT column_name FROM information_schema.columns "
         "WHERE table_schema = $1 AND table_name = $2 ORDER BY ordinal_position",
@@ -114,7 +143,10 @@ async def test_legacy_row_is_preserved_and_missing_tooling_is_added(
         f'FROM "{schema}"."{table}" WHERE chatbot_id = $1',
         identifier,
     )
-    assert dict(row) == {
+    assert {
+        key: _json_value(value) if key in ("toolkit_config", "mcp_servers") else value
+        for key, value in dict(row).items()
+    } == {
         "chatbot_id": identifier,
         "name": "legacy",
         "description": "preserved",
@@ -153,9 +185,16 @@ async def test_incompatible_or_identityless_nonempty_legacy_tables_are_rejected(
     for statement in statements:
         await connection.execute(statement.format(target=target))
 
+    before = await _column_names(connection, schema, table)
+
     report = await _upgrade()
     assert report.exit_code == 2
-    assert any(message in diagnostic.lower() for diagnostic in report.diagnostics)
+    assert report.failed == ["bots/001_baseline.sql"]
+    # The precondition is raised by the body; diagnostics stay sanitized (SQLSTATE + category, no driver text).
+    assert any("SQLSTATE P0001" in diagnostic for diagnostic in report.diagnostics), message
+    assert not any(message in diagnostic.lower() for diagnostic in report.diagnostics)
+    # Rejected before any additive DDL: the legacy table is unchanged and nothing was recorded.
+    assert await _column_names(connection, schema, table) == before
 
 
 @pytest.mark.asyncio
@@ -178,7 +217,7 @@ async def test_custom_targets_have_distinct_scoped_objects_and_valid_postconditi
             "SELECT namespace.nspname, relation.relname FROM pg_catalog.pg_class AS relation "
             "JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = relation.relnamespace "
             "WHERE namespace.nspname = ANY($1::text[]) AND relation.relkind = 'i' "
-            "AND relation.relname LIKE 'parrot_%'",
+            "AND relation.relname LIKE 'parrot_%' AND relation.relname NOT LIKE 'parrot_schema_migrations%'",
             [schema, second_schema],
         )
         assert len({row["relname"] for row in names}) == len(names)

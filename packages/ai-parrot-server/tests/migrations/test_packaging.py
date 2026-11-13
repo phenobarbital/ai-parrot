@@ -193,12 +193,12 @@ def test_no_handler_imports() -> None:
     # Perform discovery
     sets = discover_sets()
 
-    # Get all modules after discovery
+    # Only modules that discovery itself imported count; other tests in the session may have loaded handlers
     modules_after = set(sys.modules.keys())
-    all_modules = modules_after | modules_before
+    newly_imported = modules_after - modules_before
 
-    # Check for any handler imports
-    handler_modules = [m for m in all_modules if "parrot.handlers" in m]
+    # Check for any handler imports caused by discovery
+    handler_modules = sorted(m for m in newly_imported if "parrot.handlers" in m)
 
     assert handler_modules == [], f"Handler modules imported: {handler_modules}"
 

@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from parrot.migrations import catalog
 from parrot.migrations.catalog import discover_sets, load_migrations, render_sql, scaffold
+from parrot.migrations.providers import bots_set
 from parrot.migrations.models import (
     MigrationConfigurationError,
     MigrationFile,
@@ -191,6 +192,13 @@ def test_render_replaces_only_identifier_tokens_and_preserves_json_braces() -> N
     for identifier in ("Navigator", "ai-bots", "a" * 64):
         with pytest.raises(MigrationConfigurationError, match="Invalid"):
             render_sql("SELECT * FROM {schema}.{bots_table}", schema=identifier, bots_table="ai_bots")
+
+
+def test_packaged_bots_sql_never_double_quotes_rendered_identifiers() -> None:
+    """Tokens render already quoted, so packaged SQL must not wrap them in quotes a second time."""
+    for migration in load_migrations(bots_set()):
+        for text in (migration.sql, migration.check_sql):
+            assert '""' not in render_sql(text, schema="navigator", bots_table="ai_bots"), migration.filename
 
 
 def test_scaffold_uses_next_sequence_and_never_overwrites(tmp_path: Path) -> None:

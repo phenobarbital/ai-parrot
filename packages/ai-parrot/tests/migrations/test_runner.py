@@ -354,3 +354,14 @@ async def test_lock_timeout_and_cancellation_release_connection(
 
     assert connection.closed is True
     assert any("pg_advisory_unlock" in call for call in connection.calls)
+
+
+def test_recorded_identity_decodes_jsonb_text_as_returned_by_asyncpg() -> None:
+    """asyncpg returns jsonb as text by default; a ledger written by this runner must read back as equal."""
+    from parrot.migrations.runner import _recorded_identity
+
+    assert _recorded_identity('{"tables": ["navigator.ai_bots"]}') == ("navigator.ai_bots",)
+    assert _recorded_identity('["navigator.ai_bots"]') == ("navigator.ai_bots",)
+    assert _recorded_identity(["navigator.ai_bots"]) == ("navigator.ai_bots",)
+    assert _recorded_identity("not json") is None
+    assert _recorded_identity('"navigator.ai_bots"') is None

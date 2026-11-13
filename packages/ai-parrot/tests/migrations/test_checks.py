@@ -262,3 +262,14 @@ async def test_cancellation_closes_connection(connected: _Connection, loaded_mig
         await status("postgresql://test", sets=(_set(),))
 
     assert connected.closed is True
+
+
+def test_recorded_identity_decodes_jsonb_text_as_returned_by_asyncpg() -> None:
+    """asyncpg returns jsonb as text by default; a ledger written by this runner must read back as equal."""
+    from parrot.migrations.checks import _recorded_identity
+
+    assert _recorded_identity('{"tables": ["navigator.ai_bots"]}') == ("navigator.ai_bots",)
+    assert _recorded_identity('["navigator.ai_bots"]') == ("navigator.ai_bots",)
+    assert _recorded_identity(["navigator.ai_bots"]) == ("navigator.ai_bots",)
+    assert _recorded_identity("not json") is None
+    assert _recorded_identity('"navigator.ai_bots"') is None
