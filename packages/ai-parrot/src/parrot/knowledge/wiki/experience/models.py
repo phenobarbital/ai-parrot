@@ -258,9 +258,9 @@ def validate_event(line: Mapping[str, Any]) -> ExperienceEvent | None:
 
     try:
         event = ExperienceEvent.model_validate(canonical_envelope)
-        serialized = json.dumps(
-            event.model_dump(mode="json"), ensure_ascii=False, separators=(",", ":")
-        ).encode("utf-8")
+        serialized = json.dumps(event.model_dump(mode="json"), ensure_ascii=False, separators=(",", ":")).encode(
+            "utf-8"
+        )
     except (TypeError, UnicodeEncodeError, ValidationError):
         return None
     if len(serialized) + 1 > MAX_EVENT_BYTES:
