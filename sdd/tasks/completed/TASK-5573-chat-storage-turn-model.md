@@ -674,6 +674,6 @@ Added ChatStorageTurn (+ _parse_utc, _json_default/_json_safe handling set/bytes
 **Completed by**: sdd-worker (sequential fallback)
 **Date**: 2026-11-12
 **Tests**: test_chat_storage_turn 16 passed, test_chat_hot_tier_metadata + tests/test_chat_storage.py green; ruff clean.
-**Mutation evidence**: no _force_utc -> RED; always model_validate -> RED; dropping the timestamp identity check -> RED only after the test asserted the error names "timestamp" (pydantic would otherwise wrap the failure anyway); identity _json_safe -> RED. Restored each time.
+**Mutation evidence**: no _force_utc -> RED; always model_validate (no legacy branch) -> RED; identity _json_safe -> RED. Dropping the explicit `timestamp is None` identity check SURVIVED (equivalent mutant): pydantic rejects `timestamp=None` and the failure is wrapped in InvalidTurnPayloadError with a message that still names "timestamp"; the explicit check is kept for the clearer message only. Restored each time.
 
 **Deviations from spec**: none
