@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-886 — Durable Conversation Memory
 **Spec**: `sdd/specs/durable-conversation-memory.spec.md` (Module 5)
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5570
@@ -792,10 +792,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented the durable contract on ConversationSQLiteBackend: additive migration (ts_utc/seq/turn_id, composite index, tombstone + index-state tables), single-statement tombstone-guarded upsert with immutable ordering, raising put_turn/query_turns, query_turn_window, max_sequence, put_tombstone, is_deleted, derived get_index_state, resumable backfill_batch.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (sequential fallback)
+**Date**: 2026-11-13
+**Tests**: test_sqlite_durable_contract 18 passed (all 9 shared checks + 9 SQLite-specific incl. query plan, legacy migration, restart/cascade/sweep survival, concurrency); test_sqlite_backend green (33 total); tests/storage/test_backend_contract.py 12 passed, 36 SKIPPED (the non-SQLite backend parametrizations — no Postgres/Mongo/moto here). ruff (E9,F63,F7,F82,F401) clean.
+**Mutation evidence**: remove tombstone guard -> RED (3); ORDER ASC -> RED; always-ready index state -> RED (2); silent put when disconnected -> RED (2). Dropping `turn_id DESC` from ORDER BY SURVIVED: it is an equivalent mutant because the composite index already orders by turn_id DESC, so SQLite returns the same order; the tie-break is pinned by test_equal_timestamp_and_sequence_ties_break_on_turn_id and by the index definition.
+**Notes**: invalid_sessions entries are "<user_id>/<agent_id>/<session_id>" (BackfillBatch documents no format). The DurableHarness fields matched as written in TASK-5570.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

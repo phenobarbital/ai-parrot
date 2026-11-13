@@ -206,7 +206,7 @@
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -216,8 +216,9 @@
       "parallelism_notes": "Implements the abstract methods TASK-5570 adds to storage/backends/base.py; runs its durable_contract.py checks.",
       "assigned_to": null,
       "started_at": "2026-11-13T03:25:54+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5574-sqlite-durable-backend.md"
+      "completed_at": "2026-11-13T04:01:39+00:00",
+      "file": "sdd/tasks/completed/TASK-5574-sqlite-durable-backend.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5575",
