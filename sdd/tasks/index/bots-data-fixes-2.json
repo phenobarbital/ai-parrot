@@ -37,7 +37,7 @@
       "feature_id": "FEAT-893",
       "feature": "bots-data-fixes-2",
       "spec": "sdd/specs/bots-data-fixes-2.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -45,7 +45,8 @@
       "parallelism_notes": "single task; files: bots/data.py, tests/unit/bots/test_pandasagent_output_guardrails.py; no shared resources",
       "assigned_to": "claude-code:sdd-fix",
       "discovered_from": "issue:3e29dbe2f16a",
-      "file": "sdd/tasks/active/TASK-5682-pandas-agent-answer-guard.md"
+      "file": "sdd/tasks/active/TASK-5682-pandas-agent-answer-guard.md",
+      "started_at": "2026-11-13T23:19:04+00:00"
     }
   ]
 }
