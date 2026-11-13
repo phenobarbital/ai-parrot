@@ -22,6 +22,8 @@ from parrot.flows.dev_loop import (
     ResearchOutput,
 )
 from parrot.flows.dev_loop.dispatchers import llm as llm_module
+from parrot.flows.dev_loop.experience import ExperienceInterceptor
+from parrot.knowledge.wiki.experience.models import CommandOutcome
 from parrot.flows.dev_loop.test_scope.guard import GuardOutcome
 
 
@@ -126,6 +128,23 @@ def _published_events(dispatcher: LLMCodeDispatcher) -> list[dict[str, Any]]:
         fields = call.args[1]
         events.append(json.loads(fields["event"]))
     return events
+
+
+@pytest.mark.asyncio
+async def test_interceptor_replay_per_observation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify replay records a missed observation while skipping its hook alias."""
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".parrot" / "experience").mkdir(parents=True)
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
+    interceptor = ExperienceInterceptor(session="dispatch-1", cwd=str(tmp_path), seat="codex")
+
+    first = CommandOutcome(command="gh pr edit 12", ok=False, error="permission denied", observation_id="hook-a")
+    second = CommandOutcome(command="gh pr list", ok=False, error="permission denied", observation_id="hook-b")
+    assert await interceptor.replay([first, second]) == 2
+    events = (tmp_path / ".parrot" / "experience" / "events.jsonl").read_text(encoding="utf-8").splitlines()
+    assert len(events) == 2
+    assert json.loads(events[0])["observation_id"] == "hook-a"
+    assert json.loads(events[1])["observation_id"] == "hook-b"
 
 
 @pytest.mark.asyncio
