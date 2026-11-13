@@ -2,7 +2,19 @@
 import pytest
 from pydantic import ValidationError
 
-from parrot.memory.unified.models import MemoryConfig, MemoryContext
+from parrot.memory.agent_memory.models import MemoryRequestScope
+from parrot.memory.unified.models import MemoryCandidate, MemoryConfig, MemoryContext
+
+
+def _scope(*, user_id: str | None = None) -> MemoryRequestScope:
+    """Build a deterministic trusted scope for candidate tests."""
+    return MemoryRequestScope(
+        tenant_id="tenant-1",
+        agent_id="agent-1",
+        user_id=user_id,
+        turn_id="turn-1",
+        identity_provenance="runtime_derived",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -15,6 +27,8 @@ class TestMemoryContext:
         assert ctx.episodic_warnings == ""
         assert ctx.relevant_skills == ""
         assert ctx.conversation_summary == ""
+        assert ctx.user_knowledge == ""
+        assert ctx.delivered_refs == ()
         assert ctx.tokens_used == 0
         assert ctx.tokens_budget == 2000
 
@@ -34,6 +48,16 @@ class TestMemoryContext:
         assert "<recent_conversation>" in result
         assert "User asked about weather" in result
         assert "</recent_conversation>" in result
+
+    def test_user_knowledge_is_contextual_section(self):
+        """User knowledge is rendered as a separate contextual section."""
+        ctx = MemoryContext(user_knowledge="The user prefers dark mode.")
+
+        result = ctx.to_prompt_string()
+
+        assert "<user_knowledge>" in result
+        assert "The user prefers dark mode." in result
+        assert "<system>" not in result
 
     def test_to_prompt_string_empty_sections_omitted(self):
         ctx = MemoryContext(episodic_warnings="warning only")
@@ -134,3 +158,73 @@ class TestMemoryConfig:
     def test_custom_token_budget(self):
         config = MemoryConfig(max_context_tokens=500)
         assert config.max_context_tokens == 500
+
+    def test_normalized_section_weights_include_only_enabled_capabilities(self):
+        config = MemoryConfig(
+            enable_episodic=False,
+            enable_skills=False,
+            enable_conversation=True,
+            enable_user_memory=True,
+            conversation_weight=0.4,
+            user_weight=0.2,
+        )
+
+        weights = config.normalized_section_weights
+
+        assert set(weights) == {"conversation", "user_knowledge"}
+        assert weights["conversation"] == pytest.approx(2 / 3)
+        assert weights["user_knowledge"] == pytest.approx(1 / 3)
+
+
+class TestMemoryCandidate:
+    def test_scope_and_bounded_similarity_are_preserved(self):
+        candidate = MemoryCandidate(
+            scope=_scope(user_id="user-1"),
+            memory_id="memory-1",
+            content_version="v1",
+            source="episodic",
+            text="Use the authenticated endpoint.",
+            relevance=0.8,
+            similarity=0.75,
+            ranking_score=0.6,
+            provenance="retrieved",
+        )
+
+        assert candidate.relevance == 0.8
+        assert candidate.similarity == 0.75
+        assert candidate.ranking_score == 0.6
+        assert candidate.dynamics_state_ref is None
+
+        with pytest.raises(ValidationError):
+            MemoryCandidate(
+                scope=_scope(),
+                memory_id="memory-2",
+                content_version="v1",
+                source="episodic",
+                text="out of range",
+                relevance=1.1,
+            )
+
+    def test_user_candidate_cannot_carry_dynamics_state(self):
+        with pytest.raises(ValidationError, match="cannot carry an experiential dynamics state"):
+            MemoryCandidate(
+                scope=_scope(user_id="user-1"),
+                memory_id="profile-1",
+                content_version="v1",
+                source="user",
+                text="The user prefers dark mode.",
+                relevance=0.9,
+                candidate_type="user",
+                dynamics_state_ref="state-1",
+            )
+
+        candidate = MemoryCandidate(
+            scope=_scope(user_id="user-1"),
+            memory_id="profile-1",
+            content_version="v1",
+            source="user",
+            text="The user prefers dark mode.",
+            relevance=0.9,
+            candidate_type="user",
+        )
+        assert not hasattr(candidate, "grade")

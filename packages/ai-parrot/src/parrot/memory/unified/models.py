@@ -6,7 +6,42 @@ Provides:
 """
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, model_validator
+from typing import Literal
+
+from parrot.memory.agent_memory.models import MemoryRequestScope
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+class MemoryCandidate(BaseModel):
+    """Scoped supplementary content with relevance separate from ranking.
+
+    A candidate is a retrieval result, not an outcome or review record.  In
+    particular, user knowledge is intentionally represented without a
+    dynamics grade so experiential forgetting cannot be applied to facts.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    scope: MemoryRequestScope
+    memory_id: str = Field(min_length=1)
+    content_version: str = Field(min_length=1)
+    source: str = Field(min_length=1)
+    text: str
+    relevance: float = Field(default=0.0, ge=0.0, le=1.0)
+    similarity: float | None = Field(default=None, ge=0.0, le=1.0)
+    ranking_score: float | None = None
+    provenance: str = Field(default="retrieved", min_length=1)
+    candidate_type: Literal["episodic", "user", "brain", "skill"] = "episodic"
+    dynamics_state_ref: str | None = Field(default=None, min_length=1)
+    importance: int | None = Field(default=None, ge=0, le=10)
+
+    @model_validator(mode="after")
+    def _reject_user_dynamics_reference(self) -> MemoryCandidate:
+        """Keep user knowledge outside experiential dynamics state."""
+        user_source = self.source in {"user", "user_memory", "user_knowledge"}
+        if (self.candidate_type == "user" or user_source) and self.dynamics_state_ref is not None:
+            raise ValueError("user candidates cannot carry an experiential dynamics state")
+        return self
 
 
 class MemoryContext(BaseModel):
@@ -33,6 +68,10 @@ class MemoryContext(BaseModel):
         default="",
         description="Distilled long-term knowledge from the agent's brain wiki (FEAT-390)",
     )
+    user_knowledge: str = Field(
+        default="",
+        description="Scoped user knowledge supplied as contextual data, never instructions",
+    )
     tokens_used: int = Field(
         default=0,
         ge=0,
@@ -42,6 +81,22 @@ class MemoryContext(BaseModel):
         default=2000,
         ge=0,
         description="Maximum token budget for context",
+    )
+    delivered_refs: tuple[str, ...] = Field(
+        default=(),
+        description="Ordered memory references whose content was actually delivered",
+    )
+    packed_digest: str | None = Field(
+        default=None,
+        description="Digest of the packed supplementary memory block",
+    )
+    exposure_id: str | None = Field(
+        default=None,
+        description="Runtime exposure identity for the delivered memory block",
+    )
+    exposure_metadata: dict[str, str] = Field(
+        default_factory=dict,
+        description="Bounded metadata associated with the delivered exposure",
     )
 
     def to_prompt_string(self) -> str:
@@ -83,6 +138,13 @@ class MemoryContext(BaseModel):
                 "</brain_knowledge>"
             )
 
+        if self.user_knowledge:
+            sections.append(
+                "<user_knowledge>\n"
+                f"{self.user_knowledge}\n"
+                "</user_knowledge>"
+            )
+
         return "\n\n".join(sections)
 
 
@@ -105,6 +167,10 @@ class MemoryConfig(BaseModel):
     enable_conversation: bool = Field(
         default=True,
         description="Enable conversation history retrieval",
+    )
+    enable_user_memory: bool = Field(
+        default=False,
+        description="Enable independent scoped user-knowledge retrieval",
     )
     enable_brain: bool = Field(
         default=False,
@@ -154,6 +220,12 @@ class MemoryConfig(BaseModel):
         ge=0.0,
         le=1.0,
         description="Fraction of token budget for brain-wiki knowledge (FEAT-390)",
+    )
+    user_weight: float = Field(
+        default=0.20,
+        ge=0.0,
+        le=1.0,
+        description="Relative token weight for scoped user knowledge",
     )
 
     # Skill auto-extraction
@@ -215,3 +287,25 @@ class MemoryConfig(BaseModel):
                 f"brain={self.brain_weight})"
             )
         return self
+
+    @property
+    def normalized_section_weights(self) -> dict[str, float]:
+        """Return weights normalized across enabled context capabilities only.
+
+        Legacy callers continue to validate and use the original three
+        weights.  The structured agent path can enable user knowledge (or
+        brain) without allocating budget to disabled sections or injecting
+        conversation a second time.
+        """
+        configured = {
+            "episodic": (self.enable_episodic, self.episodic_weight),
+            "skills": (self.enable_skills, self.skill_weight),
+            "conversation": (self.enable_conversation, self.conversation_weight),
+            "brain": (self.enable_brain, self.brain_weight),
+            "user_knowledge": (self.enable_user_memory, self.user_weight),
+        }
+        enabled = {name: weight for name, (is_enabled, weight) in configured.items() if is_enabled}
+        total = sum(enabled.values())
+        if total <= 0.0:
+            return {}
+        return {name: weight / total for name, weight in enabled.items()}
