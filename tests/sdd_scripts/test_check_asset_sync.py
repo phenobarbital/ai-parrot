@@ -144,8 +144,8 @@ def test_no_rulebook_and_no_dot_rules_ship() -> None:
     assert "sdd/CONVENTIONS.md" in targets                              # C10
     assert not any("sdd-insight" in t for t in targets)                  # rev 0.5 C22
     assert (
-        len(targets) == 92
-    )  # FEAT-847 docs/sdd/AGY.md (packaged-only) + rev 0.5 C22 + code-reviewer, qa-runner, CODEX.md (packaged-only) + FEAT-764 sdd_hooks.example.toml + TASK-5134 remove-worktree (x3) + FEAT-801 techwiki-page.md template + FEAT-847 AGY sdd-coder, code-reviewer, qa-runner agents (x3)
+        len(targets) == 93
+    )  # FEAT-891 sdd/procedures/sdd-workflow.yaml + FEAT-847 docs/sdd/AGY.md (packaged-only) + rev 0.5 C22 + code-reviewer, qa-runner, CODEX.md (packaged-only) + FEAT-764 sdd_hooks.example.toml + TASK-5134 remove-worktree (x3) + FEAT-801 techwiki-page.md template + FEAT-847 AGY sdd-coder, code-reviewer, qa-runner agents (x3)
 
 
 def test_assets_have_no_publication_findings() -> None:
