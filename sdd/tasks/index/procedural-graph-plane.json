@@ -284,7 +284,7 @@
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -294,8 +294,9 @@
       "parallelism_notes": "Modifies procedure.py, cli.py and test_procedure_cli.py written by TASK-5643; reuses its _load_specs and _settings.",
       "assigned_to": null,
       "started_at": "2026-11-13T21:47:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5644-procedure-cli-next-brief.md"
+      "completed_at": "2026-11-13T23:11:44+00:00",
+      "file": "sdd/tasks/completed/TASK-5644-procedure-cli-next-brief.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5645",
@@ -369,7 +370,7 @@
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -380,8 +381,9 @@
       "parallelism_notes": "Calls procedure.build from TASK-5643 (sdd/scripts/procedure.py); installs the manifest asset TASK-5647 ships and modifies its test_procedure_assets.py.",
       "assigned_to": null,
       "started_at": "2026-11-13T21:47:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5648-install-procedure-index-step.md"
+      "completed_at": "2026-11-13T23:11:45+00:00",
+      "file": "sdd/tasks/completed/TASK-5648-install-procedure-index-step.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5649",

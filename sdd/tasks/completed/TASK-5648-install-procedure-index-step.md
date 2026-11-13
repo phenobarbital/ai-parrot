@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-891 — Procedural Graph Plane
 **Spec**: `sdd/specs/procedural-graph-plane.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5643, TASK-5647
@@ -37,6 +37,7 @@ in the receipt), the manifest content, the guard registration.
 |---|---|---|
 | `packages/ai-parrot/src/parrot/sdd/installer.py` | MODIFY | New plan action and its step |
 | `packages/ai-parrot/tests/sdd/test_procedure_assets.py` | MODIFY | Install tests |
+| `packages/ai-parrot/tests/sdd/fixtures/asset_targets.json` | MODIFY | Add the sdd-workflow asset target (added during review; omitted from the original task) |
 
 ---
 
@@ -238,4 +239,15 @@ def test_dry_run_lists_the_step_and_writes_nothing(tmp_path: Path) -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+
+- Task: TASK-5648
+- Feature: procedural-graph-plane
+- Implementation SHA: f4c309c82d59d7bb08857e416e28dd7bc762a3c3
+- Closed at (UTC): 2026-11-13T23:11:45+00:00
+- Fix commits: ee342c38b9fd776501394b23c5b24da2d9c8d1fa
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 1 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 3 (sol x2, terra) · Duration: 631.2s · Tokens: n/a · Review fix ee342c38: asset_targets fixture (task omitted it; spec gap, not model defect) |
