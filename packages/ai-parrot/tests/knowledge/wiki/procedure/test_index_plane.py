@@ -17,6 +17,8 @@ from parrot.knowledge.wiki.procedure.models import (
     ProcedureSpec,
     ScopeArg,
 )
+from parrot.knowledge.wiki.procedure.plane import ProcedurePlane
+from parrot.knowledge.wiki.store import SQLiteWikiStore
 from parrot.sdd.scripts import procedure_advice
 
 COSTS = {"task.status": "local", "pr.open": "remote"}
@@ -127,3 +129,74 @@ def test_index_contract(tmp_path: Path) -> None:
     for check in pre:
         assert {"probe", "expect", "args", "cost"} <= set(check)
     assert [c["cost"] for c in pre] == ["local", "remote"]
+
+
+async def test_plane_build_idempotent(tmp_path: Path) -> None:
+    """Two builds preserve pages and edges; a dropped source loses its page."""
+    (tmp_path / ".git").mkdir()
+    first_source = _source(tmp_path, "first.yaml")
+    second_source = _source(tmp_path, "second.yaml")
+    first, second = _specs()
+    first = first.model_copy(
+        update={
+            "origin_path": first_source.relative_to(tmp_path).as_posix(),
+            "requires_procedures": [second.id],
+        }
+    )
+    second = second.model_copy(update={"origin_path": second_source.relative_to(tmp_path).as_posix()})
+    plane = ProcedurePlane(tmp_path / PLANE_DIR)
+
+    assert await plane.build([first, second], [first_source, second_source], root=tmp_path, probe_costs=COSTS) == {
+        "pages": 2,
+        "edges": 1,
+        "sources": 2,
+    }
+    store = SQLiteWikiStore(plane.plane_dir / "wiki.db", wiki_name="procedure")
+    page_ids = [page["concept_id"] for page in await store.dump_pages()]
+    edges = await store.dump_edges()
+    assert (await store.neighbors(first.id, rel="requires", direction="out"))[0]["provenance"] == "sdd"
+
+    await plane.build([first, second], [first_source, second_source], root=tmp_path, probe_costs=COSTS)
+    assert [page["concept_id"] for page in await store.dump_pages()] == page_ids
+    assert await store.dump_edges() == edges
+
+    await plane.build([first], [first_source], root=tmp_path, probe_costs=COSTS)
+    assert [page["concept_id"] for page in await store.dump_pages()] == [first.id]
+
+
+async def test_plane_specs_round_trip(tmp_path: Path) -> None:
+    """The stored JSON round-trips every procedure spec sorted by id."""
+    source = _source(tmp_path)
+    specs = [
+        spec.model_copy(update={"origin_path": source.relative_to(tmp_path).as_posix()}) for spec in reversed(_specs())
+    ]
+    plane = ProcedurePlane(tmp_path / PLANE_DIR)
+
+    assert await plane.specs() == []
+    await plane.build(specs, [source], root=tmp_path, probe_costs=COSTS)
+    assert await plane.specs() == sorted(specs, key=lambda spec: spec.id)
+
+
+async def test_plane_publishes_index_last(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A store-write failure prevents publication of a new procedure index."""
+    source = _source(tmp_path)
+    spec = _specs()[0].model_copy(update={"origin_path": source.relative_to(tmp_path).as_posix()})
+    plane = ProcedurePlane(tmp_path / PLANE_DIR)
+
+    async def fail_add_edges(self: SQLiteWikiStore, edges: list[tuple]) -> int:
+        raise OSError("injected edge write failure")
+
+    monkeypatch.setattr(SQLiteWikiStore, "add_edges", fail_add_edges)
+    with pytest.raises(OSError, match="injected edge write failure"):
+        await plane.build([spec], [source], root=tmp_path, probe_costs=COSTS)
+    assert read_index(plane.plane_dir) is None
+
+
+def test_for_root_uses_shared_root(tmp_path: Path) -> None:
+    """for_root resolves a repository's shared procedure-plane directory."""
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+
+    plane = ProcedurePlane.for_root(repo / "sub")
+    assert plane is not None
+    assert plane.plane_dir == repo / PLANE_DIR
