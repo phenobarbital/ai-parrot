@@ -124,7 +124,7 @@
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -132,8 +132,9 @@
       "parallelism_notes": "No dependency: storage/errors.py and the ConversationBackend ABC. Concrete backends stay abstract until TASK-5574..5577 land (recorded in the task).",
       "assigned_to": null,
       "started_at": "2026-11-13T03:25:54+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5570-storage-backend-contract-errors.md"
+      "completed_at": "2026-11-13T03:46:44+00:00",
+      "file": "sdd/tasks/completed/TASK-5570-storage-backend-contract-errors.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5571",

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-886 — Durable Conversation Memory
 **Spec**: `sdd/specs/durable-conversation-memory.spec.md` (Module 4)
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -644,10 +644,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added storage/errors.py, six abstract ops + BackfillBatch on ConversationBackend, InstrumentedBackend delegates, exports, shared tests/storage/durable_contract.py (DurableHarness + 9 checks) and test_storage_errors.py (in-file reference backend + mutation self-test).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (sequential fallback; parrot-sdd-coder MCP unavailable)
+**Date**: 2026-11-12
+**Tests**: test_storage_errors + test_instrumented_backend + test_base_abc: 28 passed; ruff clean. No skips.
+**Mutation evidence**: dropped @abstractmethod on max_sequence -> test_new_operations_are_abstract RED; dropped InstrumentedBackend.max_sequence -> 7 failures; broken (ascending-limit) reference backend -> window check raises AssertionError. All restored.
+**Known decision**: the four concrete backends (sqlite/postgres/mongodb/dynamodb) are uninstantiable until TASK-5574..5577; existing suites that build them (tests/storage/test_backend_contract.py, conftest any_backend, tests/storage/backends/test_*_backend.py, root tests/storage/test_dynamodb_backend.py) are EXPECTED RED inside this branch. Abstract methods kept, no defaults added.
+**Note**: backfill check does not require >1 page (the reference pages by session); row-paging backends still page.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
