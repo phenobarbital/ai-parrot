@@ -193,7 +193,7 @@
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -204,8 +204,9 @@
       "parallelism_notes": "Imports ProcedureSpec from TASK-5633; calls compile_index/publish_index from TASK-5639 (index.py) and modifies its test_index_plane.py.",
       "assigned_to": null,
       "started_at": "2026-11-13T21:47:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5640-procedure-plane.md"
+      "completed_at": "2026-11-13T22:16:47+00:00",
+      "file": "sdd/tasks/completed/TASK-5640-procedure-plane.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5641",
@@ -214,7 +215,7 @@
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -225,8 +226,9 @@
       "parallelism_notes": "Imports Resolution/ProbeCheck from TASK-5633 (models.py); reuses LOCAL_PROBES, apply_check, feature_index and current_branch from TASK-5638 (procedure_advice.py).",
       "assigned_to": null,
       "started_at": "2026-11-13T21:47:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5641-procedure-probes-resolver.md"
+      "completed_at": "2026-11-13T22:16:48+00:00",
+      "file": "sdd/tasks/completed/TASK-5641-procedure-probes-resolver.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5642",
@@ -300,7 +302,7 @@
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -310,8 +312,9 @@
       "parallelism_notes": "Calls evaluate_command from TASK-5638 (procedure_advice.py); edits only dangerous_actions.py and its existing test.",
       "assigned_to": null,
       "started_at": "2026-11-13T21:47:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5645-guard-dangerous-actions.md"
+      "completed_at": "2026-11-13T22:16:50+00:00",
+      "file": "sdd/tasks/completed/TASK-5645-guard-dangerous-actions.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5646",
@@ -320,7 +323,7 @@
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -330,8 +333,9 @@
       "parallelism_notes": "Calls evaluate_command from TASK-5638 (procedure_advice.py); edits worktree_environment.py and native_claude_sandbox.py, creates test_procedure_guards.py.",
       "assigned_to": null,
       "started_at": "2026-11-13T21:47:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5646-guard-worktree-environment.md"
+      "completed_at": "2026-11-13T22:16:51+00:00",
+      "file": "sdd/tasks/completed/TASK-5646-guard-worktree-environment.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5647",
