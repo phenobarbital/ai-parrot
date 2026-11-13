@@ -7,7 +7,6 @@ import pytest
 from parrot.knowledge.wiki.experience.models import ExperienceConfig, ExperienceEvent
 from parrot.knowledge.wiki.experience.reducer import match_score, reduce_events
 
-
 LESSON_ID = "pit-reducer"
 REVISION_ONE = "rev-one"
 REVISION_TWO = "rev-two"
@@ -87,9 +86,9 @@ def test_reduce_candidate_to_confirmed(tmp_path: Path) -> None:
     assert candidate.state == "candidate"
     assert candidate.validations == 1
 
-    confirmed = reduce_events(events + [_evidence("lesson.validated", REVISION_ONE, "validation-two", "session-two")], config)[
-        LESSON_ID
-    ]
+    confirmed = reduce_events(
+        events + [_evidence("lesson.validated", REVISION_ONE, "validation-two", "session-two")], config
+    )[LESSON_ID]
     assert confirmed.state == "confirmed"
     assert confirmed.validations == 2
 
