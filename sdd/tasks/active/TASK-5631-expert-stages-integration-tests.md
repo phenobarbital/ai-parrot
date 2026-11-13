@@ -81,6 +81,7 @@ Spec §4 Integration Tests, AC6, AC9.
 
 - Conventions: `.claude/rules/codebase-conventions.md` (Pydantic v2, Google docstrings, `self.logger`, async I/O, no print).
 - Worktree tests need `PYTHONPATH=packages/ai-parrot/src` (plus `packages/ai-parrot-integrations/src` / `packages/ai-parrot-tools/src` when touched).
+- Run-state checkpoints (AgentsFlow) need a lease-capable store: a stock `DurableCheckpointStore` raises on `acquire_lease`. For the SQLite/no-Redis pause-resume test use `parrot.experts.lease_store.LeaseDurableCheckpointStore(tmp_path / "cp.sqlite")` (exists on this branch; `parrot experts --checkpoint-store sqlite` resolves to it via `parrot.experts.cli._checkpoint_store`). Do not modify it.
 
 ---
 
