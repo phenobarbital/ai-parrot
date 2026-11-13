@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-886 — Durable Conversation Memory
 **Spec**: `sdd/specs/durable-conversation-memory.spec.md` (Module 6)
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5570
@@ -800,10 +800,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented the durable contract on ConversationPostgresBackend exactly per the blueprint (additive migration under a DDL advisory lock, advisory-lock-serialized put_turn/put_tombstone/backfill sessions, COLLATE "C" tie-break, derived index state, typed error translation, lazy asyncpg).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (sequential fallback)
+**Date**: 2026-11-13
+**STATUS: done-with-issues — NOT EXERCISED AGAINST A REAL POSTGRES.** No server or POSTGRES_TEST_DSN exists in this environment. What ran: import/abstractness check (backend is instantiable, no abstract methods left), ruff (E9,F63,F7,F82,F401: only the pre-existing unused-`timedelta` module import is noted), and the new test file collects; all 22 tests of test_postgres_durable_contract.py + test_postgres_backend.py SKIP (POSTGRES_TEST_DSN not set). The SQL has therefore never been executed.
+**Mutation checks**: not run (they need the server).
+**Action for a reviewer**: run `POSTGRES_TEST_DSN=postgresql://… pytest -p no:xdist packages/ai-parrot/tests/storage/backends/test_postgres_durable_contract.py test_postgres_backend.py` on a role with CREATE DATABASE, then the five mutation checks of the Acceptance Criteria.
+**Notes**: invalid_sessions entries are "<user_id>/<agent_id>/<session_id>". The DurableHarness fields matched TASK-5570.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
