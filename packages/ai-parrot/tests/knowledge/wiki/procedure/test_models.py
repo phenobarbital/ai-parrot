@@ -50,4 +50,4 @@ def test_lazy_exports_resolve_models() -> None:
 
     assert procedure.ProcedureSpec is ProcedureSpec
     with pytest.raises(AttributeError):
-        getattr(procedure, "nope")
+        procedure.nope
