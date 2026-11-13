@@ -226,8 +226,10 @@ def match_guards(index: Mapping[str, Any], command: str) -> list[dict[str, Any]]
             executable = guard.get("executable")
             argv_prefix = guard.get("argv_prefix", [])
             path_globs = guard.get("path_globs", [])
-            if not isinstance(executable, str) or not isinstance(argv_prefix, list) or not all(
-                isinstance(item, str) for item in argv_prefix
+            if (
+                not isinstance(executable, str)
+                or not isinstance(argv_prefix, list)
+                or not all(isinstance(item, str) for item in argv_prefix)
             ):
                 continue
             if not isinstance(path_globs, list) or not all(isinstance(item, str) for item in path_globs):
