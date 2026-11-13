@@ -186,6 +186,24 @@ without inheriting a Redis or aiofiles dependency.
 
 ---
 
+## Hydration, the `auto` default and emitter-owned ordering (FEAT-886)
+
+Ownership is unchanged: `AbstractBot` loads, renders and writes the working history. FEAT-886 adds three things
+on the bot side; see [Durable Conversation Memory](durable-conversation-memory.md) for the full design.
+
+- **Hydration on a miss.** The four history loads in `BaseBot` go through
+  `AbstractBot._load_or_hydrate_history`. With an injected `HydrationSource` a miss is filled from ChatStorage
+  (newest budget-sized window, installed atomically under `memory_key_id`, NX); without one the call is the old
+  `get_history(...) or create_history(...)`, byte for byte.
+- **`memory_type="auto"` is the default.** It selects `RedisConversation` only with an explicit
+  `REDIS_HISTORY_URL` (`REDIS_HISTORY_EXPLICIT`) or a host-injected `redis_url`; otherwise `InMemoryConversation`.
+  An explicit `"memory"`, `"file"` or `"redis"` still wins, and a Redis failure no longer falls back silently.
+- **Emitter-owned ordering.** `save_conversation_turn` stamps a UTC timestamp and a monotonic
+  `ConversationTurn.sequence`, and publishes the raw turn after `add_turn`. `ask`, `ask_stream`, `conversation`
+  and `invoke` honor a caller-supplied `turn_id`.
+
+---
+
 ## Breaking changes in 0.29.0
 
 Hard cut — no deprecation shims, no compatibility kwargs.
