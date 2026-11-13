@@ -50,7 +50,7 @@
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -58,8 +58,9 @@
       "parallelism_notes": "No dependency: first module; creates parrot.knowledge.wiki.procedure and its test package.",
       "assigned_to": null,
       "started_at": "2026-11-13T21:47:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5633-procedure-models.md"
+      "completed_at": "2026-11-13T21:57:05+00:00",
+      "file": "sdd/tasks/completed/TASK-5633-procedure-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5634",
@@ -68,7 +69,7 @@
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -76,8 +77,9 @@
       "parallelism_notes": "No dependency: edits only parrot/skills (models.py, parsers.py) and its existing test; keeps the raw mapping, so it needs no procedure model.",
       "assigned_to": null,
       "started_at": "2026-11-13T21:47:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5634-skill-procedure-frontmatter.md"
+      "completed_at": "2026-11-13T21:57:55+00:00",
+      "file": "sdd/tasks/completed/TASK-5634-skill-procedure-frontmatter.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5635",
@@ -127,7 +129,7 @@
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -135,8 +137,9 @@
       "parallelism_notes": "No dependency: stdlib-only module; the index shape it reads is fixed in spec §2.",
       "assigned_to": null,
       "started_at": "2026-11-13T21:47:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5637-procedure-advice-matching.md"
+      "completed_at": "2026-11-13T21:58:03+00:00",
+      "file": "sdd/tasks/completed/TASK-5637-procedure-advice-matching.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5638",
