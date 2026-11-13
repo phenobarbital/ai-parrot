@@ -359,7 +359,7 @@
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -371,8 +371,9 @@
       "parallelism_notes": "Wraps BusTurnPublisher/topics from TASK-5569; subscribes ChatStorage.handle_turn_completed from TASK-5579; conf.py after TASK-5571.",
       "assigned_to": null,
       "started_at": "2026-11-13T03:25:54+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5581-turn-bus-setup.md"
+      "completed_at": "2026-11-13T04:31:56+00:00",
+      "file": "sdd/tasks/completed/TASK-5581-turn-bus-setup.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5582",

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-886 — Durable Conversation Memory
 **Spec**: `sdd/specs/durable-conversation-memory.spec.md` (Module 10)
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5569, TASK-5579, TASK-5571
@@ -689,10 +689,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added PARROT_TURN_BUS_* settings and parrot/storage/turn_bus.py (TurnPersistence, setup/shutdown/replay, SqliteDeadLetterStore, late-bound on_dlq, explicit RedisStreamsBackend so PARROT_TURN_BUS_CHANNEL_PREFIX is honoured, deletion publisher via bus.core.publish).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (sequential fallback)
+**Date**: 2026-11-13
+**Tests**: test_turn_bus_setup 9 passed — navigator-eventbus 0.4.1 memory transport + real ChatStorage over real SQLite, real files. ruff clean. NOT covered here (by the task's own scope): the Redis Streams end-to-end / crash recovery (TASK-5585); the Postgres DLQHandler path (needs a server) — only the local SQLite dead-letter path is exercised; the explicit RedisStreamsBackend is only constructed (no live Redis in these tests).
+**Mutation evidence**: no deletion-topic subscription / no-op DLQ callback / no W_OK check / channel_prefix instead of explicit backend / replay without mark_replayed -> each RED. Restored by re-applying.
+**Notes**: the installed library (0.4.1) ignores channel_prefix for streams and keeps no dead letters in the outbox, hence the explicit backend and the local SqliteDeadLetterStore (task "Library drift").
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
