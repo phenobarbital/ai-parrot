@@ -215,7 +215,7 @@ def _control_files(root: Path) -> list[Path]:
     """
     here = Path(__file__).resolve().parent
     parrot_dir = root / "packages" / "ai-parrot" / "src" / "parrot"
-    names = ("native_claude_sandbox.py", "worktree_environment.py")
+    names = ("native_claude_sandbox.py", "worktree_environment.py", "procedure_advice.py")
     found: list[Path] = []
     shim_dir = here.parent.parent / "flows" / "dev_loop"
     for directory in (here, parrot_dir / "sdd" / "scripts", parrot_dir / "flows" / "dev_loop", shim_dir):
