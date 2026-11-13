@@ -1,9 +1,14 @@
 """Tests for the procedure graph validator (FEAT-891)."""
 
+from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
+from parrot.knowledge.lint.models import LintOptions
+from parrot.knowledge.lint.packs import default_rules
+from parrot.knowledge.lint.packs.procedure import ProcedureGraphRule
 from parrot.knowledge.wiki.procedure.models import ProbeCost, ProcedureSpec
 from parrot.knowledge.wiki.procedure.validate import validate_graph
 
@@ -103,3 +108,50 @@ def test_uncovered_command_requires_a_whole_token() -> None:
     findings = validate_graph(specs, known_probes=PROBES, known_commands=["sdd-task"])
 
     assert [(finding.code, finding.subjects) for finding in findings] == [("uncovered-command", ["sdd-task"])]
+
+
+async def test_lint_rule_noop_without_manifest(tmp_path: Path) -> None:
+    """ProcedureGraphRule.check returns [] with no root and with a root that has no manifest."""
+    rule = ProcedureGraphRule()
+
+    assert await rule.check(SimpleNamespace(root=None)) == []
+    assert await rule.check(SimpleNamespace(root=tmp_path)) == []
+
+
+async def test_lint_rule_reports_graph_errors(tmp_path: Path) -> None:
+    """A malformed graph yields findings and an invalid manifest yields one load finding."""
+    manifest = tmp_path / "sdd" / "procedures" / "x.yaml"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(
+        """graph: sdd
+procedures:
+  - id: x
+    title: X
+    kind: command
+    next: [missing]
+    preconditions:
+      - probe: nope
+""",
+        encoding="utf-8",
+    )
+    rule = ProcedureGraphRule()
+
+    findings = await rule.check(SimpleNamespace(root=tmp_path))
+
+    assert {finding.data["code"] for finding in findings} == {"broken-edge", "unknown-probe"}
+    assert len({finding.fingerprint for finding in findings}) == len(findings)
+    assert await rule.fix(SimpleNamespace(root=tmp_path), findings[0]) is None
+
+    manifest.write_text("graph: sdd\nunknown: value\n", encoding="utf-8")
+
+    load_findings = await rule.check(SimpleNamespace(root=tmp_path))
+
+    assert len(load_findings) == 1
+    assert load_findings[0].severity == "error"
+    assert load_findings[0].subjects == ["sdd/procedures"]
+    assert "x.yaml" in load_findings[0].message
+
+
+def test_procedure_rule_is_a_default_rule() -> None:
+    """default_rules includes the procedure pack."""
+    assert "procedure-graph" in {rule.rule_id for rule in default_rules(LintOptions())}
