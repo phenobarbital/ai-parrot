@@ -77,9 +77,7 @@ def _unknown_probes(spec: ProcedureSpec, known_probes: Mapping[str, ProbeCost]) 
     ]
 
 
-def _remote_guard_finding(
-    spec: ProcedureSpec, known_probes: Mapping[str, ProbeCost]
-) -> GraphFinding | None:
+def _remote_guard_finding(spec: ProcedureSpec, known_probes: Mapping[str, ProbeCost]) -> GraphFinding | None:
     """Return a finding when a guarded node has only remote preconditions."""
     if not spec.guards or not spec.preconditions:
         return None
@@ -154,9 +152,7 @@ def _cycle_findings(specs: Sequence[ProcedureSpec]) -> list[GraphFinding]:
     ]
 
 
-def _uncovered_commands(
-    specs: Sequence[ProcedureSpec], known_commands: Sequence[str]
-) -> list[GraphFinding]:
+def _uncovered_commands(specs: Sequence[ProcedureSpec], known_commands: Sequence[str]) -> list[GraphFinding]:
     """Return findings for known commands absent from every procedure command."""
     return [
         GraphFinding(
