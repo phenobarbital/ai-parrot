@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-886 — Durable Conversation Memory
 **Spec**: `sdd/specs/durable-conversation-memory.spec.md` (Module 3)
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5569, TASK-5570
@@ -669,10 +669,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added ChatStorageTurn (+ _parse_utc, _json_default/_json_safe handling set/bytes/Decimal/datetime/model objects, legacy tool-call mapper) to storage/models.py and exported it from parrot.storage.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (sequential fallback)
+**Date**: 2026-11-12
+**Tests**: test_chat_storage_turn 16 passed, test_chat_hot_tier_metadata + tests/test_chat_storage.py green; ruff clean.
+**Mutation evidence**: no _force_utc -> RED; always model_validate -> RED; dropping the timestamp identity check -> RED only after the test asserted the error names "timestamp" (pydantic would otherwise wrap the failure anyway); identity _json_safe -> RED. Restored each time.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

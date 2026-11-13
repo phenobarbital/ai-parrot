@@ -184,7 +184,7 @@
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -195,8 +195,9 @@
       "parallelism_notes": "Imports TurnPresentation from TASK-5569 (memory/persistence.py); InvalidTurnPayloadError and storage/__init__.py exports from TASK-5570.",
       "assigned_to": null,
       "started_at": "2026-11-13T03:25:54+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5573-chat-storage-turn-model.md"
+      "completed_at": "2026-11-13T03:56:57+00:00",
+      "file": "sdd/tasks/completed/TASK-5573-chat-storage-turn-model.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5574",
