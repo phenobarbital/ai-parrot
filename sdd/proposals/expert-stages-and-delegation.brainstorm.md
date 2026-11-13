@@ -427,7 +427,7 @@ class DecisionService: generate(target) -> GenerationResult (origin="inferred", 
 - [x] Gate lift compatibility — *Owner: Jesus Lara*: new string-id protocol + adapter for persisted envelopes, dev-loop hard cut, no import shims.
 - [x] Scope grid meaning — *Owner: Jesus Lara*: scope × stage → (expert, mode, gate).
 - [x] Q6 tier / memory — *Owner: Jesus Lara*: tier → OTEL attribute and → sdd-coder seat hint; per-expert episodic memory in v1.
-- [ ] Episodic store: wiki namespace (`remember`) vs `parrot/memory/episodic` `EpisodicMemoryStore` — default: wiki namespace (already mandatory per expert), revisit if retrieval quality is poor. — *Owner: spec*
-- [ ] Gate persistence for non-dev-loop runs: reuse Redis action streams or add a file/PG store for CLI `parrot experts run` without Redis — *Owner: spec*
-- [ ] Should `pre_review` (an LLM `review` expert before human notification) be in v1 or deferred — *Owner: Jesus Lara*
-- [ ] Migration order of the remaining phase-5 experts (`mvp`/`poc` grid with Domain Design; `ContractsAgent`/`LegalLibrarianAgent`) — out of scope here; confirm they wait for this feature — *Owner: Jesus Lara*
+- [x] Episodic store — *Owner: Jesus Lara*: the expert's wiki namespace (`expert-<slug>`, via the wiki `remember` API); `parrot/memory/episodic` is not used.
+- [x] Gate persistence without Redis — *Owner: Jesus Lara*: pluggable `GateStore`; Redis action streams when Redis is configured (dev-loop path), otherwise **SQLite** (default local store, e.g. CLI `parrot experts run`), with **HelixDB** as an optional backend. The spec must define the store protocol so all three are interchangeable and verify HelixDB's async Python client before committing to it.
+- [x] `pre_review` in v1 — *Owner: Jesus Lara*: yes. A gate may name a `review`-capability expert that runs before human notification; its verdict is attached to the gate as advisory context and never resolves the gate (only a human or the TTL `on_expiry` policy does).
+- [x] Remaining phase-5 experts (`mvp`/`poc` grid with Domain Design; `ContractsAgent`/`LegalLibrarianAgent`) — *Owner: Jesus Lara*: wait for this feature; out of scope here.
