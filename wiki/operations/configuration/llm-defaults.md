@@ -1,5 +1,5 @@
 ---
-title: "Per-component and per-agent LLM defaults (FEAT-796, FEAT-882)"
+title: "Per component and per agent LLM defaults (FEAT 796, FEAT 882)"
 ---
 
 # Per-component and per-agent LLM defaults (FEAT-796, FEAT-882)
