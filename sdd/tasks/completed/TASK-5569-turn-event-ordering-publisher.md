@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-886 — Durable Conversation Memory
 **Spec**: `sdd/specs/durable-conversation-memory.spec.md` (Module 2)
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -479,10 +479,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added TurnCompletedEvent, ConversationTurn.sequence (round-trips), memory/persistence.py (topics, TurnPresentation.from_ai_message, TurnPublisher, BusTurnPublisher) and exports.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (sequential fallback; parrot-sdd-coder MCP unavailable)
+**Date**: 2026-11-12
+**Tests**: new file 3 passed (real EventBus(transport="memory"), navigator-eventbus 0.4.1); test_conversation_turn_attribution + test_render_history pass (36 total); ruff clean on new/changed files. tests/unit/memory/compaction/test_compact.py and test_normalize.py error at collection (`hypothesis` not installed in the venv) — pre-existing, verified identical with my changes stashed; NOT run.
+**Mutation evidence**: sequence dropped from from_dict -> RED; cost_usd dropped -> RED; event_id default instead of turn_id -> RED. Restored by re-applying the edit.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. `import parrot.memory` still pulls parrot.models transitively (pre-existing via compaction), parrot.bots not imported.
