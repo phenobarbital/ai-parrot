@@ -4,6 +4,7 @@ Chatbot Manager.
 Tool for instanciate, managing and interacting with Chatbot through APIs.
 """
 
+from dataclasses import dataclass
 from typing import Any, Dict, Type, Optional, Tuple, List, TYPE_CHECKING
 import importlib.util
 from importlib import import_module
@@ -64,6 +65,9 @@ from ..storage import (
     build_conversation_backend,
     build_overflow_store,
 )
+from ..storage.turn_bus import TurnPersistence, setup_turn_persistence, shutdown_turn_persistence
+from ..storage.hydration import ChatStorageHydrationSource
+from ..memory.hydration import LocalSequenceAllocator, RedisSequenceAllocator
 from ..handlers import ChatbotHandler
 from ..handlers.bots import ToolList
 from ..handlers.config_handler import BotConfigHandler
@@ -194,6 +198,28 @@ class ReloadResult(BaseModel):
 
 
 _REGISTRY_ONLY_APP_KEY = "_bot_manager_registry_only"
+
+
+@dataclass(frozen=True)
+class _DurableMemory:
+    """Collaborators every managed bot receives once turn persistence is running (FEAT-886)."""
+
+    chat_storage: ChatStorage
+    handle: TurnPersistence
+    hydration_source: Optional[ChatStorageHydrationSource]
+    sequence_allocator: Any
+
+
+def _memory_cleaner_for(bot: "AbstractBot"):
+    """Working-memory cleaner for ``ChatStorage.register_memory_cleaner`` bound to one bot."""
+
+    async def _clean(user_id: str, agent_id: str, session_id: str) -> None:
+        memory = getattr(bot, "conversation_memory", None)
+        if memory is None or agent_id != bot.name:
+            return
+        await memory.delete_history(user_id, session_id, chatbot_id=bot.memory_key_id)
+
+    return _clean
 
 _STUDIO_PREFIXES = ("studio:", "studio-agent:")
 _cleanup_logger = logging.getLogger("Parrot.Manager")
@@ -457,6 +483,7 @@ class BotManager:
             if result["status"] == "success":
                 if instance := result.get("instance"):
                     self._bots[agent_name] = instance
+                    self._attach_durable_memory(instance)
                     self.logger.info(f"Added startup agent to active bots: {agent_name}")
             else:
                 self.logger.error(f"Startup agent {agent_name} failed: {result['error']}")
@@ -825,6 +852,7 @@ class BotManager:
         self._bots[bot.name] = bot
         # Store the class definition for future instance creation
         self._botdef[bot.name] = bot.__class__
+        self._attach_durable_memory(bot)
 
     async def get_bot(
         self, name: str, new: bool = False, session_id: str = "", request: Optional[web.Request] = None, **kwargs
@@ -922,6 +950,7 @@ class BotManager:
 
             # Add to bots dictionary
             self._bots[new_name] = bot
+            self._attach_durable_memory(bot)
 
             # Set expiration time (1 hour from now)
             self._bot_expiration[new_name] = time.time() + 3600
@@ -1056,6 +1085,7 @@ class BotManager:
         # --- Rebuild succeeded: only now do we touch live state ---
         old_instance = self._bots.pop(name, None)
         self._bots[name] = new_instance
+        self._attach_durable_memory(new_instance)
         self._botdef[name] = type(new_instance)
 
         closed = False
@@ -1313,6 +1343,7 @@ class BotManager:
     def add_agent(self, agent: AbstractBot) -> None:
         """Add a Agent to the manager."""
         self._bots[str(agent.chatbot_id)] = agent
+        self._attach_durable_memory(agent)
 
     def remove_agent(self, agent: AbstractBot) -> None:
         """Remove a Bot by name."""
@@ -3128,7 +3159,12 @@ Available documentation UIs:
                 bot._dataplane_guard = guard  # noqa: SLF001
 
     def setup_registry_only(
-        self, app: web.Application, *, import_modules: bool = False, load_definitions: bool = False
+        self,
+        app: web.Application,
+        *,
+        import_modules: bool = False,
+        load_definitions: bool = False,
+        turn_persistence: bool = False,
     ) -> None:
         """Mount the agent registry without ``setup()`` (no routes, no startup agents).
 
@@ -3140,6 +3176,7 @@ Available documentation UIs:
             app: The aiohttp application.
             import_modules: Import ``AGENTS_DIR`` modules at startup.
             load_definitions: Load YAML agent definitions at startup.
+            turn_persistence: Also initialize ChatStorage and the turn bus at startup (FEAT-886).
 
         Raises:
             RuntimeError: When a scope resolver is installed on ``app`` and
@@ -3151,7 +3188,11 @@ Available documentation UIs:
         if app.get(_REGISTRY_ONLY_APP_KEY):
             self.logger.info("setup_registry_only: already installed on this app")
             return
-        app[_REGISTRY_ONLY_APP_KEY] = {"import_modules": import_modules, "load_definitions": load_definitions}
+        app[_REGISTRY_ONLY_APP_KEY] = {
+            "import_modules": import_modules,
+            "load_definitions": load_definitions,
+            "turn_persistence": turn_persistence,
+        }
         self.app = app
         app["bot_manager"] = self
         app.on_startup.append(self._registry_only_startup)
@@ -3163,6 +3204,74 @@ Available documentation UIs:
         from parrot.userstore.checks import install_user_store_hooks
 
         install_user_store_hooks(app)
+
+    _durable_memory: Optional[_DurableMemory] = None
+    _registry_only_chat_storage: Optional[ChatStorage] = None
+
+    def _build_durable_memory(self, chat_storage: ChatStorage, handle: TurnPersistence) -> _DurableMemory:
+        """Build the shared hydration source and sequence allocator from the running ChatStorage."""
+        cold = chat_storage.cold_backend
+        hot_client = chat_storage.hot_redis_client
+        return _DurableMemory(
+            chat_storage=chat_storage,
+            handle=handle,
+            hydration_source=ChatStorageHydrationSource(cold) if cold is not None else None,
+            sequence_allocator=RedisSequenceAllocator(hot_client) if hot_client is not None else LocalSequenceAllocator(),
+        )
+
+    async def _start_turn_persistence(self, app: web.Application, chat_storage: ChatStorage) -> None:
+        """Start the turn bus; on failure log ERROR and leave the server running (Q16)."""
+        try:
+            handle = await setup_turn_persistence(chat_storage)
+        except Exception as exc:  # noqa: BLE001 - startup must never be blocked by the audit bus
+            self.logger.error("Turn persistence not started, agents run without ChatStorage: %s", exc, exc_info=True)
+            return
+        app["turn_persistence"] = handle
+        self._durable_memory = self._build_durable_memory(chat_storage, handle)
+        for bot in list(self._bots.values()):  # bots loaded before the bus existed
+            self._attach_durable_memory(bot)
+        self.logger.info("Turn persistence started")
+
+    async def _stop_turn_persistence(self, app: web.Application) -> None:
+        """Detach and stop the turn bus BEFORE ChatStorage closes (preserves the outbox)."""
+        handle = app.pop("turn_persistence", None)
+        self._durable_memory = None
+        if handle is None:
+            return
+        try:
+            await shutdown_turn_persistence(handle)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning("Turn persistence shutdown failed: %s", exc)
+
+    def _attach_durable_memory(self, bot: "AbstractBot") -> None:
+        """Set ``turn_publisher`` / ``hydration_source`` / ``sequence_allocator`` on ``bot`` (FEAT-886 M17).
+
+        No-op when turn persistence is not running. A collaborator the bot already carries is kept.
+        Registers one working-memory cleaner per bot with ChatStorage.
+        """
+        durable = self._durable_memory
+        if durable is None or getattr(bot, "_durable_memory_attached", False):
+            return
+        if bot.turn_publisher is None:
+            bot.turn_publisher = durable.handle.publisher
+        if bot.hydration_source is None:
+            bot.hydration_source = durable.hydration_source
+        if bot.sequence_allocator is None:
+            bot.sequence_allocator = durable.sequence_allocator
+        durable.chat_storage.register_memory_cleaner(_memory_cleaner_for(bot))
+        bot._durable_memory_attached = True  # noqa: SLF001 - idempotency marker, one cleaner per bot
+
+    async def _start_registry_only_persistence(self, app: web.Application) -> None:
+        """Registry-only hosts have no on_startup: create + initialize ChatStorage, then start the bus."""
+        chat_storage = ChatStorage()
+        try:
+            await chat_storage.initialize()
+        except Exception as exc:  # noqa: BLE001
+            self.logger.error("ChatStorage initialization failed, turn persistence disabled: %s", exc)
+            return
+        app["chat_storage"] = chat_storage
+        self._registry_only_chat_storage = chat_storage
+        await self._start_turn_persistence(app, chat_storage)
 
     async def _registry_only_startup(self, app: web.Application) -> None:
         """registry.setup(app) (+ opt-in imports), then start the legacy expiry loop."""
@@ -3178,9 +3287,15 @@ Available documentation UIs:
                 if definitions_dir.is_dir():
                     self.registry.load_agent_definitions(definitions_dir)
         self._cleanup_task = asyncio.create_task(self._cleanup_expired_bots())
+        if opts.get("turn_persistence"):
+            await self._start_registry_only_persistence(app)
 
     async def _registry_only_shutdown(self, app: web.Application) -> None:
         """Cancel the legacy expiry loop (mirrors ``on_shutdown``)."""
+        await self._stop_turn_persistence(app)
+        owned_storage, self._registry_only_chat_storage = self._registry_only_chat_storage, None
+        if owned_storage is not None:
+            await owned_storage.close()
         task = self._cleanup_task
         self._cleanup_task = None
         if task:
@@ -3238,6 +3353,7 @@ Available documentation UIs:
         try:
             await chat_storage.initialize()
             self.logger.info("ChatStorage initialized (Redis + DocumentDB)")
+            await self._start_turn_persistence(app, chat_storage)
         except Exception as exc:
             self.logger.warning("ChatStorage initialization failed: %s", exc)
         # Initialize Dashboard indexes
@@ -3274,6 +3390,7 @@ Available documentation UIs:
         # Stop Integration bots
         if self._integration_manager:
             await self._integration_manager.shutdown()
+        await self._stop_turn_persistence(app)
         # Close ChatStorage
         chat_storage = app.get("chat_storage")
         if chat_storage:
