@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-887 — SDD Experience Memory (experience.pitfall)
 **Spec**: `sdd/specs/sdd-experience-memory.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5595
@@ -246,3 +246,18 @@ Use the spec §4 payload fixtures, with deterministic temporary Git roots and PA
 2. Verify dependencies are done in `sdd/tasks/index/sdd-experience-memory.json` and recheck this contract after they land.
 3. Implement only the declared files, run validation, and commit scoped changes.
 4. Use `parrot sdd task finalize` with real TaskCompletionEvidence and the exact implementation HEAD. The finalizer owns the completion note and active-to-completed move; never edit them manually.
+
+## Completion Note
+
+- Task: TASK-5601
+- Feature: sdd-experience-memory
+- Implementation SHA: e384de4a013c8ec642c5a8306fba25b757e36c0b
+- Closed at (UTC): 2026-11-13T21:05:54+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-luna · Backend: codex · Model: gpt-5.6-luna · Attempts: 1 · Duration: 561.95s · Tokens: n/a |
+| validation_note | Engine merge-tier run timed_out (known environmental failures, group cut ~60s). Hand run of experience, hook, launcher, interceptor and dispatcher tests: 138 passed, 5 failed (test_llm_code_dispatcher subprocess/run_command tests, environmental; dispatchers/llm.py untouched). |

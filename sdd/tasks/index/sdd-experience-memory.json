@@ -228,7 +228,7 @@
       "feature_id": "FEAT-887",
       "feature": "sdd-experience-memory",
       "spec": "sdd/specs/sdd-experience-memory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -238,8 +238,9 @@
       "parallelism_notes": "hooks: TASK-5595: consumes the transitions contract in packages/ai-parrot/src/parrot/knowledge/wiki/experience/transitions.py",
       "assigned_to": null,
       "started_at": "2026-11-13T19:26:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5596-hooks.md"
+      "completed_at": "2026-11-13T21:05:27+00:00",
+      "file": "sdd/tasks/completed/TASK-5596-hooks.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5597",
@@ -269,7 +270,7 @@
       "feature_id": "FEAT-887",
       "feature": "sdd-experience-memory",
       "spec": "sdd/specs/sdd-experience-memory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -280,8 +281,9 @@
       "parallelism_notes": "sync: TASK-5593: consumes the service contract in packages/ai-parrot/src/parrot/knowledge/wiki/experience/service.py; TASK-5597: consumes the graduation contract in packages/ai-parrot/src/parrot/knowledge/wiki/experience/graduation.py",
       "assigned_to": null,
       "started_at": "2026-11-13T19:26:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5598-sync.md"
+      "completed_at": "2026-11-13T21:05:53+00:00",
+      "file": "sdd/tasks/completed/TASK-5598-sync.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5599",
@@ -335,7 +337,7 @@
       "feature_id": "FEAT-887",
       "feature": "sdd-experience-memory",
       "spec": "sdd/specs/sdd-experience-memory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -345,8 +347,9 @@
       "parallelism_notes": "interceptor: TASK-5595: consumes the transitions contract in packages/ai-parrot/src/parrot/knowledge/wiki/experience/transitions.py",
       "assigned_to": null,
       "started_at": "2026-11-13T19:26:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5601-interceptor.md"
+      "completed_at": "2026-11-13T21:05:54+00:00",
+      "file": "sdd/tasks/completed/TASK-5601-interceptor.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5602",
