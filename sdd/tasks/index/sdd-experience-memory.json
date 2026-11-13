@@ -61,7 +61,7 @@
       "feature_id": "FEAT-887",
       "feature": "sdd-experience-memory",
       "spec": "sdd/specs/sdd-experience-memory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -69,8 +69,9 @@
       "parallelism_notes": "Independent fastpath files; no shared state outside declared targets.",
       "assigned_to": null,
       "started_at": "2026-11-13T19:26:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5588-fastpath.md"
+      "completed_at": "2026-11-13T19:42:12+00:00",
+      "file": "sdd/tasks/completed/TASK-5588-fastpath.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5589",
@@ -180,7 +181,7 @@
       "feature_id": "FEAT-887",
       "feature": "sdd-experience-memory",
       "spec": "sdd/specs/sdd-experience-memory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -188,8 +189,9 @@
       "parallelism_notes": "Independent sandbox files; no shared state outside declared targets.",
       "assigned_to": null,
       "started_at": "2026-11-13T19:26:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5594-sandbox.md"
+      "completed_at": "2026-11-13T19:42:56+00:00",
+      "file": "sdd/tasks/completed/TASK-5594-sandbox.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5595",
@@ -579,4 +581,3 @@
     }
   ]
 }
-
