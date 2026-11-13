@@ -67,9 +67,7 @@ def manifest_specs(root: Path) -> tuple[list[ProcedureSpec], list[Path]]:
 
             previous_origin = origins_by_id.get(spec.id)
             if previous_origin is not None:
-                raise ValueError(
-                    f"duplicate procedure id '{spec.id}' in {previous_origin} and {spec.origin_path}"
-                )
+                raise ValueError(f"duplicate procedure id '{spec.id}' in {previous_origin} and {spec.origin_path}")
             origins_by_id[spec.id] = spec.origin_path
             merged.append(spec)
 
