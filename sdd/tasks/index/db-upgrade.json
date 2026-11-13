@@ -137,7 +137,7 @@
       "feature_id": "FEAT-884",
       "feature": "db-upgrade",
       "spec": "sdd/specs/db-upgrade.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -149,8 +149,9 @@
       "parallelism_notes": "Consumes rendering from TASK-5554, runner.upgrade from TASK-5556, and 001_baseline SQL from TASK-5557; successor tests execute that baseline.",
       "assigned_to": null,
       "started_at": "2026-11-12T23:12:58+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5558-bots-migration-folds.md"
+      "completed_at": "2026-11-13T00:25:49+00:00",
+      "file": "sdd/tasks/completed/TASK-5558-bots-migration-folds.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5559",
