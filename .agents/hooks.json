@@ -12,5 +12,26 @@
         ]
       }
     ]
+  },
+  "parrot-sdd-experience": {
+    "PostToolUse": [
+      {
+        "matcher": "run_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "parrot sdd experience hook --host agy --event post",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostInvocation": [
+      {
+        "type": "command",
+        "command": "parrot sdd experience hook --host agy --event post-invocation",
+        "timeout": 5
+      }
+    ]
   }
 }
