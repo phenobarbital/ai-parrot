@@ -106,6 +106,96 @@ def test_experience_install_idempotent(empty_repo: Path) -> None:
     assert any("Claude experience hooks already registered" in action for action in repeat)
 
 
+_AGY_EXPERIENCE = {
+    "PostToolUse": [
+        {
+            "matcher": "run_command",
+            "hooks": [
+                {"type": "command", "command": "parrot sdd experience hook --host agy --event post", "timeout": 5}
+            ],
+        }
+    ],
+    "PostInvocation": [
+        {"type": "command", "command": "parrot sdd experience hook --host agy --event post-invocation", "timeout": 5}
+    ],
+}
+
+
+def _agy_install(root: Path) -> tuple[bool, list[str]]:
+    from parrot.sdd import installer
+
+    return installer._install_agy_hook(root, {"settings_hooks": []}, portable=True)
+
+
+def test_agy_hooks_json_shape(tmp_path: Path) -> None:
+    """Grouped PostToolUse, FLAT PostInvocation, no pre hook; reinstall is byte-stable; foreign wheel is upgraded."""
+    registered, _ = _agy_install(tmp_path)
+    assert registered
+    path = tmp_path / ".agents/hooks.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["parrot-sdd-experience"] == _AGY_EXPERIENCE
+    assert set(data["parrot-sdd-experience"]) == {"PostToolUse", "PostInvocation"}  # no pre experience hook
+    assert "matcher" not in data["parrot-sdd-experience"]["PostInvocation"][0]
+
+    stable = path.read_bytes()
+    _, lines = _agy_install(tmp_path)
+    assert path.read_bytes() == stable
+    assert any("agy experience hooks already registered" in line for line in lines)
+
+    data["parrot-sdd-experience"]["PostToolUse"][0]["hooks"][0]["command"] = "/old/bin/parrot sdd experience hook"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    _, lines = _agy_install(tmp_path)
+    assert json.loads(path.read_text(encoding="utf-8"))["parrot-sdd-experience"] == _AGY_EXPERIENCE
+    assert any("agy experience hooks updated" in line for line in lines)
+
+
+def test_agy_permissions_preserved(tmp_path: Path) -> None:
+    """The permission group and unrelated named hooks are unchanged by the experience merge."""
+    from parrot.sdd import installer
+
+    _agy_install(tmp_path)
+    path = tmp_path / ".agents/hooks.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    permissions = json.dumps(data[installer.AGY_HOOK_NAME], sort_keys=True)
+    data["foreign-hook"] = {"PreToolUse": [{"matcher": "x", "hooks": []}]}
+    path.write_text(json.dumps(data), encoding="utf-8")
+    _agy_install(tmp_path)
+    after = json.loads(path.read_text(encoding="utf-8"))
+    assert json.dumps(after[installer.AGY_HOOK_NAME], sort_keys=True) == permissions
+    assert after["foreign-hook"] == {"PreToolUse": [{"matcher": "x", "hooks": []}]}
+
+    # a malformed hooks file is never clobbered by the experience merge
+    path.write_text("[not an object]", encoding="utf-8")
+    registered, _ = _agy_install(tmp_path)
+    assert not registered and path.read_text(encoding="utf-8") == "[not an object]"
+
+    # removal drops both managed groups but keeps foreign ones
+    path.write_text(json.dumps(data), encoding="utf-8")
+    _agy_install(tmp_path)
+    receipt = {"settings_hooks": ["agy-permissions"]}
+    installer._remove_agy_permissions(tmp_path, receipt)
+    left = json.loads(path.read_text(encoding="utf-8"))
+    assert set(left) == {"foreign-hook"}
+
+
+def test_codex_experience_hook_shape() -> None:
+    """The tracked Codex hooks file registers the PostToolUse Bash experience hook next to the PreToolUse guard."""
+    repo_root = Path(__file__).resolve().parents[4]
+    hooks = json.loads((repo_root / ".codex/hooks.json").read_text(encoding="utf-8"))["hooks"]
+    assert hooks["PostToolUse"] == [
+        {
+            "matcher": "Bash",
+            "hooks": [
+                {"type": "command", "command": "parrot sdd experience hook --host codex --event post", "timeout": 5}
+            ],
+        }
+    ]
+    assert "sh scripts/sdd/codex_hook.sh" in json.dumps(hooks["PreToolUse"])
+    assert "experience" not in json.dumps(hooks["PreToolUse"])
+    agy = json.loads((repo_root / ".agents/hooks.json").read_text(encoding="utf-8"))
+    assert agy["parrot-sdd-experience"] == _AGY_EXPERIENCE
+
+
 def _tree_digest(root: Path) -> dict[str, str]:
     """{relative path: sha256} for every file under root except .git/ (C5 no-write assertion)."""
     return {

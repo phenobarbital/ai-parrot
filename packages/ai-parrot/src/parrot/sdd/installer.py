@@ -804,12 +804,60 @@ def _widen_legacy_matcher(path: Path, data: dict[str, Any]) -> None:
     _write_json_object(path, data)
 
 
+#: Named agy hook owning the experience-memory capture (PostToolUse + PostInvocation); there is no pre hook.
+AGY_EXPERIENCE_HOOK_NAME = "parrot-sdd-experience"
+_AGY_EXPERIENCE_POST = "parrot sdd experience hook --host agy --event post"
+_AGY_EXPERIENCE_POST_INVOCATION = "parrot sdd experience hook --host agy --event post-invocation"
+
+
+def _agy_experience_entry() -> dict[str, Any]:
+    """Fixed agy experience group: grouped PostToolUse (run_command) and a FLAT PostInvocation command list."""
+    return {
+        "PostToolUse": [
+            {
+                "matcher": "run_command",
+                "hooks": [{"type": "command", "command": _AGY_EXPERIENCE_POST, "timeout": 5}],
+            }
+        ],
+        "PostInvocation": [{"type": "command", "command": _AGY_EXPERIENCE_POST_INVOCATION, "timeout": 5}],
+    }
+
+
+def _install_agy_experience(root: Path) -> list[str]:
+    """Idempotently merge the fixed experience group into ``.agents/hooks.json``; other groups stay untouched."""
+    path = root / AGY_HOOKS_PATH
+    if not _hooks_file_inside(root, path):
+        return []
+    data = _read_json_object(path)
+    if data is None:
+        return []
+    expected = _agy_experience_entry()
+    previous = data.get(AGY_EXPERIENCE_HOOK_NAME)
+    if previous == expected:
+        return [f"{AGY_HOOKS_PATH} — agy experience hooks already registered"]
+    data[AGY_EXPERIENCE_HOOK_NAME] = expected
+    _write_json_object(path, data)
+    verb = "updated" if previous is not None else "registered"
+    return [f"{AGY_HOOKS_PATH} — agy experience hooks {verb}"]
+
+
 def _install_agy_hook(root: Path, receipt: dict[str, Any], *, portable: bool | None) -> tuple[bool, list[str]]:
-    """Write the named agy hook into ``.agents/hooks.json``, keeping every other named hook.
+    """Write the named agy hooks into ``.agents/hooks.json``, keeping every other named hook.
+
+    The permission group is handled first and unchanged; the experience group is merged only once the file is
+    known to be a usable repository-local JSON object.
 
     Returns:
-        Whether the hook is registered afterwards, and the action lines.
+        Whether the permission hook is registered afterwards, and the action lines.
     """
+    registered, lines = _install_agy_permission_hook(root, receipt, portable=portable)
+    return registered, [*lines, *_install_agy_experience(root)]
+
+
+def _install_agy_permission_hook(
+    root: Path, receipt: dict[str, Any], *, portable: bool | None
+) -> tuple[bool, list[str]]:
+    """Write the named agy permission hook into ``.agents/hooks.json``, keeping every other named hook."""
     path = root / AGY_HOOKS_PATH
     if not _hooks_file_inside(root, path):
         return False, [f"warning: {AGY_HOOKS_PATH} — resolves outside the repository (symlink); agy hook skipped"]
@@ -954,8 +1002,9 @@ def _remove_agy_permissions(root: Path, receipt: dict[str, Any]) -> list[str]:
         if data is None:
             cleared = False
             lines.append(f"warning: {AGY_HOOKS_PATH} — not a JSON object or outside the repository; agy hook kept")
-        elif AGY_HOOK_NAME in data:
-            data.pop(AGY_HOOK_NAME)
+        elif AGY_HOOK_NAME in data or AGY_EXPERIENCE_HOOK_NAME in data:
+            data.pop(AGY_HOOK_NAME, None)
+            data.pop(AGY_EXPERIENCE_HOOK_NAME, None)
             if data:
                 _write_json_object(path, data)
             else:
