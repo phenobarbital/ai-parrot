@@ -383,3 +383,99 @@ async def test_text_the_pipeline_never_scanned_is_still_redacted_before_it_is_pe
     stored, event = await _stored(bot), bot.turn_publisher.events[0]
     for text in (stored.assistant_response, event.turn["assistant_response"]):
         assert SECRET not in text and "REDACTED" in text, text
+
+
+def _count_runs(bot: BaseBot) -> list:
+    """Record every text the OUTPUT pipeline runs on."""
+    from parrot.bots.guardrails.base import GuardrailStage
+
+    pipeline = bot._guardrail_pipelines[GuardrailStage.OUTPUT]
+    runs, real_run = [], pipeline.run
+
+    async def counting_run(content, ctx):
+        runs.append(content)
+        return await real_run(content, ctx)
+
+    pipeline.run = counting_run
+    return runs
+
+
+def _structured_message(output: Any, response: str | None) -> AIMessage:
+    return AIMessage(
+        input="hi",
+        output=output,
+        response=response,
+        model="stub",
+        provider="stub",
+        usage=CompletionUsage(prompt_tokens=0, completion_tokens=0),
+    )
+
+
+async def test_a_text_answer_beside_a_structured_output_is_redacted_for_the_caller():
+    """issue:062128ff0d48 — `to_text` prefers the text kept beside a structured output; the caller gets it scanned."""
+    bot = await _guarded_bot(_ExplanationSecretClient())
+    runs = _count_runs(bot)
+    response = await bot.ask("hi", user_id="u", session_id="s", use_vector_context=False)
+    assert response.output == {"html": "<b>chart</b>"}  # the structured output is never rewritten
+    assert SECRET not in response.response and SECRET not in response.to_text, response.response
+    assert "REDACTED" in response.response
+    assert len(runs) == 1, runs  # the stored text reuses the verdict
+    assert SECRET not in (await _stored(bot)).assistant_response
+
+
+class _StructuredClient(Client):
+    """A structured output with no text answer beside it."""
+
+    def _msg(self, prompt: str) -> AIMessage:
+        message = super()._msg(prompt)
+        message.output = {"rows": [1, 2]}
+        return message
+
+
+@pytest.mark.parametrize("entry", ["invoke", "conversation"])
+async def test_a_question_echoed_beside_a_structured_output_is_redacted(entry: str):
+    """`get_response`'s "**Question**" block beside a structured output is scanned like any other text answer."""
+    bot = await _guarded_bot(_StructuredClient())
+    call = bot.invoke if entry == "invoke" else bot.conversation
+    kwargs = {} if entry == "invoke" else {"use_vector_context": False}
+    response = await call(f"my key is API_KEY={SECRET}", user_id="u", session_id="s", **kwargs)
+    assert response.output == {"rows": [1, 2]}
+    assert "**Question**" in response.response  # the caller still gets the rendered block
+    assert SECRET not in response.response and SECRET not in response.to_text, response.response
+
+
+@pytest.mark.parametrize("kind", ["dict", "dataframe"])
+async def test_a_structured_output_with_no_text_answer_runs_no_guardrail(kind: str):
+    bot = await _guarded_bot(Client())
+    runs = _count_runs(bot)
+    output = {"a": 1} if kind == "dict" else pd.DataFrame({"a": [1, 2]})
+    response = await bot._run_output_pipeline(_structured_message(output, None), method="ask")
+    assert runs == []
+    assert response.output is output
+    assert response.response is None
+
+
+async def test_a_blocked_text_beside_a_structured_output():
+    """A BLOCK replaces the text answer and marks the response; the structured output keeps its type."""
+    from parrot.bots.abstract import _OUTPUT_BLOCKED_TEXT
+    from parrot.bots.guardrails.base import Guardrail, GuardrailAction, GuardrailResult, GuardrailStage
+
+    class BlockWord(Guardrail):
+        name = "block_word"
+        stages = {GuardrailStage.OUTPUT}
+        priority = 50
+        on_error = "fail_closed"
+
+        async def check(self, content: str, ctx: Any) -> GuardrailResult:
+            if "secret-word" in content:
+                return GuardrailResult(action=GuardrailAction.BLOCK, reason="word")
+            return GuardrailResult(action=GuardrailAction.PASS)
+
+    bot = await _bot()
+    bot._guardrail_pipelines[GuardrailStage.OUTPUT].add(BlockWord())
+    response = await bot._run_output_pipeline(_structured_message({"a": 1}, "the secret-word"), method="ask")
+    assert response.output == {"a": 1}
+    assert response.response == _OUTPUT_BLOCKED_TEXT
+    assert response.to_text == _OUTPUT_BLOCKED_TEXT
+    assert response.metadata["error"] == "security_block"
+    assert response.metadata["block_reason"] == "word"
