@@ -18,10 +18,9 @@ These are planning artifacts, not evidence that carried G1–G4 gates passed.
 
 ## Release Preconditions
 
-**FEAT-886 merged (spec rev 0.3).** PR #2121 (durable conversation memory) must be merged into `dev` before this
-task writes code: it rewrites every BaseBot and PandasAgent site this task edits. If it is not on `dev`, stop.
-Once it is, re-verify the post-merge anchors below and spec C18, and follow spec §2 "FEAT-886 integration
-contract" F1–F4 and F9.
+**FEAT-886 merged — satisfied (spec rev 0.5).** PR #2121 (durable conversation memory) was merged into `dev`
+as `bfdbe3fd84`; it rewrote every BaseBot and PandasAgent site this task edits. The anchors below are verified
+there. Follow spec §2 "FEAT-886 integration contract" F1–F4, F6 and F9.
 
 No additional owner decision is required beyond completed dependency contracts. Do not bypass a blocked dependency.
 
@@ -83,23 +82,21 @@ import pytest
 - `packages/ai-parrot/src/parrot/bots/abstract.py`: 216:class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin, ToolInterface, VectorInterface, ABC):
 - `packages/ai-parrot/src/parrot/bots/base.py`: 130:class BaseBot(AbstractBot):
 - `packages/ai-parrot/src/parrot/bots/agent.py`: 40:class BasicAgent(Chatbot, NotificationMixin):
-- `packages/ai-parrot/src/parrot/bots/abstract.py:1681` — `AbstractBot.configure`: `async def configure(self, app=None) -> None:`
-- `packages/ai-parrot/src/parrot/bots/abstract.py:5527` — `AbstractBot.cleanup`: `async def cleanup(self) -> None:`
+- `packages/ai-parrot/src/parrot/bots/abstract.py:1724` — `AbstractBot.configure`: `async def configure(self, app=None) -> None:`
+- `packages/ai-parrot/src/parrot/bots/abstract.py:6011` — `AbstractBot.cleanup`: `async def cleanup(self) -> None:`
 - `packages/ai-parrot/src/parrot/bots/agent.py:86` — `BasicAgent.__init__`: `def __init__(self, name: str='Agent', agent_id: str='agent', use_llm: str='google', llm: str=None, tools: List[AbstractTool]=None, system_prompt: str=None, human_prompt: str=None, use_tools: bool=True, instructions: Optional[str]=None, dataframes: Optional[Dict[str, pd.DataFrame]]=None, **kwargs):`
 - `packages/ai-parrot/src/parrot/bots/agent.py:179` — `BasicAgent.configure`: `async def configure(self, app=None) -> None:`
 - `packages/ai-parrot/src/parrot/bots/base.py:237` — `BaseBot.conversation`: `async def conversation(self, question: str, session_id: Optional[str]=None, user_id: Optional[str]=None, search_type: str='similarity', search_kwargs: dict=None, metric_type: Optional[str]=None, use_vector_context: bool=True, use_conversation_history: bool=True, return_sources: bool=True, return_context: bool=False, memory: Optional[Callable]=None, ensemble_config: dict=None, mode: str='adaptive', ctx: Optional[RequestContext]=None, output_mode: OutputMode=OutputMode.DEFAULT, format_kwargs: dict=None, system_prompt: Optional[str]=None, use_tools: Optional[bool]=None, trace_context=None, **kwargs) -> AIMessage:`
-- `packages/ai-parrot/src/parrot/bots/base.py:734` — `BaseBot.invoke`: `async def invoke(self, question: str, session_id: Optional[str]=None, user_id: Optional[str]=None, use_conversation_history: bool=True, memory: Optional[Callable]=None, ctx: Optional[RequestContext]=None, response_model: Optional[Type[BaseModel]]=None, **kwargs) -> AIMessage:`
-- `packages/ai-parrot/src/parrot/bots/base.py:1136` — `BaseBot.ask`: `async def ask(self, question: str, session_id: Optional[str]=None, user_id: Optional[str]=None, search_type: str='similarity', search_kwargs: dict=None, metric_type: Optional[str]=None, use_vector_context: bool=True, use_conversation_history: bool=True, return_sources: bool=True, memory: Optional[Callable]=None, ensemble_config: dict=None, ctx: Optional[RequestContext]=None, permission_context: Optional[Any]=None, a2ui_surface_state: Optional[Any]=None, structured_output: Optional[Union[Type[BaseModel], StructuredOutputConfig]]=None, system_prompt: Optional[str]=None, output_mode: OutputMode=OutputMode.DEFAULT, format_kwargs: dict=None, use_tools: bool=True, trace_context=None, tenant: Optional[str]=None, **kwargs) -> AIMessage:`
-- `packages/ai-parrot/src/parrot/bots/base.py:1943` — `BaseBot.ask_stream`: `async def ask_stream(self, question: str, session_id: Optional[str]=None, user_id: Optional[str]=None, search_type: str='similarity', search_kwargs: dict=None, metric_type: Optional[str]=None, use_vector_context: bool=True, use_conversation_history: bool=True, return_sources: bool=True, memory: Optional[Callable]=None, ensemble_config: dict=None, ctx: Optional[RequestContext]=None, permission_context: Optional[Any]=None, structured_output: Optional[Union[Type[BaseModel], StructuredOutputConfig]]=None, output_mode: OutputMode=OutputMode.DEFAULT, system_prompt: Optional[str]=None, use_tools: bool=True, trace_context=None, tenant: Optional[str]=None, **kwargs) -> AsyncIterator[Union[str, AIMessage]]:`
-- `packages/ai-parrot/src/parrot/bots/data.py:416`: `class PandasAgent(IntentRouterMixin, BasicAgent):` (exact-line occurrence count 1 on `dev` `a24a820a41` and on PR #2121 head `b0ac554835`, where it is line 415).
-- `packages/ai-parrot/src/parrot/bots/data.py:1363` — `PandasAgent.ask` (`    async def ask(`, exact-line occurrence count 1): calls `self._on_pre_ask(` at :1512 and schedules `self._on_post_ask(` at :2281; `PandasAgent.invoke` (:1009) delegates to `self.ask`.
+- `packages/ai-parrot/src/parrot/bots/base.py:726` — `BaseBot.invoke`: `async def invoke(self, question: str, session_id: Optional[str]=None, user_id: Optional[str]=None, use_conversation_history: bool=True, memory: Optional[Callable]=None, ctx: Optional[RequestContext]=None, response_model: Optional[Type[BaseModel]]=None, **kwargs) -> AIMessage:`
+- `packages/ai-parrot/src/parrot/bots/base.py:1123` — `BaseBot.ask`: `async def ask(self, question: str, session_id: Optional[str]=None, user_id: Optional[str]=None, search_type: str='similarity', search_kwargs: dict=None, metric_type: Optional[str]=None, use_vector_context: bool=True, use_conversation_history: bool=True, return_sources: bool=True, memory: Optional[Callable]=None, ensemble_config: dict=None, ctx: Optional[RequestContext]=None, permission_context: Optional[Any]=None, a2ui_surface_state: Optional[Any]=None, structured_output: Optional[Union[Type[BaseModel], StructuredOutputConfig]]=None, system_prompt: Optional[str]=None, output_mode: OutputMode=OutputMode.DEFAULT, format_kwargs: dict=None, use_tools: bool=True, trace_context=None, tenant: Optional[str]=None, **kwargs) -> AIMessage:`
+- `packages/ai-parrot/src/parrot/bots/base.py:1927` — `BaseBot.ask_stream`: `async def ask_stream(self, question: str, session_id: Optional[str]=None, user_id: Optional[str]=None, search_type: str='similarity', search_kwargs: dict=None, metric_type: Optional[str]=None, use_vector_context: bool=True, use_conversation_history: bool=True, return_sources: bool=True, memory: Optional[Callable]=None, ensemble_config: dict=None, ctx: Optional[RequestContext]=None, permission_context: Optional[Any]=None, structured_output: Optional[Union[Type[BaseModel], StructuredOutputConfig]]=None, output_mode: OutputMode=OutputMode.DEFAULT, system_prompt: Optional[str]=None, use_tools: bool=True, trace_context=None, tenant: Optional[str]=None, **kwargs) -> AsyncIterator[Union[str, AIMessage]]:`
+- `packages/ai-parrot/src/parrot/bots/data.py:415`: `class PandasAgent(IntentRouterMixin, BasicAgent):` (exact-line occurrence count 1 on `dev` `bfdbe3fd84`).
+- `packages/ai-parrot/src/parrot/bots/data.py:1362` — `PandasAgent.ask` (`    async def ask(`, exact-line occurrence count 1): calls `self._on_pre_ask(` at :1512 and schedules `self._on_post_ask(` at :2282; `PandasAgent.invoke` (:1008) delegates to `self.ask`.
 
-**Anchors with PR #2121 merged** (verified with `git merge-tree` of `dev` `a24a820a41` and #2121 head `b0ac554835`; re-verify after the real merge):
-`BaseBot.invoke` base.py:726 · `BaseBot.ask` :1123 · `BaseBot.ask_stream` :1927 · `_on_pre_ask` :933 · `_on_post_ask` :951 ·
-`AbstractBot.configure` abstract.py:1724 · `AbstractBot.cleanup` :6011 · `PandasAgent` data.py:415 · `PandasAgent.ask` :1362.
+All line numbers in this section are verified on `dev` `bfdbe3fd84` (after PR #2121); also `_on_pre_ask` base.py:933 and `_on_post_ask` :951.
 
-**FEAT-886 symbols this task attaches to** (PR #2121 head `b0ac554835`; absent on `dev` until it merges):
-- `packages/ai-parrot/src/parrot/bots/abstract.py:2796` — `AbstractBot._persist_finalized_turn(self, response, *, question, user_id, session_id, turn_id, use_history, context_used=None, compaction=None, output_mode=None, started=None, assistant_text=None)`: the single finalize-then-persist step, called after the output pipeline at base.py:666 (`conversation`), :899 (`invoke`), :1780 (`ask`) and data.py:2261 (`PandasAgent.ask`).
+**FEAT-886 symbols this task attaches to** (on `dev` since `bfdbe3fd84`):
+- `packages/ai-parrot/src/parrot/bots/abstract.py:2796` — `AbstractBot._persist_finalized_turn(self, response, *, question, user_id, session_id, turn_id, use_history, context_used=None, compaction=None, output_mode=None, started=None, assistant_text=None)`: the single finalize-then-persist step, called after the output pipeline at base.py:666 (`conversation`), :899 (`invoke`), :1780 (`ask`) and data.py:2264 (`PandasAgent.ask`).
 - `packages/ai-parrot/src/parrot/bots/abstract.py:3392` — `AbstractBot._stored_turn_text(self, response, plain, method="persist") -> Optional[str]`: the stored text with the OUTPUT guardrail verdict applied.
 - `packages/ai-parrot/src/parrot/bots/base.py:385,771,1230,1997` — each entry point reads `turn_id = kwargs.pop("turn_id", None) or str(uuid.uuid4())`.
 - `packages/ai-parrot/src/parrot/bots/base.py:2188` — `ask_stream`'s nested `_save_stream_turn(error_text, commit=None)`; `except (asyncio.CancelledError, GeneratorExit):` at :2283 saves the partial turn with `error="stream cancelled by the caller"`.
@@ -220,7 +217,7 @@ from parrot.memory.agent_memory.runtime import (
 
 ```python
 # occurrences: 1 (verified: grep -F -x -c -- 'class PandasAgent(IntentRouterMixin, BasicAgent):' packages/ai-parrot/src/parrot/bots/data.py)
-# MODIFY anchor at packages/ai-parrot/src/parrot/bots/data.py:416 (PR #2121 head: 415): class PandasAgent(IntentRouterMixin, BasicAgent):
+# MODIFY anchor at packages/ai-parrot/src/parrot/bots/data.py:415: class PandasAgent(IntentRouterMixin, BasicAgent):
 # PandasAgent.ask (`    async def ask(`, occurrences: 1) is a full override: it calls _on_pre_ask/_on_post_ask itself
 # and never reaches BaseBot.ask, so the BaseBot change alone leaves it without the new lifecycle (spec F1).
 # FILL IN: one prepare_memory call and one complete_memory call, sharing BaseBot's scope binding/reset — AC03/AC05.

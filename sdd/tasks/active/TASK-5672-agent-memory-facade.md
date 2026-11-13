@@ -18,9 +18,9 @@ These are planning artifacts, not evidence that carried G1–G4 gates passed.
 
 ## Release Preconditions
 
-**FEAT-886 merged (spec rev 0.3).** PR #2121 must be merged into `dev` before this task writes code: it moves
+**FEAT-886 merged — satisfied (spec rev 0.5).** PR #2121 was merged into `dev` as `bfdbe3fd84`: it moved
 `AbstractBot.configure`/`cleanup` and makes the host's conversation-memory configuration raise when Redis was
-selected (spec F8). If it is not on `dev`, stop. Once it is, re-verify the post-merge anchors below.
+selected (spec F8). The anchors below are verified there.
 
 No additional owner decision is required beyond completed dependency contracts. Do not bypass a blocked dependency.
 
@@ -79,9 +79,9 @@ import pytest
 - `packages/ai-parrot/src/parrot/memory/agent_memory/__init__.py` is created by TASK-5653; anchor `"""Agent persistent-memory contracts; no eager storage or brain imports."""` is planned, not an existing verified symbol.
 - `packages/ai-parrot/src/parrot/bots/abstract.py`: 216:class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin, ToolInterface, VectorInterface, ABC):
 - `packages/ai-parrot/src/parrot/memory/unified/manager.py`: 53:class UnifiedMemoryManager:
-- `packages/ai-parrot/src/parrot/bots/abstract.py:1681` — `AbstractBot.configure`: `async def configure(self, app=None) -> None:`
-- `packages/ai-parrot/src/parrot/bots/abstract.py:5527` — `AbstractBot.cleanup`: `async def cleanup(self) -> None:`
-- With PR #2121 merged (`git merge-tree` of `dev` `a24a820a41` and #2121 head `b0ac554835`; re-verify after the real merge): `AbstractBot.configure` abstract.py:1724, `AbstractBot.cleanup` :6011, and `AbstractBot.configure_conversation_memory(self) -> None` at :1470, which re-raises a configuration error when `memory_type` is `"redis"` or `"auto"` with an explicit history URL (spec F8).
+- `packages/ai-parrot/src/parrot/bots/abstract.py:1724` — `AbstractBot.configure`: `async def configure(self, app=None) -> None:`
+- `packages/ai-parrot/src/parrot/bots/abstract.py:6011` — `AbstractBot.cleanup`: `async def cleanup(self) -> None:`
+- Verified on `dev` `bfdbe3fd84` (after PR #2121): `AbstractBot.configure_conversation_memory(self) -> None` at abstract.py:1470, which re-raises a configuration error when `memory_type` is `"redis"` or `"auto"` with an explicit history URL (spec F8).
 - `packages/ai-parrot/src/parrot/memory/unified/manager.py:83` — `UnifiedMemoryManager.__init__`: `def __init__(self, namespace: MemoryNamespace, conversation_memory: Optional[ConversationMemory]=None, episodic_store: Optional[EpisodicMemoryStore]=None, skill_registry: Optional[Any]=None, config: Optional[MemoryConfig]=None, cross_domain_router: Optional[CrossDomainRouter]=None, brain: Optional[BrainStore]=None, org_brain: Optional[BrainStore]=None) -> None:`
 - `packages/ai-parrot/src/parrot/memory/unified/manager.py:109` — `UnifiedMemoryManager.configure`: `async def configure(self, **kwargs: Any) -> None:`
 - `packages/ai-parrot/src/parrot/memory/unified/manager.py:124` — `UnifiedMemoryManager.cleanup`: `async def cleanup(self) -> None:`

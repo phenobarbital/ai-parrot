@@ -56,7 +56,7 @@ Agents need durable, correctable knowledge about the user across sessions, indep
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:10ab8ac217cc9379e797542badcc02ec55b2936f4ac0df6120da5018830e08b1 evaluation_digest=sha256:54ddd1efae3f987a28fdf790e9bdbcf38dcdd8bf09120004f80519b044e30327 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:be4ac03c1eb0f022a8f76878fe1f11f7ad4b2ae0bff03791dece78cb7a458417 evaluation_digest=sha256:182676faade4eebd82f4c19bbadb4e0985475164a42cfb0d382606b145e2d761 rules_version=1 status=pass -->
 
 ## 2. Architectural Design
 
@@ -100,7 +100,7 @@ flowchart TD
 | Coder feedback/reviews/engine | Stable adapters and IDs, engine-owned exposure and verified check evidence | C12–C14 |
 | MCP factory and AbstractToolkit | New self-contained toolkit with lazy `_open`/`_close`; explicit YAML section | C15; no new implicit built-in registry |
 | FEAT-887 experience.pitfall | Separate operational lessons; preserve its approved interfaces and shared-file edits | Not absorbed by this feature; no automatic conversion into trusted FSRS evidence |
-| FEAT-886 durable conversation memory (PR #2121) | Preserve hydration, turn publication, compaction and partial-stream saves; attach memory finalization to its shared finalize-then-persist step | Launch prerequisite for TASK-5672/5673/5674; binding rules F1–F9 in "FEAT-886 integration contract" below; no history ownership transfer |
+| FEAT-886 durable conversation memory (PR #2121, merged in `bfdbe3fd84`) | Preserve hydration, turn publication, compaction and partial-stream saves; attach memory finalization to its shared finalize-then-persist step | Prerequisite of TASK-5672/5673/5674, satisfied; binding rules F1–F9 in "FEAT-886 integration contract" below; no history ownership transfer |
 
 ### Configuration and scope
 
@@ -168,7 +168,7 @@ History continues through `AbstractBot.save_conversation_turn` and provider-neut
 
 ### FEAT-886 integration contract (rev 0.3)
 
-FEAT-886 (durable conversation memory, PR #2121) rewrites the BaseBot sites A1/M3 attach to. Its symbols are absent from `dev` at `a24a820a41`; anchors in C18 are verified on the PR head `b0ac554835`. TASK-5672/5673/5674 do not start until #2121 is merged into `dev`, and then re-verify C1/C2/C18. These rules bind A0, A1, U1 and M3:
+FEAT-886 (durable conversation memory, PR #2121) rewrites the BaseBot sites A1/M3 attach to. It was merged into `dev` as `bfdbe3fd84` on 2026-11-13; C1, C1b, C2, C9 and C18 are re-verified there (rev 0.5). These rules bind A0, A1, U1 and M3:
 
 - **F1 — Every entry point.** FEAT-886 persists a turn from five entry points: `BaseBot.ask`, `ask_stream`, `invoke`, `conversation` and `PandasAgent.ask` (`core/bots/data.py`). `PandasAgent.ask` is a full override: it calls `_on_pre_ask`/`_on_post_ask` itself and never reaches `BaseBot.ask` (`PandasAgent.invoke` delegates to it). A1 gives `PandasAgent.ask` the same single prepare/finalize, or the hard cut would leave it with no persistent memory or a second path. M3 exposure wiring for PandasAgent is not in this feature: without a delivered-exposure manifest its response events earn no review (AC11).
 - **F2 — One finalize site and one text.** `complete_memory()` runs where FEAT-886's `AbstractBot._persist_finalized_turn` runs: once, after the entry point's output pipeline (`_run_output_pipeline` / `get_response`). The response event's text is the turn's stored text — `AbstractBot._stored_turn_text(response, plain)`, the plain answer with the OUTPUT guardrail verdict applied — never `response.content`/`output`, which can differ (an explanation kept apart from structured or HTML output is scanned only by `_stored_turn_text`). On `ask_stream` the stored text is the streamed text. Episodes, user-knowledge candidates and evidence never carry text the stored conversation redacted.
@@ -580,17 +580,17 @@ from parrot.flows.dev_loop.models import DevelopmentOutput
 
 | ID | Verified anchor | Existing contract / consequence |
 |---|---|---|
-| C1 | `core/bots/base.py:734,946,964,1136,1404,1817,1943`; with #2121 merged: invoke :726, `_on_pre_ask` :933, `_on_post_ask` :951, ask :1123, `get_memory_context` call :1393, recording hooks :1819/:1836, ask_stream :1927 | `invoke`, `ask`, `ask_stream` have separate preparation paths; ask retrieves `get_memory_context` and `_on_pre_ask`, then schedules two recording hooks. `conversation` at :237 is deprecated; preserve its low-level contract without double integration. |
+| C1 | `core/bots/base.py`, verified on `bfdbe3fd84`: invoke :726, `_on_pre_ask` :933, `_on_post_ask` :951, ask :1123, `get_memory_context` call :1393, recording hooks :1819/:1836, ask_stream :1927 | `invoke`, `ask`, `ask_stream` have separate preparation paths; ask retrieves `get_memory_context` and `_on_pre_ask`, then schedules two recording hooks. `conversation` at :237 is deprecated; preserve its low-level contract without double integration. |
 | C1a | `core/bots/agent.py:40`; `core/bots/chatbot.py:33` | BasicAgent currently inherits Chatbot/NotificationMixin; Chatbot inherits BaseBot. Add AgentMemoryMixin to BasicAgent's cooperative MRO so ordinary Agents receive R1/R10 without custom inheritance. |
-| C1b | `core/bots/data.py:416,1009,1363,1512,2281` (PR head: :415,1008,1362,1512,2279) | `class PandasAgent(IntentRouterMixin, BasicAgent):`; `invoke` delegates to `self.ask`; `ask` is a full override that calls `_on_pre_ask` and schedules `_on_post_ask` itself, never reaching `BaseBot.ask` (F1). |
-| C2 | `core/bots/abstract.py:1681,5527`; with #2121 merged: :1724,:6011 | `configure(self, app=None) -> None` exposes `configure_skipped`/`configure_is_noop`; changed app can be real reconfiguration. `cleanup(self) -> None` closes LLM resources, so facade drains before delegating. |
+| C1b | `core/bots/data.py:415,1008,1362,1512,2264,2282` (verified on `bfdbe3fd84`) | `class PandasAgent(IntentRouterMixin, BasicAgent):`; `invoke` delegates to `self.ask`; `ask` is a full override that calls `_on_pre_ask`, persists through `_persist_finalized_turn` (:2264) and schedules `_on_post_ask` itself, never reaching `BaseBot.ask` (F1). |
+| C2 | `core/bots/abstract.py:1724,6011` (verified on `bfdbe3fd84`) | `configure(self, app=None) -> None` exposes `configure_skipped`/`configure_is_noop`; changed app can be real reconfiguration. `cleanup(self) -> None` closes LLM resources, so facade drains before delegating. |
 | C3 | `core/memory/unified/manager.py:83,139,178,363` | Constructor receives namespace, optional conversation/episodic/skills/config/router/brain/org-brain. `get_context_for_query(query: str, user_id: str, session_id: str) -> MemoryContext`; `record_interaction(query: str, response: Any, tool_calls: list[Any], user_id: str, session_id: str) -> None`. M0 uses `record_episode` with PARTIAL and preserves room/crew. |
 | C4 | `core/memory/unified/context.py:49`; `unified/models.py:12,89` | `assemble(episodic_warnings: str="", relevant_skills: str="", conversation: str="", semantic_knowledge: str="") -> MemoryContext`. Existing output is strings/token counts, not delivered refs; weights normalize 3/4 sections. |
 | C5 | `core/memory/episodic/store.py:86,106,235,377,522,544` | Constructor backend plus optional embedding/reflection/cache/scorer/strategy and TTL=90. `record_episode(namespace, situation, action_taken, outcome, outcome_details=None, error_type=None, error_message=None, category=TOOL_EXECUTION, importance=None, related_tools=None, related_entities=None, metadata=None, generate_reflection=True, ttl_days=None) -> EpisodicMemory`. `ttl_days=0` means no expiry. Preferences/room retrieval already exist. |
 | C6 | `core/memory/episodic/models.py:203,214`; `backends/abstract.py:18,29,51,69,106` | Similarity is constrained to [0,1.01]; namespace has tenant/agent/user/session/room/crew, no model_id. Backend methods store/search/recent/failures/count/expiry/update_metadata; `get_failures(agent_id, tenant_id="default", limit=5)` lacks full user/model scope. No transactional review capability. |
 | C7 | `core/memory/episodic/backends/pgvector.py:492`; `redis_vector.py:544`; `faiss.py:257,292` | Metadata merge is not atomic review-state CAS. Redis reads then writes; FAISS writes snapshots. Do not claim shared-writer review safety from these APIs. |
 | C8 | `core/memory/episodic/cache.py:51,99,123`; `recall.py:30` | Cache keys derive from namespace redis_prefix; cache invalidation must follow new scope/version semantics. Strategy search requires query_embedding and namespace_filter. No paid-embedding dependency may be imposed on SDD fallback. |
-| C9 | `core/tools/manager.py:1668,1737,1799`; `bots/abstract.py:2560` | `set_invocation_observer(observer)` is already owned by task-memory capture; `_observed` invokes body after guards and records cancellation. Memory integration must compose, not overwrite; default tool return status is not independent verification. |
+| C9 | `core/tools/manager.py:1668,1737,1799`; `bots/abstract.py:2629` (was :2560 before #2121) | `set_invocation_observer(observer)` is already owned by task-memory capture; `_observed` invokes body after guards and records cancellation. Memory integration must compose, not overwrite; default tool return status is not independent verification. |
 | C10 | `core/memory/dream/brain.py:31,53,113,146` | Constructor opens a SQLite wiki store. `remember(text, title=None, category="note", related_pages=None) -> dict[str, Any]`; `search(query, top_k=5, max_tokens=600) -> str`; `copy_page_to(page_id: str, other: BrainStore) -> str`. Family identity hashes title/category; copy preserves body, no separate transactional review state. |
 | C11 | `core/memory/dream/runner.py:105,183,235`; `dream/models.py:29,59,105` | Cycle-count promotion and created-at collection watermark exist. `run_cycle(state: DreamState) -> DreamCycleReport`. Redistillation and dynamics counters/version lineage are additions, not existing fields. |
 | C12 | `core/knowledge/wiki/ledger/coder_feedback.py:67,96,114,160` | Stable feedback_id; `record(feedback) -> CoderFeedbackReceipt`; `retract(feedback_id, reason, actor) -> bool`; context signature retained in M5. Retractions append tombstones; imports must honor them. |
@@ -599,7 +599,7 @@ from parrot.flows.dev_loop.models import DevelopmentOutput
 | C15 | `core/mcp/toolkit_config.py:21`; `mcp/toolkit_server.py:218,258`; `tools/toolkit.py:426,442` | Explicit YAML class_path/kwargs; no implicit built-in sections. Constructor is synchronous; `_open` supports lazy I/O, `_close` plus cleanup/stop is released by server. New adapter fits this contract without editing the generic factory. |
 | C16 | `core/memory/__init__.py:20,30`; `episodic/__init__.py:8`; `unified/__init__.py:11`; `memory/agent.py:36` | Old mixins are re-exported. AgentMemory already aliases AnswerMemory, so no conversion of agent.py into a package. |
 | C17 | `examples/shoply/sample.py:34,78,166`; `tests/test_episodic_memory.py:1084`; `tests/memory/unified/test_mixin.py:8` | Live example and old mixin tests need coordinated migration; raw references in historical spike evidence are not live consumers. |
-| C18 | PR #2121 head `b0ac554835` — not on `dev` at `a24a820a41`: `core/bots/abstract.py:318,1470,2796,2844,2874,3002,3012,3392`; `core/bots/base.py:385,771,1230,1997,2188,2283`; `core/memory/abstract.py:121` | `turn_publisher` attribute; `configure_conversation_memory()` re-raises when Redis was selected (F8); `_persist_finalized_turn(response, *, question, user_id, session_id, turn_id, use_history, context_used, compaction, output_mode, started, assistant_text)` is the single finalize-then-persist step (F2); `_persist_turn_unit` shields save + publish from cancellation; `save_conversation_turn(..., compaction, presentation, publish)`; `_guard_session`/`_load_or_hydrate_history` fail closed on tombstones (F5); `_stored_turn_text(response, plain, method)` returns the stored, verdict-applied text (F2). Each entry point accepts `turn_id=` (F3); `ask_stream` saves partial turns via `_save_stream_turn` and on `except (asyncio.CancelledError, GeneratorExit)` (F4). `ConversationTurn.error: Optional[str]` (also on `dev`). |
+| C18 | On `dev` since `bfdbe3fd84` (PR #2121): `core/bots/abstract.py:318,1470,2796,2844,2874,3002,3012,3392`; `core/bots/base.py:385,771,1230,1997,2188,2283`; `core/memory/abstract.py:121` | `turn_publisher` attribute; `configure_conversation_memory()` re-raises when Redis was selected (F8); `_persist_finalized_turn(response, *, question, user_id, session_id, turn_id, use_history, context_used, compaction, output_mode, started, assistant_text)` is the single finalize-then-persist step (F2); `_persist_turn_unit` shields save + publish from cancellation; `save_conversation_turn(..., compaction, presentation, publish)`; `_guard_session`/`_load_or_hydrate_history` fail closed on tombstones (F5); `_stored_turn_text(response, plain, method)` returns the stored, verdict-applied text (F2). Each entry point accepts `turn_id=` (F3); `ask_stream` saves partial turns via `_save_stream_turn` and on `except (asyncio.CancelledError, GeneratorExit)` (F4). `ConversationTurn.error: Optional[str]` (also on `dev`). |
 
 ### Does NOT Exist / outdated FEAT-571 assumptions
 
@@ -619,7 +619,7 @@ Verified against `de9addcfb7723396ac98f6b326a21884c7118f77`. The table below rec
 |---|---|---|---|---|
 | `core/bots/base.py` | MODIFY | `class BaseBot(AbstractBot):` | `core/bots/base.py:130` | 1 |
 | `core/bots/agent.py` | MODIFY | `class BasicAgent(Chatbot, NotificationMixin):` | `core/bots/agent.py:40` | 1 |
-| `core/bots/data.py` | MODIFY | `class PandasAgent(IntentRouterMixin, BasicAgent):` | `core/bots/data.py:416` (rev 0.3; PR #2121 head :415) | 1 |
+| `core/bots/data.py` | MODIFY | `class PandasAgent(IntentRouterMixin, BasicAgent):` | `core/bots/data.py:415` (rev 0.5, `bfdbe3fd84`) | 1 |
 | `core/tools/manager.py` | MODIFY | `    async def _observed(` | `core/tools/manager.py:1737` | 1 |
 | `core/memory/__init__.py` | MODIFY | `from .episodic import (` | `core/memory/__init__.py:19` | 1 |
 | `core/memory/episodic/__init__.py` | MODIFY | `from .mixin import EpisodicMemoryMixin` | `core/memory/episodic/__init__.py:8` | 1 |
@@ -710,7 +710,7 @@ Dependency edges represent contracts: A1/U1 import A0 scope/config; M2 imports M
 
 Shared files requiring exclusive ownership or task sequencing: unified models/manager/context (A1/M3), BaseBot and PandasAgent (A1/M3 and FEAT-886), episodic store/tools (M2/M3 wiring), and engine/delivery models/prompts (M5 versus FEAT-887). FEAT-892 owns mixin/manager brain wiring and BasicAgent; FEAT-889 exclusively owns `memory/dream/*`, admin toolkit and HTTP/PBAC. Do not infer a total dependency chain from sharing only one integration file: isolate the attachment task where possible.
 
-Exclusive resources: any accepted lockfile/dependency update, shared DB migration or gate workload outside an isolated fixture; ordinary tests use their own stores. FEAT-571 is the evidence predecessor, not a separately executing M1–M6 branch. FEAT-887 requires shared-file coordination, not an automatic merge prerequisite; refresh its landed state before overlapping tasks. FEAT-886 (PR #2121) is a merge prerequisite for TASK-5672/5673/5674 (rev 0.3): they stop before code until it is on `dev`, then re-verify C1/C1b/C2/C18. Earlier tasks do not wait for it. FEAT-889 has an explicit launch/decomposition prerequisite: FEAT-892 must land on dev first. Sibling phase-2 interface planning may proceed as design coordination only. No feature is assumed merged merely from its spec status.
+Exclusive resources: any accepted lockfile/dependency update, shared DB migration or gate workload outside an isolated fixture; ordinary tests use their own stores. FEAT-571 is the evidence predecessor, not a separately executing M1–M6 branch. FEAT-887 requires shared-file coordination, not an automatic merge prerequisite; refresh its landed state before overlapping tasks. FEAT-886 (PR #2121) was a merge prerequisite for TASK-5672/5673/5674 (rev 0.3). It is satisfied: merged into `dev` as `bfdbe3fd84` on 2026-11-13, with C1/C1b/C2/C9/C18 re-verified there (rev 0.5). FEAT-889 has an explicit launch/decomposition prerequisite: FEAT-892 must land on dev first. Sibling phase-2 interface planning may proceed as design coordination only. No feature is assumed merged merely from its spec status.
 
 ## Decisions
 
@@ -762,7 +762,7 @@ These entries encode the agreed direction for review, not gate approval. The gov
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:10ab8ac217cc9379e797542badcc02ec55b2936f4ac0df6120da5018830e08b1 evaluation_digest=sha256:54ddd1efae3f987a28fdf790e9bdbcf38dcdd8bf09120004f80519b044e30327 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:be4ac03c1eb0f022a8f76878fe1f11f7ad4b2ae0bff03791dece78cb7a458417 evaluation_digest=sha256:182676faade4eebd82f4c19bbadb4e0985475164a42cfb0d382606b145e2d761 rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -808,10 +808,10 @@ Coverage:
     ]
   },
   "diagnostics": [],
-  "evaluation_digest": "sha256:54ddd1efae3f987a28fdf790e9bdbcf38dcdd8bf09120004f80519b044e30327",
+  "evaluation_digest": "sha256:182676faade4eebd82f4c19bbadb4e0985475164a42cfb0d382606b145e2d761",
   "exit_code": 0,
   "findings": [],
-  "input_digest": "sha256:10ab8ac217cc9379e797542badcc02ec55b2936f4ac0df6120da5018830e08b1",
+  "input_digest": "sha256:be4ac03c1eb0f022a8f76878fe1f11f7ad4b2ae0bff03791dece78cb7a458417",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
@@ -827,7 +827,7 @@ Coverage:
       "adr:doc:e7c5ae770b06db3b35cdd4cba93001a58bfa7bef": "394f4656c71618a256427d81350fdc32335fa791"
     },
     "rules_version": 1,
-    "structural_revision": "sha256:68cac3e97e656c725a2605da70f11ad7e746e6d6e004a8c1a674e630bffaf4cc",
+    "structural_revision": "sha256:2c0544ffb2156e4c324ed1774dd0b283bcadbb737d51ea056030539ecf3891a3",
     "taxonomy_digest": "65548b9a71329b13ab44f4904dff99814e1aac0da4bb2b58171a7201e3a9ba39"
   },
   "status": "pass"
@@ -896,3 +896,4 @@ Summary: **0 confirmed · 0 rejected · 0 escalated** from an independent review
 | 0.2 | 2026-11-13 | Jesus Lara / Claude | §8 resolved: Q1–Q5, U1–U6 and anti-pattern representation accepted with stated defaults; Q6 (parameter fitting/optimizer) moved to a follow-up, `fit.py` and the optimizer dependency removed from M6/AC18 |
 | 0.3 | 2026-11-13 | Jesus Lara / Claude | FEAT-886 alignment from the review of PR #2121: §2 "FEAT-886 integration contract" F1–F9 (PandasAgent entry point, shared finalize site and stored text, turn_id event identity, partial turns earn nothing, conversation deletion, agent-name key, tenant-checked evidence, raising host configure, no second conversation source); AC03/05/06/07/09 and §4 cases extended; C1/C2 anchors with #2121 merged, new C1b/C18 and a `bots/data.py` edit site; #2121 is a merge prerequisite for TASK-5672/5673/5674; Q7 opened |
 | 0.4 | 2026-11-13 | Jesus Lara / Claude | Q7 accepted: deleting a conversation does not delete the episodes or user knowledge learned from it; only its evidence links become unavailable; no deletion cascade (F5) |
+| 0.5 | 2026-11-14 | Jesus Lara / Claude | FEAT-886 (PR #2121) merged into `dev` as `bfdbe3fd84`: the TASK-5672/5673/5674 prerequisite is satisfied; C1/C1b/C2/C9/C18 and the `bots/data.py` edit site re-verified there (`data.py` persist call :2264 and `_on_post_ask` :2282 after the PandasAgent OUTPUT-verdict fix `2a923cc86c`; C9 :2560 → :2629) |
