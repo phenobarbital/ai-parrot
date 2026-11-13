@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-890 — Expert stages, dispatch modes, generic gate host and SDD expert delegation
 **Spec**: `sdd/specs/expert-stages-and-delegation.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S
 **Depends-on**: TASK-5629
@@ -159,4 +159,15 @@ Run `parrot sdd experts consult --doc <doc> [--feature <FEAT-ID>]`. ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+
+- Task: TASK-5630
+- Feature: expert-stages-and-delegation
+- Implementation SHA: 744cc734f6f7f05901b68976ed3712616f52233e
+- Closed at (UTC): 2026-11-13T23:44:12+00:00
+- Fix commits: 206721ae905964195ca15d3b950d1f11af148429, 2a3094e275708e9b7181bc4707496e513dd70bda
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 2 |
+| seat_summary | Seat: minimax · Backend: nova · Model: minimax.minimax-m2.5 · Attempts: 1 · Duration: 473.6s · Tokens: 3.09M in / 15.0k out (adopted by cherry-pick after fidelity_violation) |

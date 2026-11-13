@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-890 — Expert stages, dispatch modes, generic gate host and SDD expert delegation
 **Spec**: `sdd/specs/expert-stages-and-delegation.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: M
 **Depends-on**: TASK-5613, TASK-5615, TASK-5624, TASK-5625, TASK-5627, TASK-5629
@@ -137,4 +137,15 @@ Spec §10 (docs policy required), AC17.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+
+- Task: TASK-5632
+- Feature: expert-stages-and-delegation
+- Implementation SHA: 744cc734f6f7f05901b68976ed3712616f52233e
+- Closed at (UTC): 2026-11-13T23:44:16+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: qwen · Backend: nova · Model: qwen.qwen3-coder-480b-a35b-instruct · Attempts: 2 (both rejected, fidelity_violation) · Duration: 409.2s · Tokens: 8.07M in / 18.5k out · Attempt 3 written by the worker (fe106723ec) |

@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-13T13:27:15+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-13T23:44:16+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -449,7 +449,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -459,8 +459,9 @@
       "parallelism_notes": "documents the triage/promote commands TASK-5629 adds to packages/ai-parrot/src/parrot/sdd/experts_cli.py",
       "assigned_to": null,
       "started_at": "2026-11-13T18:41:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5630-sdd-commands-consult-step.md"
+      "completed_at": "2026-11-13T23:44:12+00:00",
+      "file": "sdd/tasks/completed/TASK-5630-sdd-commands-consult-step.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5631",
@@ -491,7 +492,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "M",
       "depends_on": [
@@ -506,8 +507,9 @@
       "parallelism_notes": "documents GateHost/stores (TASK-5613/5615), ExpertStageNode/compile_scope (TASK-5624/5625), `parrot experts` (TASK-5627) and consult/triage/promote (TASK-5629)",
       "assigned_to": null,
       "started_at": "2026-11-13T18:41:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5632-docs-expert-stages.md"
+      "completed_at": "2026-11-13T23:44:16+00:00",
+      "file": "sdd/tasks/completed/TASK-5632-docs-expert-stages.md",
+      "verification": "verified"
     }
   ]
 }
