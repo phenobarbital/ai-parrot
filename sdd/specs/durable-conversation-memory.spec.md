@@ -26,7 +26,7 @@ docs:
 **Feature ID**: FEAT-886
 **Date**: 2026-11-13
 **Author**: Jesus Lara (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: 2.2.0
 
 ---
@@ -1670,3 +1670,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-11-13 | Jesus Lara (with Claude) | Initial draft from `sdd/proposals/durable-conversation-memory.brainstorm.md` |
+| 0.2 | 2026-11-12 | Juan (for Jesus Lara) | Approved for decomposition: no open questions block a module (Q13 deferred to the Stage 2 follow-up) |
