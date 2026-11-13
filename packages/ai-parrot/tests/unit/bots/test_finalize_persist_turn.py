@@ -4,6 +4,7 @@ The text that is stored / published / hydrated is the text the caller receives, 
 ``conversation`` alike, with a real ``SecretsGuardrail``; a DataFrame output must not break ``ask()``;
 PandasAgent goes through the same step and runs the deletion guard.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -41,8 +42,12 @@ async def _stored(bot: BaseBot):
 def _assert_clean(bot: BaseBot, response: AIMessage, stored) -> None:
     event = bot.turn_publisher.events[0]
     for text in (
-        str(response.output), str(response.response), response.to_text,
-        stored.assistant_response, event.turn["assistant_response"], str(event.presentation.get("output")),
+        str(response.output),
+        str(response.response),
+        response.to_text,
+        stored.assistant_response,
+        event.turn["assistant_response"],
+        str(event.presentation.get("output")),
         str(event.presentation.get("response")),
     ):
         assert SECRET not in text, text
@@ -106,8 +111,9 @@ async def test_a_dataframe_output_works_with_no_persistence_at_all():
     bot = await _bot()
     bot.conversation_memory = None
     bot.llm = _DataFrameClient()
-    response = await bot.ask("hi", user_id="u", session_id="s", use_vector_context=False,
-                             use_conversation_history=False)
+    response = await bot.ask(
+        "hi", user_id="u", session_id="s", use_vector_context=False, use_conversation_history=False
+    )
     assert isinstance(response.output, pd.DataFrame)
 
 
@@ -173,8 +179,14 @@ class _PandasClient:
         return None
 
     async def ask(self, prompt: str, **kwargs: Any) -> AIMessage:
-        return AIMessage(input=prompt, output="ok", response="ok", model="fake", provider="fake",
-                         usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0))
+        return AIMessage(
+            input=prompt,
+            output="ok",
+            response="ok",
+            model="fake",
+            provider="fake",
+            usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
+        )
 
 
 def _pandas(use_source: bool = True) -> PandasAgent:
@@ -200,8 +212,7 @@ async def test_pandas_agent_refuses_a_deleted_session(history: bool):
     agent = _pandas()
     agent.hydration_source.deleted = True
     with pytest.raises(SessionDeletedError):
-        await agent.ask("hola", user_id="u", session_id="s", return_structured=False,
-                        use_conversation_history=history)
+        await agent.ask("hola", user_id="u", session_id="s", return_structured=False, use_conversation_history=history)
     assert agent.turn_publisher.events == []
 
 
@@ -220,8 +231,14 @@ async def test_pandas_agent_save_failure_returns_the_answer_and_is_logged_at_err
 class _PandasSecretClient(_PandasClient):
     async def ask(self, prompt: str, **kwargs: Any) -> AIMessage:
         text = f"your key is API_KEY={SECRET}"
-        return AIMessage(input=prompt, output=text, response=text, model="fake", provider="fake",
-                         usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0))
+        return AIMessage(
+            input=prompt,
+            output=text,
+            response=text,
+            model="fake",
+            provider="fake",
+            usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
+        )
 
 
 async def test_pandas_agent_persisted_text_carries_an_output_verdict():
@@ -250,7 +267,6 @@ def test_voice_saves_run_the_deletion_guard_first():
     assert len(saves) == 2
     for i in saves:
         assert lines[i - 1].startswith("await self._guard_session("), lines[i - 1]
-
 
 
 @pytest.mark.parametrize("entry", ["invoke", "conversation"])
@@ -367,4 +383,3 @@ async def test_text_the_pipeline_never_scanned_is_still_redacted_before_it_is_pe
     stored, event = await _stored(bot), bot.turn_publisher.events[0]
     for text in (stored.assistant_response, event.turn["assistant_response"]):
         assert SECRET not in text and "REDACTED" in text, text
-

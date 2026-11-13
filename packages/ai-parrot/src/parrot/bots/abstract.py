@@ -230,9 +230,7 @@ _RENDERED_SYSTEM_PROMPT: ContextVar[Optional[Dict[int, Optional[str]]]] = Contex
 #: The last OUTPUT verdict of this task: ``(id(response), scanned_text, resulting_text, ctx)``. Set by
 #: `_run_output_pipeline` whenever the guardrails ran; read by `_stored_turn_text` so text the pipeline has
 #: already judged is not scanned again, while any OTHER text that is persisted still gets its own verdict.
-_OUTPUT_VERDICT: ContextVar[Optional[Tuple[int, str, str, Any]]] = ContextVar(
-    "parrot_output_verdict", default=None
-)
+_OUTPUT_VERDICT: ContextVar[Optional[Tuple[int, str, str, Any]]] = ContextVar("parrot_output_verdict", default=None)
 
 _OUTPUT_BLOCKED_TEXT = "This response could not be delivered due to a content policy violation."
 
@@ -2759,9 +2757,7 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         """
         return self.turn_publisher is not None and bool(user_id) and bool(session_id)
 
-    async def _snapshot_turn(
-        self, user_id: str, session_id: str, turn: ConversationTurn
-    ) -> Optional[Dict[str, Any]]:
+    async def _snapshot_turn(self, user_id: str, session_id: str, turn: ConversationTurn) -> Optional[Dict[str, Any]]:
         """Stamp ordering and take the raw snapshot WITHOUT writing working memory (history disabled)."""
         if not self._publishes_turns(user_id, session_id):
             return None
@@ -2837,7 +2833,11 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
             tool_invocations=self.observed_tool_invocations(),
         )
         return await self._persist_turn_unit(
-            user_id, session_id, turn, use_history=use_history, compaction=compaction,
+            user_id,
+            session_id,
+            turn,
+            use_history=use_history,
+            compaction=compaction,
             presentation=self._turn_presentation(response, output_mode=output_mode, started=started),
         )
 
@@ -2854,7 +2854,11 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         """Save + publish ``turn`` as one cancellation-shielded unit (see :meth:`_persist_finalized_turn`)."""
         unit = asyncio.ensure_future(
             self._save_or_snapshot_turn(
-                user_id, session_id, turn, use_history=use_history, compaction=compaction,
+                user_id,
+                session_id,
+                turn,
+                use_history=use_history,
+                compaction=compaction,
                 presentation=presentation,
             )
         )
@@ -2864,9 +2868,7 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
                 return
             exc = task.exception()  # retrieving it also silences "exception was never retrieved"
             if exc is not None:
-                self.logger.error(
-                    "persisting turn_id=%s failed: %s", turn.turn_id, type(exc).__name__, exc_info=exc
-                )
+                self.logger.error("persisting turn_id=%s failed: %s", turn.turn_id, type(exc).__name__, exc_info=exc)
 
         unit.add_done_callback(_log_failure)
         return await asyncio.shield(unit)
@@ -3086,9 +3088,7 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         tenant = current_tenant.get()
         if response is None:  # ask_stream partial save: the AIMessage does not exist yet
             return TurnPresentation(output=fallback_output, output_mode=mode, response_time_ms=elapsed, tenant=tenant)
-        return TurnPresentation.from_ai_message(
-            response, output_mode=mode, response_time_ms=elapsed, tenant=tenant
-        )
+        return TurnPresentation.from_ai_message(response, output_mode=mode, response_time_ms=elapsed, tenant=tenant)
 
     def _local_sequence_allocator(self) -> SequenceAllocator:
         """Lazily create (and cache) the per-process allocator used when none is injected."""
@@ -3151,7 +3151,8 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
             turn.sequence = await allocator.next(self.name, user_id, session_id, floor=floor)
         except Exception as exc:  # noqa: BLE001 - a counter/floor outage must not lose the user's answer
             self.logger.warning(
-                "sequence allocation failed for %s/%s (%s); using the local allocator", user_id, session_id, exc)
+                "sequence allocation failed for %s/%s (%s); using the local allocator", user_id, session_id, exc
+            )
             turn.sequence = await self._fallback_sequence(user_id, session_id)
 
     async def _publish_turn_completed(
@@ -3400,7 +3401,9 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
             else:
                 response.response = wrapped.content if wrapped.content is not None else alias
 
-    async def _stored_turn_text(self, response: AIMessage, plain: Optional[str], method: str = "persist") -> Optional[str]:
+    async def _stored_turn_text(
+        self, response: AIMessage, plain: Optional[str], method: str = "persist"
+    ) -> Optional[str]:
         """The assistant text persisted for a turn: the plain answer with an OUTPUT verdict applied (FEAT-886).
 
         ``plain`` is the answer text captured BEFORE any presentation wrapper is written to
