@@ -290,7 +290,7 @@
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -301,8 +301,9 @@
       "parallelism_notes": "Calls ConversationBackend.backfill_batch / mark_index_ready from TASK-5570; tests run on the SQLite backend from TASK-5574.",
       "assigned_to": null,
       "started_at": "2026-11-13T03:25:54+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5578-backfill-tool.md"
+      "completed_at": "2026-11-13T04:15:45+00:00",
+      "file": "sdd/tasks/completed/TASK-5578-backfill-tool.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5579",

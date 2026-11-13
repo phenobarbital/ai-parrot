@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-886 — Durable Conversation Memory
 **Spec**: `sdd/specs/durable-conversation-memory.spec.md` (Module 11)
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5570, TASK-5574
@@ -541,10 +541,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Created parrot/storage/backfill.py (BackfillReport, run_backfill with atomic per-batch cursor persistence, no-progress guard, CLI main with exit codes 0/2/3).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (sequential fallback)
+**Date**: 2026-11-13
+**Tests**: test_backfill 8 passed on the real SQLite backend (resume, idempotent re-run, invalid session, live writes untouched, tombstoned skip, no-progress guard, damaged state file, arg validation, CLI exit codes). ruff clean. No skips.
+**Mutation evidence**: guard removed / state never persisted / exit code 2 collapsed to 0 -> each RED (see run); restored by re-applying the edit.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
