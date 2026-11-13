@@ -61,6 +61,7 @@ if not OUTPUT_DIR.exists():
 
 
 # Main Database:
+PARROT_ADMIN_DSN = config.get("PARROT_ADMIN_DSN")
 # DB Default (database used for interaction (rw))
 DBHOST = config.get("DBHOST", fallback="localhost")
 DBUSER = config.get("DBUSER")
