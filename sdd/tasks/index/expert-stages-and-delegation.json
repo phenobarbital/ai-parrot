@@ -74,7 +74,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -82,8 +82,9 @@
       "parallelism_notes": "root task: no dependency; creates the gates package every gate task imports",
       "assigned_to": null,
       "started_at": "2026-11-13T18:41:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5612-gate-core-models-kinds.md"
+      "completed_at": "2026-11-13T22:01:13+00:00",
+      "file": "sdd/tasks/completed/TASK-5612-gate-core-models-kinds.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5613",
@@ -254,7 +255,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -262,8 +263,9 @@
       "parallelism_notes": "root task: modifies only experts/activation.py, no new-symbol dependency",
       "assigned_to": null,
       "started_at": "2026-11-13T18:41:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5621-expert-observability.md"
+      "completed_at": "2026-11-13T22:01:20+00:00",
+      "file": "sdd/tasks/completed/TASK-5621-expert-observability.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5622",
@@ -272,7 +274,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -280,8 +282,9 @@
       "parallelism_notes": "root task: modifies experts/models.py and registry.py, which no other task of this feature edits",
       "assigned_to": null,
       "started_at": "2026-11-13T18:41:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5622-expert-episodic-memory.md"
+      "completed_at": "2026-11-13T22:01:21+00:00",
+      "file": "sdd/tasks/completed/TASK-5622-expert-episodic-memory.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5623",
@@ -290,7 +293,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -298,8 +301,9 @@
       "parallelism_notes": "root task: uses only existing PromptBuilder.clone and install_layers",
       "assigned_to": null,
       "started_at": "2026-11-13T18:41:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5623-expert-inline-conductor.md"
+      "completed_at": "2026-11-13T22:01:22+00:00",
+      "file": "sdd/tasks/completed/TASK-5623-expert-inline-conductor.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5624",

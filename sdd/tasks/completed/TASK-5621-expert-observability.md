@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-890 — Expert stages, dispatch modes, generic gate host and SDD expert delegation
 **Spec**: `sdd/specs/expert-stages-and-delegation.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S
 **Depends-on**: none
@@ -146,4 +146,15 @@ def _set_expert_span_attributes(slug: str, tier: str, stage: str | None, mode: s
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+
+- Task: TASK-5621
+- Feature: expert-stages-and-delegation
+- Implementation SHA: ee29b636b6966482af372aabf320a238b1242fbf
+- Closed at (UTC): 2026-11-13T22:01:20+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-sol · Backend: codex · Model: gpt-5.6-sol · Attempts: 1 · Duration: 166.5s · Tokens: n/a |

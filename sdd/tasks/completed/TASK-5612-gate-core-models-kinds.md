@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-890 — Expert stages, dispatch modes, generic gate host and SDD expert delegation
 **Spec**: `sdd/specs/expert-stages-and-delegation.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M
 **Depends-on**: none
@@ -238,4 +238,15 @@ def registered_kinds() -> dict[str, str]:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+
+- Task: TASK-5612
+- Feature: expert-stages-and-delegation
+- Implementation SHA: ee29b636b6966482af372aabf320a238b1242fbf
+- Closed at (UTC): 2026-11-13T22:01:13+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 170.8s · Tokens: n/a |
