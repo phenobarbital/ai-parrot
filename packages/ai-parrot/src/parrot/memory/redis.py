@@ -68,6 +68,14 @@ def _upsert_turn_dict(turns: List[Dict[str, Any]], new: Dict[str, Any]) -> List[
     return result
 
 
+def _without_turn(turns: Any, turn_id: str) -> Optional[List[Dict[str, Any]]]:
+    """``turns`` minus the stored turn ``turn_id``; ``None`` when ``turns`` is not a list or holds no such turn."""
+    if not isinstance(turns, list):
+        return None
+    kept = [t for t in turns if not (isinstance(t, dict) and t.get("turn_id") == turn_id)]
+    return kept if len(kept) != len(turns) else None
+
+
 _INSTALL_NX_LUA = """
 if redis.call('EXISTS', KEYS[1]) == 1 then return 0 end
 redis.call('HSET', KEYS[1], unpack(ARGV))
@@ -676,6 +684,95 @@ class RedisConversation(ConversationMemory):
             await conn.execute()
         else:
             await conn.set(key, data)
+
+    async def remove_turn(self, user_id: str, session_id: str, turn_id: str, chatbot_id: Optional[str] = None) -> bool:
+        """Remove the turn ``turn_id`` in ONE compare-and-swap write (``WATCH``/``MULTI``/``EXEC``).
+
+        The base read-modify-write (``get_history`` -> filter -> ``update_history``) overwrote a turn appended
+        between its read and its write. Here a concurrent writer aborts the transaction and the filter re-runs
+        against the fresh value. Hash mode rewrites only ``turns``/``updated_at``, so a concurrent ``metadata``
+        write survives as well. A legacy un-segmented history is re-keyed first (FEAT-524), exactly as
+        :meth:`get_history` would, so the turn also leaves the record the bot reads next.
+
+        Args:
+            user_id: Owner of the conversation.
+            session_id: Conversation session.
+            turn_id: The turn to drop.
+            chatbot_id: Agent key segment.
+
+        Returns:
+            ``True`` when this call removed the turn; ``False`` when there is no history or it holds no such turn.
+
+        Raises:
+            RuntimeError: the CAS still conflicts after ``_MERGE_MAX_ATTEMPTS`` (the deletion cleanup retries).
+        """
+        key = self._get_key(user_id, session_id, chatbot_id)
+        if chatbot_id and not await self.redis.exists(key):
+            if await self.get_history(user_id, session_id, chatbot_id) is None:  # FEAT-524 legacy re-key
+                return False
+        attempts = _MERGE_MAX_ATTEMPTS if self._supports_cas() else 1
+        for attempt in range(attempts):
+            if self._supports_cas():
+                async with self.redis.pipeline() as pipe:
+                    try:
+                        await pipe.watch(key)
+                        removed = await self._write_without_turn(pipe, key, turn_id, cas=True)
+                    except WatchError:
+                        await _merge_backoff(attempt)
+                        continue
+            else:
+                removed = await self._write_without_turn(self.redis, key, turn_id, cas=False)
+            if removed:
+                await self._refresh_ttl(user_id, session_id, chatbot_id)
+            return removed
+        raise RuntimeError(f"turn removal for {key} still conflicting after {_MERGE_MAX_ATTEMPTS} attempts")
+
+    async def _write_without_turn(self, conn: Any, key: str, turn_id: str, *, cas: bool) -> bool:
+        """Read the stored turns through ``conn``, drop ``turn_id`` and write once (MULTI/EXEC when ``cas``).
+
+        Args:
+            conn: The watching pipeline (``cas``) or the plain client.
+            key: The history key.
+            turn_id: The turn to drop.
+            cas: Whether ``conn`` is a pipeline in ``WATCH`` mode.
+
+        Returns:
+            ``True`` when the turn was dropped and written; ``False`` (nothing written) when the key holds no
+            such turn.
+        """
+        payload: Optional[Dict[str, Any]] = None
+        if self.use_hash_storage:
+            raw = await conn.hget(key, "turns")
+            kept = _without_turn(self._deserialize_data(raw) if raw else None, turn_id)
+        else:
+            raw = await conn.get(key)
+            loaded = self._deserialize_data(raw) if raw else None
+            payload = loaded if isinstance(loaded, dict) else None
+            kept = _without_turn(payload.get("turns") if payload is not None else None, turn_id)
+        if kept is None:
+            if cas:
+                await conn.unwatch()
+            return False
+        now = datetime.now().isoformat()
+        if payload is None:
+            mapping = {"turns": self._serialize_data(kept), "updated_at": now}
+            if cas:
+                conn.multi()
+                conn.hset(key, mapping=mapping)
+                await conn.execute()
+            else:
+                await conn.hset(key, mapping=mapping)
+            return True
+        payload["turns"] = kept
+        payload["updated_at"] = now
+        data = self._serialize_data(payload)
+        if cas:
+            conn.multi()
+            conn.set(key, data)
+            await conn.execute()
+        else:
+            await conn.set(key, data)
+        return True
 
     async def _append_turn(
         self,

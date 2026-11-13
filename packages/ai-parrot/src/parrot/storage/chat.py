@@ -702,15 +702,8 @@ class ChatStorage:
         """
         if not self._redis:
             return False
-        history = await self._redis.get_history(user_id, session_id, chatbot_id=agent_id)
-        if history is None:
-            return False
-        kept = [t for t in history.turns if t.turn_id != turn_id]
-        if len(kept) == len(history.turns):
-            return False
-        history.turns = kept
-        await self._redis.update_history(history)
-        return True
+        # One atomic removal (compare-and-swap on Redis): a turn upserted concurrently is never overwritten.
+        return await self._redis.remove_turn(user_id, session_id, turn_id, chatbot_id=agent_id)
 
     async def _publish_deletion(self, payload: Dict[str, Any]) -> bool:
         """Publish the deletion event; a failure is logged, never raised.

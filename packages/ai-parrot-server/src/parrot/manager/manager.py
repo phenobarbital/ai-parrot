@@ -3305,16 +3305,11 @@ Available documentation UIs:
 
         Without this a bot keeps feeding the deleted turn to the LLM until the history's TTL
         (``_load_or_hydrate_history`` returns an existing history untouched). Each bot is isolated.
+        The removal is the memory's own atomic ``remove_turn`` (compare-and-swap on Redis), so a turn the bot
+        appends concurrently is never overwritten.
         """
         async def clean(bot: "AbstractBot") -> None:
-            memory = bot.conversation_memory
-            history = await memory.get_history(user_id, session_id, chatbot_id=bot.memory_key_id)
-            if history is None:
-                return
-            kept = [t for t in history.turns if t.turn_id != turn_id]
-            if len(kept) != len(history.turns):
-                history.turns = kept
-                await memory.update_history(history)
+            await bot.conversation_memory.remove_turn(user_id, session_id, turn_id, chatbot_id=bot.memory_key_id)
 
         await self._clean_each_bot(agent_id, f"turn {turn_id}", clean)
 
