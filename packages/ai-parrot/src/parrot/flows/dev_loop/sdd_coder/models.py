@@ -469,6 +469,7 @@ class NativePrep(BaseModel):
     coder_feedback: str = ""
     validation_verdict: str = ""
     """FEAT-709: rendered verdict of the failed previous attempt (same-seat repair)."""
+    experience_briefing: str = ""
     assessment_id: str = ""
     """ComplexityAssessment ID for native attempts, enabling attribution."""
     execution_id: str = ""
