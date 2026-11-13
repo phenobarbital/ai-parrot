@@ -237,7 +237,7 @@
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -249,8 +249,9 @@
       "parallelism_notes": "Calls manifest_specs from TASK-5635 (producers.py) and validate_graph from TASK-5636 (validate.py, and modifies its test_validate.py); reads PROBE_COSTS from TASK-5641 (procedure_probes.py).",
       "assigned_to": null,
       "started_at": "2026-11-13T21:47:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5642-procedure-lint-pack.md"
+      "completed_at": "2026-11-13T22:53:00+00:00",
+      "file": "sdd/tasks/completed/TASK-5642-procedure-lint-pack.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5643",
@@ -259,7 +260,7 @@
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -272,8 +273,9 @@
       "parallelism_notes": "Calls manifest_specs/load_manifest (TASK-5635), validate_graph (TASK-5636), ProcedurePlane and the index readers (TASK-5640, plane.py) and PROBE_COSTS (TASK-5641).",
       "assigned_to": null,
       "started_at": "2026-11-13T21:47:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5643-procedure-cli-build.md"
+      "completed_at": "2026-11-13T22:53:01+00:00",
+      "file": "sdd/tasks/completed/TASK-5643-procedure-cli-build.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5644",
@@ -388,7 +390,7 @@
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -399,8 +401,9 @@
       "parallelism_notes": "Reads specs through ProcedurePlane from TASK-5640 (plane.py); calls resolve, SddProbeRunner and scope_for from TASK-5641.",
       "assigned_to": null,
       "started_at": "2026-11-13T21:47:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5649-mcp-procedure-next.md"
+      "completed_at": "2026-11-13T22:53:02+00:00",
+      "file": "sdd/tasks/completed/TASK-5649-mcp-procedure-next.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5650",
