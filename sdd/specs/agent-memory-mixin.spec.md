@@ -23,7 +23,7 @@ docs:
 **Feature ID**: FEAT-892
 **Date**: 2026-11-13
 **Author**: Jesus Lara, with Codex
-**Status**: review
+**Status**: approved
 **Target version**: next release after acceptance of the applicable gates; release number unassigned
 
 **Source:** [accepted direction and detailed design](../proposals/agent-memory-mixin.design.md), including §12 and its R1–R10 contract. Detailed policies and gate amendments remain proposed where explicitly noted. This specification incorporates pending M1/M2/M3/M5/M6 of [FEAT-571](memory-dynamics.spec.md). M4 belongs to [FEAT-889 — agent-brain](agent-brain.spec.md), phase 2 (M8–M9); this feature owns only its agent integration. Completed G1–G4/M0 work remains evidence, not an assertion that its gates passed.
