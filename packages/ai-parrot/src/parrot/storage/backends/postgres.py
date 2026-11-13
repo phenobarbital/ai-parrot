@@ -14,13 +14,42 @@ Limitations:
 FEAT-116: dynamodb-fallback-redis — Module 5 (Postgres backend).
 """
 
+import asyncio
 import json
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from navconfig.logging import logging
 
-from parrot.storage.backends.base import ConversationBackend
+from parrot.storage.backends.base import BackfillBatch, ConversationBackend
+from parrot.storage.errors import (
+    ConversationDeletedError,
+    IndexNotReadyError,
+    StorageError,
+    StorageUnavailableError,
+    StorageWriteError,
+)
+
+
+def _chrono_fields(data: dict) -> Tuple[Optional[datetime], int]:
+    """Return ``(timestamp_utc, sequence)`` from a turn payload (``None`` timestamp when unusable).
+
+    Naive values are read as UTC; a non-int / negative ``sequence`` yields ``0``.
+    """
+    raw = data.get("timestamp")
+    ts: Optional[datetime] = None
+    if isinstance(raw, datetime):
+        ts = raw
+    elif isinstance(raw, str) and raw.strip():
+        try:
+            ts = datetime.fromisoformat(raw.strip())
+        except ValueError:
+            ts = None
+    if ts is not None:
+        ts = (ts.replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts).astimezone(timezone.utc)
+    seq = data.get("sequence")
+    valid_seq = isinstance(seq, int) and not isinstance(seq, bool) and seq >= 0
+    return ts, (seq if valid_seq else 0)
 
 
 # Fix #4: explicit JSONB codec registered on every new connection so that
@@ -86,6 +115,98 @@ class ConversationPostgresBackend(ConversationBackend):
         )
     """
 
+    _ADD_COLUMNS = (
+        "ALTER TABLE parrot_conversations ADD COLUMN IF NOT EXISTS ts_utc TIMESTAMPTZ",
+        "ALTER TABLE parrot_conversations ADD COLUMN IF NOT EXISTS seq BIGINT",
+        "ALTER TABLE parrot_conversations ADD COLUMN IF NOT EXISTS turn_id TEXT",
+    )
+    _CREATE_CHRONO_IDX = """
+        CREATE INDEX IF NOT EXISTS idx_parrot_conv_turn_chrono
+        ON parrot_conversations (user_id, agent_id, session_id, kind, ts_utc DESC, seq DESC, turn_id COLLATE "C" DESC)
+    """
+    _CREATE_TOMBSTONES = """
+        CREATE TABLE IF NOT EXISTS parrot_conversation_tombstones (
+            user_id    TEXT NOT NULL,
+            agent_id   TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            turn_id    TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            PRIMARY KEY (user_id, agent_id, session_id, turn_id)
+        )
+    """
+    _CREATE_INDEX_STATE = """
+        CREATE TABLE IF NOT EXISTS parrot_conversation_index_state (
+            user_id    TEXT NOT NULL,
+            agent_id   TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            state      TEXT NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            PRIMARY KEY (user_id, agent_id, session_id)
+        )
+    """
+    _LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))"
+    _DDL_LOCK_KEY = "parrot_conversations:ddl"
+    _TOMBSTONE_SQL = (
+        "SELECT 1 FROM parrot_conversation_tombstones"
+        " WHERE user_id=$1 AND agent_id=$2 AND session_id=$3 AND turn_id IN ('', $4) LIMIT 1"
+    )
+    # $1..$9: user, agent, session, sort_key, payload, expires_at, ts_utc, seq, turn_id
+    _UPSERT_TURN = """
+        INSERT INTO parrot_conversations
+            (user_id, agent_id, session_id, kind, sort_key, payload, updated_at, expires_at,
+             ts_utc, seq, turn_id)
+        VALUES ($1, $2, $3, 'turn', $4, $5, now(), $6, $7, $8, $9)
+        ON CONFLICT (user_id, agent_id, session_id, kind, sort_key) DO UPDATE SET
+            payload = CASE WHEN parrot_conversations.ts_utc IS NULL THEN EXCLUDED.payload
+                ELSE ((EXCLUDED.payload - 'timestamp' - 'sequence') || jsonb_strip_nulls(
+                    jsonb_build_object('timestamp', parrot_conversations.payload->'timestamp',
+                                       'sequence',  parrot_conversations.payload->'sequence'))) END,
+            updated_at = now(),
+            expires_at = EXCLUDED.expires_at,
+            seq = CASE WHEN parrot_conversations.ts_utc IS NULL THEN EXCLUDED.seq
+                       ELSE parrot_conversations.seq END,
+            turn_id = EXCLUDED.turn_id,
+            ts_utc = COALESCE(parrot_conversations.ts_utc, EXCLUDED.ts_utc)
+    """
+    _SELECT_WINDOW = """
+        SELECT c.session_id, c.sort_key, c.payload, c.updated_at FROM parrot_conversations AS c
+        WHERE c.user_id=$1 AND c.agent_id=$2 AND c.session_id=$3 AND c.kind='turn'
+          AND c.ts_utc IS NOT NULL AND (c.expires_at IS NULL OR c.expires_at > $4)
+          AND NOT EXISTS (
+              SELECT 1 FROM parrot_conversation_tombstones t
+              WHERE t.user_id=c.user_id AND t.agent_id=c.agent_id
+                AND t.session_id=c.session_id AND t.turn_id=c.turn_id)
+        ORDER BY c.ts_utc DESC, c.seq DESC, c.turn_id COLLATE "C" DESC
+        LIMIT $5
+    """
+    _HAS_UNINDEXED = """
+        SELECT 1 FROM parrot_conversations
+        WHERE user_id=$1 AND agent_id=$2 AND session_id=$3 AND kind='turn'
+          AND ts_utc IS NULL AND (expires_at IS NULL OR expires_at > $4) LIMIT 1
+    """
+    _SELECT_LEGACY = """
+        SELECT c.user_id, c.agent_id, c.session_id, c.sort_key, c.payload
+        FROM parrot_conversations AS c
+        WHERE c.kind='turn' AND c.ts_utc IS NULL AND (c.expires_at IS NULL OR c.expires_at > $1)
+          AND (c.user_id, c.agent_id, c.session_id, c.sort_key) > ($2, $3, $4, $5)
+          AND NOT EXISTS (
+              SELECT 1 FROM parrot_conversation_tombstones t
+              WHERE t.user_id=c.user_id AND t.agent_id=c.agent_id AND t.session_id=c.session_id
+                AND t.turn_id IN ('', substr(c.sort_key, 6)))
+        ORDER BY c.user_id, c.agent_id, c.session_id, c.sort_key
+        LIMIT $6
+    """
+    _INDEX_ROW_SQL = (
+        "UPDATE parrot_conversations SET ts_utc=$1, seq=$2, turn_id=$3"
+        " WHERE user_id=$4 AND agent_id=$5 AND session_id=$6 AND kind='turn' AND sort_key=$7"
+        " AND ts_utc IS NULL"
+    )
+    _UPSERT_STATE_SQL = """
+        INSERT INTO parrot_conversation_index_state (user_id, agent_id, session_id, state, updated_at)
+        VALUES ($1, $2, $3, $4, now())
+        ON CONFLICT (user_id, agent_id, session_id) DO UPDATE SET state = EXCLUDED.state, updated_at = now()
+    """
+
     def __init__(self, dsn: str, default_ttl_days: int = 180) -> None:
         self._dsn = dsn
         self._default_ttl_days = default_ttl_days
@@ -112,6 +233,7 @@ class ConversationPostgresBackend(ConversationBackend):
             await conn.execute(self._CREATE_CONV_IDX_USER_AGENT)
             await conn.execute(self._CREATE_CONV_IDX_GIN)
             await conn.execute(self._CREATE_ARTIFACTS)
+            await self._migrate_chrono_schema(conn)
         self._initialized = True
         self.logger.info("Postgres backend initialized")
 
@@ -178,6 +300,36 @@ class ConversationPostgresBackend(ConversationBackend):
             "updated_at": updated_at.isoformat() if updated_at else None,
             **payload,
         }
+
+    async def _migrate_chrono_schema(self, conn) -> None:
+        """Additive, idempotent migration; serialized across pods with a transaction-scoped advisory lock."""
+        async with conn.transaction():
+            await conn.execute(self._LOCK_SQL, self._DDL_LOCK_KEY)
+            for statement in self._ADD_COLUMNS:
+                await conn.execute(statement)
+            await conn.execute(self._CREATE_CHRONO_IDX)
+            await conn.execute(self._CREATE_TOMBSTONES)
+            await conn.execute(self._CREATE_INDEX_STATE)
+
+    def _require_connection(self) -> None:
+        """Raise ``StorageUnavailableError`` when the backend is not connected."""
+        if not self.is_connected:
+            raise StorageUnavailableError("Postgres conversation backend is not connected")
+
+    @staticmethod
+    def _translate(exc: BaseException, *, write: bool) -> StorageError:
+        """Map a driver/transport exception to the typed storage error (never swallow)."""
+        import asyncpg  # lazy: optional dependency
+
+        transport = (OSError, asyncio.TimeoutError, asyncpg.InterfaceError, asyncpg.PostgresConnectionError)
+        if isinstance(exc, transport):
+            return StorageUnavailableError(f"Postgres unavailable: {exc}")
+        cls = StorageWriteError if write else StorageUnavailableError
+        return cls(f"Postgres operation failed: {exc}")
+
+    @staticmethod
+    def _lock_key(user_id: str, agent_id: str, session_id: str) -> str:
+        return f"{user_id}\x1f{agent_id}\x1f{session_id}"
 
     def _encode_payload(self, data: dict) -> dict:
         """Normalize datetime values in a payload dict to ISO strings."""
@@ -285,22 +437,31 @@ class ConversationPostgresBackend(ConversationBackend):
         turn_id: str,
         data: dict,
     ) -> None:
-        if not self.is_connected:
-            return
+        """Idempotent upsert by ``turn_id``; tombstone check + upsert in one locked transaction.
+
+        Raises:
+            StorageUnavailableError: not connected / transport failure.
+            ConversationDeletedError: the session or this turn is tombstoned.
+            StorageWriteError: the durable write failed (nothing is swallowed).
+        """
+        self._require_connection()
         payload = self._encode_payload(data)
-        sort_key = f"TURN#{turn_id}"
-        expires = self._expires_at()
-        async with self._pool.acquire() as conn:
-            await conn.execute(
-                """
-                INSERT INTO parrot_conversations
-                    (user_id, agent_id, session_id, kind, sort_key, payload, updated_at, expires_at)
-                VALUES ($1, $2, $3, 'turn', $4, $5, now(), $6)
-                ON CONFLICT (user_id, agent_id, session_id, kind, sort_key)
-                DO UPDATE SET payload = EXCLUDED.payload, updated_at = now(), expires_at = EXCLUDED.expires_at
-                """,
-                user_id, agent_id, session_id, sort_key, payload, expires,
-            )
+        ts, seq = _chrono_fields(data)
+        try:
+            async with self._pool.acquire() as conn:
+                async with conn.transaction():
+                    await conn.execute(self._LOCK_SQL, self._lock_key(user_id, agent_id, session_id))
+                    if await conn.fetchval(self._TOMBSTONE_SQL, user_id, agent_id, session_id, turn_id):
+                        raise ConversationDeletedError(
+                            f"session {session_id} or turn {turn_id} is tombstoned; write rejected")
+                    await conn.execute(
+                        self._UPSERT_TURN, user_id, agent_id, session_id, f"TURN#{turn_id}",
+                        payload, self._expires_at(), ts, seq, turn_id,
+                    )
+        except StorageError:
+            raise
+        except Exception as exc:
+            raise self._translate(exc, write=True) from exc
 
     async def query_turns(
         self,
@@ -310,8 +471,7 @@ class ConversationPostgresBackend(ConversationBackend):
         limit: int = 10,
         newest_first: bool = True,
     ) -> List[dict]:
-        if not self.is_connected:
-            return []
+        self._require_connection()
         now = self._not_expired_cond()
         # Fix #9: avoid f-string SQL — ORDER direction is boolean-derived,
         # never user-supplied, but static analysers flag it as injection risk.
@@ -323,8 +483,11 @@ class ConversationPostgresBackend(ConversationBackend):
             f" ORDER BY sort_key {_ORDER[newest_first]}"
             " LIMIT $5"
         )
-        async with self._pool.acquire() as conn:
-            rows = await conn.fetch(sql, user_id, agent_id, session_id, now, limit)
+        try:
+            async with self._pool.acquire() as conn:
+                rows = await conn.fetch(sql, user_id, agent_id, session_id, now, limit)
+        except Exception as exc:
+            raise self._translate(exc, write=False) from exc
         return [self._row_to_turn(r) for r in rows]
 
     async def delete_turn(
@@ -367,6 +530,150 @@ class ConversationPostgresBackend(ConversationBackend):
                 user_id, agent_id, session_id,
             )
         return int(r1.split()[-1]) + int(r2.split()[-1])
+
+    # ------------------------------------------------------------------
+    # FEAT-886: ordered window, tombstones, index state, backfill
+    # ------------------------------------------------------------------
+
+    async def query_turn_window(
+        self, user_id: str, agent_id: str, session_id: str, limit: int
+    ) -> List[dict]:
+        """Newest ``limit`` turns by (ts_utc, seq, turn_id), limit applied descending, returned ascending."""
+        self._require_connection()
+        if await self.is_deleted(user_id, agent_id, session_id):
+            raise ConversationDeletedError(f"session {session_id} is tombstoned")
+        if await self.get_index_state(user_id, agent_id, session_id) != "ready":
+            raise IndexNotReadyError(f"chronological index of session {session_id} is not ready")
+        if limit <= 0:
+            return []
+        try:
+            async with self._pool.acquire() as conn:
+                rows = await conn.fetch(
+                    self._SELECT_WINDOW, user_id, agent_id, session_id, self._not_expired_cond(), limit)
+        except Exception as exc:
+            raise self._translate(exc, write=False) from exc
+        window = [self._row_to_turn(r) for r in rows]
+        window.reverse()
+        return window
+
+    async def max_sequence(self, user_id: str, agent_id: str, session_id: str) -> int:
+        """Highest stored sequence for the session, ``0`` when none (durable maximum)."""
+        self._require_connection()
+        try:
+            async with self._pool.acquire() as conn:
+                return int(await conn.fetchval(
+                    "SELECT COALESCE(MAX(seq), 0) FROM parrot_conversations"
+                    " WHERE user_id=$1 AND agent_id=$2 AND session_id=$3 AND kind='turn'",
+                    user_id, agent_id, session_id))
+        except Exception as exc:
+            raise self._translate(exc, write=False) from exc
+
+    async def put_tombstone(
+        self, user_id: str, agent_id: str, session_id: str, turn_id: Optional[str] = None
+    ) -> None:
+        """Durably record a session (``turn_id=None``) or turn deletion. Idempotent; no TTL."""
+        self._require_connection()
+        if turn_id == "":
+            raise ValueError("turn_id must be non-empty (use None for a session tombstone)")
+        try:
+            async with self._pool.acquire() as conn:
+                async with conn.transaction():
+                    await conn.execute(self._LOCK_SQL, self._lock_key(user_id, agent_id, session_id))
+                    await conn.execute(
+                        "INSERT INTO parrot_conversation_tombstones (user_id, agent_id, session_id, turn_id)"
+                        " VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+                        user_id, agent_id, session_id, turn_id or "")
+        except Exception as exc:
+            raise self._translate(exc, write=True) from exc
+
+    async def is_deleted(
+        self, user_id: str, agent_id: str, session_id: str, turn_id: Optional[str] = None
+    ) -> bool:
+        """Whether the session (or session OR this turn) is tombstoned; raises when it cannot be determined."""
+        self._require_connection()
+        try:
+            async with self._pool.acquire() as conn:
+                row = await conn.fetchval(self._TOMBSTONE_SQL, user_id, agent_id, session_id, turn_id or "")
+        except Exception as exc:
+            raise self._translate(exc, write=False) from exc
+        return row is not None
+
+    async def get_index_state(self, user_id: str, agent_id: str, session_id: str) -> str:
+        """``'ready'`` | ``'pending'`` | ``'invalid'``.
+
+        Derived: ``ready`` iff the session has no live turn row without ``ts_utc``; the state table
+        only distinguishes ``invalid`` from ``pending``.
+        """
+        self._require_connection()
+        try:
+            async with self._pool.acquire() as conn:
+                unindexed = await conn.fetchval(
+                    self._HAS_UNINDEXED, user_id, agent_id, session_id, self._not_expired_cond())
+                if unindexed is None:
+                    return "ready"
+                state = await conn.fetchval(
+                    "SELECT state FROM parrot_conversation_index_state"
+                    " WHERE user_id=$1 AND agent_id=$2 AND session_id=$3", user_id, agent_id, session_id)
+        except Exception as exc:
+            raise self._translate(exc, write=False) from exc
+        return "invalid" if state == "invalid" else "pending"
+
+    @staticmethod
+    def _encode_cursor(row) -> str:
+        return json.dumps([row["user_id"], row["agent_id"], row["session_id"], row["sort_key"]])
+
+    @staticmethod
+    def _decode_cursor(cursor: Optional[str]) -> Tuple[str, str, str, str]:
+        if cursor is None:
+            return ("", "", "", "")
+        user_id, agent_id, session_id, sort_key = json.loads(cursor)
+        return (user_id, agent_id, session_id, sort_key)
+
+    async def _index_session(self, conn, key: Tuple[str, str, str], rows: list) -> Tuple[int, bool]:
+        """Index one session's legacy rows under its advisory lock; returns ``(indexed, saw_invalid)``."""
+        indexed, saw_invalid = 0, False
+        async with conn.transaction():
+            await conn.execute(self._LOCK_SQL, self._lock_key(*key))
+            if await conn.fetchval(self._TOMBSTONE_SQL, *key, ""):  # tombstoned since the SELECT: leave it
+                return 0, False
+            for row in rows:
+                ts, seq = _chrono_fields(row["payload"])
+                if ts is None:
+                    saw_invalid = True
+                    continue
+                await conn.execute(self._INDEX_ROW_SQL, ts, seq, row["sort_key"][5:], *key, row["sort_key"])
+                indexed += 1
+            state = "invalid" if saw_invalid else None
+            if not saw_invalid and await conn.fetchval(
+                    self._HAS_UNINDEXED, *key, self._not_expired_cond()) is None:
+                state = "ready"
+            if state is not None:
+                await conn.execute(self._UPSERT_STATE_SQL, *key, state)
+        return indexed, saw_invalid
+
+    async def backfill_batch(self, cursor: Optional[str], batch_size: int) -> BackfillBatch:
+        """Index up to ``batch_size`` legacy turns after ``cursor`` (resumable, safe next to new writes).
+
+        ``invalid_sessions`` entries are formatted ``"<user_id>/<agent_id>/<session_id>"``.
+        """
+        self._require_connection()
+        groups: Dict[Tuple[str, str, str], list] = {}
+        indexed_total, invalid = 0, []
+        try:
+            async with self._pool.acquire() as conn:
+                rows = await conn.fetch(
+                    self._SELECT_LEGACY, self._not_expired_cond(), *self._decode_cursor(cursor), batch_size)
+                for row in rows:
+                    groups.setdefault((row["user_id"], row["agent_id"], row["session_id"]), []).append(row)
+                for key, session_rows in groups.items():
+                    done, bad = await self._index_session(conn, key, session_rows)
+                    indexed_total += done
+                    if bad:
+                        invalid.append("/".join(key))
+        except Exception as exc:
+            raise self._translate(exc, write=True) from exc
+        next_cursor = self._encode_cursor(rows[-1]) if rows and len(rows) == batch_size else None
+        return BackfillBatch(processed=indexed_total, next_cursor=next_cursor, invalid_sessions=tuple(invalid))
 
     # ------------------------------------------------------------------
     # Artifacts
