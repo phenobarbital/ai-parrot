@@ -280,6 +280,18 @@ VERBS: dict[str, dict[str, tuple[str, tuple[str, ...], str]]] = {
         "state": ("check_task_state", (), "Read-only backstop for stalled task files."),
         "review": ("review_checkpoint", (), "Review: prepare | validate | record."),
     },
+    "experience": {
+        "init": ("experience_cli", ("init",), "Initialize the experience plane."),
+        "brief": ("experience_cli", ("brief",), "Show known pitfalls."),
+        "record": ("experience_cli", ("record",), "Record a candidate lesson."),
+        "list": ("experience_cli", ("list",), "List experience lessons."),
+        "show": ("experience_cli", ("show",), "Show one lesson."),
+        "retire": ("experience_cli", ("retire",), "Retire one lesson."),
+        "sync": ("experience_cli", ("sync",), "Sync global experience events."),
+        "export": ("experience_cli", ("export",), "Export shared lesson definitions."),
+        "rebuild": ("experience_cli", ("rebuild",), "Rebuild experience indexes."),
+        "hook": ("experience_hook", (), "Handle a host hook event."),
+    },
     "ids": {
         "reserve": ("reserve_ids", (), "Reserve TASK/FEAT ids on the git-native ledger."),
         "check": ("check_id_collisions", (), "Scan for TASK/FEAT id collisions."),
@@ -336,8 +348,9 @@ VERBS: dict[str, dict[str, tuple[str, tuple[str, ...], str]]] = {
 }
 #: Packaged modules with a main() that are deliberately NOT mounted (C22: /sdd-insight does not ship).
 # `native_claude_sandbox.main()` serves the `launch-worker` script entry; its CLI is `parrot sdd launch worker`.
-# `worker_notification.main()` is invoked as a host lifecycle hook, not as an operator-facing SDD command.
-_UNMOUNTED: frozenset[str] = frozenset({"native_claude_sandbox", "worker_notification"})
+# `worker_notification.main()` is invoked as a host lifecycle hook, and `shell_prefix.main()` is the
+# launcher's configured shell executable; neither is an operator-facing SDD command.
+_UNMOUNTED: frozenset[str] = frozenset({"native_claude_sandbox", "shell_prefix", "worker_notification"})
 _PASSTHROUGH = {"ignore_unknown_options": True, "allow_interspersed_args": False}
 
 

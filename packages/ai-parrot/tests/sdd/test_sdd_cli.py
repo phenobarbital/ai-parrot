@@ -10,12 +10,49 @@ import pytest
 from click.testing import CliRunner
 
 from parrot.cli import cli
-from parrot.sdd.cli import sdd
+from parrot.sdd.cli import VERBS, sdd
+from parrot.sdd.scripts.experience_cli import main as experience_main
 
 
 def test_lazy_registration() -> None:
     assert cli._lazy_commands["sdd"] == "parrot.sdd.cli"
     assert cli.get_command(None, "sdd") is sdd
+
+
+def test_cli_usage_errors(tmp_path: Path) -> None:
+    """Return argparse's usage status for missing verbs and required options."""
+    assert experience_main([]) == 2
+    assert experience_main(["brief", "--task-file"]) == 2
+    assert experience_main(["record", "--executable", "gh"]) == 2
+
+
+def test_cli_init_namespace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Initialize the plane and register its absolute read-only namespace."""
+    root = tmp_path / "primary"
+    (root / ".git").mkdir(parents=True)
+    (root / ".parrot").mkdir()
+    config_path = root / ".parrot" / "wiki.json"
+    config_path.write_text('{"wiki_name":"preserved"}', encoding="utf-8")
+    monkeypatch.chdir(root)
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
+
+    assert experience_main(["init"]) == 0
+    assert (root / ".parrot" / "experience").is_dir()
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    assert config["wiki_name"] == "preserved"
+    assert config["namespaces"]["experience"] == {"store": str(root / ".parrot" / "experience")}
+    assert set(VERBS["experience"]) == {
+        "init",
+        "brief",
+        "record",
+        "list",
+        "show",
+        "retire",
+        "sync",
+        "export",
+        "rebuild",
+        "hook",
+    }
 
 
 def test_install_status_uninstall_roundtrip(tmp_path: Path) -> None:
