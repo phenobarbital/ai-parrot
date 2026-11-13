@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-12T23:00:11.073152+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-13T11:31:29+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -342,7 +342,7 @@
       "feature_id": "FEAT-884",
       "feature": "db-upgrade",
       "spec": "sdd/specs/db-upgrade.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -355,8 +355,9 @@
       "parallelism_notes": "Consumes preserved manual operations from TASK-5559, complete optional set inventory from TASK-5561, CLI/DSN/doctor wiring from TASK-5562, and bounded probe behavior from TASK-5563. These paths transitively depend on all documented catalog/runner/check symbols.",
       "assigned_to": null,
       "started_at": "2026-11-12T23:12:58+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5567-migration-documentation.md"
+      "completed_at": "2026-11-13T11:31:29+00:00",
+      "file": "sdd/tasks/completed/TASK-5567-migration-documentation.md",
+      "verification": "verified"
     }
   ]
 }

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-884 — Packaged PostgreSQL migrations
 **Spec**: `sdd/specs/db-upgrade.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5559, TASK-5561, TASK-5562, TASK-5563
@@ -203,4 +203,4 @@ def test_database_migrations_techwiki() -> None:
 
 ## Completion Note
 
-Populated by the task finalizer after verified implementation.
+Implemented at /sdd-done. `parrot sdd techwiki check` returns ok (policy required) and test_documentation.py passes. Page facts taken from cli.py and spec §2. Note: techwiki check verifies page presence only, so `ref:` API links were not machine-resolved.
