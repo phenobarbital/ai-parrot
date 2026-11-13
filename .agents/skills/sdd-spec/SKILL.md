@@ -85,6 +85,18 @@ stay with the thinking model — eligibility never delegates a design choice.
    - missing target version/status/author preferences
    - unresolved questions that block design
    - contradictions discovered during codebase research
+7b. Consult experts (optional, advisory — FEAT-890):
+   - Run `parrot sdd experts consult --doc sdd/specs/<feature-slug>.spec.md [--feature <FEAT-ID>]`.
+   - This is optional and non-blocking — it gathers advisory contributions from domain experts
+     before drafting the spec. The command writes findings to `sdd/state/.contributions/<doc-slug>/`.
+   - List findings: read each `<expert>.json` in the contributions directory.
+   - Triage each finding as CONFIRM, REJECT, or ESCALATE:
+     - CONFIRM: fold the finding into the spec with a reference to the contribution file.
+     - REJECT: note the rejection reason in a brief comment; do not include in spec.
+     - ESCALATE: move the finding to Open Questions — it requires human clarification.
+   - Promote contributions (if FEAT-ID is known): after triage, promote
+     `sdd/state/.contributions/<doc-slug>/` to `sdd/state/<FEAT-ID>/contributions/`
+     like design research.
 8. Research codebase:
    - run `wikitoolkit query "<focused question>"` before source scans
    - inspect at least one wiki result when available

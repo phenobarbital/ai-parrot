@@ -99,6 +99,18 @@ forks (Claude Code). Codex has no forks: research always runs sequentially and
      `sdd/templates/finding.md`; `<slug>` is lowercase `[a-z0-9-]` only
      (`:`, `*`, `|`, quotes break Windows checkouts and fail
      the repository's portable-path CI check).
+5b. Consult experts (optional, advisory — FEAT-890):
+   - Run `parrot sdd experts consult --doc sdd/proposals/<slug>.proposal.md [--feature <FEAT-ID>]`.
+   - This is optional and non-blocking — it gathers advisory contributions from domain experts
+     before synthesis. The command writes findings to `sdd/state/.contributions/<doc-slug>/`.
+   - List findings: read each `<expert>.json` in the contributions directory.
+   - Triage each finding as CONFIRM, REJECT, or ESCALATE:
+     - CONFIRM: fold the finding into the synthesis with a reference to the contribution file.
+     - REJECT: note the rejection reason in a brief comment; do not include in synthesis.
+     - ESCALATE: move the finding to Open Questions — it requires human clarification.
+   - Promote contributions (if FEAT-ID is known): after triage, promote
+     `sdd/state/.contributions/<doc-slug>/` to `sdd/state/<FEAT-ID>/contributions/`
+     like design research.
 6. Synthesize:
    - Use source, plan, findings, and budget status.
    - Produce `sdd/state/<FEAT-ID>/synthesis.json`.

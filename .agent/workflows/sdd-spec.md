@@ -394,6 +394,21 @@ not cover. Typical legitimate gaps:
 Ask in a single batch so the user answers once and you proceed. If there is
 nothing to ask, skip this step silently.
 
+### 3c. Consult experts (optional, advisory — FEAT-890)
+
+Run `parrot sdd experts consult --doc sdd/specs/<feature-slug>.spec.md [--feature <FEAT-ID>]`.
+This is optional and non-blocking — it gathers advisory contributions from domain experts
+before drafting the spec. The command writes findings to `sdd/state/.contributions/<doc-slug>/`.
+
+- **List findings**: read each `<expert>.json` in the contributions directory.
+- **Triage each finding** as CONFIRM, REJECT, or ESCALATE:
+  - CONFIRM: fold the finding into the spec with a reference to the contribution file.
+  - REJECT: note the rejection reason in a brief comment; do not include in spec.
+  - ESCALATE: move the finding to §8 Open Questions — it requires human clarification.
+- **Promote contributions** (if FEAT-ID is known): after triage, promote
+  `sdd/state/.contributions/<doc-slug>/` to `sdd/state/<FEAT-ID>/contributions/`
+  like design research.
+
 ### 4. Research the Codebase & Build Codebase Contract
 Before writing the spec:
 - Read existing specs in `sdd/specs/` directory.
@@ -637,6 +652,20 @@ if [ -d "$DR" ]; then
       && rm -rf "$DR" \
       && git add "$PROMOTED/" \
       || { echo "⚠️  Promotion of $DR failed — left in place for inspection (run-id ${RUN_ID})." ; rm -rf "$STAGE_TMP"; }
+  fi
+fi
+
+# Contributions promotion (FEAT-890) — promote .contributions/ to sdd/state/<FEAT-ID>/contributions/
+CONTRIB_STAGING="sdd/state/.contributions"
+if [ -d "$CONTRIB_STAGING" ]; then
+  CONTRIB_PROMOTED="sdd/state/$FEAT_ID/contributions"
+  if [ -e "$CONTRIB_PROMOTED" ]; then
+    echo "⚠️  $CONTRIB_PROMOTED already exists — leaving $CONTRIB_STAGING in place for manual review (run-id ${RUN_ID}); not overwriting existing contributions."
+  else
+    mkdir -p "sdd/state/$FEAT_ID" && cp -a "$CONTRIB_STAGING"/. "$CONTRIB_PROMOTED"/ \
+      && rm -rf "$CONTRIB_STAGING" \
+      && git add "$CONTRIB_PROMOTED/" \
+      || { echo "⚠️  Promotion of $CONTRIB_STAGING failed — left in place for inspection (run-id ${RUN_ID})." ; }
   fi
 fi
 
