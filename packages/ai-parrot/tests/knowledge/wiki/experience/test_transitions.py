@@ -37,6 +37,7 @@ def _stub(*, advice: str = "Use the API workaround.") -> dict[str, object]:
 
 def _matcher(stub: dict[str, object]):
     """Return a synchronous published-map matcher for a single gh trigger."""
+
     def match(executable: str, subcommand: str, error: str) -> dict[str, object] | None:
         return stub if (executable, subcommand, error) == ("gh", "pr edit", "permission denied") else None
 
@@ -55,22 +56,28 @@ def test_hook_pairing_drafts_lesson(tmp_path: Path) -> None:
     """Verify a same-family failed retry drafts one paired lesson."""
     plane = tmp_path / "plane"
 
-    assert on_outcome(
-        plane,
-        session="pair",
-        command="gh pr edit 1",
-        outcome=Outcome(False, "permission denied", "failure"),
-        seat="codex",
-        matcher=lambda *_: None,
-    ) is None
-    assert on_outcome(
-        plane,
-        session="pair",
-        command="gh pr edit 1 --base dev",
-        outcome=Outcome(True, observation_id="retry"),
-        seat="codex",
-        matcher=lambda *_: None,
-    ) is None
+    assert (
+        on_outcome(
+            plane,
+            session="pair",
+            command="gh pr edit 1",
+            outcome=Outcome(False, "permission denied", "failure"),
+            seat="codex",
+            matcher=lambda *_: None,
+        )
+        is None
+    )
+    assert (
+        on_outcome(
+            plane,
+            session="pair",
+            command="gh pr edit 1 --base dev",
+            outcome=Outcome(True, observation_id="retry"),
+            seat="codex",
+            matcher=lambda *_: None,
+        )
+        is None
+    )
 
     recorded = [event for event in _events(plane) if event["kind"] == "lesson.recorded"]
     assert len(recorded) == 1
@@ -260,4 +267,3 @@ def test_codex_occurrence_aliases(tmp_path: Path) -> None:
 
     failures = [event for event in _events(plane) if event["kind"] == "failure.observed"]
     assert [event["observation_id"] for event in failures] == ["hook-one", "hook-two"]
-

@@ -92,9 +92,11 @@ def on_outcome(
                     session,
                     canonical_observation,
                     seat,
-                    "trigger_family"
-                    if _same_family(injection, executable, subcommand, "executable", "subcommand")
-                    else "fix_family",
+                    (
+                        "trigger_family"
+                        if _same_family(injection, executable, subcommand, "executable", "subcommand")
+                        else "fix_family"
+                    ),
                 )
                 _remove_injection(state, injection)
                 return state
@@ -228,9 +230,7 @@ def _remove_injection(state: dict, injection: Mapping[str, str]) -> None:
         state["injections"] = [candidate for candidate in injections if candidate != injection]
 
 
-def _add_pending(
-    state: dict, executable: str, subcommand: str, command: str, error: str, observation_id: str
-) -> None:
+def _add_pending(state: dict, executable: str, subcommand: str, command: str, error: str, observation_id: str) -> None:
     """Record one eligible failure, keeping the session state bounded."""
     pending = state.setdefault("pending", [])
     if not isinstance(pending, list):
@@ -273,8 +273,7 @@ def _add_injection(state: dict, injection: dict[str, str]) -> None:
         state["injections"] = injections
     key = (injection["lesson_id"], injection["solution_rev"])
     if not any(
-        isinstance(candidate, dict)
-        and (candidate.get("lesson_id"), candidate.get("solution_rev")) == key
+        isinstance(candidate, dict) and (candidate.get("lesson_id"), candidate.get("solution_rev")) == key
         for candidate in injections
     ):
         injections.append(injection)
