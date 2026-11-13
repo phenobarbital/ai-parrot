@@ -139,7 +139,8 @@ _GUARD_MARKERS = ("worktree guard --hook", "worktree_environment")
 
 FileState = Literal["missing", "current", "outdated", "edited", "foreign"]
 #: Plan vocabulary (C5). install: write | upgrade | overwrite | skip-current | skip-edited | skip-foreign |
-#: seed | skip-seed | gitignore | gitattributes | ledger-hooks | ledger-seed | config-seed | base-branch | dangerous-guard | toolkits. uninstall: remove |
+#: seed | skip-seed | gitignore | gitattributes | ledger-hooks | ledger-seed | config-seed | base-branch | dangerous-guard |
+#: experience-hooks | toolkits. uninstall: remove |
 #: keep-edited | keep-foreign | skip-missing | keep-shared | gitignore-remove | gitattributes-remove |
 #: keep-gitattributes | ledger-hooks-remove | keep-ledger-hooks | toolkits-remove | receipt-remove.
 #: stale: stale-remove | keep-stale | skip-symlink.   [rev 0.5 C23 / D5]
@@ -159,7 +160,9 @@ PlanAction = Literal[
     "config-seed",
     "base-branch",
     "dangerous-guard",
+    "experience-hooks",
     "dangerous-guard-remove",
+    "experience-hooks-remove",
     "agy-permissions",
     "agy-permissions-remove",
     "toolkits",
@@ -364,6 +367,8 @@ def guard_hook_command(*, portable: bool | None) -> tuple[str, Literal["bare", "
 DANGEROUS_HOOK_LINE = "parrot sdd hooks dangerous-actions --hook"
 _DANGEROUS_SUFFIX = " sdd hooks dangerous-actions --hook"
 _DANGEROUS_MATCHER = "Bash|Edit|Write|MultiEdit"
+_EXPERIENCE_EVENTS = (("PostToolUse", "post"), ("PostToolUseFailure", "post-failure"))
+_EXPERIENCE_RECEIPT_NAME = "experience"
 
 
 def dangerous_hook_command(*, portable: bool | None) -> tuple[str, Literal["bare", "baked"]]:
@@ -435,6 +440,170 @@ def _install_dangerous_guard(root: Path, receipt: dict[str, Any], *, portable: b
     if "dangerous-actions" not in recorded:
         recorded.append("dangerous-actions")
     return [result]
+
+
+def _experience_event(command: object) -> str | None:
+    """Return the Claude experience event from a managed or legacy command."""
+    if not isinstance(command, str):
+        return None
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return None
+    for index in range(len(tokens) - 5):
+        if tokens[index : index + 3] != ["sdd", "experience", "hook"]:
+            continue
+        if tokens[index + 3 : index + 5] != ["--host", "claude"] or index + 5 >= len(tokens):
+            continue
+        if tokens[index + 5] in {event for _name, event in _EXPERIENCE_EVENTS}:
+            return tokens[index + 5]
+        if tokens[index + 5] == "--event" and index + 6 < len(tokens):
+            event = tokens[index + 6]
+            if event in {event_name for _name, event_name in _EXPERIENCE_EVENTS}:
+                return event
+    return None
+
+
+def _experience_command(event: str) -> str:
+    """Return the portable installer command for one Claude experience event."""
+    return f"parrot sdd experience hook --host claude --event {event}"
+
+
+def _experience_entry(event: str) -> dict[str, Any]:
+    """Return the managed Claude settings entry for one experience event."""
+    return {
+        "matcher": "Bash",
+        "hooks": [{"type": "command", "command": _experience_command(event), "timeout": 5}],
+    }
+
+
+def _install_experience_hooks(root: Path, receipt: dict[str, Any], *, portable: bool | None) -> list[str]:
+    """Idempotently install portable Claude PostToolUse/PostToolUseFailure hooks."""
+    del portable  # Installed settings are always portable; launch-time settings use the isolated interpreter.
+    from parrot.knowledge.wiki.claude_code.installer import _load_settings, _write_settings
+
+    path = root / SETTINGS_PATH
+    settings = _load_settings(path) or {}
+    hooks = settings.get("hooks")
+    if hooks is None:
+        hooks = settings["hooks"] = {}
+    if not isinstance(hooks, dict):
+        raise RuntimeError(f"{path}: 'hooks' is not a JSON object")
+
+    changed = False
+    statuses: list[str] = []
+    for hook_name, event in _EXPERIENCE_EVENTS:
+        groups = hooks.get(hook_name)
+        if groups is None:
+            groups = hooks[hook_name] = []
+        if not isinstance(groups, list):
+            raise RuntimeError(f"{path}: 'hooks.{hook_name}' is not a list")
+
+        matches = [
+            entry
+            for entry in groups
+            if isinstance(entry, dict)
+            and any(
+                _experience_event(hook.get("command")) == event
+                for hook in entry.get("hooks", [])
+                if isinstance(hook, dict)
+            )
+        ]
+        expected = _experience_entry(event)
+        if not matches:
+            groups.append(expected)
+            changed = True
+            statuses.append("registered")
+            continue
+
+        primary = matches[0]
+        foreign_hooks = [
+            hook
+            for hook in primary.get("hooks", [])
+            if isinstance(hook, dict) and _experience_event(hook.get("command")) != event
+        ]
+        normalized_hooks = [*foreign_hooks, *expected["hooks"]]
+        if primary.get("matcher") != expected["matcher"] or primary.get("hooks") != normalized_hooks:
+            primary["matcher"] = expected["matcher"]
+            primary["hooks"] = normalized_hooks
+            changed = True
+
+        for duplicate in matches[1:]:
+            kept = [
+                hook
+                for hook in duplicate.get("hooks", [])
+                if isinstance(hook, dict) and _experience_event(hook.get("command")) != event
+            ]
+            if kept:
+                if duplicate.get("hooks") != kept:
+                    duplicate["hooks"] = kept
+                    changed = True
+            else:
+                groups.remove(duplicate)
+                changed = True
+        statuses.append("updated" if changed else "already registered")
+
+    if changed:
+        _write_settings(path, settings)
+    receipt.setdefault("settings_hooks", [])
+    if _EXPERIENCE_RECEIPT_NAME not in receipt["settings_hooks"]:
+        receipt["settings_hooks"].append(_EXPERIENCE_RECEIPT_NAME)
+    if "updated" in statuses:
+        result = "updated"
+    elif "registered" in statuses:
+        result = "registered"
+    else:
+        result = "already registered"
+    return [f"{SETTINGS_PATH} — Claude experience hooks {result}"]
+
+
+def _remove_experience_hooks(root: Path, receipt: dict[str, Any]) -> list[str]:
+    """Remove only the managed Claude experience hook commands from settings."""
+    from parrot.knowledge.wiki.claude_code.installer import _load_settings, _write_settings
+
+    path = root / SETTINGS_PATH
+    settings = _load_settings(path)
+    receipt["settings_hooks"] = [
+        hook for hook in receipt.get("settings_hooks", []) if hook != _EXPERIENCE_RECEIPT_NAME
+    ]
+    if settings is None:
+        return []
+    hooks = settings.get("hooks")
+    if not isinstance(hooks, dict):
+        return []
+    changed = False
+    for hook_name, event in _EXPERIENCE_EVENTS:
+        groups = hooks.get(hook_name)
+        if not isinstance(groups, list):
+            continue
+        kept_groups: list[Any] = []
+        for group in groups:
+            if not isinstance(group, dict) or not isinstance(group.get("hooks"), list):
+                kept_groups.append(group)
+                continue
+            kept_hooks = [
+                hook
+                for hook in group["hooks"]
+                if not isinstance(hook, dict) or _experience_event(hook.get("command")) != event
+            ]
+            if len(kept_hooks) != len(group["hooks"]):
+                changed = True
+                if kept_hooks:
+                    group["hooks"] = kept_hooks
+                    kept_groups.append(group)
+            else:
+                kept_groups.append(group)
+        if kept_groups != groups:
+            hooks[hook_name] = kept_groups
+        if not hooks[hook_name]:
+            hooks.pop(hook_name)
+            changed = True
+    if not hooks:
+        settings.pop("hooks", None)
+    if changed:
+        _write_settings(path, settings)
+        return [f"{SETTINGS_PATH} — Claude experience hooks removed"]
+    return []
 
 
 def _remove_dangerous_guard(root: Path, receipt: dict[str, Any]) -> list[str]:
@@ -941,6 +1110,8 @@ def plan_install(
     plan.append(PlannedAction(action="base-branch", target=base, note=_base_branch_state(root, base)))  # C31
     if dangerous_guard and "claude" in _validate_hosts(hosts):
         plan.append(PlannedAction(action="dangerous-guard", target=SETTINGS_PATH.as_posix()))  # C32
+    if "claude" in _validate_hosts(hosts):
+        plan.append(PlannedAction(action="experience-hooks", target=SETTINGS_PATH.as_posix()))
     if agy_permissions and "google" in _validate_hosts(hosts):  # brief agy-permission-hook
         rules_in = ", ".join(_display_home(p) for p in agy_settings_paths())
         note = f"+ rules in {rules_in}" if rules_in else "agy settings not found: rules skipped"
@@ -1122,6 +1293,8 @@ def plan_uninstall(root: Path, hosts: Sequence[str], *, keep_edits: bool = False
             removed.add(target)
     if "claude" in selected_hosts and "dangerous-actions" in receipt.get("settings_hooks", []):
         plan.append(PlannedAction(action="dangerous-guard-remove", target=SETTINGS_PATH.as_posix()))  # C32
+    if "claude" in selected_hosts and _EXPERIENCE_RECEIPT_NAME in receipt.get("settings_hooks", []):
+        plan.append(PlannedAction(action="experience-hooks-remove", target=SETTINGS_PATH.as_posix()))
     if "google" in selected_hosts and ("agy-permissions" in receipt.get("settings_hooks", []) or _agy_owned_by(root)):
         plan.append(PlannedAction(action="agy-permissions-remove", target=AGY_HOOKS_PATH.as_posix()))
     if receipt.get("toolkits"):
@@ -1617,6 +1790,8 @@ def install_sdd_integration(
             actions.extend(_base_branch_step(root, config, push=push_base, receipt=receipt))
         elif step.action == "dangerous-guard":
             actions.extend(_install_dangerous_guard(root, receipt, portable=portable))
+        elif step.action == "experience-hooks":
+            actions.extend(_install_experience_hooks(root, receipt, portable=portable))
         elif step.action == "agy-permissions":
             actions.extend(_install_agy_permissions(root, receipt, portable=portable))
         elif step.action == "toolkits":
@@ -1899,6 +2074,8 @@ def uninstall_sdd_integration(
             actions.append(f"git ledger hooks — kept (keep-ledger-hooks: {step.note})")
         elif step.action == "dangerous-guard-remove":
             actions.extend(_remove_dangerous_guard(root, receipt))
+        elif step.action == "experience-hooks-remove":
+            actions.extend(_remove_experience_hooks(root, receipt))
         elif step.action == "agy-permissions-remove":
             actions.extend(_remove_agy_permissions(root, receipt))
         elif step.action == "toolkits-remove":
