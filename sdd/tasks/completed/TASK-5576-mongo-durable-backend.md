@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-886 — Durable Conversation Memory
 **Spec**: `sdd/specs/durable-conversation-memory.spec.md` (Module 7)
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5570
@@ -718,10 +718,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented the durable contract on ConversationMongoBackend per the blueprint: chrono/tombstone/index-state collections and indexes (no TTL on tombstones), ts_utc as int64 microseconds, guarded two-phase tombstone-fenced put_turn (check, upsert, re-check/rollback — NO transaction path shipped), raising query_turns, the six new operations, lazy pymongo/bson imports.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (sequential fallback)
+**Date**: 2026-11-13
+**STATUS: done-with-issues — NOT EXERCISED AGAINST A REAL MONGODB.** motor/pymongo are not installed in this venv and there is no MONGO_TEST_DSN. What ran: the class is instantiable (no abstract methods left), ruff (E9,F63,F7,F82,F401) clean, the new test file collects and every test in it plus test_mongo_backend.py SKIPs. The driver calls were never executed.
+**Mutation checks**: not run (need the server).
+**Action for a reviewer**: run `MONGO_TEST_DSN=mongodb://… pytest -p no:xdist packages/ai-parrot/tests/storage/backends/test_mongo_durable_contract.py test_mongo_backend.py`, then the mutation checks of the Acceptance Criteria.
+**Notes**: invalid_sessions entries are "<user_id>/<agent_id>/<session_id>"; cursor is str(ObjectId). During implementation an anchor mismatch temporarily deleted put_thread/update_thread/query_threads; they were restored from HEAD before the commit (diff shows only intended removals).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

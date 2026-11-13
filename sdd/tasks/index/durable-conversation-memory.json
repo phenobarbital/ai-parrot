@@ -249,7 +249,7 @@
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -259,8 +259,9 @@
       "parallelism_notes": "Implements TASK-5570's abstract methods in backends/mongodb.py; reuses tests/storage/durable_contract.py.",
       "assigned_to": null,
       "started_at": "2026-11-13T03:25:54+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5576-mongo-durable-backend.md"
+      "completed_at": "2026-11-13T04:11:54+00:00",
+      "file": "sdd/tasks/completed/TASK-5576-mongo-durable-backend.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-5577",
