@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 from datetime import datetime
 from enum import IntEnum
 
@@ -115,7 +116,7 @@ class MemoryParameters(BaseModel):
             raise ValueError("weights must contain exactly 21 values")
         if any(
             not lower <= weight <= upper
-            for weight, lower, upper in zip(self.weights, LOWER_BOUNDS_PARAMETERS, UPPER_BOUNDS_PARAMETERS)
+            for weight, lower, upper in zip(self.weights, LOWER_BOUNDS_PARAMETERS, UPPER_BOUNDS_PARAMETERS, strict=True)
         ):
             raise ValueError("weights must be finite and within the accepted FSRS-6 bounds")
 
@@ -146,7 +147,7 @@ class MemoryState(BaseModel):
             return
         if self.difficulty is None or not 1.0 <= self.difficulty <= 10.0:
             raise ValueError("difficulty must be finite and within [1.0, 10.0]")
-        if self.stability is None or not self.stability >= 0.001:
+        if self.stability is None or not math.isfinite(self.stability) or self.stability < 0.001:
             raise ValueError("stability must be finite and at least 0.001")
         if self.reviewed_at is None:
             raise ValueError("reviewed state requires reviewed_at")

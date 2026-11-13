@@ -82,3 +82,27 @@ def test_versioned_namespace_identity() -> None:
     assert next_version.canonical_key != changed_namespace.canonical_key
     with pytest.raises(ValueError, match="episode content_version"):
         MemoryRef(namespace=namespace, kind="episode", memory_id="episode-1", content_version="v2")
+
+
+def test_reviewed_state_bounds_and_utc() -> None:
+    """Verify reviewed state accepts valid values and rejects non-finite, out-of-range and non-UTC input."""
+    valid = MemoryState(
+        status="reviewed",
+        difficulty=5.0,
+        stability=1.0,
+        reviewed_at="2026-11-13T00:00:00+00:00",
+        parameter_id="fsrs-6-default",
+        review_count=1,
+    )
+
+    assert valid.review_count == 1
+    for field, value in (("stability", float("inf")), ("stability", float("nan")), ("stability", 0.0005)):
+        with pytest.raises(ValueError, match="stability"):
+            MemoryState(**{**valid.model_dump(), field: value})
+    for value in (0.5, 10.5, float("nan")):
+        with pytest.raises(ValueError, match="difficulty"):
+            MemoryState(**{**valid.model_dump(), "difficulty": value})
+    with pytest.raises(ValueError, match="aware UTC"):
+        MemoryState(**{**valid.model_dump(), "reviewed_at": "2026-11-13T00:00:00"})
+    with pytest.raises(ValueError):
+        valid.review_count = 2
