@@ -71,7 +71,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -79,8 +79,9 @@
       "parallelism_notes": "Creates independent capability/scope contracts and the FEAT-571 ownership amendment; no other task produces these inputs.",
       "assigned_to": null,
       "started_at": "2026-11-13T21:48:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5653-agent-memory-config.md"
+      "completed_at": "2026-11-13T21:56:48+00:00",
+      "file": "sdd/tasks/completed/TASK-5653-agent-memory-config.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5654",
