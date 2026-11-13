@@ -1,12 +1,12 @@
 from typing import List, Dict, Any, Callable, Optional, TYPE_CHECKING
-from datetime import datetime
+from datetime import datetime, timezone
 import asyncio
 import json
 import random
 from redis.asyncio import Redis
 from redis.exceptions import WatchError
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
-from .abstract import ConversationMemory, ConversationHistory, ConversationTurn
+from .abstract import ConversationMemory, ConversationHistory, ConversationTurn, _preview
 from .compaction.omission import OmissionStore, RedisOmissionStore
 from ..conf import REDIS_HISTORY_URL
 
@@ -27,6 +27,39 @@ _MERGE_MAX_ATTEMPTS: int = 16
 #: writers are involved.
 _MERGE_BACKOFF_BASE: float = 0.002
 _MERGE_BACKOFF_CAP: float = 0.100
+
+
+def _turn_sort_key(turn: Dict[str, Any]) -> Optional[tuple]:
+    """``(UTC timestamp, sequence or 0, turn_id)`` of a stored turn dict, or ``None`` when unparseable."""
+    try:
+        ts = datetime.fromisoformat(str(turn["timestamp"]))
+    except (KeyError, ValueError, TypeError):
+        return None
+    ts = ts.replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts.astimezone(timezone.utc)
+    return ts, int(turn.get("sequence") or 0), str(turn.get("turn_id", ""))
+
+
+def _upsert_turn_dict(turns: List[Dict[str, Any]], new: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Replace the dict with ``new['turn_id']`` (keeping its ``timestamp``/``sequence``) or insert it chronologically."""
+    result = list(turns)
+    for i, old in enumerate(result):
+        if old.get("turn_id") == new.get("turn_id"):
+            result[i] = {**new, "timestamp": old.get("timestamp", new.get("timestamp")),
+                         "sequence": old.get("sequence")}
+            return result
+    new_key = _turn_sort_key(new)
+    if new_key is None:
+        return result + [new]
+    insert_at = len(result)
+    for i, old in enumerate(result):
+        old_key = _turn_sort_key(old)
+        if old_key is None:
+            return result + [new]  # an unparseable stored timestamp: never reorder around it
+        if old_key > new_key:
+            insert_at = i
+            break
+    result.insert(insert_at, new)
+    return result
 
 
 async def _merge_backoff(attempt: int) -> None:
@@ -489,6 +522,107 @@ class RedisConversation(ConversationMemory):
         """Append ``turn`` (see :meth:`_append_turn`) and refresh the history TTL."""
         await self._append_turn(user_id, session_id, turn, chatbot_id, compaction_state=compaction_state)
         await self._refresh_ttl(user_id, session_id, chatbot_id)
+
+    async def upsert_turn(
+        self, user_id: str, session_id: str, turn: ConversationTurn, chatbot_id: Optional[str] = None
+    ) -> None:
+        """Replace the stored turn with the same ``turn_id``, or insert it, in ONE compare-and-swap write.
+
+        Creates the history when absent. Runs the ``add_turn`` normalize / count / offload steps.
+        Idempotent: replaying the same turn leaves one copy; the ordering fields of an existing turn
+        never change.
+
+        Raises:
+            RuntimeError: the CAS still conflicts after ``_MERGE_MAX_ATTEMPTS`` (the caller's bus retries).
+        """
+        prepared = await self._prepare_turn(user_id, session_id, turn, chatbot_id)
+        key = self._get_key(user_id, session_id, chatbot_id)
+        new = prepared.to_dict()
+        attempts = _MERGE_MAX_ATTEMPTS if self._supports_cas() else 1
+        for attempt in range(attempts):
+            if self._supports_cas():
+                async with self.redis.pipeline() as pipe:
+                    try:
+                        await pipe.watch(key)
+                        await self._write_upserted(pipe, key, user_id, session_id, chatbot_id, new, cas=True)
+                    except WatchError:
+                        await _merge_backoff(attempt)
+                        continue
+            else:
+                await self._write_upserted(self.redis, key, user_id, session_id, chatbot_id, new, cas=False)
+            await self._refresh_ttl(user_id, session_id, chatbot_id)
+            await self.redis.sadd(self._get_user_sessions_key(user_id, chatbot_id), session_id)
+            return
+        raise RuntimeError(f"turn upsert for {key} still conflicting after {_MERGE_MAX_ATTEMPTS} attempts")
+
+    async def _write_upserted(
+        self, conn: Any, key: str, user_id: str, session_id: str, chatbot_id: Optional[str],
+        new: Dict[str, Any], *, cas: bool,
+    ) -> None:
+        """Read the stored turns through ``conn``, upsert ``new`` and write once (MULTI/EXEC when ``cas``)."""
+        now = datetime.now().isoformat()
+        if self.use_hash_storage:
+            exists = await conn.exists(key)
+            raw = await conn.hget(key, "turns") if exists else None
+            turns = self._deserialize_data(raw) if raw else []
+            mapping: Dict[str, Any] = {"turns": self._serialize_data(_upsert_turn_dict(turns, new)),
+                                       "updated_at": now}
+            if chatbot_id is not None:
+                mapping["chatbot_id"] = str(chatbot_id)
+            if not exists:
+                mapping.update({"session_id": str(session_id), "user_id": str(user_id), "created_at": now,
+                                "metadata": self._serialize_data({})})
+            if cas:
+                conn.multi()
+                conn.hset(key, mapping=mapping)
+                await conn.execute()
+            else:
+                await conn.hset(key, mapping=mapping)
+            return
+        raw = await conn.get(key)
+        payload = self._deserialize_data(raw) if raw else None
+        if isinstance(payload, dict):
+            history = ConversationHistory.from_dict(payload)
+        else:
+            history = ConversationHistory(session_id=session_id, user_id=user_id, chatbot_id=chatbot_id)
+        if chatbot_id and not history.chatbot_id:
+            history.chatbot_id = chatbot_id
+        merged = _upsert_turn_dict([t.to_dict() for t in history.turns], new)
+        history.turns = [ConversationTurn.from_dict(t) for t in merged]
+        data = self._serialize_data(history.to_dict())
+        if cas:
+            conn.multi()
+            conn.set(key, data)
+            await conn.execute()
+        else:
+            await conn.set(key, data)
+
+    async def _prepare_turn(
+        self, user_id: str, session_id: str, turn: ConversationTurn, chatbot_id: Optional[str] = None
+    ) -> ConversationTurn:
+        """TEMPORARY mirror of the ``add_turn`` steps (TASK-5580 moves this to ``ConversationMemory``)."""
+        from .compaction.tokens import count_turn, needs_recount
+
+        counter = self.token_counter
+        if self._normalize:
+            from .compaction.normalize import normalize_turn
+
+            turn = normalize_turn(turn)
+        if needs_recount(turn, counter):
+            turn.token_count = count_turn(turn, counter)
+        key = self.omission_key(user_id, session_id, chatbot_id)
+        offloaded = False
+        for inv in turn.tool_invocations:
+            if inv.output and "output" not in inv.omitted and counter.count(inv.output) > self._oversize_tool_tokens:
+                cid = await self.omission_store.put(key, inv.output, turn_id=turn.turn_id)
+                inv.output_chars = len(inv.output)
+                inv.output = _preview(inv.output)
+                inv.omitted["output"] = cid
+                offloaded = True
+        if offloaded:
+            turn.token_count = count_turn(turn, counter)
+        turn.schema_version = 2
+        return turn
 
     async def _append_turn(
         self,

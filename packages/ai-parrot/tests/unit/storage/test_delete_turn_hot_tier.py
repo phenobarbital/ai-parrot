@@ -22,6 +22,9 @@ class _ColdBackend:
     async def update_thread(self, **kwargs) -> None:
         return None
 
+    async def put_tombstone(self, user_id, agent_id, session_id, turn_id=None) -> None:
+        return None
+
 
 async def _seed(hot: InMemoryConversation) -> None:
     await hot.create_history("u", "s", chatbot_id="agent-1")
@@ -57,7 +60,7 @@ async def test_delete_turn_hot_failure_is_logged_not_raised(caplog):
     storage = ChatStorage(redis_conversation=hot, dynamodb=_ColdBackend())
     with caplog.at_level(logging.WARNING):
         assert await storage.delete_turn("s", "t1", user_id="u", agent_id="agent-1") is True
-    assert any("t1" in r.getMessage() for r in caplog.records if r.levelno == logging.WARNING)
+    assert any("t1" in r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING)
 
 
 async def test_initialize_passes_history_ttl(monkeypatch):
