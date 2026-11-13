@@ -21,7 +21,7 @@ import sqlite3
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 import aiosqlite
 from navconfig.logging import logging
@@ -717,6 +717,19 @@ class ConversationSQLiteBackend(ConversationBackend):
             await self._conn.commit()
         except sqlite3.Error as exc:
             raise StorageWriteError(f"SQLite put_tombstone failed for session {session_id}: {exc}") from exc
+
+    async def deleted_turn_ids(self, user_id: str, agent_id: str, session_id: str) -> Set[str]:
+        """Every turn-scoped tombstone of the session in one query."""
+        self._require_connection()
+        try:
+            cursor = await self._conn.execute(
+                "SELECT turn_id FROM conversation_tombstones"
+                " WHERE user_id=? AND agent_id=? AND session_id=? AND turn_id != ''",
+                (user_id, agent_id, session_id),
+            )
+            return {row["turn_id"] for row in await cursor.fetchall()}
+        except sqlite3.Error as exc:
+            raise StorageUnavailableError(f"SQLite deleted_turn_ids failed for session {session_id}: {exc}") from exc
 
     async def is_deleted(
         self, user_id: str, agent_id: str, session_id: str, turn_id: Optional[str] = None

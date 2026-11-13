@@ -55,6 +55,7 @@ def test_build_overflow_prefix_default_layout():
         async def query_turn_window(self, *a, **kw): return []
         async def max_sequence(self, *a, **kw): return 0
         async def put_tombstone(self, *a, **kw): ...
+        async def deleted_turn_ids(self, *a, **kw): return set()
         async def is_deleted(self, *a, **kw): return False
         async def get_index_state(self, *a, **kw): return "ready"
         async def backfill_batch(self, *a, **kw): return None
@@ -92,6 +93,7 @@ def test_stub_subclass_can_be_instantiated():
         async def query_turn_window(self, *a, **kw): return []
         async def max_sequence(self, *a, **kw): return 0
         async def put_tombstone(self, *a, **kw): ...
+        async def deleted_turn_ids(self, *a, **kw): return set()
         async def is_deleted(self, *a, **kw): return False
         async def get_index_state(self, *a, **kw): return "ready"
         async def backfill_batch(self, *a, **kw): return None

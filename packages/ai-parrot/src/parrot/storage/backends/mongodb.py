@@ -13,7 +13,7 @@ FEAT-116: dynamodb-fallback-redis — Module 6 (MongoDB backend).
 
 import asyncio
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from navconfig.logging import logging
 
@@ -476,6 +476,16 @@ class ConversationMongoBackend(ConversationBackend):
             )
         except Exception as exc:
             raise self._translate(exc, write=True) from exc
+
+    async def deleted_turn_ids(self, user_id: str, agent_id: str, session_id: str) -> Set[str]:
+        """Every turn-scoped tombstone of the session in one query."""
+        self._require_connection()
+        try:
+            return {d["turn_id"] async for d in self._tombstones.find(
+                {"user_id": user_id, "agent_id": agent_id, "session_id": session_id, "turn_id": {"$ne": ""}},
+                projection={"turn_id": 1})}
+        except Exception as exc:
+            raise self._translate(exc, write=False) from exc
 
     async def is_deleted(
         self, user_id: str, agent_id: str, session_id: str, turn_id: Optional[str] = None

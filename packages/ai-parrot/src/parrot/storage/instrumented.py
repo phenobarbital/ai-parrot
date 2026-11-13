@@ -104,6 +104,9 @@ class InstrumentedBackend(ConversationBackend):
     async def put_tombstone(self, *a, **kw) -> None:
         return await self._measure("put_tombstone", self._inner.put_tombstone, *a, **kw)
 
+    async def deleted_turn_ids(self, *a, **kw):
+        return await self._measure("deleted_turn_ids", self._inner.deleted_turn_ids, *a, **kw)
+
     async def is_deleted(self, *a, **kw) -> bool:
         return await self._measure("is_deleted", self._inner.is_deleted, *a, **kw)
 

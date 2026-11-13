@@ -197,6 +197,22 @@ async def check_backfill_batch_resumable(h: DurableHarness) -> None:
     assert again.processed == 0
 
 
+async def check_deleted_turn_ids(h: DurableHarness) -> None:
+    """deleted_turn_ids returns exactly the TURN tombstones of the session in one read: no session tombstone,
+    no other session's, no other agent's."""
+    b = h.backend
+    s, other = "s-batch-tomb", "s-batch-other"
+    assert await b.deleted_turn_ids(USER, AGENT, s) == set()
+    await b.put_tombstone(USER, AGENT, s, "t-a")
+    await b.put_tombstone(USER, AGENT, s, "t-b")
+    await b.put_tombstone(USER, AGENT, s, "t-a")  # idempotent
+    await b.put_tombstone(USER, AGENT, other, "t-other")
+    await b.put_tombstone(USER, AGENT + "-2", s, "t-agent2")
+    assert await b.deleted_turn_ids(USER, AGENT, s) == {"t-a", "t-b"}
+    await b.put_tombstone(USER, AGENT, s)  # a session tombstone is not a turn id
+    assert await b.deleted_turn_ids(USER, AGENT, s) == {"t-a", "t-b"}
+
+
 ALL_CHECKS: List[Callable[[DurableHarness], Awaitable[None]]] = [
     check_disconnected_raises,
     check_failed_write_raises,
@@ -207,4 +223,5 @@ ALL_CHECKS: List[Callable[[DurableHarness], Awaitable[None]]] = [
     check_index_state,
     check_max_sequence,
     check_backfill_batch_resumable,
+    check_deleted_turn_ids,
 ]

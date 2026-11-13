@@ -13,7 +13,7 @@ import asyncio
 import json
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import aioboto3
 from botocore.exceptions import ClientError, BotoCoreError
@@ -691,6 +691,25 @@ class ConversationDynamoDB(ConversationBackend):
             raise StorageWriteError(f"DynamoDB put_tombstone failed: {exc}") from exc
         except BotoCoreError as exc:
             raise StorageUnavailableError(f"DynamoDB transport failure: {exc}") from exc
+
+    async def deleted_turn_ids(self, user_id: str, agent_id: str, session_id: str) -> Set[str]:
+        """Every turn-scoped tombstone of the session: ONE paginated, consistent Query (not a GetItem per turn)."""
+        self._require_connection()
+        kwargs: Dict[str, Any] = {
+            "KeyConditionExpression": DKey("PK").eq(self._build_pk(user_id, agent_id))
+            & DKey("SK").begins_with(f"TOMB#{session_id}#TURN#"),
+            "ProjectionExpression": "turn_id", "ConsistentRead": True,
+        }
+        gone: Set[str] = set()
+        try:
+            while True:
+                page = await self._conv_table.query(**kwargs)
+                gone.update(i["turn_id"] for i in page.get("Items", []) if i.get("turn_id"))
+                if not page.get("LastEvaluatedKey"):
+                    return gone
+                kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
+        except (ClientError, BotoCoreError) as exc:
+            raise StorageUnavailableError(f"DynamoDB deleted_turn_ids failed: {exc}") from exc
 
     async def is_deleted(
         self, user_id: str, agent_id: str, session_id: str, turn_id: Optional[str] = None

@@ -138,6 +138,10 @@ class _ReferenceBackend(ConversationBackend):
     async def put_tombstone(self, user_id, agent_id, session_id, turn_id=None):
         self.tombs.add((user_id, agent_id, session_id, turn_id))
 
+    async def deleted_turn_ids(self, user_id, agent_id, session_id):
+        self._need()
+        return {t for (u, a, s_, t) in self.tombs if (u, a, s_) == (user_id, agent_id, session_id) and t}
+
     async def is_deleted(self, user_id, agent_id, session_id, turn_id=None):
         self._need()
         return (user_id, agent_id, session_id, turn_id) in self.tombs

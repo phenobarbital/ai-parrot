@@ -10,7 +10,7 @@ See wiki/stores/storage-backends.md for the backend selection matrix.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import List, Optional, Set, Tuple
 
 
 @dataclass(frozen=True)
@@ -180,6 +180,14 @@ class ConversationBackend(ABC):
         """Durably record a session (``turn_id=None``) or turn deletion. Idempotent.
 
         Not subject to transcript TTL or :meth:`delete_thread_cascade`.
+        """
+
+    @abstractmethod
+    async def deleted_turn_ids(self, user_id: str, agent_id: str, session_id: str) -> Set[str]:
+        """The ids of every TURN tombstoned in the session, in ONE bounded read (session tombstone excluded).
+
+        Raises:
+            StorageUnavailableError: If it cannot be determined — never returns an empty set on failure.
         """
 
     @abstractmethod

@@ -280,8 +280,9 @@ class ChatStorage:
                 history = await self._redis.get_history(user_id, session_id, chatbot_id=agent_id)
                 if history and history.turns:
                     messages = []
-                    visible = await self._drop_tombstoned_turns(
-                        user_id, agent_id or "", session_id, list(history.turns[-limit:]), lambda t: t.turn_id)
+                    # filter FIRST, then window: a read returns up to ``limit`` LIVE turns
+                    visible = (await self._drop_tombstoned_turns(
+                        user_id, agent_id or "", session_id, list(history.turns), lambda t: t.turn_id))[-limit:]
                     for turn in visible:
                         messages.append(
                             {
@@ -327,15 +328,19 @@ class ChatStorage:
                     turns = await self._dynamo.query_turn_window(user_id, agent, session_id, limit)
                 except IndexNotReadyError:
                     # Legacy session not backfilled yet: the old (sort_key) order is the best available read.
+                    # The window backends already exclude tombstoned turns; this path does not, so ask for the
+                    # tombstoned count extra (ONE batched lookup), filter, then apply ``limit`` to live turns.
+                    gone = await self._dynamo.deleted_turn_ids(user_id, agent, session_id)
                     turns = await self._dynamo.query_turns(
                         user_id=user_id,
                         agent_id=agent,
                         session_id=session_id,
-                        limit=limit,
+                        limit=limit + len(gone),
                         newest_first=False,
                     )
-                turns = await self._drop_tombstoned_turns(
-                    user_id, agent, session_id, list(turns), lambda r: str(r.get("turn_id", "")))
+                    turns = [t for t in turns if str(t.get("turn_id", "")) not in gone][:limit]
+                # NOT filtered again on the window path: ``query_turn_window`` of every backend already excludes
+                # tombstoned turns and applies ``limit`` after doing so.
                 messages = []
                 for row in turns:
                     try:
@@ -519,10 +524,13 @@ class ChatStorage:
         """Remove turns whose turn-scoped tombstone exists (a deleted turn is never served, even before cleanup)."""
         if self._dynamo is None or not turns:
             return turns
-        flags = await asyncio.gather(
-            *(self._dynamo.is_deleted(user_id, agent, session_id, turn_id_of(t)) for t in turns)
-        )
-        return [t for t, gone in zip(turns, flags) if not gone]
+        try:
+            gone = await self._dynamo.deleted_turn_ids(user_id, agent, session_id)  # ONE batched lookup per read
+        except StorageError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - fail closed: never serve without knowing what was deleted
+            raise StorageUnavailableError(f"tombstone lookup unavailable: {exc}") from exc
+        return [t for t in turns if turn_id_of(t) not in gone] if gone else turns
 
     async def _ensure_not_deleted(self, user_id: str, agent: str, session_id: str) -> None:
         """Raise ``ConversationDeletedError`` when the session is tombstoned; a guard failure is raised, not ignored."""

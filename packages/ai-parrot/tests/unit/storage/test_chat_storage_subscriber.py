@@ -371,3 +371,66 @@ async def test_titles_and_threads_cannot_be_recreated_for_a_deleted_session(stor
     with pytest.raises(ConversationDeletedError):
         await storage.assert_conversation_active("u1", "bot1", "s1")
     assert await cold.query_threads("u1", "bot1", limit=10) == []  # no thread row was resurrected
+
+
+class _CountingBackend:
+    """Delegates to the real SQLite backend and counts every call by method name."""
+
+    def __init__(self, inner) -> None:
+        self._inner, self.calls = inner, []
+
+    def __getattr__(self, name):
+        attr = getattr(self._inner, name)
+        if not callable(attr):
+            return attr
+
+        async def _wrapped(*a, **kw):
+            self.calls.append(name)
+            return await attr(*a, **kw)
+
+        return _wrapped
+
+
+async def test_a_read_costs_a_bounded_number_of_backend_calls_not_one_per_turn(storage, cold):
+    for i in range(1, 21):
+        await storage.store_turn(_turn(f"t{i}", sec=i))
+    await cold.put_tombstone("u1", "bot1", "s1", "t3")
+    counting = _CountingBackend(cold)
+    storage._dynamo = counting
+    users = [m["content"] for m in await storage.load_conversation("u1", "s1", agent_id="bot1", limit=50)
+             if m["role"] == "user"]
+    assert "q-t3" not in users and len(users) == 19  # Redis hot read, tombstone honoured
+    assert counting.calls.count("deleted_turn_ids") == 1
+    assert counting.calls.count("is_deleted") <= 1  # the session guard only; never per turn
+    assert len(counting.calls) <= 3
+
+
+async def test_limit_is_applied_after_filtering_tombstoned_turns(storage, cold):
+    for i in range(1, 6):
+        await storage.store_turn(_turn(f"t{i}", sec=i))
+    await cold.put_tombstone("u1", "bot1", "s1", "t5")  # the two NEWEST turns are tombstoned
+    await cold.put_tombstone("u1", "bot1", "s1", "t4")
+    hot = [m["content"] for m in await storage.load_conversation("u1", "s1", agent_id="bot1", limit=3)
+           if m["role"] == "user"]
+    assert hot == ["q-t1", "q-t2", "q-t3"]  # 3 live turns, not 1
+    cold_only = ChatStorage(dynamodb=cold)
+    window = [m["content"] for m in await cold_only.load_conversation("u1", "s1", agent_id="bot1", limit=3)
+              if m["role"] == "user"]
+    assert window == ["q-t1", "q-t2", "q-t3"]
+
+
+async def test_legacy_fallback_returns_limit_live_turns_when_tombstoned_ones_come_first(cold):
+    import sqlite3
+
+    raw = sqlite3.connect(str(cold._path))
+    for i in range(1, 6):
+        raw.execute("INSERT INTO conversations (user_id, agent_id, session_id, kind, sort_key, payload, updated_at)"
+                    " VALUES ('u1','bot1','legacy2','turn',?, ?, 1.0)",
+                    (f"TURN#o{i}", f'{{"user_message": "legacy o{i}", "assistant_response": "a"}}'))
+    raw.commit()
+    raw.close()
+    await cold.put_tombstone("u1", "bot1", "legacy2", "o1")
+    await cold.put_tombstone("u1", "bot1", "legacy2", "o2")
+    got = [m["content"] for m in await ChatStorage(dynamodb=cold).load_conversation("u1", "legacy2", agent_id="bot1",
+                                                                                   limit=3) if m["role"] == "user"]
+    assert got == ["legacy o3", "legacy o4", "legacy o5"]

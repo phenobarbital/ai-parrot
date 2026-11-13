@@ -17,7 +17,7 @@ FEAT-116: dynamodb-fallback-redis — Module 5 (Postgres backend).
 import asyncio
 import json
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from navconfig.logging import logging
 
@@ -584,6 +584,19 @@ class ConversationPostgresBackend(ConversationBackend):
                         user_id, agent_id, session_id, turn_id or "")
         except Exception as exc:
             raise self._translate(exc, write=True) from exc
+
+    async def deleted_turn_ids(self, user_id: str, agent_id: str, session_id: str) -> Set[str]:
+        """Every turn-scoped tombstone of the session in one query."""
+        self._require_connection()
+        try:
+            async with self._pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT turn_id FROM parrot_conversation_tombstones"
+                    " WHERE user_id=$1 AND agent_id=$2 AND session_id=$3 AND turn_id <> ''",
+                    user_id, agent_id, session_id)
+        except Exception as exc:
+            raise self._translate(exc, write=False) from exc
+        return {r["turn_id"] for r in rows}
 
     async def is_deleted(
         self, user_id: str, agent_id: str, session_id: str, turn_id: Optional[str] = None
