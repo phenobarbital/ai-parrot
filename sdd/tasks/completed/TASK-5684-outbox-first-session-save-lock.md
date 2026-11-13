@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-895 — Turn save — outbox first, one save at a time per session
 **Spec**: `sdd/specs/bots-abstract-tech-debt-2.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -389,4 +389,23 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed**: 2026-11-14 · **Verification**: verified · **Code commit**: `cf184da502`
+
+- `_TurnSaveLocks` / `_TURN_SAVE_LOCKS` (module level, refcounted per-key `asyncio.Lock`), `AbstractBot._turn_save_key`
+  and `AbstractBot._invalidate_working_memory` added. `save_conversation_turn` takes the lock around stamp → snapshot →
+  stage-2 read → outbox append → `add_turn`; the append now precedes `add_turn`; a failing `add_turn` after an append
+  invalidates working memory only with a hydration source, then re-raises. `_save_or_snapshot_turn`'s history-disabled
+  branch runs under the same lock. `_publish_turn_completed` no longer swallows errors.
+- Tests: `test_publish_after_add_turn` → `test_publish_before_add_turn`; `test_publish_failure_does_not_fail_round` →
+  `test_rejected_outbox_append_fails_the_round_and_leaves_memory_untouched`; seven M1 tests added. All nine failed on
+  the unmodified code. Five targeted mutations (lock key without session, no lock on the history-disabled branch,
+  invalidation without the hydration guard, no invalidation, registry never shrinking) each failed their test.
+- Validation Commands: 91 passed (five files, `PYTHONPATH=packages/ai-parrot/src`). Also run:
+  `ai-parrot-server` `tests/studio/test_tenant_matrix.py` + `tests/manager/test_turn_persistence_wiring.py` — 14 passed,
+  14 skipped (infrastructure-gated). `ruff check` clean; `abstract.py` black-clean; the new test hunks black-clean
+  (the rest of the test file predates black).
+- Pre-existing, unrelated: `tests/tools/working_memory/task_memory/test_bot_task_context.py::
+  test_single_writer_only_save_conversation_turn_persists` fails on `dev` without this change (it AST-scans `base.py`
+  for a direct `save_conversation_turn` call, which FEAT-886 moved into `_persist_turn_unit`). Filed as
+  `issue:d55f57be4ae6`.
+- Behaviour change, as decided in spec Q2: an outbox fault (overflow, unwritable SQLite file) now fails the request.
