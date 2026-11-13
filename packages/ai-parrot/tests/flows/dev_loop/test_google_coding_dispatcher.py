@@ -21,6 +21,7 @@ from parrot.flows.dev_loop import (
     DispatchOutputValidationError,
     ResearchOutput,
 )
+from parrot.flows.dev_loop.dispatchers.google_coding import AgyToolStep, parse_agy_tool_step
 
 
 class _AsyncBytesStream:
@@ -388,6 +389,182 @@ class TestAgyEventExtraction:
 
 
 # ---------------------------------------------------------------------------
+# FEAT-888 — agy 1.5.8 emits ``step_type: "tool"`` (ACTIVE, then DONE) instead
+# of tool_call / tool_response. Fixtures are sanitized live 1.5.8 captures.
+# ---------------------------------------------------------------------------
+
+_FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def _agy_fixture(name: str) -> list[Dict[str, Any]]:
+    lines = (_FIXTURES / name).read_text(encoding="utf-8").splitlines()
+    return [json.loads(line) for line in lines if line.strip()]
+
+
+def _agy_tool_events(name: str) -> list[Dict[str, Any]]:
+    return [
+        event
+        for event in _agy_fixture(name)
+        if event.get("event") == "step_update" and event["step_update"].get("step_type") == "tool"
+    ]
+
+
+def _tool_event(name: str, tool: str, state: str, needle: str = "") -> Dict[str, Any]:
+    for event in _agy_tool_events(name):
+        su = event["step_update"]
+        params = json.dumps(su["tool_info"].get("parameters", {}))
+        if su["tool_info"]["name"] == tool and su["state"] == state and needle in params:
+            return event
+    raise AssertionError(f"no {tool}/{state}/{needle!r} step in {name}")
+
+
+_STEPS = "agy_1_5_8_tool_steps.jsonl"
+_DENIED = "agy_1_5_8_denied_command.jsonl"
+
+
+class TestAgyToolStepParser:
+    def test_done_run_command_success(self):
+        step = parse_agy_tool_step(_tool_event(_STEPS, "run_command", "DONE", "echo")["step_update"])
+        assert isinstance(step, AgyToolStep)
+        assert step.done is True
+        assert step.name == "run_command"
+        assert step.command == "echo hello"
+        assert step.step_index == 2
+        assert step.exit_code == 0
+        assert step.is_error is False
+        assert step.command_output == "hello"
+
+    def test_done_run_command_failure(self):
+        step = parse_agy_tool_step(_tool_event(_STEPS, "run_command", "DONE", "nonexistent")["step_update"])
+        assert step is not None
+        assert step.exit_code == 2
+        assert step.is_error is True
+        assert "/nonexistent_dir_xyz" in step.command_output
+        assert "Created At" not in step.command_output
+
+    def test_active_step_has_no_output(self):
+        step = parse_agy_tool_step(_tool_event(_STEPS, "run_command", "ACTIVE", "echo")["step_update"])
+        assert step is not None
+        assert step.done is False
+        assert step.command == "echo hello"
+        assert step.output is None
+        assert step.exit_code is None
+        assert step.is_error is None
+
+    def test_read_file_has_no_exit_code(self):
+        step = parse_agy_tool_step(_tool_event(_STEPS, "read_file", "DONE")["step_update"])
+        assert step is not None
+        assert step.parameters["Path"] == "/work/agyprobe/note.txt"
+        assert step.command is None
+        assert step.output == "1 lines, 11 bytes"
+        assert step.exit_code is None
+        assert step.is_error is None
+        assert step.command_output is None
+
+    def test_denied_command_done_without_output(self):
+        step = parse_agy_tool_step(_tool_event(_DENIED, "run_command", "DONE")["step_update"])
+        assert step is not None
+        assert step.done is True
+        assert step.command.startswith("for i in")
+        assert step.output is None
+        assert step.is_error is None
+
+    def test_non_tool_and_malformed_return_none(self):
+        assert parse_agy_tool_step({"step_type": "agent_response", "text_delta": "hi"}) is None
+        assert parse_agy_tool_step({"step_type": "user_input", "state": "DONE"}) is None
+        assert parse_agy_tool_step("not a dict") is None
+        assert parse_agy_tool_step(None) is None
+
+        bare = parse_agy_tool_step({"step_type": "tool", "tool_name": "run_command", "tool_info": "bogus"})
+        assert bare is not None
+        assert bare.name == "run_command"
+        assert bare.parameters == {}
+
+        odd = parse_agy_tool_step({"step_type": "tool", "tool_info": {"parameters": "oops", "output": 123}})
+        assert odd is not None
+        assert odd.parameters == {}
+        assert odd.output == "123"
+        assert odd.exit_code is None
+
+
+class TestAgyToolStepEvents:
+    async def _replay(self, dispatcher, events) -> list[str]:
+        for event in events:
+            await dispatcher._publish_agy_event("flow:r1:dispatch:development", event, "r1", "development")
+        return [json.loads(call.args[1]["event"])["kind"] for call in dispatcher._fake_redis.xadd.call_args_list]
+
+    @pytest.mark.asyncio
+    async def test_fixture_publishes_tool_use_and_result_pairs(self, dispatcher):
+        kinds = await self._replay(dispatcher, _agy_fixture(_STEPS))
+        assert kinds.count("dispatch.tool_use") == 3
+        assert kinds.count("dispatch.tool_result") == 3
+        assert kinds[0] == "dispatch.started"
+        assert kinds[-1] == "dispatch.completed"
+
+    @pytest.mark.asyncio
+    async def test_fixture_folds_tool_use_count(self, dispatcher):
+        from parrot.flows.dev_loop.dispatchers._shared import _SESSION_HOST_CTX
+        from parrot.flows.dev_loop.session_state import SessionHost
+
+        host = SessionHost("r1")
+        token = _SESSION_HOST_CTX.set(host)
+        try:
+            await self._replay(dispatcher, _agy_fixture(_STEPS))
+        finally:
+            _SESSION_HOST_CTX.reset(token)
+        assert host.state.nodes["development"].dispatch.tool_use_count == 3
+
+    @pytest.mark.asyncio
+    async def test_denied_command_still_pairs(self, dispatcher):
+        kinds = await self._replay(dispatcher, _agy_fixture(_DENIED))
+        assert kinds.count("dispatch.tool_use") == 1
+        assert kinds.count("dispatch.tool_result") == 1
+
+    def test_display_keys_for_done_failure(self):
+        out = GoogleCodingDispatcher._extract_agy_display(_tool_event(_STEPS, "run_command", "DONE", "nonexistent"))
+        assert out["tool_name"] == "run_command"
+        assert out["tool_input"] == "ls /nonexistent_dir_xyz"
+        assert out["exit_code"] == 2
+        assert out["is_error"] is True
+        assert "nonexistent_dir_xyz" in out["result_snippet"]
+        assert "Created At" not in out["result_snippet"]
+
+    def test_display_keys_for_done_success(self):
+        out = GoogleCodingDispatcher._extract_agy_display(_tool_event(_STEPS, "run_command", "DONE", "echo"))
+        assert out["exit_code"] == 0
+        assert out["is_error"] is False
+        assert out["result_snippet"] == "hello"
+
+    def test_display_keys_for_active_step(self):
+        out = GoogleCodingDispatcher._extract_agy_display(_tool_event(_STEPS, "run_command", "ACTIVE", "echo"))
+        assert out == {"tool_name": "run_command", "tool_input": "echo hello"}
+
+    def test_display_keys_for_read_file(self):
+        out = GoogleCodingDispatcher._extract_agy_display(_tool_event(_STEPS, "read_file", "DONE"))
+        assert out["tool_name"] == "read_file"
+        assert out["tool_input"].endswith("note.txt")
+        assert out["result_snippet"] == "1 lines, 11 bytes"
+        assert "is_error" not in out
+        assert "exit_code" not in out
+
+    def test_display_keys_for_denied_command(self):
+        out = GoogleCodingDispatcher._extract_agy_display(_tool_event(_DENIED, "run_command", "DONE"))
+        assert out["tool_name"] == "run_command"
+        assert out["tool_input"].startswith("for i in")
+        assert "is_error" not in out
+        assert "result_snippet" not in out
+
+    @pytest.mark.asyncio
+    async def test_unknown_tool_state_is_message(self, dispatcher):
+        event = {
+            "event": "step_update",
+            "step_update": {"step_type": "tool", "state": "PENDING", "tool_info": {"name": "run_command"}},
+        }
+        kinds = await self._replay(dispatcher, [event])
+        assert kinds == ["dispatch.message"]
+
+
+# ---------------------------------------------------------------------------
 # FEAT-606: the --json-schema file must be readable by ``agy --sandbox``,
 # which can only see its workspace (the dispatch cwd).
 # ---------------------------------------------------------------------------
@@ -518,4 +695,3 @@ def test_build_command_passes_through_auto_mode_and_xhigh_effort(dispatcher) -> 
     effort_index = command.index("--effort")
     assert command[mode_index : mode_index + 2] == ["--mode", "auto"]
     assert command[effort_index : effort_index + 2] == ["--effort", "xhigh"]
-
