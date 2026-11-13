@@ -73,7 +73,9 @@ def test_mcp_tool_both_transports(tmp_path: Path) -> None:
         assert framework_tool.description == PROCEDURE_NEXT_DESCRIPTION
         assert framework_tool.args_schema is ProcedureNextInput
 
-        descriptor = next(item for item in build_operation_descriptors(sdk.wiki_bundle) if item.name == "wiki_procedure_next")
+        descriptor = next(
+            item for item in build_operation_descriptors(sdk.wiki_bundle) if item.name == "wiki_procedure_next"
+        )
         assert descriptor.description == PROCEDURE_NEXT_DESCRIPTION
         assert descriptor.input_model is ProcedureNextInput
         assert descriptor.mount == "procedure"
