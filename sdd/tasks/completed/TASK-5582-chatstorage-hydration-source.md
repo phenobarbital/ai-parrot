@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-886 — Durable Conversation Memory
 **Spec**: `sdd/specs/durable-conversation-memory.spec.md` (Module 14)
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5573, TASK-5570, TASK-5580, TASK-5574
@@ -460,10 +460,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added parrot/storage/hydration.py: ChatStorageHydrationSource (load_turns / is_deleted / max_sequence) translating StorageError subclasses to the three hydration errors, [] -> None, deletion wins over not-ready, corrupt rows -> HydrationUnavailableError.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (sequential fallback)
+**Date**: 2026-11-13
+**Tests**: test_chat_storage_hydration_source 8 passed (real SQLite + a raising real subclass). ruff clean. No skips.
+**Mutation evidence**: empty -> [] / deleted not mapped / no deletion probe on the not-ready path / swapped agent-user key order -> each RED (see run). Restored by re-applying.
+**Notes**: `ChatStorageTurn.from_row` is called with user_id/agent_id/session_id keyword args so legacy rows (no identity keys) still load; a ValueError/TypeError/KeyError from a corrupt row is also translated to HydrationUnavailableError.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
