@@ -20,6 +20,10 @@ These are planning artifacts, not evidence that carried G1–G4 gates passed.
 
 G3: concrete runtime outcome adapter and verified-check schema must be accepted; generic tool return values are not a substitute.
 
+**FEAT-886 merged (spec rev 0.3).** PR #2121 must be merged into `dev` before this task writes code: it rewrites
+the BaseBot sites this task edits. If it is not on `dev`, stop. Once it is, re-verify the post-merge anchors below.
+Exposure for `PandasAgent.ask` is out of scope (spec F1): its events carry no exposure manifest and earn no review.
+
 Before releasing any blocked task, record the accepted amendment in the spec, expand its
 Validation Contract with the released module test paths, regenerate the index test contract
 using `parrot sdd tests contract`, and change status through the normal SDD workflow.
@@ -85,6 +89,7 @@ import pytest
 - `packages/ai-parrot/src/parrot/memory/unified/manager.py:124` — `UnifiedMemoryManager.cleanup`: `async def cleanup(self) -> None:`
 - `packages/ai-parrot/src/parrot/memory/unified/manager.py:139` — `UnifiedMemoryManager.get_context_for_query`: `async def get_context_for_query(self, query: str, user_id: str, session_id: str) -> MemoryContext:`
 - `packages/ai-parrot/src/parrot/memory/unified/manager.py:178` — `UnifiedMemoryManager.record_interaction`: `async def record_interaction(self, query: str, response: Any, tool_calls: list[Any], user_id: str, session_id: str) -> None:`
+- With PR #2121 merged (`git merge-tree` of `dev` `a24a820a41` and #2121 head `b0ac554835`; re-verify after the real merge): `BaseBot.invoke` base.py:726, `BaseBot.ask` :1123, `BaseBot.ask_stream` :1927; `BaseBot.conversation` stays at :237.
 - `packages/ai-parrot/src/parrot/tools/manager.py:1668` — `ToolManager.set_invocation_observer`: `def set_invocation_observer(self, observer: Optional[Any]) -> None:`
 - `packages/ai-parrot/src/parrot/tools/manager.py:1737` — `ToolManager._observed`: `async def _observed(self, observation: Optional['_Observation'], tool_name: str, call: Any, *, sync: bool=False, gated: bool=False) -> Any:`
 

@@ -56,7 +56,7 @@ Agents need durable, correctable knowledge about the user across sessions, indep
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:0f8975d902c9881add322cb722df1870cacdbafac5122ef8ffc0032917739269 evaluation_digest=sha256:a0423d26ca4f96608ef85b8dca5a79aebbf5921bd7a22bd0768602ef983faab6 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:c6a2a432ca2f3b89515a7b3a520e1c84707652c2b735318742a167b339fcdb40 evaluation_digest=sha256:61b9d95fbe56ed83fdbad29576e5bca23da8cf7eb2dee5f631e70cd1651d50fd rules_version=1 status=pass -->
 
 ## 2. Architectural Design
 
@@ -100,7 +100,7 @@ flowchart TD
 | Coder feedback/reviews/engine | Stable adapters and IDs, engine-owned exposure and verified check evidence | C12–C14 |
 | MCP factory and AbstractToolkit | New self-contained toolkit with lazy `_open`/`_close`; explicit YAML section | C15; no new implicit built-in registry |
 | FEAT-887 experience.pitfall | Separate operational lessons; preserve its approved interfaces and shared-file edits | Not absorbed by this feature; no automatic conversion into trusted FSRS evidence |
-| FEAT-886 durable conversation memory | Preserve hydration, turn publication, compaction and partial-stream saves | Shared BaseBot attachment sites require sequencing; no history ownership transfer |
+| FEAT-886 durable conversation memory (PR #2121) | Preserve hydration, turn publication, compaction and partial-stream saves; attach memory finalization to its shared finalize-then-persist step | Launch prerequisite for TASK-5672/5673/5674; binding rules F1–F9 in "FEAT-886 integration contract" below; no history ownership transfer |
 
 ### Configuration and scope
 
@@ -165,6 +165,20 @@ All new structured models use Pydantic v2, aware UTC times, finite numeric valid
 `ask()`, `ask_stream()` and `invoke()` must follow the same integration contract. Streaming finalizes once on a completed response, not per chunk; cancellation produces no fabricated final success or profile update from partial assistant output. The low-level `conversation()` path must not repeat a memory lifecycle already owned by its caller; its direct-call behavior is documented and tested as an explicit low-level boundary. Existing generic pre/post hooks remain composable for non-memory mixins, but no longer carry a second persistent-memory implementation.
 
 History continues through `AbstractBot.save_conversation_turn` and provider-neutral rendering. Preserve FEAT-886 hydration guards, raw-turn publication, compaction and partial-stream history saves; an interrupted turn can be saved as history without becoming a successful memory review or user-knowledge update. The new agent integration disables unified conversation-summary retrieval to prevent injecting the same history twice. Keep standalone manager text/history compatibility for existing explicit callers; the agent path owns only supplementary persistent memory.
+
+### FEAT-886 integration contract (rev 0.3)
+
+FEAT-886 (durable conversation memory, PR #2121) rewrites the BaseBot sites A1/M3 attach to. Its symbols are absent from `dev` at `a24a820a41`; anchors in C18 are verified on the PR head `b0ac554835`. TASK-5672/5673/5674 do not start until #2121 is merged into `dev`, and then re-verify C1/C2/C18. These rules bind A0, A1, U1 and M3:
+
+- **F1 — Every entry point.** FEAT-886 persists a turn from five entry points: `BaseBot.ask`, `ask_stream`, `invoke`, `conversation` and `PandasAgent.ask` (`core/bots/data.py`). `PandasAgent.ask` is a full override: it calls `_on_pre_ask`/`_on_post_ask` itself and never reaches `BaseBot.ask` (`PandasAgent.invoke` delegates to it). A1 gives `PandasAgent.ask` the same single prepare/finalize, or the hard cut would leave it with no persistent memory or a second path. M3 exposure wiring for PandasAgent is not in this feature: without a delivered-exposure manifest its response events earn no review (AC11).
+- **F2 — One finalize site and one text.** `complete_memory()` runs where FEAT-886's `AbstractBot._persist_finalized_turn` runs: once, after the entry point's output pipeline (`_run_output_pipeline` / `get_response`). The response event's text is the turn's stored text — `AbstractBot._stored_turn_text(response, plain)`, the plain answer with the OUTPUT guardrail verdict applied — never `response.content`/`output`, which can differ (an explanation kept apart from structured or HTML output is scanned only by `_stored_turn_text`). On `ask_stream` the stored text is the streamed text. Episodes, user-knowledge candidates and evidence never carry text the stored conversation redacted.
+- **F3 — Turn identity.** `MemoryRequestScope.turn_id` is the `turn_id` the entry point persists (caller-supplied through the `turn_id=` kwarg FEAT-886 accepts on all entry points, or minted once per invocation). The response event ID derives deterministically from `(agent_id, user_id, session_id, turn_id)` — the scope of FEAT-886's bus dedup key — so a retried turn is the same event. Tool events keep distinct IDs derived from the same turn.
+- **F4 — Completed response, not saved turn.** FEAT-886 also saves a partial turn when the caller abandons a stream (`CancelledError` or `GeneratorExit`, `ConversationTurn.error = "stream cancelled by the caller"`) or the stream fails (`error` = the exception text). Memory finalization keys on a completed response: a turn persisted with `error` set produces no response event, review or user-knowledge extraction, while its history save is untouched.
+- **F5 — Deleted conversations.** FEAT-886 tombstones deleted sessions and turns in ChatStorage, filters them on every read path and purges working memory. A conversation delete is not a Q2 forget: it neither deletes user facts nor writes suppression markers. Evidence references that resolve to a tombstoned session or turn are unavailable evidence — never re-read, never re-extracted. What a delete does to knowledge or episodes derived from that conversation is Q7 (§8).
+- **F6 — Agent key.** `MemoryRequestScope.agent_id` is `AbstractBot.name`: the key existing episodic namespaces use (`episodic/mixin.py` `_get_agent_id`, `unified/mixin.py` `_create_namespace`) and FEAT-886 uses for ChatStorage rows, tombstones and hydration. Changing it would orphan persisted episodes (AC08). `memory_key_id` stays the working-memory history key only. Inherited limitation, documented: agents sharing a `name` share episodes, user knowledge and ChatStorage rows.
+- **F7 — Tenant on evidence.** The ChatStorage key carries no tenant; each stored assistant message records the request tenant (`tenant`, from `current_tenant`). An evidence reference into ChatStorage carries the scope's `tenant_id` and the turn key `(agent_name, user_id, session_id, turn_id)`; resolution compares the stored `tenant` with the scope tenant and treats a mismatch or a missing value as unavailable, revealing nothing.
+- **F8 — Host configure can raise.** With FEAT-886, `configure_conversation_memory` re-raises when Redis was selected (`memory_type="redis"`, or `"auto"` with an explicit history URL) instead of falling back to in-memory. `AgentMemoryMixin.configure` acquires nothing before the host configuration succeeds, releases anything acquired if it raises, and propagates the error unchanged.
+- **F9 — No second conversation source.** `UnifiedMemoryManager._get_conversation` reads `get_history(user_id, session_id)` without `chatbot_id` and outside FEAT-886's hydration and deletion guard. The agent path never calls it; standalone callers keep it unchanged.
 
 ### User knowledge semantics
 
@@ -456,10 +470,10 @@ New files below are planned delivery paths, not tests already executed. Gate rep
 | Test file (relative to `packages/ai-parrot/tests/`) | Required cases |
 |---|---|
 | `memory/agent_memory/test_config.py` (new) | All four user/episode flag combinations with brain off; brain alone implies episodes; kwargs precedence; disabled brain imports no service; explicit unavailable-service error |
-| `memory/agent_memory/test_lifecycle.py` (new) | Real BaseBot preparation with stub client for ask/stream/invoke; one context/write; configure repeated and changed app; no duplicate toolkit registration; history written once; cancellation and shutdown |
+| `memory/agent_memory/test_lifecycle.py` (new) | Real BaseBot preparation with stub client for ask/stream/invoke and `PandasAgent.ask` (F1); one context/write; event text equals the stored turn text and event ID derives from the persisted turn_id (F2/F3); caller cancellation, `GeneratorExit` and stream error save history but produce no event (F4); the scope's `agent_id` is the agent name even when `memory_key_id` differs (F6); configure repeated and changed app; no duplicate toolkit registration; history written once; cancellation and shutdown |
 | `memory/agent_memory/test_scope.py` (new) | Concurrent users/tenants/rooms; nested calls; anonymous fallback; ContextVar cleanup and tool-manager clones |
 | `memory/user/test_store.py` (new) | Real selected backend; cross-session facts, explicit correction, context-specific constraint, inference pending, CAS conflict, duplicate event, missing identity |
-| `memory/user/test_forget.py` (new) | Disable retains data; explicit forget prevents replay/re-extraction from evidence and derivatives under accepted erasure policy |
+| `memory/user/test_forget.py` (new) | Disable retains data; explicit forget prevents replay/re-extraction from evidence and derivatives under accepted erasure policy; evidence resolving to a tombstoned session/turn or another tenant is unavailable (F5/F7) |
 | `memory/dynamics/test_core.py` (new) | Pinned reference parity, all grades, same-day clamp, bounded state, injected clock, neutral legacy, immutable parameter versions |
 | `memory/dynamics/test_reviews.py` (new) | Ordered admission/grades, synthetic evidence rejected, unrelated outcome no-review, duplicate/revised/conflicting outcomes, scoped IDs |
 | `memory/dynamics/test_storage.py` (new) | Eight-process zero-loss; duplicate/CAS concurrency; pre/post-commit crash and replay; real-store lesson persistence and import/retraction idempotency |
@@ -521,13 +535,13 @@ Use isolated temporary databases, fake clocks, deterministic UUID/event fixtures
 
 - [ ] **AC01** FEAT-571 pending scope explicitly maps M1/M2/M3/M5/M6 to FEAT-892 and M4 to FEAT-889; historical G1–G4/M0 evidence remains unchanged and no implementation tasks are duplicated.
 - [ ] **AC02** Applicable gate amendments and Q1–Q4/U1–U5 are accepted before dependent implementation; remaining roadmap questions are identified. Completing this draft does not satisfy this criterion.
-- [ ] **AC03** One memory context and one event owner per invocation; ask, ask_stream and invoke pass real bot integration tests. No second history injection or writer.
+- [ ] **AC03** One memory context and one event owner per invocation; ask, ask_stream, invoke and `PandasAgent.ask` pass real bot integration tests. Finalization shares FEAT-886's finalize-then-persist site and stored text, and the response event derives from the persisted turn_id (F1–F3). No second history injection or writer, including the unified conversation section (F9).
 - [ ] **AC04** All four user/episodic flag combinations work; user-only mode persists across sessions without episodic construction. Disabled mode preserves existing non-memory behavior.
-- [ ] **AC05** Request scopes isolate tenants/agents/users, including parallel calls, anonymous defaults, room participants, cache/fallback routes and cancellation.
-- [ ] **AC06** User correction, contextual validity, inference status, CAS and idempotency pass against a real backend; explicit forgetting cannot silently resurrect through retained evidence/derivatives.
-- [ ] **AC07** Configuration is idempotent, preserves genuine reconfiguration, registers tools once and releases partial resources; shutdown drains or durably queues owned writes.
+- [ ] **AC05** Request scopes isolate tenants/agents/users, including parallel calls, anonymous defaults, room participants, cache/fallback routes and cancellation. `agent_id` is the agent name and evidence into ChatStorage is tenant-checked (F6/F7).
+- [ ] **AC06** User correction, contextual validity, inference status, CAS and idempotency pass against a real backend; explicit forgetting cannot silently resurrect through retained evidence/derivatives; evidence in a FEAT-886-tombstoned session or turn is never re-read (F5).
+- [ ] **AC07** Configuration is idempotent, preserves genuine reconfiguration, registers tools once and releases partial resources, including when the host's conversation-memory configuration raises (F8); shutdown drains or durably queues owned writes.
 - [ ] **AC08** Old mixin classes/exports and live consumer imports are removed without shims; `AgentMemory/AnswerMemory`, store APIs and public feedback/MCP contracts remain compatible. Migration preserves persisted data and documents flag/path changes plus manager brain-constructor changes.
-- [ ] **AC09** M0 remains correct: a no-signal conversation records one PARTIAL episode, no tool duplicates and no invented review. Explicit lesson text is durable before acknowledgement.
+- [ ] **AC09** M0 remains correct: a no-signal conversation records one PARTIAL episode, no tool duplicates and no invented review. Explicit lesson text is durable before acknowledgement. A turn FEAT-886 persists with `error` set (caller cancellation, `GeneratorExit`, stream failure) produces no memory event (F4).
 - [ ] **AC10** FSRS matches the accepted pinned reference/time policy within G1 tolerance; defaults and bounds are versioned; synthetic calibration is not presented as field validation.
 - [ ] **AC11** Reviews require delivered version, attribution and verified outcome; reading/citing alone never reinforces; synthetic production evidence is rejected and zero-fix success requires real check evidence.
 - [ ] **AC12** Scoped durable dedupe/CAS/replay produces one application under concurrent/crash tests; no success receipt precedes commit; failed exports are reconciled. Brain projection atomicity is a coordinated external M4 gate, not implicitly supplied by the episode transaction.
@@ -566,9 +580,10 @@ from parrot.flows.dev_loop.models import DevelopmentOutput
 
 | ID | Verified anchor | Existing contract / consequence |
 |---|---|---|
-| C1 | `core/bots/base.py:734,946,964,1136,1404,1817,1943` | `invoke`, `ask`, `ask_stream` have separate preparation paths; ask retrieves `get_memory_context` and `_on_pre_ask`, then schedules two recording hooks. `conversation` at :237 is deprecated; preserve its low-level contract without double integration. |
+| C1 | `core/bots/base.py:734,946,964,1136,1404,1817,1943`; with #2121 merged: invoke :726, `_on_pre_ask` :933, `_on_post_ask` :951, ask :1123, `get_memory_context` call :1393, recording hooks :1819/:1836, ask_stream :1927 | `invoke`, `ask`, `ask_stream` have separate preparation paths; ask retrieves `get_memory_context` and `_on_pre_ask`, then schedules two recording hooks. `conversation` at :237 is deprecated; preserve its low-level contract without double integration. |
 | C1a | `core/bots/agent.py:40`; `core/bots/chatbot.py:33` | BasicAgent currently inherits Chatbot/NotificationMixin; Chatbot inherits BaseBot. Add AgentMemoryMixin to BasicAgent's cooperative MRO so ordinary Agents receive R1/R10 without custom inheritance. |
-| C2 | `core/bots/abstract.py:1681,5527` | `configure(self, app=None) -> None` exposes `configure_skipped`/`configure_is_noop`; changed app can be real reconfiguration. `cleanup(self) -> None` closes LLM resources, so facade drains before delegating. |
+| C1b | `core/bots/data.py:416,1009,1363,1512,2281` (PR head: :415,1008,1362,1512,2279) | `class PandasAgent(IntentRouterMixin, BasicAgent):`; `invoke` delegates to `self.ask`; `ask` is a full override that calls `_on_pre_ask` and schedules `_on_post_ask` itself, never reaching `BaseBot.ask` (F1). |
+| C2 | `core/bots/abstract.py:1681,5527`; with #2121 merged: :1724,:6011 | `configure(self, app=None) -> None` exposes `configure_skipped`/`configure_is_noop`; changed app can be real reconfiguration. `cleanup(self) -> None` closes LLM resources, so facade drains before delegating. |
 | C3 | `core/memory/unified/manager.py:83,139,178,363` | Constructor receives namespace, optional conversation/episodic/skills/config/router/brain/org-brain. `get_context_for_query(query: str, user_id: str, session_id: str) -> MemoryContext`; `record_interaction(query: str, response: Any, tool_calls: list[Any], user_id: str, session_id: str) -> None`. M0 uses `record_episode` with PARTIAL and preserves room/crew. |
 | C4 | `core/memory/unified/context.py:49`; `unified/models.py:12,89` | `assemble(episodic_warnings: str="", relevant_skills: str="", conversation: str="", semantic_knowledge: str="") -> MemoryContext`. Existing output is strings/token counts, not delivered refs; weights normalize 3/4 sections. |
 | C5 | `core/memory/episodic/store.py:86,106,235,377,522,544` | Constructor backend plus optional embedding/reflection/cache/scorer/strategy and TTL=90. `record_episode(namespace, situation, action_taken, outcome, outcome_details=None, error_type=None, error_message=None, category=TOOL_EXECUTION, importance=None, related_tools=None, related_entities=None, metadata=None, generate_reflection=True, ttl_days=None) -> EpisodicMemory`. `ttl_days=0` means no expiry. Preferences/room retrieval already exist. |
@@ -584,6 +599,7 @@ from parrot.flows.dev_loop.models import DevelopmentOutput
 | C15 | `core/mcp/toolkit_config.py:21`; `mcp/toolkit_server.py:218,258`; `tools/toolkit.py:426,442` | Explicit YAML class_path/kwargs; no implicit built-in sections. Constructor is synchronous; `_open` supports lazy I/O, `_close` plus cleanup/stop is released by server. New adapter fits this contract without editing the generic factory. |
 | C16 | `core/memory/__init__.py:20,30`; `episodic/__init__.py:8`; `unified/__init__.py:11`; `memory/agent.py:36` | Old mixins are re-exported. AgentMemory already aliases AnswerMemory, so no conversion of agent.py into a package. |
 | C17 | `examples/shoply/sample.py:34,78,166`; `tests/test_episodic_memory.py:1084`; `tests/memory/unified/test_mixin.py:8` | Live example and old mixin tests need coordinated migration; raw references in historical spike evidence are not live consumers. |
+| C18 | PR #2121 head `b0ac554835` — not on `dev` at `a24a820a41`: `core/bots/abstract.py:318,1470,2796,2844,2874,3002,3012,3392`; `core/bots/base.py:385,771,1230,1997,2188,2283`; `core/memory/abstract.py:121` | `turn_publisher` attribute; `configure_conversation_memory()` re-raises when Redis was selected (F8); `_persist_finalized_turn(response, *, question, user_id, session_id, turn_id, use_history, context_used, compaction, output_mode, started, assistant_text)` is the single finalize-then-persist step (F2); `_persist_turn_unit` shields save + publish from cancellation; `save_conversation_turn(..., compaction, presentation, publish)`; `_guard_session`/`_load_or_hydrate_history` fail closed on tombstones (F5); `_stored_turn_text(response, plain, method)` returns the stored, verdict-applied text (F2). Each entry point accepts `turn_id=` (F3); `ask_stream` saves partial turns via `_save_stream_turn` and on `except (asyncio.CancelledError, GeneratorExit)` (F4). `ConversationTurn.error: Optional[str]` (also on `dev`). |
 
 ### Does NOT Exist / outdated FEAT-571 assumptions
 
@@ -603,6 +619,7 @@ Verified against `de9addcfb7723396ac98f6b326a21884c7118f77`. The table below rec
 |---|---|---|---|---|
 | `core/bots/base.py` | MODIFY | `class BaseBot(AbstractBot):` | `core/bots/base.py:130` | 1 |
 | `core/bots/agent.py` | MODIFY | `class BasicAgent(Chatbot, NotificationMixin):` | `core/bots/agent.py:40` | 1 |
+| `core/bots/data.py` | MODIFY | `class PandasAgent(IntentRouterMixin, BasicAgent):` | `core/bots/data.py:416` (rev 0.3; PR #2121 head :415) | 1 |
 | `core/tools/manager.py` | MODIFY | `    async def _observed(` | `core/tools/manager.py:1737` | 1 |
 | `core/memory/__init__.py` | MODIFY | `from .episodic import (` | `core/memory/__init__.py:19` | 1 |
 | `core/memory/episodic/__init__.py` | MODIFY | `from .mixin import EpisodicMemoryMixin` | `core/memory/episodic/__init__.py:8` | 1 |
@@ -691,9 +708,9 @@ Async I/O, Pydantic v2, Google docstrings, strict hints, existing AbstractClient
 
 Dependency edges represent contracts: A1/U1 import A0 scope/config; M2 imports M1 state/grade/protocol; M3 consumes A1 lifecycle and M2 review contracts; M5 consumes M2/M3; M6 consumes stable M2 interfaces. Pure M1 work and U1 can proceed concurrently after their respective gates and common contracts. The initial X1 scope-transfer amendment precedes release of moved work; final X1 migration/docs depend on the delivered interfaces. External M4 in FEAT-889 consumes accepted M1/M2 interfaces; it is not a task in this worktree.
 
-Shared files requiring exclusive ownership or task sequencing: unified models/manager/context (A1/M3), BaseBot (A1/M3 and FEAT-886), episodic store/tools (M2/M3 wiring), and engine/delivery models/prompts (M5 versus FEAT-887). FEAT-892 owns mixin/manager brain wiring and BasicAgent; FEAT-889 exclusively owns `memory/dream/*`, admin toolkit and HTTP/PBAC. Do not infer a total dependency chain from sharing only one integration file: isolate the attachment task where possible.
+Shared files requiring exclusive ownership or task sequencing: unified models/manager/context (A1/M3), BaseBot and PandasAgent (A1/M3 and FEAT-886), episodic store/tools (M2/M3 wiring), and engine/delivery models/prompts (M5 versus FEAT-887). FEAT-892 owns mixin/manager brain wiring and BasicAgent; FEAT-889 exclusively owns `memory/dream/*`, admin toolkit and HTTP/PBAC. Do not infer a total dependency chain from sharing only one integration file: isolate the attachment task where possible.
 
-Exclusive resources: any accepted lockfile/dependency update, shared DB migration or gate workload outside an isolated fixture; ordinary tests use their own stores. FEAT-571 is the evidence predecessor, not a separately executing M1–M6 branch. FEAT-887 and FEAT-886 require shared-file coordination, not automatic merge prerequisites; refresh their landed state before overlapping tasks. FEAT-889 has an explicit launch/decomposition prerequisite: FEAT-892 must land on dev first. Sibling phase-2 interface planning may proceed as design coordination only. No feature is assumed merged merely from its spec status.
+Exclusive resources: any accepted lockfile/dependency update, shared DB migration or gate workload outside an isolated fixture; ordinary tests use their own stores. FEAT-571 is the evidence predecessor, not a separately executing M1–M6 branch. FEAT-887 requires shared-file coordination, not an automatic merge prerequisite; refresh its landed state before overlapping tasks. FEAT-886 (PR #2121) is a merge prerequisite for TASK-5672/5673/5674 (rev 0.3): they stop before code until it is on `dev`, then re-verify C1/C1b/C2/C18. Earlier tasks do not wait for it. FEAT-889 has an explicit launch/decomposition prerequisite: FEAT-892 must land on dev first. Sibling phase-2 interface planning may proceed as design coordination only. No feature is assumed merged merely from its spec status.
 
 ## Decisions
 
@@ -726,13 +743,26 @@ entries:
     rationale: User-only memory must work without episodes and an unused preference is not thereby false.
     rejected_alternatives:
       - Require episodic recording for persistent user knowledge.
+  - id: memory-finalize-on-durable-turn
+    statement: Agent memory finalization runs at the FEAT-886 finalize-then-persist site of every entry point, PandasAgent included, using the stored turn text and the persisted turn identity, and only for completed responses.
+    relation: requires
+    about: [memory, bots]
+    targets:
+      - file:packages/ai-parrot/src/parrot/bots/base.py
+      - file:packages/ai-parrot/src/parrot/bots/data.py
+    contradicts: []
+    supersedes: []
+    rationale: One finalize site keeps conversation history, episodes and user knowledge on the same guardrail-applied text and the same retry identity, and keeps partial streams from becoming memory success.
+    rejected_alternatives:
+      - Finalize memory from the raw response object in a separate post-ask hook.
+      - Leave PandasAgent on its own pre/post-ask memory path.
 ```
 
 These entries encode the agreed direction for review, not gate approval. The governing-decision query returned no listed accepted decisions at authoring time. FEAT-571's narrative scope transfer is recorded in §3 X1; no nonexistent ADR identifier is fabricated as a supersession link.
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:0f8975d902c9881add322cb722df1870cacdbafac5122ef8ffc0032917739269 evaluation_digest=sha256:a0423d26ca4f96608ef85b8dca5a79aebbf5921bd7a22bd0768602ef983faab6 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:c6a2a432ca2f3b89515a7b3a520e1c84707652c2b735318742a167b339fcdb40 evaluation_digest=sha256:61b9d95fbe56ed83fdbad29576e5bca23da8cf7eb2dee5f631e70cd1651d50fd rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -745,7 +775,7 @@ Diagnostics:
 Coverage:
 - Subsystems: bots, clients, config, flows, knowledge-graphindex, knowledge-pageindex, knowledge-wiki, memory, server, skills, tools
 - Unmapped tags: agents, memory-dynamics, user-memory
-- Targets resolved: 4/4
+- Targets resolved: 5/5
 - Impact complete: true
 - Inventory complete: true
 - Omitted ids: not recorded
@@ -769,8 +799,8 @@ Coverage:
       "skills",
       "tools"
     ],
-    "targets_resolved": 4,
-    "targets_total": 4,
+    "targets_resolved": 5,
+    "targets_total": 5,
     "unmapped_tags": [
       "agents",
       "memory-dynamics",
@@ -778,10 +808,10 @@ Coverage:
     ]
   },
   "diagnostics": [],
-  "evaluation_digest": "sha256:a0423d26ca4f96608ef85b8dca5a79aebbf5921bd7a22bd0768602ef983faab6",
+  "evaluation_digest": "sha256:61b9d95fbe56ed83fdbad29576e5bca23da8cf7eb2dee5f631e70cd1651d50fd",
   "exit_code": 0,
   "findings": [],
-  "input_digest": "sha256:0f8975d902c9881add322cb722df1870cacdbafac5122ef8ffc0032917739269",
+  "input_digest": "sha256:c6a2a432ca2f3b89515a7b3a520e1c84707652c2b735318742a167b339fcdb40",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
@@ -797,7 +827,7 @@ Coverage:
       "adr:doc:e7c5ae770b06db3b35cdd4cba93001a58bfa7bef": "394f4656c71618a256427d81350fdc32335fa791"
     },
     "rules_version": 1,
-    "structural_revision": "sha256:59013abe7b712cd2a953e69b44966a95da0d6c8f2889f4a33bfa8e4ac813c1bd",
+    "structural_revision": "sha256:68cac3e97e656c725a2605da70f11ad7e746e6d6e004a8c1a674e630bffaf4cc",
     "taxonomy_digest": "65548b9a71329b13ab44f4904dff99814e1aac0da4bb2b58171a7201e3a9ba39"
   },
   "status": "pass"
@@ -831,6 +861,10 @@ Coverage:
 - [x] **U6 reopened:** Accepted by Jesus, 2026-11-13. User knowledge is its own plane of user facts (Q1), not the `USER_PREFERENCE` episode category, which is not treated as a profile store.
 - [x] **Anti-pattern representation:** Accepted by Jesus, 2026-11-13. Episode metadata, not a new `EpisodeCategory`; no schema migration.
 
+### Open — raised by the FEAT-886 integration (rev 0.3)
+
+- [ ] **Q7 — Conversation deletion and derived memory:** when a user deletes a conversation or turn (FEAT-886 tombstone), what happens to user knowledge and episodes whose evidence lies in it? Already fixed regardless of the answer (F5): a delete is not a Q2 forget, and tombstoned content is never re-read or re-extracted. Options: (a) derived knowledge and episodes remain, and only the evidence link becomes unavailable; (b) inferred/pending facts whose only evidence is tombstoned are invalidated, while explicit facts remain until corrected or forgotten; (c) a delete cascades a Q2 forget over every fact and episode it evidences. Recommendation: (b), since explicit statements keep their own validity policy and an unconfirmed inference loses its only basis. Blocks only the deletion-cascade behavior of TASK-5668; nothing else waits on it.
+
 ### Deferred roadmap
 
 - [ ] **Follow-up — parameter fitting (was Q6):** optimizer pin, extra name, deterministic export adapter, offline resource limits and `fit_parameters`; needs G1 acceptance and its own spec. No pyproject edit is authorized here.
@@ -860,3 +894,4 @@ Summary: **0 confirmed · 0 rejected · 0 escalated** from an independent review
 |---|---|---|---|
 | 0.1 | 2026-11-13 | Jesus Lara / Codex | Review draft: independent user memory, hard-cut integration, M1/M2/M3/M5/M6 and carried gates; source §12 R1–R10 reserves brain/M4 for FEAT-889 and orders its launch after this feature |
 | 0.2 | 2026-11-13 | Jesus Lara / Claude | §8 resolved: Q1–Q5, U1–U6 and anti-pattern representation accepted with stated defaults; Q6 (parameter fitting/optimizer) moved to a follow-up, `fit.py` and the optimizer dependency removed from M6/AC18 |
+| 0.3 | 2026-11-13 | Jesus Lara / Claude | FEAT-886 alignment from the review of PR #2121: §2 "FEAT-886 integration contract" F1–F9 (PandasAgent entry point, shared finalize site and stored text, turn_id event identity, partial turns earn nothing, conversation deletion, agent-name key, tenant-checked evidence, raising host configure, no second conversation source); AC03/05/06/07/09 and §4 cases extended; C1/C2 anchors with #2121 merged, new C1b/C18 and a `bots/data.py` edit site; #2121 is a merge prerequisite for TASK-5672/5673/5674; Q7 opened |

@@ -18,6 +18,11 @@ These are planning artifacts, not evidence that carried G1–G4 gates passed.
 
 ## Release Preconditions
 
+**Q7 open (spec rev 0.3).** What a FEAT-886 conversation or turn delete does to knowledge and episodes derived
+from it is undecided (spec §8 Q7). Do not implement any deletion cascade until Q7 is accepted in the spec. The
+fixed part of spec F5/F7 is in scope now: evidence that resolves to a tombstoned session/turn, or to another
+tenant, is unavailable — never re-read, never re-extracted.
+
 No additional owner decision is required beyond completed dependency contracts. Do not bypass a blocked dependency.
 
 Before releasing any blocked task, record the accepted amendment in the spec, expand its
@@ -119,6 +124,8 @@ async def forget(self, command: UserKnowledgeCommand, *, scope: MemoryRequestSco
     # FILL IN: one scoped transaction; retained evidence/stale extraction cannot resurrect — AC06/Q2.
     # Only a later explicit statement from the same trusted user can lift suppression.
     # Track affected source episodes for BrainService.forget_derived without importing brain internals.
+    # Spec F5/F7: replay/re-extraction treats evidence in a FEAT-886-tombstoned session/turn, or whose stored
+    #   `tenant` differs from scope.tenant_id or is missing, as unavailable; a conversation delete is not a forget.
     raise NotImplementedError
 ```
 
@@ -153,6 +160,12 @@ def test_derivative_retry_survives_restart() -> None:
     # FILL IN: real subject/isolated fixture and observable assertions — task acceptance criteria below.
     # Use pytest.mark.asyncio and async def for async subject calls; never run paid/shared services.
     raise NotImplementedError
+
+def test_tombstoned_or_foreign_tenant_evidence_unavailable() -> None:
+    """Verify tombstoned or foreign-tenant ChatStorage evidence is never re-read."""
+    # FILL IN: evidence in a deleted session/turn or with a mismatched/missing stored tenant resolves as
+    # unavailable and reveals nothing; the delete writes no suppression marker (spec F5/F7).
+    raise NotImplementedError
 ```
 
 **Why:** Erasure alone cannot stop stale extraction from resurrecting facts; durable suppression and derivative retry close that replay path.
@@ -169,6 +182,7 @@ def test_derivative_retry_survives_restart() -> None:
 - [ ] AC06/Q2: physical deletion removes fact content and persists a minimal suppression marker; re-extraction/replay from retained evidence cannot recreate it.
 - [ ] AC06: only later explicit same-user evidence lifts suppression; duplicate forget is idempotent and disablement alone never deletes facts.
 - [ ] AC15: derivative invalidation is keyed by tenant/source-episode lineage, remains retryable across restart, and uses only the sibling service boundary.
+- [ ] AC06 (F5/F7): evidence resolving to a FEAT-886-tombstoned session/turn, or to a stored tenant that differs from the scope or is missing, is unavailable and reveals nothing; a conversation delete writes no suppression marker.
 - [ ] Narrow task checks pass; scoped black/ruff pass for touched Python; validation logs identify skipped external coverage explicitly.
 
 ## Validation Commands
@@ -181,6 +195,7 @@ def test_derivative_retry_survives_restart() -> None:
 - `stale_replay_cannot_resurrect`: AC06: only later explicit same-user evidence lifts suppression; duplicate forget is idempotent and disablement alone never deletes facts.
 - `later_explicit_statement_lifts_marker`: AC15: derivative invalidation is keyed by tenant/source-episode lineage, remains retryable across restart, and uses only the sibling service boundary.
 - `derivative_retry_survives_restart`: AC06/Q2: physical deletion removes fact content and persists a minimal suppression marker; re-extraction/replay from retained evidence cannot recreate it.
+- `tombstoned_or_foreign_tenant_evidence_unavailable`: AC06 (F5/F7): evidence resolving to a FEAT-886-tombstoned session/turn, or to a stored tenant that differs from the scope or is missing, is unavailable and reveals nothing; a conversation delete writes no suppression marker.
 
 Use deterministic clocks, runtime-derived identities and isolated temporary stores. Preserve
 CancelledError. Use subprocesses for crash/multiprocess checks, never shared production data.

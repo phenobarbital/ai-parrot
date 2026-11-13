@@ -155,6 +155,8 @@ from parrot.memory.agent_memory.models import MemoryEvent, MemoryRequestScope, M
 async def prepare_context(self, query: str, *, scope: MemoryRequestScope) -> MemoryContext:
     """Retrieve enabled supplementary capabilities concurrently under immutable request scope."""
     # FILL IN: typed candidates and one assembler; agent path disables conversation retrieval — AC03.
+    # Spec F9: prepare_context never calls _get_conversation (no chatbot_id, outside FEAT-886's hydration and
+    #   deletion guard); standalone get_context_for_query keeps it unchanged.
     # Brain calls use injected brain_service.search(query, tenant_id, max_tokens), never BrainStore.
     raise NotImplementedError
 
@@ -196,6 +198,7 @@ async def record_event(self, event: MemoryEvent) -> MemoryWriteReceipt:
 - [ ] AC04/AC05: user-only works independently and concurrent requests never mutate manager namespace; tenant binds brain recall and recording consistently.
 - [ ] AC15: constructor receives brain_service; no direct BrainStore/org-brain instance; text-only brain results never imply versioned review evidence.
 - [ ] AC03: preserve get_context_for_query/record_interaction signatures and the unchanged M0 real-store regression.
+- [ ] AC03 (F9): prepare_context returns no conversation section and never calls `_get_conversation`; standalone get_context_for_query still includes it.
 - [ ] Narrow task checks pass; scoped black/ruff pass for touched Python; validation logs identify skipped external coverage explicitly.
 
 ## Validation Commands
