@@ -111,7 +111,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -121,9 +121,10 @@
       "parallelism_notes": "Consumes FEAT-571 ownership amendment; configuration's independent dynamics enablement from TASK-5653",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5655-agent-memory-state.md",
-      "blocked_reason": "G1/G2: accepted production reference/time policy and canonical namespace/content-version encoding must be amended into the spec before release."
+      "completed_at": "2026-11-13T23:03:43+00:00",
+      "file": "sdd/tasks/completed/TASK-5655-agent-memory-state.md",
+      "blocked_reason": "G1/G2: accepted production reference/time policy and canonical namespace/content-version encoding must be amended into the spec before release.",
+      "verification": "verified"
     },
     {
       "id": "TASK-5656",
