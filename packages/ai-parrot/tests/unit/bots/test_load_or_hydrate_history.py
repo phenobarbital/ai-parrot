@@ -175,3 +175,23 @@ async def test_pending_marker_never_overwrites_a_history_installed_meanwhile():
     bot.conversation_memory = mem
     history = await bot._load_or_hydrate_history(mem, "u", "s")
     assert [t.turn_id for t in history.turns] == ["won"]
+
+
+async def test_deletion_guard_runs_even_with_history_disabled():
+    """use_conversation_history=False must not let a deleted session keep answering."""
+    client = RecordingClient()
+    bot = await _bot(ScriptedSource(deleted=(True,)))
+    bot.llm = client
+    for call in (
+        lambda: bot.ask("hi", user_id="u", session_id="s", use_vector_context=False, use_conversation_history=False),
+        lambda: bot.conversation("hi", user_id="u", session_id="s", use_vector_context=False,
+                                 use_conversation_history=False),
+    ):
+        with pytest.raises(SessionDeletedError):
+            await call()
+    stream = bot.ask_stream("hi", user_id="u", session_id="s", use_vector_context=False,
+                            use_conversation_history=False)
+    with pytest.raises(SessionDeletedError):
+        async for _ in stream:
+            pass
+    assert client.calls == []  # the LLM was never reached

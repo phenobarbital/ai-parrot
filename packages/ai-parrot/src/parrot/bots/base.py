@@ -430,6 +430,8 @@ class BaseBot(AbstractBot):
 
             memory = memory or self.conversation_memory
 
+            if not (use_conversation_history and memory):
+                await self._guard_session(user_id, session_id)
             if use_conversation_history and memory:
                 conversation_history = await self._load_or_hydrate_history(memory, user_id, session_id)
                 # FEAT-524: history reaches the provider exactly once, as
@@ -831,6 +833,8 @@ class BaseBot(AbstractBot):
 
             memory = memory or self.conversation_memory
 
+            if not (use_conversation_history and memory):
+                await self._guard_session(user_id, session_id)
             if use_conversation_history and memory:
                 conversation_history = await self._load_or_hydrate_history(memory, user_id, session_id)
                 # FEAT-524: history reaches the provider exactly once, as
@@ -1329,6 +1333,8 @@ class BaseBot(AbstractBot):
             memory = memory or self.conversation_memory
 
             phase_started = time.perf_counter()
+            if not (use_conversation_history and memory):
+                await self._guard_session(user_id, session_id)
             if use_conversation_history and memory:
                 conversation_history = await self._load_or_hydrate_history(memory, user_id, session_id)
                 # FEAT-524: history reaches the provider exactly once, as
@@ -2100,6 +2106,8 @@ class BaseBot(AbstractBot):
             compaction_result = None
             memory = memory or self.conversation_memory
 
+            if not (use_conversation_history and memory):
+                await self._guard_session(user_id, session_id)
             if use_conversation_history and memory:
                 conversation_history = await self._load_or_hydrate_history(memory, user_id, session_id)
                 # FEAT-524: history reaches the provider exactly once, as

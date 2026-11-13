@@ -332,3 +332,42 @@ async def test_cold_read_is_chronological_with_a_legacy_fallback(cold, tmp_path)
     raw.close()
     legacy = await st.load_conversation("u1", "legacy", agent_id="bot1")  # index not ready: legacy read, not an error
     assert [m["content"] for m in legacy if m["role"] == "user"] == ["legacy q"]
+
+
+async def test_turn_tombstones_hide_a_turn_on_every_read_path_before_cleanup(storage, cold):
+    await storage.store_turn(_turn("t1", sec=1))
+    await storage.store_turn(_turn("t2", sec=2))
+    await cold.put_tombstone("u1", "bot1", "s1", "t1")  # delete_turn acknowledged, cleanup not run yet
+    assert await _hot_ids(storage) == ["t1", "t2"]
+    users = [m["content"] for m in await storage.load_conversation("u1", "s1", agent_id="bot1") if m["role"] == "user"]
+    assert users == ["q-t2"]  # Redis hot read
+    ctx = await storage.get_context_for_agent("u1", "s1", agent_id="bot1")
+    assert all("q-t1" not in m["content"] for m in ctx)
+    # the cold fallback (hot tier empty) and the legacy query_turns fallback
+    cold_only = ChatStorage(dynamodb=cold)
+    assert [m["content"] for m in await cold_only.load_conversation("u1", "s1", agent_id="bot1")
+            if m["role"] == "user"] == ["q-t2"]
+    import sqlite3
+
+    raw = sqlite3.connect(str(cold._path))
+    for tid in ("old1", "old2"):
+        raw.execute("INSERT INTO conversations (user_id, agent_id, session_id, kind, sort_key, payload, updated_at)"
+                    " VALUES ('u1','bot1','legacy','turn',?, ?, 1.0)",
+                    (f"TURN#{tid}", f'{{"user_message": "legacy {tid}", "assistant_response": "a"}}'))
+    raw.commit()
+    raw.close()
+    await cold.put_tombstone("u1", "bot1", "legacy", "old1")
+    legacy = [m["content"] for m in await cold_only.load_conversation("u1", "legacy", agent_id="bot1")
+              if m["role"] == "user"]
+    assert legacy == ["legacy old2"]
+
+
+async def test_titles_and_threads_cannot_be_recreated_for_a_deleted_session(storage, cold):
+    await storage.delete_conversation("u1", "s1", "bot1")
+    with pytest.raises(ConversationDeletedError):
+        await storage.update_conversation_title("s1", "revived", user_id="u1", agent_id="bot1")
+    with pytest.raises(ConversationDeletedError):
+        await storage.create_conversation("u1", "s1", "bot1", title="again")
+    with pytest.raises(ConversationDeletedError):
+        await storage.assert_conversation_active("u1", "bot1", "s1")
+    assert await cold.query_threads("u1", "bot1", limit=10) == []  # no thread row was resurrected

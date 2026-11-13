@@ -2904,6 +2904,16 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         if deleted:
             raise SessionDeletedError(f"{self.name}/{user_id}/{session_id} is deleted")
 
+    async def _guard_session(self, user_id: Optional[str], session_id: Optional[str]) -> None:
+        """Run the deletion guard when history is disabled for the round (``use_conversation_history=False``).
+
+        A deleted session must not keep answering (and its turn must not be published later) just because the
+        caller turned the history off. No source / no ids: nothing to check.
+        """
+        source = self.hydration_source
+        if source is not None and user_id and session_id:
+            await self._assert_session_active(source, user_id, session_id)
+
     async def _load_or_hydrate_history(
         self, memory: ConversationMemory, user_id: str, session_id: str
     ) -> ConversationHistory:

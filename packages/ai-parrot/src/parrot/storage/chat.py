@@ -271,7 +271,9 @@ class ChatStorage:
                 history = await self._redis.get_history(user_id, session_id, chatbot_id=agent_id)
                 if history and history.turns:
                     messages = []
-                    for turn in history.turns[-limit:]:
+                    visible = await self._drop_tombstoned_turns(
+                        user_id, agent_id or "", session_id, list(history.turns[-limit:]), lambda t: t.turn_id)
+                    for turn in visible:
                         messages.append(
                             {
                                 "role": MessageRole.USER.value,
@@ -323,6 +325,8 @@ class ChatStorage:
                         limit=limit,
                         newest_first=False,
                     )
+                turns = await self._drop_tombstoned_turns(
+                    user_id, agent, session_id, list(turns), lambda r: str(r.get("turn_id", "")))
                 messages = []
                 for row in turns:
                     try:
@@ -411,6 +415,7 @@ class ChatStorage:
                 session_id,
             )
             return None
+        await self._ensure_not_deleted(user_id, agent_id, session_id)  # session ids are not reused
         now = datetime.now(timezone.utc)
         metadata = {
             "title": title,
@@ -475,6 +480,7 @@ class ChatStorage:
                 agent_id,
             )
             return False
+        await self._ensure_not_deleted(user_id, agent_id, session_id)  # never recreate a thread of a deleted session
         try:
             await self._dynamo.update_thread(
                 user_id=user_id,
@@ -494,6 +500,20 @@ class ChatStorage:
         except Exception as exc:
             self.logger.warning("update_conversation_title failed for %s: %s", session_id, exc)
             return False
+
+    async def assert_conversation_active(self, user_id: str, agent_id: str, session_id: str) -> None:
+        """Public deletion guard for callers that write a thread row directly (raises ``ConversationDeletedError``)."""
+        await self._ensure_not_deleted(user_id, agent_id, session_id)
+
+    async def _drop_tombstoned_turns(self, user_id: str, agent: str, session_id: str, turns: List[Any],
+                                     turn_id_of: Callable[[Any], str]) -> List[Any]:
+        """Remove turns whose turn-scoped tombstone exists (a deleted turn is never served, even before cleanup)."""
+        if self._dynamo is None or not turns:
+            return turns
+        flags = await asyncio.gather(
+            *(self._dynamo.is_deleted(user_id, agent, session_id, turn_id_of(t)) for t in turns)
+        )
+        return [t for t, gone in zip(turns, flags) if not gone]
 
     async def _ensure_not_deleted(self, user_id: str, agent: str, session_id: str) -> None:
         """Raise ``ConversationDeletedError`` when the session is tombstoned; a guard failure is raised, not ignored."""
@@ -732,6 +752,8 @@ class ChatStorage:
                     # AttributeError would be swallowed by the `except Exception:
                     # pass` below and this Redis fast path would silently fall
                     # through to DynamoDB forever.
+                    history.turns = await self._drop_tombstoned_turns(
+                        user_id, agent_id or "", session_id, list(history.turns), lambda t: t.turn_id)
                     return [
                         {"role": m.role, "content": m.content} for m in render_history(history, max_turns=max_turns)
                     ]
