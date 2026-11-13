@@ -24,7 +24,7 @@ from parrot.models import AIMessage
 from parrot.models.basic import CompletionUsage, ToolCall
 from parrot.storage import ChatStorage
 from parrot.storage.backends.sqlite import ConversationSQLiteBackend
-from parrot.storage.errors import StorageWriteError
+from parrot.storage.errors import ConversationDeletedError, StorageWriteError
 from parrot.storage.hydration import ChatStorageHydrationSource
 from parrot.storage.turn_bus import setup_turn_persistence, shutdown_turn_persistence
 
@@ -294,7 +294,8 @@ async def test_delete_during_delayed_write(tmp_path):
         gate.set()
         await _eventually(lambda: _flag(stack.handler_done))
         assert await stack.stored_turns() == []
-        assert await stack.storage.load_conversation(USER, SESSION, agent_id=AGENT) == []
+        with pytest.raises(ConversationDeletedError):  # reads refuse a tombstoned conversation
+            await stack.storage.load_conversation(USER, SESSION, agent_id=AGENT)
         assert await stack.hot_ids() == []
         with pytest.raises(SessionDeletedError):
             await ChatStorageHydrationSource(stack.backend).load_turns(AGENT, USER, SESSION, 5)

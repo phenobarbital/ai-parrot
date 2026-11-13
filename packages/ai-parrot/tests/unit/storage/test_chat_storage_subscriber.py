@@ -5,6 +5,7 @@ Cold tier: the real SQLite backend. Hot tier: a real ``RedisConversation`` again
 """
 from __future__ import annotations
 
+import asyncio
 import shutil
 import socket
 import subprocess
@@ -244,3 +245,71 @@ async def test_load_conversation_reads_cold_rows_through_the_tolerant_reader(col
     msgs = await st.load_conversation("u1", "s9", agent_id="bot1")
     assert [m["role"] for m in msgs] == ["user", "assistant"]
     assert msgs[1]["usage"] == {"t": 1} and msgs[1]["model"] == "m"
+
+
+async def test_cleanup_failing_once_is_retried_until_done(storage, cold):
+    storage.cleanup_retry_base_delay = 0.0
+    await storage.store_turn(_turn("t1"))
+    real = storage._redis.delete_history
+    calls = {"n": 0}
+
+    async def flaky_delete(*a, **kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("redis hiccup")
+        return await real(*a, **kw)
+
+    storage._redis.delete_history = flaky_delete
+    await storage.delete_conversation("u1", "s1", "bot1")  # no deletion publisher attached: the in-process retry runs
+    assert await _hot_ids(storage) == ["t1"]  # first attempt failed, the resurrected copy is still there
+    for _ in range(200):
+        if not storage._cleanup_retries:
+            break
+        await asyncio.sleep(0.01)
+    assert calls["n"] >= 2 and await _hot_ids(storage) == []
+
+
+async def test_failed_deletion_publish_falls_back_to_the_in_process_retry(storage):
+    storage.cleanup_retry_base_delay = 0.0
+    await storage.store_turn(_turn("t1"))
+
+    async def broken(topic, payload):
+        raise RuntimeError("bus down")
+
+    storage.attach_deletion_publisher(broken)
+    await storage.delete_conversation("u1", "s1", "bot1")
+    assert storage._cleanup_retries  # a retry exists even though the event could not be published
+    for _ in range(200):
+        if not storage._cleanup_retries:
+            break
+        await asyncio.sleep(0.01)
+    assert not storage._cleanup_retries
+
+
+async def test_reads_between_tombstone_and_cleanup_refuse_the_conversation(storage, cold):
+    await storage.store_turn(_turn("t1"))
+    await cold.put_tombstone("u1", "bot1", "s1")  # the delete was acknowledged; cleanup has not run yet
+    assert await _hot_ids(storage) == ["t1"]  # the leftover copy is still physically present
+    with pytest.raises(ConversationDeletedError):
+        await storage.load_conversation("u1", "s1", agent_id="bot1")
+    with pytest.raises(ConversationDeletedError):
+        await storage.get_context_for_agent("u1", "s1", agent_id="bot1")
+    await cold.put_thread("u1", "bot1", "s1", {"title": "x", "session_id": "s1", "agent_id": "bot1"})
+    assert await storage.list_user_conversations("u1", agent_id="bot1") == []  # hidden from the list too
+
+
+async def test_storage_errors_on_reads_are_raised_not_emptied(storage, cold, monkeypatch):
+    async def down(*a, **kw):
+        raise StorageUnavailableError("cold store down")
+
+    monkeypatch.setattr(cold, "is_deleted", down)
+    with pytest.raises(StorageUnavailableError):
+        await storage.load_conversation("u1", "s1", agent_id="bot1")
+    monkeypatch.undo()
+
+    async def query_down(*a, **kw):
+        raise StorageUnavailableError("cold store down")
+
+    monkeypatch.setattr(cold, "query_threads", query_down)
+    with pytest.raises(StorageUnavailableError):
+        await storage.list_user_conversations("u1", agent_id="bot1")

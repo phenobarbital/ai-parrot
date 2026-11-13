@@ -411,7 +411,7 @@ class TestGracefulDegradation:
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_dynamo_error_doesnt_crash_query(self, mock_dynamo, mock_redis):
+    async def test_dynamo_error_is_raised_not_swallowed_on_query(self, mock_dynamo, mock_redis):
         from botocore.exceptions import ClientError
         mock_dynamo.query_turns.side_effect = ClientError(
             {"Error": {"Code": "500", "Message": "Internal"}}, "Query"
@@ -421,9 +421,11 @@ class TestGracefulDegradation:
         storage = ChatStorage(redis_conversation=mock_redis, dynamodb=mock_dynamo)
         storage._initialized = True
 
-        # Should not raise
-        messages = await storage.load_conversation("u1", "sess1", agent_id="bot1")
-        assert messages == []
+        # FEAT-886: a failed read is raised as a typed error, never reported as an empty conversation
+        from parrot.storage.errors import StorageUnavailableError
+
+        with pytest.raises(StorageUnavailableError):
+            await storage.load_conversation("u1", "sess1", agent_id="bot1")
 
 
 # ---------------------------------------------------------------------------

@@ -12,10 +12,19 @@ from navigator.views import BaseView
 from navigator_session import get_session
 from navigator_auth.decorators import is_authenticated, user_session
 from navigator_auth.conf import AUTH_SESSION_OBJECT
+from parrot.storage.errors import ConversationDeletedError, StorageError
 
 
 @is_authenticated()
 @user_session()
+
+def _storage_error_response(view: BaseView, exc: StorageError) -> web.Response:
+    """Map a typed storage failure to an HTTP status (never an empty 200)."""
+    if isinstance(exc, ConversationDeletedError):
+        return view.error(response={"message": "Conversation was deleted"}, status=410)
+    return view.error(response={"message": "Conversation storage is unavailable"}, status=503)
+
+
 class ChatInteractionHandler(BaseView):
     """Manage persisted chat interactions.
 
@@ -115,12 +124,15 @@ class ChatInteractionHandler(BaseView):
                     status=400,
                 )
 
-        conversations = await storage.list_user_conversations(
-            user_id=user_id,
-            agent_id=agent_id,
-            limit=limit,
-            since=since,
-        )
+        try:
+            conversations = await storage.list_user_conversations(
+                user_id=user_id,
+                agent_id=agent_id,
+                limit=limit,
+                since=since,
+            )
+        except StorageError as exc:
+            return _storage_error_response(self, exc)
         return self.json_response({
             "conversations": conversations,
             "count": len(conversations),
@@ -134,12 +146,15 @@ class ChatInteractionHandler(BaseView):
         agent_id = qs.get("agent_id")
         limit = int(qs.get("limit", 50))
 
-        messages = await storage.load_conversation(
-            user_id=user_id,
-            session_id=session_id,
-            agent_id=agent_id,
-            limit=limit,
-        )
+        try:
+            messages = await storage.load_conversation(
+                user_id=user_id,
+                session_id=session_id,
+                agent_id=agent_id,
+                limit=limit,
+            )
+        except StorageError as exc:
+            return _storage_error_response(self, exc)
 
         metadata = await storage.get_conversation_metadata(session_id)
 

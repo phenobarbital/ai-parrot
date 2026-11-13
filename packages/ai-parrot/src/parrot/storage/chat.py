@@ -36,6 +36,9 @@ DEFAULT_CONTEXT_TURNS = 10
 class ChatStorage:
     """Unified chat persistence with Redis hot cache and DynamoDB cold storage."""
 
+    #: Attempts of the in-process post-delete cleanup retry.
+    CLEANUP_RETRY_ATTEMPTS = 12
+
     def __init__(
         self,
         redis_conversation: Optional[Any] = None,
@@ -50,6 +53,9 @@ class ChatStorage:
         self._initialized = False
         self._memory_cleaners: List[Callable[[str, str, str], Awaitable[None]]] = []
         self._deletion_publisher: Optional[Callable[[str, Dict[str, Any]], Awaitable[None]]] = None
+        self._cleanup_retries: Dict[Tuple[str, str, str, Optional[str]], "asyncio.Task[None]"] = {}
+        #: Base delay (seconds) of the in-process cleanup retry; doubles per attempt, capped at 60 s.
+        self.cleanup_retry_base_delay: float = 1.0
         self.logger = logging.getLogger("parrot.storage.ChatStorage")
 
     # ------------------------------------------------------------------
@@ -128,6 +134,9 @@ class ChatStorage:
 
     async def close(self) -> None:
         """Release connections."""
+        for task in list(self._cleanup_retries.values()):
+            task.cancel()
+        self._cleanup_retries.clear()
         if self._redis:
             try:
                 await self._redis.close()
@@ -215,6 +224,9 @@ class ChatStorage:
                 errors.append(exc)
         for exc in errors:
             self.logger.error("post-write cleanup failed for turn %s: %s", turn.turn_id, exc)
+        if errors:  # the envelope is acknowledged as terminal below: nothing else would retry this cleanup
+            self._schedule_cleanup_retry(turn.user_id, turn.agent_id, turn.session_id,
+                                         None if session_gone else turn.turn_id)
         raise ConversationDeletedError(
             f"turn {turn.turn_id} was deleted while it was being stored; the stored copy was removed"
         )
@@ -246,7 +258,12 @@ class ChatStorage:
 
         Returns:
             List of message dicts, sorted by timestamp ascending.
+
+        Raises:
+            ConversationDeletedError: the conversation is tombstoned (even if cleanup has not finished).
+            StorageUnavailableError: the deletion guard or the cold tier could not be read.
         """
+        await self._ensure_not_deleted(user_id, agent_id or "", session_id)
         # Try Redis first
         if self._redis:
             try:
@@ -311,8 +328,10 @@ class ChatStorage:
                         continue
                     messages.extend(stored.to_messages())
                 return messages
-            except Exception as exc:
-                self.logger.warning("%s load failed: %s", self._backend_label, exc)
+            except StorageError:
+                raise
+            except Exception as exc:  # a failed read is raised, never reported as "empty"
+                raise StorageUnavailableError(f"{self._backend_label} load failed: {exc}") from exc
 
         return []
 
@@ -356,11 +375,14 @@ class ChatStorage:
             results = []
             for t in threads:
                 clean = {k: v for k, v in t.items() if k not in ("PK", "SK", "type", "ttl")}
+                if await self._dynamo.is_deleted(user_id, t.get("agent_id") or agent, t.get("session_id", "")):
+                    continue  # tombstoned: hidden even while its cleanup is still running
                 results.append(clean)
             return results
-        except Exception as exc:
-            self.logger.warning("list_user_conversations failed: %s", exc)
-        return []
+        except StorageError:
+            raise
+        except Exception as exc:  # a failed read is raised, never reported as "empty"
+            raise StorageUnavailableError(f"list_user_conversations failed: {exc}") from exc
 
     async def create_conversation(
         self,
@@ -467,6 +489,51 @@ class ChatStorage:
             self.logger.warning("update_conversation_title failed for %s: %s", session_id, exc)
             return False
 
+    async def _ensure_not_deleted(self, user_id: str, agent: str, session_id: str) -> None:
+        """Raise ``ConversationDeletedError`` when the session is tombstoned; a guard failure is raised, not ignored."""
+        if self._dynamo is None:
+            return
+        try:
+            deleted = await self._dynamo.is_deleted(user_id, agent, session_id)
+        except StorageError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise StorageUnavailableError(f"deletion guard unavailable: {exc}") from exc
+        if deleted:
+            raise ConversationDeletedError(f"conversation {session_id} is deleted")
+
+    def _schedule_cleanup_retry(
+        self, user_id: str, agent_id: Optional[str], session_id: str, turn_id: Optional[str] = None
+    ) -> None:
+        """Retry the post-tombstone cleanup in-process (exponential backoff) until it succeeds.
+
+        Independent of the bus: it covers a failed deletion publish and a cleanup that keeps failing.
+        """
+        key = (user_id, agent_id or "", session_id, turn_id)
+        if key in self._cleanup_retries:
+            return
+        try:
+            task = asyncio.get_running_loop().create_task(self._retry_cleanup(key))
+        except RuntimeError:  # no running loop (sync caller): the bus event is the only retry
+            return
+        self._cleanup_retries[key] = task
+        task.add_done_callback(lambda _t, k=key: self._cleanup_retries.pop(k, None))
+
+    async def _retry_cleanup(self, key: Tuple[str, str, str, Optional[str]]) -> None:
+        user_id, agent, session_id, turn_id = key
+        for attempt in range(self.CLEANUP_RETRY_ATTEMPTS):
+            await asyncio.sleep(min(self.cleanup_retry_base_delay * (2 ** attempt), 60.0))
+            if turn_id:
+                errors = (await self._cleanup_turn(user_id, agent, session_id, turn_id))[2]
+            else:
+                errors = (await self._cleanup_conversation(user_id, agent or None, session_id))[1]
+            if not errors:
+                self.logger.info("post-delete cleanup of %s finished after %d retries", session_id, attempt + 1)
+                return
+        self.logger.error("post-delete cleanup of %s still failing after %d retries; the tombstone keeps it "
+                          "hidden and the deletion event remains the only retry", session_id,
+                          self.CLEANUP_RETRY_ATTEMPTS)
+
     async def delete_conversation(self, user_id: str, session_id: str, agent_id: Optional[str] = None) -> bool:
         """Tombstone first, then clear cold turns, companions, artifacts and the hot tier, run the cleaners, publish the event.
 
@@ -477,8 +544,10 @@ class ChatStorage:
         await self._commit_tombstone(user_id, agent, session_id)
         deleted, errors = await self._cleanup_conversation(user_id, agent_id, session_id)
         for exc in errors:
-            self.logger.error("post-tombstone cleanup failed for session %s (retried via event): %s", session_id, exc)
-        await self._publish_deletion({"user_id": user_id, "agent_id": agent, "session_id": session_id})
+            self.logger.error("post-tombstone cleanup failed for session %s (retried): %s", session_id, exc)
+        published = await self._publish_deletion({"user_id": user_id, "agent_id": agent, "session_id": session_id})
+        if errors or not published:
+            self._schedule_cleanup_retry(user_id, agent, session_id)
         return deleted
 
     async def delete_turn(
@@ -494,10 +563,12 @@ class ChatStorage:
         await self._commit_tombstone(user_id, agent_id, session_id, turn_id)
         cold, hot, errors = await self._cleanup_turn(user_id, agent_id, session_id, turn_id)
         for exc in errors:
-            self.logger.error("post-tombstone cleanup failed for turn %s in %s (retried via event): %s",
+            self.logger.error("post-tombstone cleanup failed for turn %s in %s (retried): %s",
                               turn_id, session_id, exc)
-        await self._publish_deletion(
+        published = await self._publish_deletion(
             {"user_id": user_id, "agent_id": agent_id, "session_id": session_id, "turn_id": turn_id})
+        if errors or not published:
+            self._schedule_cleanup_retry(user_id, agent_id, session_id, turn_id)
         return cold or hot
 
     async def _commit_tombstone(
@@ -593,14 +664,21 @@ class ChatStorage:
         await self._redis.update_history(history)
         return True
 
-    async def _publish_deletion(self, payload: Dict[str, Any]) -> None:
-        """Publish the deletion event for idempotent cleanup retries; a failure is logged, never raised."""
+    async def _publish_deletion(self, payload: Dict[str, Any]) -> bool:
+        """Publish the deletion event; a failure is logged, never raised.
+
+        Returns:
+            ``True`` when published or when no publisher is attached (no bus retry exists, nothing to wait
+            for); ``False`` when the publish failed (the caller then falls back to the in-process retry).
+        """
         if self._deletion_publisher is None:
-            return
+            return True
         try:
             await self._deletion_publisher(CONVERSATION_DELETED_TOPIC, payload)
+            return True
         except Exception as exc:  # noqa: BLE001
             self.logger.error("could not publish the deletion event for %s: %s", payload.get("session_id"), exc)
+            return False
 
     async def handle_conversation_deleted(self, envelope: "EventEnvelope") -> None:
         """Idempotent cleanup retry for ``CONVERSATION_DELETED_TOPIC``; raises ``StorageWriteError`` while any step fails."""
@@ -633,7 +711,11 @@ class ChatStorage:
 
         Returns:
             List of {role, content} dicts ready for the model API.
+
+        Raises:
+            ConversationDeletedError: the conversation is tombstoned.
         """
+        await self._ensure_not_deleted(user_id, agent_id or "", session_id)
         # Try Redis first for speed
         if self._redis:
             try:
