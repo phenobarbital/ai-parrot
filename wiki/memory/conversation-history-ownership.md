@@ -199,7 +199,9 @@ on the bot side; see [Durable Conversation Memory](durable-conversation-memory.m
   `REDIS_HISTORY_URL` (`REDIS_HISTORY_EXPLICIT`) or a host-injected `redis_url`; otherwise `InMemoryConversation`.
   An explicit `"memory"`, `"file"` or `"redis"` still wins, and a Redis failure no longer falls back silently.
 - **Emitter-owned ordering.** `save_conversation_turn` stamps a UTC timestamp and a monotonic
-  `ConversationTurn.sequence`, and publishes the raw turn after `add_turn`. `ask`, `ask_stream`, `conversation`
+  `ConversationTurn.sequence`, and appends the raw turn to the outbox before `add_turn`, one save at a time per
+  session; a rejected append fails the round with working memory untouched (see
+  [Durable Conversation Memory](durable-conversation-memory.md#event-flow)). `ask`, `ask_stream`, `conversation`
   and `invoke` honor a caller-supplied `turn_id`.
 
 ---
