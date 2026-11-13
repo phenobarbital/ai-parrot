@@ -16,9 +16,11 @@ def default_rules(options: "LintOptions") -> list["LintRule"]:
     from parrot.knowledge.lint.packs.memory import MEMORY_RULES
     from parrot.knowledge.lint.packs.plane import PLANE_RULES
     from parrot.knowledge.lint.packs.plane_fix import PLANE_FIX_RULES
+    from parrot.knowledge.lint.packs.procedure import PROCEDURE_RULES
 
     rules: list[LintRule] = [
-        cls() for cls in (*PLANE_RULES, *PLANE_FIX_RULES, *EXPORT_RULES, *ADR_RULES, *MEMORY_RULES)
+        cls()
+        for cls in (*PLANE_RULES, *PLANE_FIX_RULES, *EXPORT_RULES, *ADR_RULES, *MEMORY_RULES, *PROCEDURE_RULES)
     ]
     if options.llm:
         from parrot.knowledge.lint.packs.llm import build_llm_rule
