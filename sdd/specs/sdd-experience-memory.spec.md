@@ -17,7 +17,7 @@ docs:
 **Feature ID**: FEAT-887
 **Date**: 2026-11-13
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
 ---
@@ -102,7 +102,7 @@ Locations:
 |---|---|---|---|
 | repo plane | `<shared-root>/.parrot/experience/` (`events.jsonl`, `wiki.db`, `triggers.json`, `sessions/`, `index.lock`) | no | yes (new) |
 | global plane | `$PARROT_HOME/experience/` (same layout) | no | no (read-only) |
-| shared definitions | `sdd/experience/lessons.jsonl` | yes, `merge=union` | via the worktree |
+| shared definitions | `sdd/experience/lessons/*.jsonl` (one new file per export, never edited) | yes | via the worktree |
 
 `<shared-root>` is resolved with `find_shared_root`, so every linked worktree uses the primary
 checkout's plane wherever the worktree lives.
@@ -136,7 +136,8 @@ redacted before anything is stored.
    (`source="authored"`). An authored lesson with a matching signature enriches the draft.
 3. *Replay.* For seats whose CLI cannot run a hook, the dispatcher replays the command outcomes
    it saw on the event stream through the same pairing logic when the attempt ends
-   (`source="mined"`). Replay is skipped when hooks already recorded events for that session.
+   (`source="mined"`). Replay is skipped when hooks already recorded command *outcomes* for that
+   session (a hook that noted commands but resolved no outcome does not suppress replay).
 
 Pairing ignores validation runners and read-only utilities (configurable exclusion list), so a
 failing test under development does not become a lesson.
@@ -148,15 +149,25 @@ becomes `confirmed` once validations come from `confirm_sessions` distinct sessi
 none of them the recording session, with no unresolved refutation. `quarantine_refutations`
 refutations (default 2) quarantine it.
 
+**Session identity.** The session key is `PARROT_EXPERIENCE_SESSION` when set, else the host
+payload's session id; when the payload carries an `agent_id` (a Claude subagent) the key is
+`<session>/<agent_id>`. Claude subagents share their parent's `session_id` (verified, §6), so
+without the suffix parallel `sdd-coder` subagents would cross-pair each other's failures. The same
+key drives pairing, the advice cooldown and promotion: two subagents of one worker run count as
+distinct sessions, because each starts from a fresh context.
+
 **Tier routing.** A draft whose triggers contain no repo path and whose executable is not a
 repo-local script is tagged `tier="global"`. Sandboxed sessions cannot write `$HOME`, so
 global-tagged events are appended to the repo log; a host-side `sync` moves them to the global
 plane. Reads always consult both tiers.
 
-**Sharing.** `export` appends not-yet-exported definition events (`lesson.recorded`,
-`lesson.confirmed`, `lesson.retired`, `lesson.graduated`) to `sdd/experience/lessons.jsonl` in
-the current checkout, redacted. The reducer treats that file as a second event source, so no
-import step exists. Hit and validation events are never exported.
+**Sharing.** `export` writes the not-yet-exported definition events (`lesson.recorded`,
+`lesson.confirmed`, `lesson.retired`, `lesson.graduated`), redacted, into **one new file** under
+`sdd/experience/lessons/` in the current checkout; it never edits an existing file. New files
+never conflict on GitHub, which ignores `merge=union` — the reason FEAT-758 took ledger events out
+of feature PRs. The reducer reads every file in that directory as a second event source
+(de-duplicated by `event_id`), so no import step exists. Hit and validation events are never
+exported.
 
 **Graduation.** When a confirmed lesson passes `graduate_hits` injections across
 `graduate_sessions` sessions (defaults 5 and 3), one `tech_debt` ledger issue is opened
@@ -169,8 +180,9 @@ lesson is retired.
 |---|---|---|---|---|
 | native Claude coder, `claude-code` dispatcher, `sdd-worker`, interactive `/sdd-start` | Claude Code | `PreToolUse` hook, `additionalContext` | `PostToolUse` + `PostToolUseFailure` hooks, `additionalContext` | pairing + `lessons[]` / `record` |
 | `nova`, `google-compat`, other in-process seats | parrot | interceptor at the tool call site | same site, advice attached to the tool result | pairing + `lessons[]` |
-| `codex` | codex CLI | `PreToolUse` hook, `additionalContext` | `PostToolUse` hook, `additionalContext` | pairing by hook; replay as fallback |
-| `agy` / `google_coding` | agy CLI | briefing only (its pre-hook must emit a decision) | `PostToolUse` records; `PostInvocation` injects the pending advice | pairing by hook; replay as fallback |
+| `codex` (development profile) | codex CLI | `PreToolUse` hook, `additionalContext` | `PostToolUse` hook (outcome from the rollout by `tool_use_id`), `additionalContext` | pairing by hook; replay as fallback |
+| `codex` (review profiles, `--ignore-user-config`) | codex CLI | briefing only | none (project hooks do not load, verified) | replay |
+| `agy` / `google_coding` | agy CLI | briefing only (its pre-hook must emit a decision) | `PostToolUse` notes the command; `PostInvocation` resolves the outcome from the transcript and injects advice via `injectSteps` | pairing by hook (transcript); replay as fallback |
 | `gemini` | gemini CLI | briefing only | none | replay |
 
 **Design research.** Skipped: the exploration document's status was `exploration`, not
@@ -186,7 +198,7 @@ lesson is retired.
                               triggers.json            events.jsonl (repo tier)
                                      ▲                          │
                                      │ writes                   │ reads
-                              ExperienceIndex ◄── reducer ◄─────┼── sdd/experience/lessons.jsonl
+                              ExperienceIndex ◄── reducer ◄─────┼── sdd/experience/lessons/*.jsonl
                                      │                          └── $PARROT_HOME/experience/events.jsonl
                                      ▼
                            wiki.db (FTS, category=pitfall)
@@ -210,7 +222,7 @@ lesson is retired.
 | `CodexCodeDispatcher`, `GoogleCodingDispatcher`, `GeminiCodeDispatcher` | modifies | collect command outcomes, replay at attempt end |
 | `TaskScopedBrief`, `NativePrep`, `DevelopmentOutput` | extends | `experience_briefing`, `lessons` |
 | `SddCoderEngine` attempt path | modifies | build the briefing, consume returned lessons |
-| `/sdd-start`, `/sdd-done`, `sdd-coder`, `sdd-worker` definitions and their twins | modifies | briefing call, export call, hooks, `lessons[]` contract |
+| `/sdd-start`, `/sdd-done`, `sdd-coder`, `sdd-worker` definitions and their twins | modifies | briefing call, export call, `lessons[]` contract (no frontmatter hooks, see M6) |
 | `.codex/hooks.json`, `.agents/hooks.json`, `sdd/installer.py` | modifies | hook entries for other hosts |
 
 ### Data Models
@@ -260,7 +272,7 @@ class ExperienceEvent(BaseModel):
     event_id: str                   # sha1 of kind|lesson_id|session|ts|payload, 12 hex
     kind: ExperienceEventKind
     lesson_id: str = ""
-    session: str                    # host session id, attempt uid or PARROT_EXPERIENCE_SESSION
+    session: str                    # session key (§2 Session identity): PARROT_EXPERIENCE_SESSION or host id, + "/<agent_id>"
     actor: str                      # authoring_identity()
     seat: str = ""                  # "claude" | "codex" | "agy" | "gemini" | "<backend>:<model>"
     ts: str                         # UTC ISO-8601
@@ -293,7 +305,7 @@ parrot sdd experience list [--state S] [--tier T] [--json]
 parrot sdd experience show <lesson-id> [--json]
 parrot sdd experience retire <lesson-id> --reason "..."
 parrot sdd experience sync                       # host only: move global-tagged events to $PARROT_HOME
-parrot sdd experience export                     # append definition events to sdd/experience/lessons.jsonl
+parrot sdd experience export                     # write new definition events to a new sdd/experience/lessons/<id>.jsonl
 parrot sdd experience rebuild                    # re-reduce the log into the store and triggers.json
 ```
 
@@ -308,11 +320,11 @@ parrot sdd experience rebuild                    # re-reduce the log into the st
 | M1: Models, signature, fast log | yes | models in §2; function signatures below; stdlib-only rule for `fastpath.py` | — |
 | M2: Reducer, index, service | yes | state machine in §2; signatures below; store layout fixed | — |
 | M3: `parrot sdd experience` CLI | yes | verb table in §2; `main(argv) -> int` per helper; `VERBS` shape | — |
-| M4: Hook runtime | no | — | Host payload shapes for failure detection must be confirmed against live CLIs first (§8 Q1–Q3) |
+| M4: Hook runtime | yes | payload and transcript shapes verified live for all three hosts (§6 Host hook facts); envelopes, session key and `outcome_of` tri-state fixed below | — |
 | M5: Sandbox writable directory | yes | mirror `coder_evidence_dirs`; exact edit sites in §6 | — |
-| M6: Claude hook wiring | no | — | Depends on Q1 (failure event) and Q4 (`--settings` hooks inside subagents) |
+| M6: Claude hook wiring | yes | settings-only delivery (§8 Q1, Q4 resolved); exact entries below | — |
 | M7: In-process interception | yes | interceptor signatures; advice attached under one key | — |
-| M8: codex / agy adapters and replay | no | — | Q2 and Q3 decide whether hook capture works in dispatcher mode |
+| M8: codex / agy adapters and replay | yes | stream fields and hook entry shapes verified live (§6); exact `hooks.json` shapes below | — |
 | M9: Briefing and `lessons[]` contract | yes | field names and call sites fixed below | — |
 | M10: Promotion and graduation | yes | thresholds and events fixed in §2 | — |
 | M11: Global sync, shared export, namespace | yes | file names and event kinds fixed | — |
@@ -339,7 +351,8 @@ parrot sdd experience rebuild                    # re-reduce the log into the st
   def leading_command(command: str) -> tuple[str, str]:
       """Return (executable basename, subcommand) of the first real command segment.
 
-      Skips env assignments, `cd … &&` prefixes and wrappers (rtk, sudo, timeout, uv run).
+      Skips env assignments, `cd … &&` prefixes and wrappers (rtk, sudo, timeout, uv run), and
+      unwraps `bash -lc '<cmd>'` / `sh -c '<cmd>'` (codex reports every command that way).
       Returns ("", "") when no executable can be determined.
       """
 
@@ -456,22 +469,65 @@ parrot sdd experience rebuild                    # re-reduce the log into the st
       """Read the hook payload on stdin, print the host response (or nothing); always return 0."""
 
   def session_of(payload: Mapping[str, Any], env: Mapping[str, str]) -> str:
-      """PARROT_EXPERIENCE_SESSION if set, else the payload's session id, else 'unknown'."""
+      """Session key (§2 Session identity).
+
+      PARROT_EXPERIENCE_SESSION if set, else the payload's session id (claude `session_id`,
+      agy `conversationId`), else 'unknown'; suffixed '/<agent_id>' when the payload has a
+      non-empty `agent_id` (Claude subagents share the parent's session_id).
+      """
 
   def command_of(payload: Mapping[str, Any], host: str) -> str:
-      """The shell command of a tool call for claude|codex|agy payloads; '' if not a shell tool."""
+      """The shell command of a tool call; '' if not a shell tool.
 
-  def failure_of(payload: Mapping[str, Any], host: str, event: str) -> str | None:
-      """The error text when the payload describes a failed command, else None."""
+      claude and codex: tool_name == 'Bash' → tool_input.command (codex hands the raw command,
+      not the `bash -lc` wrapper). agy: toolCall.name == 'run_command' → toolCall.args.CommandLine.
+      """
+
+  def outcome_of(payload: Mapping[str, Any], host: str, event: str) -> tuple[bool, str] | None:
+      """(ok, error_text) of the command a post payload reports, or None when it cannot be known.
+
+      claude: 'post' → (True, ''); 'post-failure' → (False, payload['error']) ('Exit code N\\n<stderr>').
+      codex: codex_outcome(transcript_path, tool_use_id) — the payload's tool_response is the bare
+      output string, with no exit code. agy: always None at PostToolUse (handle_post_invocation
+      resolves it). None never produces an event and never closes a pending failure; the
+      end-of-attempt replay covers the command.
+      """
+
+  def codex_outcome(transcript_path: Path, tool_use_id: str) -> tuple[bool, str] | None:
+      """(exit_code == 0, aggregated_output) from the codex rollout at transcript_path.
+
+      Scans only the last 256 KiB for the `event_msg` line whose payload.type == 'item_completed'
+      and payload.item == {type: 'CommandExecution', id: tool_use_id, exit_code, aggregated_output}.
+      Never raises; not found or unknown shape → None.
+      """
+
+  def agy_outcome(transcript_path: Path, step_idx: int) -> tuple[bool, str] | None:
+      """(ok, error) of the agy run_command result at step_idx, or None when not found.
+
+      Reads the tail of transcriptPath (JSONL; the result line has the PostToolUse `stepIdx` as
+      `step_index`, `type == "GENERIC"`, and a `content` holding 'Command exited with code N.'
+      followed by 'Command output:' and the output). Never raises; unknown shapes return None.
+      """
 
   def handle_pre(payload: Mapping[str, Any], *, host: str, plane_dir: Path) -> str | None:
       """Advice for a confirmed lesson matching the command, honoring the per-session cooldown."""
 
   def handle_post(payload: Mapping[str, Any], *, host: str, event: str, plane_dir: Path) -> str | None:
-      """Success: close a pending failure (pair or validate). Failure: record it and return advice."""
+      """Branch on outcome_of(): success closes a pending failure (pair or validate); failure is
+      recorded and returns advice; None (unknown) does nothing.
+
+      agy: only notes {stepIdx, command} as pending in the session file and returns None; the
+      transcript does not hold the result yet when PostToolUse fires (verified).
+      """
 
   def handle_post_invocation(payload: Mapping[str, Any], *, plane_dir: Path) -> str | None:
-      """agy only: return advice queued in the session file by handle_post, then clear it."""
+      """agy only: resolve each pending command with agy_outcome, run the handle_post success /
+      failure logic on it, clear it, and return the advice (if any).
+
+      Fires after every model invocation: with nothing pending it returns after one stat of the
+      session file. A pending command whose outcome cannot be read is dropped without an event,
+      so the end-of-attempt replay still covers it.
+      """
 
   def render(advice: str, *, host: str, event: str) -> dict[str, Any]:
       """Host response envelope carrying advice as advisory context only."""
@@ -481,6 +537,8 @@ parrot sdd experience rebuild                    # re-reduce the log into the st
   - claude `post` / `post-failure`: same with `"PostToolUse"` / `"PostToolUseFailure"`
   - codex `pre` / `post`: `{"hookSpecificOutput": {"hookEventName": "PreToolUse" | "PostToolUse", "additionalContext": advice}}`
   - agy `post`: always `{}`; agy `post-invocation`: `{"injectSteps": [{"systemMessage": {"systemMessage": advice}}]}`
+    when there is advice, else `{}` (the model sees it as a `<SYSTEM_MESSAGE>` "injected by a
+    PostInvocation hook", verified)
 
   Advice template (fixed; lesson text is data inside it, total <= 700 chars):
   `[experience:<lesson_id> <state>] Known pitfall for \`<executable> <subcommand>\`: <symptom> Fix that worked before: <solution>`
@@ -505,10 +563,9 @@ parrot sdd experience rebuild                    # re-reduce the log into the st
 
 ### Module 6: Claude hook wiring
 - **Path**: `packages/ai-parrot/src/parrot/sdd/scripts/native_claude_sandbox.py`,
-  `packages/ai-parrot/src/parrot/sdd/installer.py`, `.claude/agents/sdd-coder.md`,
-  `.claude/agents/sdd-worker.md` (+ packaged twins)
-- **Responsibility**: register the three experience hooks for launched workers, for subagents,
-  and for interactive sessions.
+  `packages/ai-parrot/src/parrot/sdd/installer.py`
+- **Responsibility**: register the three experience hooks for launched workers and for
+  interactive sessions; subagents inherit them.
 - **Depends on**: M3, M4.
 - **Interface Skeleton**:
   ```python
@@ -524,7 +581,10 @@ parrot sdd experience rebuild                    # re-reduce the log into the st
   def _install_experience_hooks(root: Path, receipt: dict[str, Any], *, portable: bool | None) -> list[str]:
       """Add the three entries to .claude/settings.json idempotently; return changed paths."""
   ```
-  Agent frontmatter adds, under `hooks:`, the same three entries with matcher `Bash`.
+  Agent frontmatter gets **no** experience hooks. Settings-level hooks (`--settings` for launched
+  workers, `.claude/settings.json` for interactive sessions) already run inside subagents
+  (verified, §6); registering them again in `sdd-coder.md` / `sdd-worker.md` would record every
+  event twice.
 
 ### Module 7: In-process interception
 - **Path**: `packages/ai-parrot/src/parrot/flows/dev_loop/experience.py`,
@@ -567,16 +627,31 @@ parrot sdd experience rebuild                    # re-reduce the log into the st
 - **Interface Skeleton**:
   ```python
   # dispatchers/codex.py  (modifies the command_execution branch, verified: :783)
-  #   on item.completed: self._outcomes.append(CommandOutcome(command=…, ok=exit_code == 0, error=…))
-  # dispatchers/google_coding.py  (modifies, verified: :564) and dispatchers/gemini.py (verified: :384)
+  #   on item.completed: self._outcomes.append(CommandOutcome(
+  #       command=<item.command, `bash -lc '…'` unwrapped>, ok=item.exit_code == 0,
+  #       error=<item.aggregated_output, first 400 chars, redacted>))          # fields verified live
+  # dispatchers/google_coding.py  (modifies, next to :564)
+  #   agy 1.5.8 emits step_update with step_type "tool" (states ACTIVE, DONE) and
+  #   tool_info = {name, parameters.CommandLine, output}; no "tool_call"/"tool_response" steps.
+  #   on step_type == "tool", state == "DONE", tool_info.name == "run_command":
+  #       append CommandOutcome(command=parameters.CommandLine,
+  #                             ok=<"Command exited with code 0." in output>, error=<text after "Command output:">)
+  # dispatchers/gemini.py  (verified: :384)
   #   on tool_response: append CommandOutcome(command=<paired tool_call args>, ok=not is_error, error=result_snippet)
   # each dispatcher, after the CLI process exits:
   #   await ExperienceInterceptor(session=…, cwd=…, seat=…).replay(self._outcomes)
   ```
   `.codex/hooks.json`: a second `PreToolUse` hook command and a new `PostToolUse` block, matcher
-  `Bash`, command `parrot sdd experience hook --host codex --event pre|post`.
-  `.agents/hooks.json`: `PostToolUse` (matcher `run_command`) and `PostInvocation` entries under
-  the existing named hook, command `parrot sdd experience hook --host agy --event post|post-invocation`.
+  `Bash`, command `parrot sdd experience hook --host codex --event pre|post`. They load only in
+  development dispatches (`ignore_user_config=False` + `--dangerously-bypass-hook-trust`); review
+  profiles pass `--ignore-user-config`, under which project hooks do not load (verified), so
+  reviews are captured by replay.
+  `.agents/hooks.json`: a separate named hook `parrot-sdd-experience` with
+  `PostToolUse` → `[{"matcher": "run_command", "hooks": [<cmd --event post>]}]` and
+  `PostInvocation` → `[<cmd --event post-invocation>]` — **flat**: a `{"hooks": [...]}` group under
+  `PostInvocation` is rejected ("command hook must specify 'command'"), and one invalid named
+  hook makes agy drop the **whole file**, including `parrot-sdd-permissions` (verified on 1.5.8).
+  The installer writes this group from a fixed template; a test pins the exact shape.
 
 ### Module 9: Briefing and the `lessons[]` contract
 - **Path**: `packages/ai-parrot/src/parrot/flows/dev_loop/models/base.py`,
@@ -624,7 +699,7 @@ parrot sdd experience rebuild                    # re-reduce the log into the st
 
 ### Module 11: Global sync, shared export and namespace
 - **Path**: `packages/ai-parrot/src/parrot/knowledge/wiki/experience/sync.py`,
-  `packages/ai-parrot/src/parrot/flows/dev_loop/feature_launcher.py`, `.gitattributes`,
+  `packages/ai-parrot/src/parrot/flows/dev_loop/feature_launcher.py`,
   `packages/ai-parrot/src/parrot/sdd/installer.py`, `.claude/commands/sdd-done.md` (+ twins)
 - **Responsibility**: host-side move of global-tagged events; redacted export of definition
   events; namespace registration.
@@ -632,21 +707,29 @@ parrot sdd experience rebuild                    # re-reduce the log into the st
 - **Interface Skeleton**:
   ```python
   # knowledge/wiki/experience/sync.py  (new)
-  SHARED_LOG = Path("sdd") / "experience" / "lessons.jsonl"
+  SHARED_DIR = Path("sdd") / "experience" / "lessons"
   DEFINITION_KINDS = frozenset({"lesson.recorded", "lesson.confirmed", "lesson.retired", "lesson.graduated"})
 
   def global_plane_dir() -> Path:
       """parrot_home() / 'experience' (parrot_home verified: launcher.py:26)."""
   def sync_global(repo_plane: Path) -> int:
       """Copy tier='global' events absent from the global log into it; return the count. Host only."""
-  def export_shared(repo_plane: Path, checkout: Path) -> int:
-      """Append DEFINITION_KINDS events not yet in checkout/SHARED_LOG, redacted; return the count."""
+  def shared_event_ids(checkout: Path) -> set[str]:
+      """event_ids already present in any checkout/SHARED_DIR/*.jsonl file."""
+  def export_shared(repo_plane: Path, checkout: Path) -> Path | None:
+      """Write the DEFINITION_KINDS events whose event_id is not in shared_event_ids(), redacted,
+      to a NEW file checkout/SHARED_DIR/<UTC %Y%m%dT%H%M%SZ>-<sha1(actor|first event_id)[:8]>.jsonl
+      (O_CREAT|O_EXCL); return its path, or None when there is nothing to export. Never opens an
+      existing file for writing."""
   def register_namespace(root: Path) -> bool:
       """Add namespaces.experience = {store: '.parrot/experience'} to .parrot/wiki.json if absent."""
   ```
-  `feature_launcher._preflight_sandbox` calls `sync_global` best-effort before launch;
-  `/sdd-done` runs `parrot sdd experience sync` and `parrot sdd experience export` before its
-  final commit and stages `sdd/experience/lessons.jsonl`.
+  `feature_launcher._preflight_sandbox` calls `sync_global` best-effort before launch.
+  `/sdd-done` Step 7, inside the feature worktree and right before its `git add` of the index:
+  `parrot sdd experience sync` (best-effort) and `parrot sdd experience export`, then adds
+  `sdd/experience/lessons/` to that same `git add` so the new file rides the
+  `sdd: close tasks for FEAT-<ID>` commit. Same step in the `.agent/workflows` and
+  `.agents/skills` twins (§6 Edit Sites).
 
 ### Module 12: Documentation, asset twins and release smoke
 - **Path**: `wiki/sdd-tooling/sdd/experience-memory.md`,
@@ -669,6 +752,7 @@ parrot sdd experience rebuild                    # re-reduce the log into the st
 | Test | Module | Description |
 |---|---|---|
 | `test_leading_command_skips_wrappers` | M1 | `cd x && rtk gh pr edit 1` → (`gh`, `pr edit`) |
+| `test_leading_command_unwraps_shell_c` | M1 | `/bin/bash -lc 'gh pr edit 1'` → (`gh`, `pr edit`) |
 | `test_normalize_error_strips_volatile` | M1 | paths, hashes, numbers and timestamps removed; stable across runs |
 | `test_redact_masks_secrets` | M1 | tokens, bearer headers, URL credentials masked |
 | `test_append_event_never_raises` | M1 | unwritable directory returns False |
@@ -688,27 +772,37 @@ parrot sdd experience rebuild                    # re-reduce the log into the st
 | `test_hook_excluded_executables` | M4 | failing `pytest` never drafts a lesson |
 | `test_hook_envelopes_per_host` | M4 | exact JSON for claude, codex, agy |
 | `test_hook_never_blocks` | M4 | corrupt payload / corrupt index → exit 0, no output |
+| `test_hook_session_key_includes_agent_id` | M4 | subagent payload → `<session_id>/<agent_id>`; two subagents never cross-pair |
+| `test_hook_outcome_claude` | M4 | `PostToolUseFailure` → (False, `error`); `PostToolUse` → (True, '') |
+| `test_hook_codex_outcome_from_rollout` | M4 | `PostToolUse` + rollout line with `item.id == tool_use_id`, `exit_code: 2` → failure recorded with `aggregated_output`; `exit_code: 0` → success |
+| `test_hook_unknown_outcome_records_nothing` | M4 | codex rollout missing / no matching id → no event, a pending failure stays pending |
+| `test_hook_agy_outcome_from_transcript` | M4 | `post` notes the command; `post-invocation` reads exit code 2 from the transcript, records the failure, returns `injectSteps` advice |
+| `test_hook_agy_unreadable_transcript_defers_to_replay` | M4 | missing / unknown transcript → no event, pending dropped, replay not suppressed |
 | `test_experience_dirs_contract` | M5 | created under primary; `()` for the primary checkout itself |
 | `test_protected_argv_binds_experience` | M5 | bind present for a linked worktree |
 | `test_native_allow_write_includes_experience` | M5 | path in `allowWrite`; wiki plane still absent |
 | `test_native_settings_experience_hooks` | M6 | three entries, matcher `Bash`, no `exit 2` |
+| `test_agent_frontmatter_has_no_experience_hooks` | M6 | `sdd-coder.md` / `sdd-worker.md` (+ twins) carry no `experience hook` command |
 | `test_interceptor_attaches_advice` | M7 | failed `run_command` result carries `experience_advice` |
 | `test_interceptor_replay_skips_hooked_session` | M7 | replay is a no-op when hook events exist |
-| `test_codex_outcomes_collected` | M8 | `command_execution` items become outcomes |
+| `test_codex_outcomes_collected` | M8 | `command_execution` items become outcomes; `aggregated_output` is the error; `bash -lc` unwrapped |
+| `test_agy_tool_step_outcomes_collected` | M8 | `step_update` / `step_type: "tool"` / `DONE` items become outcomes; exit code parsed from `tool_info.output` |
+| `test_agy_hooks_json_shape` | M8 | installed `parrot-sdd-experience` group: flat `PostInvocation`, `PostToolUse` matcher `run_command`; `parrot-sdd-permissions` untouched |
 | `test_brief_field_reaches_prompt` | M9 | `experience_briefing` present in the dispatched brief JSON |
 | `test_lessons_field_in_codex_schema` | M9 | strict schema includes `lessons` |
 | `test_record_lessons_from_output` | M9 | returned lessons stored as candidates |
 | `test_graduate_opens_one_issue` | M10 | idempotent per lesson |
 | `test_closed_issue_retires_lesson` | M10 | retired lessons are not injected |
 | `test_sync_global_moves_once` | M11 | second run copies nothing |
-| `test_export_shared_redacted_definitions_only` | M11 | no hit events in the shared log |
+| `test_export_shared_redacted_definitions_only` | M11 | no hit events in the shared directory |
+| `test_export_creates_new_file_only` | M11 | second export writes a second file with only the new events; existing files are byte-identical; nothing to export → no file |
 
 ### Integration Tests
 | Test | Description |
 |---|---|
 | `test_gh_pr_edit_end_to_end` | session A: `gh pr edit` fails, `gh api -X PATCH` … succeeds → candidate drafted from an authored lesson; sessions B and C fail, receive the candidate, succeed → confirmed; session D receives the advisory before running `gh pr edit` and the bullet in its briefing |
 | `test_worktree_uses_primary_plane` | a linked worktree outside `.parrot/worktrees/` reads and writes the primary plane |
-| `test_shared_log_feeds_fresh_clone` | a plane with only `sdd/experience/lessons.jsonl` yields the confirmed lesson |
+| `test_shared_log_feeds_fresh_clone` | a plane with only `sdd/experience/lessons/*.jsonl` (two files, one duplicated event) yields the confirmed lesson once |
 
 ### Validation Contract
 
@@ -742,7 +836,25 @@ def plane(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def claude_bash_failure_payload() -> dict[str, Any]:
-    """PostToolUseFailure payload for `gh pr edit 12 --base dev`, error first line 'Exit code 1'."""
+    """PostToolUseFailure payload for `gh pr edit 12 --base dev`: keys session_id, cwd, hook_event_name,
+    tool_name='Bash', tool_input.command, tool_use_id, error='Exit code 1\\n<stderr>', is_interrupt,
+    duration_ms (no tool_response) — shape captured live on Claude Code 2.1.323."""
+
+@pytest.fixture
+def agy_transcript(tmp_path: Path) -> Path:
+    """transcript_full.jsonl as agy 1.5.8 writes it: USER_INPUT, PLANNER_RESPONSE with tool_calls,
+    GENERIC result at step_index 2 ('Command exited with code 2.\\n\\nCommand output:\\n…'), PLANNER_RESPONSE."""
+
+@pytest.fixture
+def codex_rollout(tmp_path: Path) -> tuple[dict[str, Any], Path]:
+    """(codex PostToolUse payload, rollout path): payload with tool_use_id='exec-…', tool_response as a
+    bare string, transcript_path → a JSONL whose event_msg/item_completed line holds
+    item={type: 'CommandExecution', id: 'exec-…', exit_code: 2, aggregated_output: '…'} — codex-cli 0.167.2."""
+
+@pytest.fixture
+def codex_command_item() -> dict[str, Any]:
+    """codex 0.167.2 item.completed: type=command_execution, command="/bin/bash -lc '…'",
+    aggregated_output, exit_code=1, status='failed'."""
 ```
 
 ---
@@ -760,12 +872,14 @@ def claude_bash_failure_payload() -> dict[str, Any]:
 - [ ] `<primary>/.parrot/experience` is writable and `<primary>/.parrot/wiki` is still not writable in both sandbox backends; no `$HOME` path is writable.
 - [ ] A linked worktree located outside `.parrot/worktrees/` resolves the primary checkout's plane.
 - [ ] Global-tagged lessons recorded in a sandbox reach `$PARROT_HOME/experience/` only through `sync`, and `sync` is idempotent.
-- [ ] `sdd/experience/lessons.jsonl` contains only definition events, redacted, and carries `merge=union`.
+- [ ] `sdd/experience/lessons/` contains only definition events, redacted; `export` only creates new files and never rewrites an existing one.
 - [ ] `wikitoolkit query "<text>" --ns experience` returns lessons after `parrot sdd experience init`; a default query does not open the plane for writing.
 - [ ] A confirmed lesson past the graduation thresholds opens exactly one `tech_debt` ledger issue; closing it retires the lesson.
 - [ ] `DevelopmentOutput.lessons` is accepted from every MCP seat, including the codex strict schema, and stored as candidates.
 - [ ] The briefing reaches MCP seats through `TaskScopedBrief.experience_briefing` and native seats through `NativePrep.experience_briefing`; `coder_feedback` text is unchanged.
-- [ ] Seat parity as tabled in §2 holds for Claude, in-process and codex seats; for agy, capture works and advice arrives through `PostInvocation` (or the gap is recorded per §8 Q3).
+- [ ] Seat parity as tabled in §2 holds: Claude, in-process and codex development seats by hook (codex outcome joined from the rollout on `tool_use_id`); codex review profiles by replay; agy failures captured in-session from the transcript at `PostInvocation`, with advice delivered through `injectSteps`.
+- [ ] A Claude subagent's events carry the `<session_id>/<agent_id>` session key, and agent frontmatter registers no experience hook (no event is recorded twice).
+- [ ] Installing the agy experience hooks leaves `.agents/hooks.json` loadable by agy and the `parrot-sdd-permissions` group unchanged.
 - [ ] The motivating scenario passes end to end (`test_gh_pr_edit_end_to_end`).
 - [ ] `scripts/sdd/check_asset_sync.py --check` passes; release smoke has scenarios for `experience_cli` and `experience_hook`.
 
@@ -891,17 +1005,65 @@ def _install_agy_hook(root: Path, receipt: dict[str, Any], *, portable: bool | N
 | noun `experience` | `VERBS` | dict entry | `sdd/cli.py:247` |
 | `parrot` binary in in-process seats | runner-registry merge | already allowed in engine attempts | `flows/dev_loop/sdd_coder/engine.py:3831` |
 
-Host hook facts (external, verified against the installed CLIs / official docs on 2026-11-13):
+Host hook facts (external). Verified by live probes on 2026-11-13 (throwaway repos in the
+session scratchpad, trivial `ls /nonexistent…` / `echo` prompts) unless marked *docs*:
 
-- Claude Code 2.1.323: `PostToolUse` fires after a tool call succeeds, `PostToolUseFailure` after
-  it fails; both accept `hookSpecificOutput.additionalContext`. Bash `tool_response` has
-  `stdout`, `stderr`, `interrupted`; the exit code appears only as an `Exit code N` first line of
-  `error`. Matching hooks run in parallel and all `additionalContext` values are delivered.
-- codex-cli 0.167.2: `PreToolUse` and `PostToolUse` accept
-  `hookSpecificOutput.additionalContext`; `systemMessage` does not reach the model.
-- agy 1.5.3: `PostToolUse` receives `toolCall.name`, `toolCall.args`, `error` and must return
-  `{}`; `PostInvocation` may return `injectSteps` with a `systemMessage`; `PreToolUse` must
-  return a `decision`.
+- **Claude Code 2.1.323** (`claude -p --setting-sources local --settings <file>`):
+  - A Bash call with a non-zero exit fires `PostToolUseFailure`, **not** `PostToolUse`; a
+    successful one fires `PostToolUse`. `additionalContext` from either reaches the model.
+  - `PostToolUseFailure` payload: `session_id`, `cwd`, `prompt_id`, `permission_mode`,
+    `hook_event_name`, `tool_name`, `tool_input.command`, `tool_use_id`,
+    `error = "Exit code N\n<stderr>"`, `is_interrupt`, `duration_ms`; **no** `tool_response`.
+  - `PostToolUse` payload for Bash: `tool_response = {stdout, stderr, interrupted, isImage,
+    noOutputExpected}`; no exit code.
+  - Hooks passed with `--settings` **run inside subagents**. A subagent's payload adds
+    `agent_id` and `agent_type`; its `session_id` is the **parent's**.
+  - *docs*: matching hooks run in parallel and every `additionalContext` value is delivered.
+- **codex-cli 0.167.2**:
+  - With `--ignore-user-config` (the review-profile invocation, no bypass flag) the project
+    `.codex/hooks.json` hooks **do not fire**. Control (operator-run, same repo): without
+    `--ignore-user-config`, with the project trusted and `--dangerously-bypass-hook-trust`
+    (the development-dispatch form), `PreToolUse` and `PostToolUse` fire for every Bash call.
+  - `PostToolUse` payload: `session_id`, `turn_id`, `cwd`, `hook_event_name`, `model`,
+    `permission_mode`, `tool_name: "Bash"`, `tool_input.command` (raw, not `bash -lc` wrapped),
+    `tool_response` = the **bare output string, no exit code**, `tool_use_id`,
+    `transcript_path`. A failed and a successful call are indistinguishable from the payload.
+  - `transcript_path` is the session rollout (JSONL). Its `event_msg` line with
+    `payload.type == "item_completed"` carries `item = {type: "CommandExecution", id, command,
+    status, exit_code, aggregated_output, …}` with `item.id == tool_use_id`, and was written
+    ~5 ms **before** the `PostToolUse` hook ran (2/2 calls). The rollout is large (136 KB for a
+    two-command session): read its tail.
+  - `additionalContext` from `PostToolUse` reaches the model as a `developer` message (seen in
+    the rollout; the model declined to quote it back). *docs*: `systemMessage` does not reach
+    the model.
+  - `codex exec --json` `command_execution` items carry `command` (wrapped as
+    `/bin/bash -lc '<cmd>'`), `aggregated_output` (the error text), `exit_code`, `status`.
+    `codex exec` reads stdin when it is not a TTY: dispatchers must close it.
+  - The profile default model `gpt-5.5` is refused for ChatGPT-account auth ("not supported when
+    using Codex with a ChatGPT account"); probes used `gpt-6-astra`. Not in scope here.
+- **agy 1.5.8** (self-updated from 1.5.3 during the probes; headless `agy -p`, default mode, the
+  workspace trusted through `--settings '{"trustedWorkspaces":[…]}'`):
+  - `PreToolUse`, `PostToolUse` and `PostInvocation` all fire under `--print`; FEAT-847
+    verified `PreToolUse` under `--dangerously-skip-permissions` too (`docs/sdd/AGY.md` §4).
+  - `PostToolUse` payload: `conversationId`, `cwd`, `stepIdx`, `toolCall.{id,name,args.CommandLine}`,
+    `transcriptPath`, `workspacePaths`, `modelName`, `error`. For a command that exits 2,
+    `error` is **empty** and no output is included: the outcome is not in the payload.
+  - `PostInvocation` fires after every model invocation — right after each `PostToolUse`, and
+    once more at the end. Payload: `conversationId`, `invocationNum`, `initialNumSteps`,
+    `transcriptPath`, … (no tool fields).
+  - `injectSteps: [{"systemMessage": {"systemMessage": text}}]` from `PostInvocation` reaches the
+    model as a `<SYSTEM_MESSAGE>` "injected by a PostInvocation hook".
+  - `transcriptPath` (JSONL) holds the command result line (`step_index` = the `PostToolUse`
+    `stepIdx`, `type: "GENERIC"`, `content` with `Command exited with code N.`) when
+    `PostInvocation` fires, but **not yet** when `PostToolUse` fires.
+  - `hooks.json`: `PostInvocation` takes a flat list of command hooks; a nested
+    `{"hooks": [...]}` group is rejected and one invalid named hook makes agy ignore the whole
+    file (`Failed to parse hooks file …: invalid hook "<name>"` in the CLI log).
+  - `--output-format stream-json` emits `step_update` events with `step_type: "tool"` (states
+    `ACTIVE`, `DONE`) and `tool_info = {name, parameters.CommandLine, output}`; the exit code is
+    only the text `Command exited with code N.` inside `output`.
+- **Locale**: Claude Code and agy pass the host locale through (es_ES error text on the reference
+  host); codex returned English text for the same command.
 
 ### Does NOT Exist (Anti-Hallucination)
 - ~~any `PostToolUse` / `PostToolUseFailure` hook~~ — none registered for any host today
@@ -917,11 +1079,15 @@ Host hook facts (external, verified against the installed CLIs / official docs o
 - ~~`.codex/hooks.json` written by `sdd/installer.py`~~ — it is hand-maintained; only `.agents/hooks.json` has an installer
 - ~~`CLAUDE_SESSION_ID` / `PARROT_RUN_ID` in `identity.py`~~ — read in `knowledge/wiki/cli.py:4564` (`_authoring_run_id`)
 - ~~`hooks` field on `ClaudeAgentRunOptions`~~ — the `claude-code` seat gets hooks only through settings JSON
-- ~~`aggregated_output` parsing in the codex dispatcher~~ — only `command`, `exit_code`, `status` are read
-- ~~exit code in agy / gemini stream events~~ — only `error` / `status == "error"`
+- ~~`aggregated_output` parsing in the codex dispatcher~~ — today only `command`, `exit_code`, `status` are read; the field is present in the stream (verified) and M8 adds the read
+- ~~a structured exit code in agy / gemini stream events~~ — agy 1.5.8 reports it only as the text `Command exited with code N.` in `tool_info.output`; gemini: only `error` / `status == "error"`
+- ~~`step_type == "tool_call"` / `"tool_response"` in agy 1.5.8 stream-json~~ — 1.5.8 emits `step_type: "tool"` with `tool_info`; the existing branches at `google_coding.py:493–495` and `:549`/`:564` never match (pre-existing drift, outside this feature)
+- ~~the command outcome in agy's `PostToolUse` payload~~ — `error` is empty for a non-zero exit; read it from `transcriptPath` at `PostInvocation`
+- ~~an exit code in codex's `PostToolUse` payload~~ — `tool_response` is the bare output string; read `exit_code` from the rollout at `transcript_path` by `tool_use_id`
+- ~~experience hooks in agent frontmatter~~ — settings-level hooks reach subagents; frontmatter would double-record
 - ~~per-field BM25 boosts; embeddings on the `query` path~~
 - ~~a Codex twin of `/sdd-start`~~ — `.codex/skills` holds only `parrot-wiki`
-- ~~`sdd/experience/`~~ — created by this feature
+- ~~`sdd/experience/lessons/`~~ — created by this feature (no `.gitattributes` entry: files are never edited, so no merge driver is needed)
 
 ### Edit Sites (Blueprint Anchors)
 
@@ -932,7 +1098,7 @@ Verified against: `433e0e9318`
 | `knowledge/wiki/experience/__init__.py`, `models.py`, `fastpath.py`, `reducer.py`, `index.py`, `service.py`, `sync.py` | CREATE | — | — | — |
 | `sdd/scripts/experience_cli.py`, `sdd/scripts/experience_hook.py` | CREATE | — | — | — |
 | `flows/dev_loop/experience.py` | CREATE | — | — | — |
-| `sdd/experience/lessons.jsonl` | CREATE | — | — | — |
+| `sdd/experience/lessons/` | CREATE (by the first `export`; the reducer tolerates its absence) | — | — | — |
 | `wiki/sdd-tooling/sdd/experience-memory.md` | CREATE | — | — | — |
 | `knowledge/wiki/project.py` | MODIFY | `class WikiProjectConfig(BaseModel):` | `project.py:589` | 1 |
 | `sdd/cli.py` | MODIFY | `"review": ("review_checkpoint", (), "Review: prepare \| validate \| record."),` | `cli.py:281` | 1 |
@@ -947,7 +1113,7 @@ Verified against: `433e0e9318`
 | `flows/dev_loop/dispatchers/llm.py` | MODIFY | `tool_result = await self._run_tool(` | `:589` | 1 |
 | `flows/dev_loop/dispatchers/llm.py` | MODIFY | `if tool_result.get("ok") is False:` | `:595` | 1 |
 | `flows/dev_loop/dispatchers/codex.py` | MODIFY | `if item_type == "command_execution":` | `:783` | 1 |
-| `flows/dev_loop/dispatchers/google_coding.py` | MODIFY | `elif step_type == "tool_response":` | `:564` | 1 |
+| `flows/dev_loop/dispatchers/google_coding.py` | MODIFY | `elif step_type == "tool_response":` | `:564` | 1 (add a sibling `step_type == "tool"` branch; this one never matches agy 1.5.8, see Does NOT Exist) |
 | `flows/dev_loop/dispatchers/gemini.py` | MODIFY | `elif event_type == "tool_response":` | `:384` | 1 |
 | `flows/dev_loop/models/base.py` | MODIFY | `validation_verdict: str = Field(` | `:491` | 1 |
 | `flows/dev_loop/models/base.py` | MODIFY | `merge_performed: bool = Field(` | `:561` | 1 |
@@ -958,15 +1124,14 @@ Verified against: `433e0e9318`
 | `flows/dev_loop/feature_launcher.py` | MODIFY | `native_claude_sandbox.plan_native_launch(worktree, allowed_domains=allowed_domains)` | `:98` | 1 |
 | `.claude/commands/sdd-start.md` (+ `_assets/claude/commands/`, `.agent/workflows/`, `_assets/agent/workflows/`) | MODIFY | `wikitoolkit ledger context <file-1> <file-2> ... 2>/dev/null \|\| true` | `sdd-start.md:174` | 1 |
 | `.agents/skills/sdd-start/SKILL.md` (+ `_assets/agents/skills/sdd-start/`) | MODIFY | ``- `wikitoolkit ledger context <files-from-scope> 2>/dev/null \|\| true` `` | `SKILL.md:85` | 1 |
-| `.claude/commands/sdd-done.md` (+ twins) | MODIFY | `wikitoolkit ledger outbox prepare --repo-root "<worktree-path>"` | `sdd-done.md:612` | 2 (also `:887`; the exact step is Q6) |
-| `.claude/agents/sdd-coder.md` (+ `_assets/claude/agents/`) | MODIFY | `command: 'parrot sdd worktree guard --hook \|\| exit 2'` | `sdd-coder.md:21` | 1 |
+| `.claude/commands/sdd-done.md` (+ `_assets/claude/commands/`) | MODIFY (Step 7: insert `sync` + `export` before, add `sdd/experience/lessons/` to the `git add`) | `git -C "$WORKTREE_PATH" add "$INDEX" sdd/tasks/completed/` | `sdd-done.md:502` (at `ca5d8e53c0`) | 1 |
+| `.agent/workflows/sdd-done.md` (+ `_assets/agent/workflows/`) | MODIFY (same) | `git -C "$WORKTREE_PATH" add "$INDEX" sdd/tasks/completed/` | `sdd-done.md:391` (at `ca5d8e53c0`) | 1 |
+| `.agents/skills/sdd-done/SKILL.md` (+ `_assets/agents/skills/sdd-done/`) | MODIFY (same, as a bullet before it) | `   - stage only the index and this feature's task files, verify cached names` | `SKILL.md:194` (at `ca5d8e53c0`) | 1 |
 | `.claude/agents/sdd-coder.md` (+ twin) | MODIFY | ``## Output — `DevelopmentOutput` JSON (mandatory)`` | `sdd-coder.md:212` | 1 |
-| `.claude/agents/sdd-worker.md` (+ `_assets/claude/agents/`) | MODIFY | `command: 'parrot sdd worktree guard --hook \|\| exit 2'` | `sdd-worker.md:32` | 1 |
 | `.claude/agents/sdd-worker.md` (+ twin) | MODIFY | ``<classification>. Previous delivery feedback: <prepared.coder_feedback>")`. When `prepared.effort` is non-null, also`` | `sdd-worker.md:368` | 1 |
 | `.agents/agents/sdd-coder/agent.md`, `.agents/agents/sdd-worker/agent.md` (+ `_assets/agents/agents/`) | MODIFY | (unverified — check before use) | — | — |
 | `.codex/hooks.json` | MODIFY | `"command": "sh scripts/sdd/codex_hook.sh",` | `hooks.json:9` | 1 |
 | `.agents/hooks.json` | MODIFY | `"command": "sh ../scripts/sdd/agy_hook.sh",` | `hooks.json:9` | 1 |
-| `.gitattributes` | MODIFY | `sdd/ledger/events.jsonl merge=union` | `.gitattributes:2` | 2 (also `:10`; append after the last one) |
 | `.claude/rules/worktree-management.md` (+ `_assets/claude/rules/`) | MODIFY | (line 55, sandbox policy paragraph — unverified anchor, check before use) | `:55` | — |
 | `wiki/sdd-tooling/dev_loop/claude-native-sandbox.md` | MODIFY | (lines 16–20 — unverified anchor, check before use) | `:16` | — |
 | `packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py` | MODIFY | `"migrate_index": Scenario(prepare=_seed_feature, expect_exit=_ANY_CLEAN),` | `:461` | 1 |
@@ -993,11 +1158,13 @@ Tests that pin the sandbox path lists and must be updated with M5:
 - **Append-only**: no code path edits or deletes a line of `events.jsonl`. State changes are new
   events. `rebuild` must be able to recreate `wiki.db` and `triggers.json` from the logs alone.
 - **Session identity**: dispatchers export `PARROT_EXPERIENCE_SESSION=<attempt uid>` to the CLI
-  process so hook-recorded and replayed events share one session id.
+  process so hook-recorded and replayed events share one session id; a payload `agent_id` is
+  always appended (§2 Session identity).
 - **Sandbox directory**: bind the directory, not a file (SQLite sidecar files), and create it
   before binding, as `coder_evidence_dirs` does.
 - **Worker hook delivery**: sandboxed workers do not load project `.claude/settings.json`; their
-  hooks come from `--settings` (built by `native_sandbox_settings`) and agent frontmatter.
+  hooks come from `--settings` (built by `native_sandbox_settings`), which also reach their
+  subagents (verified). Agent frontmatter carries no experience hook.
 - **Installer portability**: hook commands are written as `parrot sdd experience hook …`, never
   as an absolute interpreter path.
 - Async-first, Pydantic v2, `logging.getLogger(__name__)`, Google-style docstrings.
@@ -1016,16 +1183,37 @@ Tests that pin the sandbox path lists and must be updated with M5:
   session that already has hook events.
 - **`PostToolUse` on every successful Bash call**: the success path must exit after one `stat`
   of the session file when no failure is pending.
-- **Claude Code failure event** is inferred from documentation, not stated outright (Q1).
-- **codex `--ignore-user-config`** may or may not drop project hooks (Q2); review profiles pin it.
-- **agy** cannot inject from `PostToolUse` and cannot advise from `PreToolUse` without a decision;
-  parity for agy is capture + `PostInvocation` advice + briefing (Q3).
+- **codex review profiles** pin `--ignore-user-config`, under which project hooks do not load
+  (verified): reviews are captured by replay only, and get the briefing but no in-session advice.
+- **codex outcome comes from the rollout**: the `PostToolUse` payload has no exit code. The hook
+  joins the rollout's `item_completed` line on `tool_use_id`; that line preceded the hook by
+  ~5 ms in every observed call, but the ordering is not documented. Not found → unknown → no
+  event, and replay covers the command. Read only the rollout's tail.
+- **agy** cannot inject from `PostToolUse`, cannot advise from `PreToolUse` without a decision,
+  and its `PostToolUse` does not see the command's outcome. The outcome is read from
+  `transcriptPath` at `PostInvocation` — an undocumented file, and agy self-updates (1.5.3 →
+  1.5.8 during the 2026-11-13 probes). Parse defensively; when no outcome is found the hook
+  records nothing and the end-of-attempt replay covers the command. Re-run the §8 Q3 probe after
+  an agy update, next to the `docs/sdd/AGY.md` §6 re-verification.
+- **One bad agy hook disables all agy hooks**: an invalid named hook makes agy reject the whole
+  `.agents/hooks.json`, including the `parrot-sdd-permissions` narrowing hook — a security
+  regression, not just a lost lesson. The experience group is written from a fixed template and
+  its shape is pinned by `test_agy_hooks_json_shape`.
+- **Locale-dependent error text**: Claude Code and agy pass the host locale through (es_ES text on
+  the reference host). The same stone under two locales yields two signatures in v1; the BM25
+  path still matches on the command family. Not normalized across languages.
+- **Subagents share the parent's `session_id`**: the session key appends `agent_id`, otherwise
+  parallel coders cross-pair. Two subagents of one worker run are distinct sessions for
+  promotion, by decision (§8).
 - **Native Claude coder output is never parsed by parrot**: its lessons arrive through
   `parrot sdd experience record`, not through `lessons[]`.
 - **Worktree outside `.parrot/worktrees/`**: must resolve through the shared root, unlike the
   wiki store.
-- **Dirty tracked file**: `export` writes a tracked file; it is called only from `/sdd-done`
-  inside the feature worktree, right before a commit that stages it. Never from a hook.
+- **Dirty tracked file**: `export` creates a tracked file; it is called only from `/sdd-done`
+  Step 7 inside the feature worktree, right before the commit that stages it. Never from a hook.
+- **Shared-log merge conflicts**: avoided by construction — every export is a new file
+  (`O_CREAT|O_EXCL`), so two feature PRs never touch the same path. GitHub ignores `merge=union`
+  (the FEAT-758 lesson), so no merge driver is relied on.
 - **Retired signatures** stay known to the reducer so the same failure is not re-learned while
   its graduation issue is open.
 - **Lessons fixed upstream**: once the rule or guard lands and the issue closes, the lesson is
@@ -1142,14 +1330,18 @@ Resolved in brainstorm and in the spec intake round:
 - [x] Native Claude coder lessons — *Owner: spec author*: recorded with `parrot sdd experience record`; its output JSON is not parsed by parrot.
 - [x] Hybrid retrieval for deduplication — *Owner: spec author*: deferred; signature hashing deduplicates in v1.
 
-Still open:
+Resolved on 2026-11-13 by live probes (evidence in §6 Host hook facts) and owner decisions:
 
-- [ ] Q1. Confirm on a live Claude Code session that a Bash call with a non-zero exit fires `PostToolUseFailure` (and not `PostToolUse`), and capture the real payload. The first M4 task must do this before coding `failure_of`. — *Owner: implementer*
-- [ ] Q2. Does `codex exec --ignore-user-config` also disable project `.codex/hooks.json`? If yes, review-profile runs rely on replay only. — *Owner: implementer*
-- [ ] Q3. Do agy hooks fire under `--print` with permissions skipped, and does `PostInvocation` `injectSteps` reach the model in that mode? If not, agy keeps capture by replay and advice by briefing only, and the parity criterion is recorded as a known gap. — *Owner: implementer, then Jesus Lara if a gap remains*
-- [ ] Q4. Do hooks passed with `--settings` apply inside subagents spawned by that session? If not, agent frontmatter is the only delivery path for native coders. — *Owner: implementer*
-- [ ] Q5. Thresholds are shipped as defaults (confirm 2 sessions, quarantine 2 refutations, graduate 5 hits across 3 sessions). Adjust after the first weeks of data. — *Owner: Jesus Lara*
-- [ ] Q6. `/sdd-done` runs `sync` and `export`; the exact step and anchor in `sdd-done.md` are unverified. — *Owner: implementer*
+- [x] Q1. Does a failing Bash call fire `PostToolUseFailure`? — *Verified live (Claude Code 2.1.323)*: yes, and not `PostToolUse`; a success fires `PostToolUse`. `additionalContext` reaches the model from both. Payload captured (§6): `error = "Exit code N\n<stderr>"`, no `tool_response`.
+- [x] Q2. Does `codex exec --ignore-user-config` disable project `.codex/hooks.json`? — *Verified live (codex-cli 0.167.2)*: yes, no project hook fired in the review-profile invocation; the same repo in the development form fires them (operator-run control, Q7). Review profiles are captured by replay only (§2 seat parity).
+- [x] Q3. Do agy hooks fire under `--print`, and does `injectSteps` reach the model? — *Verified live (agy 1.5.8, default headless mode; FEAT-847 covers `--dangerously-skip-permissions`)*: `PostToolUse` and `PostInvocation` fire, and `injectSteps` reaches the model. But `PostToolUse` carries no outcome (`error` empty for exit 2). *Decision, Jesus Lara*: capture in-session from `transcriptPath` at `PostInvocation` (M4 `agy_outcome`), replay as fallback; no parity gap is recorded.
+- [x] Q4. Do `--settings` hooks apply inside subagents? — *Verified live*: yes; payload adds `agent_id` / `agent_type` and keeps the parent's `session_id`. Consequences: no experience hooks in agent frontmatter (M6); session key `<session>/<agent_id>`. *Decision, Jesus Lara*: two subagents of one worker run count as distinct sessions for promotion (§2 Session identity).
+- [x] Q5. Thresholds. — *Decision, Jesus Lara*: ship the defaults (confirm 2 sessions, quarantine 2 refutations, graduate 5 hits across 3 sessions), all in `ExperienceConfig`; revisit after the first weeks of data.
+- [x] Q6. Where does `/sdd-done` run `sync` / `export`? — *Verified*: Step 7, before `git add "$INDEX" sdd/tasks/completed/` (`sdd-done.md:502`; twins in §6 Edit Sites). The single `merge=union` file conflicted with FEAT-758 (GitHub ignores the driver). *Decision, Jesus Lara*: one new file per export under `sdd/experience/lessons/`, riding the Step 7 commit; no `.gitattributes` entry.
+
+- [x] Q7. What does codex's `PostToolUse` carry for a failed Bash call in a development dispatch? — *Verified live, operator-run (codex-cli 0.167.2, trusted project, `--dangerously-bypass-hook-trust`)*: hooks fire; `tool_response` is the bare output string with **no exit code**; `additionalContext` reaches the model as a `developer` message. The outcome is in the rollout at `transcript_path` (`item_completed`, `item.id == tool_use_id`, `exit_code`, `aggregated_output`), written before the hook. Applied the Q3 decision to codex: M4 `codex_outcome` joins on `tool_use_id`, unknown → no event, replay as fallback.
+
+No open questions remain.
 
 ---
 
@@ -1194,10 +1386,12 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
   - `sdd/scripts/native_claude_sandbox.py` — M5 and M6.
   - `sdd/installer.py` — M6, M8, M11.
   - `knowledge/wiki/experience/service.py` — M2 and M10.
-  - `.claude/agents/sdd-coder.md`, `.claude/agents/sdd-worker.md` and twins — M6 and M9.
+  - `.claude/agents/sdd-coder.md`, `.claude/agents/sdd-worker.md` and twins — M9 only (M6 no longer edits them).
+  - `.claude/commands/sdd-done.md` and twins — M11 only.
   - `flows/dev_loop/sdd_coder/engine.py`, `models/base.py` — M9 only.
 - **Exclusive resources**: packaged asset twins (`scripts/sdd/check_asset_sync.py` must pass
-  after every task that edits a command, agent or rule); `.gitattributes`.
+  after every task that edits a command, agent or rule); `.agents/hooks.json` (M8 — an invalid
+  entry disables every agy hook).
 - **Cross-feature dependencies**: none must merge first. The hot files above are shared with any
   in-flight SDD-tooling fix; rebase before `/sdd-done`.
 
@@ -1208,3 +1402,5 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-11-13 | Jesus Lara | Initial draft from `sdd/proposals/sdd-experience-memory.brainstorm.md` |
+| 0.2 | 2026-11-13 | Jesus Lara | Resolve §8 Q1–Q6 with live probes (Claude Code 2.1.323, codex-cli 0.167.2, agy 1.5.8): shared log becomes one new file per export (no `merge=union`); agy outcome read from the transcript at `PostInvocation`; session key `<session>/<agent_id>`, subagents distinct for promotion; settings-only Claude hook delivery (no frontmatter); codex review profiles replay-only; M4/M6 delegation-eligible; new Q7 (codex development-mode payload) |
+| 0.3 | 2026-11-13 | Jesus Lara | Resolve Q7 (operator-run codex probe): `PostToolUse` has no exit code, outcome joined from the rollout on `tool_use_id`; `failure_of` → tri-state `outcome_of`; Q2 control recorded; M8 delegation-eligible; no open questions |
