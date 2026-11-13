@@ -83,7 +83,7 @@ def _next_recall_stability(
     easy_bonus = weights[16] if grade == Grade.EASY else 1.0
     return stability * (
         1.0
-        + (_EXP_BASE**weights[8])
+        + (_EXP_BASE ** weights[8])
         * (11.0 - difficulty)
         * (stability ** -weights[9])
         * ((_EXP_BASE ** ((1.0 - retrievability_value) * weights[10])) - 1.0)

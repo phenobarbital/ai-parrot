@@ -88,9 +88,7 @@ def test_same_day_and_out_of_order() -> None:
     assert same_day.stability == pytest.approx(state.stability, abs=1e-12)
     assert out_of_order.stability == pytest.approx(same_day.stability, abs=1e-12)
     assert out_of_order.difficulty == pytest.approx(same_day.difficulty, abs=1e-12)
-    assert (
-        retrievability(state, now=datetime.fromisoformat("2025-12-01T00:00:00+00:00"), parameters=parameters) == 1.0
-    )
+    assert retrievability(state, now=datetime.fromisoformat("2025-12-01T00:00:00+00:00"), parameters=parameters) == 1.0
     assert state.reviewed_at == first_at
 
     later_at = datetime.fromisoformat("2026-01-03T12:00:00+00:00")
