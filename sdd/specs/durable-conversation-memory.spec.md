@@ -1483,9 +1483,10 @@ Verified against: `2dddd6d2cc`
   ephemeral volume the guarantee degrades to "survives a process restart, not a pod
   replacement". `SqliteOutbox(overflow="reject_new")` makes publish raise when full; the
   bot logs at ERROR and the round still succeeds.
-- **DLQ needs Postgres.** `DLQHandler` defaults to `driver="pg"`. Without
+- **DLQ without Postgres.** `DLQHandler` defaults to `driver="pg"`. Without
   `PARROT_TURN_BUS_DLQ_DSN`, exhausted envelopes are logged at ERROR with their
-  `turn_id` and dropped; say so in the operator docs.
+  `turn_id` and **retained as dead letters in the per-pod SQLite outbox, never dropped**
+  (§8 Q15, M10); say so in the operator docs.
 - **Bus not available (CLI, code, sub-agents).** No bus is created and no event is built.
 - **Cold tier unavailable.** The backend raises, the subscriber propagates, the bus
   retries and routes exhaustion to the DLQ. A read failure is never a history miss.
@@ -1706,3 +1707,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 |---|---|---|---|
 | 0.1 | 2026-11-13 | Jesus Lara (with Claude) | Initial draft from `sdd/proposals/durable-conversation-memory.brainstorm.md` |
 | 0.2 | 2026-11-12 | Juan (for Jesus Lara) | Approved for decomposition: no open questions block a module (Q13 deferred to the Stage 2 follow-up) |
+| 0.3 | 2026-11-12 | Juan (for Jesus Lara; open to revision) | Decisions taken while decomposing, all already reflected in the tasks: (1) §7 DLQ bullet aligned with Q15 — dead letters are retained in the SQLite outbox, not dropped (TASK-5581); (2) when `REDIS_HISTORY_EXPLICIT` is true, `REDIS_HISTORY_URL` is the operator's value, never the synthesized host/port one (TASK-5571); (3) a caller disconnect mid-stream saves the partial turn in the bot (TASK-5583); (4) Studio bots: Agent Studio FEAT-013 calls `BotManager._attach_durable_memory` under a contract test; exposing it publicly or calling it from `studio_builder` is a welcome follow-up |
