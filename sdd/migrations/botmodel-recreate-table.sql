@@ -2,6 +2,10 @@
 --
 -- WARNING: DROP TABLE ... CASCADE destroys all existing bot rows and any
 -- dependent objects. This DDL matches the PRODUCTION schema exactly.
+--
+-- MANUAL AND DESTRUCTIVE: never run this through the packaged migration
+-- runner. For a non-destructive database upgrade, run
+-- `parrot self migration upgrade` instead.
 
 -- Drop existing table first (CASCADE removes dependent objects/constraints)
 DROP TABLE IF EXISTS navigator.ai_bots CASCADE;
