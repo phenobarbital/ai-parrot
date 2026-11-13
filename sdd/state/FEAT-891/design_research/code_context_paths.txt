@@ -1,0 +1,16 @@
+.agent/workflows/sdd-start.md
+.claude/commands/sdd-start.md
+packages/ai-parrot/src/parrot/auth/confirmation.py
+packages/ai-parrot/src/parrot/knowledge/lint/packs/__init__.py
+packages/ai-parrot/src/parrot/knowledge/lint/rule.py
+packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/hook.py
+packages/ai-parrot/src/parrot/knowledge/wiki/schema/store.py
+packages/ai-parrot/src/parrot/knowledge/wiki/store.py
+packages/ai-parrot/src/parrot/sdd/_assets/agent/workflows/sdd-start.md
+packages/ai-parrot/src/parrot/sdd/_assets/claude/commands/sdd-start.md
+packages/ai-parrot/src/parrot/sdd/scripts/check_task_state.py
+packages/ai-parrot/src/parrot/skills/models.py
+packages/ai-parrot/src/parrot/skills/parsers.py
+sdd/installer.py
+sdd/scripts/experience_hook.py
+sdd/scripts/native_claude_sandbox.py
