@@ -341,3 +341,33 @@ async def test_a_deleted_turn_is_not_fed_to_the_llm_by_the_next_ask(wired, stora
         assert any("second-question" in c for c in client.histories[-1])  # the other turns stay
     finally:
         await runner.cleanup()
+
+
+async def test_one_failing_bot_does_not_stop_the_cleaning_of_the_others(wired, storage):
+    app, mgr = web.Application(), _manager()
+    mgr.setup_registry_only(app, turn_persistence=True)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    try:
+        sick, healthy = _bot("alpha", chatbot_id="uuid-sick"), _bot("alpha", chatbot_id="uuid-ok")
+        for b in (sick, healthy):
+            b.conversation_memory = InMemoryConversation()
+            mgr._attach_durable_memory(b)
+            await b.conversation_memory.create_history("u", "s", chatbot_id=b.memory_key_id)
+
+        async def boom(*a, **kw):
+            raise RuntimeError("redis down")
+
+        sick.conversation_memory.delete_history = boom
+        with pytest.raises(RuntimeError):  # the aggregate: ChatStorage must still schedule its retry
+            await mgr._clean_working_memory("u", "alpha", "s")
+        assert await healthy.conversation_memory.get_history("u", "s", chatbot_id="uuid-ok") is None
+        # the turn cleaner is isolated the same way
+        sick.conversation_memory.get_history = boom
+        with pytest.raises(RuntimeError):
+            await mgr._clean_working_memory_turn("u", "alpha", "s", "t1")
+        # and the delete as a whole still retries (the failure is surfaced to ChatStorage, not swallowed)
+        _, errors = await storage._cleanup_conversation("u", "alpha", "s")
+        assert errors
+    finally:
+        await runner.cleanup()

@@ -5,7 +5,7 @@ Tool for instanciate, managing and interacting with Chatbot through APIs.
 """
 
 from dataclasses import dataclass
-from typing import Any, Dict, Type, Optional, Tuple, List, TYPE_CHECKING
+from typing import Any, Awaitable, Callable, Dict, Type, Optional, Tuple, List, TYPE_CHECKING
 import importlib.util
 from importlib import import_module
 from pathlib import Path
@@ -3259,35 +3259,60 @@ Available documentation UIs:
         self._durable_bots.add(bot)
         bot._durable_memory_attached = True  # noqa: SLF001 - idempotency marker
 
+    def _bots_named(self, agent_id: str) -> List["AbstractBot"]:
+        """Live durable bots named ``agent_id`` that own a conversation memory (resolved at call time)."""
+        return [
+            bot for bot in list(self._durable_bots)
+            if getattr(bot, "conversation_memory", None) is not None and getattr(bot, "name", None) == agent_id
+        ]
+
+    async def _clean_each_bot(self, agent_id: str, what: str, clean: Callable[["AbstractBot"], Awaitable[None]]) -> None:
+        """Run ``clean`` on every matching bot; one failing bot never stops the rest.
+
+        Raises:
+            RuntimeError: at the END, aggregating every failure, so ChatStorage's cleanup retry still happens.
+        """
+        errors: List[BaseException] = []
+        for bot in self._bots_named(agent_id):
+            try:
+                await clean(bot)
+            except Exception as exc:  # noqa: BLE001 - isolate the bot, keep cleaning the others
+                self.logger.error("working-memory cleanup (%s) failed for a bot named %s: %s", what, agent_id, exc)
+                errors.append(exc)
+        if errors:
+            raise RuntimeError(
+                f"working-memory cleanup ({what}) failed for {len(errors)} bot(s) named {agent_id}: "
+                + "; ".join(type(e).__name__ for e in errors)
+            ) from errors[0]
+
     async def _clean_working_memory(self, user_id: str, agent_id: str, session_id: str) -> None:
         """The single ``ChatStorage`` memory cleaner: clear the history of every live bot named ``agent_id``.
 
         Resolves the bots at call time (shared bots, cached per-user bots, temporary bots) through a weak set,
-        so an evicted bot is neither kept alive nor awaited.
+        so an evicted bot is neither kept alive nor awaited. Each bot is isolated (see ``_clean_each_bot``).
         """
-        for bot in list(self._durable_bots):
-            memory = getattr(bot, "conversation_memory", None)
-            if memory is None or getattr(bot, "name", None) != agent_id:
-                continue
-            await memory.delete_history(user_id, session_id, chatbot_id=bot.memory_key_id)
+        async def clean(bot: "AbstractBot") -> None:
+            await bot.conversation_memory.delete_history(user_id, session_id, chatbot_id=bot.memory_key_id)
+
+        await self._clean_each_bot(agent_id, f"session {session_id}", clean)
 
     async def _clean_working_memory_turn(self, user_id: str, agent_id: str, session_id: str, turn_id: str) -> None:
         """Drop ONE deleted turn from the working memory of every live bot named ``agent_id``.
 
         Without this a bot keeps feeding the deleted turn to the LLM until the history's TTL
-        (``_load_or_hydrate_history`` returns an existing history untouched).
+        (``_load_or_hydrate_history`` returns an existing history untouched). Each bot is isolated.
         """
-        for bot in list(self._durable_bots):
-            memory = getattr(bot, "conversation_memory", None)
-            if memory is None or getattr(bot, "name", None) != agent_id:
-                continue
+        async def clean(bot: "AbstractBot") -> None:
+            memory = bot.conversation_memory
             history = await memory.get_history(user_id, session_id, chatbot_id=bot.memory_key_id)
             if history is None:
-                continue
+                return
             kept = [t for t in history.turns if t.turn_id != turn_id]
             if len(kept) != len(history.turns):
                 history.turns = kept
                 await memory.update_history(history)
+
+        await self._clean_each_bot(agent_id, f"turn {turn_id}", clean)
 
     async def _start_registry_only_persistence(self, app: web.Application) -> None:
         """Registry-only hosts have no on_startup: create + initialize ChatStorage, then start the bus."""
