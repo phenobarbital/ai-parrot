@@ -32,6 +32,7 @@ from .persistence import (
 from .mem import InMemoryConversation
 from .redis import RedisConversation
 from .render import HistoryMessage, render_history
+from .parts import MessagePart, render_parts_text
 from .unified import (
     ContextAssembler,
     LongTermMemoryMixin,
@@ -124,6 +125,7 @@ __all__ = [
     "LongTermMemoryMixin",
     "MemoryConfig",
     "MemoryContext",
+    "MessagePart",
     "OmissionStore",
     "RedisConversation",
     "TokenCount",
@@ -138,6 +140,7 @@ __all__ = [
     "UnifiedMemoryManager",
     "compact_history",
     "render_history",
+    "render_parts_text",
     "load_state",
     "save_state",
 ]
