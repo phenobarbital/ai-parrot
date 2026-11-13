@@ -14,6 +14,8 @@ sections:
     title: Tools & Toolkits
   - id: flows
     title: Flows
+  - id: experts
+    title: Experts
   - id: skills
     title: Skills
   - id: stores
