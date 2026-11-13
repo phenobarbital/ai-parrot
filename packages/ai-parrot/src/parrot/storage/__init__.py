@@ -1,7 +1,7 @@
 # parrot/storage — conversation and artifact storage layer.
 # See wiki/stores/storage-backends.md for the backend selection matrix and env var reference.
 from .chat import ChatStorage
-from .models import ChatMessage, Conversation
+from .models import ChatMessage, ChatStorageTurn, Conversation
 from .models import (
     ArtifactType,
     ArtifactCreator,
@@ -38,6 +38,7 @@ from .instrumented import InstrumentedBackend                         # FEAT-116
 __all__ = [
     "ChatStorage",
     "ChatMessage",
+    "ChatStorageTurn",
     "Conversation",
     # FEAT-103 artifact & thread models
     "ArtifactType",
