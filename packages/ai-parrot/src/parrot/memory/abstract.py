@@ -130,6 +130,10 @@ class ConversationTurn:
     #: Stage 0 normalization version stamp (``NORM_VERSION``); ``None`` when
     #: normalization has not run (legacy turns, or ``normalize=False``).
     norm_version: Optional[str] = None
+    #: Emitter-owned monotonic sequence within ``(agent, user, session)`` (FEAT-886).
+    #: ``None`` on legacy turns. Round-trips through ``to_dict()``/``from_dict()``;
+    #: ``from_dict()`` tolerates its absence.
+    sequence: Optional[int] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize turn to dictionary."""
@@ -149,6 +153,7 @@ class ConversationTurn:
             "state": self.state.value,
             "schema_version": self.schema_version,
             "norm_version": self.norm_version,
+            "sequence": self.sequence,
         }
 
     @classmethod
@@ -172,6 +177,7 @@ class ConversationTurn:
             state=TurnState(data.get("state", TurnState.RAW.value)),
             schema_version=data.get("schema_version", 1),
             norm_version=data.get("norm_version"),
+            sequence=data.get("sequence"),
         )
 
     @classmethod

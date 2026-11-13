@@ -22,6 +22,13 @@ from .episodic import (
     EpisodicMemoryToolkit,
 )
 from .file import FileConversationMemory
+from .persistence import (
+    CONVERSATION_DELETED_TOPIC,
+    TURN_COMPLETED_TOPIC,
+    BusTurnPublisher,
+    TurnPresentation,
+    TurnPublisher,
+)
 from .mem import InMemoryConversation
 from .redis import RedisConversation
 from .render import HistoryMessage, render_history
@@ -91,6 +98,7 @@ def __dir__() -> list[str]:
 __all__ = [
     "AgentMemory",
     "AnswerMemory",
+    "BusTurnPublisher",
     "BrainStore",
     "CompactionCommit",
     "CompactionResult",
@@ -99,6 +107,7 @@ __all__ = [
     "ConversationHistory",
     "ConversationMemory",
     "ConversationTurn",
+    "CONVERSATION_DELETED_TOPIC",
     "DistilledKnowledge",
     "DreamConfig",
     "DreamCycleReport",
@@ -119,8 +128,11 @@ __all__ = [
     "RedisConversation",
     "TokenCount",
     "TokenCounter",
+    "TURN_COMPLETED_TOPIC",
     "ToolInvocation",
     "ToolStatus",
+    "TurnPresentation",
+    "TurnPublisher",
     "TurnState",
     "TurnView",
     "UnifiedMemoryManager",
