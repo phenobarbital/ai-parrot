@@ -28,6 +28,7 @@ from typing import Literal
 from aiohttp import web
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from parrot.bots.flows.core.gates import GateError, GateErrorCode
 from parrot.flows.dev_loop.runner import DevLoopRunner
 from parrot.flows.dev_loop.session_state import (
     ActionOrigin,
@@ -111,6 +112,32 @@ async def resolve_gate_handler(request: web.Request) -> web.Response:
             run_id, gate_id, body.resolution, body.resolved_by,
             body.comment, origin=origin, answers=body.answers,
         )
+    except GateError as exc:
+        if exc.code is GateErrorCode.NOT_FOUND:
+            logger.info(
+                "resolve_gate: unknown gate_id=%s for run_id=%s", gate_id, run_id
+            )
+            return web.json_response({"error": "unknown_gate"}, status=404)
+        if exc.code is GateErrorCode.NOT_PENDING:
+            host = runner.get_host(run_id)
+            gate = host.state.gates.get(gate_id) if host is not None else None
+            logger.info(
+                "resolve_gate: gate_id=%s on run_id=%s is not pending "
+                "(attempted by %s)",
+                gate_id,
+                run_id,
+                body.resolved_by,
+            )
+            return web.json_response(
+                {
+                    "error": "already_resolved",
+                    "status": gate.status if gate is not None else "unknown",
+                    "resolved_by": gate.resolved_by if gate is not None else "",
+                    "resolved_at": gate.resolved_at if gate is not None else None,
+                },
+                status=409,
+            )
+        raise
     except GateNotFoundError:
         # NOTE: GateNotFoundError subclasses KeyError — this except clause
         # MUST come before the bare ``except KeyError`` below, or the more
