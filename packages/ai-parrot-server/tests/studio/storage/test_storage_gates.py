@@ -247,6 +247,35 @@ _SANCTIONED_REWRITES: tuple[tuple[str, str], ...] = (
         "        mcp_servers JSONB DEFAULT '[]'::JSONB,\n"
         "        operation_mode VARCHAR DEFAULT 'adaptive',\n",
     ),
+    (
+        "-- WARNING: Initial setup DDL only. DO NOT run against production.\n"
+        "-- For migrations, use the ALTER TABLE ADD COLUMN IF NOT EXISTS statements at the bottom,\n"
+        "-- or run sdd/migrations/ai-bots-homologate-botmodel.sql (idempotent, covers every column).\n"
+        "--\n"
+        "-- The CREATE TABLE below tracks parrot.models.bots.BotModel field-for-field (44 columns).\n"
+        "-- Columns dropped from the model live only in their fold migrations:\n"
+        "--   model_name/temperature/max_tokens/top_k/top_p -> FEAT-fold-legacy-llm-columns.sql\n"
+        "--   embedding_model                               -> FEAT-fold-embedding-model-into-vector-store-config.sql\n",
+        "-- WARNING: Initial setup DDL only. DO NOT run against production.\n"
+        "-- For non-destructive database upgrades, run `parrot self migration upgrade`.\n"
+        "--\n"
+        "-- The CREATE TABLE below tracks parrot.models.bots.BotModel field-for-field (49 columns).\n",
+    ),
+    (
+        "    use_conversation_history BOOLEAN DEFAULT TRUE,\n"
+        "\n"
+        "    -- Advanced: bot class\n",
+        "    use_conversation_history BOOLEAN DEFAULT TRUE,\n"
+        "\n"
+        "    -- Follow-up suggestion chip settings (FEAT-752)\n"
+        "    enable_suggestions BOOLEAN DEFAULT FALSE,\n"
+        "    suggest_followups BOOLEAN DEFAULT FALSE,\n"
+        "    suggestion_timeout_s REAL DEFAULT 4.0,\n"
+        "    max_suggestions INTEGER DEFAULT 6,\n"
+        "    suggestion_model VARCHAR,\n"
+        "\n"
+        "    -- Advanced: bot class\n",
+    ),
 )
 
 

@@ -1,11 +1,7 @@
 -- WARNING: Initial setup DDL only. DO NOT run against production.
--- For migrations, use the ALTER TABLE ADD COLUMN IF NOT EXISTS statements at the bottom,
--- or run sdd/migrations/ai-bots-homologate-botmodel.sql (idempotent, covers every column).
+-- For non-destructive database upgrades, run `parrot self migration upgrade`.
 --
--- The CREATE TABLE below tracks parrot.models.bots.BotModel field-for-field (44 columns).
--- Columns dropped from the model live only in their fold migrations:
---   model_name/temperature/max_tokens/top_k/top_p -> FEAT-fold-legacy-llm-columns.sql
---   embedding_model                               -> FEAT-fold-embedding-model-into-vector-store-config.sql
+-- The CREATE TABLE below tracks parrot.models.bots.BotModel field-for-field (49 columns).
 DROP TABLE IF EXISTS navigator.ai_bots CASCADE;
 
 -- Create the unified AI bots table
@@ -65,6 +61,13 @@ CREATE TABLE IF NOT EXISTS navigator.ai_bots (
     memory_config JSONB DEFAULT '{}'::JSONB,
     max_context_turns INTEGER DEFAULT 5 CHECK (max_context_turns > 0),
     use_conversation_history BOOLEAN DEFAULT TRUE,
+
+    -- Follow-up suggestion chip settings (FEAT-752)
+    enable_suggestions BOOLEAN DEFAULT FALSE,
+    suggest_followups BOOLEAN DEFAULT FALSE,
+    suggestion_timeout_s REAL DEFAULT 4.0,
+    max_suggestions INTEGER DEFAULT 6,
+    suggestion_model VARCHAR,
 
     -- Advanced: bot class
     bot_class VARCHAR,
