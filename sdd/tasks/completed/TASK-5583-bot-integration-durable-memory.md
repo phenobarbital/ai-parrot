@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-886 — Durable Conversation Memory
 **Spec**: sdd/specs/durable-conversation-memory.spec.md (Module 15)
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5568, TASK-5569, TASK-5571, TASK-5580
@@ -781,10 +781,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+AbstractBot gains turn_publisher / hydration_source / sequence_allocator (class defaults + kwargs), _load_or_hydrate_history (+ guard, hydrate, pending, post-install recheck), _turn_presentation, _stamp_turn_ordering (UTC timestamp + monotonic sequence), _publish_turn_completed (after add_turn, never fails the round), save_conversation_turn(presentation=); BaseBot: four hydrate call sites, caller turn_id on conversation/invoke/ask/ask_stream (and from_ai_message(turn_id=...) so ask() stores the caller's id), presentation= at the four save sites, ask_stream partial turn carries error= and is saved (shielded, once) when the caller cancels/closes the stream.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (sequential fallback)
+**Date**: 2026-11-13
+**Tests**: test_load_or_hydrate_history 9 + test_turn_publish_after_save 10 passed; test_bot_history_wiring / test_context_budget / test_ask_stream_compaction_commit / test_memory_key_id green. Whole tests/unit/bots run (minus test_abstractbot_store_router.py which needs `greenlet`, absent from the venv — pre-existing): 3 failures in the full run, of which test_memory_key_id was MINE (fixed: the signature pin now includes `presentation`); test_flex_dashboard_agent and test_infographic_authoring_mixin pass in isolation both with and without my change (order-dependent in the full run — not investigated further). ruff clean.
+**Mutation evidence**: no publish -> RED (8); deletion guard failing open -> RED; cancel saves nothing -> RED; no history cleanup after the guard recheck -> RED; ask() not given the caller turn_id -> RED (5; the probe used an invalid kwarg, so it is a coarse RED rather than a precise one). Restored by re-applying edits.
+**Notes**: tests/unit/bots/test_memory_key_id.py is outside the task's file table; it only needed the new `presentation` parameter added to its exact-signature pin. voice.py / data.py callers of save_conversation_turn publish with an empty presentation (task scope).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

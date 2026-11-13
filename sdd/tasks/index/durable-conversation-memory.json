@@ -406,7 +406,7 @@
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -419,8 +419,9 @@
       "parallelism_notes": "bots/base.py after TASK-5568; TurnPublisher/TurnPresentation from TASK-5569; 'auto' and bots/abstract.py after TASK-5571; install_history/SequenceAllocator from TASK-5580.",
       "assigned_to": null,
       "started_at": "2026-11-13T03:25:54+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5583-bot-integration-durable-memory.md"
+      "completed_at": "2026-11-13T04:41:02+00:00",
+      "file": "sdd/tasks/completed/TASK-5583-bot-integration-durable-memory.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5584",
