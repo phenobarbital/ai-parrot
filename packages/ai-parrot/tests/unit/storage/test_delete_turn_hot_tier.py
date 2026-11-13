@@ -77,3 +77,23 @@ async def test_initialize_passes_history_ttl(monkeypatch):
         storage = ChatStorage(dynamodb=_ColdBackend())
         await storage.initialize()
     assert seen == [7200, None]
+
+
+async def test_hot_tier_removal_uses_the_atomic_remove_turn():
+    """issue:afbd39c93c94 — the hot tier drops the turn through ``remove_turn`` (CAS on Redis), keyed by agent name."""
+    hot = InMemoryConversation()
+    await _seed(hot)
+    calls: list = []
+
+    async def remove_turn(user_id, session_id, turn_id, chatbot_id=None):
+        calls.append((user_id, session_id, turn_id, chatbot_id))
+        return True
+
+    async def whole_history_rewrite(*a, **kw):
+        raise AssertionError("the hot tier must not rewrite the whole history")
+
+    hot.remove_turn = remove_turn
+    hot.update_history = whole_history_rewrite
+    storage = ChatStorage(redis_conversation=hot, dynamodb=_ColdBackend())
+    assert await storage.delete_turn("s", "t1", user_id="u", agent_id="agent-1") is True
+    assert calls == [("u", "s", "t1", "agent-1")]

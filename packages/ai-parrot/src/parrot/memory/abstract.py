@@ -683,6 +683,34 @@ class ConversationMemory(ABC):
         history.metadata["compaction"] = state.to_dict()
         await self.update_history(history)
 
+    async def remove_turn(self, user_id: str, session_id: str, turn_id: str, chatbot_id: Optional[str] = None) -> bool:
+        """Remove the turn ``turn_id`` from a stored history.
+
+        This default is a plain read-modify-write over :meth:`get_history` / :meth:`update_history`. It is
+        race-free for :class:`~parrot.memory.mem.InMemoryConversation`, whose ``get_history`` returns the live
+        object with no suspension point in between. A backend shared by concurrent writers overrides it with
+        one atomic write (``RedisConversation`` uses ``WATCH``/``MULTI``/``EXEC``), so a turn appended between
+        the read and the write is never overwritten.
+
+        Args:
+            user_id: Owner of the conversation.
+            session_id: Conversation session.
+            turn_id: The turn to drop.
+            chatbot_id: Agent key segment.
+
+        Returns:
+            ``True`` when this call removed the turn; ``False`` when there is no history or it holds no such turn.
+        """
+        history = await self.get_history(user_id, session_id, chatbot_id)
+        if history is None:
+            return False
+        kept = [t for t in history.turns if t.turn_id != turn_id]
+        if len(kept) == len(history.turns):
+            return False
+        history.turns = kept
+        await self.update_history(history)
+        return True
+
     @abstractmethod
     async def clear_history(self, user_id: str, session_id: str, chatbot_id: Optional[str] = None) -> None:
         """Clear a conversation history."""

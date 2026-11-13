@@ -371,3 +371,30 @@ async def test_one_failing_bot_does_not_stop_the_cleaning_of_the_others(wired, s
         assert errors
     finally:
         await runner.cleanup()
+
+
+async def test_the_turn_cleaner_uses_the_memorys_atomic_remove_turn(wired, storage):
+    """issue:afbd39c93c94 — the cleaner delegates to ``remove_turn`` (CAS on Redis), never a read-modify-write."""
+    app, mgr = web.Application(), _manager()
+    mgr.setup_registry_only(app, turn_persistence=True)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    try:
+        bot = _bot("alpha", chatbot_id="uuid-1")
+        bot.conversation_memory = InMemoryConversation()
+        mgr._attach_durable_memory(bot)
+        calls = []
+
+        async def remove_turn(user_id, session_id, turn_id, chatbot_id=None):
+            calls.append((user_id, session_id, turn_id, chatbot_id))
+            return True
+
+        async def whole_history_rewrite(*a, **kw):
+            raise AssertionError("the turn cleaner must not rewrite the whole history")
+
+        bot.conversation_memory.remove_turn = remove_turn
+        bot.conversation_memory.update_history = whole_history_rewrite
+        await mgr._clean_working_memory_turn("u", "alpha", "s", "t1")
+        assert calls == [("u", "s", "t1", bot.memory_key_id)]
+    finally:
+        await runner.cleanup()
