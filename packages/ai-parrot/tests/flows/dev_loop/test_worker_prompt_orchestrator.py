@@ -98,9 +98,7 @@ def test_lessons_field_in_codex_schema(tmp_path: Path) -> None:
     assert "lessons" in schema["properties"]
     assert "lessons" in schema["required"]
     assert schema["$defs"]["LessonDraft"]["additionalProperties"] is False
-    assert set(schema["$defs"]["LessonDraft"]["required"]) == set(
-        schema["$defs"]["LessonDraft"]["properties"]
-    )
+    assert set(schema["$defs"]["LessonDraft"]["required"]) == set(schema["$defs"]["LessonDraft"]["properties"])
     assert schema["$defs"]["LessonTrigger"]["additionalProperties"] is False
 
     invalid_draft = _lesson_draft().model_dump()
