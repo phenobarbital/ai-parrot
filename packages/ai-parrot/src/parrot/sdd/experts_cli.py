@@ -274,3 +274,51 @@ def consult_cmd(doc: Path, feature_id: str | None, root: Path) -> None:
     click.echo(f"Wrote {len(written)} contribution(s).")
     for path in written:
         click.echo(str(path))
+
+
+@experts.command(name="triage")
+@click.argument("contribution", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.argument("finding_id")
+@click.argument("action", type=click.Choice(["confirm", "reject", "escalate"]))
+@click.option("--reason", default="", help="Reason for the triage decision")
+@click.option("--root", "root", default=".", type=click.Path(file_okay=False, path_type=Path), help="Repo root.")
+def triage_cmd(contribution: Path, finding_id: str, action: str, reason: str, root: Path) -> None:
+    """Update the finding status and reason."""
+    # Load the contribution
+    contrib = load_contribution(contribution)
+
+    # Find and update the specified finding
+    finding_found = False
+    for finding in contrib.findings:
+        if finding.id == finding_id:
+            finding.status = action
+            finding.reason = reason
+            finding_found = True
+            break
+
+    if not finding_found:
+        click.echo(f"Error: Finding {finding_id} not found in contribution", err=True)
+        raise click.ClickException(f"Finding {finding_id} not found")
+
+    # Save the updated contribution
+    save_contribution(contribution, contrib)
+    click.echo(f"Updated finding {finding_id} status to {action}")
+
+
+@experts.command(name="promote")
+@click.argument("contribution", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.argument("finding_id")
+@click.option("--root", "root", default=".", type=click.Path(file_okay=False, path_type=Path), help="Repo root.")
+def promote_cmd(contribution: Path, finding_id: str, root: Path) -> None:
+    """Promote a confirmed finding to an inferred decision."""
+    from parrot.experts.promotion import promote_finding
+
+    async def _run() -> str:
+        return await promote_finding(contribution, finding_id, repo_root=root)
+
+    try:
+        decision_id = asyncio.run(_run())
+        click.echo(f"Created inferred decision: {decision_id}")
+    except ValueError as e:
+        click.echo(f"Error: {e}", err=True)
+        raise click.ClickException(str(e)) from e
