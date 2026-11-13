@@ -46,7 +46,9 @@ class FakeResolver:
             expert=name,
             budget_tokens=1000,
             layers=[
-                KnowledgeLayer(layer="rules", source="r.md", mode=KnowledgeMode.INLINE, revision="r1", content=self.rule),
+                KnowledgeLayer(
+                    layer="rules", source="r.md", mode=KnowledgeMode.INLINE, revision="r1", content=self.rule
+                ),
                 KnowledgeLayer(
                     layer="tier1_expert",
                     source="k.md",
@@ -289,7 +291,7 @@ async def test_mob_partial_failure_non_strict_skips(episodes):
     result = await node.execute(_ctx(registry), {})
 
     assert "answer a" in result.result
-    assert f'expert="b"' not in result.result
+    assert 'expert="b"' not in result.result
     assert result.metadata["experts"]["b"]["status"] == "failed"
     assert "boom" in result.metadata["experts"]["b"]["error"]
     outcomes = {slug: ep.outcome for _, slug, ep in episodes}

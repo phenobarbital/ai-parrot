@@ -345,7 +345,9 @@ class ExpertStageNode(Node):
             )
         base = conductor.prompt_builder
         if base is None:
-            raise ExpertStageError(f"expert_stage {config.stage!r}: conductor {config.conductor!r} has no prompt builder")
+            raise ExpertStageError(
+                f"expert_stage {config.stage!r}: conductor {config.conductor!r} has no prompt builder"
+            )
         composed = build_inline_conductor(base, contexts)
         async with _conductor_lock(conductor):
             conductor.prompt_builder = composed
