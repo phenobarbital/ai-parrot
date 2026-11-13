@@ -1373,15 +1373,18 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
 
         1. ``_run_output_pipeline`` judges a plain-text ``output`` exactly as ``BaseBot.ask`` does
            (TRANSFORM, BLOCK and FLAG; a rewrite also reaches an aliased or wrapped ``response.response``).
-        2. ``response.response`` text that step 1 did not judge — the explanation beside a structured
-           ``PandasAgentResponse``, chart config, HTML or A2UI ``output``, or a wrapper left alone because
-           ``output`` passed — gets its own verdict.
-        3. The ``explanation`` of the structured ``PandasAgentResponse`` (``output`` / ``structured_output``)
-           gets one too, so no unredacted copy of the answer survives in the returned message.
+        2. Every other copy of the answer text that step 1 did not judge gets its own verdict:
+           ``response.response`` (the explanation beside a structured ``PandasAgentResponse``, chart config,
+           HTML or A2UI ``output``, or a wrapper left alone because ``output`` passed), the ``explanation`` of
+           each structured ``PandasAgentResponse`` (``data_response`` / ``structured_output``) and the
+           ``metadata["explanation"]`` an infographic or interactive artifact records. No unjudged copy of the
+           answer survives in the returned message.
 
-        Each distinct text is judged at most once. A BLOCK on any of them replaces every answer text with the
-        canned notice ``BaseBot`` uses and sets ``metadata["error"] = "security_block"``; data, code and
-        artifacts stay in place, as in ``_run_output_pipeline``. Without OUTPUT guardrails nothing runs.
+        Each distinct text is judged at most once: a text step 1 already judged (the original ``output``, a
+        wrapper ``_propagate_output_verdict`` scanned) reuses that verdict. A BLOCK on any of them replaces every
+        answer text with the canned notice ``BaseBot`` uses and sets ``metadata["error"] = "security_block"``;
+        data, code and artifacts stay in place, as in ``_run_output_pipeline``. Without OUTPUT guardrails
+        nothing runs.
 
         Args:
             response: The message ``ask()`` is about to return.
@@ -1395,33 +1398,57 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         if not pipeline.has_guardrails:
             return response
 
+        before_output = response.output if isinstance(response.output, str) else None
+        before = response.response
+        response = await self._run_output_pipeline(response, method=method)
+
+        # Every place the answer text lives, as (container, field): attributes, or a key of the metadata dict.
+        slots: List[Tuple[Any, str]] = [(response, "response")]
+        models: List[PandasAgentResponse] = []
+        for model in (data_response, response.structured_output):
+            if isinstance(model, PandasAgentResponse) and not any(model is seen for seen in models):
+                models.append(model)
+                slots.append((model, "explanation"))
+        if isinstance(response.metadata, dict):
+            slots.append((response.metadata, "explanation"))
+
+        def _get(container: Any, field: str) -> Any:
+            return container.get(field) if isinstance(container, dict) else getattr(container, field, None)
+
+        def _set(container: Any, field: str, value: str) -> None:
+            if isinstance(container, dict):
+                container[field] = value
+            else:
+                setattr(container, field, value)
+
         def _block(reason: Optional[str]) -> AIMessage:
-            response.response = _OUTPUT_BLOCKED_TEXT
             if isinstance(response.output, str):
                 response.output = _OUTPUT_BLOCKED_TEXT
-            if data_response is not None:
-                data_response.explanation = _OUTPUT_BLOCKED_TEXT
+            for container, field in slots:
+                if container is response or isinstance(_get(container, field), str):
+                    _set(container, field, _OUTPUT_BLOCKED_TEXT)
             response.metadata["error"] = "security_block"
             if reason:
                 response.metadata["block_reason"] = reason
             return response
 
-        before = response.response
-        response = await self._run_output_pipeline(response, method=method)
         if response.metadata.get("error") == "security_block":
             return _block(response.metadata.get("block_reason"))
 
-        # Text step 1 already judged: the final plain-text output, and a response it rewrote.
+        # Verdicts step 1 already reached, keyed by the text it judged (and by its result, itself judged).
         judged: Dict[str, str] = {}
-        if isinstance(response.output, str):
+        if before_output is not None and isinstance(response.output, str):
+            judged[before_output] = response.output
             judged[response.output] = response.output
-        if isinstance(response.response, str) and response.response != before:
-            judged[response.response] = response.response
+            if response.output != before_output and isinstance(before, str) and before:
+                # A rewritten output is propagated to a distinct response text, which that step judged.
+                result = response.response if isinstance(response.response, str) else before
+                judged[before] = result
+                judged[result] = result
 
         ctx: Optional[GuardrailContext] = None
-        for field in ("response", "explanation"):
-            holder: Any = response if field == "response" else data_response
-            text = getattr(holder, field, None) if holder is not None else None
+        for container, field in slots:
+            text = _get(container, field)
             if not isinstance(text, str) or not text:
                 continue
             if text not in judged:
@@ -1439,7 +1466,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 if outcome.blocked:
                     return _block(outcome.reason)
                 judged[text] = outcome.content if outcome.content is not None else text
-            setattr(holder, field, judged[text])
+            _set(container, field, judged[text])
         return response
 
     @with_call_identity

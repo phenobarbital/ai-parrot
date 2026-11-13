@@ -8,7 +8,7 @@ stage, so a secret in the answer reached the caller unredacted (issue:3e29dbe2f1
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Any, List, Optional
+from typing import Any, List
 
 from parrot.bots.abstract import _OUTPUT_BLOCKED_TEXT
 from parrot.bots.data import PandasAgent, PandasAgentResponse
@@ -55,6 +55,51 @@ class _StructuredSecretClient(_PandasClient):
             provider="fake",
             usage=_usage(),
         )
+
+
+class _SeparateStructuredClient(_PandasClient):
+    """Puts two distinct `PandasAgentResponse` instances in ``output`` and ``structured_output``."""
+
+    async def ask(self, prompt: str, **kwargs: Any) -> AIMessage:
+        return AIMessage(
+            input=prompt,
+            output=PandasAgentResponse(explanation=SECRET_TEXT),
+            structured_output=PandasAgentResponse(explanation=SECRET_TEXT),
+            model="fake",
+            provider="fake",
+            usage=_usage(),
+        )
+
+
+class _WrappedAnswerClient(_PandasClient):
+    """The secret is in ``output``; ``response`` is a distinct text without it."""
+
+    async def ask(self, prompt: str, **kwargs: Any) -> AIMessage:
+        return AIMessage(
+            input=prompt,
+            output=SECRET_TEXT,
+            response="see the attached answer",
+            model="fake",
+            provider="fake",
+            usage=_usage(),
+        )
+
+
+class _RecordingRedactor(Guardrail):
+    """OUTPUT transformer that records every text it judges and redacts the secret."""
+
+    name = "recording-redactor"
+    stages = {GuardrailStage.OUTPUT}
+    priority = 100
+
+    def __init__(self) -> None:
+        self.seen: List[str] = []
+
+    async def check(self, content: str, ctx: GuardrailContext) -> GuardrailResult:
+        self.seen.append(content)
+        if SECRET in content:
+            return GuardrailResult(action=GuardrailAction.TRANSFORM, content=content.replace(SECRET, "[REDACTED]"))
+        return GuardrailResult(action=GuardrailAction.PASS)
 
 
 class _CountingGuardrail(Guardrail):
@@ -171,24 +216,58 @@ async def test_block_on_text_output_uses_the_pipeline_notice():
     assert history.turns[0].assistant_response == _OUTPUT_BLOCKED_TEXT
 
 
+def _interactive_envelope() -> SimpleNamespace:
+    return SimpleNamespace(
+        a2ui_envelope=None,
+        artifact_id="art-1",
+        enhanced=False,
+        html_inline="<html><body>chart</body></html>",
+        html_url=None,
+        template_name="tpl",
+        theme="light",
+        libraries_used=[],
+    )
+
+
 async def test_early_return_path_is_guarded():
-    """The interactive-artifact early return bypasses the formatter and must still be judged."""
+    """The interactive-artifact early return bypasses the formatter; the real finalizer copies the explanation
+    into ``metadata["explanation"]``, and every copy must be judged."""
     agent = _agent(_TextSecretClient(), SecretsGuardrail())
-    envelope = SimpleNamespace(a2ui_envelope=None, artifact_id="art-1", enhanced=False)
-
-    def _finalize(response: AIMessage, _envelope: Any) -> Optional[str]:
-        explanation = response.response
-        response.output = "<html><body>chart</body></html>"
-        response.response = explanation
-        return explanation
-
-    agent._extract_last_interactive_result = lambda tool_calls: envelope  # type: ignore[method-assign]
-    agent._finalize_interactive_response = _finalize  # type: ignore[method-assign]
+    agent._extract_last_interactive_result = lambda tool_calls: _interactive_envelope()  # type: ignore[method-assign]
     response = await agent.ask("hola", user_id="u", session_id="s", return_structured=False)
     assert response.output == "<html><body>chart</body></html>"
-    assert SECRET not in response.response
-    assert "REDACTED" in response.response
-    assert SECRET not in response.to_text
+    for text in (response.response, response.to_text, response.metadata["explanation"]):
+        assert SECRET not in text, text
+        assert "REDACTED" in text, text
+
+
+async def test_block_on_early_return_replaces_the_metadata_explanation():
+    agent = _agent(_TextSecretClient(), _BlockingGuardrail())
+    agent._extract_last_interactive_result = lambda tool_calls: _interactive_envelope()  # type: ignore[method-assign]
+    response = await agent.ask("hola", user_id="u", session_id="s", return_structured=False)
+    assert response.response == _OUTPUT_BLOCKED_TEXT
+    assert response.metadata["explanation"] == _OUTPUT_BLOCKED_TEXT
+    assert response.metadata["error"] == "security_block"
+
+
+async def test_separate_structured_output_instance_is_redacted():
+    agent = _agent(_SeparateStructuredClient(), SecretsGuardrail())
+    response = await agent.ask("hola", user_id="u", session_id="s", return_structured=False)
+    assert response.output is not response.structured_output
+    for text in _answer_fields(response):
+        assert SECRET not in text, text
+    assert "REDACTED" in response.structured_output.explanation
+
+
+async def test_transform_does_not_rescan_a_text_the_pipeline_already_judged():
+    """A rewritten output is propagated to a distinct response text, which that step judges; neither text is
+    judged again, although the response text is unchanged by its verdict."""
+    redactor = _RecordingRedactor()
+    agent = _agent(_WrappedAnswerClient(), redactor)
+    response = await agent.ask("hola", user_id="u", session_id="s", return_structured=False)
+    assert response.output == "your key is API_KEY=[REDACTED]"
+    assert response.response == "see the attached answer"
+    assert redactor.seen == [SECRET_TEXT, "see the attached answer"]
 
 
 async def test_no_guardrails_leaves_the_answer_untouched():
