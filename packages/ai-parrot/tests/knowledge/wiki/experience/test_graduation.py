@@ -14,9 +14,7 @@ from parrot.knowledge.wiki.experience.service import ExperienceService
 from parrot.knowledge.wiki.ledger.service import LedgerService
 
 
-def _services(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> tuple[ExperienceService, LedgerService, Path, Path]:
+def _services(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[ExperienceService, LedgerService, Path, Path]:
     """Create isolated experience and ledger services sharing one root."""
     primary = tmp_path / "primary"
     (primary / ".git").mkdir(parents=True)
@@ -264,9 +262,7 @@ async def test_graduate_counts_only_current_revision(tmp_path: Path, monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_graduate_requires_injection_session_threshold(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_graduate_requires_injection_session_threshold(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Count distinct current-revision injection sessions, not unrelated evidence sessions."""
     service, ledger, primary, plane = _services(tmp_path, monkeypatch)
     lesson = await _record_lesson(service)
