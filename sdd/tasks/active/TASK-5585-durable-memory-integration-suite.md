@@ -332,10 +332,12 @@ async def test_guard_unavailable_fails_closed(stack):
 
 
 async def test_stream_disconnect_stores_partial_turn(stack):
-    """a mid-stream LLM failure stores a partial turn with error state."""
-    # FILL IN: RecordingClient(fail_after=1) yields "par" then raises RuntimeError("boom"); consume bot.ask_stream; the stored
-    #          turn has assistant_response == "par" and error containing "boom"; the next ask() on the same session
-    #          proceeds cleanly. Interpretation note: "client" here is the LLM client (see TASK-5583 NOT-in-scope).
+    """a mid-stream disconnect stores a partial turn with error state (spec §4, §7 "Streaming and cancellation")."""
+    # FILL IN: two cases. (1) Caller disconnect — the spec's meaning: consume one chunk of bot.ask_stream, then
+    #          cancel the consuming task / aclose() the generator; ChatStorage holds a turn with the partial text and
+    #          an error state; the next ask() on the same session proceeds cleanly. (2) LLM stream failure:
+    #          RecordingClient(fail_after=1) yields "par" then raises RuntimeError("boom"); the stored turn has
+    #          assistant_response == "par" and error containing "boom".
 
 
 @pytest.mark.skipif(not __import__("os").environ.get("TEST_REDIS_URL"), reason="needs a real Redis Streams + outbox")

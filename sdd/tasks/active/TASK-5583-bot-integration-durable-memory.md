@@ -39,6 +39,17 @@ point operation; nothing scans.
 - `ask`, `ask_stream`, `invoke`, `conversation` honor a caller-supplied `turn_id` kwarg.
 - `ask_stream`: the partial turn saved when the LLM stream raised carries `error=` (spec §4 integration
   test `test_stream_disconnect_stores_partial_turn`).
+- `ask_stream`, caller disconnect (spec §2 "AgentTalk owns no persistence": "a partial turn from a stream
+  disconnect is saved by the bot"; §7 "Streaming and cancellation": "On a client disconnect mid-stream a
+  partial turn with error state is saved and published"). The "client" there is the HTTP caller: the handler
+  no longer persists anything, so the bot is the only place a disconnected stream can be saved. Today
+  `except asyncio.CancelledError: raise` (`bots/base.py:2262`, re-verify the line) skips the save. Change it:
+  on `CancelledError` / `GeneratorExit` with a non-empty `full_response`, save the partial turn with an error
+  state through `save_conversation_turn` (shielded from the cancellation, so the save and publish complete),
+  then re-raise. `# FILL IN: shielding and error text — bounded by: the cancellation is always re-raised, the
+  save runs at most once per round, an empty full_response saves nothing.` Add
+  `test_stream_caller_cancel_saves_partial_turn` to `test_turn_publish_after_save.py` (mutation: restore the
+  bare `raise` → RED).
 - Tests: hydration paths and publish-after-save behavior.
 
 **NOT in scope**:
@@ -47,10 +58,6 @@ point operation; nothing scans.
   `install_history`, `HydrationSource`, allocators (TASK-5580).
 - `voice.py:686/725` and `data.py:2268` call `save_conversation_turn` too. They pass no `presentation`,
   so they publish with an empty presentation. Giving them presentations is a follow-up, not here.
-- A saved partial turn when the *caller* cancels the stream (`CancelledError` / `GeneratorExit`): the
-  existing `except asyncio.CancelledError: raise` at `bots/base.py:2262` skips the save today and stays.
-  In this codebase "client" in "client stream raised" is the LLM client; the spec §7 "client disconnect"
-  bullet is implemented as that path (the `stream_error` branch). Flagged in the delivery report.
 - Importing `parrot.storage.chat` from `parrot.bots` (forbidden by spec §5 "Stores separate").
 
 ---
