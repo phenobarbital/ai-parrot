@@ -1,7 +1,7 @@
 ---
 type: feature
 base_branch: dev
-projects: [ai-parrot]
+projects: [ai-parrot, ai-parrot-server]
 tags: [memory, dream-cycle, brain, multi-tenant, pbac]
 docs:
   policy: required
@@ -78,12 +78,14 @@ the same files as the six fixes above. The owner decided to move M4 into this sp
   scheduler lease in this spec is single-host by construction.
 - Per-user brains. The scope is `(tenant, agent)`; knowledge about one person is user memory.
 - Migrating brains written by FEAT-390. They are left in place and never read in scoped mode (§7).
+- Promotion to a wiki shared between agents, in Phase 1. It returns in Phase 2 with a verified
+  criterion (M9). Phase 1 has no organisation brain and no cross-agent sharing.
 
 ---
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:61d0f587a14f25883f265e5b1c3d51f8eca0edeaf8adfbbbf34e83d97b64d09b evaluation_digest=sha256:7408f34c1f0f33027e872cf31e32a465b8aa6723041e95547632d481f634a99e rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:9ebb45c12de6c3b629d29f04ae976cb43c8b82828c6e28dd7ee901ed8da1a946 evaluation_digest=sha256:4c4c47efe623b91af9909adc27e19d6a47d4d4822d7b7c59597cdeb8a00d5aed rules_version=1 status=pass -->
 
 ## 2. Architectural Design
 
@@ -115,8 +117,6 @@ The contract between them is one class, `BrainService`:
 │   └── <tenant_id>/
 │       ├── wiki.db                # the scope's brain
 │       └── dream_state.json       # the scope's watermark and schedule
-├── org/
-│   └── tenants/<tenant_id>/wiki.db   # promotion target, only when promotion is enabled
 ├── wiki.db                        # LEGACY (FEAT-390): left in place, never read or written
 └── dream_state.json               # LEGACY
 ```
@@ -146,6 +146,8 @@ Rule 2 keeps personal preferences out of a shared brain.
   consolidated and the group is counted in the report.
 - With no LLM client, the heuristic path uses `lesson_learned` only. A group with no lessons is
   skipped; the raw `situation` / `action_taken` text is never copied into a page.
+- The title and body of every page pass through `redact_text` before they are archived, whether or
+  not the agent sets `enable_redaction`. Tool episodes can carry keys and tokens in their arguments.
 
 #### One scheduler per agent (Phase 1)
 
@@ -162,8 +164,14 @@ Each wake-up, the holder visits every known scope whose `next_due` has passed, i
 - The read path returns only the pages of the request's scope, packed under the existing token
   budget. With eligibility and distillation fixed, what a user can coax out of the agent is
   operational knowledge of their own tenant.
-- `BrainAdminToolkit` is the only way to inspect a brain as a whole. Every tool requires the
-  `brain.admin` permission, and a policy in `policies/defaults.yaml` grants it to superusers only.
+- `BrainAdminToolkit` is the only way to inspect a brain as a whole, and it is **mounted only when
+  allowed**. It is never registered on the agent's own `ToolManager`. On each request the agent HTTP
+  handler asks PBAC whether the user may execute `tool:brain_admin_*`; if so it registers the
+  toolkit on the session-scoped `ToolManager`, and in every other case — denied, PBAC not
+  configured, an error, no session-scoped manager — it makes sure those tools are absent. Channels
+  that do not go through that handler never receive it.
+- `policies/tools.yaml` denies `tool:brain_admin_*` to everyone outside the `superuser` group, at a
+  priority above `devops_all_tools` (which allows `tool:*` at priority 30).
 
 #### Forgetting derived pages (Phase 1)
 
@@ -179,14 +187,12 @@ AgentMemoryMixin  (unification spec)
       │  start() / stop() / search(query, tenant_id) / forget_derived(...)
       ▼
 BrainService ──→ BrainRegistry ──→ BrainStore  (one per tenant scope)
-      │                │
-      │                └──→ org BrainStore  (per tenant, only with promotion)
       ├──→ SchedulerLease  (flock on dream.lock)
       ├──→ DreamScheduler ──→ DreamCycleRunner (one per scope per cycle)
       │                              │
       │                              ├──→ is_eligible()        (eligibility.py)
       │                              └──→ EpisodicMemoryStore  (existing)
-      └──→ BrainAdminToolkit  (@requires_permission("brain.admin"))
+      └──→ BrainAdminToolkit  ◀── mounted per request by the agent HTTP handler, only when PBAC allows
 ```
 
 ### Integration Points
@@ -200,7 +206,9 @@ BrainService ──→ BrainRegistry ──→ BrainStore  (one per tenant scope
 | `parrot.skills.tenancy.validate_tenant_id` | uses | tenant ids become path segments |
 | `parrot.utils.paths.secure_path` | uses | scope directories cannot escape the brain root |
 | `AbstractToolkit`, `requires_permission` | uses | administrator toolkit |
-| `policies/defaults.yaml` | modifies | `brain.admin` policy |
+| `parrot.security.redaction.redact_text` | uses | scrubs distilled text before archiving |
+| `AgentTalk` handler (`handlers/agent.py`) | modifies | mounts or removes the administrator tools per request |
+| `policies/tools.yaml` | modifies | deny rule for `tool:brain_admin_*` |
 
 #### Incoming requirements (owned by the unification spec)
 
@@ -216,7 +224,8 @@ These are not implemented here. This spec is correct only if the unification spe
 | R6 | The unified manager calls `BrainService.search()` and holds no `BrainStore` | `manager.py:91`, `manager.py:327` |
 | R7 | The user-memory `forget` operation calls `BrainService.forget_derived()` | no caller exists |
 | R8 | Tool and outcome episodes are recorded on the unified path | without them nothing is eligible under rule 3 |
-| R9 | Registering `BrainAdminToolkit` on an agent is an explicit opt-in | — |
+| R9 | Nothing registers `BrainAdminToolkit` on the agent's own `ToolManager`; mounting is done only by the handler (M6) | — |
+| R10 | The mixin exposes the service as `self.brain_service` (`BrainService \| None`) so the handler can reach it | no such attribute exists |
 
 ### Data Models
 
@@ -272,7 +281,7 @@ Phase 1 is modules M1–M7. Phase 2 is modules M8–M9.
 | M3: runner | yes | prompt clause, skip rules and report fields fixed | — |
 | M4: lease and scheduler | yes | `flock` protocol and standby retry fixed | — |
 | M5: service | yes | facade signatures fixed | — |
-| M6: admin toolkit and policy | no | — | policy syntax and Layer 1 behaviour need the checks in §8 Q1–Q2 |
+| M6: admin toolkit, mount and policy | yes | tool names, mount/unmount rule and policy rule fixed below | — |
 | M7: documentation | yes | pages named in §10 | — |
 | M8: page state and versions | no | — | blocked by G4 and G2 |
 | M9: dynamics in the cycle | no | — | blocked by G1 and the M1/M2 interfaces |
@@ -287,7 +296,6 @@ Phase 1 is modules M1–M7. Phase 2 is modules M8–M9.
   ```python
   # packages/ai-parrot/src/parrot/memory/dream/scope.py  (new)
   TENANTS_DIRNAME: Final[str] = "tenants"
-  ORG_DIRNAME: Final[str] = "org"
 
   class BrainScope(BaseModel):
       """Identity of one brain: the request tenant and the agent."""
@@ -306,11 +314,9 @@ Phase 1 is modules M1–M7. Phase 2 is modules M8–M9.
 
   class BrainRegistry:
       """Resolves and caches one BrainStore per tenant for a single agent."""
-      def __init__(self, brain_root: Path, agent_id: str, promote_to_org: bool = False) -> None: ...
+      def __init__(self, brain_root: Path, agent_id: str) -> None: ...
       def get(self, tenant_id: str) -> BrainStore:
           """Return the scope's store, creating its directory on first use."""
-      def org(self, tenant_id: str) -> BrainStore | None:
-          """Return the tenant's promotion target, or None when promotion is off."""
       def known_tenants(self) -> list[str]:
           """Tenant ids with a directory under brain_root/tenants, sorted."""
 
@@ -373,7 +379,9 @@ Phase 1 is modules M1–M7. Phase 2 is modules M8–M9.
           """Lessons only. Returns None when the group carries no lesson."""
   ```
   `run_cycle` (runner.py:105) treats a `None` result and a `personal_data=True` result the same way
-  as a failed distill for watermark purposes: the group stays pending.
+  as a failed distill for watermark purposes: the group stays pending. Before `self._brain.remember`
+  (runner.py:166) the title and body pass through `redact_text`. The promotion block (runner.py:196)
+  is left in place but unreachable in Phase 1, because `BrainService` never passes an `org_brain`.
 
 ### Module 4: Lease and scheduler
 - **Path**: `packages/ai-parrot/src/parrot/memory/dream/lease.py` (new),
@@ -433,7 +441,6 @@ Phase 1 is modules M1–M7. Phase 2 is modules M8–M9.
           brain_root: Path | None = None,          # default ~/.parrot/brains/<agent_id>
           llm_client: Any = None,
           interval_hours: float = 24.0,
-          promote_to_org: bool = False,
           config: DreamConfig | None = None,
       ) -> None: ...
       async def start(self) -> None:
@@ -441,7 +448,7 @@ Phase 1 is modules M1–M7. Phase 2 is modules M8–M9.
       async def stop(self) -> None:
           """Idempotent."""
       async def search(self, query: str, tenant_id: str, max_tokens: int = 600) -> str:
-          """Packed pages of the scope (and its org brain). "" on error or invalid tenant."""
+          """Packed pages of the scope. "" on error or invalid tenant."""
       async def run_now(self, tenant_id: str | None = None) -> list[DreamCycleReport]: ...
       async def forget_derived(self, tenant_id: str, episodes: Sequence[EpisodicMemory]) -> list[str]:
           """Delete pages named by the episodes' "consolidated_into"; return deleted ids."""
@@ -451,8 +458,10 @@ Phase 1 is modules M1–M7. Phase 2 is modules M8–M9.
   and `BrainAdminToolkit` to `_EXPORT_MODULES` (`__init__.py:16`), keeping resolution lazy.
 
 ### Module 6: Administrator toolkit and policy
-- **Path**: `packages/ai-parrot/src/parrot/memory/dream/toolkit.py` (new), `policies/defaults.yaml` (modify)
-- **Responsibility**: Bulk inspection and operation of a brain, for superusers only.
+- **Path**: `packages/ai-parrot/src/parrot/memory/dream/toolkit.py` (new),
+  `packages/ai-parrot-server/src/parrot/handlers/agent.py` (modify), `policies/tools.yaml` (modify)
+- **Responsibility**: Bulk inspection and operation of a brain, for superusers only, mounted per
+  request and fail-closed.
 - **Depends on**: M5
 - **Interface Skeleton**:
   ```python
@@ -480,6 +489,26 @@ Phase 1 is modules M1–M7. Phase 2 is modules M8–M9.
   `tenant_id=None` resolves to `current_tenant.get()`
   (verified: `packages/ai-parrot/src/parrot/observability/context.py:85`).
 
+  ```python
+  # packages/ai-parrot-server/src/parrot/handlers/agent.py  (modifies agent.py:237, :1614)
+  async def _sync_brain_admin_tools(self, agent: Any, tool_manager: "ToolManager") -> None:
+      """Mount the agent's BrainAdminToolkit on the session ToolManager only when PBAC allows it.
+
+      Allowed  -> every brain_admin_* tool is registered (idempotent).
+      Anything else (denied, no Guardian/PDP, no brain_service, any exception) -> every
+      brain_admin_* tool is removed. Never raises.
+      """
+      # ToolManager.register_toolkit verified: packages/ai-parrot/src/parrot/tools/manager.py:1193
+      # ToolManager.remove_tool verified: packages/ai-parrot/src/parrot/tools/manager.py:1450
+      # Guardian.filter_resources call shape verified: handlers/agent.py:260
+  ```
+  It is called immediately before `_filter_tools_for_user` (agent.py:1614), so the existing filter
+  remains a second check. The policy rule follows `deny_tool_configure_non_admin`
+  (`policies/tools.yaml:121`): `effect: deny`, resource `tool:brain_admin_*`, actions `tool:execute`,
+  `tool:list`, `tool:configure`, `groups: ["*"]`, `exclude_groups: [superuser]`, priority 90.
+  `@requires_permission("brain.admin")` stays on the tools for deployments that use the RBAC
+  resolver; under PBAC the declared permission is ignored (`auth/resolver.py:305`).
+
 ### Module 7: Documentation
 - **Path**: `wiki/memory/agent-brain.md` (new), `wiki/memory/dream-cycle.md` (modify)
 - **Responsibility**: Operator and author documentation for the scoped brain.
@@ -496,8 +525,8 @@ Phase 1 is modules M1–M7. Phase 2 is modules M8–M9.
 
 ### Module 9 (Phase 2): Dynamics in the cycle — from FEAT-571 M4 / G1
 - **Path**: `packages/ai-parrot/src/parrot/memory/dream/runner.py`
-- **Responsibility**: Promotion by retrievability plus at least one verified, attributed, non-`AGAIN`
-  review of that version; recoverable forgetting; re-distillation, including re-distilling a page
+- **Responsibility**: Reintroduce promotion to a per-tenant wiki shared between agents, by
+  retrievability plus at least one verified, attributed, non-`AGAIN` review of that version; recoverable forgetting; re-distillation, including re-distilling a page
   from its remaining sources when `forget_derived` removes some; cycle counters kept readable but no
   longer evidence.
 - **Depends on**: M8; FEAT-571 gate G1; FEAT-571 M1 and M2 interfaces
@@ -529,13 +558,17 @@ Phase 1 is modules M1–M7. Phase 2 is modules M8–M9.
 | `test_service_search_scoped` | M5 | returns only the tenant's pages; `""` for an invalid tenant |
 | `test_service_start_stop_idempotent` | M5 | repeated calls start one loop and release once |
 | `test_forget_derived_deletes_pages` | M5 | pages named by the episodes are gone from search; ids returned |
-| `test_admin_tools_require_permission` | M6 | every generated tool carries `brain.admin` |
+| `test_distilled_text_is_redacted` | M3 | a token in a lesson is replaced by the redaction marker in the stored page |
+| `test_admin_tools_require_permission` | M6 | every generated tool carries `brain.admin` and the `brain_admin_` prefix |
+| `test_mount_only_when_allowed` | M6 | allowed user: tools registered; denied user: absent |
+| `test_mount_fails_closed` | M6 | no Guardian, no `brain_service`, or a raising Guardian: tools absent, no exception |
+| `test_mount_revokes_cached_session` | M6 | tools mounted on a cached session manager are removed once the user is no longer allowed |
 
 ### Integration Tests
 | Test | Description |
 |---|---|
 | `test_two_tenants_one_agent_end_to_end` | episodes of two tenants, one cycle each, searches never cross |
-| `test_admin_toolkit_denied_for_regular_user` | with the default policies loaded, a non-superuser execution returns `forbidden` and a superuser execution succeeds |
+| `test_brain_admin_policy_superuser_only` | with the shipped policies loaded, `tool:brain_admin_search` is denied to a `devops` user and allowed to a `superuser` |
 
 ### Validation Contract
 
@@ -551,6 +584,7 @@ tests:
 - packages/ai-parrot/tests/memory/dream/test_lease.py
 - packages/ai-parrot/tests/memory/dream/test_service.py
 - packages/ai-parrot/tests/memory/dream/test_admin_toolkit.py
+- packages/ai-parrot-server/tests/handlers/test_brain_admin_mount.py
 markers: none
 
 ### Test Data / Fixtures
@@ -566,8 +600,8 @@ def fake_episodic_store() -> Any:
 ```
 
 The five files under `tests/memory/dream/` exist today and are updated by the modules that change
-the behaviour they cover. The six files under `packages/ai-parrot/tests/memory/dream/` are created
-by this feature. `tests/memory/dream/test_integration.py` and `test_unified_brain.py` exercise
+the behaviour they cover. The six files under `packages/ai-parrot/tests/memory/dream/` and
+`packages/ai-parrot-server/tests/handlers/test_brain_admin_mount.py` are created by this feature. `tests/memory/dream/test_integration.py` and `test_unified_brain.py` exercise
 `LongTermMemoryMixin` and belong to the unification spec.
 
 ---
@@ -590,8 +624,13 @@ Phase 1:
       over within `lease_retry_seconds`.
 - [ ] `BrainService.start()` and `stop()` are idempotent.
 - [ ] `forget_derived` removes every page named by the given episodes' `consolidated_into`.
-- [ ] Every `BrainAdminToolkit` tool is denied to a non-superuser and allowed to a superuser under
-      the shipped default policies.
+- [ ] No page contains a value that `redact_text` would replace.
+- [ ] `BrainAdminToolkit` tools are present on a session `ToolManager` only for a user PBAC allows;
+      they are absent when PBAC is not configured, when the check raises, and after the user stops
+      being allowed.
+- [ ] Under the shipped policies, `tool:brain_admin_*` is denied to every group except `superuser`,
+      including groups that are allowed `tool:*`.
+- [ ] Phase 1 writes no page outside `tenants/<tenant_id>/`; there is no organisation brain.
 - [ ] A FEAT-390 brain at the root of the brain directory is neither read nor modified, and one
       WARNING names it.
 - [ ] Importing `parrot.memory` still does not import the wiki plane unless a brain symbol is used.
@@ -627,6 +666,7 @@ from parrot.utils.paths import secure_path, validate_path_segment   # utils/path
 from parrot.observability.context import current_tenant             # observability/context.py:85
 from parrot.tools.toolkit import AbstractToolkit                    # tools/toolkit.py:225
 from parrot.tools.decorators import requires_permission             # tools/decorators.py:9
+from parrot.security.redaction import redact_text                   # security/redaction.py:49
 ```
 
 ### Existing Class Signatures
@@ -699,7 +739,20 @@ class AbstractToolkit(ServerManagedToolkit, ABC):                   # :225
     async def can_execute(self, context, tool_name: str, required_permissions: set[str]) -> bool  # :44 (abstract)
     async def filter_tools(self, context, tools: list[Any]) -> list[Any]                          # :65, PBAC override :341
 
+# security/redaction.py
+def redact_text(text: str) -> str                                   # :49
+
+# packages/ai-parrot-server/src/parrot/handlers/agent.py
+    async def _filter_tools_for_user(self, tool_manager: "ToolManager") -> None   # :237  removes denied tools; fail-open
+    # guardian = self.request.app.get("security")                                # :249
+    # await guardian.filter_resources(resources=tool_names, request=self.request,
+    #     resource_type=ResourceType.TOOL, action="tool:execute")                 # :260  -> .denied
+    # call site: await self._filter_tools_for_user(user_tool_manager)             # :1614
+
 # tools/manager.py
+    def register_toolkit(self, toolkit, **kwargs) -> List[AbstractTool]   # :1193
+    def list_tools(self) -> List[str]                               # :1415
+    def remove_tool(self, tool_name: str) -> None                   # :1450
     def set_resolver(self, resolver) -> None                        # :446
     # Layer 2 check at execution: self._resolver.can_execute(permission_context, tool.name, required)  # :2027
 ```
@@ -713,6 +766,8 @@ class AbstractToolkit(ServerManagedToolkit, ABC):                   # :225
 | `DreamCycleRunner._collect` | `is_eligible` | function call | `memory/dream/runner.py:262` (current inline predicate) |
 | `DreamScheduler` | `SchedulerLease`, `BrainRegistry` | constructor injection | `memory/dream/scheduler.py:38` |
 | `BrainAdminToolkit` tools | `ToolManager` Layer 2 check | `can_execute` | `tools/manager.py:2027` |
+| `_sync_brain_admin_tools` | `Guardian.filter_resources`, `ToolManager.register_toolkit` / `remove_tool` | method calls | `handlers/agent.py:260`, `tools/manager.py:1193`, `:1450` |
+| distilled title/body | `redact_text` | function call before `remember` | `security/redaction.py:49`, `memory/dream/runner.py:166` |
 | `forget_derived` | episode `metadata["consolidated_into"]` | read | written at `memory/dream/runner.py:189` |
 
 ### Does NOT Exist (Anti-Hallucination)
@@ -724,12 +779,12 @@ class AbstractToolkit(ServerManagedToolkit, ABC):                   # :225
   `self._episodic_store._backend.get_recent` (`runner.py:253`).
 - ~~a get-episode-by-id method on `AbstractEpisodeBackend`~~ — not found; `forget_derived` therefore
   takes episode objects, not ids.
-- ~~`WikiPageRecord.metadata`~~ — the record has no metadata member. Page attributes exist as a
-  separate store capability (`supports_attrs`, `store.py:889`); whether the SQLite backend enables
-  it is **(unverified — check before use)**.
-- ~~a caller of `AbstractToolkit.get_tools_filtered` on the bot request path~~ — only
-  `tools/dataset_manager/tool.py:2981` overrides it; nothing in `bots/` calls it. Layer 1 hiding is
-  not wired today (see §8 Q2).
+- ~~`WikiPageRecord.metadata`~~ — the record has no metadata member. Page attributes are a separate
+  store capability; `SQLiteWikiStore` enables it (`supports_attrs = True`, `knowledge/wiki/store.py:1306`).
+- ~~a caller of `AbstractToolkit.get_tools_filtered` on the bot request path~~ — nothing calls it.
+  Layer 1 is wired elsewhere: the agent HTTP handler removes denied tools from the session
+  `ToolManager` (`handlers/agent.py:237`). That filter is fail-open and HTTP-only.
+- ~~`bot.brain_service`~~ — does not exist yet; it is requirement R10 on the unification spec.
 - ~~a per-request tenant on `MemoryNamespace`~~ — `tenant_id` is whatever the caller sets; today
   the mixin sets it from the instance attribute (`memory/unified/mixin.py:356`).
 - ~~`fakeredis`, a `parrot/vectorstores/` package, `DreamScheduler` leader election~~ — none exist.
@@ -757,7 +812,9 @@ Verified against: `58ec71d179`
 | `packages/ai-parrot/src/parrot/memory/dream/runner.py` | MODIFY | `    def _heuristic_distill(group: list[EpisodicMemory]) -> DistilledKnowledge:` | `runner.py:474` | 1 |
 | `packages/ai-parrot/src/parrot/memory/dream/scheduler.py` | MODIFY | `class DreamScheduler:` | `scheduler.py:24` | 1 |
 | `packages/ai-parrot/src/parrot/memory/dream/__init__.py` | MODIFY | `_EXPORT_MODULES: dict[str, str] = {` | `__init__.py:16` | 1 |
-| `policies/defaults.yaml` | MODIFY | `  - name: allow_superuser_all` | `defaults.yaml:93` | 1 |
+| `policies/tools.yaml` | MODIFY | `  - name: deny_tool_configure_non_admin` | `tools.yaml:121` | 1 |
+| `packages/ai-parrot-server/src/parrot/handlers/agent.py` | MODIFY | `    async def _filter_tools_for_user(self, tool_manager: "ToolManager") -> None:` | `agent.py:237` | 1 |
+| `packages/ai-parrot-server/src/parrot/handlers/agent.py` | MODIFY | `            await self._filter_tools_for_user(user_tool_manager)` | `agent.py:1614` | 1 |
 | `wiki/memory/agent-brain.md` | CREATE | — | — | — |
 | `wiki/memory/dream-cycle.md` | MODIFY | `# Dream Cycle — episodic → wiki brain consolidation` | `dream-cycle.md:1` | 1 |
 
@@ -788,6 +845,10 @@ Verified against: `58ec71d179`
 - **Legacy brains are orphaned, not migrated.** No production agent enables the brain today, so no
   migration is written. The WARNING names the path so an operator can move it under
   `tenants/<tenant>/` by hand.
+- **The administrator tools exist only on the HTTP path.** Telegram, Slack and other channels never
+  mount them. That is intended.
+- **`redact_text` covers secrets, not personal data.** It complements the prompt clause and the
+  eligibility rules; it does not replace them.
 - **Breaking constructor on `DreamScheduler`.** Safe only because this spec is built after the
   hard-cut removes `LongTermMemoryMixin`.
 
@@ -833,7 +894,7 @@ entries:
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:61d0f587a14f25883f265e5b1c3d51f8eca0edeaf8adfbbbf34e83d97b64d09b evaluation_digest=sha256:7408f34c1f0f33027e872cf31e32a465b8aa6723041e95547632d481f634a99e rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:9ebb45c12de6c3b629d29f04ae976cb43c8b82828c6e28dd7ee901ed8da1a946 evaluation_digest=sha256:4c4c47efe623b91af9909adc27e19d6a47d4d4822d7b7c59597cdeb8a00d5aed rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -844,7 +905,7 @@ Diagnostics:
 - none
 
 Coverage:
-- Subsystems: bots, clients, config, flows, knowledge-graphindex, knowledge-pageindex, knowledge-wiki, memory, skills, tools
+- Subsystems: auth, bots, clients, config, flows, knowledge-graphindex, knowledge-pageindex, knowledge-wiki, memory, server, skills, tools
 - Unmapped tags: brain, dream-cycle, multi-tenant, pbac
 - Targets resolved: 3/3
 - Impact complete: true
@@ -858,6 +919,7 @@ Coverage:
     "inventory_complete": true,
     "omitted_ids": [],
     "subsystems": [
+      "auth",
       "bots",
       "clients",
       "config",
@@ -866,6 +928,7 @@ Coverage:
       "knowledge-pageindex",
       "knowledge-wiki",
       "memory",
+      "server",
       "skills",
       "tools"
     ],
@@ -879,10 +942,10 @@ Coverage:
     ]
   },
   "diagnostics": [],
-  "evaluation_digest": "sha256:7408f34c1f0f33027e872cf31e32a465b8aa6723041e95547632d481f634a99e",
+  "evaluation_digest": "sha256:4c4c47efe623b91af9909adc27e19d6a47d4d4822d7b7c59597cdeb8a00d5aed",
   "exit_code": 0,
   "findings": [],
-  "input_digest": "sha256:61d0f587a14f25883f265e5b1c3d51f8eca0edeaf8adfbbbf34e83d97b64d09b",
+  "input_digest": "sha256:9ebb45c12de6c3b629d29f04ae976cb43c8b82828c6e28dd7ee901ed8da1a946",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
@@ -919,21 +982,26 @@ Coverage:
       Bulk inspection is administrator tooling gated by PBAC to superusers.
 - [x] Is a user a tenant — *Resolved by the owner, 2026-11-13*: no. Knowledge about a person is
       user memory, a separate capability in the unification spec.
-- [ ] **Q1** — How is `brain.admin` granted to superusers only in `policies/defaults.yaml`? Whether
-      execution of an unlisted tool is denied by default, and how a deny rule ranks against
-      `allow_superuser_all` (priority 100), was not verified. M6's integration test fixes the
-      syntax. — *Owner: M6 implementer, confirmed by Jesus*
-- [ ] **Q2** — Layer 1 (the tool is not shown to the model) is not wired on the request path today;
-      only Layer 2 (execution denied) is. Is denial at execution enough for the first release, or
-      must the unification spec call `get_tools_filtered` per request (R9)? — *Owner: Jesus*
-- [ ] **Q3** — Should distilled bodies also pass the redaction pipeline behind `enable_redaction`
-      before they are archived? Its API was not inspected for this spec. — *Owner: Jesus*
+- [x] **Q1** — How the administrator tools are restricted by policy — *Resolved by inspection,
+      2026-11-13*: under PBAC the declared permission is ignored and the resource `tool:<name>` is
+      evaluated (`auth/resolver.py:322`). `policies/tools.yaml` denies by default, but
+      `devops_all_tools` allows `tool:*` at priority 30, so M6 adds an explicit deny for
+      `tool:brain_admin_*` with `exclude_groups: [superuser]` at priority 90, after the existing
+      `deny_tool_configure_non_admin` pattern.
+- [x] **Q2** — How the administrator toolkit is mounted — *Resolved by the owner, 2026-11-13*: mount
+      only when allowed. It is never registered on the agent; the HTTP handler adds it to the session
+      `ToolManager` when PBAC allows the user and removes it in every other case, including PBAC not
+      configured and errors. (An earlier draft said Layer 1 was not wired; that was wrong — see
+      `handlers/agent.py:237`.)
+- [x] **Q3** — Redaction of distilled text — *Resolved by the owner, 2026-11-13*: always. Title and
+      body pass through `redact_text` before archiving, regardless of `enable_redaction`.
 - [ ] **Q4** — Authoritative brain page state and G2–G4 atomicity (inherited from the unification
-      design document, §8 "Contrato transversal pendiente"). Blocks M8. — *Owner: Jesus + G2/G4 review*
-- [ ] **Q5** — Promotion in Phase 1 keeps the FEAT-390 cycle count and stays off by default. Confirm
-      it should remain available before M9 replaces its criterion. — *Owner: Jesus*
-- [ ] **Q6** — Does the SQLite wiki backend support page attributes? If it does, M8 can record
-      lineage on the page instead of only on the episode. — *Owner: M8 implementer*
+      design document, §8 "Contrato transversal pendiente"). Blocks M8; cannot be closed before the
+      G2 and G4 gates are reviewed. — *Owner: Jesus + G2/G4 review*
+- [x] **Q5** — Promotion in Phase 1 — *Resolved by the owner, 2026-11-13*: deferred to Phase 2.
+      Phase 1 has no organisation brain; M9 reintroduces promotion with the G1 criterion.
+- [x] **Q6** — Page attributes on the SQLite wiki backend — *Resolved by inspection, 2026-11-13*:
+      supported (`knowledge/wiki/store.py:1306`). M8 may record lineage on the page.
 
 ---
 
@@ -971,7 +1039,8 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
   - M3 → M2 (the runner imports `is_eligible` and the new `DreamConfig` fields).
   - M4 → M1 (the scheduler takes a `BrainRegistry`), M4 → M3 (it builds runners).
   - M5 → M1, M3, M4 (the service composes them).
-  - M6 → M5 (the toolkit wraps the service).
+  - M6 → M5 (the toolkit wraps the service). M6 also edits `ai-parrot-server`; run its tests with
+    `PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-server/src`.
   - M7 → M1–M6.
   - M1 and M2 have no edge between them and run concurrently.
   - M9 → M8.
@@ -989,3 +1058,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-11-13 | Jesus Lara, with Claude | Initial draft. Absorbs FEAT-571 M4 as Phase 2. |
+| 0.2 | 2026-11-13 | Jesus Lara, with Claude | Open questions resolved: mount-only-when-allowed for the admin toolkit, deny rule in `policies/tools.yaml`, always-on redaction, promotion deferred to Phase 2. Only Q4 stays open. |
