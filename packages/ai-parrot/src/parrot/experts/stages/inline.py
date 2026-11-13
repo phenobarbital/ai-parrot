@@ -18,11 +18,7 @@ class InlineCompositionError(Exception):
 
 def _rule_ids(ctx: KnowledgeContext) -> set[str]:
     """Return the rule lines (ALWAYS/NEVER statements) an expert's rules layer carries."""
-    return {
-        line.strip()
-        for line in ctx.inline_text("rules").splitlines()
-        if line.strip().startswith(_RULE_PREFIXES)
-    }
+    return {line.strip() for line in ctx.inline_text("rules").splitlines() if line.strip().startswith(_RULE_PREFIXES)}
 
 
 def build_inline_conductor(builder: PromptBuilder, contexts: Mapping[str, KnowledgeContext]) -> PromptBuilder:
