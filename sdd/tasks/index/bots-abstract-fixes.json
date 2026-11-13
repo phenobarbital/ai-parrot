@@ -39,7 +39,7 @@
       "feature_id": "FEAT-898",
       "feature": "bots-abstract-fixes",
       "spec": "sdd/specs/bots-abstract-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -47,7 +47,8 @@
       "parallelism_notes": "single task; files: bots/abstract.py, tests/unit/bots/test_finalize_persist_turn.py; no shared resources",
       "assigned_to": null,
       "discovered_from": "issue:062128ff0d48",
-      "file": "sdd/tasks/active/TASK-5686-scan-text-beside-structured-output.md"
+      "file": "sdd/tasks/active/TASK-5686-scan-text-beside-structured-output.md",
+      "started_at": "2026-11-13T23:38:18+00:00"
     }
   ]
 }
