@@ -1,0 +1,51 @@
+{
+  "feature": "bots-data-fixes-2",
+  "feature_id": "FEAT-893",
+  "spec": "sdd/specs/bots-data-fixes-2.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-13T23:18:35+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/unit/bots/test_pandasagent_output_guardrails.py",
+          "packages/ai-parrot/tests/unit/bots/test_finalize_persist_turn.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:eff4e5bc415e8d677ad97109f67758eb46feba54a0e5b768eed0fa8cebd67346"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5682",
+      "slug": "pandas-agent-answer-guard",
+      "title": "PandasAgent.ask — OUTPUT guardrail verdict on the returned answer",
+      "feature_id": "FEAT-893",
+      "feature": "bots-data-fixes-2",
+      "spec": "sdd/specs/bots-data-fixes-2.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "single task; files: bots/data.py, tests/unit/bots/test_pandasagent_output_guardrails.py; no shared resources",
+      "assigned_to": "claude-code:sdd-fix",
+      "discovered_from": "issue:3e29dbe2f16a",
+      "file": "sdd/tasks/active/TASK-5682-pandas-agent-answer-guard.md"
+    }
+  ]
+}
