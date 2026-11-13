@@ -213,7 +213,7 @@ Prefixes in module paths: `core/` = `packages/ai-parrot/src/parrot/`; `tests/` =
 | M3 | Structured exposure, runtime/coder-independent evidence admission | A0/A1, M1/M2, G3; M0 already present |
 | M4 (external) | FEAT-889 phase 2 M8–M9: brain versions, state, lineage, promotion and reconciliation | This feature's M1/M2 contracts; G1/G2/G4, Q3; no files owned here |
 | M5 | Coder feedback migration/adapters and checked-pattern evidence | M2/M3, U2/U5; shared-file coordination with FEAT-887 |
-| M6 | Lazy CLI/MCP service, operations/export/optional fitting | M2 frozen interfaces; G1/U4 and optimizer decision for fit; brain operations deferred to FEAT-889's contract |
+| M6 | Lazy CLI/MCP service, operations/export (fitting deferred to a follow-up) | M2 frozen interfaces; U4 retention; brain operations deferred to FEAT-889's contract |
 | X1 | Scope transfer, consumer/API migration and documentation | A0/A1 for code migration; all modules for final release |
 
 X1's scope-transfer document amendment is an initial administrative slice, not a cyclic implementation dependency. A1's base lifecycle can precede M3; M3 adds dynamics receipts to its fixed extension points. Completion requires all locally owned modules and their gates; external M4 is not a precondition for landing FEAT-892. The A1 brain boundary must pass contract tests before the handoff to FEAT-889.
@@ -230,7 +230,7 @@ X1's scope-transfer document amendment is an initial administrative slice, not a
 | M3 | no | Final-delivery exposure, request-local tool capture | G3 adapters/rubric and M2 interfaces |
 | M4 | external | FEAT-889 exclusive ownership; delivered-version credit | Never decompose under FEAT-892; sibling waits for this feature to land |
 | M5 | no | Preserve public signatures/IDs/audit | U2/U5, checked-evidence plumbing, FEAT-887 shared files |
-| M6 | no | Store client, lazy toolkit lifecycle, no implicit registry | Concrete storage construction, export retention/optimizer |
+| M6 | no | Store client, lazy toolkit lifecycle, no implicit registry | Concrete storage construction, export retention |
 | X1 | yes, documentation slice only | Add FEAT-892/FEAT-889 scope mapping to FEAT-571; preserve completed tasks | Code migration waits for A1; no rewriting gate verdicts |
 
 ### A0 — Common configuration and runtime scope
@@ -410,7 +410,7 @@ FEAT-887 `experience.pitfall` is not imported or assigned FSRS grades automatica
 
 ### M6 — CLI, MCP and operations
 
-Create `core/memory/dynamics/{cli,export,fit}.py` and `core/memory/agent_memory/{factory,toolkit}.py`; attach the lazy command group in `core/knowledge/wiki/cli.py`. Optional dependency changes in `packages/ai-parrot/pyproject.toml` occur only after optimizer acceptance. Concrete toolkit classes belong under the existing memory subsystem as the episodic toolkit already does; no unrelated tools migration is included.
+Create `core/memory/dynamics/{cli,export}.py` and `core/memory/agent_memory/{factory,toolkit}.py`; attach the lazy command group in `core/knowledge/wiki/cli.py`. No dependency change in `packages/ai-parrot/pyproject.toml`: parameter fitting is deferred to a follow-up feature (§8 Q6). Concrete toolkit classes belong under the existing memory subsystem as the episodic toolkit already does; no unrelated tools migration is included.
 
 ```python
 # New: memory/agent_memory/factory.py
@@ -431,12 +431,10 @@ class AgentMemoryToolkit(AbstractToolkit):
         """Report enabled capabilities, pending durable reviews and degraded state."""
 # New: memory/dynamics/cli.py
 def register_memory_commands(group: click.Group) -> None:
-    """Lazily attach status/recall/cite/review/forget/sync/import-feedback/export-reviews/fit."""
-# New: memory/dynamics/export.py and fit.py
+    """Lazily attach status/recall/cite/review/forget/sync/import-feedback/export-reviews."""
+# New: memory/dynamics/export.py
 async def export_reviews(*, namespace: MemoryNamespace, destination: Path) -> dict[str, Any]:
     """Export durable evidence with stable card mapping and immutable parameter provenance."""
-def fit_parameters(review_export: Path, *, output: Path) -> MemoryParameters:
-    """Run the accepted optional optimizer offline; never train in a serving request."""
 ```
 
 The MCP factory now requires an explicit YAML section and calls the toolkit constructor with serializable kwargs. Supply config through that contract and allocate stores in `_open`; do not add the obsolete implicit registry entry proposed by FEAT-571. Preserve the existing `memory` target's meaning when configured; document a distinct `episodic`/agent-memory section. Human/runtime review operations accept evidence references, not model-selected grades. SDD state resolves from the main shared root, not a worker CWD. User-profile operations require a separately trusted user scope and are not exposed by default to coder tooling.
@@ -511,7 +509,7 @@ Use isolated temporary databases, fake clocks, deterministic UUID/event fixtures
 - [ ] **AC15** Source R1–R10 pass boundary tests: every Agent accepts enable_brain and implies episodes; one public brain_service owns lifecycle; tenant-bound search/record works for ask/stream; derived forgetting is retried; the manager holds no BrainStore and the agent never registers BrainAdminToolkit. FEAT-892 lands before FEAT-889 decomposition; actual brain implementation and M4 acceptance are owned there.
 - [ ] **AC16** Historical feedback imports/retractions and revised reviews are idempotent; UUID/legacy ID mapping, timestamps, audit and review_ref remain usable. FEAT-887 lessons are not silently converted into trusted outcomes.
 - [ ] **AC17** CLI/MCP constructs and closes the same stores via explicit configuration; no provider changes, stdout contamination or hidden synchronous training in serving paths.
-- [ ] **AC18** Optional optimizer pin/export adapter is validated before dependency addition; serving does not import the optimizer. Retention/archive policy permits replay/export as promised.
+- [ ] **AC18** No optimizer dependency or fitting code is added (deferred, §8 Q6); the review export is deterministic and usable by a later fitting feature. Retention/archive policy permits replay/export as promised.
 - [ ] **AC19** Existing validation operands and all released new module tests pass; black (120), scoped ruff and docs are complete. Skipped backend tests are disclosed, not represented as passing persistence coverage.
 
 ## 6. Codebase Contract
@@ -627,7 +625,7 @@ Created implementation files (all under `core/`; each listed filename is a disti
 | M2 | `memory/episodic/backends/sqlite.py` — conditional G2 acceptance |
 | M3 | `memory/agent_memory/attribution.py` |
 | M5 | `memory/dynamics/feedback.py` |
-| M6 | `memory/agent_memory/factory.py`, `memory/agent_memory/toolkit.py`, `memory/dynamics/cli.py`, `memory/dynamics/export.py`, `memory/dynamics/fit.py` |
+| M6 | `memory/agent_memory/factory.py`, `memory/agent_memory/toolkit.py`, `memory/dynamics/cli.py`, `memory/dynamics/export.py` |
 
 The twelve new test files in §4 and three wiki pages in §10 are CREATE sites too. Backend-specific U1 files and optional dependency edits are not blanket-authorized: name their files, signatures and anchors in the gate amendment before implementation. Q3's brain files belong exclusively to FEAT-889. Existing shared tests in §4 are modified at the listed anchors; M0's real-store file remains a read-only regression operand unless a specific gate amendment requires adapting it.
 
@@ -658,7 +656,7 @@ Async I/O, Pydantic v2, Google docstrings, strict hints, existing AbstractClient
 | hypothesis | Same file :896, existing test dependency for transition/replay properties |
 | FSRS reference | S1 pinned vendored reference and license are evidence; production vendoring requires acceptance, no runtime test-package imports |
 | sqlite-vec / other vector extension | Not selected or approved by this spec; Q5 dependency/performance decision |
-| Optional optimizer | Version and export compatibility pending Q6; no installation or pyproject edit authorized until accepted |
+| Optional optimizer | Deferred to a follow-up feature (§8 Q6); no installation or pyproject edit in this feature |
 
 ## Worktree Strategy
 
@@ -792,22 +790,23 @@ Coverage:
 
 ### Design decisions blocking dependent modules
 
-- [ ] **Q1 — User storage and learning:** select physical backend, extraction admission/confirmation policy and conflict handling details, including bounds and defaults. Recommendation: explicit declarations can become active; inferences remain pending. Owner: Jesus/architecture review. Blocks A0 policy freeze/U1.
-- [ ] **Q2 — Forget semantics:** define suppression versus physical deletion, evidence/derived-data handling and re-learning after a later explicit statement; no resurrection from stale extraction. Owner: Jesus. Blocks U1 release.
-- [ ] **Q3 — G2/G4 boundary:** coordinate authoritative page state, transactional/projection/reconciliation design, canonical hash encoding, version-scoped review identity and structured exposure across BrainService. Owner: FEAT-889 architecture review with G1/G2/G4 evidence and G3 admission schema. Blocks external M4 and only any M2 interface explicitly required by it; no brain-file ownership transfers here.
-- [ ] **Q4 — Configuration:** freeze remaining constructor fields, per-section budgets/user priority, legacy flag mapping and trusted identity entry points across transports. R1–R10 and enable_brain implying episodes are already resolved. Owner: Jesus/architecture review. Blocks A0/A1 release.
-- [ ] **Q5 — G2 performance:** select measured index/candidate approach or reviewed row-count ceiling and canonical benchmark run; approve any extra dependency separately. Owner: Jesus/architecture review. Blocks M2 production backend.
-- [ ] **Q6 — Optimizer:** accepted pin, extra name, deterministic export adapter and offline resource limits. Owner: maintainer after G1. Blocks fit implementation/dependency changes.
-- [ ] **U1 (FEAT-571):** accept cited-only/default versus opt-in overlap and quantitative attribution requirements after real traces. Owner: Jesus + G3. Blocks M3 and evidence-dependent M1 schema.
-- [ ] **U2:** permanent CoderFeedback adapter or announced retirement; retain public compatibility until decided. Owner: Jesus. Blocks M5 rollout.
-- [ ] **U3:** numeric useful-forgetting/false-reinforcement/precision targets and evaluation horizon, with real trace provenance; validate provisional .2/8.0 thresholds and promotion rules. Owner: Jesus + G1/G3. Blocks gate acceptance.
-- [ ] **U4:** complete replay corpus versus replayable archives after fitting, including external audit/export delivery. Owner: Jesus. Blocks M2 lifecycle/M6 export-fit.
-- [ ] **U5:** max_age_days warning/deprecation versus explicit hard bound; do not introduce a second hidden ageing policy. Owner: Jesus. Blocks M5.
-- [ ] **U6 reopened:** old FEAT-571 preference-only scope is insufficient for the agreed user-knowledge direction; select its concrete representation through Q1 rather than treating `USER_PREFERENCE` as a complete profile plane. Owner: Jesus.
-- [ ] **Anti-pattern representation:** metadata versus new EpisodeCategory and migration impact. Owner: architecture review. Blocks relevant schema tasks only.
+- [x] **Q1 — User storage and learning:** Accepted by Jesus, 2026-11-13. User knowledge lives in the same SQLite store selected for episodes (own tables, scoped by tenant/agent/user). Explicit declarations become active; inferences stay pending until confirmed. On conflict the most recent explicit declaration wins and the superseded fact is kept as history, not served. Landed in A0/U1.
+- [x] **Q2 — Forget semantics:** Accepted by Jesus, 2026-11-13. Forgetting physically deletes the fact and writes a suppression marker that blocks re-learning from retained evidence or stale extraction. Only a later explicit declaration by the same user lifts the marker. Brain derivatives are removed by source-episode lineage through `BrainService` (FEAT-889). Landed in U1.
+- [x] **Q3 — G2/G4 boundary:** Accepted by Jesus, 2026-11-13, direction only. The episode store is the authoritative state; brain pages are a reconcilable projection, never part of the episode transaction. Hash encoding, version-scoped review identity and the reconciliation protocol are designed in FEAT-889 phase 2 (its Q4) with G1/G2/G4 evidence; M2 exposes only the interfaces that design requires.
+- [x] **Q4 — Configuration:** Accepted by Jesus, 2026-11-13. Constructor surface is three flags (`enable_episodic_memory`, `enable_user_memory`, `enable_brain`) plus one optional `AgentMemoryConfig`; per-section budgets and user priority live in that object. Legacy flags are rejected with an error naming the replacement (hard-cut, no mapping shim). Tenant and user come only from the server-resolved request context on every transport; without a trusted identity, user memory neither learns nor recalls. Landed in A0/A1.
+- [x] **Q5 — G2 performance:** Accepted by Jesus, 2026-11-13. Ship exact vector search under a measured, documented row-count ceiling taken from the canonical benchmark run; no index dependency is added in this feature. Exceeding the ceiling is reported as degraded state, and FTS success never masks it. An index approach is a separate, later decision.
+- [x] **Q6 — Optimizer:** Accepted by Jesus, 2026-11-13: moved to a follow-up feature. Parameter fitting, the optimizer dependency and `memory/dynamics/fit.py` are out of scope here; M6 ships status/recall/review/forget/sync/import/export only. See Deferred roadmap.
+- [x] **U1 (FEAT-571):** Accepted by Jesus, 2026-11-13. `cited` is the default attribution mode; overlap is opt-in. Citations travel in a structured channel and are never rendered into user-visible answer text. Quantitative attribution requirements stay provisional until real traces exist (see U3).
+- [x] **U2:** Accepted by Jesus, 2026-11-13. The CoderFeedback adapter is permanent; the public feedback/MCP contract is not retired by this feature.
+- [x] **U3:** Accepted by Jesus, 2026-11-13. The .2/8.0 thresholds ship as provisional, versioned defaults. No automatic promotion or threshold change happens until real-trace evidence is reviewed; synthetic calibration is never presented as field validation. Final numeric targets are set at gate acceptance.
+- [x] **U4:** Accepted by Jesus, 2026-11-13. Replayable archives: retain what replay and export need, not the full corpus hot. Retention must keep export usable for the follow-up fitting feature.
+- [x] **U5:** Accepted by Jesus, 2026-11-13. `max_age_days` emits a deprecation warning in this release and keeps its current effect; dynamics is the only ageing policy going forward, and no second hidden bound is introduced.
+- [x] **U6 reopened:** Accepted by Jesus, 2026-11-13. User knowledge is its own plane of user facts (Q1), not the `USER_PREFERENCE` episode category, which is not treated as a profile store.
+- [x] **Anti-pattern representation:** Accepted by Jesus, 2026-11-13. Episode metadata, not a new `EpisodeCategory`; no schema migration.
 
 ### Deferred roadmap
 
+- [ ] **Follow-up — parameter fitting (was Q6):** optimizer pin, extra name, deterministic export adapter, offline resource limits and `fit_parameters`; needs G1 acceptance and its own spec. No pyproject edit is authorized here.
 - [ ] Cross-agent profile sharing, complete bitemporal queries and autonomous rehearsal probes require separate explicit scope decisions; not implementation blockers for this feature's stated baseline.
 
 ## 9. Design Research Cross-Check
@@ -833,3 +832,4 @@ Summary: **0 confirmed · 0 rejected · 0 escalated** from an independent review
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-11-13 | Jesus Lara / Codex | Review draft: independent user memory, hard-cut integration, M1/M2/M3/M5/M6 and carried gates; source §12 R1–R10 reserves brain/M4 for FEAT-889 and orders its launch after this feature |
+| 0.2 | 2026-11-13 | Jesus Lara / Claude | §8 resolved: Q1–Q5, U1–U6 and anti-pattern representation accepted with stated defaults; Q6 (parameter fitting/optimizer) moved to a follow-up, `fit.py` and the optimizer dependency removed from M6/AC18 |
