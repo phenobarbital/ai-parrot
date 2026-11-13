@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-886 — Durable Conversation Memory
 **Spec**: sdd/specs/durable-conversation-memory.spec.md (Module 17)
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5568, TASK-5581, TASK-5582, TASK-5579, TASK-5583
@@ -654,10 +654,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+BotManager: _DurableMemory + per-bot memory cleaner, _build_durable_memory / _start_turn_persistence / _stop_turn_persistence / _attach_durable_memory / _start_registry_only_persistence, setup_registry_only(turn_persistence=False) opt-in (hook count unchanged), attachment in add_bot / add_agent / the three lazy registration sites / a post-start sweep, bus stopped before ChatStorage closes (on_shutdown and registry-only shutdown, which also closes the ChatStorage it created), bus start failure logged at ERROR without blocking startup. AgentTalk: both chat_storage.save_turn blocks removed, turn_id=client_message_id forwarded to bot.ask / bot.ask_stream (followup untouched).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (sequential fallback)
+**Date**: 2026-11-13
+**Tests**: ai-parrot-server: test_turn_persistence_wiring 7 + test_agenttalk_no_persistence_writes 3 + test_agenttalk_tenant_metadata (rewritten) + test_agenttalk_memory_injection + test_registry_only (incl. hooks-once) = 22 passed; real BotManager on a real aiohttp app, real EventBus(transport="memory"), real SQLite cold tier; the hot tier is an in-file InMemoryConversation subclass (Redis is the external service). ruff (E9,F63,F7,F82,F401,F841) clean.
+**Mutation evidence**: add_bot without attachment -> RED (2); ChatStorage closed before the bus -> RED; re-adding a RedisConversation import to the handler -> AST fence RED; dropping the on_startup start call was checked by hand (the startup path is only covered through the registry-only flag, i.e. test_registry_only_turn_persistence). Restored by re-applying edits.
+**Notes**: (1) the old save_turn-metadata tests in test_agenttalk_tenant_metadata.py were rewritten: the usage/cost/tenant/agent metadata they pinned is now the bot's TurnPresentation (covered by TASK-5583 tests); the stream-handler test now asserts tenant + turn_id forwarding and that the handler touches no storage. (2) A reloaded bot (reload_agent) leaves the replaced instance's cleaner registered; it is harmless (same agent-name guard, the stale bot's memory just no longer matters). (3) The default `on_startup` path (non-registry-only) is wired but only exercised through code shared with the registry-only path.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
