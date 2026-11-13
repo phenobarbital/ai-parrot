@@ -344,7 +344,7 @@
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -356,8 +356,9 @@
       "parallelism_notes": "Exclusive: regenerates the shared packaged-asset tree (check_asset_sync --write, _assets/manifest.json) and edits packages/ai-parrot/pyproject.toml. Its tests load the manifest with manifest_specs (TASK-5635), validate it with validate_graph (TASK-5636) against PROBE_COSTS (TASK-5641).",
       "assigned_to": null,
       "started_at": "2026-11-13T21:47:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5647-sdd-workflow-manifest-asset.md"
+      "completed_at": "2026-11-13T22:39:37+00:00",
+      "file": "sdd/tasks/completed/TASK-5647-sdd-workflow-manifest-asset.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5648",
