@@ -164,7 +164,7 @@
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -174,8 +174,9 @@
       "parallelism_notes": "Serialized after TASK-5569: both modify parrot/memory/__init__.py exports.",
       "assigned_to": null,
       "started_at": "2026-11-13T03:25:54+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5572-rich-history-parts.md"
+      "completed_at": "2026-11-13T04:07:28+00:00",
+      "file": "sdd/tasks/completed/TASK-5572-rich-history-parts.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5573",

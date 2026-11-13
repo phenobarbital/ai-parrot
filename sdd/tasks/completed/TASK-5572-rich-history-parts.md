@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-886 — Durable Conversation Memory
 **Spec**: `sdd/specs/durable-conversation-memory.spec.md` (Module 16)
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5569 (memory/__init__.py)
@@ -552,10 +552,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added parrot/memory/parts.py (MessagePart, render_parts_text), TurnView.parts, PrunedInvocation.parts, format_invocation_parts/prune_turn_parts, render_raw_parts (render_raw_view and prune_turn are now derived from them; render_raw_view split into _raw_invocation_group/_collapse_groups), HistoryMessage.parts with merge/label handling, exports.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (sequential fallback)
+**Date**: 2026-11-13
+**Tests**: test_history_parts + test_format_history_consumes_content_once 11 passed (bedrock/google/jev satellites imported and exercised, none skipped); tests/unit/memory/compaction (minus the two hypothesis files) + test_render_history 72 passed, 1 skipped (pre-existing).
+**NOT RUN**: tests/unit/memory/compaction/test_compact.py and test_normalize.py — `hypothesis` is not installed in this worktree venv and could not be installed (pypi.org is not reachable from the sandbox; `uv pip install --offline` has no cached copy). Substitute evidence for byte identity: a throw-away differential script (not committed) compared the HEAD versions of render_raw_view/prune_turn against the new ones on 400 randomized turns (oversize, offloaded, errors, token collapse, overflow lines): output identical. Re-run the two suites where hypothesis exists.
+**Mutation evidence**: drop trailer part -> RED; drop merge separator part -> RED; PRUNED views without parts -> RED (2); foreign label not on parts -> RED. Restored each time.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
