@@ -115,7 +115,7 @@
       "feature_id": "FEAT-884",
       "feature": "db-upgrade",
       "spec": "sdd/specs/db-upgrade.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -126,8 +126,9 @@
       "parallelism_notes": "Consumes catalog.render_sql from TASK-5554 and runner.upgrade from TASK-5556 for disposable database tests.",
       "assigned_to": null,
       "started_at": "2026-11-12T23:12:58+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5557-bots-migration-baseline.md"
+      "completed_at": "2026-11-13T00:17:46+00:00",
+      "file": "sdd/tasks/completed/TASK-5557-bots-migration-baseline.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5558",
@@ -222,7 +223,7 @@
       "feature_id": "FEAT-884",
       "feature": "db-upgrade",
       "spec": "sdd/specs/db-upgrade.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -235,8 +236,9 @@
       "parallelism_notes": "Consumes catalog selection/scaffold from TASK-5554, status from TASK-5555, upgrade/baseline from TASK-5556, and migration_doctor_check from TASK-5563. Owns self_/cli.py and its existing CLI tests exclusively.",
       "assigned_to": null,
       "started_at": "2026-11-12T23:12:58+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5562-migration-cli.md"
+      "completed_at": "2026-11-13T00:17:47+00:00",
+      "file": "sdd/tasks/completed/TASK-5562-migration-cli.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5563",
