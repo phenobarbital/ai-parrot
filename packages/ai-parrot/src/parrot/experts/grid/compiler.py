@@ -60,7 +60,9 @@ def _stage_nodes(stage: ExpertStageConfig) -> list[NodeDefinition]:
                 "gate": stage.gate if index == len(stage.experts) - 1 else None,
             }
         )
-        nodes.append(NodeDefinition(id=config.stage, type="expert_stage", label=config.stage, config=config.model_dump()))
+        nodes.append(
+            NodeDefinition(id=config.stage, type="expert_stage", label=config.stage, config=config.model_dump())
+        )
     return nodes
 
 
