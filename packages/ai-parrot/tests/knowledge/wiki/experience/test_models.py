@@ -134,3 +134,115 @@ def test_command_outcome_unknown(tmp_path: Path) -> None:
         "error": "",
         "observation_id": "missing-host-status",
     }
+
+
+def _recorded_payload() -> dict[str, object]:
+    """Build a minimally valid recorded-lesson payload."""
+    return {
+        "draft": {
+            "trigger": {
+                "executable": "gh",
+                "subcommand": "pr edit",
+                "error_signature": "permission denied at /tmp/project",
+                "error_excerpt": "permission denied",
+                "command_example": "gh pr edit 1",
+            },
+            "solution": "Use the repository token.",
+            "fix_example": "gh api -X PATCH repos/example/project",
+        },
+        "solution_rev": "a1b2c3d4",
+        "tier": "repo",
+        "source": "paired",
+    }
+
+
+def _event(kind: str, payload: dict[str, object], **overrides: object) -> dict[str, object]:
+    """Build a raw event line for schema validation tests."""
+    event: dict[str, object] = {
+        "schema_version": 1,
+        "event_id": "untrusted-input",
+        "kind": kind,
+        "lesson_id": "pit-123",
+        "session": "session-1",
+        "observation_id": "observation-1",
+        "actor": "codex",
+        "seat": "codex",
+        "ts": "2026-11-13T12:00:00Z",
+        "payload": payload,
+    }
+    event.update(overrides)
+    return event
+
+
+def test_validate_event_schemas(tmp_path: Path) -> None:
+    """Validate each per-kind payload and reject malformed or oversized lines."""
+    payloads = {
+        "lesson.recorded": _recorded_payload(),
+        "failure.observed": {
+            "executable": "gh",
+            "subcommand": "pr edit",
+            "error_signature": "permission denied",
+        },
+        "lesson.injected": {"solution_rev": "a1b2c3d4", "state_at_injection": "candidate"},
+        "lesson.validated": {"solution_rev": "a1b2c3d4", "via": "fix_family"},
+        "lesson.refuted": {"solution_rev": "a1b2c3d4", "via": "trigger_family"},
+        "lesson.confirmed": {"solution_rev": "a1b2c3d4"},
+        "lesson.quarantined": {"solution_rev": "a1b2c3d4"},
+        "lesson.graduated": {"solution_rev": "a1b2c3d4", "issue_id": "ledger-12", "ledger": "ai-parrot"},
+        "lesson.retired": {"reason": "Issue was resolved."},
+    }
+
+    assert tuple(payloads) == models.ExperienceEventKind.__args__
+    for kind, payload in payloads.items():
+        event = models.validate_event(_event(kind, payload))
+        assert event is not None
+        assert event.kind == kind
+        assert isinstance(event.payload, dict)
+        assert event._shared_attestation is False
+
+    valid = _event("lesson.retired", payloads["lesson.retired"])
+    assert models.validate_event({**valid, "unknown": str(tmp_path)}) is None
+    assert models.validate_event({**valid, "schema_version": 2}) is None
+    assert models.validate_event({**valid, "schema_version": True}) is None
+    assert models.validate_event({**valid, "schema_version": 1.0}) is None
+    assert models.validate_event({**valid, "kind": "lesson.unknown"}) is None
+    assert models.validate_event(_event("lesson.retired", {"reason": "closed", "unknown": True})) is None
+    assert models.validate_event({**valid, "actor": "é" * 4096}) is None
+
+
+def test_event_redaction_before_identity(tmp_path: Path) -> None:
+    """Re-redact persisted text, reject JSON-attested provenance, and stabilize identity."""
+    payload = _recorded_payload()
+    draft = payload["draft"]
+    assert isinstance(draft, dict)
+    trigger = draft["trigger"]
+    assert isinstance(trigger, dict)
+    trigger["error_excerpt"] = "Authorization: Bearer top-secret-token"
+    draft["solution"] = f"Use token at {tmp_path}/secret"
+    draft["fix_example"] = "API_TOKEN=abcdefghijklmnopqrstuvwxyz gh pr edit 1"
+
+    event = models.validate_event(_event("lesson.recorded", payload))
+    assert event is not None
+    rendered = str(event.model_dump(mode="json"))
+    assert "top-secret-token" not in rendered
+    assert "abcdefghijklmnopqrstuvwxyz" not in rendered
+    assert "[REDACTED]" in rendered
+    assert event.event_id != "untrusted-input"
+    assert models.validate_event(event.model_dump(mode="json")) == event
+    assert models.validate_event({**event.model_dump(mode="json"), "_shared_attestation": True}) is None
+
+
+def test_solution_revision_identity(tmp_path: Path) -> None:
+    """Hash normalized solution text and the parsed fix-command family only."""
+    first = models.LessonDraft(
+        trigger=models.LessonTrigger(executable="gh"),
+        solution="  Use   the existing token.  ",
+        fix_example=f"gh pr edit {tmp_path.name}",
+    )
+    whitespace_variant = first.model_copy(update={"solution": "Use the existing token."})
+    other_family = first.model_copy(update={"fix_example": "gh api -X PATCH repos/example/project"})
+
+    revision = models.solution_rev_for(first)
+    assert len(revision) == 8
+    assert revision == models.solution_rev_for(whitespace_variant)
+    assert revision != models.solution_rev_for(other_family)
