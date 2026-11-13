@@ -76,6 +76,7 @@
   "docs/sdd/CODEX.md",
   "sdd/CONVENTIONS.md",
   "sdd/WORKFLOW.md",
+  "sdd/procedures/sdd-workflow.yaml",
   "sdd/templates/brainstorm.md",
   "sdd/templates/brief.md",
   "sdd/templates/design_research.prompt.md",
