@@ -93,7 +93,7 @@ async def test_failed_body_rolls_back_stamp_and_skips_successors(
 ) -> None:
     """Keep failed DDL out of the ledger and stop only the dependent suffix."""
     connection, schema, table, dsn = migration_target
-    await connection.execute(f'CREATE TABLE {_target(schema, table)} (chatbot_id TEXT PRIMARY KEY, name TEXT NOT NULL)')
+    await connection.execute(f"CREATE TABLE {_target(schema, table)} (chatbot_id TEXT PRIMARY KEY, name TEXT NOT NULL)")
 
     report = await upgrade(dsn, sets=(bots_set(),))
 
@@ -106,14 +106,15 @@ async def test_failed_body_rolls_back_stamp_and_skips_successors(
         "bots/005_language_schema.sql",
     ]
     assert await connection.fetchval("SELECT count(*) FROM pg_catalog.pg_tables WHERE tablename = $1", table) == 1
-    assert await connection.fetchval(
-        "SELECT count(*) FROM information_schema.tables WHERE table_schema = $1 "
-        "AND table_name = 'parrot_schema_migrations'",
-        schema,
-    ) == 1
-    assert await connection.fetchval(
-        f'SELECT count(*) FROM "{schema}"."parrot_schema_migrations"'
-    ) == 0
+    assert (
+        await connection.fetchval(
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema = $1 "
+            "AND table_name = 'parrot_schema_migrations'",
+            schema,
+        )
+        == 1
+    )
+    assert await connection.fetchval(f'SELECT count(*) FROM "{schema}"."parrot_schema_migrations"') == 0
 
 
 @pytest.mark.asyncio
@@ -159,8 +160,7 @@ async def test_changed_body_and_check_require_reapply_and_reapply_rechecks_set(
     assert blocked_body.exit_code == 1
 
     await connection.execute(
-        f'UPDATE "{schema}"."parrot_schema_migrations" SET checksum = $1, check_checksum = $2 '
-        "WHERE filename = $3",
+        f'UPDATE "{schema}"."parrot_schema_migrations" SET checksum = $1, check_checksum = $2 ' "WHERE filename = $3",
         load_migrations(bots_set())[0].checksum,
         "changed-check",
         "001_baseline.sql",
@@ -282,15 +282,21 @@ async def test_separate_ledgers_share_the_database_advisory_lock(
         )
         assert first.exit_code == 0
         assert second.exit_code == 0
-        assert await connection.fetchval(
-            "SELECT count(*) FROM information_schema.tables WHERE table_schema = $1 "
-            "AND table_name = 'parrot_schema_migrations'",
-            first_schema,
-        ) == 1
-        assert await connection.fetchval(
-            "SELECT count(*) FROM information_schema.tables WHERE table_schema = $1 "
-            "AND table_name = 'parrot_schema_migrations'",
-            second_schema,
-        ) == 1
+        assert (
+            await connection.fetchval(
+                "SELECT count(*) FROM information_schema.tables WHERE table_schema = $1 "
+                "AND table_name = 'parrot_schema_migrations'",
+                first_schema,
+            )
+            == 1
+        )
+        assert (
+            await connection.fetchval(
+                "SELECT count(*) FROM information_schema.tables WHERE table_schema = $1 "
+                "AND table_name = 'parrot_schema_migrations'",
+                second_schema,
+            )
+            == 1
+        )
     finally:
         await connection.execute(f'DROP SCHEMA IF EXISTS "{second_schema}" CASCADE')
