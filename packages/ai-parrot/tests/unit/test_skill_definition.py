@@ -129,3 +129,64 @@ Traduce al idioma solicitado.
         skill = parse_skill_file(f)
         assert skill.version == "2.0"
         assert skill.category == "translation"
+
+    def test_skill_without_procedure_unchanged(self, tmp_path):
+        """A skill with no `procedure` key parses as before; the new field is None."""
+        skill_md = """---
+name: basic
+description: Basic skill
+triggers:
+  - /basic
+---
+
+Follow the basic procedure.
+"""
+        f = tmp_path / "basic.md"
+        f.write_text(skill_md)
+
+        skill = parse_skill_file(f)
+
+        assert skill.procedure is None
+        assert skill.name == "basic"
+        assert skill.description == "Basic skill"
+        assert skill.triggers == ["/basic"]
+        assert skill.template_body == "Follow the basic procedure."
+
+    def test_skill_procedure_mapping_kept(self, tmp_path):
+        """A `procedure` mapping is stored unchanged."""
+        skill_md = """---
+name: refunds
+description: Handle refunds
+triggers:
+  - /refund
+procedure: {mode: advisory, intents: [refund]}
+---
+
+Handle the refund request.
+"""
+        f = tmp_path / "refunds.md"
+        f.write_text(skill_md)
+
+        skill = parse_skill_file(f)
+
+        assert skill.procedure == {"mode": "advisory", "intents": ["refund"]}
+
+    def test_skill_procedure_not_mapping_raises(self, tmp_path):
+        """`procedure: "x"` raises ValueError naming the file."""
+        skill_md = """---
+name: invalid
+description: Invalid procedure
+triggers:
+  - /invalid
+procedure: x
+---
+
+This skill has invalid procedure metadata.
+"""
+        f = tmp_path / "invalid.md"
+        f.write_text(skill_md)
+
+        with pytest.raises(ValueError, match="'procedure' must be a mapping") as exc_info:
+            parse_skill_file(f)
+
+        assert str(f) in str(exc_info.value)

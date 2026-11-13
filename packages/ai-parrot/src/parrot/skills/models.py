@@ -94,6 +94,10 @@ class SkillDefinition(BaseModel):
         default_factory=list,
         description="Follow-up chips emitted when this skill is the turn's skill (FEAT-752).",
     )
+    procedure: dict[str, Any] | None = Field(
+        default=None,
+        description="Optional graph fields (FEAT-891); validated into a ProcedureSpec by the producer.",
+    )
 
     MAX_TOKENS: ClassVar[int] = 1000
 
