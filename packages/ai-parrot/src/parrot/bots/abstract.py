@@ -227,12 +227,14 @@ _RENDERED_SYSTEM_PROMPT: ContextVar[Optional[Dict[int, Optional[str]]]] = Contex
     "parrot_rendered_system_prompt", default=None
 )
 
-#: The last OUTPUT verdict that actually REWROTE a response in this task: ``(id(response), original, rewritten,
-#: pipeline, ctx)``. Set by `_run_output_pipeline` only on a TRANSFORM/BLOCK; read by `_stored_turn_text` so the
-#: persisted text gets the same verdict without running the guardrails again when nothing was rewritten.
-_OUTPUT_REWRITE: ContextVar[Optional[Tuple[int, str, str, Any, Any]]] = ContextVar(
-    "parrot_output_rewrite", default=None
+#: The last OUTPUT verdict of this task: ``(id(response), scanned_text, resulting_text, ctx)``. Set by
+#: `_run_output_pipeline` whenever the guardrails ran; read by `_stored_turn_text` so text the pipeline has
+#: already judged is not scanned again, while any OTHER text that is persisted still gets its own verdict.
+_OUTPUT_VERDICT: ContextVar[Optional[Tuple[int, str, str, Any]]] = ContextVar(
+    "parrot_output_verdict", default=None
 )
+
+_OUTPUT_BLOCKED_TEXT = "This response could not be delivered due to a content policy violation."
 
 #: `_fallback_sequence`: seconds before a FAILED read of the durable sequence floor is tried again, and the
 #: number of sessions whose floor state one bot remembers (cleared when exceeded).
@@ -3314,7 +3316,7 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         Returns:
             The same ``response`` instance, mutated in place.
         """
-        _OUTPUT_REWRITE.set(None)
+        _OUTPUT_VERDICT.set(None)
         pipeline = self._guardrail_pipelines[GuardrailStage.OUTPUT]
         if not pipeline.has_guardrails or not isinstance(response.output, str):
             return response
@@ -3338,8 +3340,8 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
 
         original = response.output
         if outcome.blocked:
-            response.output = "This response could not be delivered due to a content policy violation."
-            _OUTPUT_REWRITE.set((id(response), original, response.output, pipeline, ctx))
+            response.output = _OUTPUT_BLOCKED_TEXT
+            _OUTPUT_VERDICT.set((id(response), original, response.output, ctx))
             await self._propagate_output_verdict(response, original, pipeline, ctx, blocked_text=response.output)
             response.metadata["error"] = "security_block"
             if outcome.reason:
@@ -3348,9 +3350,9 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
 
         # `pipeline.run` returns the working content on every non-blocked pass: only an actual rewrite
         # (TRANSFORM) is propagated, so a PASS never runs the guardrails a second time.
+        _OUTPUT_VERDICT.set((id(response), original, outcome.content if outcome.content is not None else original, ctx))
         if outcome.content is not None and outcome.content != original:
             response.output = outcome.content
-            _OUTPUT_REWRITE.set((id(response), original, outcome.content, pipeline, ctx))
             await self._propagate_output_verdict(response, original, pipeline, ctx)
 
         if outcome.flag_reports:
@@ -3387,28 +3389,43 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
             else:
                 response.response = wrapped.content if wrapped.content is not None else alias
 
-    async def _stored_turn_text(self, response: AIMessage, plain: Optional[str]) -> Optional[str]:
-        """The assistant text persisted for a turn: the plain answer with the OUTPUT verdict applied (FEAT-886).
+    async def _stored_turn_text(self, response: AIMessage, plain: Optional[str], method: str = "persist") -> Optional[str]:
+        """The assistant text persisted for a turn: the plain answer with an OUTPUT verdict applied (FEAT-886).
 
         ``plain`` is the answer text captured BEFORE any presentation wrapper is written to
         ``response.response`` (``get_response``'s markdown "Question/Answer/Sources" block, a formatter's
         wrapped string). The wrapper is what the caller renders; the conversation keeps the answer itself, so
         the next LLM call and the stored history do not carry the question echoed inside the assistant turn.
-        A TRANSFORM/BLOCK verdict of ``_run_output_pipeline`` is applied to it: the already rewritten text
-        when ``plain`` is what the pipeline scanned, otherwise the same pipeline run on ``plain``. With no
-        rewrite the guardrails are not run again. ``None`` (non-text answer) keeps ``response.to_text``.
+
+        Whatever is persisted carries a verdict of the OUTPUT guardrails: text the pipeline already judged for
+        this response reuses that verdict (no second run); any other text — an explanation kept apart from an
+        HTML/structured ``output``, a plain answer different from the formatted ``output`` — is scanned here,
+        even when ``output`` itself passed or was never scanned. ``None`` (no text answer) keeps
+        ``response.to_text``.
         """
         if not isinstance(plain, str) or not plain:
             return None
-        rewrite = _OUTPUT_REWRITE.get()
-        if rewrite is None or rewrite[0] != id(response):
+        verdict = _OUTPUT_VERDICT.get()
+        ctx = None
+        if verdict is not None and verdict[0] == id(response):
+            if plain == verdict[1]:
+                return verdict[2]
+            ctx = verdict[3]
+        pipeline = self._guardrail_pipelines[GuardrailStage.OUTPUT]
+        if not pipeline.has_guardrails:
             return plain
-        _, original, rewritten, pipeline, ctx = rewrite
-        if plain == original:
-            return rewritten
+        if ctx is None:
+            ctx = GuardrailContext(
+                stage=GuardrailStage.OUTPUT,
+                agent_name=self.name,
+                user_id=str(response.user_id) if response.user_id is not None else None,
+                session_id=response.session_id,
+                method=method,
+                extras=self._output_extras(response, pipeline),
+            )
         outcome = await pipeline.run(plain, ctx)
         if outcome.blocked:
-            return rewritten
+            return _OUTPUT_BLOCKED_TEXT
         return outcome.content if outcome.content is not None else plain
 
     def _merge_guardrail_reports(self, response: AIMessage, flag_reports: Dict[str, Dict[str, Any]]) -> None:

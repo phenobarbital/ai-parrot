@@ -264,3 +264,22 @@ async def test_a_passing_response_runs_the_output_guardrails_once(entry: str):
     else:
         await bot.conversation("hi", user_id="u", session_id="s", use_vector_context=False)
     assert len(runs) == 1, runs
+
+
+class _ExplanationSecretClient(Client):
+    """A structured (non-text) output that passes untouched, and a separate text answer carrying a secret."""
+
+    def _msg(self, prompt: str) -> AIMessage:
+        message = super()._msg(prompt)
+        message.output = {"html": "<b>chart</b>"}
+        message.response = f"your key is API_KEY={SECRET}"
+        return message
+
+
+async def test_text_the_pipeline_never_scanned_is_still_redacted_before_it_is_persisted():
+    bot = await _guarded_bot(_ExplanationSecretClient())
+    await bot.ask("hi", user_id="u", session_id="s", use_vector_context=False)
+    stored, event = await _stored(bot), bot.turn_publisher.events[0]
+    for text in (stored.assistant_response, event.turn["assistant_response"]):
+        assert SECRET not in text and "REDACTED" in text, text
+
