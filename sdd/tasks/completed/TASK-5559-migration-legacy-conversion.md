@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-884 — Packaged PostgreSQL migrations
 **Spec**: `sdd/specs/db-upgrade.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5557, TASK-5558
@@ -400,4 +400,4 @@ def test_legacy_conversion_contract() -> None:
 
 ## Completion Note
 
-Populated by the task finalizer after verified implementation.
+Verified at /sdd-done: `test_legacy_conversion.py` + `test_storage_gates.py` pass (15 passed). Code merged in e4a4ab66a8; closed by /sdd-done because the engine finalizer had not run.

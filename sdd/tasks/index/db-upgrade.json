@@ -160,7 +160,7 @@
       "feature_id": "FEAT-884",
       "feature": "db-upgrade",
       "spec": "sdd/specs/db-upgrade.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -171,8 +171,9 @@
       "parallelism_notes": "Consumes packaged 001 baseline from TASK-5557 and 002–005 successors from TASK-5558 before retiring historical sources.",
       "assigned_to": null,
       "started_at": "2026-11-12T23:12:58+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5559-migration-legacy-conversion.md"
+      "completed_at": "2026-11-13T11:29:07+00:00",
+      "file": "sdd/tasks/completed/TASK-5559-migration-legacy-conversion.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5560",
