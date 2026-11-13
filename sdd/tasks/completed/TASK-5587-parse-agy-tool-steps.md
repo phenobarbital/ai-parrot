@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-888 — agy dispatcher — parse agy 1.5.8 `step_type: "tool"` steps
 **Spec**: `sdd/specs/dispatchers-google-coding-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -273,4 +273,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Code (/sdd-fix, actor agent:sdd-fix:ece7ef51)
+**Date**: 2026-11-13
+**Notes**: Implemented the blueprint in commit 417e9dae6f. `parse_agy_tool_step()` / `AgyToolStep` are module-level
+in `google_coding.py`; `_publish_agy_event` maps `tool`+`ACTIVE` → `dispatch.tool_use` and `tool`+`DONE` →
+`dispatch.tool_result`; `_extract_agy_display` projects `tool_name`, `tool_input` (aliases `CommandLine`→`command`,
+`Path`→`path`), and on `DONE` `exit_code` / `is_error` (only when an exit code was parsed) plus `result_snippet`.
+Fixtures are the two live agy 1.5.8 captures from 2026-11-13, with the scratch path replaced by `/work/agyprobe`.
+Validation: `pytest packages/ai-parrot/tests/flows/dev_loop/test_google_coding_dispatcher.py` → 57 passed
+(`PYTHONPATH=packages/ai-parrot/src`); `test_dispatch_legibility_integration.py` → 45 passed; `black --check` and
+`ruff check` clean.
+**Resolves**: `issue:339fbb135e7f`
+**Deviations from spec**: none. Added three tests beyond spec §4: `test_denied_command_still_pairs`,
+`test_display_keys_for_done_success` and `test_display_keys_for_active_step`. Spec §8 Q1 (repeated `ACTIVE` updates)
+remains unverified.
