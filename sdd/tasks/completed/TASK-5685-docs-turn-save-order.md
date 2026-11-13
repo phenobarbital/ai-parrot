@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-895 — Turn save — outbox first, one save at a time per session
 **Spec**: `sdd/specs/bots-abstract-tech-debt-2.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5684
@@ -198,4 +198,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed**: 2026-11-14 · **Verification**: verified · **Commit**: `0a3900ebf8`
+
+- `wiki/memory/durable-conversation-memory.md` `## Event flow`: diagram redrawn (outbox append first, then
+  `add_turn`; hot tier marked `chat:`), the publish paragraph rewritten (append before the working-memory write,
+  snapshot still before `add_turn`), a "Failures of the two writes" list and a per-session save-lock paragraph added;
+  the "never fails the round" sentence replaced. No heading changed.
+- `wiki/memory/conversation-history-ownership.md`: the "Emitter-owned ordering" bullet now states the outbox-first
+  order, the per-session save and the failing round, with a link to the Event flow section.
+- `test_turn_save_order_is_documented` appended to `tests/docs/test_durable_memory_docs.py`: failed on the unmodified
+  pages, passes after the edit (10 passed). `parrot sdd techwiki check` → `Docs: required — ok`. `ruff` clean; the new
+  test block is black-clean (the file's earlier lines predate black).
