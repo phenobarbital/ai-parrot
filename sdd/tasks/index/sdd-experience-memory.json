@@ -205,7 +205,7 @@
       "feature_id": "FEAT-887",
       "feature": "sdd-experience-memory",
       "spec": "sdd/specs/sdd-experience-memory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -217,8 +217,9 @@
       "parallelism_notes": "transitions: TASK-5588: consumes the fastpath contract in packages/ai-parrot/src/parrot/knowledge/wiki/experience/__init__.py, packages/ai-parrot/src/parrot/knowledge/wiki/experience/fastpath.py; TASK-5590: consumes the event-schemas contract in packages/ai-parrot/src/parrot/knowledge/wiki/experience/models.py; TASK-5593: consumes the service contract in packages/ai-parrot/src/parrot/knowledge/wiki/experience/service.py",
       "assigned_to": null,
       "started_at": "2026-11-13T19:26:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5595-transitions.md"
+      "completed_at": "2026-11-13T20:52:12+00:00",
+      "file": "sdd/tasks/completed/TASK-5595-transitions.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5596",
@@ -247,7 +248,7 @@
       "feature_id": "FEAT-887",
       "feature": "sdd-experience-memory",
       "spec": "sdd/specs/sdd-experience-memory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -257,8 +258,9 @@
       "parallelism_notes": "graduation: TASK-5593: consumes the service contract in packages/ai-parrot/src/parrot/knowledge/wiki/experience/service.py",
       "assigned_to": null,
       "started_at": "2026-11-13T19:26:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5597-graduation.md"
+      "completed_at": "2026-11-13T20:52:13+00:00",
+      "file": "sdd/tasks/completed/TASK-5597-graduation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5598",
