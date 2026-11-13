@@ -293,3 +293,11 @@ CancelledError. Use subprocesses for crash/multiprocess checks, never shared pro
 | validation_refs | 1 |
 | fix_commits | 0 |
 | seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 372s · Tokens: n/a |
+
+### Review fix (spec rev 0.3 amendment)
+
+Commit 2cbcd17aba added `MemoryRequestScope.response_event_id()` (SHA-256 over length-prefixed
+agent_id/user_id/session_id/turn_id, absent values encoded distinctly; spec F3) and
+`ChatStorageEvidenceRef` (tenant plus agent/user/session/turn; `MemoryEvent` rejects tenant-less
+`chatstorage/v1/` refs; spec F7). The encoding was chosen by the worker with owner approval (option A),
+not taken from an accepted spec amendment. Merge-tier validation: 31 passed.
