@@ -65,7 +65,7 @@ it to `cve-remediation`. There is no way to:
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:d7e74f1b49b84974cd23352313494504d78a416e08c2913fdfcd632b5415729f evaluation_digest=sha256:0f0c87821167c00812d258a683ebd5cfec87a32f9e1ad49bcafce521daede536 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:0104f58f031d1d3dcb53090013e09398788253ad958f26f09b5ee2e175b1c235 evaluation_digest=sha256:8599c0e84a270b00d78575016958e7874e002b373ed2e8d1ffeefd0974e7b3e1 rules_version=1 status=pass -->
 
 No eligible decisions govern subsystems: bots, clients, config, flows, integrations, knowledge-graphindex, knowledge-pageindex, knowledge-wiki, memory, sdd-tooling, skills, tools
 
@@ -366,12 +366,50 @@ See §3 Interface Skeletons.
 ### Validation Contract
 
 tests:
-- packages/ai-parrot/tests/flows/dev_loop/
-- packages/ai-parrot/tests/experts/
+- packages/ai-parrot-integrations/tests/integrations/devloop/test_bridge.py
+- packages/ai-parrot-integrations/tests/integrations/devloop/test_e2e_service.py
+- packages/ai-parrot-integrations/tests/integrations/devloop/test_gate_errors.py
+- packages/ai-parrot/tests/experts/test_activation_otel.py
+- packages/ai-parrot/tests/experts/test_agent_activation.py
+- packages/ai-parrot/tests/experts/test_bundled_wheel.py
+- packages/ai-parrot/tests/experts/test_episodes.py
+- packages/ai-parrot/tests/experts/test_expert_stages_docs.py
+- packages/ai-parrot/tests/experts/test_experts_cli.py
+- packages/ai-parrot/tests/experts/test_grid_models.py
+- packages/ai-parrot/tests/experts/test_integration.py
+- packages/ai-parrot/tests/experts/test_integration_stages.py
+- packages/ai-parrot/tests/experts/test_loader_view.py
+- packages/ai-parrot/tests/experts/test_registry.py
+- packages/ai-parrot/tests/experts/test_resolver.py
+- packages/ai-parrot/tests/experts/test_scope_compiler.py
+- packages/ai-parrot/tests/experts/test_stage_inline.py
+- packages/ai-parrot/tests/experts/test_stage_node.py
+- packages/ai-parrot/tests/flows/dev_loop/test_commands.py
+- packages/ai-parrot/tests/flows/dev_loop/test_gate_adapter.py
+- packages/ai-parrot/tests/flows/dev_loop/test_gate_integration.py
+- packages/ai-parrot/tests/flows/dev_loop/test_gate_upgrade_inflight.py
+- packages/ai-parrot/tests/flows/dev_loop/test_open_questions_gate.py
+- packages/ai-parrot/tests/flows/dev_loop/test_plan_gate_override.py
+- packages/ai-parrot/tests/flows/dev_loop/test_runner.py
+- packages/ai-parrot/tests/flows/dev_loop/test_runner_gate_store.py
+- packages/ai-parrot/tests/flows/dev_loop/test_runner_host.py
+- packages/ai-parrot/tests/flows/dev_loop/test_session_state.py
+- packages/ai-parrot/tests/flows/dev_loop/test_session_state_gate_host.py
+- packages/ai-parrot/tests/flows/dev_loop/test_tier_seat_hint.py
+- packages/ai-parrot/tests/flows/gates/test_gate_host.py
+- packages/ai-parrot/tests/flows/gates/test_gate_models.py
+- packages/ai-parrot/tests/flows/gates/test_store_contract.py
+- packages/ai-parrot/tests/flows/gates/test_store_redis.py
+- packages/ai-parrot/tests/sdd/test_consult_step_twins.py
+- packages/ai-parrot/tests/sdd/test_experts_consult.py
+- packages/ai-parrot/tests/sdd/test_experts_triage_promote.py
+- tests/sdd_scripts/test_check_asset_sync.py
+- tests/sdd_scripts/test_command_twin_parity.py
 markers: none
 
-> The dev-loop and experts test files are the existing coverage of the touched code; `/sdd-task` must narrow
-> these to files (never a directory) once the new test files exist.
+### Test Data / Fixtures
+
+Fake experts from `packages/ai-parrot/tests/experts/conftest.py`; recorded legacy gate envelopes from TASK-5616.
 
 ---
 
@@ -573,7 +611,7 @@ entries:
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:d7e74f1b49b84974cd23352313494504d78a416e08c2913fdfcd632b5415729f evaluation_digest=sha256:0f0c87821167c00812d258a683ebd5cfec87a32f9e1ad49bcafce521daede536 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:0104f58f031d1d3dcb53090013e09398788253ad958f26f09b5ee2e175b1c235 evaluation_digest=sha256:8599c0e84a270b00d78575016958e7874e002b373ed2e8d1ffeefd0974e7b3e1 rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -623,7 +661,7 @@ Coverage:
     ]
   },
   "diagnostics": [],
-  "evaluation_digest": "sha256:0f0c87821167c00812d258a683ebd5cfec87a32f9e1ad49bcafce521daede536",
+  "evaluation_digest": "sha256:8599c0e84a270b00d78575016958e7874e002b373ed2e8d1ffeefd0974e7b3e1",
   "exit_code": 0,
   "findings": [
     {
@@ -669,7 +707,7 @@ Coverage:
       "waived_by": null
     }
   ],
-  "input_digest": "sha256:d7e74f1b49b84974cd23352313494504d78a416e08c2913fdfcd632b5415729f",
+  "input_digest": "sha256:0104f58f031d1d3dcb53090013e09398788253ad958f26f09b5ee2e175b1c235",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
