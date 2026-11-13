@@ -39,6 +39,8 @@ class ChatStorage:
 
     #: Attempts of the in-process post-delete cleanup retry.
     CLEANUP_RETRY_ATTEMPTS = 12
+    #: Most session-tombstone lookups in flight at once while listing conversations.
+    TOMBSTONE_LOOKUP_CONCURRENCY = 8
 
     def __init__(
         self,
@@ -319,45 +321,55 @@ class ChatStorage:
                     exc,
                 )
 
-        # Fallback: DynamoDB
-        if self._dynamo:
-            try:
-                agent = agent_id or ""
-                try:
-                    # Chronological: the newest ``limit`` turns by (timestamp, sequence, turn_id), ascending.
-                    turns = await self._dynamo.query_turn_window(user_id, agent, session_id, limit)
-                except IndexNotReadyError:
-                    # Legacy session not backfilled yet: the old (sort_key) order is the best available read.
-                    # The window backends already exclude tombstoned turns; this path does not, so ask for the
-                    # tombstoned count extra (ONE batched lookup), filter, then apply ``limit`` to live turns.
-                    gone = await self._dynamo.deleted_turn_ids(user_id, agent, session_id)
-                    turns = await self._dynamo.query_turns(
-                        user_id=user_id,
-                        agent_id=agent,
-                        session_id=session_id,
-                        limit=limit + len(gone),
-                        newest_first=False,
-                    )
-                    turns = [t for t in turns if str(t.get("turn_id", "")) not in gone][:limit]
-                # NOT filtered again on the window path: ``query_turn_window`` of every backend already excludes
-                # tombstoned turns and applies ``limit`` after doing so.
-                messages = []
-                for row in turns:
-                    try:
-                        stored = ChatStorageTurn.from_row(
-                            {"user_id": user_id, "session_id": session_id, "agent_id": agent, **row}
-                        )
-                    except (InvalidTurnPayloadError, ValueError) as exc:
-                        self.logger.warning("skipping unreadable stored turn %s: %s", row.get("turn_id"), exc)
-                        continue
-                    messages.extend(stored.to_messages())
-                return messages
-            except StorageError:
-                raise
-            except Exception as exc:  # a failed read is raised, never reported as "empty"
-                raise StorageUnavailableError(f"{self._backend_label} load failed: {exc}") from exc
+        return await self._load_cold(user_id, session_id, agent_id, limit)
 
-        return []
+    async def _load_cold(
+        self, user_id: str, session_id: str, agent_id: Optional[str], limit: int
+    ) -> List[Dict[str, Any]]:
+        """Read the newest ``limit`` live turns from the cold tier as messages (``[]`` without a cold tier).
+
+        Runs no deletion guard: the caller has already run ``_ensure_not_deleted`` for this read.
+
+        Raises:
+            StorageError: the cold tier could not be read — a failed read is raised, never reported as "empty".
+        """
+        if not self._dynamo:
+            return []
+        try:
+            agent = agent_id or ""
+            try:
+                # Chronological: the newest ``limit`` turns by (timestamp, sequence, turn_id), ascending.
+                turns = await self._dynamo.query_turn_window(user_id, agent, session_id, limit)
+            except IndexNotReadyError:
+                # Legacy session not backfilled yet: the old (sort_key) order is the best available read.
+                # The window backends already exclude tombstoned turns; this path does not, so ask for the
+                # tombstoned count extra (ONE batched lookup), filter, then apply ``limit`` to live turns.
+                gone = await self._dynamo.deleted_turn_ids(user_id, agent, session_id)
+                turns = await self._dynamo.query_turns(
+                    user_id=user_id,
+                    agent_id=agent,
+                    session_id=session_id,
+                    limit=limit + len(gone),
+                    newest_first=False,
+                )
+                turns = [t for t in turns if str(t.get("turn_id", "")) not in gone][:limit]
+            # NOT filtered again on the window path: ``query_turn_window`` of every backend already excludes
+            # tombstoned turns and applies ``limit`` after doing so.
+            messages = []
+            for row in turns:
+                try:
+                    stored = ChatStorageTurn.from_row(
+                        {"user_id": user_id, "session_id": session_id, "agent_id": agent, **row}
+                    )
+                except (InvalidTurnPayloadError, ValueError) as exc:
+                    self.logger.warning("skipping unreadable stored turn %s: %s", row.get("turn_id"), exc)
+                    continue
+                messages.extend(stored.to_messages())
+            return messages
+        except StorageError:
+            raise
+        except Exception as exc:  # a failed read is raised, never reported as "empty"
+            raise StorageUnavailableError(f"{self._backend_label} load failed: {exc}") from exc
 
     async def get_conversation_metadata(self, session_id: str) -> Optional[Dict[str, Any]]:
         """Load conversation metadata.
@@ -395,14 +407,15 @@ class ChatStorage:
             if since:
                 since_iso = since.isoformat()
                 threads = [t for t in threads if t.get("updated_at", "") >= since_iso]
-            # Clean up DynamoDB internal fields
-            results = []
-            for t in threads:
-                clean = {k: v for k, v in t.items() if k not in ("PK", "SK", "type", "ttl")}
-                if await self._dynamo.is_deleted(user_id, t.get("agent_id") or agent, t.get("session_id", "")):
-                    continue  # tombstoned: hidden even while its cleanup is still running
-                results.append(clean)
-            return results
+            deleted = await self._sessions_deleted(
+                user_id, [(t.get("agent_id") or agent, t.get("session_id", "")) for t in threads]
+            )
+            # Clean up DynamoDB internal fields; a tombstoned thread is hidden even while its cleanup is running
+            return [
+                {k: v for k, v in t.items() if k not in ("PK", "SK", "type", "ttl")}
+                for t, gone in zip(threads, deleted, strict=True)
+                if not gone
+            ]
         except StorageError:
             raise
         except Exception as exc:  # a failed read is raised, never reported as "empty"
@@ -544,6 +557,34 @@ class ChatStorage:
             raise StorageUnavailableError(f"deletion guard unavailable: {exc}") from exc
         if deleted:
             raise ConversationDeletedError(f"conversation {session_id} is deleted")
+
+    async def _sessions_deleted(self, user_id: str, keys: List[Tuple[str, str]]) -> List[bool]:
+        """Session-tombstone verdict for each ``(agent, session_id)`` in ``keys``, in the same order.
+
+        The backend contract has no batched session-tombstone read, so this is still one ``is_deleted`` per key;
+        the lookups run concurrently (at most ``TOMBSTONE_LOOKUP_CONCURRENCY`` in flight) instead of one round
+        trip after another.
+
+        Raises:
+            Exception: the first failed lookup, unchanged — an unknown verdict is never reported as "not deleted".
+        """
+        backend = self._dynamo
+        if backend is None:  # no durable store: nothing can be tombstoned (same as ``_ensure_not_deleted``)
+            return [False] * len(keys)
+        gate = asyncio.Semaphore(self.TOMBSTONE_LOOKUP_CONCURRENCY)
+
+        async def lookup(agent: str, session_id: str) -> bool:
+            async with gate:
+                return bool(await backend.is_deleted(user_id, agent, session_id))
+
+        # return_exceptions: every lookup settles before a failure is raised, so none is left running unobserved
+        verdicts = await asyncio.gather(*(lookup(agent, session) for agent, session in keys), return_exceptions=True)
+        deleted: List[bool] = []
+        for verdict in verdicts:
+            if isinstance(verdict, BaseException):
+                raise verdict
+            deleted.append(verdict)
+        return deleted
 
     def _schedule_cleanup_retry(
         self, user_id: str, agent_id: Optional[str], session_id: str, turn_id: Optional[str] = None
@@ -782,6 +823,7 @@ class ChatStorage:
             except Exception:
                 pass
 
-        # Fallback to DynamoDB
-        messages = await self.load_conversation(user_id, session_id, agent_id=agent_id, limit=max_turns)
+        # Fallback: the cold tier directly. The guard above already ran and the hot tier was just tried, so going
+        # through load_conversation() would repeat both the tombstone read and the Redis read.
+        messages = await self._load_cold(user_id, session_id, agent_id, max_turns)
         return [{"role": m.get("role", "user"), "content": m.get("content", "")} for m in messages]
