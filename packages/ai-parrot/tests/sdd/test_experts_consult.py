@@ -150,3 +150,27 @@ def test_cli_consult_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     assert result.exit_code == 0, result.output
     assert (tmp_path / "sdd/state/FEAT-9/contributions/e1.json").exists()
     assert isinstance(load_contribution(tmp_path / "sdd/state/FEAT-9/contributions/e1.json"), Contribution)
+
+
+@pytest.mark.asyncio
+async def test_stage_after_mob_still_runs(tmp_path: Path) -> None:
+    """The mob synthesis node is served by a no-LLM client, so later stages are not skipped."""
+    doc = _doc(tmp_path)
+    grid = ScopeGrid.model_validate(
+        {
+            "scope": "s3",
+            "match": {"projects": ["ai-parrot"]},
+            "stages": [
+                {"stage": "m", "experts": ["e1", "e2"], "mode": "mob"},
+                {"stage": "after", "experts": ["e3"], "mode": "subagent"},
+            ],
+        }
+    )
+    written = await experts_cli.consult(
+        repo_root=tmp_path,
+        doc=doc,
+        feature_id="FEAT-3",
+        registry=FakeRegistry(json.dumps(FINDINGS)),
+        scopes={"s3": grid},
+    )
+    assert sorted(p.name for p in written) == ["e1.json", "e2.json", "e3.json"]

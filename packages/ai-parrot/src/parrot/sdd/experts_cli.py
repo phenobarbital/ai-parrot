@@ -118,6 +118,25 @@ def _ungated(grid: ScopeGrid) -> ScopeGrid:
     return grid.model_copy(update={"stages": [stage.model_copy(update={"gate": None}) for stage in grid.stages]})
 
 
+class _PassThroughResponse:
+    """Minimal ``AIMessage`` duck-type: the text a synthesis step hands back."""
+
+    def __init__(self, content: str) -> None:
+        self.content = content
+
+
+class _PassThroughSynthesisClient:
+    """Synthesis client that makes no LLM call and echoes the blocks it is given.
+
+    Consult reads findings from each stage's per-expert outcomes, never from synthesized prose, so a mob
+    stage's ``<stage>-synthesis`` node only needs to *succeed* for the flow to continue to later stages.
+    """
+
+    async def ask(self, *, question: str = "", **_kwargs: Any) -> _PassThroughResponse:
+        """Return the prompt text unchanged instead of calling a model."""
+        return _PassThroughResponse(question)
+
+
 async def _run_scope(grid: ScopeGrid, registry: Any, prompt: str) -> dict[str, list[Finding]]:
     """Run one scope through the real compiled flow and collect findings per expert.
 
@@ -125,9 +144,8 @@ async def _run_scope(grid: ScopeGrid, registry: Any, prompt: str) -> dict[str, l
     in its declared mode (subagent / mob / pipeline / inline). Consultation is advisory, so gates are
     auto-skipped: every stage gate is stripped before compiling (no gate host is bound, nothing waits).
     A stage that fails is logged and skipped; findings come from the ``metadata["experts"]`` outcomes of
-    the stages that did run. The mob synthesis node needs an LLM synthesis client, which consult does not
-    bind, so it fails (logged) and any stage downstream of a mob stage is skipped; the mob stage's own
-    per-expert answers are still used.
+    the stages that did run. The mob synthesis node is served by a pass-through client (no LLM call), so a
+    mob stage no longer truncates the stages after it.
     """
     from parrot.bots.flows.core.context import FlowContext
     from parrot.bots.flows.flow.flow import AgentsFlow
@@ -136,7 +154,7 @@ async def _run_scope(grid: ScopeGrid, registry: Any, prompt: str) -> dict[str, l
 
     definition = compile_scope(_ungated(grid), registry=registry)
     flow = AgentsFlow.from_definition(definition, agent_registry=object())
-    ctx = FlowContext(initial_task=prompt)
+    ctx = FlowContext(initial_task=prompt, synthesis_client=_PassThroughSynthesisClient())
     ctx.shared_data[EXPERT_REGISTRY_KEY] = registry
     result = await flow.run_flow(ctx)
     for node_id, error in result.errors.items():
