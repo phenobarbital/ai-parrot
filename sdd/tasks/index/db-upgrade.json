@@ -318,7 +318,7 @@
       "feature_id": "FEAT-884",
       "feature": "db-upgrade",
       "spec": "sdd/specs/db-upgrade.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -331,8 +331,9 @@
       "parallelism_notes": "Consumes core metadata/catalog from TASK-5554, complete bots SQL from TASK-5558, server metadata/providers from TASK-5560, and complete server resources from TASK-5561. Temporary build directories/venvs are task-local.",
       "assigned_to": null,
       "started_at": "2026-11-12T23:12:58+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5566-migration-wheel-tests.md"
+      "completed_at": "2026-11-13T11:30:16+00:00",
+      "file": "sdd/tasks/completed/TASK-5566-migration-wheel-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5567",

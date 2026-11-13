@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-884 — Packaged PostgreSQL migrations
 **Spec**: `sdd/specs/db-upgrade.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5554, TASK-5558, TASK-5560, TASK-5561
@@ -185,4 +185,4 @@ def test_packaging_contract() -> None:
 
 ## Completion Note
 
-Populated by the task finalizer after verified implementation.
+Verified at /sdd-done: both test_packaging.py files pass (18 passed, 0 skipped). Taken from pool attempt a3 (cherry-picked 9402eb494e, 931d5023f6); a1/a2 were discarded.
