@@ -27,9 +27,7 @@ _LOCK_POLL_SECONDS = 0.01
 _AGY_EXIT_CODE_RE = re.compile(r"^Command exited with code (\d+)\.$")
 _ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 _ABSOLUTE_PATH_RE = re.compile(r"(?:(?:[A-Za-z]:)?/)[^\s:'\"`]+")
-_TIMESTAMP_RE = re.compile(
-    r"\b\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?\b"
-)
+_TIMESTAMP_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?\b")
 _HEX_RE = re.compile(r"\b[0-9a-fA-F]{7,}\b")
 _NUMBER_RE = re.compile(r"\b\d+(?:\.\d+)?\b")
 _BEARER_RE = re.compile(r"\b(Bearer\s+)([^\s,;]+)", re.IGNORECASE)
@@ -38,7 +36,9 @@ _SECRET_ASSIGNMENT_RE = re.compile(
     r"\b([A-Za-z_][A-Za-z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASS|KEY|AUTH|CREDENTIAL)[A-Za-z0-9_]*)=([^\s&;]+)",
     re.IGNORECASE,
 )
-_TOKEN_RE = re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9_]{8,}|github_pat_[A-Za-z0-9_]{8,}|sk-[A-Za-z0-9_-]{8,}|xox[baprs]-[A-Za-z0-9-]{8,})\b")
+_TOKEN_RE = re.compile(
+    r"\b(?:gh[pousr]_[A-Za-z0-9_]{8,}|github_pat_[A-Za-z0-9_]{8,}|sk-[A-Za-z0-9_-]{8,}|xox[baprs]-[A-Za-z0-9-]{8,})\b"
+)
 _LONG_SECRET_RE = re.compile(r"\b(?:[0-9a-fA-F]{24,}|[A-Za-z0-9+/]{32,}={0,2})\b")
 
 
@@ -365,7 +365,11 @@ def load_triggers(plane_dir: Path, *, max_bytes: int) -> dict[str, list[dict[str
         return {}
     result: dict[str, list[dict[str, Any]]] = {}
     for executable, stubs in parsed.items():
-        if not isinstance(executable, str) or not isinstance(stubs, list) or not all(isinstance(stub, dict) for stub in stubs):
+        if (
+            not isinstance(executable, str)
+            or not isinstance(stubs, list)
+            or not all(isinstance(stub, dict) for stub in stubs)
+        ):
             return {}
         result[executable] = [dict(stub) for stub in stubs]
     return result
@@ -566,7 +570,23 @@ def _skip_env(tokens: list[str], index: int) -> int:
 
 def _skip_sudo(tokens: list[str], index: int) -> int:
     """Skip known sudo options and their values."""
-    options_with_values = {"-C", "-c", "-g", "-h", "-p", "-r", "-t", "-u", "--chdir", "--group", "--host", "--prompt", "--role", "--type", "--user"}
+    options_with_values = {
+        "-C",
+        "-c",
+        "-g",
+        "-h",
+        "-p",
+        "-r",
+        "-t",
+        "-u",
+        "--chdir",
+        "--group",
+        "--host",
+        "--prompt",
+        "--role",
+        "--type",
+        "--user",
+    }
     while index < len(tokens):
         token = tokens[index]
         if token == "--":
@@ -592,7 +612,15 @@ def _skip_timeout(tokens: list[str], index: int) -> int:
 
 def _skip_uv_run(tokens: list[str], index: int) -> int:
     """Skip common ``uv run`` options before its command."""
-    options_with_values = {"--with", "--with-editable", "--python", "--project", "--directory", "--isolated", "--env-file"}
+    options_with_values = {
+        "--with",
+        "--with-editable",
+        "--python",
+        "--project",
+        "--directory",
+        "--isolated",
+        "--env-file",
+    }
     while index < len(tokens) and tokens[index].startswith("-"):
         option = tokens[index]
         index += 2 if option in options_with_values else 1
