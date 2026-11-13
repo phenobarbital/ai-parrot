@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-891 — Procedural Graph Plane
 **Spec**: `sdd/specs/procedural-graph-plane.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5644, TASK-5651
@@ -229,4 +229,17 @@ async def test_engine_procedure_briefing(repo: Path) -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Status: done-with-issues — NOT IMPLEMENTED (gate failed).**
+
+The task's Step 0 GATE requires FEAT-887 (`sdd-experience-memory`) briefing code to exist. Verified on this branch
+(base includes all other FEAT-891 tasks):
+
+- `_experience_briefing_for` has 0 matches in `packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/engine.py`.
+- `experience brief` has 0 matches in `.claude/commands/sdd-start.md`.
+
+Per the task instructions, nothing was implemented and no alternative briefing channel was created. Two coder
+attempts (gpt-5.6-sol, gpt-5.6-terra) returned `empty_delivery`, consistent with the gate. No files were changed.
+
+Follow-up once FEAT-887 lands: implement `_procedure_briefing_for` in `sdd_coder/engine.py`, add the
+`parrot sdd procedure brief --task-file <task file>` step to the `sdd-start` command twins, regenerate packaged
+assets (`check_asset_sync.py --write`), and add the engine test. Filed in the ledger as a feature_gap.
