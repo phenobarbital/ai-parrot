@@ -17,6 +17,8 @@ import re
 import shutil
 import tempfile
 import time
+import uuid
+from collections.abc import Mapping
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Type
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -39,6 +41,7 @@ from parrot.flows.dev_loop.dispatchers._shared import (
     DispatchOutputValidationError,
 )
 from parrot.flows.dev_loop.dispatchers.gemini import GeminiCodeDispatcher
+from parrot.flows.dev_loop.experience import ExperienceInterceptor
 from parrot.flows.dev_loop.models import (
     ClaudeCodeDispatchProfile,
     CodexCodeDispatchProfile,
@@ -48,6 +51,8 @@ from parrot.flows.dev_loop.models import (
     GoogleCodingDispatchProfile,
 )
 from parrot.flows.dev_loop.session_state import SessionHost
+from parrot.knowledge.wiki.experience.fastpath import agy_exit_code, redact
+from parrot.knowledge.wiki.experience.models import CommandOutcome
 
 # agy's ``--sandbox`` can only read its workspace (the dispatch ``cwd``), so the
 # ``--json-schema`` file must live inside it. The directory carries its own
@@ -157,6 +162,103 @@ def parse_agy_tool_step(step_update: Any) -> Optional[AgyToolStep]:
         )
     except Exception:  # noqa: BLE001 - telemetry must never break a dispatch
         return None
+
+
+def _experience_outcome(event: Mapping[str, Any], *, conversation_id: str) -> CommandOutcome | None:
+    """Convert a terminal agy tool step into a command outcome via the shared parser.
+
+    Args:
+        event: One agy stream-json event carrying a ``step_update``.
+        conversation_id: The agy conversation identity used in the observation id.
+
+    Returns:
+        The outcome for a ``DONE`` ``run_command`` step with a command and step index;
+        ``None`` for anything else. ``ok`` is ``None`` when the output header carries no
+        exit code (the parser's ``exit_code`` is deliberately not trusted).
+    """
+    step = parse_agy_tool_step(event.get("step_update"))
+    if step is None or not step.done or step.name != "run_command":
+        return None
+    if step.step_index is None or not step.command:
+        return None
+    code = agy_exit_code(step.output or "")
+    return CommandOutcome(
+        command=step.command,
+        ok=None if code is None else code == 0,
+        error=redact(step.command_output or "")[:400],
+        observation_id=f"{conversation_id}:{step.step_index}",
+    )
+
+
+class _AgyExperienceCollector:
+    """Per-attempt collector of agy command outcomes for fallback replay.
+
+    Deduplicates repeated ``DONE`` updates by ``step_index`` and holds outcomes
+    until the stream reveals the agy conversation identity, so an observation id
+    is never invented from anything else.
+    """
+
+    def __init__(self) -> None:
+        self.conversation_id: Optional[str] = None
+        self.outcomes: List[CommandOutcome] = []
+        self._seen: set[int] = set()
+        self._pending: Dict[int, Mapping[str, Any]] = {}
+
+    def observe(self, event: Any) -> None:
+        """Record one stream event. Never raises."""
+        try:
+            self._observe(event)
+        except Exception:  # noqa: BLE001 - experience capture must never break a dispatch
+            logging.getLogger(__name__).debug("agy experience capture failed", exc_info=True)
+
+    def _observe(self, event: Any) -> None:
+        if not isinstance(event, dict):
+            return
+        self._learn_conversation(event)
+        su = event.get("step_update")
+        if (event.get("type") or event.get("event")) != "step_update" or not isinstance(su, dict):
+            return
+        step = parse_agy_tool_step(su)
+        if step is None or not step.done or step.name != "run_command":
+            return
+        if step.step_index is None or not step.command or step.step_index in self._seen:
+            return
+        self._seen.add(step.step_index)
+        self._pending[step.step_index] = event
+        self._flush()
+
+    def _learn_conversation(self, event: Dict[str, Any]) -> None:
+        if self.conversation_id:
+            return
+        sources: List[Any] = [event, event.get("step_update"), event.get("result"), event.get("init")]
+        for source in sources:
+            if not isinstance(source, dict):
+                continue
+            for key in ("conversation_id", "conversationId"):
+                value = source.get(key)
+                if isinstance(value, str) and value:
+                    self.conversation_id = value
+                    self._flush()
+                    return
+
+    def _flush(self) -> None:
+        if not self.conversation_id:
+            return
+        pending, self._pending = self._pending, {}
+        for index in sorted(pending):
+            outcome = _experience_outcome(pending[index], conversation_id=self.conversation_id)
+            if outcome is not None:
+                self.outcomes.append(outcome)
+
+    def finish(self) -> List[CommandOutcome]:
+        """Return collected outcomes, discarding any whose conversation was never identified."""
+        self._flush()
+        if self._pending:
+            logging.getLogger(__name__).debug(
+                "dropping %d agy command outcome(s): conversation identity never reported", len(self._pending)
+            )
+            self._pending = {}
+        return list(self.outcomes)
 
 
 class GoogleCodingDispatcher:
@@ -280,6 +382,13 @@ class GoogleCodingDispatcher:
             raise
 
         async with self._semaphore:
+            collector = _AgyExperienceCollector()
+            attempt_uid = f"{run_id}:{node_id}:{uuid.uuid4().hex[:12]}"
+            interceptor: Optional[ExperienceInterceptor] = None
+            try:
+                interceptor = ExperienceInterceptor(session=attempt_uid, cwd=cwd, seat=f"agy:{node_id}")
+            except Exception:  # noqa: BLE001 - experience memory is fail-open
+                self.logger.debug("experience interceptor unavailable", exc_info=True)
             try:
                 schema_path = self._materialize_json_schema(output_model, cwd)
                 prompt = self._build_agy_prompt(profile, brief, output_model, cwd=cwd)
@@ -303,13 +412,18 @@ class GoogleCodingDispatcher:
 
                 try:
                     async with asyncio.timeout(profile.timeout_seconds):
-                        process = await self._create_process(command, cwd=cwd)
+                        process = await self._create_process(
+                            command,
+                            cwd=cwd,
+                            env={"PARROT_EXPERIENCE_SESSION": attempt_uid},
+                        )
                         stderr_task = asyncio.create_task(self._read_stream(process.stderr))
                         result_data, assistant_text = await self._stream_stdout_events(
                             process.stdout,
                             stream_key=stream_key,
                             run_id=run_id,
                             node_id=node_id,
+                            experience=collector,
                         )
                         return_code = await process.wait()
                         stderr = await stderr_task
@@ -389,10 +503,16 @@ class GoogleCodingDispatcher:
                 )
                 return result
             finally:
-                _SESSION_HOST_CTX.reset(_host_token)
-                _DISPATCH_LABELS_CTX.reset(_labels_token)
-                if schema_path:
-                    self._cleanup_json_schema(schema_path)
+                try:
+                    if interceptor is not None:
+                        await interceptor.replay(collector.finish())
+                except Exception:  # noqa: BLE001 - replay is fail-open and must not mask the dispatch result
+                    self.logger.debug("experience replay failed", exc_info=True)
+                finally:
+                    _SESSION_HOST_CTX.reset(_host_token)
+                    _DISPATCH_LABELS_CTX.reset(_labels_token)
+                    if schema_path:
+                        self._cleanup_json_schema(schema_path)
 
     def _build_command(
         self,
@@ -506,7 +626,15 @@ class GoogleCodingDispatcher:
         if os.path.basename(schema_dir).startswith(_SCHEMA_DIR_PREFIX):
             shutil.rmtree(schema_dir, ignore_errors=True)
 
-    async def _create_process(self, command: Sequence[str], cwd: str) -> Any:
+    async def _create_process(
+        self,
+        command: Sequence[str],
+        cwd: str,
+        env: Optional[Mapping[str, str]] = None,
+    ) -> Any:
+        extra: Dict[str, Any] = {}
+        if env is not None:
+            extra["env"] = {**os.environ, **env}
         return await asyncio.create_subprocess_exec(
             *command,
             cwd=cwd,
@@ -514,6 +642,7 @@ class GoogleCodingDispatcher:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             limit=8 * 1024 * 1024,
+            **extra,
         )
 
     async def _read_stream(self, stream: Any) -> str:
@@ -531,6 +660,7 @@ class GoogleCodingDispatcher:
         stream_key: str,
         run_id: str,
         node_id: str,
+        experience: Optional[_AgyExperienceCollector] = None,
     ) -> Tuple[Optional[Dict[str, Any]], str]:
         if stdout is None:
             return None, ""
@@ -555,6 +685,9 @@ class GoogleCodingDispatcher:
                     payload={"raw_line": line},
                 )
                 continue
+
+            if experience is not None:
+                experience.observe(event)
 
             event_type = event.get("type") or event.get("event")
             if event_type == "result":
