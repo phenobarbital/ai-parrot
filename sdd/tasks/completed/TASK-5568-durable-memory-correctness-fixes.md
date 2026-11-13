@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-886 — Durable Conversation Memory
 **Spec**: `sdd/specs/durable-conversation-memory.spec.md` (Module 1)
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -493,10 +493,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented all four fixes (handler memory injection removed; ask_stream commits compaction unless the stream errored; delete_turn clears the hot tier; CHAT_HOT_TTL_HOURS drives history_ttl).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (sequential fallback; parrot-sdd-coder MCP unavailable)
+**Date**: 2026-11-12
+**Tests**: 47 passed (new 3 files + test_bot_history_wiring + test_chat_storage + test_agenttalk_tenant_metadata); ruff clean. No skips.
+**Mutation evidence**: revert `compaction=commit` -> test_ask_stream_commits_compaction RED; drop hot-tier call -> test_delete_turn_clears_hot_tier RED; re-add RedisConversation import to handler -> test_agenttalk_does_not_inject_memory RED. All restored by re-applying the edit.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. Note: InMemoryConversation.add_turn needs create_history first, so the hot-tier test seeds via create_history.
