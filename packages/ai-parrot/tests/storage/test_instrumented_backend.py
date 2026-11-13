@@ -46,6 +46,7 @@ class _Stub(ConversationBackend):
     async def max_sequence(self, *a, **kw): return 0
     async def put_tombstone(self, *a, **kw): ...
     async def deleted_turn_ids(self, *a, **kw): return set()
+    async def deleted_session_ids(self, *a, **kw): return {"s"}
     async def is_deleted(self, *a, **kw): raise RuntimeError("guard-boom")
     async def get_index_state(self, *a, **kw): return "ready"
     async def backfill_batch(self, *a, **kw): return BackfillBatch(0, None, ())
@@ -123,10 +124,11 @@ async def test_new_operations_are_delegated_and_measured():
     assert await b.get_index_state("u", "a", "s") == "ready"
     assert (await b.backfill_batch(None, 10)).next_cursor is None
     await b.put_tombstone("u", "a", "s")
+    assert await b.deleted_session_ids("u", "a", ["s", "t"]) == {"s"}
     with pytest.raises(RuntimeError, match="guard-boom"):
         await b.is_deleted("u", "a", "s")
     assert [c[1] for c in metrics.error_calls] == ["is_deleted"]
     assert [c[1] for c in metrics.latency_calls] == [
         "query_turn_window", "max_sequence", "get_index_state",
-        "backfill_batch", "put_tombstone", "is_deleted",
+        "backfill_batch", "put_tombstone", "deleted_session_ids", "is_deleted",
     ]

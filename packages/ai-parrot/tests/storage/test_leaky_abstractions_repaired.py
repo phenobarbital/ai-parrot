@@ -55,6 +55,7 @@ class _StubBackend(ConversationBackend):
     async def max_sequence(self, *a, **kw): return 0
     async def put_tombstone(self, *a, **kw): ...
     async def deleted_turn_ids(self, *a, **kw): return set()
+    async def deleted_session_ids(self, *a, **kw): return set()
     async def is_deleted(self, *a, **kw): return False
     async def get_index_state(self, *a, **kw): return "ready"
     async def backfill_batch(self, *a, **kw): return None

@@ -23,7 +23,16 @@ from parrot.storage import (
 from . import durable_contract
 from .durable_contract import ALL_CHECKS, DurableHarness, check_window_newest_ascending
 
-NEW_ABSTRACT = {"query_turn_window", "max_sequence", "put_tombstone", "is_deleted", "get_index_state", "backfill_batch"}
+NEW_ABSTRACT = {
+    "query_turn_window",
+    "max_sequence",
+    "put_tombstone",
+    "is_deleted",
+    "get_index_state",
+    "backfill_batch",
+    "deleted_turn_ids",
+    "deleted_session_ids",
+}
 
 
 def test_error_hierarchy():
@@ -36,7 +45,7 @@ def test_error_hierarchy():
 
 
 def test_new_operations_are_abstract():
-    """The six new operations are @abstractmethod; the ABC is still not instantiable."""
+    """The durable operations are @abstractmethod; the ABC is still not instantiable."""
     assert NEW_ABSTRACT <= set(ConversationBackend.__abstractmethods__)
     with pytest.raises(TypeError):
         ConversationBackend()  # type: ignore[abstract]
@@ -142,9 +151,14 @@ class _ReferenceBackend(ConversationBackend):
         self._need()
         return {t for (u, a, s_, t) in self.tombs if (u, a, s_) == (user_id, agent_id, session_id) and t}
 
+    async def deleted_session_ids(self, user_id, agent_id, session_ids):
+        self._need()
+        return {s for s in session_ids if (user_id, agent_id, s, None) in self.tombs}
+
     async def is_deleted(self, user_id, agent_id, session_id, turn_id=None):
         self._need()
-        return (user_id, agent_id, session_id, turn_id) in self.tombs
+        session_gone = (user_id, agent_id, session_id, None) in self.tombs
+        return session_gone or (turn_id is not None and (user_id, agent_id, session_id, turn_id) in self.tombs)
 
     async def get_index_state(self, user_id, agent_id, session_id):
         return self.state.get((user_id, agent_id, session_id), "ready")

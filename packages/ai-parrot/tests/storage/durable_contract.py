@@ -63,7 +63,8 @@ async def _window(b: ConversationBackend, session: str, limit: int = 50) -> List
 
 
 async def check_disconnected_raises(h: DurableHarness) -> None:
-    """put_turn / query_turn_window / is_deleted raise StorageUnavailableError on a disconnected backend."""
+    """put_turn / query_turn_window / is_deleted / deleted_session_ids raise StorageUnavailableError on a
+    disconnected backend."""
     await h.disconnect()
     b = h.backend
     with pytest.raises(StorageUnavailableError):
@@ -72,6 +73,8 @@ async def check_disconnected_raises(h: DurableHarness) -> None:
         await _window(b, "s-disc")
     with pytest.raises(StorageUnavailableError):
         await b.is_deleted(USER, AGENT, "s-disc")
+    with pytest.raises(StorageUnavailableError):
+        await b.deleted_session_ids(USER, AGENT, ["s-disc"])
 
 
 async def check_failed_write_raises(h: DurableHarness) -> None:
@@ -213,6 +216,40 @@ async def check_deleted_turn_ids(h: DurableHarness) -> None:
     assert await b.deleted_turn_ids(USER, AGENT, s) == {"t-a", "t-b"}
 
 
+async def check_deleted_session_ids(h: DurableHarness) -> None:
+    """deleted_session_ids returns exactly the SESSION-tombstoned members of its input in one batched read:
+    no turn tombstone, no other agent's, no other user's, no id that was not asked for; empty input → empty set;
+    150 ids cross DynamoDB's 100-key BatchGetItem chunk."""
+    b = h.backend
+    asked = [f"s-many-{i:03d}" for i in range(150)]
+    assert await b.deleted_session_ids(USER, AGENT, []) == set()
+    assert await b.deleted_session_ids(USER, AGENT, asked) == set()
+    for sid in ("s-many-000", "s-many-099", "s-many-149"):
+        await b.put_tombstone(USER, AGENT, sid)
+    await b.put_tombstone(USER, AGENT, "s-many-149")  # idempotent
+    await b.put_tombstone(USER, AGENT, "s-many-050", "t-1")  # a turn tombstone is not a session tombstone
+    await b.put_tombstone(USER, AGENT + "-2", "s-many-001")  # another agent's
+    await b.put_tombstone(USER + "-2", AGENT, "s-many-002")  # another user's
+    await b.put_tombstone(USER, AGENT, "s-not-asked")
+    assert await b.deleted_session_ids(USER, AGENT, asked) == {"s-many-000", "s-many-099", "s-many-149"}
+    assert await b.deleted_session_ids(USER, AGENT, ["s-many-099", "s-many-099", "s-many-098"]) == {"s-many-099"}
+
+
+async def check_is_deleted_turn_includes_session(h: DurableHarness) -> None:
+    """is_deleted(…, turn_id) means "the session OR that turn is tombstoned"; a turn tombstone never deletes
+    the session."""
+    b = h.backend
+    turn_only, whole = "s-turn-only", "s-whole"
+    await b.put_tombstone(USER, AGENT, turn_only, "t-gone")
+    assert await b.is_deleted(USER, AGENT, turn_only, "t-gone") is True
+    assert await b.is_deleted(USER, AGENT, turn_only, "t-alive") is False
+    assert await b.is_deleted(USER, AGENT, turn_only) is False
+    assert await b.is_deleted(USER, AGENT, whole, "t-any") is False
+    await b.put_tombstone(USER, AGENT, whole)
+    assert await b.is_deleted(USER, AGENT, whole) is True
+    assert await b.is_deleted(USER, AGENT, whole, "t-any") is True  # never stored, still deleted with its session
+
+
 ALL_CHECKS: List[Callable[[DurableHarness], Awaitable[None]]] = [
     check_disconnected_raises,
     check_failed_write_raises,
@@ -224,4 +261,6 @@ ALL_CHECKS: List[Callable[[DurableHarness], Awaitable[None]]] = [
     check_max_sequence,
     check_backfill_batch_resumable,
     check_deleted_turn_ids,
+    check_deleted_session_ids,
+    check_is_deleted_turn_includes_session,
 ]

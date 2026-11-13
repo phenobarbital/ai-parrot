@@ -13,7 +13,7 @@ import asyncio
 import json
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 import aioboto3
 from botocore.exceptions import ClientError, BotoCoreError
@@ -711,15 +711,37 @@ class ConversationDynamoDB(ConversationBackend):
         except (ClientError, BotoCoreError) as exc:
             raise StorageUnavailableError(f"DynamoDB deleted_turn_ids failed: {exc}") from exc
 
+    async def deleted_session_ids(self, user_id: str, agent_id: str, session_ids: Sequence[str]) -> Set[str]:
+        """The session-tombstoned members of ``session_ids``: consistent ``BatchGetItem`` of ``TOMB#<session>``
+        keys, at most 100 keys per request, ``UnprocessedKeys`` retried by ``_batch_get``."""
+        self._require_connection()
+        pk = self._build_pk(user_id, agent_id)
+        by_sk = {self._sk_tomb(s): s for s in dict.fromkeys(session_ids)}  # BatchGetItem rejects duplicate keys
+        sks = list(by_sk)
+        found: Dict[str, dict] = {}
+        try:
+            for start in range(0, len(sks), 100):
+                found.update(await self._batch_get([{"PK": pk, "SK": sk} for sk in sks[start : start + 100]]))
+        except (ClientError, BotoCoreError) as exc:
+            raise StorageUnavailableError(f"DynamoDB deleted_session_ids failed: {exc}") from exc
+        return {by_sk[sk] for sk in found if sk in by_sk}
+
     async def is_deleted(
         self, user_id: str, agent_id: str, session_id: str, turn_id: Optional[str] = None
     ) -> bool:
-        """Whether the session (or session OR this turn) is tombstoned; raises when it cannot be determined."""
+        """Whether the session (or session OR this turn) is tombstoned; raises when it cannot be determined.
+
+        With ``turn_id`` both tombstone keys are read in ONE consistent ``BatchGetItem`` round trip.
+        """
         self._require_connection()
         pk = self._build_pk(user_id, agent_id)
-        if await self._get_item(pk, self._sk_tomb(session_id)) is not None:
-            return True
-        return turn_id is not None and await self._get_item(pk, self._sk_tomb(session_id, turn_id)) is not None
+        if turn_id is None:
+            return await self._get_item(pk, self._sk_tomb(session_id)) is not None
+        keys = [{"PK": pk, "SK": self._sk_tomb(session_id)}, {"PK": pk, "SK": self._sk_tomb(session_id, turn_id)}]
+        try:
+            return bool(await self._batch_get(keys))
+        except (ClientError, BotoCoreError) as exc:
+            raise StorageUnavailableError(f"DynamoDB is_deleted failed: {exc}") from exc
 
     async def get_index_state(self, user_id: str, agent_id: str, session_id: str) -> str:
         """``'ready'`` | ``'pending'`` | ``'invalid'`` (marker fast path, otherwise derived)."""

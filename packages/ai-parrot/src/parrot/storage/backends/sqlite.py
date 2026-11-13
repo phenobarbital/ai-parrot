@@ -21,7 +21,7 @@ import sqlite3
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 import aiosqlite
 from navconfig.logging import logging
@@ -730,6 +730,25 @@ class ConversationSQLiteBackend(ConversationBackend):
             return {row["turn_id"] for row in await cursor.fetchall()}
         except sqlite3.Error as exc:
             raise StorageUnavailableError(f"SQLite deleted_turn_ids failed for session {session_id}: {exc}") from exc
+
+    async def deleted_session_ids(self, user_id: str, agent_id: str, session_ids: Sequence[str]) -> Set[str]:
+        """The session-tombstoned members of ``session_ids``: one query per 500 ids (below SQLite's variable limit)."""
+        self._require_connection()
+        wanted = list(dict.fromkeys(session_ids))
+        gone: Set[str] = set()
+        try:
+            for start in range(0, len(wanted), 500):
+                chunk = wanted[start : start + 500]
+                marks = ", ".join("?" * len(chunk))
+                cursor = await self._conn.execute(
+                    "SELECT session_id FROM conversation_tombstones"
+                    f" WHERE user_id=? AND agent_id=? AND turn_id='' AND session_id IN ({marks})",
+                    (user_id, agent_id, *chunk),
+                )
+                gone.update(row["session_id"] for row in await cursor.fetchall())
+        except sqlite3.Error as exc:
+            raise StorageUnavailableError(f"SQLite deleted_session_ids failed: {exc}") from exc
+        return gone
 
     async def is_deleted(
         self, user_id: str, agent_id: str, session_id: str, turn_id: Optional[str] = None

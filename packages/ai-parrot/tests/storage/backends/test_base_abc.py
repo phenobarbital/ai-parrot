@@ -14,7 +14,7 @@ EXPECTED_ABSTRACT_METHODS = {
     "put_artifact", "get_artifact", "query_artifacts",
     "delete_artifact", "delete_session_artifacts",
     "query_turn_window", "max_sequence", "put_tombstone", "is_deleted",
-    "get_index_state", "backfill_batch",
+    "get_index_state", "backfill_batch", "deleted_turn_ids", "deleted_session_ids",
 }
 
 
@@ -56,6 +56,7 @@ def test_build_overflow_prefix_default_layout():
         async def max_sequence(self, *a, **kw): return 0
         async def put_tombstone(self, *a, **kw): ...
         async def deleted_turn_ids(self, *a, **kw): return set()
+        async def deleted_session_ids(self, *a, **kw): return set()
         async def is_deleted(self, *a, **kw): return False
         async def get_index_state(self, *a, **kw): return "ready"
         async def backfill_batch(self, *a, **kw): return None
@@ -94,6 +95,7 @@ def test_stub_subclass_can_be_instantiated():
         async def max_sequence(self, *a, **kw): return 0
         async def put_tombstone(self, *a, **kw): ...
         async def deleted_turn_ids(self, *a, **kw): return set()
+        async def deleted_session_ids(self, *a, **kw): return set()
         async def is_deleted(self, *a, **kw): return False
         async def get_index_state(self, *a, **kw): return "ready"
         async def backfill_batch(self, *a, **kw): return None
