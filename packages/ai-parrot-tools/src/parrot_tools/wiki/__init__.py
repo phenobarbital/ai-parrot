@@ -30,6 +30,8 @@ _EXPORTS: dict[str, str] = {
     "create_decision_tools": "parrot_tools.wiki.decisions",
     "SchemaPlaneToolkit": "parrot_tools.wiki.schema",
     "create_schema_tools": "parrot_tools.wiki.schema",
+    "WikiProcedureNextTool": "parrot_tools.wiki.procedure",
+    "create_procedure_tools": "parrot_tools.wiki.procedure",
 }
 __all__ = list(_EXPORTS)
 
