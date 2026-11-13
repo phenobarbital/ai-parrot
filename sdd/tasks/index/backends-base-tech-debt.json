@@ -44,11 +44,11 @@
     {
       "id": "TASK-5687",
       "slug": "deleted-session-ids-contract",
-      "title": "Backend contract \u2014 batched deleted_session_ids and session-or-turn is_deleted",
+      "title": "Backend contract — batched deleted_session_ids and session-or-turn is_deleted",
       "feature_id": "FEAT-897",
       "feature": "backends-base-tech-debt",
       "spec": "sdd/specs/backends-base-tech-debt.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -56,13 +56,15 @@
       "parallelism_notes": "backend files + storage test stubs; TASK-5688 depends on the new abstract method",
       "assigned_to": "claude-code:sdd-fix",
       "discovered_from": "issue:6393789b3d37",
-      "file": "sdd/tasks/active/TASK-5687-deleted-session-ids-contract.md",
-      "started_at": "2026-11-13T23:41:33+00:00"
+      "file": "sdd/tasks/completed/TASK-5687-deleted-session-ids-contract.md",
+      "started_at": "2026-11-13T23:41:33+00:00",
+      "completed_at": "2026-11-13T23:47:25+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-5688",
       "slug": "chatstorage-batched-listing-guard",
-      "title": "ChatStorage \u2014 batched listing guard, limit after filtering, one-read fence, docs",
+      "title": "ChatStorage — batched listing guard, limit after filtering, one-read fence, docs",
       "feature_id": "FEAT-897",
       "feature": "backends-base-tech-debt",
       "spec": "sdd/specs/backends-base-tech-debt.spec.md",
