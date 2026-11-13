@@ -31,6 +31,11 @@ parrot sdd experts promote CONTRIBUTION FINDING_ID
 4. Writes one `Contribution` per expert: `sdd/state/<FEAT-ID>/contributions/<expert>.json`, or
    `sdd/state/.contributions/<doc-slug>/<expert>.json` when no `--feature` is given.
 
+`--feature` must look like `FEAT-<number>` (it becomes a directory name); anything else is a usage error. Apart from that,
+consult never fails the SDD flow: any error while consulting is logged and reported as one `Expert consult skipped: ...` line
+with exit code 0. The document is passed to the experts as escaped data inside a `<document>` wrapper, so text in it cannot close the
+wrapper.
+
 Each contribution stores the SHA-256 of the document; any contribution in the directory made for a different digest is
 marked `stale: true`.
 

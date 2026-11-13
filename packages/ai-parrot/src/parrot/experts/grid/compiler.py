@@ -26,12 +26,32 @@ def _expert(registry: "ExpertRegistry", name: str) -> Any:
         raise ScopeGridError(ScopeGridErrorCode.UNKNOWN_EXPERT, f"unknown expert {name!r}") from exc
 
 
+def _check_inline_rule_clashes(stage: ExpertStageConfig, registry: "ExpertRegistry") -> None:
+    """Refuse an inline stage whose experts declare the same governance rule line.
+
+    Uses each expert bundle's own rules (static, so this stays a pure compile-time check). Workspace-level rule
+    layers are only known at run time; ``build_inline_conductor`` repeats the check there as a backstop.
+    """
+    owners: dict[str, str] = {}
+    for name in stage.experts:
+        rules = _expert(registry, name).bundle.rules
+        for line in () if rules is None else (*rules.mandated, *rules.forbidden):
+            other = owners.setdefault(line, name)
+            if other != name:
+                raise ScopeGridError(
+                    ScopeGridErrorCode.RULE_CLASH,
+                    f"inline stage {stage.stage!r}: rule {line!r} is declared by both {other!r} and {name!r}",
+                )
+
+
 def _validate_stage(stage: ExpertStageConfig, registry: "ExpertRegistry") -> None:
     """Validate registry and gate contracts used by one stage."""
     for name in stage.experts:
         _expert(registry, name)
     if stage.conductor is not None:
         _expert(registry, stage.conductor)
+    if stage.mode == "inline":
+        _check_inline_rule_clashes(stage, registry)
     if stage.gate is None:
         return
     if not is_registered(stage.gate.kind):

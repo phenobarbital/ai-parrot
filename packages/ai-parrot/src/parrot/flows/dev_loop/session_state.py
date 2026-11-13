@@ -76,7 +76,14 @@ from typing import (
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from parrot.bots.flows.core.gates import GateError, GateErrorCode, GateHost, GateRecord, GateSpec, is_registered
+from parrot.bots.flows.core.gates import (
+    AUTO_APPROVER,
+    GateError,
+    GateErrorCode,
+    GateRecord,
+    GateSpec,
+    is_registered,
+)
 
 # ─────────────────────────────────────────────────────────────────────
 # Channel URIs — neutral scheme. Mirrors AHP's channel *model* without
@@ -1346,7 +1353,12 @@ def reduce_root(state: RunRegistryState, action: RootAction) -> RunRegistryState
 
 
 class _SessionGateStore:
-    """Session-scoped in-memory store used by the synchronous dev-loop host."""
+    """Session-scoped in-memory store used by the synchronous dev-loop host.
+
+    ``SessionHost.resolve_gate`` / ``expire_due_gates`` are synchronous and sequenced through ``apply``, while
+    ``GateHost`` is async, so the legacy host applies the same transitions to these ``GateRecord`` objects itself
+    (sharing ``AUTO_APPROVER``) instead of delegating. Keep the two in step when changing expiry policy.
+    """
 
     def __init__(self) -> None:
         """Initialize an empty gate record mapping."""
@@ -1409,7 +1421,6 @@ class SessionHost:
 
         register_devloop_gate_kinds()
         self._gate_store = _SessionGateStore()
-        self._gate_host = GateHost(self._gate_store)
 
     def _seed_gate_store(self) -> None:
         """Refresh generic records from the authoritative dev-loop state."""
@@ -1638,7 +1649,7 @@ class SessionHost:
                 updated = record.model_copy(
                     update={
                         "status": "approved",
-                        "resolved_by": "system:ttl-auto-approve",
+                        "resolved_by": AUTO_APPROVER,
                         "resolved_at": current_time,
                         "comment": "TTL expired; fail-open policy.",
                     }

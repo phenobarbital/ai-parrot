@@ -18,7 +18,7 @@ human approval points needs no new orchestrator.
 |---|---|
 | `subagent` | exactly one expert, inside `activate_expert` (so spans carry `expert.*` attributes) |
 | `mob` | every listed expert concurrently; a failed expert is skipped unless `strict`, and all failing raises `ExpertStageError`. The compiler appends a `<stage>-synthesis` node (stock `SynthesisNode`, needs `ctx.synthesis_client`) |
-| `inline` | one `conductor` agent receives each expert's rules and knowledge layers under `expert_rules:<slug>` / `expert_knowledge:<slug>` (`build_inline_conductor`); two experts declaring the same `ALWAYS`/`NEVER` rule raise `InlineCompositionError` |
+| `inline` | one `conductor` agent receives each expert's rules and knowledge layers under `expert_rules:<slug>` / `expert_knowledge:<slug>` (`build_inline_conductor`); two experts declaring the same `ALWAYS`/`NEVER` rule are refused at compile time (`RULE_CLASH`, from the bundles' own rules) and, for workspace-level rule layers only known at run time, again with `InlineCompositionError` |
 | `pipeline` | compiled into a chain of `<stage>-<n>` subagent nodes, one per expert; the stage gate sits on the last one |
 
 A stage with a `gate` (`GateSpec`) opens it through the [generic gate host](../flows/generic-gate-host.md)
@@ -58,7 +58,7 @@ definition = compile_scope(grid, registry=expert_registry)  # FlowDefinition
 ```
 
 `compile_scope` raises `ScopeGridError` with one of `UNKNOWN_EXPERT`, `CAPABILITY_MISMATCH`,
-`UNKNOWN_GATE_KIND`, `CYCLE` or `INVALID` (`ScopeGridErrorCode`). The nodes read `expert_registry`
+`UNKNOWN_GATE_KIND`, `RULE_CLASH`, `CYCLE` or `INVALID` (`ScopeGridErrorCode`). The nodes read `expert_registry`
 (required), `gate_host` (when a stage has a gate), `run_id` and `tenant` from `FlowContext.shared_data`.
 
 ## Running: `parrot experts`

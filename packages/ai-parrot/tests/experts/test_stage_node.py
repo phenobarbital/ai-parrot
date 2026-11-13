@@ -236,6 +236,19 @@ async def test_stage_input_includes_upstream_results(episodes):
 
 
 @pytest.mark.asyncio
+async def test_first_stage_does_not_receive_the_task_twice(episodes):
+    """The compiled flow's start node echoes the task; it must not be appended again as 'upstream'."""
+    expert = FakeExpert("a", "answer a")
+    node = _node(stage="intake", experts=["a"], mode="subagent")
+    echo = NodeResult(node_id="__start__", node_name="start", task="t", result="review the patch")
+
+    await node.execute(_ctx(FakeRegistry(expert)), {"__start__": echo})
+
+    assert expert.prompts[0].count("review the patch") == 1
+    assert "Upstream results" not in expert.prompts[0]
+
+
+@pytest.mark.asyncio
 async def test_stage_mob_attributed_without_synthesis_client(episodes, spans):
     registry = FakeRegistry(FakeExpert("a", "answer a"), FakeExpert("b", "answer b"))
     node = _node(stage="review", experts=["a", "b"], mode="mob")

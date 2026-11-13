@@ -89,6 +89,10 @@ _CONFIG_FIELDS = frozenset(ExpertStageConfig.model_fields)
 _CONDUCTOR_LOCKS: "weakref.WeakKeyDictionary[Any, asyncio.Lock]" = weakref.WeakKeyDictionary()
 
 
+#: Id of the start node ``compile_scope`` emits; its output only echoes the task.
+_START_NODE_ID = "__start__"
+
+
 class ExpertStageError(Exception):
     """An expert stage could not produce an answer."""
 
@@ -266,9 +270,13 @@ class ExpertStageNode(Node):
     def _stage_input(ctx: FlowContext, deps: Any) -> str:
         """Build the stage input from the flow task plus upstream stage outputs."""
         task = getattr(ctx, "initial_task", "") or ""
-        if not deps:
+        # The flow's start node echoes the task; the task is already the head of the input, so skip that echo.
+        upstream_items = [
+            (node_id, _text_of(value)) for node_id, value in dict(deps or {}).items() if node_id != _START_NODE_ID
+        ]
+        if not upstream_items:
             return task
-        upstream = "\n\n".join(f"### {node_id}\n{_text_of(value)}" for node_id, value in dict(deps).items())
+        upstream = "\n\n".join(f"### {node_id}\n{text}" for node_id, text in upstream_items)
         return f"{task}\n\n## Upstream results\n{upstream}" if task else upstream
 
     # ── modes ─────────────────────────────────────────────────────────────
@@ -302,7 +310,7 @@ class ExpertStageNode(Node):
         )
         outcomes: dict[str, dict[str, Any]] = {}
         answers: dict[str, str] = {}
-        for slug, result in zip(slugs, results):
+        for slug, result in zip(slugs, results, strict=True):
             if isinstance(result, BaseException):
                 if not isinstance(result, Exception):
                     raise result
@@ -383,6 +391,6 @@ class ExpertStageNode(Node):
             )
             calls.append(record_episode(wiki_toolkit, slug, episode))
         results = await asyncio.gather(*calls, return_exceptions=True)
-        for slug, result in zip(outcomes, results):
+        for slug, result in zip(outcomes, results, strict=True):
             if isinstance(result, Exception):
                 self.logger.warning("expert_stage %s: episode for %s not recorded: %s", self.config.stage, slug, result)

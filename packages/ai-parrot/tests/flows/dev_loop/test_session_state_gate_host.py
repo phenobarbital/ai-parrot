@@ -1,14 +1,14 @@
-"""Delegation tests for SessionHost's generic GateHost bridge."""
+"""Tests for SessionHost's mapping onto the generic gate records (it applies the transitions itself, synchronously)."""
 
 from __future__ import annotations
 
-from parrot.bots.flows.core.gates import GateHost, GateSpec, is_registered
+from parrot.bots.flows.core.gates import GateSpec, is_registered
 from parrot.flows.dev_loop.gate_adapter import DevLoopGateAdapter
 from parrot.flows.dev_loop.session_state import SessionHost
 
 
-def test_open_gate_delegates_to_generic_host() -> None:
-    """Opening builds a GateSpec and maps the generic record into the legacy action."""
+def test_open_gate_builds_a_generic_record_and_maps_it_to_the_legacy_action() -> None:
+    """Opening builds a GateSpec/GateRecord and maps the generic record into the legacy action."""
     host = SessionHost("run-delegation-open")
     gate_id, envelope = host.open_gate(
         kind="open_questions",
@@ -21,8 +21,6 @@ def test_open_gate_delegates_to_generic_host() -> None:
         questions=["Which store?"],
     )
 
-    assert isinstance(host._gate_host, GateHost)
-    assert host._gate_host.store is host._gate_store
     assert is_registered("open_questions")
     record = host._gate_store.records[gate_id]
     assert record.spec == GateSpec(
@@ -41,7 +39,7 @@ def test_open_gate_delegates_to_generic_host() -> None:
 
 
 def test_resolve_gate_delegates_and_preserves_legacy_action() -> None:
-    """Resolving seeds GateHost from state and translates its result to GateResolved."""
+    """Resolving seeds the generic records from state and translates the result to GateResolved."""
     host = SessionHost("run-delegation-resolve")
     gate_id, _ = host.open_gate(kind="manual_criterion", node_id="qa", title="Review")
     envelope = host.resolve_gate(gate_id, "approved", resolved_by="human:alice", comment="Looks good")

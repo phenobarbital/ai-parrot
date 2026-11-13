@@ -12,6 +12,7 @@ from parrot.experts.cli import EXPERT_GATE_KINDS
 from parrot.bots.flows.core.gates import register_gate_kind
 from parrot.bots.flows.flow.flow import AgentsFlow
 from parrot.experts.grid.compiler import compile_scope
+from parrot.experts.models import RuleSet
 from parrot.experts.grid.loader import BUNDLED_SCOPES_DIR, load_scopes
 from parrot.experts.grid.models import ScopeGrid, ScopeGridError, ScopeGridErrorCode
 from parrot.experts.loader import discover_expert_bundles
@@ -20,10 +21,13 @@ from parrot.experts.loader import discover_expert_bundles
 class FakeRegistry:
     """Minimal registry exposing the compiler's synchronous lookup contract."""
 
-    def __init__(self, capabilities: dict[str, list[str]]) -> None:
-        """Build fake experts with the manifest capability shape."""
+    def __init__(self, capabilities: dict[str, list[str]], rules: dict[str, RuleSet] | None = None) -> None:
+        """Build fake experts with the real bundle shape: ``manifest.capabilities`` and ``rules`` (or ``None``)."""
+        rules = rules or {}
         self._experts = {
-            name: SimpleNamespace(bundle=SimpleNamespace(manifest=SimpleNamespace(capabilities=values)))
+            name: SimpleNamespace(
+                bundle=SimpleNamespace(manifest=SimpleNamespace(capabilities=values), rules=rules.get(name))
+            )
             for name, values in capabilities.items()
         }
 
@@ -144,3 +148,48 @@ def test_workspace_scope_shadows_bundled_and_expert_discovery_ignores_scopes(tmp
     assert scopes["security-patch"].stages[0].stage == "local"
     assert bundles == []
     assert skipped == []
+
+
+def _rule_set(*lines: str) -> RuleSet:
+    return RuleSet(
+        layer="expert",
+        source=Path("rules/governance.md"),
+        revision="r1",
+        mandated=[line for line in lines if line.startswith("ALWAYS ")],
+        forbidden=[line for line in lines if line.startswith("NEVER ")],
+    )
+
+
+def _inline_grid(*experts: str) -> ScopeGrid:
+    return ScopeGrid.model_validate(
+        {"scope": "s", "stages": [{"stage": "i", "experts": list(experts), "mode": "inline", "conductor": "conductor"}]}
+    )
+
+
+def test_inline_rule_clash_fails_at_compile_time() -> None:
+    """Two inlined experts declaring the same rule line are refused before anything runs."""
+    registry = FakeRegistry(
+        {"a": ["write"], "b": ["write"], "conductor": ["write"]},
+        rules={
+            "a": _rule_set("ALWAYS cite sources", "NEVER guess"),
+            "b": _rule_set("NEVER guess"),
+        },
+    )
+
+    with pytest.raises(ScopeGridError) as raised:
+        compile_scope(_inline_grid("a", "b"), registry=registry)
+
+    assert raised.value.code is ScopeGridErrorCode.RULE_CLASH
+    assert "NEVER guess" in str(raised.value)
+
+
+def test_inline_without_clash_compiles_and_non_inline_stages_skip_the_check() -> None:
+    registry = FakeRegistry(
+        {"a": ["write"], "b": ["write"], "conductor": ["write"]},
+        rules={"a": _rule_set("ALWAYS cite sources"), "b": _rule_set("NEVER guess")},
+    )
+    assert compile_scope(_inline_grid("a", "b"), registry=registry).flow == "s"
+
+    same = {"a": _rule_set("NEVER guess"), "b": _rule_set("NEVER guess")}
+    mob = ScopeGrid.model_validate({"scope": "m", "stages": [{"stage": "m", "experts": ["a", "b"], "mode": "mob"}]})
+    compile_scope(mob, registry=FakeRegistry({"a": ["write"], "b": ["write"]}, rules=same))  # a mob never inlines
