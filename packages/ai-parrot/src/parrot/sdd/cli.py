@@ -399,6 +399,10 @@ from parrot.sdd.launch_cli import launch as _launch  # noqa: E402  light: click 
 
 sdd.add_command(_launch)
 
+from parrot.sdd.experts_cli import experts as _experts  # noqa: E402
+
+sdd.add_command(_experts)
+
 for _noun, _verbs in VERBS.items():
     _group = sdd.group(name=_noun, help=f"SDD {_noun} helpers.")(lambda: None)
     for _verb, (_module, _prefix, _help) in _verbs.items():
