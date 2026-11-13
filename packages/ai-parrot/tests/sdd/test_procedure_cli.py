@@ -92,7 +92,7 @@ def test_list_rebuilds_a_stale_plane(repo: Path, capsys: pytest.CaptureFixture[s
     manifest = repo / MANIFEST_DIR / "demo.yaml"
     manifest.write_text(
         MANIFEST
-        + "  - {id: done, title: Finish, kind: command, command: \"/sdd-done <feature>\", requires_procedures: [task]}\n",
+        + '  - {id: done, title: Finish, kind: command, command: "/sdd-done <feature>", requires_procedures: [task]}\n',
         encoding="utf-8",
     )
 
