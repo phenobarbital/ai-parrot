@@ -434,3 +434,94 @@ async def test_legacy_fallback_returns_limit_live_turns_when_tombstoned_ones_com
     got = [m["content"] for m in await ChatStorage(dynamodb=cold).load_conversation("u1", "legacy2", agent_id="bot1",
                                                                                    limit=3) if m["role"] == "user"]
     assert got == ["legacy o3", "legacy o4", "legacy o5"]
+
+
+class _InFlightBackend(_CountingBackend):
+    """``_CountingBackend`` that also records the peak number of ``is_deleted`` lookups running at once."""
+
+    def __init__(self, inner) -> None:
+        super().__init__(inner)
+        self.in_flight = self.peak = 0
+
+    def __getattr__(self, name):
+        wrapped = super().__getattr__(name)
+        if name != "is_deleted":
+            return wrapped
+
+        async def _tracked(*a, **kw):
+            self.in_flight += 1
+            self.peak = max(self.peak, self.in_flight)
+            try:
+                await asyncio.sleep(0.01)  # hold the slot so overlapping lookups are observable
+                return await wrapped(*a, **kw)
+            finally:
+                self.in_flight -= 1
+
+        return _tracked
+
+
+async def _seed_threads(cold, count: int) -> None:
+    for i in range(count):
+        sid = f"s{i:02d}"
+        await cold.put_thread("u1", "bot1", sid, {"title": sid, "session_id": sid, "agent_id": "bot1"})
+
+
+async def test_listing_checks_tombstones_concurrently_bounded_and_in_order(cold):
+    await _seed_threads(cold, 20)
+    for sid in ("s03", "s07", "s15"):
+        await cold.put_tombstone("u1", "bot1", sid)
+    threads = await cold.query_threads("u1", "bot1", limit=50)
+    expected = [t["session_id"] for t in threads if t["session_id"] not in {"s03", "s07", "s15"}]
+    tracking = _InFlightBackend(cold)
+    st = ChatStorage(dynamodb=tracking)
+    st._initialized = True
+    listed = await st.list_user_conversations("u1", agent_id="bot1")
+    assert [t["session_id"] for t in listed] == expected and len(expected) == 17  # tombstoned hidden, order kept
+    assert tracking.calls.count("is_deleted") == 20
+    assert 1 < tracking.peak <= ChatStorage.TOMBSTONE_LOOKUP_CONCURRENCY  # overlapped, never unbounded
+
+
+async def test_listing_fails_closed_when_one_tombstone_lookup_fails(cold, monkeypatch):
+    await _seed_threads(cold, 10)
+    real = cold.is_deleted
+    started, settled = [], []
+
+    async def flaky(user_id, agent_id, session_id, turn_id=None):
+        started.append(session_id)
+        try:
+            await asyncio.sleep(0.01)
+            if session_id == "s04":
+                raise StorageUnavailableError("cold store down")
+            return await real(user_id, agent_id, session_id, turn_id)
+        finally:
+            settled.append(session_id)
+
+    monkeypatch.setattr(cold, "is_deleted", flaky)
+    st = ChatStorage(dynamodb=cold)
+    st._initialized = True
+    with pytest.raises(StorageUnavailableError):
+        await st.list_user_conversations("u1", agent_id="bot1")
+    assert len(started) == len(settled) == 10  # every lookup settled: none is left running after the raise
+
+
+@pytest.mark.parametrize("hot_outcome", ["miss", "error"])
+async def test_context_fallback_reads_the_guard_and_the_hot_tier_once(cold, hot_outcome):
+    st = ChatStorage(dynamodb=cold)
+    st._initialized = True
+    await st.store_turn(_turn("t1", sec=1))
+    await st.store_turn(_turn("t2", sec=2))
+    hot_reads = []
+
+    async def get_history(user_id, session_id, chatbot_id=None):
+        hot_reads.append(session_id)
+        if hot_outcome == "error":
+            raise ConnectionError("redis down")
+        return None  # evicted / expired from the hot tier
+
+    counting = _CountingBackend(cold)
+    st._dynamo = counting
+    st._redis = SimpleNamespace(get_history=get_history)
+    ctx = await st.get_context_for_agent("u1", "s1", agent_id="bot1")
+    assert [m["content"] for m in ctx] == ["q-t1", "a-t1", "q-t2", "a-t2"]
+    assert counting.calls.count("is_deleted") == 1  # the guard runs once, not again in the fallback
+    assert hot_reads == ["s1"]  # the hot tier is tried once, not again in the fallback
