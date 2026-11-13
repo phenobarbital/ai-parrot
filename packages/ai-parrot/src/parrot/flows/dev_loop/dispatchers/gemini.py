@@ -14,6 +14,7 @@ import logging
 import os
 import shutil
 import time
+from collections.abc import Mapping
 from typing import Any, Dict, List, Optional, Sequence, Type
 
 from pydantic import BaseModel, ValidationError
@@ -38,6 +39,35 @@ from parrot.flows.dev_loop.models import (
     GeminiCodeDispatchProfile,
 )
 from parrot.flows.dev_loop.session_state import SessionHost
+from parrot.flows.dev_loop.experience import ExperienceInterceptor
+from parrot.knowledge.wiki.experience.fastpath import redact
+from parrot.knowledge.wiki.experience.models import CommandOutcome
+
+
+def _experience_outcome(event: Mapping[str, Any], *, command: str, observation_id: str) -> CommandOutcome:
+    """Map explicit Gemini outcome fields while retaining absent status as unknown.
+
+    Args:
+        event: A Gemini ``tool_response`` stream event.
+        command: The paired ``run_command`` invocation.
+        observation_id: The stream's tool-call identifier.
+
+    Returns:
+        A redacted, tri-state command outcome for the replay interceptor.
+    """
+    status = event.get("status")
+    error = event.get("error")
+    ok: bool | None = None
+    if status == "error" or error:
+        ok = False
+    elif status == "success" or ("error" in event and error is False):
+        ok = True
+    return CommandOutcome(
+        command=command,
+        ok=ok,
+        error=redact(str(event.get("result") or ""))[:400],
+        observation_id=observation_id,
+    )
 
 
 class GeminiCodeDispatcher:
@@ -92,6 +122,10 @@ class GeminiCodeDispatcher:
         """Dispatch a single Gemini CLI session and return its parsed output."""
         stream_key = f"flow:{run_id}:dispatch:{node_id}"
         process: Any = None
+        outcomes: list[CommandOutcome] = []
+        tool_commands: dict[str, str] = {}
+        experience_session = f"{run_id}/{node_id}"
+        interceptor = ExperienceInterceptor(session=experience_session, cwd=cwd, seat="gemini")
         # FEAT-322 TASK-1852: see module-level _SESSION_HOST_CTX docstring.
         # try/except covers the narrow pre-semaphore window so an early
         # raise here still resets the var (the main finally: below only
@@ -154,13 +188,19 @@ class GeminiCodeDispatcher:
 
                 try:
                     async with asyncio.timeout(profile.timeout_seconds):
-                        process = await self._create_process(command, cwd=cwd)
+                        process = await self._create_process(
+                            command,
+                            cwd=cwd,
+                            env={"PARROT_EXPERIENCE_SESSION": experience_session},
+                        )
                         stderr_task = asyncio.create_task(self._read_stream(process.stderr))
                         assistant_text = await self._stream_stdout_events(
                             process.stdout,
                             stream_key=stream_key,
                             run_id=run_id,
                             node_id=node_id,
+                            outcomes=outcomes,
+                            tool_commands=tool_commands,
                         )
                         return_code = await process.wait()
                         stderr = await stderr_task
@@ -233,8 +273,11 @@ class GeminiCodeDispatcher:
                 )
                 return result
             finally:
-                _SESSION_HOST_CTX.reset(_host_token)
-                _DISPATCH_LABELS_CTX.reset(_labels_token)
+                try:
+                    await interceptor.replay(outcomes)
+                finally:
+                    _SESSION_HOST_CTX.reset(_host_token)
+                    _DISPATCH_LABELS_CTX.reset(_labels_token)
 
     def _build_command(
         self,
@@ -273,13 +316,23 @@ class GeminiCodeDispatcher:
             f"{output_prompt}"
         )
 
-    async def _create_process(self, command: Sequence[str], cwd: str) -> Any:
+    async def _create_process(
+        self,
+        command: Sequence[str],
+        cwd: str,
+        *,
+        env: Mapping[str, str] | None = None,
+    ) -> Any:
         """Spawn the Gemini CLI subprocess."""
+        process_env = os.environ.copy()
+        if env is not None:
+            process_env.update(env)
         return await asyncio.create_subprocess_exec(
             *command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd,
+            env=process_env,
             limit=8 * 1024 * 1024,
         )
 
@@ -290,6 +343,8 @@ class GeminiCodeDispatcher:
         stream_key: str,
         run_id: str,
         node_id: str,
+        outcomes: list[CommandOutcome] | None = None,
+        tool_commands: dict[str, str] | None = None,
     ) -> str:
         if stdout is None:
             return ""
@@ -319,10 +374,44 @@ class GeminiCodeDispatcher:
                     content = event.get("content", "")
                     if content:
                         assistant_chunks.append(content)
+                elif event_type == "tool_call":
+                    tool_id = self._gemini_tool_id(event)
+                    command = self._gemini_run_command(event)
+                    if tool_id and command is not None and tool_commands is not None:
+                        tool_commands[tool_id] = command
+                elif event_type == "tool_response":
+                    tool_id = self._gemini_tool_id(event)
+                    if tool_id and tool_commands is not None and outcomes is not None:
+                        command = tool_commands.pop(tool_id, None)
+                        if command is not None:
+                            outcomes.append(_experience_outcome(event, command=command, observation_id=tool_id))
 
                 await self._publish_gemini_event(stream_key, event, run_id, node_id)
 
         return "".join(assistant_chunks)
+
+    @staticmethod
+    def _gemini_tool_id(event: Mapping[str, Any]) -> str:
+        """Return Gemini's stream tool identifier without guessing by tool name."""
+        for key in ("toolCallId", "tool_call_id", "id"):
+            value = event.get(key)
+            if isinstance(value, str) and value:
+                return value
+        return ""
+
+    @staticmethod
+    def _gemini_run_command(event: Mapping[str, Any]) -> str | None:
+        """Return the command from a Gemini ``run_command`` tool-call event."""
+        name = event.get("name") or event.get("tool") or event.get("toolName")
+        if name != "run_command":
+            return None
+        for key in ("args", "arguments", "input"):
+            arguments = event.get(key)
+            if isinstance(arguments, Mapping):
+                command = arguments.get("command")
+                if isinstance(command, str) and command:
+                    return command
+        return None
 
     async def _publish_gemini_event(
         self,
