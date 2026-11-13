@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-886 — Durable Conversation Memory
 **Spec**: sdd/specs/durable-conversation-memory.spec.md (Module 17; §4 "Integration Tests")
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5584
@@ -432,10 +432,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Created tests/integration/test_durable_conversation_memory.py: the nine spec §4 scenarios (+ an extra "second round sees the first" test) on a real BaseBot -> BusTurnPublisher -> EventBus(transport="memory") -> ChatStorage -> real SQLite -> ChatStorageHydrationSource stack.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (sequential fallback)
+**Date**: 2026-11-13
+**STATUS: done-with-issues** (see the two items below).
+**Tests**: 10 passed (navigator-eventbus 0.4.1). ruff clean.
+**Mutation evidence**: A (swallow StorageWriteError in handle_turn_completed) -> RED; B (no post-install guard recheck) -> RED; D (install_history not NX) -> RED; E (guard fails open on an unknown exception) -> RED only after adding a RuntimeError-raising guard to test_guard_unavailable_fails_closed (the first version only raised HydrationUnavailableError, which takes the `except HydrationError: raise` branch).
+**Issue 1 — mutation C survives**: making SQLite `put_turn` ignore the tombstone does NOT turn test_delete_during_delayed_write / test_deleted_turn_stays_deleted RED, because ChatStorage._fence_after_write (a second, independent defense) re-checks the tombstones after the write and removes the resurrected copies. The backend guard itself is pinned by the backend contract suite (test_sqlite_durable_contract: removing the guard -> 3 RED). Net: the end-to-end behavior is protected twice; the integration test cannot isolate the first layer.
+**Issue 2 — the optional spec §5 outbox-durability test (`test_outbox_survives_process_restart`) was NOT written**: it needs a real Redis Streams bus + SqliteOutbox restart; no Redis server is reachable from the test sandbox as a service. Outbox crash recovery is therefore untested in this feature.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: the optional tenth test was not implemented (above)

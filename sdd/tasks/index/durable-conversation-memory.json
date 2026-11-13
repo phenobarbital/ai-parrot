@@ -455,7 +455,7 @@
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -465,8 +465,9 @@
       "parallelism_notes": "Drives the full wiring from TASK-5584 (bus, subscriber, hydration, deletion) end to end.",
       "assigned_to": null,
       "started_at": "2026-11-13T03:25:54+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5585-durable-memory-integration-suite.md"
+      "completed_at": "2026-11-13T04:49:26+00:00",
+      "file": "sdd/tasks/completed/TASK-5585-durable-memory-integration-suite.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-5586",
