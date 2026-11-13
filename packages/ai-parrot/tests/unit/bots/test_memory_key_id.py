@@ -140,13 +140,14 @@ async def test_save_conversation_turn_takes_no_chatbot_id_argument():
     FEAT-525 adds a keyword-only ``compaction`` parameter (the bot's
     ``CompactionCommit`` for the round) — an authorized extension of this
     same signature, not a reintroduction of caller-chosen attribution.
+    FEAT-886 adds the keyword-only ``presentation`` (usage/presentation fields for the turn event).
     """
     import inspect
 
     parameters = inspect.signature(AbstractBot.save_conversation_turn).parameters
 
     assert "chatbot_id" not in parameters
-    assert list(parameters) == ["self", "user_id", "session_id", "turn", "compaction"]
+    assert list(parameters) == ["self", "user_id", "session_id", "turn", "compaction", "presentation"]
     assert parameters["compaction"].kind is inspect.Parameter.KEYWORD_ONLY
     assert parameters["compaction"].default is None
 

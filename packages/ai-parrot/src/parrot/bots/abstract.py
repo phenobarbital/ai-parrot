@@ -16,6 +16,9 @@ from string import Template
 import asyncio
 from contextvars import ContextVar
 import warnings
+import copy
+import time
+from datetime import timezone
 from aiohttp import web
 from pydantic import BaseModel
 from navconfig.logging import logging
@@ -48,6 +51,18 @@ from ..memory import (
     HistoryMessage,
     render_history,
 )
+from ..memory.hydration import (
+    HydrationError,
+    HydrationNotReadyError,
+    HydrationSource,
+    HydrationUnavailableError,
+    LocalSequenceAllocator,
+    SequenceAllocator,
+    SessionDeletedError,
+)
+from ..memory.persistence import TurnPresentation, TurnPublisher
+from parrot.core.events.lifecycle.events.memory import TurnCompletedEvent
+from parrot.observability.context import current_tenant
 from ..memory.compaction.models import (
     ContextBudget,
     CompactionCommit,
@@ -285,6 +300,11 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
             self.context_search_limit = int(recs.get("recommended_search_limit", self.context_search_limit))
         if not self._user_set_score_threshold:
             self.context_score_threshold = float(recs.get("recommended_score_threshold", self.context_score_threshold))
+
+    turn_publisher: Optional[TurnPublisher] = None
+    hydration_source: Optional[HydrationSource] = None
+    sequence_allocator: Optional[SequenceAllocator] = None
+    """All three default to None and are also accepted as constructor kwargs (FEAT-886)."""
 
     def __init__(
         self,
@@ -615,6 +635,10 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         self.conversation_memory: Optional[ConversationMemory] = None
         self.memory_type: str = kwargs.get("memory_type", "auto")  # 'auto', 'memory', 'file', 'redis'
         self.memory_config: dict = kwargs.get("memory_config", {})
+        # FEAT-886: optional durable-memory collaborators, injected by the host.
+        self.turn_publisher = kwargs.get("turn_publisher", self.turn_publisher)
+        self.hydration_source = kwargs.get("hydration_source", self.hydration_source)
+        self.sequence_allocator = kwargs.get("sequence_allocator", self.sequence_allocator)
 
         # Conversation settings
         # FEAT-525: default changed from 50 to None. `None` means "use
@@ -2720,6 +2744,7 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         turn: ConversationTurn,
         *,
         compaction: Optional[CompactionCommit] = None,
+        presentation: Optional[TurnPresentation] = None,
     ) -> None:
         """Persist one conversation turn — the single writer (FEAT-524, FEAT-525).
 
@@ -2729,6 +2754,8 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         into a different agent's history by accident.
 
         Args:
+            presentation: Presentation/usage fields built by the entry point from its AIMessage; only used
+                when a turn_publisher is set (FEAT-886).
             user_id: Owner of the conversation.
             session_id: Conversation session.
             turn: The turn to persist. Its ``chatbot_id`` MUST equal
@@ -2756,6 +2783,10 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
                 "the agent whose history it is stored in."
             )
 
+        await self._stamp_turn_ordering(user_id, session_id, turn)
+        # Raw, pre-normalization snapshot: MUST precede add_turn (spec §7 "Raw turn snapshot").
+        snapshot = copy.deepcopy(turn.to_dict()) if self.turn_publisher is not None else None
+
         # FEAT-525: read the PERSISTED stage2_needed flag before the write,
         # so the event fires exactly once, on the first False -> True flip.
         was_stage2_needed = False
@@ -2767,6 +2798,7 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         await self.conversation_memory.add_turn(
             user_id, session_id, turn, chatbot_id=chatbot_key, compaction=compaction
         )
+        await self._publish_turn_completed(user_id, session_id, snapshot, presentation)
         # FEAT-176: emit MessageAddedEvent after persisting to memory.
         # Use the active invocation's trace context when available.
         # ConversationTurn stores both user_message and assistant_response;
@@ -2803,6 +2835,156 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
                     source_name=self.name,
                 )
             )
+
+    @staticmethod
+    def _hydration_pending(history: Optional[ConversationHistory]) -> bool:
+        """Whether ``history`` was created while the hydration source was unavailable (Q14)."""
+        if history is None:
+            return False
+        return (history.metadata.get("hydration") or {}).get("state") == "pending"
+
+    def _hydration_window(self) -> int:
+        """Budget-sized window: ``budget.max_turns`` or ``max_context_turns`` or 30."""
+        budget = self.context_budget
+        return (budget.max_turns if budget is not None else None) or self.max_context_turns or 30
+
+    async def _assert_session_active(self, source: HydrationSource, user_id: str, session_id: str) -> None:
+        """Fail closed: raise unless the guard positively says the session is not deleted."""
+        try:
+            deleted = await source.is_deleted(self.name, user_id, session_id)
+        except HydrationError:
+            raise
+        except Exception as exc:  # any unknown guard failure must not serve stale history
+            raise HydrationUnavailableError(f"deletion guard unavailable: {exc}") from exc
+        if deleted:
+            raise SessionDeletedError(f"{self.name}/{user_id}/{session_id} is deleted")
+
+    async def _load_or_hydrate_history(
+        self, memory: ConversationMemory, user_id: str, session_id: str
+    ) -> ConversationHistory:
+        """Replace ``get_history(...) or create_history(...)`` (FEAT-886 M15).
+
+        Without a ``hydration_source`` this is today's expression, verbatim. With one: the deletion
+        guard is checked first, a hit is returned untouched, and a miss (or a ``pending`` history) is
+        hydrated from the source and installed under ``self.memory_key_id`` (NX).
+
+        Raises:
+            SessionDeletedError: the identity is tombstoned.
+            HydrationUnavailableError: the guard could not be checked (fail closed).
+        """
+        key = self.memory_key_id
+        source = self.hydration_source
+        if source is None:
+            return await memory.get_history(user_id, session_id, chatbot_id=key) or await memory.create_history(
+                user_id, session_id, chatbot_id=key
+            )
+        await self._assert_session_active(source, user_id, session_id)
+        existing = await memory.get_history(user_id, session_id, chatbot_id=key)
+        if existing is not None and not self._hydration_pending(existing):
+            return existing
+        return await self._hydrate_history(memory, source, user_id, session_id, existing)
+
+    async def _hydrate_history(
+        self,
+        memory: ConversationMemory,
+        source: HydrationSource,
+        user_id: str,
+        session_id: str,
+        existing: Optional[ConversationHistory],
+    ) -> ConversationHistory:
+        """Load the newest window, install it atomically, recheck the guard, return the history."""
+        key = self.memory_key_id
+        try:
+            turns = await source.load_turns(self.name, user_id, session_id, self._hydration_window())
+        except (HydrationNotReadyError, HydrationUnavailableError) as exc:
+            self.logger.warning("hydration pending for %s/%s: %s", user_id, session_id, exc)
+            return existing or await memory.create_history(
+                user_id, session_id, metadata={"hydration": {"state": "pending"}}, chatbot_id=key
+            )
+        # SessionDeletedError from load_turns propagates untouched.
+        installed = await memory.install_history(user_id, session_id, turns or [], chatbot_id=key)
+        self.logger.debug(
+            "hydration install for %s/%s: installed=%s turns=%d", user_id, session_id, installed, len(turns or [])
+        )
+        try:
+            await self._assert_session_active(source, user_id, session_id)  # the delete may have landed mid-install
+        except SessionDeletedError:
+            await memory.delete_history(user_id, session_id, chatbot_id=key)
+            raise
+        history = await memory.get_history(user_id, session_id, chatbot_id=key)
+        return history or await memory.create_history(user_id, session_id, chatbot_id=key)
+
+    def _turn_presentation(
+        self,
+        response: Optional[AIMessage],
+        *,
+        output_mode: Any = None,
+        started: Optional[float] = None,
+        fallback_output: Optional[str] = None,
+    ) -> Optional[TurnPresentation]:
+        """Build the per-turn presentation, or ``None`` when no publisher is set (no work, no event)."""
+        if self.turn_publisher is None:
+            return None
+        elapsed = None if started is None else int((time.perf_counter() - started) * 1000)
+        mode = None if output_mode is None else str(getattr(output_mode, "value", output_mode))
+        tenant = current_tenant.get()
+        if response is None:  # ask_stream partial save: the AIMessage does not exist yet
+            return TurnPresentation(output=fallback_output, output_mode=mode, response_time_ms=elapsed, tenant=tenant)
+        return TurnPresentation.from_ai_message(
+            response, output_mode=mode, response_time_ms=elapsed, tenant=tenant
+        )
+
+    def _local_sequence_allocator(self) -> SequenceAllocator:
+        """Lazily create (and cache) the per-process allocator used when none is injected."""
+        allocator = getattr(self, "_fallback_sequence_allocator", None)
+        if allocator is None:
+            allocator = self._fallback_sequence_allocator = LocalSequenceAllocator()
+        return allocator
+
+    async def _stamp_turn_ordering(self, user_id: str, session_id: str, turn: ConversationTurn) -> None:
+        """Stamp a UTC-aware timestamp and a monotonic sequence on ``turn`` (spec §2 "Sequence allocation").
+
+        No-op (and no suspension) for a conversation-less bot: neither publisher nor allocator set.
+        """
+        allocator = self.sequence_allocator
+        if self.turn_publisher is None and allocator is None:
+            return
+        if turn.timestamp.tzinfo is None:
+            turn.timestamp = turn.timestamp.astimezone(timezone.utc)
+        if turn.sequence is not None:
+            return
+        if allocator is None:
+            allocator = self._local_sequence_allocator()
+        source = self.hydration_source
+        floor = None if source is None else (lambda: source.max_sequence(self.name, user_id, session_id))
+        turn.sequence = await allocator.next(self.name, user_id, session_id, floor=floor)
+
+    async def _publish_turn_completed(
+        self,
+        user_id: str,
+        session_id: str,
+        snapshot: Optional[Dict[str, Any]],
+        presentation: Optional[TurnPresentation],
+    ) -> None:
+        """Publish ``TurnCompletedEvent`` for the raw ``snapshot``. Never raises (logged at ERROR)."""
+        publisher = self.turn_publisher
+        if publisher is None or snapshot is None:
+            return
+        try:
+            event = TurnCompletedEvent(
+                trace_context=getattr(self, "_current_trace_context", None) or TraceContext.new_root(),
+                agent_name=self.name,
+                chatbot_id=self.memory_key_id,
+                user_id=user_id,
+                session_id=session_id,
+                turn=snapshot,
+                presentation=presentation.model_dump() if presentation is not None else {},
+                source_type="agent",
+                source_name=self.name,
+            )
+            await publisher.publish(event)
+        except Exception:  # pylint: disable=broad-except  # a lost audit event must not fail the round
+            self.logger.error("turn publish failed turn_id=%s", snapshot.get("turn_id"), exc_info=True)
 
     async def clear_conversation_history(self, user_id: str, session_id: str, chatbot_id: Optional[str] = None) -> bool:
         """Clear conversation history using unified memory system."""
