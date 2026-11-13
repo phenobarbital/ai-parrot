@@ -14,8 +14,13 @@ import pytest
 
 from parrot.bots.flows.core.gates import GateHost, GateRecord, GateSpec, register_gate_kind
 from parrot.flows.dev_loop.gate_adapter import DevLoopGateAdapter, register_devloop_gate_kinds
-from parrot.flows.dev_loop.session_state import ActionEnvelope, ApprovalGate, DevLoopSessionState, SessionHost, session_channel
-
+from parrot.flows.dev_loop.session_state import (
+    ActionEnvelope,
+    ApprovalGate,
+    DevLoopSessionState,
+    SessionHost,
+    session_channel,
+)
 
 FIXTURE = Path(__file__).parent / "fixtures" / "legacy_gate_envelopes.json"
 
@@ -34,7 +39,11 @@ def _recorded_envelopes() -> list[ActionEnvelope]:
 def _recorded_gates() -> list[ApprovalGate]:
     """Load gates from the fixture."""
     data = _load_fixture()
-    return [ApprovalGate.model_validate(env["action"]["gate"]) for env in data["envelopes"] if env["action"]["type"] == "gate/opened"]
+    return [
+        ApprovalGate.model_validate(env["action"]["gate"])
+        for env in data["envelopes"]
+        if env["action"]["type"] == "gate/opened"
+    ]
 
 
 class InMemoryGateStore:

@@ -15,7 +15,6 @@ import pytest
 from parrot.bots.flows.core.gates import GateHost, GateRecord, GateSpec, register_gate_kind
 from parrot.experts.lease_store import LeaseDurableCheckpointStore
 
-
 # Register a test gate kind for the security-patch pipeline.
 register_gate_kind("approval", description="Manual approval gate")
 
@@ -180,6 +179,7 @@ async def test_gate_host_recover_expired(
 
     # Wait for TTL to expire and recover
     import time
+
     time.sleep(1.1)
 
     recovered = await gate_host.recover(now=time.time())
@@ -211,6 +211,7 @@ async def test_gate_host_recover_auto_approve(
 
     # Wait for TTL to expire and recover
     import time
+
     time.sleep(1.1)
 
     recovered = await gate_host.recover(now=time.time())
