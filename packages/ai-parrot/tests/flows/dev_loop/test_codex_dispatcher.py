@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import subprocess
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Optional, Sequence
 from unittest.mock import AsyncMock
@@ -14,6 +16,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from parrot.flows.dev_loop import (
+    CodexAdversarialReviewProfile,
     CodexCodeDispatchProfile,
     CodexCodeDispatcher,
     DevelopmentOutput,
@@ -127,12 +130,185 @@ def _write_output(command: Sequence[str], payload: str) -> None:
     output_path.write_text(payload, encoding="utf-8")
 
 
+def _experience_plane(root: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Create an isolated repository experience plane for replay tests."""
+    (root / ".git").mkdir(parents=True)
+    plane = root / ".parrot" / "experience"
+    plane.mkdir(parents=True)
+    monkeypatch.setenv("PARROT_HOME", str(root / "parrot-home"))
+    return plane
+
+
 def _published_events(dispatcher: CodexCodeDispatcher) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
     for call in dispatcher._fake_redis.xadd.await_args_list:  # type: ignore[attr-defined]
         fields = call.args[1]
         events.append(json.loads(fields["event"]))
     return events
+
+
+@pytest.mark.asyncio
+async def test_codex_outcomes_collected(tmp_path: Path, dispatcher, brief, monkeypatch) -> None:
+    """Collect ordered, redacted command outcomes from the instance stream loop."""
+    root = tmp_path / "repo"
+    plane = _experience_plane(root, monkeypatch)
+    command = "/bin/bash -lc 'gh pr edit 12'"
+    stream = [
+        json.dumps(
+            {
+                "type": "item.completed",
+                "item": {
+                    "id": "cmd-1",
+                    "type": "command_execution",
+                    "command": command,
+                    "exit_code": 1,
+                    "aggregated_output": "AUTH_TOKEN=super-secret permission denied",
+                },
+            }
+        )
+        + "\n",
+        json.dumps(
+            {
+                "type": "item.completed",
+                "item": {
+                    "id": "cmd-1",
+                    "type": "command_execution",
+                    "command": command,
+                    "exit_code": 1,
+                    "aggregated_output": "AUTH_TOKEN=super-secret permission denied",
+                },
+            }
+        )
+        + "\n",
+        json.dumps(
+            {
+                "type": "item.completed",
+                "item": {
+                    "id": "cmd-2",
+                    "type": "command_execution",
+                    "command": command,
+                    "exit_code": 1,
+                    "aggregated_output": "AUTH_TOKEN=super-secret permission denied",
+                },
+            }
+        )
+        + "\n",
+    ]
+    captured: dict[str, Any] = {}
+
+    async def _fake_create(command_argv: Sequence[str], *, env: Mapping[str, str] | None = None):
+        captured["env"] = env
+        _write_output(command_argv, _development_payload())
+        return _FakeCodexProcess(stdout_lines=stream)
+
+    monkeypatch.setattr(dispatcher, "_create_process", _fake_create)
+    result = await dispatcher.dispatch(
+        brief=brief,
+        profile=CodexCodeDispatchProfile(),
+        output_model=DevelopmentOutput,
+        run_id="r1",
+        node_id="development",
+        cwd=str(root),
+    )
+
+    assert result.summary == "implemented the spec"
+    assert captured["env"]["PARROT_EXPERIENCE_SESSION"]
+    assert captured["env"] is not os.environ
+    events = [json.loads(line) for line in (plane / "events.jsonl").read_text(encoding="utf-8").splitlines()]
+    failures = [event for event in events if event["kind"] == "failure.observed"]
+    digest = hashlib.sha1("gh pr edit 12".encode("utf-8")).hexdigest()  # noqa: S324 - stable identity
+    assert [event["observation_id"] for event in failures] == [f"{digest}#1", f"{digest}#2"]
+    assert all("super-secret" not in json.dumps(event) for event in events)
+
+
+@pytest.mark.asyncio
+async def test_codex_review_replays(tmp_path: Path, dispatcher, brief, monkeypatch) -> None:
+    """Replay review-profile outcomes even when Codex exits unsuccessfully."""
+    root = tmp_path / "repo"
+    plane = _experience_plane(root, monkeypatch)
+    captured: dict[str, Any] = {}
+
+    async def _fake_create(command: Sequence[str], *, env: Mapping[str, str] | None = None):
+        captured["command"] = list(command)
+        captured["env"] = env
+        _write_output(command, _development_payload())
+        return _FakeCodexProcess(
+            stdout_lines=[
+                json.dumps(
+                    {
+                        "type": "item.completed",
+                        "item": {
+                            "id": "review-command",
+                            "type": "command_execution",
+                            "command": "sh -c 'gh pr edit 12'",
+                            "exit_code": 1,
+                            "aggregated_output": "permission denied",
+                        },
+                    }
+                )
+                + "\n"
+            ],
+            return_code=2,
+        )
+
+    monkeypatch.setattr(dispatcher, "_create_process", _fake_create)
+    with pytest.raises(DispatchExecutionError, match="exit code 2"):
+        await dispatcher.dispatch(
+            brief=brief,
+            profile=CodexAdversarialReviewProfile(),
+            output_model=DevelopmentOutput,
+            run_id="r-review",
+            node_id="review",
+            cwd=str(root),
+        )
+
+    assert "--ignore-user-config" in captured["command"]
+    assert captured["env"]["PARROT_EXPERIENCE_SESSION"]
+    events = [json.loads(line) for line in (plane / "events.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert [event["kind"] for event in events] == ["failure.observed"]
+
+
+@pytest.mark.asyncio
+async def test_codex_occurrence_alias_dedup(dispatcher) -> None:
+    """Preserve unknown statuses and distinct occurrence aliases while deduplicating IDs."""
+    outcomes = []
+    command = "/bin/sh -c 'gh pr edit 12'"
+    lines = [
+        json.dumps(
+            {
+                "type": "item.completed",
+                "item": {"id": "one", "type": "command_execution", "command": command, "exit_code": 1},
+            }
+        )
+        + "\n",
+        json.dumps(
+            {
+                "type": "item.completed",
+                "item": {"id": "one", "type": "command_execution", "command": command, "exit_code": 1},
+            }
+        )
+        + "\n",
+        json.dumps(
+            {
+                "type": "item.completed",
+                "item": {"id": "two", "type": "command_execution", "command": command},
+            }
+        )
+        + "\n",
+    ]
+
+    await dispatcher._stream_stdout_events(
+        _AsyncBytesStream(lines),
+        stream_key="flow:r1:dispatch:development",
+        run_id="r1",
+        node_id="development",
+        outcomes=outcomes,
+    )
+
+    digest = hashlib.sha1("gh pr edit 12".encode("utf-8")).hexdigest()  # noqa: S324 - stable identity
+    assert [outcome.observation_id for outcome in outcomes] == [f"{digest}#1", f"{digest}#2"]
+    assert outcomes[0].ok is False
+    assert outcomes[1].ok is None
 
 
 class TestCodexCommandAndEvents:
