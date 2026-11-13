@@ -13,7 +13,6 @@ from parrot.cli import cli
 from parrot.sdd.cli import VERBS, sdd
 from parrot.sdd.scripts.experience_cli import main as experience_main
 
-
 def test_lazy_registration() -> None:
     assert cli._lazy_commands["sdd"] == "parrot.sdd.cli"
     assert cli.get_command(None, "sdd") is sdd

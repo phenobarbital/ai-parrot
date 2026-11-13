@@ -172,9 +172,7 @@ async def _dispatch(args: argparse.Namespace) -> int:
         lesson = await service.get_lesson(args.lesson_id)
         if lesson is not None:
             output = (
-                json.dumps(lesson.model_dump(mode="json"), ensure_ascii=False)
-                if args.as_json
-                else _lesson_text(lesson)
+                json.dumps(lesson.model_dump(mode="json"), ensure_ascii=False) if args.as_json else _lesson_text(lesson)
             )
             _write(output)
     elif args.verb == "retire":

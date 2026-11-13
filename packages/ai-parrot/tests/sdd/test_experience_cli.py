@@ -86,23 +86,26 @@ def test_cli_record_list_show_and_retire(
     """Exercise real text/JSON output and the authored lesson lifecycle."""
     _checkout(tmp_path, monkeypatch)
     assert main(["init"]) == 0
-    assert main(
-        [
-            "record",
-            "--executable",
-            "gh",
-            "--subcommand",
-            "pr edit",
-            "--error",
-            "Projects classic",
-            "--symptom",
-            "GraphQL rejects the request",
-            "--solution",
-            "Use gh api",
-            "--path",
-            "src/release.py",
-        ]
-    ) == 0
+    assert (
+        main(
+            [
+                "record",
+                "--executable",
+                "gh",
+                "--subcommand",
+                "pr edit",
+                "--error",
+                "Projects classic",
+                "--symptom",
+                "GraphQL rejects the request",
+                "--solution",
+                "Use gh api",
+                "--path",
+                "src/release.py",
+            ]
+        )
+        == 0
+    )
     lesson_id = capsys.readouterr().out.strip()
     assert lesson_id.startswith("pit-")
 
