@@ -92,6 +92,28 @@ class InstrumentedBackend(ConversationBackend):
         )
 
     # ------------------------------------------------------------------
+    # Durable conversation operations (FEAT-886)
+    # ------------------------------------------------------------------
+
+    async def query_turn_window(self, *a, **kw) -> List[dict]:
+        return await self._measure("query_turn_window", self._inner.query_turn_window, *a, **kw)
+
+    async def max_sequence(self, *a, **kw) -> int:
+        return await self._measure("max_sequence", self._inner.max_sequence, *a, **kw)
+
+    async def put_tombstone(self, *a, **kw) -> None:
+        return await self._measure("put_tombstone", self._inner.put_tombstone, *a, **kw)
+
+    async def is_deleted(self, *a, **kw) -> bool:
+        return await self._measure("is_deleted", self._inner.is_deleted, *a, **kw)
+
+    async def get_index_state(self, *a, **kw) -> str:
+        return await self._measure("get_index_state", self._inner.get_index_state, *a, **kw)
+
+    async def backfill_batch(self, *a, **kw):
+        return await self._measure("backfill_batch", self._inner.backfill_batch, *a, **kw)
+
+    # ------------------------------------------------------------------
     # Artifacts
     # ------------------------------------------------------------------
 

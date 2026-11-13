@@ -9,7 +9,17 @@ See wiki/stores/storage-backends.md for the backend selection matrix.
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Optional
+from dataclasses import dataclass
+from typing import List, Optional, Tuple
+
+
+@dataclass(frozen=True)
+class BackfillBatch:
+    """Result of one :meth:`ConversationBackend.backfill_batch` call."""
+
+    processed: int
+    next_cursor: Optional[str]      # None when the scan is complete
+    invalid_sessions: Tuple[str, ...]
 
 
 class ConversationBackend(ABC):
@@ -87,7 +97,15 @@ class ConversationBackend(ABC):
         turn_id: str,
         data: dict,
     ) -> None:
-        """Store a conversation turn."""
+        """Idempotent upsert by ``turn_id``, atomic with the deletion guard and the chronological entry.
+
+        Ordering fields (timestamp, sequence) of an existing turn are never changed.
+
+        Raises:
+            StorageUnavailableError: When the backend is disconnected.
+            StorageWriteError: When the durable write fails.
+            ConversationDeletedError: When the session or the turn is tombstoned.
+        """
 
     @abstractmethod
     async def query_turns(
@@ -98,7 +116,11 @@ class ConversationBackend(ABC):
         limit: int = 10,
         newest_first: bool = True,
     ) -> List[dict]:
-        """Query conversation turns for a session."""
+        """Query conversation turns for a session.
+
+        Raises:
+            StorageUnavailableError: When disconnected or the read fails — never returns ``[]`` for a failure.
+        """
 
     @abstractmethod
     async def delete_turn(
@@ -125,6 +147,61 @@ class ConversationBackend(ABC):
 
         Returns:
             Number of items deleted.
+        """
+
+    # ------------------------------------------------------------------
+    # Durable conversation operations (FEAT-886)
+    # ------------------------------------------------------------------
+
+    @abstractmethod
+    async def query_turn_window(
+        self, user_id: str, agent_id: str, session_id: str, limit: int
+    ) -> List[dict]:
+        """The newest ``limit`` turns by ``(timestamp, sequence, turn_id)``.
+
+        ``limit`` is applied DESCENDING at the backend; the window is returned ASCENDING.
+
+        Raises:
+            StorageUnavailableError: Disconnected or the read failed.
+            ConversationDeletedError: The session is tombstoned.
+            IndexNotReadyError: The chronological index is not ready (no full scan is performed).
+
+        An active session with no turns returns ``[]``.
+        """
+
+    @abstractmethod
+    async def max_sequence(self, user_id: str, agent_id: str, session_id: str) -> int:
+        """Highest stored ``sequence`` for the session, ``0`` when none."""
+
+    @abstractmethod
+    async def put_tombstone(
+        self, user_id: str, agent_id: str, session_id: str, turn_id: Optional[str] = None
+    ) -> None:
+        """Durably record a session (``turn_id=None``) or turn deletion. Idempotent.
+
+        Not subject to transcript TTL or :meth:`delete_thread_cascade`.
+        """
+
+    @abstractmethod
+    async def is_deleted(
+        self, user_id: str, agent_id: str, session_id: str, turn_id: Optional[str] = None
+    ) -> bool:
+        """Whether the identity is tombstoned.
+
+        Raises:
+            StorageUnavailableError: If it cannot be determined — never returns ``False`` on failure.
+        """
+
+    @abstractmethod
+    async def get_index_state(self, user_id: str, agent_id: str, session_id: str) -> str:
+        """``'ready'`` | ``'pending'`` | ``'invalid'``. Sessions created after FEAT-886 are ``'ready'``."""
+
+    @abstractmethod
+    async def backfill_batch(self, cursor: Optional[str], batch_size: int) -> BackfillBatch:
+        """Index up to ``batch_size`` legacy turns after ``cursor``; resumable and safe alongside new writes.
+
+        Marks a session ``'ready'`` once all its turns are indexed, ``'invalid'`` when a turn has a
+        missing or unparseable timestamp.
         """
 
     # ------------------------------------------------------------------
