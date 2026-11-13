@@ -53,6 +53,7 @@ class ChatStorage:
         self._docdb = document_db
         self._initialized = False
         self._memory_cleaners: List[Callable[[str, str, str], Awaitable[None]]] = []
+        self._turn_memory_cleaners: List[Callable[[str, str, str, str], Awaitable[None]]] = []
         self._deletion_publisher: Optional[Callable[[str, Dict[str, Any]], Awaitable[None]]] = None
         self._cleanup_retries: Dict[Tuple[str, str, str, Optional[str]], "asyncio.Task[None]"] = {}
         #: Base delay (seconds) of the in-process cleanup retry; doubles per attempt, capped at 60 s.
@@ -126,6 +127,14 @@ class ChatStorage:
         so it MUST be idempotent.
         """
         self._memory_cleaners.append(cleaner)
+
+    def register_turn_memory_cleaner(self, cleaner: Callable[[str, str, str, str], Awaitable[None]]) -> None:
+        """Register a ``(user_id, agent_name, session_id, turn_id)`` cleaner for one working-memory backend.
+
+        Run after a TURN tombstone is committed (and on every cleanup retry), so a deleted turn is not fed to
+        the LLM from a bot's working memory until its TTL. MUST be idempotent.
+        """
+        self._turn_memory_cleaners.append(cleaner)
 
     def attach_deletion_publisher(
         self, publisher: Optional[Callable[[str, Dict[str, Any]], Awaitable[None]]]
@@ -661,6 +670,11 @@ class ChatStorage:
             hot = await self._delete_hot_turn(user_id, session_id, turn_id, agent_id)
         except Exception as exc:  # noqa: BLE001
             errors.append(exc)
+        for cleaner in self._turn_memory_cleaners:
+            try:
+                await cleaner(user_id, agent_id, session_id, turn_id)
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
         return cold, hot, errors
 
     async def _delete_hot_turn(self, user_id: str, session_id: str, turn_id: str, agent_id: str) -> bool:

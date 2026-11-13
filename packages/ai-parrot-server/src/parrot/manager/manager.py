@@ -3225,6 +3225,7 @@ Available documentation UIs:
         self._durable_memory = self._build_durable_memory(chat_storage, handle)
         # ONE working-memory cleaner for the whole manager; it resolves the bots by agent name at call time
         chat_storage.register_memory_cleaner(self._clean_working_memory)
+        chat_storage.register_turn_memory_cleaner(self._clean_working_memory_turn)
         for bot in list(self._bots.values()):  # bots loaded before the bus existed
             self._attach_durable_memory(bot)
         self.logger.info("Turn persistence started")
@@ -3269,6 +3270,24 @@ Available documentation UIs:
             if memory is None or getattr(bot, "name", None) != agent_id:
                 continue
             await memory.delete_history(user_id, session_id, chatbot_id=bot.memory_key_id)
+
+    async def _clean_working_memory_turn(self, user_id: str, agent_id: str, session_id: str, turn_id: str) -> None:
+        """Drop ONE deleted turn from the working memory of every live bot named ``agent_id``.
+
+        Without this a bot keeps feeding the deleted turn to the LLM until the history's TTL
+        (``_load_or_hydrate_history`` returns an existing history untouched).
+        """
+        for bot in list(self._durable_bots):
+            memory = getattr(bot, "conversation_memory", None)
+            if memory is None or getattr(bot, "name", None) != agent_id:
+                continue
+            history = await memory.get_history(user_id, session_id, chatbot_id=bot.memory_key_id)
+            if history is None:
+                continue
+            kept = [t for t in history.turns if t.turn_id != turn_id]
+            if len(kept) != len(history.turns):
+                history.turns = kept
+                await memory.update_history(history)
 
     async def _start_registry_only_persistence(self, app: web.Application) -> None:
         """Registry-only hosts have no on_startup: create + initialize ChatStorage, then start the bus."""

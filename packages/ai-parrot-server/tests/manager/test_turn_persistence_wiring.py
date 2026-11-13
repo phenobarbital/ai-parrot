@@ -302,3 +302,42 @@ async def test_one_cleaner_serves_many_bots_and_clears_the_right_memory(wired, s
         assert ref() is None
     finally:
         await runner.cleanup()
+
+
+class _RecordingAsk(_Client):
+    """Answers ``ok`` and remembers the history each call was given."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.histories = []
+
+    async def ask(self, prompt, *a, history=(), **kw):
+        from parrot.models import AIMessage
+        from parrot.models.responses import CompletionUsage
+
+        self.histories.append([m.content for m in history])
+        return AIMessage(input=prompt, output="ok", model="stub", provider="stub",
+                         usage=CompletionUsage(prompt_tokens=1, completion_tokens=1))
+
+
+async def test_a_deleted_turn_is_not_fed_to_the_llm_by_the_next_ask(wired, storage):
+    app, mgr = web.Application(), _manager()
+    mgr.setup_registry_only(app, turn_persistence=True)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    try:
+        client = _RecordingAsk()
+        bot = BaseBot(name="alpha", llm=client, memory_type="memory", injection_detection=False,
+                      chatbot_id="uuid-1")
+        await bot.configure()
+        bot.conversation_memory = InMemoryConversation()
+        mgr._attach_durable_memory(bot)
+        first = await bot.ask("first-question-xyz", user_id="u", session_id="s", use_vector_context=False)
+        await bot.ask("second-question", user_id="u", session_id="s", use_vector_context=False)
+        assert any("first-question-xyz" in c for c in client.histories[-1])
+        assert await storage.delete_turn("s", first.turn_id, user_id="u", agent_id="alpha")
+        await bot.ask("third-question", user_id="u", session_id="s", use_vector_context=False)
+        assert not any("first-question-xyz" in c for c in client.histories[-1])
+        assert any("second-question" in c for c in client.histories[-1])  # the other turns stay
+    finally:
+        await runner.cleanup()
