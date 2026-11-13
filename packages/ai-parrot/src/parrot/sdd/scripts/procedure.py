@@ -10,13 +10,15 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from parrot.knowledge.wiki.procedure.index import is_stale, read_index
-from parrot.knowledge.wiki.procedure.models import PLANE_DIR, ProcedureSpec
+from parrot.knowledge.wiki.procedure.models import PLANE_DIR, ProcedureSpec, Resolution
 from parrot.knowledge.wiki.procedure.plane import ProcedurePlane
 from parrot.knowledge.wiki.procedure.producers import load_manifest, manifest_specs
+from parrot.knowledge.wiki.procedure.resolver import resolve
 from parrot.knowledge.wiki.procedure.validate import validate_graph
 from parrot.knowledge.wiki.project import find_shared_root
 from parrot.sdd.config import ProcedureSettings, SddConfigError, load_sdd_config
-from parrot.sdd.scripts.procedure_probes import PROBE_COSTS
+from parrot.sdd.scripts.procedure_advice import checkout_root
+from parrot.sdd.scripts.procedure_probes import PROBE_COSTS, SddProbeRunner, scope_for
 
 COMMANDS_DIR = Path(__file__).resolve().parent.parent / "_assets" / "claude" / "commands"
 
@@ -159,6 +161,143 @@ def _cmd_check(args: argparse.Namespace) -> int:
     return 1 if any(finding.severity == "error" for finding in findings) else 0
 
 
+def _render_check(probe: str, expect: bool | str) -> str:
+    """Render a probe name and its string expectation when one is configured."""
+    return f"{probe}={expect}" if isinstance(expect, str) else probe
+
+
+def render_brief(resolution: Resolution, *, max_lines: int) -> str:
+    """Render the task-start procedure block, or an empty string when nothing applies."""
+    if not resolution.next and not resolution.mandatory or max_lines <= 0:
+        return ""
+
+    feature = resolution.scope.get("feature", "unknown")
+    task = resolution.scope.get("task", "unknown")
+    lines = ["### Procedure", f"Position: feature `{feature}`, task `{task}`."]
+    for item in resolution.next:
+        line = f"Next: {item.spec.title} — `{item.spec.command}`"
+        unmet = [
+            _render_check(result.check.probe, result.check.expect)
+            for result in item.preconditions
+            if result.value is not True
+        ]
+        if unmet:
+            line += f" (unmet: {', '.join(unmet)})"
+        lines.append(line)
+
+    if resolution.mandatory:
+        lines.append("Mandatory:")
+        for spec in resolution.mandatory:
+            line = f"- {spec.title}: `{spec.command}`"
+            if spec.use_instead:
+                line += f" (never by hand; use `{spec.use_instead}`)"
+            lines.append(line)
+
+    return "\n".join(lines[:max_lines])
+
+
+def _scope_from_task_file(path: Path) -> tuple[str | None, str | None]:
+    """Return ``(feature slug, task id)`` parsed from a task filename and Spec header."""
+    try:
+        parts = path.stem.split("-")
+        if len(parts) < 3:
+            return None, None
+        if parts[0] == "TASK" and parts[1].isdigit():
+            task_id = "-".join(parts[:2])
+        elif parts[0] == "HOTFIX":
+            digit_indexes = [index for index, part in enumerate(parts[1:], 1) if part.isdigit()]
+            if not digit_indexes or digit_indexes[-1] == len(parts) - 1:
+                return None, None
+            digit_index = digit_indexes[-1]
+            task_id = "-".join(parts[: digit_index + 1])
+        else:
+            return None, None
+
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.startswith("**Spec**:"):
+                continue
+            _, _, value = line.partition(":")
+            spec_path = value.strip().strip("`")
+            if not spec_path.endswith(".spec.md"):
+                return None, None
+            feature = Path(spec_path).name.removesuffix(".spec.md")
+            return (feature, task_id) if feature else (None, None)
+    except (OSError, ValueError):
+        return None, None
+    return None, None
+
+
+def _cmd_next(args: argparse.Namespace) -> int:
+    """Resolve and print the procedures applicable to the current checkout state."""
+    root = _repository_root()
+    if root is None:
+        return 2
+    settings = _settings(root)
+    specs, stale = _load_specs(root)
+    checkout = checkout_root(Path.cwd()) or root
+    scope = scope_for(checkout, feature=args.feature, task=args.task)
+    resolution = resolve(
+        specs,
+        scope,
+        SddProbeRunner(checkout, timeout=settings.remote_probe_timeout_seconds),
+        allow_remote=not args.no_remote,
+        stale=stale,
+    )
+    if args.json:
+        sys.stdout.write(resolution.model_dump_json(indent=2) + "\n")
+        return 0
+
+    scope_text = ", ".join(f"{key}={value}" for key, value in sorted(resolution.scope.items()))
+    sys.stdout.write(f"scope: {scope_text}\n")
+    for item in resolution.next:
+        line = f"{item.spec.id}  {item.spec.mode}  {item.spec.command}"
+        unmet = [
+            _render_check(result.check.probe, result.check.expect)
+            for result in item.preconditions
+            if result.value is not True
+        ]
+        if unmet:
+            line += f"  unmet: {', '.join(unmet)}"
+        sys.stdout.write(f"{line}\n")
+    for spec in resolution.mandatory:
+        sys.stdout.write(f"mandatory: {spec.id}  {spec.mode}  {spec.command}\n")
+    return 0
+
+
+def _cmd_brief(args: argparse.Namespace) -> int:
+    """Print a task-start procedure block without allowing failures to block task starts."""
+    try:
+        root = find_shared_root(Path.cwd())
+        if root is None:
+            return 0
+        settings = _settings(root)
+        if not settings.enabled:
+            return 0
+        feature, task = _scope_from_task_file(args.task_file)
+        if feature is None or task is None:
+            return 0
+        if not (root / PLANE_DIR / "procedures.json").is_file():
+            return 0
+        specs, stale = _load_specs(root)
+        if stale:
+            return 0
+        checkout = checkout_root(Path.cwd()) or root
+        resolution = resolve(
+            specs,
+            scope_for(checkout, feature=feature, task=task),
+            SddProbeRunner(checkout, timeout=settings.remote_probe_timeout_seconds),
+            allow_remote=False,
+            stale=False,
+        )
+        max_lines = settings.brief_max_lines if args.max_lines is None else args.max_lines
+        brief = render_brief(resolution, max_lines=max_lines)
+        if brief:
+            sys.stdout.write(f"{brief}\n")
+    except Exception:
+        return 0
+    return 0
+
+
 def _parser() -> argparse.ArgumentParser:
     """Build the procedure CLI parser."""
     parser = argparse.ArgumentParser(prog="parrot sdd procedure", description=__doc__)
@@ -177,11 +316,21 @@ def _parser() -> argparse.ArgumentParser:
     p_check = sub.add_parser("check", help="Validate the graph; exit 1 on any error finding.")
     p_check.add_argument("--json", action="store_true")
     p_check.set_defaults(func=_cmd_check)
+    p_next = sub.add_parser("next", help="Applicable procedures and the valid next step(s).")
+    p_next.add_argument("--feature")
+    p_next.add_argument("--task")
+    p_next.add_argument("--no-remote", action="store_true")
+    p_next.add_argument("--json", action="store_true")
+    p_next.set_defaults(func=_cmd_next)
+    p_brief = sub.add_parser("brief", help="Print the task-start procedure block.")
+    p_brief.add_argument("--task-file", type=Path, required=True)
+    p_brief.add_argument("--max-lines", type=int, default=None)
+    p_brief.set_defaults(func=_cmd_brief)
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Dispatch build, list, show, or check and return its process exit code."""
+    """Dispatch build, list, show, next, check, or brief and return its process exit code."""
     args = _parser().parse_args(argv)
     return int(args.func(args))
 
