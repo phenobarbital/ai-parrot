@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -387,6 +388,3 @@ async def test_separate_crew_db_selection_explicit() -> None:
     assert migration_set.resource_dir == "sql/crew_definitions"
     assert migration_set.package == "parrot.server.migrations"
 
-
-# Import Path for SQL file reading
-from pathlib import Path
