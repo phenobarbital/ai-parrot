@@ -50,6 +50,13 @@ class _StubBackend(ConversationBackend):
     async def query_artifacts(self, *a, **kw): return []
     async def delete_artifact(self, *a, **kw): ...
     async def delete_session_artifacts(self, *a, **kw): return 0
+    # FEAT-886 durable operations
+    async def query_turn_window(self, *a, **kw): return []
+    async def max_sequence(self, *a, **kw): return 0
+    async def put_tombstone(self, *a, **kw): ...
+    async def is_deleted(self, *a, **kw): return False
+    async def get_index_state(self, *a, **kw): return "ready"
+    async def backfill_batch(self, *a, **kw): return None
 
 
 def test_artifact_store_accepts_conversation_backend():
