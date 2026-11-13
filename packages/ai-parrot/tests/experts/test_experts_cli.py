@@ -104,6 +104,9 @@ class FakeAgentRegistry:
 # ── fixtures ──────────────────────────────────────────────────────────────
 
 
+_REAL_CHECKPOINT_STORE = experts_cli._checkpoint_store
+
+
 @pytest.fixture
 def env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> SimpleNamespace:
     """Wire fake experts and an in-memory checkpoint store into the CLI."""
@@ -119,7 +122,7 @@ def env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> SimpleNamespace:
         return None
 
     monkeypatch.setattr(experts_cli, "_build_registries", _registries)
-    monkeypatch.setattr(experts_cli, "_checkpoint_store", lambda name: store)
+    monkeypatch.setattr(experts_cli, "_checkpoint_store", lambda name, gate_db=None: store)
     monkeypatch.setattr(stage_node, "record_episode", _no_episode)
     agents_dir = tmp_path / "agents"
     agents_dir.mkdir()
@@ -274,3 +277,21 @@ def test_scope_compilation_runs_off_the_event_loop_thread(
     main = threading.get_ident()
     assert seen["compile"] != main
     assert seen["load"] != main
+
+
+def test_sqlite_checkpoint_store_needs_no_redis_and_resumes(
+    env: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``--checkpoint-store sqlite`` checkpoints a real run through the lease-capable local store."""
+    monkeypatch.setattr(experts_cli, "_checkpoint_store", _REAL_CHECKPOINT_STORE)
+    env.base = [*env.base, "--checkpoint-store", "sqlite"]  # group option, before the subcommand
+    run_id, gate_id = _run_and_gate(env)
+    assert (Path(env.base[3]).parent / "checkpoints.sqlite").exists()
+
+    assert _invoke(env, "approve", gate_id).exit_code == 0
+    resumed = _invoke(env, "resume", "--run-id", run_id)
+
+    assert resumed.exit_code == 0, resumed.output
+    assert f"run {run_id} completed" in resumed.output
+    assert len(env.analyst.prompts) == 1  # the gated stage is not re-run after restart
+    assert len(env.remediation.prompts) == 1

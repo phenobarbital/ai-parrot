@@ -41,9 +41,11 @@ from parrot.bots.flows.core.gates.stores import resolve_gate_store
 from parrot.bots.flows.core.result import NodeResult
 from parrot.bots.flows.flow.definition import FlowDefinition
 from parrot.bots.flows.flow.flow import AgentsFlow
+from parrot.launcher import parrot_home
 from parrot.experts.grid.compiler import compile_scope
 from parrot.experts.grid.loader import load_scopes
 from parrot.experts.grid.models import ScopeGrid, ScopeGridError
+from parrot.experts.lease_store import LeaseDurableCheckpointStore
 from parrot.experts.stages.node import (
     EXPERT_REGISTRY_KEY,
     GATE_HOST_KEY,
@@ -110,15 +112,22 @@ def _gate_store(gate_db: Path | None) -> GateStore:
     return resolve_gate_store(sqlite_path=gate_db)
 
 
-def _checkpoint_store(name: str | None) -> CheckpointStore:
+def _checkpoint_store(name: str | None, gate_db: Path | None = None) -> CheckpointStore:
     """Resolve the AgentsFlow checkpoint store holding run state.
+
+    ``sqlite`` resolves to :class:`LeaseDurableCheckpointStore` (no Redis needed, still lease-protected),
+    stored beside the gate database; every other name goes through the stock factory.
 
     Args:
         name: Backend name; ``None`` uses ``FLOW_CHECKPOINT_STORE``.
+        gate_db: Gate store path; the ``sqlite`` checkpoint file lives in the same directory.
 
     Returns:
         The checkpoint store.
     """
+    if name and name.lower() == "sqlite":
+        base = gate_db.parent if gate_db is not None else parrot_home()
+        return LeaseDurableCheckpointStore(base / "checkpoints.sqlite")
     return get_checkpoint_store(name)
 
 
@@ -258,7 +267,7 @@ async def _run_scope(
 
     run_id = uuid.uuid4().hex
     host = GateHost(_gate_store(gate_db))
-    flow = _build_flow(definition, agent_registry, _checkpoint_store(checkpoint_store), run_id)
+    flow = _build_flow(definition, agent_registry, _checkpoint_store(checkpoint_store, gate_db), run_id)
     ctx = FlowContext(initial_task=text, agent_registry=agent_registry)
     ctx.shared_data.update(_shared_data({SCOPE_KEY: scope}, registry=registry, host=host, run_id=run_id, tenant=tenant))
     click.echo(f"run {run_id} started (scope {scope})")
@@ -275,7 +284,7 @@ async def _resume_run(
 ) -> None:
     """Resume a paused run once every gate it waits on is approved."""
     _register_gate_kinds()
-    store = _checkpoint_store(checkpoint_store)
+    store = _checkpoint_store(checkpoint_store, gate_db)
     checkpoint = await store.latest(run_id)
     if checkpoint is None:
         raise click.ClickException(f"no checkpoint for run {run_id}")
@@ -349,7 +358,7 @@ async def _resolve_gate(
 @click.option(
     "--checkpoint-store",
     default=None,
-    help="AgentsFlow checkpoint backend for run state (default: FLOW_CHECKPOINT_STORE).",
+    help="AgentsFlow checkpoint backend for run state (default: FLOW_CHECKPOINT_STORE; 'sqlite' needs no Redis).",
 )
 @click.pass_context
 def experts(ctx: click.Context, agents_dir: Path | None, gate_db: Path | None, checkpoint_store: str | None) -> None:
