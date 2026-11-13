@@ -74,14 +74,14 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root task: no dependency; creates the gates package every gate task imports",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T18:41:45+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5612-gate-core-models-kinds.md"
     },
@@ -92,7 +92,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -101,7 +101,7 @@
       "parallel": true,
       "parallelism_notes": "imports GateSpec/GateRecord/GateStore/GateError and is_registered from TASK-5612 (core/gates/models.py, kinds.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T18:41:45+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5613-gate-host.md"
     },
@@ -112,7 +112,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -121,7 +121,7 @@
       "parallel": true,
       "parallelism_notes": "implements GateStore protocol + GateRecord from TASK-5612 (core/gates/models.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T18:41:45+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5614-gate-store-redis.md"
     },
@@ -132,7 +132,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -141,7 +141,7 @@
       "parallel": true,
       "parallelism_notes": "resolve_gate_store imports RedisGateStore from TASK-5614 (core/gates/stores/redis.py); contract suite runs it",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T18:41:45+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5615-gate-store-sqlite-resolver.md"
     },
@@ -152,7 +152,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -161,7 +161,7 @@
       "parallel": true,
       "parallelism_notes": "converts to GateRecord/GateSpec and calls register_gate_kind from TASK-5612 (core/gates)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T18:41:45+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5616-devloop-gate-adapter.md"
     },
@@ -172,7 +172,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -182,7 +182,7 @@
       "parallel": true,
       "parallelism_notes": "uses GateHost from TASK-5613 (core/gates/host.py) and DevLoopGateAdapter from TASK-5616 (dev_loop/gate_adapter.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T18:41:45+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5617-devloop-sessionhost-migration.md"
     },
@@ -193,7 +193,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -203,7 +203,7 @@
       "parallel": true,
       "parallelism_notes": "builds on SessionHost delegation from TASK-5617 (session_state.py) and resolve_gate_store from TASK-5615 (core/gates/stores)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T18:41:45+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5618-devloop-runner-commands-streaming.md"
     },
@@ -214,7 +214,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -223,7 +223,7 @@
       "parallel": true,
       "parallelism_notes": "relies on runner GateError mapping from TASK-5618 (dev_loop/runner.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T18:41:45+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5619-devloop-integrations-gate.md"
     },
@@ -234,7 +234,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -243,7 +243,7 @@
       "parallel": true,
       "parallelism_notes": "ExpertStageConfig.gate is a GateSpec from TASK-5612 (core/gates/models.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T18:41:45+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5620-expert-grid-models.md"
     },
@@ -254,14 +254,14 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root task: modifies only experts/activation.py, no new-symbol dependency",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T18:41:45+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5621-expert-observability.md"
     },
@@ -272,14 +272,14 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root task: modifies experts/models.py and registry.py, which no other task of this feature edits",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T18:41:45+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5622-expert-episodic-memory.md"
     },
@@ -290,14 +290,14 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root task: uses only existing PromptBuilder.clone and install_layers",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T18:41:45+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5623-expert-inline-conductor.md"
     },
@@ -308,7 +308,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -321,7 +321,7 @@
       "parallel": true,
       "parallelism_notes": "uses GateHost (TASK-5613 host.py), ExpertStageConfig (TASK-5620 grid/models.py), activate_expert(mode=) (TASK-5621 activation.py), record_episode (TASK-5622 sources/episodes.py), build_inline_conductor (TASK-5623 stages/inline.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T18:41:45+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5624-expert-stage-node.md"
     },
@@ -332,7 +332,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -341,7 +341,7 @@
       "parallel": false,
       "parallelism_notes": "emits node type 'expert_stage' registered by TASK-5624 (stages/node.py) and uses ScopeGrid from TASK-5620; edits pyproject package-data",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T18:41:45+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5625-expert-scope-compiler.md"
     },
@@ -352,14 +352,14 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root task: touches only sdd_coder models/roster, no new-symbol dependency",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T18:41:45+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5626-expert-tier-seat-hint.md"
     },
@@ -370,7 +370,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -380,7 +380,7 @@
       "parallel": true,
       "parallelism_notes": "uses load_scopes/compile_scope from TASK-5625 (experts/grid) and resolve_gate_store from TASK-5615 (core/gates/stores)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T18:41:45+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5627-experts-run-cli.md"
     },
@@ -391,7 +391,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -400,7 +400,7 @@
       "parallel": true,
       "parallelism_notes": "matches documents against ScopeGrid.match via load_scopes from TASK-5625 and runs the mob stage via compile_scope (TASK-5625)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T18:41:45+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5628-sdd-experts-consult.md"
     },
@@ -411,7 +411,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -420,7 +420,7 @@
       "parallel": true,
       "parallelism_notes": "extends experts_cli.py and uses Contribution io from TASK-5628 (sdd/experts_cli.py, experts/contributions.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T18:41:45+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5629-sdd-experts-triage-promote.md"
     },
@@ -431,7 +431,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -440,7 +440,7 @@
       "parallel": true,
       "parallelism_notes": "documents the triage/promote commands TASK-5629 adds to packages/ai-parrot/src/parrot/sdd/experts_cli.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T18:41:45+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5630-sdd-commands-consult-step.md"
     },
@@ -451,7 +451,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -461,7 +461,7 @@
       "parallel": true,
       "parallelism_notes": "drives `parrot experts run` from TASK-5627 (experts/cli.py) and the runner gate store from TASK-5618 (dev_loop/runner.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T18:41:45+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5631-expert-stages-integration-tests.md"
     },
@@ -472,7 +472,7 @@
       "feature_id": "FEAT-890",
       "feature": "expert-stages-and-delegation",
       "spec": "sdd/specs/expert-stages-and-delegation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "M",
       "depends_on": [
@@ -486,7 +486,7 @@
       "parallel": true,
       "parallelism_notes": "documents GateHost/stores (TASK-5613/5615), ExpertStageNode/compile_scope (TASK-5624/5625), `parrot experts` (TASK-5627) and consult/triage/promote (TASK-5629)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-13T18:41:45+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5632-docs-expert-stages.md"
     }
