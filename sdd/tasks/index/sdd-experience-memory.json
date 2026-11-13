@@ -380,7 +380,7 @@
       "feature_id": "FEAT-887",
       "feature": "sdd-experience-memory",
       "spec": "sdd/specs/sdd-experience-memory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -390,8 +390,9 @@
       "parallelism_notes": "agy-replay: TASK-5601: consumes the interceptor contract in packages/ai-parrot/src/parrot/flows/dev_loop/experience.py, packages/ai-parrot/src/parrot/flows/dev_loop/dispatchers/llm.py",
       "assigned_to": null,
       "started_at": "2026-11-13T19:26:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5603-agy-replay.md"
+      "completed_at": "2026-11-13T23:07:02+00:00",
+      "file": "sdd/tasks/completed/TASK-5603-agy-replay.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5604",
