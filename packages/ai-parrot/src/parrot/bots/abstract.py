@@ -23,7 +23,7 @@ from navigator_auth.conf import AUTH_SESSION_OBJECT
 from parrot.interfaces.database import DBInterface
 from ..exceptions import ConfigError
 from ..core.exceptions import BudgetExhausted
-from ..conf import EMBEDDING_DEFAULT_MODEL, KB_DEFAULT_MODEL
+from ..conf import EMBEDDING_DEFAULT_MODEL, KB_DEFAULT_MODEL, REDIS_HISTORY_EXPLICIT
 from ..embeddings import get_model_recommendations
 from .prompts import (
     BASIC_SYSTEM_PROMPT,
@@ -613,7 +613,7 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
 
         # NEW: Unified Conversation Memory System
         self.conversation_memory: Optional[ConversationMemory] = None
-        self.memory_type: str = kwargs.get("memory_type", "memory")  # 'memory', 'file', 'redis'
+        self.memory_type: str = kwargs.get("memory_type", "auto")  # 'auto', 'memory', 'file', 'redis'
         self.memory_config: dict = kwargs.get("memory_config", {})
 
         # Conversation settings
@@ -1436,7 +1436,12 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
             self.logger.info(f"Configured conversation memory: {self.memory_type}")
         except Exception as e:
             self.logger.error(f"Error configuring conversation memory: {e}")
-            # Fallback to in-memory
+            if self.memory_type == "redis" or (
+                self.memory_type == "auto" and self._auto_selects_redis(self.memory_config)
+            ):
+                # Redis was selected: a silent in-memory fallback would split history across processes.
+                raise
+            # Fallback to in-memory (explicit 'memory' / 'file', or 'auto' without Redis)
             self.conversation_memory = self.get_conversation_memory("memory")
             self.logger.warning("Fallback to in-memory conversation storage")
         # FEAT-525: register the recovery tool once memory (and therefore a
@@ -2078,8 +2083,26 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         self._configure_count = 0
         await self.configure(app if app is not None else getattr(self, "app", None))
 
-    def get_conversation_memory(self, storage_type: str = "memory", **kwargs) -> ConversationMemory:
-        """Factory function to create conversation memory instances."""
+    _REDIS_ONLY_KWARGS = ("redis_url", "key_prefix", "history_ttl", "omission_ttl", "use_hash_storage")
+
+    def get_conversation_memory(self, storage_type: str = "auto", **kwargs) -> ConversationMemory:
+        """Factory function to create conversation memory instances.
+
+        ``'memory'`` | ``'file'`` | ``'redis'`` behave as before. ``'auto'`` selects
+        :class:`RedisConversation` when ``kwargs`` carries a host-injected ``redis_url`` or
+        ``REDIS_HISTORY_EXPLICIT`` is true, otherwise :class:`InMemoryConversation`. The factory
+        performs no I/O and never probes a connection.
+
+        Raises:
+            ValueError: For an unknown storage type.
+        """
+        if storage_type == "auto":
+            if self._auto_selects_redis(kwargs):
+                storage_type = "redis"
+            else:
+                storage_type = "memory"
+                # Redis-only keys must not crash the in-memory constructor.
+                kwargs = {k: v for k, v in kwargs.items() if k not in self._REDIS_ONLY_KWARGS}
         if storage_type == "memory":
             return InMemoryConversation(**kwargs)
         elif storage_type == "file":
@@ -2088,6 +2111,14 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
             return RedisConversation(**kwargs)
         else:
             raise ValueError(f"Unknown storage type: {storage_type}")
+
+    @staticmethod
+    def _auto_selects_redis(kwargs: dict) -> bool:
+        """Whether ``memory_type='auto'`` resolves to Redis (no I/O).
+
+        True for a non-empty host-injected ``redis_url`` kwarg, or when ``REDIS_HISTORY_EXPLICIT`` is set.
+        """
+        return bool(kwargs.get("redis_url")) or bool(REDIS_HISTORY_EXPLICIT)
 
     @property
     def context_budget(self) -> Optional[ContextBudget]:

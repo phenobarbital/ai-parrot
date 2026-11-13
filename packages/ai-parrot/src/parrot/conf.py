@@ -328,8 +328,12 @@ FLOW_CHECKPOINT_HISTORY = int(config.get("FLOW_CHECKPOINT_HISTORY", fallback=10)
 FLOW_CHECKPOINT_SHUTDOWN_DEADLINE = int(config.get("FLOW_CHECKPOINT_SHUTDOWN_DEADLINE", fallback=15))
 FLOW_CHECKPOINT_LEASE_TTL = int(config.get("FLOW_CHECKPOINT_LEASE_TTL", fallback=60))
 
+# FEAT-886: True only when the operator set REDIS_HISTORY_URL themselves. Captured BEFORE the host/port default
+# below is synthesized; REDIS_HISTORY_URL is the operator value when explicit, else the synthesized URL.
+_explicit_history_url = str(config.get("REDIS_HISTORY_URL", fallback="") or "").strip()
+REDIS_HISTORY_EXPLICIT: bool = bool(_explicit_history_url)
 REDIS_HISTORY_DB = config.get("REDIS_HISTORY_DB", fallback=3)
-REDIS_HISTORY_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_HISTORY_DB}"
+REDIS_HISTORY_URL = _explicit_history_url or f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_HISTORY_DB}"
 REDIS_SERVICES_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/4"
 REDIS_DATASET_DB = config.get("REDIS_DATASET_DB", fallback=3)
 REDIS_DATASET_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DATASET_DB}"

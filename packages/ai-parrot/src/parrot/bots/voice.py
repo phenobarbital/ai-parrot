@@ -399,7 +399,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
             await super().configure(app)
             return
         # Default to Redis memory for VoiceBot if not specified
-        if not self.memory_type or self.memory_type == "memory":
+        if not self.memory_type or self.memory_type in ("memory", "auto"):
             self.memory_type = "redis"
         url = getattr(self, "url", None)
         if url and app:

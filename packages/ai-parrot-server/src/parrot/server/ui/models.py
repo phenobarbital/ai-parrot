@@ -110,7 +110,7 @@ class BotWritePayload(BaseModel):
     parent_searcher_config: dict[str, Any] | None = None
     context_search_limit: int | None = None
     context_score_threshold: float | None = None
-    memory_type: Literal["memory", "file", "redis"] | None = None
+    memory_type: Literal["auto", "memory", "file", "redis"] | None = None
     memory_config: dict[str, Any] | None = None
     max_context_turns: int | None = None
     use_conversation_history: bool | None = None
