@@ -459,6 +459,12 @@ SCENARIOS: dict[str, Scenario] = {
     "check_task_state": Scenario(prepare=_seed_feature, expect_exit=_ANY_CLEAN),
     "id_ledger": Scenario(prepare=_seed_feature, expect_exit=_ANY_CLEAN),
     "migrate_index": Scenario(prepare=_seed_feature, expect_exit=_ANY_CLEAN),
+    # FEAT-891: the procedure graph; `check` may refuse cleanly, a traceback is never accepted.
+    "procedure": Scenario(
+        prepare=_seed_feature,
+        expect_exit=_ANY_CLEAN,
+        placeholders={"<task.md>": "sdd/tasks/active/TASK-001-demo-task.md"},
+    ),
 }
 
 
@@ -738,3 +744,20 @@ def test_c23_codex_install_writes_ledger_gitattributes_and_hooks(
     assert "sdd/ledger/archive/*.jsonl merge=union" in attributes
     for event in ("pre-commit", "post-merge", "post-checkout", "post-rewrite"):
         assert "# >>> parrot-ledger >>>" in (repo / ".git/hooks" / event).read_text(encoding="utf-8")
+
+
+def test_wheel_only_procedure(
+    managed_home: Path, tools_dir: Path, foreign_repo: tuple[Path, Path]
+) -> None:
+    """FEAT-891: the wheel installs and runs the procedure graph in a foreign repository."""
+    repo, _ = foreign_repo
+    env = _env(managed_home, tools_dir)
+    _install_all_hosts(repo, env)
+    assert (repo / "sdd/procedures/sdd-workflow.yaml").is_file()
+    assert (repo / ".parrot/procedure/procedures.json").is_file()
+    for argv, expected in ((["check"], 0), (["next", "--no-remote"], 0), (["list"], 0)):
+        result = subprocess.run(
+            ["parrot", "sdd", "procedure", *argv], cwd=repo, env=env, capture_output=True, text=True
+        )
+        assert result.returncode == expected, f"{argv}: {result.stdout[-400:]}\n{result.stderr[-600:]}"
+        assert "Traceback" not in result.stderr, result.stderr[-600:]
