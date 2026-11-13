@@ -74,6 +74,12 @@ Decisions already taken by the owner during discovery (not to be re-litigated by
 - **Preconditions are named, deterministic probes**, validated by lint. No free-form expressions.
 - **Prompt-submit injection is out of the pilot.** The pilot injects at task start and before a
   guarded command only.
+- **Five guarded commands in v1**: `parrot sdd task close`, `parrot sdd worktree ensure`,
+  `gh pr create`, `git push`, and `mv` / `git mv` on `sdd/tasks/active/`.
+- **The pilot is measured by task-state violations only**, before and after.
+- **The manifest ships in the package assets** and is installed by `parrot sdd install`; a
+  repo-local manifest may overlay it.
+- **Host parity is inherited from FEAT-887**; this feature builds no host adapters.
 
 Hard constraints from the codebase:
 
@@ -294,9 +300,8 @@ For an agent:
 - **At task start**, next to the FEAT-887 pitfalls block, a short "Procedure" block: where the
   task is in the workflow, the next valid step and the mandatory steps ahead (for example: close
   the task with `parrot sdd task close`, never a hand-rolled move).
-- **Before a guarded command** (a Bash command that a procedure node declares as its entry, for
-  example `parrot sdd task close`, `gh pr create`, `git push`), an advisory when a precondition
-  does not hold ("`depends_on` TASK-5583 is not done"). The command still runs as written.
+- **Before a guarded command** (a Bash command that a procedure node declares as its entry; the
+  v1 set is the five listed under Constraints), an advisory when a precondition does not hold ("`depends_on` TASK-5583 is not done"). The command still runs as written.
 - A mandatory node is announced as mandatory. Nothing is dispatched in the pilot.
 
 ### Internal Behavior
@@ -546,7 +551,7 @@ from parrot_tools.wiki.tools import create_wiki_tools                  # ai-parr
 - [x] Option B declares the SDD graph in a manifest instead of command frontmatter (commands have four or more copies and host-owned frontmatter). Is that deviation from "skills with typed edges" accepted for the SDD case? — *Owner: Jesus Lara*: accepted.
 - [x] Prompt-submit injection needs an event neither the wiki hook nor FEAT-887 registers. Where does it go? — *Owner: Jesus Lara*: out of the pilot; the pilot injects at task start and before a guarded command only.
 - [x] Preconditions as named probes or as expressions? — *Owner: Jesus Lara*: named probes with deterministic validation; no free-form expressions.
-- [ ] Which commands are guarded in v1 (candidates: `parrot sdd task close`, `parrot sdd ids reserve`, `parrot sdd worktree ensure`, `gh pr create`, `git push`)? — *Owner: Jesus Lara*
-- [ ] How is the pilot measured: task-state violations and hand-rolled closes before and after, advisories fired versus followed, or both? — *Owner: Jesus Lara*
-- [ ] Does the manifest ship in the package assets (so `parrot sdd install` gives every repo the SDD graph) or stay repo-local in the pilot? — *Owner: Jesus Lara*
-- [ ] Hosts other than Claude Code (codex, agy, in-process seats): same parity rule as FEAT-887 in v1, or Claude Code first? — *Owner: Jesus Lara*
+- [x] Which commands are guarded in v1? — *Owner: Jesus Lara*: five — `parrot sdd task close` (task is `in-progress`, `depends_on` all `done`), `parrot sdd worktree ensure` (spec and per-spec index exist), `gh pr create` (base is not `main` for a feature; no PR already open for the branch), `git push` (not from a worker sandbox), and `mv` / `git mv` on `sdd/tasks/active/` (hand-rolled close instead of the script). `parrot sdd ids reserve` is excluded: the failure there is the absence of the command, which a pre-command advisory cannot see.
+- [x] How is the pilot measured? — *Owner: Jesus Lara*: task-state violations only (what `check_task_state` detects), compared before and after. "Advisories fired versus followed" is not measured in v1; it would need an event log and widen the dependency on FEAT-887.
+- [x] Does the manifest ship in the package assets or stay repo-local? — *Owner: Jesus Lara*: it ships in the package assets next to the SDD commands and is installed by `parrot sdd install`; a repo-local manifest may overlay it to add or exclude nodes. Costs one release smoke scenario and twin-test coverage.
+- [x] Host parity? — *Owner: Jesus Lara*: inherit FEAT-887's, build no host adapters here. The task-start block reaches every seat through the shared brief; the pre-command advisory reaches whichever seats FEAT-887 gives a pre-tool hook (Claude Code verified in its spec; codex, agy and in-process seats not verified here).
