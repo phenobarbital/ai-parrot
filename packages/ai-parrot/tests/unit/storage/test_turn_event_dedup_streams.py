@@ -43,7 +43,9 @@ def _backend(url: str, prefix: str) -> RedisStreamsBackend:
     return RedisStreamsBackend(url, stream_prefix=prefix, dedup_prefix=f"{prefix}dedup:", group="parrot-turns")
 
 
-async def _deliveries(url, envelopes, prefix):
+async def _deliveries(url, envelopes, prefix, expected_min):
+    """Publish ``envelopes`` and wait on a CONDITION (not a fixed sleep) until ``expected_min`` handler calls
+    happened, then give any (wrongly) non-deduplicated duplicate time to show up."""
     seen = []
     consumer = EventBus(backend=_backend(url, prefix))
 
@@ -55,10 +57,13 @@ async def _deliveries(url, envelopes, prefix):
     producer = EventBus(backend=_backend(url, prefix), publish_only=True)
     await producer.connect()
     try:
-        await asyncio.sleep(0.3)
+        # the consumer group is created at id "0": entries published before it exists are NOT lost
         for env in envelopes:
             await producer.core.publish(env)
-        await asyncio.sleep(1.5)
+        deadline = asyncio.get_running_loop().time() + 15
+        while len(seen) < expected_min and asyncio.get_running_loop().time() < deadline:
+            await asyncio.sleep(0.05)
+        await asyncio.sleep(1.0)
     finally:
         await producer.close()
         await consumer.close()
@@ -71,11 +76,12 @@ def _env(n, agent="agent-a", user="u1", session="s1", turn="msg-1"):
 
 
 async def test_a_retry_of_the_same_turn_is_deduplicated(redis_url):
-    seen = await _deliveries(redis_url, [_env(1), _env(2)], "t:retry:")  # same scope + same turn id
-    assert seen == [1]
+    seen = await _deliveries(redis_url, [_env(1), _env(2)], "t:retry:", 1)  # same scope + same turn id
+    # the two XADDs are issued by concurrent tasks, so WHICH of the two is handled is not defined; exactly one is
+    assert len(seen) == 1 and seen[0] in (1, 2)
 
 
 async def test_two_conversations_reusing_a_client_turn_id_are_both_delivered(redis_url):
     seen = await _deliveries(redis_url, [_env(1, user="u1"), _env(2, user="u2"), _env(3, session="s2"),
-                                         _env(4, agent="agent-b")], "t:scope:")
+                                         _env(4, agent="agent-b")], "t:scope:", 4)
     assert sorted(seen) == [1, 2, 3, 4]
