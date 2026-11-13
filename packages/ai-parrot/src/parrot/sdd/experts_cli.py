@@ -286,7 +286,7 @@ def triage_cmd(contribution: Path, finding_id: str, action: str, reason: str, ro
     """Update the finding status and reason."""
     # Load the contribution
     contrib = load_contribution(contribution)
-    
+
     # Find and update the specified finding
     finding_found = False
     for finding in contrib.findings:
@@ -295,11 +295,11 @@ def triage_cmd(contribution: Path, finding_id: str, action: str, reason: str, ro
             finding.reason = reason
             finding_found = True
             break
-    
+
     if not finding_found:
         click.echo(f"Error: Finding {finding_id} not found in contribution", err=True)
         raise click.ClickException(f"Finding {finding_id} not found")
-    
+
     # Save the updated contribution
     save_contribution(contribution, contrib)
     click.echo(f"Updated finding {finding_id} status to {action}")
