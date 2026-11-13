@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from click.testing import CliRunner
@@ -107,20 +106,69 @@ def test_triage_nonexistent_finding(runner, temp_contribution):
     assert "Finding nonexistent not found" in result.output
 
 
-def test_promote_confirmed_finding(runner, temp_contribution):
-    """Test promoting a confirmed finding."""
-    with patch("parrot.experts.promotion.DecisionService") as mock_service_class:
-        mock_service = AsyncMock()
-        mock_service.generate = AsyncMock(return_value=AsyncMock(decision_ids=["decision-123"], reused=[]))
-        mock_service_class.return_value = mock_service
+@pytest.fixture
+async def repository(tmp_path):
+    """A real SQLite wiki store behind a real DecisionRepository."""
+    from parrot.knowledge.wiki.decisions.repository import DecisionRepository
+    from parrot.knowledge.wiki.store import create_wiki_store
 
-        with patch("parrot.knowledge.wiki.store.create_wiki_store") as mock_factory:
-            mock_factory.return_value = Mock()
+    store = create_wiki_store(tmp_path / "wiki", wiki_name="test", backend="sqlite")
+    return DecisionRepository(store)
 
-            result = runner.invoke(experts, ["promote", str(temp_contribution), "f-2", "--root", "."])
 
-            assert result.exit_code == 0
-            assert "Created inferred decision: decision-123" in result.output
+@pytest.mark.asyncio
+async def test_promote_persists_the_findings_own_statement(temp_contribution, repository):
+    """The decision carries the confirmed finding's statement, unreviewed and inferred - no model involved."""
+    from parrot.experts.promotion import promote_finding
+
+    decision_id = await promote_finding(temp_contribution, "f-2", repo_root=Path("."), repository=repository)
+
+    loaded = await repository.get(decision_id)
+    assert loaded is not None
+    record, _hash = loaded
+    assert record.decision == "Another finding"
+    assert record.origin == "inferred"
+    assert record.review_status == "unreviewed"
+    assert record.source_status == "unknown"
+    assert record.generation is None  # not model generated
+    assert "test-expert" in record.context and "Already confirmed" in record.context
+
+
+@pytest.mark.asyncio
+async def test_promote_twice_returns_the_same_decision_and_keeps_it(temp_contribution, repository):
+    """Idempotent: a second promotion neither duplicates nor overwrites the stored decision."""
+    from parrot.experts.promotion import promote_finding
+
+    first = await promote_finding(temp_contribution, "f-2", repo_root=Path("."), repository=repository)
+    _record, content_hash = await repository.get(first)
+    second = await promote_finding(temp_contribution, "f-2", repo_root=Path("."), repository=repository)
+
+    assert second == first
+    assert (await repository.get(first))[1] == content_hash
+    assert len(await repository.inventory()) == 1
+
+
+@pytest.mark.asyncio
+async def test_promote_refuses_unconfirmed_and_missing_without_writing(temp_contribution, repository):
+    from parrot.experts.promotion import promote_finding
+
+    with pytest.raises(ValueError, match="not confirmed"):
+        await promote_finding(temp_contribution, "f-1", repo_root=Path("."), repository=repository)
+    with pytest.raises(ValueError, match="not found"):
+        await promote_finding(temp_contribution, "nope", repo_root=Path("."), repository=repository)
+    assert await repository.inventory() == []
+
+
+def test_promote_command_prints_the_created_decision(runner, temp_contribution, repository, monkeypatch):
+    """The CLI promotes through the same path; only the project-store opening is replaced."""
+    import asyncio
+
+    monkeypatch.setattr("parrot.experts.promotion._open_repository", lambda root: repository)
+    result = runner.invoke(experts, ["promote", str(temp_contribution), "f-2", "--root", "."])
+
+    assert result.exit_code == 0, result.output
+    assert "Created inferred decision: adr:candidate:" in result.output
+    assert len(asyncio.run(repository.inventory())) == 1
 
 
 def test_promote_unconfirmed_finding(runner, temp_contribution):
@@ -139,7 +187,3 @@ def test_promote_nonexistent_finding(runner, temp_contribution):
     assert result.exit_code != 0
     assert "Error:" in result.output
     assert "not found" in result.output
-
-
-# Import Mock for the patch
-from unittest.mock import Mock

@@ -312,6 +312,7 @@ def triage_cmd(contribution: Path, finding_id: str, action: str, reason: str, ro
 def promote_cmd(contribution: Path, finding_id: str, root: Path) -> None:
     """Promote a confirmed finding to an inferred decision."""
     from parrot.experts.promotion import promote_finding
+    from parrot.knowledge.wiki.decisions.models import DecisionError
 
     async def _run() -> str:
         return await promote_finding(contribution, finding_id, repo_root=root)
@@ -319,6 +320,7 @@ def promote_cmd(contribution: Path, finding_id: str, root: Path) -> None:
     try:
         decision_id = asyncio.run(_run())
         click.echo(f"Created inferred decision: {decision_id}")
-    except ValueError as e:
-        click.echo(f"Error: {e}", err=True)
-        raise click.ClickException(str(e)) from e
+    except (ValueError, DecisionError, click.ClickException) as e:
+        message = getattr(e, "message", None) or str(e)
+        click.echo(f"Error: {message}", err=True)
+        raise click.ClickException(message) from e
