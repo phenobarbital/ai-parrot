@@ -214,6 +214,8 @@ cli._lazy_commands = {
     "disconnect": "parrot.cli.connect",
     # FEAT-713 — accounting metrics layer CLI, ships in ai-parrot-semantic.
     "finance": "parrot.semantic.accounting.cli",
+    # FEAT-890 — expert scopes and gates.
+    "experts": "parrot.experts.cli",
 }
 
 _AGENTD_INSTALL_HINT = "ai-parrot-integrations[agentd]: pip install ai-parrot-integrations[agentd]"
