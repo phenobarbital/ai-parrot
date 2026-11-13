@@ -2377,15 +2377,20 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 try:
                     _stored_text = str(answer_text) if answer_text else None
                     await self._persist_finalized_turn(
-                        response, question=question, user_id=user_id, session_id=session_id,
+                        response,
+                        question=question,
+                        user_id=user_id,
+                        session_id=session_id,
                         turn_id=response.turn_id or turn_id,
-                        use_history=bool(use_conversation_history and memory), compaction=_commit,
+                        use_history=bool(use_conversation_history and memory),
+                        compaction=_commit,
                         assistant_text=_stored_text or "",
                     )
                 except Exception as _save_exc:  # noqa: BLE001 - the answer is returned regardless
                     self.logger.error(
                         "persisting turn_id=%s failed (%s); the answer is still returned",
-                        response.turn_id or turn_id, type(_save_exc).__name__,
+                        response.turn_id or turn_id,
+                        type(_save_exc).__name__,
                     )
 
                 # Post-response: episodic / mixin-provided hook
