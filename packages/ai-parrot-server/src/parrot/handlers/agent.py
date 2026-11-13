@@ -35,6 +35,7 @@ except ImportError:
     ResourceType = None
 from navigator.views import BaseView
 from ..bots.abstract import AbstractBot
+from ..memory.hydration import HydrationUnavailableError, SessionDeletedError
 from ..bots.search import WebSearchAgent
 from ..models.responses import AIMessage, AgentResponse
 from ..outputs import OutputMode, OutputFormatter
@@ -1872,6 +1873,11 @@ class AgentTalk(BaseView):
                         **data,
                     )
                 turn_auth = self._turn_auth_requirement(response)
+        except SessionDeletedError:
+            return self.error(response={"message": "This conversation was deleted"}, status=410)
+        except HydrationUnavailableError as exc:
+            self.logger.error("AgentTalk: conversation history unavailable (fail closed): %s", exc)
+            return self.error(response={"message": "Conversation history is temporarily unavailable"}, status=503)
         except (AuthorizationRequired, CredentialRequired) as exc:
             # Translate the exception into a structured envelope so the web
             # frontend can render a "Connect" pill.  HTTP 200 — the chat call

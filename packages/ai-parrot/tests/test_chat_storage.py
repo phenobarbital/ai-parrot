@@ -51,6 +51,7 @@ async def mock_dynamo():
     dynamo.update_thread = AsyncMock()
     dynamo.put_turn = AsyncMock()
     dynamo.query_turns = AsyncMock(return_value=[])
+    dynamo.query_turn_window = AsyncMock(return_value=[])
     dynamo.query_threads = AsyncMock(return_value=[])
     dynamo.delete_thread_cascade = AsyncMock(return_value=1)
     dynamo.delete_session_artifacts = AsyncMock(return_value=0)
@@ -186,7 +187,7 @@ class TestChatStorageLoadConversation:
 
         messages = await storage.load_conversation("u1", "s1")
         assert messages == []
-        mock_dynamo.query_turns.assert_awaited_once()
+        mock_dynamo.query_turn_window.assert_awaited_once()
 
 
 class TestChatStorageDeleteConversation:

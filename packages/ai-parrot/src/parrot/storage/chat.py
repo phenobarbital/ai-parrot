@@ -21,6 +21,7 @@ from ..conf import CHAT_HOT_TTL_HOURS
 from ..memory.persistence import CONVERSATION_DELETED_TOPIC
 from .errors import (
     ConversationDeletedError,
+    IndexNotReadyError,
     InvalidTurnPayloadError,
     StorageError,
     StorageUnavailableError,
@@ -310,13 +311,18 @@ class ChatStorage:
         if self._dynamo:
             try:
                 agent = agent_id or ""
-                turns = await self._dynamo.query_turns(
-                    user_id=user_id,
-                    agent_id=agent,
-                    session_id=session_id,
-                    limit=limit,
-                    newest_first=False,
-                )
+                try:
+                    # Chronological: the newest ``limit`` turns by (timestamp, sequence, turn_id), ascending.
+                    turns = await self._dynamo.query_turn_window(user_id, agent, session_id, limit)
+                except IndexNotReadyError:
+                    # Legacy session not backfilled yet: the old (sort_key) order is the best available read.
+                    turns = await self._dynamo.query_turns(
+                        user_id=user_id,
+                        agent_id=agent,
+                        session_id=session_id,
+                        limit=limit,
+                        newest_first=False,
+                    )
                 messages = []
                 for row in turns:
                     try:

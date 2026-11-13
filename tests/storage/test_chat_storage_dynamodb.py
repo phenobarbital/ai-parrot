@@ -34,6 +34,7 @@ def mock_dynamo():
     dynamo.update_thread = AsyncMock()
     dynamo.query_threads = AsyncMock(return_value=[])
     dynamo.query_turns = AsyncMock(return_value=[])
+    dynamo.query_turn_window = AsyncMock(return_value=[])
     dynamo.delete_thread_cascade = AsyncMock(return_value=0)
     dynamo.delete_session_artifacts = AsyncMock(return_value=0)
     dynamo.close = AsyncMock()
@@ -91,7 +92,7 @@ class TestLoadConversation:
     @pytest.mark.asyncio
     async def test_falls_back_to_dynamodb(self, storage, mock_dynamo, mock_redis):
         mock_redis.get_history.return_value = None
-        mock_dynamo.query_turns.return_value = [
+        mock_dynamo.query_turn_window.return_value = [
             {
                 "turn_id": "t001",
                 "user_message": "hello",

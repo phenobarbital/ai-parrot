@@ -313,3 +313,22 @@ async def test_storage_errors_on_reads_are_raised_not_emptied(storage, cold, mon
     monkeypatch.setattr(cold, "query_threads", query_down)
     with pytest.raises(StorageUnavailableError):
         await storage.list_user_conversations("u1", agent_id="bot1")
+
+
+async def test_cold_read_is_chronological_with_a_legacy_fallback(cold, tmp_path):
+    """The cold fallback returns the NEWEST turns in chronological order, not the sort_key (uuid) order."""
+    for i, tid in enumerate(("zz", "aa", "mm", "bb")):  # ids deliberately unrelated to time
+        await cold.put_turn("u1", "bot1", "s1", tid, _turn(tid, sec=i, seq=i + 1).to_row())
+    st = ChatStorage(dynamodb=cold)
+    users = [m["content"] for m in await st.load_conversation("u1", "s1", agent_id="bot1", limit=3) if m["role"] == "user"]
+    assert users == ["q-aa", "q-mm", "q-bb"]  # newest three, ascending by time
+
+    import sqlite3
+
+    raw = sqlite3.connect(str(tmp_path / "chat.db"))
+    raw.execute("INSERT INTO conversations (user_id, agent_id, session_id, kind, sort_key, payload, updated_at)"
+                " VALUES ('u1','bot1','legacy','turn','TURN#old','{\"user_message\": \"legacy q\", \"assistant_response\": \"a\"}',1.0)")
+    raw.commit()
+    raw.close()
+    legacy = await st.load_conversation("u1", "legacy", agent_id="bot1")  # index not ready: legacy read, not an error
+    assert [m["content"] for m in legacy if m["role"] == "user"] == ["legacy q"]

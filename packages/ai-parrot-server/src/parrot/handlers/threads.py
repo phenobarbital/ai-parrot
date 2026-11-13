@@ -374,13 +374,22 @@ class ThreadDetailView(BaseView):
 
         qs = self.get_arguments(self.request)
         agent_id = qs.get("agent_id", "")
+        if not agent_id:
+            # The deletion tombstone is keyed by agent: without it nothing real would be fenced or deleted.
+            return self.error(
+                response={"message": "agent_id is required to delete a thread"},
+                status=400,
+            )
 
         # ChatStorage.delete_conversation now cascade-deletes from both tables
-        deleted = await storage.delete_conversation(
-            user_id=user_id,
-            session_id=session_id,
-            agent_id=agent_id,
-        )
+        try:
+            deleted = await storage.delete_conversation(
+                user_id=user_id,
+                session_id=session_id,
+                agent_id=agent_id,
+            )
+        except StorageError as exc:
+            return _storage_error_response(self, exc)
 
         if deleted:
             return self.json_response({

@@ -60,6 +60,7 @@ def mock_dynamo():
     backend.is_deleted = AsyncMock(return_value=False)
     backend.put_tombstone = AsyncMock()
     backend.query_turns = AsyncMock(return_value=[])
+    backend.query_turn_window = AsyncMock(return_value=[])
     backend.delete_thread_cascade = AsyncMock(return_value=0)
     backend.put_artifact = AsyncMock()
     backend.get_artifact = AsyncMock(return_value=None)
@@ -176,7 +177,7 @@ class TestConversationLifecycle:
     @pytest.mark.asyncio
     async def test_load_conversation_from_dynamodb(self, chat_storage, mock_dynamo, mock_redis):
         mock_redis.get_history.return_value = None
-        mock_dynamo.query_turns.return_value = [
+        mock_dynamo.query_turn_window.return_value = [
             {
                 "turn_id": "t001",
                 "user_message": "Hello",
@@ -413,7 +414,7 @@ class TestGracefulDegradation:
     @pytest.mark.asyncio
     async def test_dynamo_error_is_raised_not_swallowed_on_query(self, mock_dynamo, mock_redis):
         from botocore.exceptions import ClientError
-        mock_dynamo.query_turns.side_effect = ClientError(
+        mock_dynamo.query_turn_window.side_effect = ClientError(
             {"Error": {"Code": "500", "Message": "Internal"}}, "Query"
         )
         mock_redis.get_history.return_value = None
