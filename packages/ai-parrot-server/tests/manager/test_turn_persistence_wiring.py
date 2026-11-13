@@ -208,3 +208,63 @@ async def test_on_shutdown_stops_bus_before_closing_storage(wired, storage):
 
     await mgr.on_shutdown(app)
     assert wired["order"][:2] == ["bus", "storage"]
+
+
+async def test_per_user_bots_are_attached_on_build_and_on_retrieval(wired, monkeypatch):
+    """Per-user bots (built per session, cached on it) must publish too: AgentTalk no longer writes."""
+    app, mgr = web.Application(), _manager()
+    mgr.setup_registry_only(app, turn_persistence=True)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    try:
+        handle = app["turn_persistence"]
+        built = _bot("user-bot")
+        calls = {"n": 0}
+
+        class _Basic:
+            def __new__(cls, **kw):
+                calls["n"] += 1
+                return built
+
+        monkeypatch.setattr("parrot.manager.manager.BasicBot", _Basic)
+
+        class _Model:
+            chatbot_id = "ub-1"
+            prompt_config = {}
+
+            def to_bot_kwargs(self):
+                return {}
+
+        async def _fetch(user_id, cid):
+            return _Model()
+
+        monkeypatch.setattr(mgr, "_fetch_user_bot_model", _fetch)
+        monkeypatch.setattr(mgr, "_apply_prompt_config", lambda bot, cfg: None)
+
+        async def _configure(app=None):
+            return None
+
+        monkeypatch.setattr(built, "configure", _configure)
+        session = {"user_id": "u1"}
+        request = type("R", (), {"session": session})()
+        import sys
+        import types as _t
+
+        fake = _t.ModuleType("navigator_session")
+
+        async def _get_session(req):
+            return session
+
+        fake.get_session = _get_session
+        monkeypatch.setitem(sys.modules, "navigator_session", fake)
+
+        bot = await mgr.get_user_bot(request, "ub-1")
+        assert bot is built and bot.turn_publisher is handle.publisher  # attached on build
+        assert isinstance(bot.hydration_source, ChatStorageHydrationSource)
+        # a bot cached on the session BEFORE the bus existed is attached on retrieval
+        bot.turn_publisher = None
+        bot._durable_memory_attached = False
+        again = await mgr.get_user_bot(request, "ub-1")
+        assert again is built and calls["n"] == 1 and again.turn_publisher is handle.publisher
+    finally:
+        await runner.cleanup()

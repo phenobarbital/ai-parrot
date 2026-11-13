@@ -1266,6 +1266,7 @@ class BotManager:
         with contextlib.suppress(Exception):
             self._apply_prompt_config(bot, prompt_config_dict)
         await bot.configure(self.app)
+        self._attach_durable_memory(bot)
         return bot
 
     async def get_user_bot(
@@ -1302,6 +1303,7 @@ class BotManager:
         cid = str(chatbot_id)
         cached = cache.get(cid)
         if cached is not None:
+            self._attach_durable_memory(cached)  # a bot cached before the bus started
             return cached
 
         bot_model = await self._fetch_user_bot_model(user_id, cid)
