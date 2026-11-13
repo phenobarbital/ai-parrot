@@ -3,7 +3,7 @@
 **Fecha:** 2026-11-13  
 **Estado:** documento de diseño; dirección acordada, contratos detallados propuestos.  
 **Base de revisión:** checkout `ca5d8e53c0`; conversación con el propietario y artefactos locales de FEAT-571.  
-**Alcance:** documentar decisiones y conciliar el diseño con Agent Memory Dynamics. No constituye una especificación aprobada, una aceptación de gates ni una implementación.
+**Alcance:** diseñar una evolución conjunta de la integración de memoria, los conocimientos del usuario y M1–M6 de Agent Memory Dynamics, bajo un futuro spec rector. No constituye una especificación aprobada, una aceptación de gates ni una implementación.
 
 ## 1. Objetivo y decisiones de la conversación
 
@@ -16,7 +16,8 @@ El destino arquitectónico es `AgentMemoryMixin`: un único punto de integració
 | Memoria de usuario | Incorporar una capacidad explícita para recordar conocimientos sobre el usuario entre conversaciones. |
 | Activación | Modelarla mediante `enable_user_memory`, independiente de `enable_episodic_memory`. |
 | Significado de usuario | Conocimientos sobre la persona con la que habla el agente; no datos sobre la identidad del propio agente. |
-| FEAT-571 | Revisar y conciliar sus decisiones manteniendo `AgentMemoryMixin` como destino. |
+| FEAT-571 | Incorporar M1–M6 al futuro spec rector de la evolución conjunta, conservando contratos, resultados previos y gates pendientes. |
+| Organización del trabajo | Un spec rector y un único propietario por entregable; paralelizar implementación después de fijar contratos, sin un split independiente que siga desarrollando los mixins antiguos. |
 | Detalles propuestos | El backend de usuario, los modelos exactos, las políticas de inferencia y las firmas de API de este documento requieren formalización. |
 
 La semántica recomendada en la conversación para `enable_user_memory` es controlar aprendizaje y recuperación automática. Desactivarla no borra los conocimientos; olvidar es una operación explícita. Los detalles de operaciones administrativas permanecen por definir.
@@ -219,6 +220,66 @@ La [especificación de Agent Memory Dynamics](../specs/memory-dynamics.spec.md) 
 
 Además, el texto de la enmienda S2 y sus reportes/métricas reflejan cifras distintas sobre pérdidas y corrupción FAISS. Ambos evidencian problemas concurrentes, pero antes de aceptar el gate debe fijarse la ejecución y evidencia canónica. Este documento no repite esas cifras como un único resultado verificado.
 
+### Digest de enmiendas aportado por el propietario
+
+El propietario aportó el siguiente contenido para incorporarlo al diseño conjunto. Se registran los contratos propuestos y sus límites; incorporar el digest no equivale a aceptar los gates ni a resolver las preguntas de política pendientes. Las enmiendas enlazadas arriba conservan los detalles y la procedencia de las mediciones.
+
+#### G1 — Paridad y calibración FSRS
+
+- **Tiempo:** fijar `days-v1`, con la semántica de días enteros del reference. Se reporta paridad exacta en 1628 pasos. `hours-v1` diverge materialmente y se propone únicamente como variante opt-in, nunca como default silencioso.
+- **Parámetros:** usar los 21 valores de `DEFAULT_PARAMETERS` del reference y sus bounds, con identidad de versión; no están ajustados con datos específicos de agentes.
+- **Umbrales provisionales:** `forget_threshold=0.2` como default de trabajo pendiente de uso real; `redistill_difficulty=8.0` no fue ejercitado por el spike y necesita validación en M1. La ausencia de contradicción en una traza sintética no valida estos valores.
+- **Promoción propuesta:** en modo dynamics, sustituir el conteo de `org_promotion_cycles` por `retrievability() >= forget_threshold` y al menos una review no `AGAIN`, verificada y atribuida a la versión correspondiente. Un lapse aislado no causa democión automática; la política debe explicitar cuándo se reevalúa la promoción.
+- **Evidencia:** paridad PASS; supervivencia a 30 días PASS; olvido útil PENDING porque la traza no ofrece suficiente dormancia de 30 días. El criterio de promoción y la utilidad de la retención requieren aceptación separada.
+- **Trazabilidad de edición:** FEAT-571 §2 FSRS/Ranking/Retention y Data Models, §3 elegibilidad M1, §8 tiempo y umbrales.
+
+#### G2 — Almacenamiento concurrente
+
+- **Backend local propuesto:** SQLite/WAL, con cero escrituras perdidas reportadas para ocho procesos a 5k y 10k registros. FAISS queda descartado para el papel de almacenamiento concurrente de reviews; conservar la discrepancia documental sobre sus cifras hasta reconciliar las ejecuciones.
+- **Aplicación atómica:** una transacción `BEGIN IMMEDIATE` agrupa deduplicación, comprobación de revisión, inserción de review, actualización de estado y commit. Resultados previstos: `applied`, `duplicate`, `stale_revision`, `pending`, `storage_unavailable`; `pending` exige una operación durable recuperable, no una tarea solo en memoria.
+- **Crash/replay:** los tres puntos ensayados, `before_log`, `after_log` y `after_state`, convergen mediante rollback y replay idempotente. Esos puntos están dentro de la transacción y antes del commit; no prueban por sí solos todos los fallos posibles de entrega de acknowledgements o replicación externa.
+- **Log:** en el prototipo, las filas de reviews y el estado se confirman juntos; no hace falta un cursor de log externo para esa recuperación. Cualquier log adicional JSONL/Postgres queda subordinado al commit y no actúa como una segunda autoridad de aplicación.
+- **Identidad/importación:** UUID para episodios; `uuid5` con namespace permanente para feedback importado. No reutilizar inadvertidamente la constante descartable del spike. La importación debe preservar procedencia y ser idempotente.
+- **Recuperación local:** FTS5 y normalización de `bm25()` a `[0,1]`. Parametrizar SQL no evita la gramática interna de FTS5: mantener el escapado y envoltura de frase de la consulta.
+- **Latencia pendiente:** el coseno exhaustivo reporta aproximadamente 130–260 ms a 5k o más registros; incumple el objetivo p95 <50 ms a 5k. Hace falta decidir y medir una estrategia de candidatos/indexación o un techo operativo explícito. Oversampling por sí solo no evita recorrer todos los vectores; `sqlite-vec` u otra extensión requiere una decisión de dependencia.
+- **Otros backends:** PG/Redis fueron inspeccionados a nivel de fuente; sus actualizaciones de metadata no constituyen un protocolo atómico de review. M2 debe implementar y probar transacciones/CAS apropiados antes de habilitar ese contrato.
+- **Evidencia:** escrituras y crash/replay PASS; importación idempotente PASS; latencia vectorial FAIL. No interpretar el éxito de FTS como aprobación de la ruta vectorial.
+- **Trazabilidad de edición:** FEAT-571 §2 Durable Storage y Data Models, §3 elegibilidad M2, §6 C5.
+
+#### G3 — Precisión de atribución
+
+- **Default propuesto:** `cited`; overlap solo opt-in. En 50 casos sintéticos se reportan precisión `1.000`, refuerzo falso `0.000` y atribución omitida `0.300` para citas; overlap/combined con cap ≥3 reportan precisión `0.920` y refuerzo falso `0.080`.
+- **Recovery linkage:** únicamente referencias estructurales, como un commit de corrección, un check aprobado o evidencia de firmas de error antes/después. La coincidencia de texto no demuestra que se aplicó una memoria.
+- **Modelos:** trasladar `MemoryExposure`, `ReviewSignal` y `MemoryCitation`, preservando ejecución/turno, referencias/versiones entregadas, digest del contexto y evidencia del resultado. El esquema completo se concilia con la enmienda; los campos del harness no pasan automáticamente a ser API de producción.
+- **Adaptadores confiables:** el runtime aporta resultados explícitos y firma de error cuando corresponda; el coder engine valida la alcanzabilidad de los fix commits aportados y exige evidencia de checks relevantes. Un merge o una lista vacía de correcciones, por sí solos, no demuestran éxito. No exigir un fix commit ficticio para acreditar una ejecución correcta al primer intento.
+- **Fuentes insuficientes:** defaults de `ToolInvocation.status` o de atributos `ToolResult`, lista vacía de correcciones, autoevaluación del modelo, transporte exitoso y marcador textual de exposición del coder.
+- **Separación de pruebas:** el digest incluye `tool_runtime | coder_engine | synthetic` como fuentes del harness. `synthetic` debe limitarse a pruebas; nunca puede autorizar reviews de producción. La admisión requiere evidencia confiable, no solo un literal de fuente o booleano enviado por el llamante.
+- **Evidencia pendiente:** U3 todavía necesita un objetivo numérico. El corpus es 100% sintético, sin trazas reales; la repetición sobre trazas verificadas es requisito antes de considerar finales U1/U3.
+- **Trazabilidad de edición:** FEAT-571 §2 Review Admission y Data Models, §3 elegibilidad M1/M3, §8 overlap/U1.
+
+#### G4 — Estado y versiones de páginas brain
+
+- **Almacenamiento propuesto:** diseño A, bloque de estado en frontmatter dentro de `body`, excluido de búsqueda y contexto mediante `searchable_body()`. Es el único diseño del spike que conserva el estado al copiar sin modificar `copy_page_to()`; esto no prueba que otros diseños sean inviables si se adapta su copia.
+- **Migración:** no requiere una columna nueva según la propuesta. Sí requiere un contrato de lectura de páginas antiguas, versionado, archivado y preservación del estado; «sin DDL» no equivale a «sin migración».
+- **Identidad propuesta:** `page_id` identifica la familia; `content_version` deriva de `sha1(body_without_state | sorted(source_episode_ids))`. El spec debe fijar serialización canónica y límites de campos para que el hash sea reproducible. Cada versión ocupa una fila; las sustituidas se archivan mediante `category="archive"`.
+- **Crédito:** aplicar reviews a la versión efectivamente entregada. Deduplicar aliases de esa misma versión sin transferir a contenido nuevo el éxito atribuido a contenido antiguo. El límite de recorrido de linaje propuesto es 32.
+- **Promoción:** `reinforcement_counts` y `org_promotion_cycles` quedan como señales legacy de solo lectura en modo dynamics; la evidencia debe pertenecer a la versión concreta y proceder de reviews verificadas.
+- **Métricas del digest:** `pages_redistilled` cuenta familias que produjeron una versión nueva; `memories_forgotten` cuenta versiones archivadas en el ciclo. Se propone corregir esta segunda semántica en el spec: separar versiones sustituidas/archivadas de recuerdos olvidados por dynamics, para poder evaluar el objetivo de G1. Los nombres definitivos quedan por fijar.
+- **Evidencia:** supervivencia de estado del diseño A PASS/PASS; FTS/pack PASS; cinco redestilaciones PASS; deduplicación de forwarding PASS, dentro del alcance del prototipo.
+- **Trazabilidad de edición:** FEAT-571 §2 Durable Storage para brain y Data Models, §3 elegibilidad M4, §6 C6/C7 y §8 almacenamiento brain.
+
+### Contrato transversal pendiente: atomicidad G2–G4
+
+Actualizar `PageState` dentro del cuerpo de una página no queda cubierto automáticamente por la transacción del backend episódico. El spec rector debe definir el estado autoritativo, su ubicación y el protocolo de actualización para cada backend admitido. Si el frontmatter es una proyección de estado transaccional, deben fijarse versión/revisión, replay y reconciliación; si es autoritativo, debe demostrarse cómo participa en la misma garantía durable que la review.
+
+La identidad de aplicación debe incorporar namespace, tipo de memoria, versión de contenido y resultado/revisión según el contrato común. Una review sobre contenido antiguo no debe terminar aplicada a la versión nueva por resolver aliases después del empaquetado.
+
+El archivado puede ser idempotente, pero eso no garantiza que ocurra tras un fallo. Debe existir reconciliación durable o una regla de recuperación que excluya versiones sustituidas aunque el cambio de categoría todavía no se haya materializado. Crear la nueva versión, publicar su vigencia y retirar la anterior necesita orden y recuperación definidos.
+
+Escribir un log externo después del commit también deja una ventana de fallo: si se promete exportación/auditoría completa, hará falta replay desde el registro transaccional u otro mecanismo durable. No se debe prometer entrega completa únicamente por ordenar la escritura del log después del commit.
+
+Estas precisiones son requisitos propuestos para formalizar M2/M4 y sus pruebas, no una selección implícita de backend ni la aceptación de G2/G4.
+
 ### Contratos que conservar
 
 - Store como contrato para agentes Python, CLI, MCP y coder engine.
@@ -240,7 +301,40 @@ Además, el texto de la enmienda S2 y sus reportes/métricas reflejan cifras dis
 | Compatibilidad de herramientas, feedback e históricos | El hard-cut acordado se limita a mixins/consumidores y su configuración; no autoriza borrar históricos ni retirar contratos CLI/MCP. |
 | Olvido recuperable FSRS | Separarlo de caducidad/corrección de hechos y de una solicitud explícita de borrado de conocimientos del usuario. |
 
-**Recomendación de organización:** mantener FEAT-571 como dinámica de memoria y documentar la fachada/perfil como una iniciativa coordinada. Enmendar sus puntos M3/M4 para que el destino sea `AgentMemoryMixin`, evitando dos implementaciones en competencia. Decidir en la especificación si se entrega como feature separada o ampliación; este documento no reserva IDs ni modifica tareas.
+### Decisión: evolución conjunta bajo un spec rector
+
+Incorporar M1–M6 como módulos del nuevo spec integral, junto con la unificación de mixins y la memoria de usuario. Esta decisión sustituye la recomendación inicial de mantener iniciativas separadas. M1–M6 son módulos pendientes de descomposición, no tareas ya implementadas que deban duplicarse.
+
+La incorporación es de alcance y planificación: no concentra la implementación en `AgentMemoryMixin`. El mixin conecta el agente; los stores, el núcleo puro de dinámica y los adaptadores externos conservan sus responsabilidades.
+
+| Módulo de FEAT-571 | Entregable en el spec rector | Dependencias que conservar |
+|---|---|---|
+| M1 — Dynamics | Modelos comunes de dinámica, FSRS, grading, ranking y protocolos puros | G1; G3 para fijar el esquema de evidencia |
+| M2 — Storage/reviews | Persistencia, aislamiento, aplicación atómica, idempotencia y replay de reviews | M1, G2, G3; U4 para retención |
+| M3 — Runtime attribution | `AgentMemoryMixin`, contexto estructurado, exposición final, atribución y resultados verificados | M0, M1, M2, G3; contratos comunes de contexto/eventos |
+| M4 — Brain dynamics | Consolidación, versiones, promoción, olvido recuperable y cableado mediante el nuevo mixin | M1, G2, G4; integración con M2 antes de completar el flujo |
+| M5 — SDD feedback | Adaptación e importación de feedback, evidencia del coder y contratos públicos existentes | M2, M3, G2; U2/U5 |
+| M6 — CLI/MCP/operación | Construcción del mismo sistema de memoria, operaciones, exportación y fitting | Interfaces M2/M4 fijadas; G1/U4 y aprobación de dependencia para fitting |
+
+Las dependencias anteriores proceden de FEAT-571 y deben conciliarse al redactar el nuevo spec. La fachada básica puede entregarse antes de la atribución dinámica completa de M3 si se separan sus contratos y pruebas; esa separación no permite saltarse los gates de reviews.
+
+El spec también incluirá los contratos comunes de identidad/configuración/eventos, la memoria de usuario, la migración hard-cut y la validación transversal. La memoria de usuario puede compartir infraestructura y trazabilidad con dynamics, pero FSRS no determina la veracidad o vigencia de hechos personales. Una preferencia explícita no se invalida únicamente porque no se haya utilizado recientemente.
+
+### Secuencia de formalización y trazabilidad
+
+1. Conciliar las enmiendas G1–G4: identificar contratos aceptables, ajustes necesarios y evidencia faltante. Conservar M0 como reparación previa y su regresión.
+2. Redactar el spec rector con los módulos anteriores y una matriz de contratos, propietarios y dependencias. Trasladar los criterios de aceptación y preguntas pendientes de FEAT-571 con referencias explícitas.
+3. Enmendar FEAT-571 para declarar que su alcance pendiente M1–M6 queda sustituido por el nuevo spec y enlazar cada módulo con su destino. Mantener G1–G4/M0 y sus artefactos históricos; no marcar el trabajo trasladado como implementado ni los gates como aceptados por el traslado.
+4. Descomponer exclusivamente en el índice del nuevo spec los entregables trasladados, una vez definidos sus contratos. Las tareas dependientes de gates pendientes conservan sus bloqueos; no crear una segunda implementación de M1–M6 en FEAT-571.
+5. Ejecutar por dependencias y cerrar cada entregable con su evidencia. Los cambios de contratos compartidos deben quedar coordinados en el spec rector.
+
+Esta edición documenta la dirección; todavía no crea el nuevo spec, reserva IDs, modifica FEAT-571 ni cambia sus estados de tareas.
+
+### Paralelismo de implementación
+
+Tras fijar identidad, configuración e interfaces de almacenamiento, el núcleo puro de dinámica y la memoria de usuario pueden avanzar en paralelo si no comparten archivos o decisiones pendientes. La atribución de runtime espera los contratos de contexto y reviews; brain debe coordinar atomicidad/versiones con almacenamiento; SDD se integra después de esas garantías. CLI/MCP puede prepararse contra interfaces fijadas, conservando los requisitos adicionales de fitting.
+
+El paralelismo se asignará por entregables y propiedad de archivos durante la descomposición. No se mantendrán dos specs activos con autoridad sobre el mismo comportamiento ni una línea paralela que añada funcionalidad a mixins destinados a desaparecer.
 
 La integración básica y la memoria de usuario pueden diseñarse sin dar por aprobados FSRS o sus backends. Las partes que dependen de reviews, almacenamiento atómico o brain dinámico conservan los gates de FEAT-571.
 
@@ -251,7 +345,7 @@ La integración básica y la memoria de usuario pueden diseñarse sin dar por ap
 3. Introducir la implementación única y actualizar consumidores, exports, ejemplos y documentación en el mismo cambio coordinado.
 4. Retirar las clases y caminos antiguos, sin shims ni advertencias temporales de compatibilidad.
 5. Preservar los datos existentes. Si las preferencias episódicas se convierten en conocimientos de usuario, definir una importación idempotente con procedencia, sin convertir inferencias antiguas en hechos confirmados.
-6. Actualizar los contratos afectados de FEAT-571 y sus futuras tareas antes de ejecutar implementación incompatible.
+6. Formalizar el traslado de M1–M6 de FEAT-571 al spec rector y actualizar sus referencias antes de ejecutar implementación incompatible; no generar tareas duplicadas bajo el índice antiguo.
 
 El hard-cut no exige cambiar de backend ni borrar o regenerar memorias. Cualquier migración de esquema o política de eliminación necesita un contrato específico.
 
@@ -266,6 +360,9 @@ El hard-cut no exige cambiar de backend ni borrar o regenerar memorias. Cualquie
 - Desactivar no borra; olvidar no vuelve a introducir datos desde evidencias sin aplicar la política acordada.
 - Persistencia comprobada contra un store real aislado; preservar la regresión M0.
 - Sin éxito ficticio, sin review por simple lectura y sin crédito a memorias eliminadas por el presupuesto.
+- Rechazo de evidencia sintética en producción; evaluación de atribución con trazas reales y umbrales explícitos antes de cerrar U1/U3.
+- Aplicación de review/estado brain consistente ante duplicados, cambios de versión, fallos de archivado y crash/replay; ausencia de transferencia de crédito a versiones no entregadas.
+- Latencia medida sobre la ruta de recuperación elegida; métricas distintas para sustitución de versiones y olvido por dinámica.
 - Cancelación, fallos de storage y cierre con tareas en vuelo.
 - Contratos CLI/MCP y lectura de históricos preservados donde FEAT-571 los exige.
 - Cobertura de `ask_stream()` y otras rutas de invocación: inventariar y fijar explícitamente su comportamiento, sin suponer paridad por modificar solo `ask()`.
@@ -277,7 +374,10 @@ El hard-cut no exige cambiar de backend ni borrar o regenerar memorias. Cualquie
 3. Reglas de vigencia y olvido explícito, incluyendo evidencias, derivados y eventual borrado físico.
 4. Compartición opcional entre agentes y límites de acceso para herramientas de memoria.
 5. Firmas de configuración/hooks y equivalencias de las flags actuales, incluidos controles de skills y brain.
-6. Resolución de U6 y alcance formal respecto de FEAT-571; aceptación separada de sus enmiendas S1–S4.
+6. Resolución de U6 y conciliación de los contratos trasladados de FEAT-571; aceptación separada de sus enmiendas S1–S4. La incorporación de M1–M6 al spec rector ya es la dirección acordada.
 7. Comportamiento de streaming, invocaciones alternativas y persistencia asíncrona.
+8. Estado autoritativo de brain y atomicidad G2–G4, con reconciliación de proyecciones, archivado y logs externos si existen.
+9. Estrategia de recuperación vectorial que cierre el fallo de latencia de G2 y evidencia canónica de sus ejecuciones; cualquier nueva dependencia requiere decisión explícita.
+10. Objetivos U3, evaluación con trazas reales, validación de umbrales provisionales y métricas separadas de olvido/sustitución.
 
-No se eligen silenciosamente valores FSRS, umbrales de atribución, backends nuevos ni dependencias. El siguiente paso es formalizar estos contratos y enmendar las secciones afectadas de FEAT-571 antes de su descomposición restante.
+No se eligen silenciosamente valores FSRS, umbrales de atribución, backends nuevos ni dependencias. El siguiente paso es redactar el spec rector, conciliar los gates y formalizar la sustitución del alcance pendiente de FEAT-571. La descomposición restante se hará en el nuevo spec, preservando la trazabilidad y los bloqueos heredados.
