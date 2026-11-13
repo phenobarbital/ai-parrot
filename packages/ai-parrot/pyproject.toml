@@ -962,6 +962,9 @@ parrot_user_llm_keys = "parrot.vault_targets:user_llm_keys_factory"
 parrot_redis_user_credentials = "parrot.vault_targets:redis_user_credentials_factory"
 parrot_redis_user_llm_keys = "parrot.vault_targets:redis_user_llm_keys_factory"
 
+[project.entry-points."parrot.migrations"]
+bots = "parrot.migrations.providers:bots_set"
+
 [project.urls]
 Homepage = "https://github.com/phenobarbital/ai-parrot"
 Source = "https://github.com/phenobarbital/ai-parrot"
@@ -1009,6 +1012,7 @@ namespaces = true
 
 [tool.setuptools.package-data]
 parrot = ["py.typed", "templates/*.tpl", "**/*.pyx", "**/*.pxd"]
+"parrot.migrations" = ["sql/*/*.sql"]
 "parrot.auth" = ["templates/*.html"]
 # parrot.integrations.telegram moved to ai-parrot-integrations
 # parrot.voice moved to ai-parrot-integrations
