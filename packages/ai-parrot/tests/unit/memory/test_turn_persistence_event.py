@@ -55,7 +55,7 @@ def test_presentation_from_ai_message():
 
 
 async def test_publisher_envelope_shape():
-    """Topic, event_id == turn_id and the RAW turn reach a real in-memory bus subscriber."""
+    """Topic, the scoped event_id and the RAW turn reach a real in-memory bus subscriber."""
     from navigator_eventbus import EventBus
 
     bus = EventBus(transport="memory")
@@ -80,6 +80,22 @@ async def test_publisher_envelope_shape():
         await bus.close()
     got = received[0]
     assert got.event_type == TURN_COMPLETED_TOPIC
-    assert got.event_id == turn.turn_id
+    from parrot.memory.persistence import turn_event_id
+
+    assert got.event_id == turn_event_id("agent-a", "u", "s", turn.turn_id)
+    assert got.payload["turn"]["turn_id"] == turn.turn_id  # the stored turn id stays the client's id
     assert got.payload["turn"]["user_message"] == "  raw   text  "
     assert got.payload["agent_name"] == "agent-a"
+
+
+def test_event_id_has_the_scope_of_the_storage_key():
+    """A retry of the same turn dedups; two conversations that reuse a client turn id do not."""
+    from parrot.memory.persistence import turn_event_id
+
+    same = turn_event_id("agent-a", "u1", "s1", "msg-1")
+    assert same == turn_event_id("agent-a", "u1", "s1", "msg-1")  # deterministic: a retry gets the same id
+    assert len({same,
+                turn_event_id("agent-a", "u2", "s1", "msg-1"),   # other user
+                turn_event_id("agent-b", "u1", "s1", "msg-1"),   # other agent
+                turn_event_id("agent-a", "u1", "s2", "msg-1"),   # other session
+                turn_event_id("agent-a", "u1", "s1", "msg-2")}) == 5  # other turn

@@ -28,6 +28,7 @@ from .persistence import (
     BusTurnPublisher,
     TurnPresentation,
     TurnPublisher,
+    turn_event_id,
 )
 from .mem import InMemoryConversation
 from .redis import RedisConversation
@@ -159,6 +160,7 @@ __all__ = [
     "compact_history",
     "render_history",
     "render_parts_text",
+    "turn_event_id",
     "load_state",
     "save_state",
 ]

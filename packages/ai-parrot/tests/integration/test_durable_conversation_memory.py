@@ -340,7 +340,7 @@ async def test_deleted_turn_stays_deleted(stack):
     second = await _ask(bot, "two")
     await _eventually(lambda: stack.has_turns(2))
     assert await stack.storage.delete_turn(SESSION, first.turn_id, user_id=USER, agent_id=AGENT) is True
-    envelope = next(e for e in stack.envelopes if e.event_id == first.turn_id)
+    envelope = next(e for e in stack.envelopes if e.payload["turn"]["turn_id"] == first.turn_id)
     await stack.storage.handle_turn_completed(envelope)  # terminal ack, no exception
     assert [r["turn_id"] for r in await stack.stored_turns()] == [second.turn_id]
     assert await stack.hot_ids() == [second.turn_id]

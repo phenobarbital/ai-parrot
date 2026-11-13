@@ -6,6 +6,7 @@ This module holds no bus lifecycle — see ``parrot.storage.turn_bus``.
 """
 from __future__ import annotations
 
+import uuid
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
@@ -16,6 +17,18 @@ if TYPE_CHECKING:  # pragma: no cover - typing only; keeps parrot.memory import-
 
 TURN_COMPLETED_TOPIC: str = "conversation.turn.completed"
 CONVERSATION_DELETED_TOPIC: str = "conversation.deleted"
+
+_TURN_EVENT_NAMESPACE = uuid.UUID("5f6f2b0e-8e0d-5c0e-9d57-886ad7a0c0de")
+
+
+def turn_event_id(agent_name: str, user_id: str, session_id: str, turn_id: str) -> str:
+    """Deterministic bus ``event_id`` for one turn, scoped exactly like the turn's storage key.
+
+    Every backend keys a turn by ``(user, agent, session, turn_id)``; the bus dedups on ``event_id``
+    (globally, for a window), so the id must carry the same scope: a retry of the same turn gets the same
+    id and is deduplicated, while two conversations that reuse a client ``turn_id`` get different ids.
+    """
+    return str(uuid.uuid5(_TURN_EVENT_NAMESPACE, "\x1f".join((user_id, agent_name, session_id, turn_id))))
 
 
 class TurnPresentation(BaseModel):
@@ -101,10 +114,10 @@ class BusTurnPublisher:
         self._bus = bus
 
     async def publish(self, event: "TurnCompletedEvent") -> None:
-        """Emit one envelope on :data:`TURN_COMPLETED_TOPIC` with ``event_id == turn_id``.
+        """Emit one envelope on :data:`TURN_COMPLETED_TOPIC` with ``event_id == turn_event_id(...)``.
 
         Args:
-            event: The completed-turn event; ``event.turn["turn_id"]`` becomes the envelope id.
+            event: The completed-turn event; its ``(agent, user, session, turn_id)`` scope becomes the envelope id.
 
         Raises:
             KeyError: If the turn dict carries no ``turn_id``.
@@ -113,6 +126,6 @@ class BusTurnPublisher:
         await self._bus.emit(
             TURN_COMPLETED_TOPIC,
             event.to_dict(),
-            event_id=event.turn["turn_id"],
+            event_id=turn_event_id(event.agent_name, event.user_id, event.session_id, event.turn["turn_id"]),
             source=event.agent_name or None,
         )

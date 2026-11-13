@@ -179,7 +179,7 @@ async def test_retry_exhaustion_lands_in_dead_letters(backend, tmp_path):
 
         assert await _eventually(dead)
         [env] = await store.pending()
-        assert env.event_id == "dead-1"
+        assert env.payload["turn"]["turn_id"] == "dead-1"
     finally:
         await shutdown_turn_persistence(handle)
         await down.close()
