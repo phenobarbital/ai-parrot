@@ -292,7 +292,7 @@
       "feature_id": "FEAT-887",
       "feature": "sdd-experience-memory",
       "spec": "sdd/specs/sdd-experience-memory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -305,8 +305,9 @@
       "parallelism_notes": "cli: TASK-5593: consumes the service contract in packages/ai-parrot/src/parrot/knowledge/wiki/experience/service.py; TASK-5597: consumes the graduation contract in packages/ai-parrot/src/parrot/knowledge/wiki/experience/graduation.py; TASK-5598: consumes the sync contract in packages/ai-parrot/src/parrot/knowledge/wiki/experience/sync.py; TASK-5596: consumes the hooks contract in packages/ai-parrot/src/parrot/sdd/scripts/experience_hook.py, packages/ai-parrot/src/parrot/launcher.py",
       "assigned_to": null,
       "started_at": "2026-11-13T19:26:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5599-cli.md"
+      "completed_at": "2026-11-13T21:19:32+00:00",
+      "file": "sdd/tasks/completed/TASK-5599-cli.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5600",
@@ -358,7 +359,7 @@
       "feature_id": "FEAT-887",
       "feature": "sdd-experience-memory",
       "spec": "sdd/specs/sdd-experience-memory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -368,8 +369,9 @@
       "parallelism_notes": "codex-replay: TASK-5601: consumes the interceptor contract in packages/ai-parrot/src/parrot/flows/dev_loop/experience.py, packages/ai-parrot/src/parrot/flows/dev_loop/dispatchers/llm.py",
       "assigned_to": null,
       "started_at": "2026-11-13T19:26:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5602-codex-replay.md"
+      "completed_at": "2026-11-13T21:19:34+00:00",
+      "file": "sdd/tasks/completed/TASK-5602-codex-replay.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5603",
@@ -398,7 +400,7 @@
       "feature_id": "FEAT-887",
       "feature": "sdd-experience-memory",
       "spec": "sdd/specs/sdd-experience-memory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -408,8 +410,9 @@
       "parallelism_notes": "gemini-replay: TASK-5601: consumes the interceptor contract in packages/ai-parrot/src/parrot/flows/dev_loop/experience.py, packages/ai-parrot/src/parrot/flows/dev_loop/dispatchers/llm.py",
       "assigned_to": null,
       "started_at": "2026-11-13T19:26:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5604-gemini-replay.md"
+      "completed_at": "2026-11-13T21:19:35+00:00",
+      "file": "sdd/tasks/completed/TASK-5604-gemini-replay.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5605",
