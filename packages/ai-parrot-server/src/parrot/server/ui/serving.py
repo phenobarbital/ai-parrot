@@ -276,6 +276,10 @@ def setup_admin_ui(
     """
     global _warned_missing_dist
 
+    if not config.getboolean("ENABLE_UI_ADMIN", fallback=True):
+        logger.info("Admin UI disabled (ENABLE_UI_ADMIN=false).")
+        return False
+
     # JSON API: registers unconditionally, independent of dist/ — the
     # status endpoint is UI-agnostic and useful even on an install-from-git
     # that never ran the Node build.
