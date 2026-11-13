@@ -240,6 +240,42 @@ _FALLBACK_FLOOR_RETRY_S = 30.0
 _FALLBACK_FLOOR_CACHE_MAX = 10_000
 
 
+class _TurnSaveLocks:
+    """Per-session turn-save locks shared by every bot of this process (FEAT-895).
+
+    An entry exists only while a save of its session holds or awaits the lock, so the registry never grows with the
+    number of sessions served and a lock never outlives the event loop its saves ran on.
+    """
+
+    def __init__(self) -> None:
+        self._entries: Dict[Tuple[str, str, str], List[Any]] = {}  # key -> [asyncio.Lock, holders]
+
+    @asynccontextmanager
+    async def hold(self, key: Tuple[str, str, str]) -> AsyncIterator[None]:
+        """Hold ``key``'s lock for the body. Saves of one key run one at a time; other keys never wait.
+
+        Args:
+            key: ``(memory_key_id, user_id, session_id)`` of the session being saved.
+
+        Yields:
+            Nothing; the lock is held for the duration of the ``async with`` body.
+        """
+        entry = self._entries.get(key)
+        if entry is None:
+            entry = self._entries[key] = [asyncio.Lock(), 0]
+        entry[1] += 1  # no await between lookup and increment: atomic on one event loop
+        try:
+            async with entry[0]:
+                yield
+        finally:  # also runs for a waiter cancelled while queued, so the count stays exact
+            entry[1] -= 1
+            if entry[1] == 0 and self._entries.get(key) is entry:
+                del self._entries[key]
+
+
+_TURN_SAVE_LOCKS = _TurnSaveLocks()
+
+
 class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin, ToolInterface, VectorInterface, ABC):
     """AbstractBot.
 
@@ -2764,6 +2800,23 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         await self._stamp_turn_ordering(user_id, session_id, turn)
         return copy.deepcopy(turn.to_dict())
 
+    def _turn_save_key(self, user_id: Optional[str], session_id: Optional[str]) -> Tuple[str, str, str]:
+        """Key of this session's turn-save lock: ``(memory_key_id, user_id, session_id)`` (FEAT-895)."""
+        return (self.memory_key_id, str(user_id), str(session_id))
+
+    async def _invalidate_working_memory(self, user_id: str, session_id: str) -> None:
+        """Drop the session's working memory after a failed write so the next request rehydrates it (FEAT-895).
+
+        Only with a ``hydration_source``: without one nothing could restore the dropped history. Best effort: a
+        failure is logged and swallowed, and the caller re-raises the original error.
+        """
+        if self.hydration_source is None or not self.conversation_memory:
+            return
+        try:
+            await self.conversation_memory.delete_history(user_id, session_id, chatbot_id=self.memory_key_id)
+        except Exception:  # noqa: BLE001 - best effort; the caller re-raises the working-memory error
+            self.logger.warning("working-memory invalidation failed for %s/%s", user_id, session_id, exc_info=True)
+
     async def _save_or_snapshot_turn(
         self,
         user_id: str,
@@ -2778,15 +2831,21 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         """Save the turn to working memory when history is on, and publish it whenever a publisher is attached.
 
         Returns the raw snapshot (``None`` when nothing is published); with ``publish=False`` the caller
-        publishes it later through :meth:`_publish_turn_completed` once the response is final.
+        publishes it later through :meth:`_publish_turn_completed` once the response is final. With history
+        disabled the order stamp and the outbox append run under the session's save lock, like
+        :meth:`save_conversation_turn` (which takes the lock itself, so it is not taken here for that branch).
+
+        Raises:
+            Exception: Whatever the outbox append raises (see :meth:`_publish_turn_completed`).
         """
         if use_history:
             return await self.save_conversation_turn(
                 user_id, session_id, turn, compaction=compaction, presentation=presentation, publish=publish
             )
-        snapshot = await self._snapshot_turn(user_id, session_id, turn)
-        if publish:
-            await self._publish_turn_completed(user_id, session_id, snapshot, presentation)
+        async with _TURN_SAVE_LOCKS.hold(self._turn_save_key(user_id, session_id)):
+            snapshot = await self._snapshot_turn(user_id, session_id, turn)
+            if publish:
+                await self._publish_turn_completed(user_id, session_id, snapshot, presentation)
         return snapshot
 
     async def _persist_finalized_turn(
@@ -2817,6 +2876,8 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         Save + publish run as one unit shielded from cancellation: a cancelled request cannot leave working
         memory and the bus disagreeing. A failure inside the detached unit is logged (ids only, no payload)
         and re-raised to the awaiting caller; it never surfaces as "Task exception was never retrieved".
+        Inside the unit the outbox append comes first and a rejected append fails the save before working
+        memory is written; saves of one session run one at a time (FEAT-895, :meth:`save_conversation_turn`).
         """
         use_history = bool(use_history and self.conversation_memory)
         if not (use_history or self._publishes_turns(user_id, session_id)):
@@ -2851,7 +2912,11 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         compaction: Optional[CompactionCommit] = None,
         presentation: Optional[TurnPresentation] = None,
     ) -> Optional[Dict[str, Any]]:
-        """Save + publish ``turn`` as one cancellation-shielded unit (see :meth:`_persist_finalized_turn`)."""
+        """Save + publish ``turn`` as one cancellation-shielded unit (see :meth:`_persist_finalized_turn`).
+
+        The session's save lock (FEAT-895) is taken INSIDE the shielded task, so a caller cancelled while its save
+        waits for the lock does not cancel the save.
+        """
         unit = asyncio.ensure_future(
             self._save_or_snapshot_turn(
                 user_id,
@@ -2905,10 +2970,21 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
                 turn. ``None`` for writers that do not participate in the
                 budget round-trip (e.g. an ``ask_stream`` partial save on
                 error).
+            publish: Append the raw turn to the outbox (when a ``turn_publisher`` is set).
+
+        Order and serialization (FEAT-895): the outbox append comes BEFORE the
+        working-memory write, and saves of one ``(memory_key_id, user_id,
+        session_id)`` run one at a time in this process (shared by every bot
+        instance with that ``memory_key_id``). ``MessageAddedEvent`` and
+        ``Stage2CompactionNeededEvent`` are emitted after the lock is released.
 
         Raises:
             ValueError: If ``turn.chatbot_id`` does not match
                 ``self.memory_key_id``.
+            Exception: Whatever the outbox append raises — working memory is
+                then untouched. Whatever the working-memory write raises after
+                a successful append — the session's working memory is then
+                dropped when a ``hydration_source`` can restore it.
         """
         if not self.conversation_memory:
             return
@@ -2920,23 +2996,35 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
                 "the agent whose history it is stored in."
             )
 
-        await self._stamp_turn_ordering(user_id, session_id, turn)
-        # Raw, pre-normalization snapshot: MUST precede add_turn (spec §7 "Raw turn snapshot").
-        snapshot = copy.deepcopy(turn.to_dict()) if self.turn_publisher is not None else None
+        # FEAT-895: one save at a time per session — the order stamp, the stage-2 read, the outbox append and the
+        # working-memory write of this session do not interleave with another save of it in this process.
+        async with _TURN_SAVE_LOCKS.hold(self._turn_save_key(user_id, session_id)):
+            await self._stamp_turn_ordering(user_id, session_id, turn)
+            # Raw, pre-normalization snapshot: MUST precede add_turn (spec §7 "Raw turn snapshot").
+            snapshot = copy.deepcopy(turn.to_dict()) if self.turn_publisher is not None else None
 
-        # FEAT-525: read the PERSISTED stage2_needed flag before the write,
-        # so the event fires exactly once, on the first False -> True flip.
-        was_stage2_needed = False
-        if compaction is not None and compaction.stage2_needed:
-            prev_history = await self.conversation_memory.get_history(user_id, session_id, chatbot_id=chatbot_key)
-            if prev_history is not None:
-                was_stage2_needed = bool((prev_history.metadata.get("compaction") or {}).get("stage2_needed"))
+            # FEAT-525: read the PERSISTED stage2_needed flag before the write,
+            # so the event fires exactly once, on the first False -> True flip.
+            was_stage2_needed = False
+            if compaction is not None and compaction.stage2_needed:
+                prev_history = await self.conversation_memory.get_history(user_id, session_id, chatbot_id=chatbot_key)
+                if prev_history is not None:
+                    was_stage2_needed = bool((prev_history.metadata.get("compaction") or {}).get("stage2_needed"))
 
-        await self.conversation_memory.add_turn(
-            user_id, session_id, turn, chatbot_id=chatbot_key, compaction=compaction
-        )
-        if publish:
-            await self._publish_turn_completed(user_id, session_id, snapshot, presentation)
+            # FEAT-895 outbox first: the durable tier is the source of truth. A rejected append raises here, before
+            # working memory is touched, so neither tier keeps the turn.
+            if publish:
+                await self._publish_turn_completed(user_id, session_id, snapshot, presentation)
+            try:
+                await self.conversation_memory.add_turn(
+                    user_id, session_id, turn, chatbot_id=chatbot_key, compaction=compaction
+                )
+            except Exception:
+                if publish and snapshot is not None:
+                    # The durable tier already has the turn and nothing on the bus writes this working memory:
+                    # drop it (only with a hydration source) so the next request rehydrates the session.
+                    await self._invalidate_working_memory(user_id, session_id)
+                raise
         # FEAT-176: emit MessageAddedEvent after persisting to memory.
         # Use the active invocation's trace context when available.
         # ConversationTurn stores both user_message and assistant_response;
@@ -3162,25 +3250,27 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         snapshot: Optional[Dict[str, Any]],
         presentation: Optional[TurnPresentation],
     ) -> None:
-        """Publish ``TurnCompletedEvent`` for the raw ``snapshot``. Never raises (logged at ERROR)."""
+        """Publish ``TurnCompletedEvent`` for the raw ``snapshot`` — the outbox append of the save (FEAT-895).
+
+        No-op without a publisher or a snapshot. Whatever building the event or ``publisher.publish`` raises (the
+        outbox rejected the append) propagates, so the save fails before working memory is written. The caller
+        logs it (``_persist_turn_unit``'s done callback, or the voice stream's handler).
+        """
         publisher = self.turn_publisher
         if publisher is None or snapshot is None:
             return
-        try:
-            event = TurnCompletedEvent(
-                trace_context=getattr(self, "_current_trace_context", None) or TraceContext.new_root(),
-                agent_name=self.name,
-                chatbot_id=self.memory_key_id,
-                user_id=user_id,
-                session_id=session_id,
-                turn=snapshot,
-                presentation=presentation.model_dump() if presentation is not None else {},
-                source_type="agent",
-                source_name=self.name,
-            )
-            await publisher.publish(event)
-        except Exception:  # pylint: disable=broad-except  # a lost audit event must not fail the round
-            self.logger.error("turn publish failed turn_id=%s", snapshot.get("turn_id"), exc_info=True)
+        event = TurnCompletedEvent(
+            trace_context=getattr(self, "_current_trace_context", None) or TraceContext.new_root(),
+            agent_name=self.name,
+            chatbot_id=self.memory_key_id,
+            user_id=user_id,
+            session_id=session_id,
+            turn=snapshot,
+            presentation=presentation.model_dump() if presentation is not None else {},
+            source_type="agent",
+            source_name=self.name,
+        )
+        await publisher.publish(event)
 
     async def clear_conversation_history(self, user_id: str, session_id: str, chatbot_id: Optional[str] = None) -> bool:
         """Clear conversation history using unified memory system."""
