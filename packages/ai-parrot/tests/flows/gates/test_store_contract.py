@@ -80,7 +80,9 @@ async def test_store_contract(backend: str, tmp_path: Path) -> None:
     assert await store.pending("alice") == [later]
 
 
-def test_resolver_prefers_explicit_backend_and_defaults_to_sqlite(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolver_prefers_explicit_backend_and_defaults_to_sqlite(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Resolver honors explicit selection, Redis injection, and local SQLite fallback."""
     redis_client = FakeAsyncRedis()
     sqlite_path = tmp_path / "configured.sqlite"

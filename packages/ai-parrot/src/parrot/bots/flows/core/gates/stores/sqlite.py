@@ -20,8 +20,7 @@ class SQLiteGateStore:
 
     async def _initialize(self, connection: aiosqlite.Connection) -> None:
         """Create the durable gate table when it does not already exist."""
-        await connection.execute(
-            """
+        await connection.execute("""
             CREATE TABLE IF NOT EXISTS gates (
                 gate_id TEXT PRIMARY KEY,
                 owner TEXT NOT NULL,
@@ -29,8 +28,7 @@ class SQLiteGateStore:
                 opened_at REAL NOT NULL,
                 body TEXT NOT NULL
             )
-            """
-        )
+            """)
         await connection.commit()
 
     async def put(self, record: GateRecord) -> None:
