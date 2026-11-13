@@ -48,6 +48,7 @@ ASSET_SOURCES: tuple[tuple[str, tuple[str, ...]], ...] = (
     (".agents/agents/qa-runner/agent.md", ("google",)),  # FEAT-847
     ("sdd/templates/*", HOST_ORDER),
     ("sdd/WORKFLOW.md", HOST_ORDER),
+    ("sdd/procedures/sdd-workflow.yaml", HOST_ORDER),  # FEAT-891 — the SDD procedure graph; overlays never ship
     ("sdd/CONVENTIONS.md", HOST_ORDER),  # C10 — seed, see SEED_TARGETS
 )
 #: Hand-maintained, repo-neutral assets that exist ONLY in the wheel (their repo-side originals name monorepo paths,

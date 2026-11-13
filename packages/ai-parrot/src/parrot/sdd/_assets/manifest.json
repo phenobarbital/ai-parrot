@@ -563,6 +563,15 @@
       ]
     },
     {
+      "source": "sdd/procedures/sdd-workflow.yaml",
+      "target": "sdd/procedures/sdd-workflow.yaml",
+      "hosts": [
+        "claude",
+        "codex",
+        "google"
+      ]
+    },
+    {
       "source": "sdd/sdd_templates/brainstorm.md",
       "target": "sdd/templates/brainstorm.md",
       "hosts": [
