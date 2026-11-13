@@ -31,13 +31,18 @@ T0 = datetime(2026, 11, 1, 10, 0, 0, tzinfo=UTC)
 
 @pytest.fixture
 async def backend():
-    b = ConversationMongoBackend(dsn=DSN, database=f"parrot_durable_{uuid.uuid4().hex[:10]}")
+    from motor.motor_asyncio import AsyncIOMotorClient
+
+    database = f"parrot_durable_{uuid.uuid4().hex[:10]}"
+    b = ConversationMongoBackend(dsn=DSN, database=database)
     await b.initialize()
     yield b
+    await b.close()  # a contract check may already have closed it
+    cleaner = AsyncIOMotorClient(DSN)  # the fixture owns its own client for the drop
     try:
-        await b._client.drop_database(b._database)
+        await cleaner.drop_database(database)
     finally:
-        await b.close()
+        cleaner.close()
 
 
 def _row(i: int, ts: datetime, seq: int = 0, **extra) -> dict:

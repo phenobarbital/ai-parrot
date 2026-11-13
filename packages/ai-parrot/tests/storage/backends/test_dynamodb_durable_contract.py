@@ -149,3 +149,32 @@ async def test_disconnected_raises(endpoint):
     b = ConversationDynamoDB("x", "y", {"region_name": "us-east-1"})
     with pytest.raises(StorageUnavailableError):
         await b.query_turn_window("u", "a", "s", 1)
+
+
+async def test_sequences_of_different_widths_order_numerically(backend):
+    for seq in (100, 2, 10):  # equal timestamp: only the zero-padded sequence orders them
+        await backend.put_turn("u", "a", "s", f"t{seq}", {"timestamp": T0.isoformat(), "sequence": seq})
+    assert [t["sequence"] for t in await backend.query_turn_window("u", "a", "s", 5)] == [2, 10, 100]
+
+
+async def test_lost_ordering_race_converges_on_the_first_writer(backend):
+    await backend.put_turn("u", "a", "s", "t1", {"timestamp": T0.isoformat(), "sequence": 1, "user_message": "first"})
+    real = backend._get_item
+    state = {"hidden": False}
+
+    async def blind_once(pk, sk):
+        if sk.endswith("#TURN#t1") and not state["hidden"]:
+            state["hidden"] = True
+            return None  # the canonical turn "appeared" after this read: the conditional Put must abort us
+        return await real(pk, sk)
+
+    backend._get_item = blind_once
+    try:
+        later = (T0 + timedelta(hours=5)).isoformat()
+        await backend.put_turn("u", "a", "s", "t1", {"timestamp": later, "sequence": 9, "user_message": "retry"})
+    finally:
+        backend._get_item = real
+    [row] = await backend.query_turn_window("u", "a", "s", 5)
+    assert row["sequence"] == 1 and row["timestamp"] == T0.isoformat() and row["user_message"] == "retry"
+    chrono = [i for i in (await backend._conv_table.scan())["Items"] if i["SK"].startswith("THREAD#s#CHRONO#")]
+    assert len(chrono) == 1

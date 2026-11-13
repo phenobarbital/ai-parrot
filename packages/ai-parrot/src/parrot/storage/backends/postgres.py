@@ -260,7 +260,6 @@ class ConversationPostgresBackend(ConversationBackend):
         if self._default_ttl_days <= 0:
             # Fix #6 (Postgres variant): use a past timestamp so the row is
             # immediately expired at query time.
-            from datetime import timedelta  # noqa: PLC0415
             return datetime.now(timezone.utc) - timedelta(seconds=1)
         return datetime.now(timezone.utc) + timedelta(days=self._default_ttl_days)
 

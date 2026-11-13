@@ -1083,3 +1083,6 @@ Implemented the durable contract on ConversationDynamoDB per the blueprint: chro
 **Notes**: `_require_connection` only checks is_connected (the existing mock tests wire only `_conv_table`); the boto resource is required lazily by `_transact` / `_batch_get`. invalid_sessions entries are "<user_id>/<agent_id>/<session_id>".
 
 **Deviations from spec**: none
+
+### Update (review round 2)
+With `moto[server]` installed the full suite now runs: `test_dynamodb_durable_contract.py` 17 passed (9 shared checks + 8 DynamoDB-specific); the native-types assumption for `transact_write_items` / `batch_get_item` under aioboto3 is CONFIRMED. All six mutation checks of the task are RED (tombstone ConditionChecks made always-true; canonical Put unconditional [needed the new `test_lost_ordering_race_converges_on_the_first_writer`]; ScanIndexForward True; no zero padding [needed the new `test_sequences_of_different_widths_order_numerically`]; ttl on the tombstone; index state always ready). Status: verified.

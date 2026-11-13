@@ -82,7 +82,7 @@
     {
       "id": "TASK-5568",
       "slug": "durable-memory-correctness-fixes",
-      "title": "Correctness fixes (P0) — AgentTalk memory injection, ask_stream commit, hot-tier delete_turn, hot TTL setting",
+      "title": "Correctness fixes (P0) \u2014 AgentTalk memory injection, ask_stream commit, hot-tier delete_turn, hot TTL setting",
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
@@ -120,7 +120,7 @@
     {
       "id": "TASK-5570",
       "slug": "storage-backend-contract-errors",
-      "title": "Backend contract — typed errors, ordered window, tombstones, index state",
+      "title": "Backend contract \u2014 typed errors, ordered window, tombstones, index state",
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
@@ -160,7 +160,7 @@
     {
       "id": "TASK-5572",
       "slug": "rich-history-parts",
-      "title": "Rich history parts — `MessagePart`, budgeted parts on views, canonical text, renderer",
+      "title": "Rich history parts \u2014 `MessagePart`, budgeted parts on views, canonical text, renderer",
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
@@ -203,7 +203,7 @@
     {
       "id": "TASK-5574",
       "slug": "sqlite-durable-backend",
-      "title": "SQLite backend — durable writes, ordered window, tombstones, index state",
+      "title": "SQLite backend \u2014 durable writes, ordered window, tombstones, index state",
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
@@ -224,7 +224,7 @@
     {
       "id": "TASK-5575",
       "slug": "postgres-durable-backend",
-      "title": "Postgres backend — durable writes, ordered window, tombstones, index state",
+      "title": "Postgres backend \u2014 durable writes, ordered window, tombstones, index state",
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
@@ -245,7 +245,7 @@
     {
       "id": "TASK-5576",
       "slug": "mongo-durable-backend",
-      "title": "Mongo backend — durable writes, ordered window, tombstones, index state",
+      "title": "Mongo backend \u2014 durable writes, ordered window, tombstones, index state",
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
@@ -266,7 +266,7 @@
     {
       "id": "TASK-5577",
       "slug": "dynamodb-durable-backend",
-      "title": "DynamoDB backend — transactional turn writes, chronological companions, tombstones, index state",
+      "title": "DynamoDB backend \u2014 transactional turn writes, chronological companions, tombstones, index state",
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
@@ -282,12 +282,12 @@
       "started_at": "2026-11-13T03:25:54+00:00",
       "completed_at": "2026-11-13T04:55:25+00:00",
       "file": "sdd/tasks/completed/TASK-5577-dynamodb-durable-backend.md",
-      "verification": "partial"
+      "verification": "verified"
     },
     {
       "id": "TASK-5578",
       "slug": "backfill-tool",
-      "title": "Backfill tool — resumable batched driver over `backfill_batch`",
+      "title": "Backfill tool \u2014 resumable batched driver over `backfill_batch`",
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
@@ -333,7 +333,7 @@
     {
       "id": "TASK-5580",
       "slug": "hydration-core",
-      "title": "Hydration core — source interface, sequence allocator, guarded atomic install",
+      "title": "Hydration core \u2014 source interface, sequence allocator, guarded atomic install",
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
@@ -356,7 +356,7 @@
     {
       "id": "TASK-5581",
       "slug": "turn-bus-setup",
-      "title": "Turn bus setup — Streams bus, outbox, dead letters, ChatStorage subscriptions",
+      "title": "Turn bus setup \u2014 Streams bus, outbox, dead letters, ChatStorage subscriptions",
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
@@ -379,7 +379,7 @@
     {
       "id": "TASK-5582",
       "slug": "chatstorage-hydration-source",
-      "title": "`ChatStorageHydrationSource` — backend errors to hydration errors, rows to turns",
+      "title": "`ChatStorageHydrationSource` \u2014 backend errors to hydration errors, rows to turns",
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
@@ -403,7 +403,7 @@
     {
       "id": "TASK-5583",
       "slug": "bot-integration-durable-memory",
-      "title": "Bot integration — hydrate on miss, stamp ordering, publish after save, honor `turn_id`",
+      "title": "Bot integration \u2014 hydrate on miss, stamp ordering, publish after save, honor `turn_id`",
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
@@ -427,7 +427,7 @@
     {
       "id": "TASK-5584",
       "slug": "server-wiring-turn-persistence",
-      "title": "Server wiring — start the turn bus, attach durable memory to bots, make AgentTalk persistence-free",
+      "title": "Server wiring \u2014 start the turn bus, attach durable memory to bots, make AgentTalk persistence-free",
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
@@ -452,7 +452,7 @@
     {
       "id": "TASK-5585",
       "slug": "durable-memory-integration-suite",
-      "title": "Durable conversation memory — integration suite (the nine spec §4 scenarios)",
+      "title": "Durable conversation memory \u2014 integration suite (the nine spec \u00a74 scenarios)",
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
@@ -473,7 +473,7 @@
     {
       "id": "TASK-5586",
       "slug": "durable-memory-documentation",
-      "title": "Documentation — durable conversation memory (architecture page, operator notes, three page updates)",
+      "title": "Documentation \u2014 durable conversation memory (architecture page, operator notes, three page updates)",
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
