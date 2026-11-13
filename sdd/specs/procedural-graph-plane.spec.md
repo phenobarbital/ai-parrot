@@ -16,7 +16,7 @@ docs:
 **Feature ID**: FEAT-891
 **Date**: 2026-11-13
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
 ---
@@ -71,6 +71,9 @@ procedure an LLM does not get right at the first attempt.
 - A new hook registration on any host. Codex and agy get no guard integration in v1 (their
   pre-tool hooks are different programs); they receive the task-start block only.
 - Measuring "advisories fired versus followed" (needs an event log).
+- A cached local signal for "a PR already exists for this branch". `pr.open` stays `remote`
+  and CLI-only in v1; the cached signal was judged worthwhile (Jesus Lara, 2026-11-13) and is
+  a follow-up.
 - Declaring the SDD graph in command frontmatter — rejected in brainstorm (Option A): each
   command has four or more copies and host-owned frontmatter.
 - `FlowDefinition` as the graph format (Option C) and a graph mined from history (Option D).
@@ -83,7 +86,7 @@ procedure an LLM does not get right at the first attempt.
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:9adc51dea9538ca2d4093b3fc9451b6b004967271743d6d3ce386002a60d1c25 evaluation_digest=sha256:fb4c335434b8835a8b38ce6a02f34f1779c8a78b1ae77af34d3726488af6e685 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:b4708de574a95ebd3fb33e7e78e7cf2020e0866939f14ce463527960fe1abe57 evaluation_digest=sha256:7ed8e053931de2ce64d1b3a253924b62ae32aadb7e16c97d84170faa49eee5f9 rules_version=1 status=pass -->
 
 ## 2. Architectural Design
 
@@ -746,7 +749,11 @@ with local probes only.
   `packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py`
 - **Responsibility**: the operator page (model, manifest format, probes, guard behavior and the
   escape variables, skill frontmatter fields, `wikitoolkit ns add procedure --store
-  .parrot/procedure`), and a `SCENARIOS["procedure"]` entry.
+  .parrot/procedure`), and a `SCENARIOS["procedure"]` entry. The page carries a **Pilot
+  activation** section: the host-operator step that switches a repository's interactive guard
+  entry from the legacy shell script to the packaged Python guard
+  (`parrot sdd install --portable`), to be run in ai-parrot after merge. `.claude/settings.json`
+  is untracked, so this is an operator step and never a task edit.
 - **Depends on**: M7, M8, M9.
 - **Interface Skeleton**: none (documentation and a test table entry).
 
@@ -867,6 +874,9 @@ def built_plane(procedure_repo):
 - [ ] `wiki/sdd-tooling/sdd/procedure-graph.md` exists (`parrot sdd techwiki check`).
 - [ ] Baseline for the pilot is recorded in the documentation page: the count of
       `parrot sdd task state` violations at merge time.
+- [ ] The documentation page has a "Pilot activation" section naming the operator step that
+      switches the interactive guard entry to the packaged Python guard
+      (`parrot sdd install --portable`).
 
 ---
 
@@ -1066,6 +1076,9 @@ was not located; `/sdd-task` must verify them before use.
 - **ai-parrot's own interactive sessions** register a legacy shell guard
   (`.claude/hooks/dangerous-actions-blocker.sh`), not the Python module; the guard integration
   is inactive there until the entry is the packaged one (`parrot sdd install --portable`).
+  Decided (Jesus Lara, 2026-11-13): ai-parrot switches to the packaged guard after merge, as
+  an operator step (the settings file is untracked). Rule parity between the shell script and
+  the Python guard was not compared here; the operator checks it before switching.
 - **False denials on `mv`.** The bypass guard matches only paths under `sdd/tasks/active/`.
   Closing through the script moves files in Python, not with `mv`, so it is not affected.
   Deliberate repairs use `PARROT_ALLOW_PROCEDURE=1`.
@@ -1098,7 +1111,7 @@ No new dependency.
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:9adc51dea9538ca2d4093b3fc9451b6b004967271743d6d3ce386002a60d1c25 evaluation_digest=sha256:fb4c335434b8835a8b38ce6a02f34f1779c8a78b1ae77af34d3726488af6e685 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:b4708de574a95ebd3fb33e7e78e7cf2020e0866939f14ce463527960fe1abe57 evaluation_digest=sha256:7ed8e053931de2ce64d1b3a253924b62ae32aadb7e16c97d84170faa49eee5f9 rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -1152,10 +1165,10 @@ Coverage:
       "path": "/home/jesuslara/proyectos/ai-parrot/sdd/specs/procedural-graph-plane.spec.md"
     }
   ],
-  "evaluation_digest": "sha256:fb4c335434b8835a8b38ce6a02f34f1779c8a78b1ae77af34d3726488af6e685",
+  "evaluation_digest": "sha256:7ed8e053931de2ce64d1b3a253924b62ae32aadb7e16c97d84170faa49eee5f9",
   "exit_code": 0,
   "findings": [],
-  "input_digest": "sha256:9adc51dea9538ca2d4093b3fc9451b6b004967271743d6d3ce386002a60d1c25",
+  "input_digest": "sha256:b4708de574a95ebd3fb33e7e78e7cf2020e0866939f14ce463527960fe1abe57",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
@@ -1196,8 +1209,8 @@ Coverage:
 - [x] Host parity? — *Resolved in brainstorm*: inherit, build no host adapters. *Refined 2026-11-13 (Jesus Lara)*: see the next two items.
 - [x] FEAT-887 dropped its pre-tool hook; where does the pre-command check attach? — *Jesus Lara, 2026-11-13*: the existing SDD guards (`dangerous_actions`, `worktree_environment`); no new hook.
 - [x] Advisory text reaches the model after the command; what does the guard do on a violated mandatory node? — *Jesus Lara, 2026-11-13*: deny mandatory violations only, naming the correct command, with an escape variable; everything else is advisory. This supersedes "mandatory is only announced in the pilot" for guarded commands; dispatch stays out.
-- [ ] Should ai-parrot's own `.claude/settings.json` switch from the legacy shell guard to the packaged Python guard so the pilot covers interactive sessions here? — *Owner: Jesus Lara*
-- [ ] `pr.open` is remote and therefore not enforced by the guard; is "a PR already exists for this branch" worth a cached local signal later? — *Owner: Jesus Lara*
+- [x] Should ai-parrot's own `.claude/settings.json` switch from the legacy shell guard to the packaged Python guard so the pilot covers interactive sessions here? — *Jesus Lara, 2026-11-13*: yes. Operator step after merge (the file is untracked), documented in the "Pilot activation" section (M12, §5, §7).
+- [x] `pr.open` is remote and therefore not enforced by the guard; is "a PR already exists for this branch" worth a cached local signal later? — *Jesus Lara, 2026-11-13*: yes, it is worth it; recorded as a follow-up in Non-Goals, not in v1.
 
 ---
 
@@ -1272,3 +1285,4 @@ checked for containment and existence.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-11-13 | Jesus Lara | Initial draft from `sdd/proposals/procedural-graph-plane.brainstorm.md`; guard attachment and deny-on-mandatory decided after FEAT-887 rev 0.4 dropped its pre-tool hook |
+| 0.2 | 2026-11-13 | Jesus Lara | Approved. Both open questions resolved: ai-parrot switches to the packaged guard as an operator step after merge; a cached `pr.open` signal is a follow-up |
