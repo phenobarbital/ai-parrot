@@ -199,12 +199,15 @@ class ChatInteractionHandler(BaseView):
                 status=400,
             )
 
-        result = await storage.create_conversation(
-            user_id=user_id,
-            session_id=session_id,
-            agent_id=agent_id,
-            title=title,
-        )
+        try:
+            result = await storage.create_conversation(
+                user_id=user_id,
+                session_id=session_id,
+                agent_id=agent_id,
+                title=title,
+            )
+        except StorageError as exc:  # a deleted session is 410, an unreachable store 503
+            return _storage_error_response(self, exc)
 
         if result is not None:
             return self.json_response({

@@ -92,3 +92,16 @@ def test_every_storage_write_of_the_chat_handlers_maps_storage_errors():
     patch = _fn("threads.py", "patch", "ThreadDetailView")
     assert {"assert_conversation_active", "update_conversation_title"} <= _storage_calls_guarded(
         patch, {"assert_conversation_active", "update_conversation_title"})
+
+
+def test_conversation_creates_and_the_direct_thread_write_map_storage_errors():
+    for filename, cls in (("threads.py", "ThreadListView"), ("chat_interaction.py", None)):
+        tree = ast.parse((SRC / filename).read_text(encoding="utf-8"))
+        guarded = set()
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef)) and node.name == "post":
+                guarded |= _storage_calls_guarded(node, {"create_conversation"})
+        assert guarded == {"create_conversation"}, filename
+    patch = _fn("threads.py", "patch", "ThreadDetailView")
+    assert _storage_calls_guarded(patch, {"update_thread"}) == {"update_thread"}
+

@@ -150,12 +150,15 @@ class ThreadListView(BaseView):
                 status=400,
             )
 
-        result = await storage.create_conversation(
-            user_id=user_id,
-            session_id=session_id,
-            agent_id=agent_id,
-            title=title,
-        )
+        try:
+            result = await storage.create_conversation(
+                user_id=user_id,
+                session_id=session_id,
+                agent_id=agent_id,
+                title=title,
+            )
+        except StorageError as exc:  # a deleted session is 410, an unreachable store 503
+            return _storage_error_response(self, exc)
 
         if result is not None:
             return self.json_response({
@@ -340,12 +343,15 @@ class ThreadDetailView(BaseView):
                 update_fields["archived"] = bool(body["archived"])
             if update_fields:
                 update_fields["updated_at"] = datetime.utcnow()
-                await dynamo.update_thread(
-                    user_id=user_id,
-                    agent_id=agent_id,
-                    session_id=session_id,
-                    **update_fields,
-                )
+                try:
+                    await dynamo.update_thread(
+                        user_id=user_id,
+                        agent_id=agent_id,
+                        session_id=session_id,
+                        **update_fields,
+                    )
+                except StorageError as exc:
+                    return _storage_error_response(self, exc)
 
         return self.json_response({
             "message": "Thread updated",
