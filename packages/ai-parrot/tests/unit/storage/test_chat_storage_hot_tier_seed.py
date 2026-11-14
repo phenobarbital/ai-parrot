@@ -318,3 +318,28 @@ async def test_a_late_seed_never_overwrites_a_hot_entry_another_writer_installed
 
     assert installs == [False]  # NX: the late seed lost to the installed entry
     assert await _hot_ids(fast) == ["t1", "t2", "t3", "t4"]  # t4 survived the late seed
+
+
+async def test_a_replayed_turn_older_than_a_truncated_seed_leaves_no_gap(storage):
+    for n in range(1, 6):
+        await storage.store_turn(_turn(n))
+    storage.hot_seed_turns = 2
+    await _expire_hot(storage)
+
+    await storage.store_turn(_turn(1))  # a delayed / replayed envelope for the oldest turn
+
+    assert await _hot_ids(storage) == ["t4", "t5"]  # contiguous newest suffix; t1 stays cold-only
+    assert await _served(storage, limit=3) == ["q-t3", "q-t4", "q-t5"]  # NOT t1, t4, t5
+
+
+async def test_a_replay_inside_the_seed_window_is_replaced_in_place(storage):
+    for n in range(1, 6):
+        await storage.store_turn(_turn(n))
+    storage.hot_seed_turns = 2
+    await _expire_hot(storage)
+
+    await storage.store_turn(_turn(4))  # inside the window of the seed that this very write creates
+    await storage.store_turn(_turn(1))  # and a later one predating the now-present truncated entry
+
+    assert await _hot_ids(storage) == ["t4", "t5"]
+    assert await _served(storage, limit=3) == ["q-t3", "q-t4", "q-t5"]

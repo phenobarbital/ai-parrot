@@ -214,10 +214,15 @@ class ChatStorage:
         if self._dynamo is None:  # no cold tier: nothing to seed from
             await self._redis.upsert_turn(turn.user_id, turn.session_id, hot, **key)
             return
-        if await self._redis.upsert_turn(turn.user_id, turn.session_id, hot, create=False, **key):
+        # keep_seed_suffix: the hot entry stays a contiguous newest suffix of the live conversation. A delayed or
+        # replayed turn that predates a truncated seed is left to the cold tier instead of landing before the
+        # suffix with a gap in between (the read-side coverage check cannot see a gap).
+        if await self._redis.upsert_turn(
+            turn.user_id, turn.session_id, hot, create=False, keep_seed_suffix=True, **key
+        ):
             return
         await self._seed_hot_tier(turn.user_id, turn.agent_id, turn.session_id)
-        await self._redis.upsert_turn(turn.user_id, turn.session_id, hot, **key)
+        await self._redis.upsert_turn(turn.user_id, turn.session_id, hot, keep_seed_suffix=True, **key)
 
     async def _seed_hot_tier(self, user_id: str, agent: str, session_id: str) -> None:
         """Install the cold tier's newest ``hot_seed_turns`` live turns as the hot entry (NX: never overwrites).

@@ -68,6 +68,18 @@ def _upsert_turn_dict(turns: List[Dict[str, Any]], new: Dict[str, Any]) -> List[
     return result
 
 
+def _predates_truncated_seed(turns: List[Dict[str, Any]], new: Dict[str, Any], metadata: Any) -> bool:
+    """``True`` when ``new`` is absent from ``turns`` and sorts before the oldest of them, under a TRUNCATED seed."""
+    seed = metadata.get("cold_seed") if isinstance(metadata, dict) else None
+    if not (isinstance(seed, dict) and seed.get("complete") is False) or not turns:
+        return False
+    if any(t.get("turn_id") == new.get("turn_id") for t in turns):
+        return False  # a replay of a stored turn is replaced in place
+    new_key = _turn_sort_key(new)
+    oldest = _turn_sort_key(turns[0])
+    return new_key is not None and oldest is not None and new_key < oldest
+
+
 def _without_turn(turns: Any, turn_id: str) -> Optional[List[Dict[str, Any]]]:
     """``turns`` minus the stored turn ``turn_id``; ``None`` when ``turns`` is not a list or holds no such turn."""
     if not isinstance(turns, list):
@@ -619,6 +631,7 @@ class RedisConversation(ConversationMemory):
         chatbot_id: Optional[str] = None,
         *,
         create: bool = True,
+        keep_seed_suffix: bool = False,
     ) -> bool:
         """Replace the stored turn with the same ``turn_id``, or insert it, in ONE compare-and-swap write.
 
@@ -633,6 +646,10 @@ class RedisConversation(ConversationMemory):
             create: When ``True`` (default) a missing history is created holding ``turn``. When ``False``
                 a missing history is left missing and nothing is written: the existence check runs inside
                 the same compare-and-swap, so the caller can seed the history first without racing an expiry.
+            keep_seed_suffix: When ``True`` and the history carries a TRUNCATED ``cold_seed`` marker, a turn that
+                is not stored yet and sorts before the oldest stored turn is NOT inserted (it lives in the cold
+                tier): inserting it would leave a gap between it and the seeded suffix, and a read would count
+                the gap as coverage. The call still returns ``True`` (the history exists, nothing to seed).
 
         Returns:
             ``True`` when the turn was written; ``False`` only when ``create=False`` and no history exists.
@@ -650,14 +667,16 @@ class RedisConversation(ConversationMemory):
                     try:
                         await pipe.watch(key)
                         written = await self._write_upserted(
-                            pipe, key, user_id, session_id, chatbot_id, new, cas=True, create=create
+                            pipe, key, user_id, session_id, chatbot_id, new, cas=True, create=create,
+                            keep_seed_suffix=keep_seed_suffix,
                         )
                     except WatchError:
                         await _merge_backoff(attempt)
                         continue
             else:
                 written = await self._write_upserted(
-                    self.redis, key, user_id, session_id, chatbot_id, new, cas=False, create=create
+                    self.redis, key, user_id, session_id, chatbot_id, new, cas=False, create=create,
+                    keep_seed_suffix=keep_seed_suffix,
                 )
             if not written:
                 return False
@@ -668,7 +687,7 @@ class RedisConversation(ConversationMemory):
 
     async def _write_upserted(
         self, conn: Any, key: str, user_id: str, session_id: str, chatbot_id: Optional[str],
-        new: Dict[str, Any], *, cas: bool, create: bool = True,
+        new: Dict[str, Any], *, cas: bool, create: bool = True, keep_seed_suffix: bool = False,
     ) -> bool:
         """Read the stored turns through ``conn``, upsert ``new`` and write once (MULTI/EXEC when ``cas``).
 
@@ -681,6 +700,10 @@ class RedisConversation(ConversationMemory):
                 return await self._abort_upsert(conn, cas)
             raw = await conn.hget(key, "turns") if exists else None
             turns = self._deserialize_data(raw) if raw else []
+            if keep_seed_suffix and exists and _predates_truncated_seed(
+                turns, new, self._deserialize_data(await conn.hget(key, "metadata") or b"null")
+            ):
+                return await self._skip_upsert(conn, cas)
             mapping: Dict[str, Any] = {"turns": self._serialize_data(_upsert_turn_dict(turns, new)),
                                        "updated_at": now}
             if chatbot_id is not None:
@@ -705,6 +728,8 @@ class RedisConversation(ConversationMemory):
             history = ConversationHistory(session_id=session_id, user_id=user_id, chatbot_id=chatbot_id)
         if chatbot_id and not history.chatbot_id:
             history.chatbot_id = chatbot_id
+        if keep_seed_suffix and _predates_truncated_seed([t.to_dict() for t in history.turns], new, history.metadata):
+            return await self._skip_upsert(conn, cas)
         merged = _upsert_turn_dict([t.to_dict() for t in history.turns], new)
         history.turns = [ConversationTurn.from_dict(t) for t in merged]
         data = self._serialize_data(history.to_dict())
@@ -714,6 +739,12 @@ class RedisConversation(ConversationMemory):
             await conn.execute()
         else:
             await conn.set(key, data)
+        return True
+
+    @classmethod
+    async def _skip_upsert(cls, conn: Any, cas: bool) -> bool:
+        """Release the WATCH; the history exists and the turn is deliberately not stored (reports ``True``)."""
+        await cls._abort_upsert(conn, cas)
         return True
 
     @staticmethod
