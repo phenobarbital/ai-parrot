@@ -68,10 +68,15 @@ def _upsert_turn_dict(turns: List[Dict[str, Any]], new: Dict[str, Any]) -> List[
     return result
 
 
+def _is_truncated_seed(metadata: Any) -> bool:
+    """``True`` when ``metadata`` carries a ``cold_seed`` marker saying the seed holds only the newest window."""
+    seed = metadata.get("cold_seed") if isinstance(metadata, dict) else None
+    return isinstance(seed, dict) and seed.get("complete") is False
+
+
 def _predates_truncated_seed(turns: List[Dict[str, Any]], new: Dict[str, Any], metadata: Any) -> bool:
     """``True`` when ``new`` is absent from ``turns`` and sorts before the oldest of them, under a TRUNCATED seed."""
-    seed = metadata.get("cold_seed") if isinstance(metadata, dict) else None
-    if not (isinstance(seed, dict) and seed.get("complete") is False) or not turns:
+    if not _is_truncated_seed(metadata) or not turns:
         return False
     if any(t.get("turn_id") == new.get("turn_id") for t in turns):
         return False  # a replay of a stored turn is replaced in place
@@ -822,6 +827,19 @@ class RedisConversation(ConversationMemory):
             if cas:
                 await conn.unwatch()
             return False
+        if not kept:
+            meta = (await conn.hget(key, "metadata") if payload is None else payload.get("metadata"))
+            if _is_truncated_seed(self._deserialize_data(meta) if isinstance(meta, (bytes, str)) else meta):
+                # Every seeded turn is gone while the cold tier still holds older ones: an empty truncated entry
+                # would let a replayed older turn become the whole "newest suffix". Invalidate it so the next
+                # write reseeds from the cold tier.
+                if cas:
+                    conn.multi()
+                    conn.delete(key)
+                    await conn.execute()
+                else:
+                    await conn.delete(key)
+                return True
         now = datetime.now().isoformat()
         if payload is None:
             mapping = {"turns": self._serialize_data(kept), "updated_at": now}

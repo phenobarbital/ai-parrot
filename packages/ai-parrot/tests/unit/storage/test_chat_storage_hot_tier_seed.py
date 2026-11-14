@@ -478,3 +478,20 @@ async def test_an_unready_chronological_index_is_never_seeded_from_the_legacy_pr
     assert await _hot_ids(storage) == []  # no entry at all: the oldest-first prefix [t1, t2] was never installed
     # (what the cold tier then serves for an unready session is the legacy read's own business, unchanged here)
 
+
+async def test_deleting_every_seeded_turn_keeps_the_seed_boundary(storage):
+    """Seed [t4, t5] (truncated), delete both while cold still holds t1-t3, replay t1: t1 must not become the
+    whole 'newest suffix' of the hot entry."""
+    for n in range(1, 6):
+        await storage.store_turn(_turn(n))
+    storage.hot_seed_turns = 2
+    await _expire_hot(storage)
+    await storage.store_turn(_turn(5))  # reseeds [t4, t5] with a truncated marker
+    assert await _hot_ids(storage) == ["t4", "t5"]
+    for stale in ("t4", "t5"):
+        await storage._redis.remove_turn(USER, SESSION, stale, AGENT)  # hot side of a delete of both turns
+
+    await storage.store_turn(_turn(1))  # replay of the oldest turn
+
+    assert await _hot_ids(storage) != ["t1"]
+    assert (await _served(storage, limit=1))[-1] == "q-t5"  # newest live cold turn; hot must not answer with t1
