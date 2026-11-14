@@ -223,10 +223,14 @@ class ConversationPostgresBackend(ConversationBackend):
         if self._initialized and self._pool is not None:
             return
         import asyncpg  # type: ignore[import]
+
         # Fix #4: pass _set_jsonb_codec as init so every pooled connection
         # speaks Python-dict↔JSONB natively.
         self._pool = await asyncpg.create_pool(
-            dsn=self._dsn, min_size=1, max_size=5, init=_set_jsonb_codec,
+            dsn=self._dsn,
+            min_size=1,
+            max_size=5,
+            init=_set_jsonb_codec,
         )
         async with self._pool.acquire() as conn:
             await conn.execute(self._CREATE_CONVERSATIONS)
@@ -332,10 +336,7 @@ class ConversationPostgresBackend(ConversationBackend):
 
     def _encode_payload(self, data: dict) -> dict:
         """Normalize datetime values in a payload dict to ISO strings."""
-        return {
-            k: v.isoformat() if isinstance(v, datetime) else v
-            for k, v in data.items()
-        }
+        return {k: v.isoformat() if isinstance(v, datetime) else v for k, v in data.items()}
 
     # ------------------------------------------------------------------
     # Threads
@@ -363,7 +364,11 @@ class ConversationPostgresBackend(ConversationBackend):
                 ON CONFLICT (user_id, agent_id, session_id, kind, sort_key)
                 DO UPDATE SET payload = EXCLUDED.payload, updated_at = now(), expires_at = EXCLUDED.expires_at
                 """,
-                user_id, agent_id, session_id, payload, expires,
+                user_id,
+                agent_id,
+                session_id,
+                payload,
+                expires,
             )
 
     async def update_thread(
@@ -384,7 +389,10 @@ class ConversationPostgresBackend(ConversationBackend):
                   AND kind='thread' AND sort_key='THREAD'
                   AND (expires_at IS NULL OR expires_at > $4)
                 """,
-                user_id, agent_id, session_id, now,
+                user_id,
+                agent_id,
+                session_id,
+                now,
             )
             # Fix #4: payload is already a dict (JSONB codec decodes it)
             payload: dict = dict(row["payload"]) if row and row["payload"] else {}
@@ -399,7 +407,11 @@ class ConversationPostgresBackend(ConversationBackend):
                 ON CONFLICT (user_id, agent_id, session_id, kind, sort_key)
                 DO UPDATE SET payload = EXCLUDED.payload, updated_at = now(), expires_at = EXCLUDED.expires_at
                 """,
-                user_id, agent_id, session_id, payload, expires,
+                user_id,
+                agent_id,
+                session_id,
+                payload,
+                expires,
             )
 
     async def query_threads(
@@ -420,7 +432,10 @@ class ConversationPostgresBackend(ConversationBackend):
                 ORDER BY updated_at DESC
                 LIMIT $4
                 """,
-                user_id, agent_id, now, limit,
+                user_id,
+                agent_id,
+                now,
+                limit,
             )
         return [self._row_to_thread(r) for r in rows]
 
@@ -452,10 +467,19 @@ class ConversationPostgresBackend(ConversationBackend):
                     await conn.execute(self._LOCK_SQL, self._lock_key(user_id, agent_id, session_id))
                     if await conn.fetchval(self._TOMBSTONE_SQL, user_id, agent_id, session_id, turn_id):
                         raise ConversationDeletedError(
-                            f"session {session_id} or turn {turn_id} is tombstoned; write rejected")
+                            f"session {session_id} or turn {turn_id} is tombstoned; write rejected"
+                        )
                     await conn.execute(
-                        self._UPSERT_TURN, user_id, agent_id, session_id, f"TURN#{turn_id}",
-                        payload, self._expires_at(), ts, seq, turn_id,
+                        self._UPSERT_TURN,
+                        user_id,
+                        agent_id,
+                        session_id,
+                        f"TURN#{turn_id}",
+                        payload,
+                        self._expires_at(),
+                        ts,
+                        seq,
+                        turn_id,
                     )
         except StorageError:
             raise
@@ -506,7 +530,10 @@ class ConversationPostgresBackend(ConversationBackend):
                 WHERE user_id=$1 AND agent_id=$2 AND session_id=$3
                   AND kind='turn' AND sort_key=$4
                 """,
-                user_id, agent_id, session_id, sort_key,
+                user_id,
+                agent_id,
+                session_id,
+                sort_key,
             )
         # asyncpg returns "DELETE N" as the status string
         return int(result.split()[-1]) > 0
@@ -522,11 +549,15 @@ class ConversationPostgresBackend(ConversationBackend):
         async with self._pool.acquire() as conn:
             r1 = await conn.execute(
                 "DELETE FROM parrot_conversations WHERE user_id=$1 AND agent_id=$2 AND session_id=$3",
-                user_id, agent_id, session_id,
+                user_id,
+                agent_id,
+                session_id,
             )
             r2 = await conn.execute(
                 "DELETE FROM parrot_artifacts WHERE user_id=$1 AND agent_id=$2 AND session_id=$3",
-                user_id, agent_id, session_id,
+                user_id,
+                agent_id,
+                session_id,
             )
         return int(r1.split()[-1]) + int(r2.split()[-1])
 
@@ -534,9 +565,7 @@ class ConversationPostgresBackend(ConversationBackend):
     # FEAT-886: ordered window, tombstones, index state, backfill
     # ------------------------------------------------------------------
 
-    async def query_turn_window(
-        self, user_id: str, agent_id: str, session_id: str, limit: int
-    ) -> List[dict]:
+    async def query_turn_window(self, user_id: str, agent_id: str, session_id: str, limit: int) -> List[dict]:
         """Newest ``limit`` turns by (ts_utc, seq, turn_id), limit applied descending, returned ascending."""
         self._require_connection()
         if await self.is_deleted(user_id, agent_id, session_id):
@@ -548,7 +577,8 @@ class ConversationPostgresBackend(ConversationBackend):
         try:
             async with self._pool.acquire() as conn:
                 rows = await conn.fetch(
-                    self._SELECT_WINDOW, user_id, agent_id, session_id, self._not_expired_cond(), limit)
+                    self._SELECT_WINDOW, user_id, agent_id, session_id, self._not_expired_cond(), limit
+                )
         except Exception as exc:
             raise self._translate(exc, write=False) from exc
         window = [self._row_to_turn(r) for r in rows]
@@ -560,16 +590,19 @@ class ConversationPostgresBackend(ConversationBackend):
         self._require_connection()
         try:
             async with self._pool.acquire() as conn:
-                return int(await conn.fetchval(
-                    "SELECT COALESCE(MAX(seq), 0) FROM parrot_conversations"
-                    " WHERE user_id=$1 AND agent_id=$2 AND session_id=$3 AND kind='turn'",
-                    user_id, agent_id, session_id))
+                return int(
+                    await conn.fetchval(
+                        "SELECT COALESCE(MAX(seq), 0) FROM parrot_conversations"
+                        " WHERE user_id=$1 AND agent_id=$2 AND session_id=$3 AND kind='turn'",
+                        user_id,
+                        agent_id,
+                        session_id,
+                    )
+                )
         except Exception as exc:
             raise self._translate(exc, write=False) from exc
 
-    async def put_tombstone(
-        self, user_id: str, agent_id: str, session_id: str, turn_id: Optional[str] = None
-    ) -> None:
+    async def put_tombstone(self, user_id: str, agent_id: str, session_id: str, turn_id: Optional[str] = None) -> None:
         """Durably record a session (``turn_id=None``) or turn deletion. Idempotent; no TTL."""
         self._require_connection()
         if turn_id == "":
@@ -581,7 +614,11 @@ class ConversationPostgresBackend(ConversationBackend):
                     await conn.execute(
                         "INSERT INTO parrot_conversation_tombstones (user_id, agent_id, session_id, turn_id)"
                         " VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
-                        user_id, agent_id, session_id, turn_id or "")
+                        user_id,
+                        agent_id,
+                        session_id,
+                        turn_id or "",
+                    )
         except Exception as exc:
             raise self._translate(exc, write=True) from exc
 
@@ -593,7 +630,10 @@ class ConversationPostgresBackend(ConversationBackend):
                 rows = await conn.fetch(
                     "SELECT turn_id FROM parrot_conversation_tombstones"
                     " WHERE user_id=$1 AND agent_id=$2 AND session_id=$3 AND turn_id <> ''",
-                    user_id, agent_id, session_id)
+                    user_id,
+                    agent_id,
+                    session_id,
+                )
         except Exception as exc:
             raise self._translate(exc, write=False) from exc
         return {r["turn_id"] for r in rows}
@@ -617,9 +657,7 @@ class ConversationPostgresBackend(ConversationBackend):
             raise self._translate(exc, write=False) from exc
         return {r["session_id"] for r in rows}
 
-    async def is_deleted(
-        self, user_id: str, agent_id: str, session_id: str, turn_id: Optional[str] = None
-    ) -> bool:
+    async def is_deleted(self, user_id: str, agent_id: str, session_id: str, turn_id: Optional[str] = None) -> bool:
         """Whether the session (or session OR this turn) is tombstoned; raises when it cannot be determined."""
         self._require_connection()
         try:
@@ -639,12 +677,17 @@ class ConversationPostgresBackend(ConversationBackend):
         try:
             async with self._pool.acquire() as conn:
                 unindexed = await conn.fetchval(
-                    self._HAS_UNINDEXED, user_id, agent_id, session_id, self._not_expired_cond())
+                    self._HAS_UNINDEXED, user_id, agent_id, session_id, self._not_expired_cond()
+                )
                 if unindexed is None:
                     return "ready"
                 state = await conn.fetchval(
                     "SELECT state FROM parrot_conversation_index_state"
-                    " WHERE user_id=$1 AND agent_id=$2 AND session_id=$3", user_id, agent_id, session_id)
+                    " WHERE user_id=$1 AND agent_id=$2 AND session_id=$3",
+                    user_id,
+                    agent_id,
+                    session_id,
+                )
         except Exception as exc:
             raise self._translate(exc, write=False) from exc
         return "invalid" if state == "invalid" else "pending"
@@ -675,8 +718,7 @@ class ConversationPostgresBackend(ConversationBackend):
                 await conn.execute(self._INDEX_ROW_SQL, ts, seq, row["sort_key"][5:], *key, row["sort_key"])
                 indexed += 1
             state = "invalid" if saw_invalid else None
-            if not saw_invalid and await conn.fetchval(
-                    self._HAS_UNINDEXED, *key, self._not_expired_cond()) is None:
+            if not saw_invalid and await conn.fetchval(self._HAS_UNINDEXED, *key, self._not_expired_cond()) is None:
                 state = "ready"
             if state is not None:
                 await conn.execute(self._UPSERT_STATE_SQL, *key, state)
@@ -693,7 +735,8 @@ class ConversationPostgresBackend(ConversationBackend):
         try:
             async with self._pool.acquire() as conn:
                 rows = await conn.fetch(
-                    self._SELECT_LEGACY, self._not_expired_cond(), *self._decode_cursor(cursor), batch_size)
+                    self._SELECT_LEGACY, self._not_expired_cond(), *self._decode_cursor(cursor), batch_size
+                )
                 for row in rows:
                     groups.setdefault((row["user_id"], row["agent_id"], row["session_id"]), []).append(row)
                 for key, session_rows in groups.items():
@@ -731,7 +774,12 @@ class ConversationPostgresBackend(ConversationBackend):
                 ON CONFLICT (user_id, agent_id, session_id, artifact_id)
                 DO UPDATE SET payload = EXCLUDED.payload, updated_at = now(), expires_at = EXCLUDED.expires_at
                 """,
-                user_id, agent_id, session_id, artifact_id, payload, expires,
+                user_id,
+                agent_id,
+                session_id,
+                artifact_id,
+                payload,
+                expires,
             )
 
     async def get_artifact(
@@ -751,7 +799,11 @@ class ConversationPostgresBackend(ConversationBackend):
                 WHERE user_id=$1 AND agent_id=$2 AND session_id=$3 AND artifact_id=$4
                   AND (expires_at IS NULL OR expires_at > $5)
                 """,
-                user_id, agent_id, session_id, artifact_id, now,
+                user_id,
+                agent_id,
+                session_id,
+                artifact_id,
+                now,
             )
         if row is None:
             return None
@@ -774,7 +826,10 @@ class ConversationPostgresBackend(ConversationBackend):
                   AND (expires_at IS NULL OR expires_at > $4)
                 ORDER BY updated_at DESC
                 """,
-                user_id, agent_id, session_id, now,
+                user_id,
+                agent_id,
+                session_id,
+                now,
             )
         return [self._row_to_artifact(r) for r in rows]
 
@@ -793,7 +848,10 @@ class ConversationPostgresBackend(ConversationBackend):
                 DELETE FROM parrot_artifacts
                 WHERE user_id=$1 AND agent_id=$2 AND session_id=$3 AND artifact_id=$4
                 """,
-                user_id, agent_id, session_id, artifact_id,
+                user_id,
+                agent_id,
+                session_id,
+                artifact_id,
             )
 
     async def delete_session_artifacts(
@@ -807,7 +865,9 @@ class ConversationPostgresBackend(ConversationBackend):
         async with self._pool.acquire() as conn:
             result = await conn.execute(
                 "DELETE FROM parrot_artifacts WHERE user_id=$1 AND agent_id=$2 AND session_id=$3",
-                user_id, agent_id, session_id,
+                user_id,
+                agent_id,
+                session_id,
             )
         return int(result.split()[-1])
 

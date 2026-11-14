@@ -2,6 +2,7 @@
 
 TASK-825: ChatStorage and ArtifactStore consume the ABC — FEAT-116.
 """
+
 from pathlib import Path
 
 import pytest
@@ -12,7 +13,6 @@ from parrot.storage.backends.base import ConversationBackend
 from parrot.storage.overflow import OverflowStore
 from parrot.storage.artifacts import ArtifactStore
 from parrot.storage.models import Artifact, ArtifactType, ArtifactCreator
-
 
 STORAGE_DIR = Path(__file__).resolve().parents[2] / "src" / "parrot" / "storage"
 
@@ -40,25 +40,52 @@ class _StubBackend(ConversationBackend):
 
     async def put_thread(self, *a, **kw): ...
     async def update_thread(self, *a, **kw): ...
-    async def query_threads(self, *a, **kw): return []
+    async def query_threads(self, *a, **kw):
+        return []
+
     async def put_turn(self, *a, **kw): ...
-    async def query_turns(self, *a, **kw): return []
-    async def delete_turn(self, *a, **kw): return True
-    async def delete_thread_cascade(self, *a, **kw): return 0
+    async def query_turns(self, *a, **kw):
+        return []
+
+    async def delete_turn(self, *a, **kw):
+        return True
+
+    async def delete_thread_cascade(self, *a, **kw):
+        return 0
+
     async def put_artifact(self, *a, **kw): ...
-    async def get_artifact(self, *a, **kw): return None
-    async def query_artifacts(self, *a, **kw): return []
+    async def get_artifact(self, *a, **kw):
+        return None
+
+    async def query_artifacts(self, *a, **kw):
+        return []
+
     async def delete_artifact(self, *a, **kw): ...
-    async def delete_session_artifacts(self, *a, **kw): return 0
+    async def delete_session_artifacts(self, *a, **kw):
+        return 0
+
     # FEAT-886 durable operations
-    async def query_turn_window(self, *a, **kw): return []
-    async def max_sequence(self, *a, **kw): return 0
+    async def query_turn_window(self, *a, **kw):
+        return []
+
+    async def max_sequence(self, *a, **kw):
+        return 0
+
     async def put_tombstone(self, *a, **kw): ...
-    async def deleted_turn_ids(self, *a, **kw): return set()
-    async def deleted_session_ids(self, *a, **kw): return set()
-    async def is_deleted(self, *a, **kw): return False
-    async def get_index_state(self, *a, **kw): return "ready"
-    async def backfill_batch(self, *a, **kw): return None
+    async def deleted_turn_ids(self, *a, **kw):
+        return set()
+
+    async def deleted_session_ids(self, *a, **kw):
+        return set()
+
+    async def is_deleted(self, *a, **kw):
+        return False
+
+    async def get_index_state(self, *a, **kw):
+        return "ready"
+
+    async def backfill_batch(self, *a, **kw):
+        return None
 
 
 def test_artifact_store_accepts_conversation_backend():
@@ -73,9 +100,7 @@ async def test_artifact_store_uses_backend_overflow_prefix():
     """save_artifact calls backend.build_overflow_prefix (not _build_pk)."""
     backend = _StubBackend()
     backend.put_artifact = AsyncMock()
-    backend.build_overflow_prefix = MagicMock(
-        return_value="artifacts/USER#u#AGENT#a/THREAD#s/a1"
-    )
+    backend.build_overflow_prefix = MagicMock(return_value="artifacts/USER#u#AGENT#a/THREAD#s/a1")
 
     overflow = MagicMock(spec=OverflowStore)
     overflow.maybe_offload = AsyncMock(return_value=({"k": "v"}, None))
@@ -93,9 +118,7 @@ async def test_artifact_store_uses_backend_overflow_prefix():
     await store.save_artifact("u", "a", "s", artifact)
 
     backend.build_overflow_prefix.assert_called_once_with("u", "a", "s", "a1")
-    overflow.maybe_offload.assert_awaited_once_with(
-        {"k": "v"}, "artifacts/USER#u#AGENT#a/THREAD#s/a1"
-    )
+    overflow.maybe_offload.assert_awaited_once_with({"k": "v"}, "artifacts/USER#u#AGENT#a/THREAD#s/a1")
 
 
 async def test_chat_storage_delete_turn_uses_backend():
@@ -107,8 +130,6 @@ async def test_chat_storage_delete_turn_uses_backend():
     backend.update_thread = AsyncMock()
 
     storage = ChatStorage(dynamodb=backend)
-    result = await storage.delete_turn(
-        session_id="s", turn_id="t1", user_id="u", agent_id="a"
-    )
+    result = await storage.delete_turn(session_id="s", turn_id="t1", user_id="u", agent_id="a")
     assert result is True
     backend.delete_turn.assert_awaited_once_with("u", "a", "s", "t1")

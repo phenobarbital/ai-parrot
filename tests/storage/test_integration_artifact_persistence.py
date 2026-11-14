@@ -28,10 +28,10 @@ from parrot.storage.models import (
     CanvasBlockType,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 def _make_mock_table():
     """Create a mock DynamoDB table."""
@@ -116,9 +116,14 @@ def chat_storage(mock_redis, mock_dynamo):
 
 def _stored_turn(user_message: str, assistant_response: str) -> ChatStorageTurn:
     return ChatStorageTurn(
-        turn_id="t-1", user_id="u1", session_id="sess1", agent_id="bot1",
-        timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc), sequence=1,
-        user_message=user_message, assistant_response=assistant_response,
+        turn_id="t-1",
+        user_id="u1",
+        session_id="sess1",
+        agent_id="bot1",
+        timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        sequence=1,
+        user_message=user_message,
+        assistant_response=assistant_response,
     )
 
 
@@ -126,14 +131,14 @@ def _stored_turn(user_message: str, assistant_response: str) -> ChatStorageTurn:
 # Integration: Full Conversation Lifecycle
 # ---------------------------------------------------------------------------
 
+
 class TestConversationLifecycle:
     """End-to-end: create thread → add turns → list → load → delete."""
 
     @pytest.mark.asyncio
     async def test_create_thread(self, chat_storage, mock_dynamo):
         result = await chat_storage.create_conversation(
-            user_id="u1", session_id="sess1", agent_id="bot1",
-            title="Sales Analysis"
+            user_id="u1", session_id="sess1", agent_id="bot1", title="Sales Analysis"
         )
         assert result is not None
         assert result["session_id"] == "sess1"
@@ -205,9 +210,7 @@ class TestConversationLifecycle:
         mock_dynamo.delete_thread_cascade.return_value = 5
         mock_dynamo.delete_session_artifacts.return_value = 3
 
-        deleted = await chat_storage.delete_conversation(
-            "u1", "sess1", agent_id="bot1"
-        )
+        deleted = await chat_storage.delete_conversation("u1", "sess1", agent_id="bot1")
         assert deleted is True
         mock_dynamo.delete_thread_cascade.assert_called_once()
         mock_dynamo.delete_session_artifacts.assert_called_once()
@@ -217,6 +220,7 @@ class TestConversationLifecycle:
 # ---------------------------------------------------------------------------
 # Integration: Full Artifact Lifecycle
 # ---------------------------------------------------------------------------
+
 
 class TestArtifactLifecycle:
     """End-to-end: save artifact → list → get → update → delete."""
@@ -283,7 +287,10 @@ class TestArtifactLifecycle:
         }
 
         await artifact_store.update_artifact(
-            "u1", "bot1", "sess1", "chart-x1",
+            "u1",
+            "bot1",
+            "sess1",
+            "chart-x1",
             definition={"new": "definition"},
         )
         # put_artifact should be called with updated data
@@ -304,6 +311,7 @@ class TestArtifactLifecycle:
 # ---------------------------------------------------------------------------
 # Integration: S3 Overflow
 # ---------------------------------------------------------------------------
+
 
 class TestS3Overflow:
     """End-to-end: large artifact → S3 upload → DynamoDB ref → resolve."""
@@ -355,6 +363,7 @@ class TestS3Overflow:
 # Integration: Cascade Delete
 # ---------------------------------------------------------------------------
 
+
 class TestCascadeDelete:
     """Thread delete cleans up both tables."""
 
@@ -383,6 +392,7 @@ class TestCascadeDelete:
 # ---------------------------------------------------------------------------
 # Integration: Graceful Degradation
 # ---------------------------------------------------------------------------
+
 
 class TestGracefulDegradation:
     """Bot keeps working when DynamoDB is unavailable."""
@@ -415,6 +425,7 @@ class TestGracefulDegradation:
     @pytest.mark.asyncio
     async def test_dynamo_error_is_raised_not_swallowed_on_query(self, mock_dynamo, mock_redis):
         from botocore.exceptions import ClientError
+
         mock_dynamo.query_turn_window.side_effect = ClientError(
             {"Error": {"Code": "500", "Message": "Internal"}}, "Query"
         )
@@ -433,6 +444,7 @@ class TestGracefulDegradation:
 # ---------------------------------------------------------------------------
 # Integration: Model Serialization
 # ---------------------------------------------------------------------------
+
 
 class TestModelSerialization:
     """Verify models round-trip correctly through the pipeline."""

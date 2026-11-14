@@ -55,9 +55,14 @@ def storage(mock_redis, mock_dynamo):
 
 def _turn(turn_id: str = "t-1") -> ChatStorageTurn:
     return ChatStorageTurn(
-        turn_id=turn_id, user_id="u1", session_id="sess1", agent_id="bot1",
-        timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc), sequence=1,
-        user_message="hello", assistant_response="hi",
+        turn_id=turn_id,
+        user_id="u1",
+        session_id="sess1",
+        agent_id="bot1",
+        timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        sequence=1,
+        user_message="hello",
+        assistant_response="hi",
     )
 
 
@@ -176,9 +181,7 @@ class TestUpdateConversationTitle:
 
     @pytest.mark.asyncio
     async def test_updates_thread(self, storage, mock_dynamo):
-        result = await storage.update_conversation_title(
-            "sess1", "New Title", user_id="u1", agent_id="bot1"
-        )
+        result = await storage.update_conversation_title("sess1", "New Title", user_id="u1", agent_id="bot1")
         assert result is True
         mock_dynamo.update_thread.assert_called_once()
         call_kwargs = mock_dynamo.update_thread.call_args.kwargs
@@ -215,9 +218,7 @@ class TestDeleteTurn:
 
     @pytest.mark.asyncio
     async def test_deletes_turn(self, storage, mock_dynamo):
-        result = await storage.delete_turn(
-            "sess1", "t001", user_id="u1", agent_id="bot1"
-        )
+        result = await storage.delete_turn("sess1", "t001", user_id="u1", agent_id="bot1")
         assert result is True
 
     @pytest.mark.asyncio

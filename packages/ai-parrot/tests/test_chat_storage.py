@@ -23,10 +23,10 @@ from parrot.storage.models import (
 )
 from parrot.storage.chat import ChatStorage
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest_asyncio.fixture
 async def mock_redis():
@@ -73,6 +73,7 @@ async def storage(mock_redis, mock_dynamo):
 # ---------------------------------------------------------------------------
 # Model tests
 # ---------------------------------------------------------------------------
+
 
 class TestChatMessage:
     """Verify ChatMessage serialization round-trip."""
@@ -155,6 +156,7 @@ class TestToolCall:
 # ---------------------------------------------------------------------------
 # ChatStorage tests
 # ---------------------------------------------------------------------------
+
 
 class TestChatStorageLoadConversation:
     """Verify load_conversation reads Redis-first, then DocumentDB."""
@@ -289,7 +291,10 @@ class TestChatStorageUpdateTitle:
     @pytest.mark.asyncio
     async def test_update_title_calls_update_thread(self, storage, mock_dynamo):
         updated = await storage.update_conversation_title(
-            "s1", "New Title", user_id="u1", agent_id="agent_a",
+            "s1",
+            "New Title",
+            user_id="u1",
+            agent_id="agent_a",
         )
         assert updated is True
         mock_dynamo.update_thread.assert_awaited_once()
@@ -313,7 +318,9 @@ class TestChatStorageUpdateTitle:
     async def test_update_title_handles_dynamo_error(self, storage, mock_dynamo):
         mock_dynamo.update_thread.side_effect = RuntimeError("timeout")
         result = await storage.update_conversation_title(
-            "s1", "Title", user_id="u1", agent_id="agent_a",
+            "s1",
+            "Title",
+            user_id="u1",
+            agent_id="agent_a",
         )
         assert result is False
-

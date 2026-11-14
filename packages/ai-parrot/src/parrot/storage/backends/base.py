@@ -18,7 +18,7 @@ class BackfillBatch:
     """Result of one :meth:`ConversationBackend.backfill_batch` call."""
 
     processed: int
-    next_cursor: Optional[str]      # None when the scan is complete
+    next_cursor: Optional[str]  # None when the scan is complete
     invalid_sessions: Tuple[str, ...]
 
 
@@ -154,9 +154,7 @@ class ConversationBackend(ABC):
     # ------------------------------------------------------------------
 
     @abstractmethod
-    async def query_turn_window(
-        self, user_id: str, agent_id: str, session_id: str, limit: int
-    ) -> List[dict]:
+    async def query_turn_window(self, user_id: str, agent_id: str, session_id: str, limit: int) -> List[dict]:
         """The newest ``limit`` turns by ``(timestamp, sequence, turn_id)``.
 
         ``limit`` is applied DESCENDING at the backend; the window is returned ASCENDING.
@@ -174,9 +172,7 @@ class ConversationBackend(ABC):
         """Highest stored ``sequence`` for the session, ``0`` when none."""
 
     @abstractmethod
-    async def put_tombstone(
-        self, user_id: str, agent_id: str, session_id: str, turn_id: Optional[str] = None
-    ) -> None:
+    async def put_tombstone(self, user_id: str, agent_id: str, session_id: str, turn_id: Optional[str] = None) -> None:
         """Durably record a session (``turn_id=None``) or turn deletion. Idempotent.
 
         Not subject to transcript TTL or :meth:`delete_thread_cascade`.
@@ -203,9 +199,7 @@ class ConversationBackend(ABC):
         """
 
     @abstractmethod
-    async def is_deleted(
-        self, user_id: str, agent_id: str, session_id: str, turn_id: Optional[str] = None
-    ) -> bool:
+    async def is_deleted(self, user_id: str, agent_id: str, session_id: str, turn_id: Optional[str] = None) -> bool:
         """Whether the identity is tombstoned.
 
         Without ``turn_id``: whether the SESSION is tombstoned. With ``turn_id``: whether the session OR that
@@ -316,7 +310,4 @@ class ConversationBackend(ABC):
             Key prefix string, e.g.
             ``"artifacts/USER#u#AGENT#a/THREAD#s/aid"``.
         """
-        return (
-            f"artifacts/USER#{user_id}#AGENT#{agent_id}"
-            f"/THREAD#{session_id}/{artifact_id}"
-        )
+        return f"artifacts/USER#{user_id}#AGENT#{agent_id}" f"/THREAD#{session_id}/{artifact_id}"

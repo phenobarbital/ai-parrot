@@ -136,9 +136,7 @@ class ChatStorage:
         """
         self._turn_memory_cleaners.append(cleaner)
 
-    def attach_deletion_publisher(
-        self, publisher: Optional[Callable[[str, Dict[str, Any]], Awaitable[None]]]
-    ) -> None:
+    def attach_deletion_publisher(self, publisher: Optional[Callable[[str, Dict[str, Any]], Awaitable[None]]]) -> None:
         """Set (or clear with ``None``) the callable that publishes deletion events: ``await publisher(topic, payload)``."""
         self._deletion_publisher = publisher
 
@@ -206,7 +204,9 @@ class ChatStorage:
         ct = turn.to_conversation_turn()
         p = turn.presentation
         extra: Dict[str, Any] = {
-            "output_mode": p.output_mode, "model": p.model, "provider": p.provider,
+            "output_mode": p.output_mode,
+            "model": p.model,
+            "provider": p.provider,
             "response_time_ms": p.response_time_ms,
         }
         for name, value in (("usage", p.usage), ("tenant", p.tenant), ("cost_usd", p.cost_usd)):
@@ -234,8 +234,9 @@ class ChatStorage:
         for exc in errors:
             self.logger.error("post-write cleanup failed for turn %s: %s", turn.turn_id, exc)
         if errors:  # the envelope is acknowledged as terminal below: nothing else would retry this cleanup
-            self._schedule_cleanup_retry(turn.user_id, turn.agent_id, turn.session_id,
-                                         None if session_gone else turn.turn_id)
+            self._schedule_cleanup_retry(
+                turn.user_id, turn.agent_id, turn.session_id, None if session_gone else turn.turn_id
+            )
         raise ConversationDeletedError(
             f"turn {turn.turn_id} was deleted while it was being stored; the stored copy was removed"
         )
@@ -280,8 +281,11 @@ class ChatStorage:
                 if history and history.turns:
                     messages = []
                     # filter FIRST, then window: a read returns up to ``limit`` LIVE turns
-                    visible = (await self._drop_tombstoned_turns(
-                        user_id, agent_id or "", session_id, list(history.turns), lambda t: t.turn_id))[-limit:]
+                    visible = (
+                        await self._drop_tombstoned_turns(
+                            user_id, agent_id or "", session_id, list(history.turns), lambda t: t.turn_id
+                        )
+                    )[-limit:]
                     for turn in visible:
                         messages.append(
                             {
@@ -533,8 +537,9 @@ class ChatStorage:
         """Public deletion guard for callers that write a thread row directly (raises ``ConversationDeletedError``)."""
         await self._ensure_not_deleted(user_id, agent_id, session_id)
 
-    async def _drop_tombstoned_turns(self, user_id: str, agent: str, session_id: str, turns: List[Any],
-                                     turn_id_of: Callable[[Any], str]) -> List[Any]:
+    async def _drop_tombstoned_turns(
+        self, user_id: str, agent: str, session_id: str, turns: List[Any], turn_id_of: Callable[[Any], str]
+    ) -> List[Any]:
         """Remove turns whose turn-scoped tombstone exists (a deleted turn is never served, even before cleanup)."""
         if self._dynamo is None or not turns:
             return turns
@@ -610,7 +615,7 @@ class ChatStorage:
     async def _retry_cleanup(self, key: Tuple[str, str, str, Optional[str]]) -> None:
         user_id, agent, session_id, turn_id = key
         for attempt in range(self.CLEANUP_RETRY_ATTEMPTS):
-            await asyncio.sleep(min(self.cleanup_retry_base_delay * (2 ** attempt), 60.0))
+            await asyncio.sleep(min(self.cleanup_retry_base_delay * (2**attempt), 60.0))
             if turn_id:
                 errors = (await self._cleanup_turn(user_id, agent, session_id, turn_id))[2]
             else:
@@ -618,9 +623,12 @@ class ChatStorage:
             if not errors:
                 self.logger.info("post-delete cleanup of %s finished after %d retries", session_id, attempt + 1)
                 return
-        self.logger.error("post-delete cleanup of %s still failing after %d retries; the tombstone keeps it "
-                          "hidden and the deletion event remains the only retry", session_id,
-                          self.CLEANUP_RETRY_ATTEMPTS)
+        self.logger.error(
+            "post-delete cleanup of %s still failing after %d retries; the tombstone keeps it "
+            "hidden and the deletion event remains the only retry",
+            session_id,
+            self.CLEANUP_RETRY_ATTEMPTS,
+        )
 
     async def delete_conversation(self, user_id: str, session_id: str, agent_id: Optional[str] = None) -> bool:
         """Tombstone first, then clear cold turns, companions, artifacts and the hot tier, run the cleaners, publish the event.
@@ -651,24 +659,24 @@ class ChatStorage:
         await self._commit_tombstone(user_id, agent_id, session_id, turn_id)
         cold, hot, errors = await self._cleanup_turn(user_id, agent_id, session_id, turn_id)
         for exc in errors:
-            self.logger.error("post-tombstone cleanup failed for turn %s in %s (retried): %s",
-                              turn_id, session_id, exc)
+            self.logger.error("post-tombstone cleanup failed for turn %s in %s (retried): %s", turn_id, session_id, exc)
         published = await self._publish_deletion(
-            {"user_id": user_id, "agent_id": agent_id, "session_id": session_id, "turn_id": turn_id})
+            {"user_id": user_id, "agent_id": agent_id, "session_id": session_id, "turn_id": turn_id}
+        )
         if errors or not published:
             self._schedule_cleanup_retry(user_id, agent_id, session_id, turn_id)
         return cold or hot
 
-    async def _commit_tombstone(
-        self, user_id: str, agent: str, session_id: str, turn_id: Optional[str] = None
-    ) -> None:
+    async def _commit_tombstone(self, user_id: str, agent: str, session_id: str, turn_id: Optional[str] = None) -> None:
         """Durably record the deletion; raise ``StorageError`` (never swallow) when it cannot be committed."""
         if self._dynamo is None:
             return  # no durable store: nothing can resurrect, nothing to fence
         if not agent:
             self.logger.warning(
                 "deleting session %s with an empty agent id: the tombstone does not fence turns stored "
-                "under a real agent name", session_id)
+                "under a real agent name",
+                session_id,
+            )
         try:
             await self._dynamo.put_tombstone(user_id, agent, session_id, turn_id)
         except StorageError:
@@ -715,8 +723,8 @@ class ChatStorage:
                 cold = bool(await self._dynamo.delete_turn(user_id, agent_id, session_id, turn_id))
                 if cold:
                     await self._dynamo.update_thread(
-                        user_id=user_id, agent_id=agent_id, session_id=session_id,
-                        updated_at=datetime.now(timezone.utc))
+                        user_id=user_id, agent_id=agent_id, session_id=session_id, updated_at=datetime.now(timezone.utc)
+                    )
             except Exception as exc:  # noqa: BLE001
                 errors.append(exc)
         try:
@@ -781,8 +789,7 @@ class ChatStorage:
             _, errors = await self._cleanup_conversation(user_id, agent or None, session_id)
         if errors:
             raise StorageWriteError(
-                f"deletion cleanup for session {session_id} still failing: "
-                + "; ".join(str(e) for e in errors)
+                f"deletion cleanup for session {session_id} still failing: " + "; ".join(str(e) for e in errors)
             ) from errors[0]
 
     async def get_context_for_agent(
@@ -813,7 +820,8 @@ class ChatStorage:
                     # pass` below and this Redis fast path would silently fall
                     # through to DynamoDB forever.
                     history.turns = await self._drop_tombstoned_turns(
-                        user_id, agent_id or "", session_id, list(history.turns), lambda t: t.turn_id)
+                        user_id, agent_id or "", session_id, list(history.turns), lambda t: t.turn_id
+                    )
                     return [
                         {"role": m.role, "content": m.content} for m in render_history(history, max_turns=max_turns)
                     ]

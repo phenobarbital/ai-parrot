@@ -5,6 +5,7 @@ Each ``check_*`` coroutine takes a :class:`DurableHarness` built by a backend's 
 spec §4 "Backend contract suite". A clause that cannot run on a backend raises ``pytest.skip``
 from the HARNESS hook, never here.
 """
+
 from __future__ import annotations
 
 from contextlib import AbstractAsyncContextManager
@@ -105,7 +106,9 @@ async def check_window_newest_ascending(h: DurableHarness) -> None:
     for t in reversed(turns):
         await _put(h.backend, s, t)
     limit = 5
-    expected = [t["turn_id"] for t in sorted(turns, key=lambda t: (t["timestamp"], t["sequence"], t["turn_id"]))[-limit:]]
+    expected = [
+        t["turn_id"] for t in sorted(turns, key=lambda t: (t["timestamp"], t["sequence"], t["turn_id"]))[-limit:]
+    ]
     got = [t["turn_id"] for t in await _window(h.backend, s, limit)]
     assert got == expected
 
@@ -144,7 +147,12 @@ async def check_tombstone_survives_cleanup(h: DurableHarness) -> None:
 async def check_index_state(h: DurableHarness) -> None:
     """Legacy sessions report pending / invalid; new sessions ready; not-ready window raises IndexNotReadyError."""
     b = h.backend
-    legacy = lambda tid, ts: {"turn_id": tid, "timestamp": ts, "user_message": "q", "assistant_response": "a"}  # noqa: E731
+    legacy = lambda tid, ts: {
+        "turn_id": tid,
+        "timestamp": ts,
+        "user_message": "q",
+        "assistant_response": "a",
+    }  # noqa: E731
     await h.seed_legacy("s-legacy-ok", [legacy("l1", _ts(1)), legacy("l2", _ts(2))])
     await h.seed_legacy("s-legacy-bad", [legacy("b1", _ts(1)), legacy("b2", "not-a-date")])
     assert await b.get_index_state(USER, AGENT, "s-legacy-ok") == "pending"
@@ -178,12 +186,12 @@ async def check_backfill_batch_resumable(h: DurableHarness) -> None:
     """backfill_batch pages with a cursor, returns BackfillBatch, and a second run is a no-op."""
     b = h.backend
     rows = [
-        {"turn_id": f"r{i:02d}", "timestamp": _ts(i), "user_message": "q", "assistant_response": "a"}
-        for i in range(7)
+        {"turn_id": f"r{i:02d}", "timestamp": _ts(i), "user_message": "q", "assistant_response": "a"} for i in range(7)
     ]
     await h.seed_legacy("s-bf-ok", rows)
-    await h.seed_legacy("s-bf-bad", [{"turn_id": "bad1", "timestamp": "garbage", "user_message": "q",
-                                      "assistant_response": "a"}])
+    await h.seed_legacy(
+        "s-bf-bad", [{"turn_id": "bad1", "timestamp": "garbage", "user_message": "q", "assistant_response": "a"}]
+    )
     processed, cursor, invalid, steps = 0, None, set(), 0
     while steps < 100:
         batch = await b.backfill_batch(cursor, 3)

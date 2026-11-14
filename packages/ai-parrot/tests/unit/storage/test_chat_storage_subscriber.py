@@ -3,6 +3,7 @@
 Cold tier: the real SQLite backend. Hot tier: a real ``RedisConversation`` against a throw-away
 ``redis-server`` subprocess (skipped when the binary is missing).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -35,9 +36,20 @@ def redis_url(tmp_path_factory):
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
     proc = subprocess.Popen(
-        [binary, "--port", str(port), "--save", "", "--appendonly", "no",
-         "--dir", str(tmp_path_factory.mktemp("redis"))],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        [
+            binary,
+            "--port",
+            str(port),
+            "--save",
+            "",
+            "--appendonly",
+            "no",
+            "--dir",
+            str(tmp_path_factory.mktemp("redis")),
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
     for _ in range(50):
         try:
             socket.create_connection(("127.0.0.1", port), timeout=0.2).close()
@@ -71,16 +83,30 @@ async def storage(cold, redis_url, request):
 
 def _turn(tid: str, sec: int = 0, seq: int = 1, session: str = "s1", **kw) -> ChatStorageTurn:
     return ChatStorageTurn(
-        turn_id=tid, user_id="u1", session_id=session, agent_id="bot1", chatbot_id="bot-uuid",
-        timestamp=T0 + timedelta(seconds=sec), sequence=seq, user_message=f"q-{tid}",
-        assistant_response=f"a-{tid}", presentation=TurnPresentation(model="m", usage={"t": 1}), **kw)
+        turn_id=tid,
+        user_id="u1",
+        session_id=session,
+        agent_id="bot1",
+        chatbot_id="bot-uuid",
+        timestamp=T0 + timedelta(seconds=sec),
+        sequence=seq,
+        user_message=f"q-{tid}",
+        assistant_response=f"a-{tid}",
+        presentation=TurnPresentation(model="m", usage={"t": 1}),
+        **kw,
+    )
 
 
 def _envelope(turn: ChatStorageTurn) -> SimpleNamespace:
     ct = turn.to_conversation_turn()
-    payload = {"agent_name": turn.agent_id, "chatbot_id": turn.chatbot_id, "user_id": turn.user_id,
-               "session_id": turn.session_id, "turn": ct.to_dict(),
-               "presentation": turn.presentation.model_dump()}
+    payload = {
+        "agent_name": turn.agent_id,
+        "chatbot_id": turn.chatbot_id,
+        "user_id": turn.user_id,
+        "session_id": turn.session_id,
+        "turn": ct.to_dict(),
+        "presentation": turn.presentation.model_dump(),
+    }
     return SimpleNamespace(payload=payload, event_id=turn.turn_id)
 
 
@@ -163,8 +189,7 @@ async def test_delete_conversation_is_tombstone_first_and_final(storage, cold):
     assert await cold.is_deleted("u1", "bot1", "s1") is True
     assert await _hot_ids(storage) == []
     assert cleaned == [("u1", "bot1", "s1")]
-    assert published == [(CONVERSATION_DELETED_TOPIC,
-                          {"user_id": "u1", "agent_id": "bot1", "session_id": "s1"})]
+    assert published == [(CONVERSATION_DELETED_TOPIC, {"user_id": "u1", "agent_id": "bot1", "session_id": "s1"})]
     with pytest.raises(ConversationDeletedError):  # a replayed event can never resurrect it
         await storage.store_turn(_turn("t2"))
     assert await _hot_ids(storage) == []
@@ -320,14 +345,18 @@ async def test_cold_read_is_chronological_with_a_legacy_fallback(cold, tmp_path)
     for i, tid in enumerate(("zz", "aa", "mm", "bb")):  # ids deliberately unrelated to time
         await cold.put_turn("u1", "bot1", "s1", tid, _turn(tid, sec=i, seq=i + 1).to_row())
     st = ChatStorage(dynamodb=cold)
-    users = [m["content"] for m in await st.load_conversation("u1", "s1", agent_id="bot1", limit=3) if m["role"] == "user"]
+    users = [
+        m["content"] for m in await st.load_conversation("u1", "s1", agent_id="bot1", limit=3) if m["role"] == "user"
+    ]
     assert users == ["q-aa", "q-mm", "q-bb"]  # newest three, ascending by time
 
     import sqlite3
 
     raw = sqlite3.connect(str(tmp_path / "chat.db"))
-    raw.execute("INSERT INTO conversations (user_id, agent_id, session_id, kind, sort_key, payload, updated_at)"
-                " VALUES ('u1','bot1','legacy','turn','TURN#old','{\"user_message\": \"legacy q\", \"assistant_response\": \"a\"}',1.0)")
+    raw.execute(
+        "INSERT INTO conversations (user_id, agent_id, session_id, kind, sort_key, payload, updated_at)"
+        " VALUES ('u1','bot1','legacy','turn','TURN#old','{\"user_message\": \"legacy q\", \"assistant_response\": \"a\"}',1.0)"
+    )
     raw.commit()
     raw.close()
     legacy = await st.load_conversation("u1", "legacy", agent_id="bot1")  # index not ready: legacy read, not an error
@@ -345,20 +374,24 @@ async def test_turn_tombstones_hide_a_turn_on_every_read_path_before_cleanup(sto
     assert all("q-t1" not in m["content"] for m in ctx)
     # the cold fallback (hot tier empty) and the legacy query_turns fallback
     cold_only = ChatStorage(dynamodb=cold)
-    assert [m["content"] for m in await cold_only.load_conversation("u1", "s1", agent_id="bot1")
-            if m["role"] == "user"] == ["q-t2"]
+    assert [
+        m["content"] for m in await cold_only.load_conversation("u1", "s1", agent_id="bot1") if m["role"] == "user"
+    ] == ["q-t2"]
     import sqlite3
 
     raw = sqlite3.connect(str(cold._path))
     for tid in ("old1", "old2"):
-        raw.execute("INSERT INTO conversations (user_id, agent_id, session_id, kind, sort_key, payload, updated_at)"
-                    " VALUES ('u1','bot1','legacy','turn',?, ?, 1.0)",
-                    (f"TURN#{tid}", f'{{"user_message": "legacy {tid}", "assistant_response": "a"}}'))
+        raw.execute(
+            "INSERT INTO conversations (user_id, agent_id, session_id, kind, sort_key, payload, updated_at)"
+            " VALUES ('u1','bot1','legacy','turn',?, ?, 1.0)",
+            (f"TURN#{tid}", f'{{"user_message": "legacy {tid}", "assistant_response": "a"}}'),
+        )
     raw.commit()
     raw.close()
     await cold.put_tombstone("u1", "bot1", "legacy", "old1")
-    legacy = [m["content"] for m in await cold_only.load_conversation("u1", "legacy", agent_id="bot1")
-              if m["role"] == "user"]
+    legacy = [
+        m["content"] for m in await cold_only.load_conversation("u1", "legacy", agent_id="bot1") if m["role"] == "user"
+    ]
     assert legacy == ["legacy old2"]
 
 
@@ -397,8 +430,11 @@ async def test_a_read_costs_a_bounded_number_of_backend_calls_not_one_per_turn(s
     await cold.put_tombstone("u1", "bot1", "s1", "t3")
     counting = _CountingBackend(cold)
     storage._dynamo = counting
-    users = [m["content"] for m in await storage.load_conversation("u1", "s1", agent_id="bot1", limit=50)
-             if m["role"] == "user"]
+    users = [
+        m["content"]
+        for m in await storage.load_conversation("u1", "s1", agent_id="bot1", limit=50)
+        if m["role"] == "user"
+    ]
     assert "q-t3" not in users and len(users) == 19  # Redis hot read, tombstone honoured
     assert counting.calls.count("deleted_turn_ids") == 1
     assert counting.calls.count("is_deleted") <= 1  # the session guard only; never per turn
@@ -410,12 +446,18 @@ async def test_limit_is_applied_after_filtering_tombstoned_turns(storage, cold):
         await storage.store_turn(_turn(f"t{i}", sec=i))
     await cold.put_tombstone("u1", "bot1", "s1", "t5")  # the two NEWEST turns are tombstoned
     await cold.put_tombstone("u1", "bot1", "s1", "t4")
-    hot = [m["content"] for m in await storage.load_conversation("u1", "s1", agent_id="bot1", limit=3)
-           if m["role"] == "user"]
+    hot = [
+        m["content"]
+        for m in await storage.load_conversation("u1", "s1", agent_id="bot1", limit=3)
+        if m["role"] == "user"
+    ]
     assert hot == ["q-t1", "q-t2", "q-t3"]  # 3 live turns, not 1
     cold_only = ChatStorage(dynamodb=cold)
-    window = [m["content"] for m in await cold_only.load_conversation("u1", "s1", agent_id="bot1", limit=3)
-              if m["role"] == "user"]
+    window = [
+        m["content"]
+        for m in await cold_only.load_conversation("u1", "s1", agent_id="bot1", limit=3)
+        if m["role"] == "user"
+    ]
     assert window == ["q-t1", "q-t2", "q-t3"]
 
 
@@ -424,15 +466,20 @@ async def test_legacy_fallback_returns_limit_live_turns_when_tombstoned_ones_com
 
     raw = sqlite3.connect(str(cold._path))
     for i in range(1, 6):
-        raw.execute("INSERT INTO conversations (user_id, agent_id, session_id, kind, sort_key, payload, updated_at)"
-                    " VALUES ('u1','bot1','legacy2','turn',?, ?, 1.0)",
-                    (f"TURN#o{i}", f'{{"user_message": "legacy o{i}", "assistant_response": "a"}}'))
+        raw.execute(
+            "INSERT INTO conversations (user_id, agent_id, session_id, kind, sort_key, payload, updated_at)"
+            " VALUES ('u1','bot1','legacy2','turn',?, ?, 1.0)",
+            (f"TURN#o{i}", f'{{"user_message": "legacy o{i}", "assistant_response": "a"}}'),
+        )
     raw.commit()
     raw.close()
     await cold.put_tombstone("u1", "bot1", "legacy2", "o1")
     await cold.put_tombstone("u1", "bot1", "legacy2", "o2")
-    got = [m["content"] for m in await ChatStorage(dynamodb=cold).load_conversation("u1", "legacy2", agent_id="bot1",
-                                                                                   limit=3) if m["role"] == "user"]
+    got = [
+        m["content"]
+        for m in await ChatStorage(dynamodb=cold).load_conversation("u1", "legacy2", agent_id="bot1", limit=3)
+        if m["role"] == "user"
+    ]
     assert got == ["legacy o3", "legacy o4", "legacy o5"]
 
 
