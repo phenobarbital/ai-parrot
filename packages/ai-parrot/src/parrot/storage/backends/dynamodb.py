@@ -266,7 +266,7 @@ class ConversationDynamoDB(ConversationBackend):
     def _raise_for_cancellation(exc: ClientError, labels: List[str]) -> None:
         reasons = exc.response.get("CancellationReasons") or []
         codes = [r.get("Code") for r in reasons]
-        for label, code in zip(labels, codes):
+        for label, code in zip(labels, codes, strict=False):
             if code != "ConditionalCheckFailed":
                 continue
             if label.startswith("tombstone"):

@@ -602,7 +602,7 @@ class ConversationMongoBackend(ConversationBackend):
                 indexed_count += result.modified_count
                 touched.setdefault(key, False)
             for key, saw_invalid in touched.items():
-                scope = dict(zip(("user_id", "agent_id", "session_id"), key))
+                scope = dict(zip(("user_id", "agent_id", "session_id"), key, strict=False))
                 await self._finalize_session(scope, saw_invalid)
         except Exception as exc:
             raise self._translate(exc, write=True) from exc

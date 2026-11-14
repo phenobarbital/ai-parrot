@@ -290,7 +290,7 @@ class ConversationSQLiteBackend(ConversationBackend):
         if not self.is_connected:
             return
         now = self._now_epoch()
-        payload = {k: v for k, v in metadata.items()}
+        payload = dict(metadata)
         # Serialize datetime values
         for k in list(payload):
             if isinstance(payload[k], datetime):

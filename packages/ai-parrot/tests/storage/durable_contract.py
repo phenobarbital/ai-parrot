@@ -147,12 +147,10 @@ async def check_tombstone_survives_cleanup(h: DurableHarness) -> None:
 async def check_index_state(h: DurableHarness) -> None:
     """Legacy sessions report pending / invalid; new sessions ready; not-ready window raises IndexNotReadyError."""
     b = h.backend
-    legacy = lambda tid, ts: {
-        "turn_id": tid,
-        "timestamp": ts,
-        "user_message": "q",
-        "assistant_response": "a",
-    }  # noqa: E731
+
+    def legacy(tid: str, ts: str) -> dict:
+        return {"turn_id": tid, "timestamp": ts, "user_message": "q", "assistant_response": "a"}
+
     await h.seed_legacy("s-legacy-ok", [legacy("l1", _ts(1)), legacy("l2", _ts(2))])
     await h.seed_legacy("s-legacy-bad", [legacy("b1", _ts(1)), legacy("b2", "not-a-date")])
     assert await b.get_index_state(USER, AGENT, "s-legacy-ok") == "pending"
