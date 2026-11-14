@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-13T19:12:37Z",
-  "completed_at": null,
+  "completed_at": "2026-11-13T23:26:28+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -50,16 +50,17 @@
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependency: first module; creates parrot.knowledge.wiki.procedure and its test package.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5633-procedure-models.md"
+      "started_at": "2026-11-13T21:47:01+00:00",
+      "completed_at": "2026-11-13T21:57:05+00:00",
+      "file": "sdd/tasks/completed/TASK-5633-procedure-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5634",
@@ -68,16 +69,17 @@
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependency: edits only parrot/skills (models.py, parsers.py) and its existing test; keeps the raw mapping, so it needs no procedure model.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5634-skill-procedure-frontmatter.md"
+      "started_at": "2026-11-13T21:47:01+00:00",
+      "completed_at": "2026-11-13T21:57:55+00:00",
+      "file": "sdd/tasks/completed/TASK-5634-skill-procedure-frontmatter.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5635",
@@ -86,7 +88,7 @@
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -96,9 +98,10 @@
       "parallel": true,
       "parallelism_notes": "Imports ProcedureSpec/ProcedureManifest from TASK-5633 (knowledge/wiki/procedure/models.py); reads SkillDefinition.procedure added by TASK-5634 (skills/models.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5635-procedure-producers.md"
+      "started_at": "2026-11-13T21:47:01+00:00",
+      "completed_at": "2026-11-13T22:07:14+00:00",
+      "file": "sdd/tasks/completed/TASK-5635-procedure-producers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5636",
@@ -107,7 +110,7 @@
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -116,9 +119,10 @@
       "parallel": true,
       "parallelism_notes": "Imports ProcedureSpec and ProbeCost from TASK-5633 (knowledge/wiki/procedure/models.py); writes test_validate.py in the test package TASK-5633 creates.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5636-procedure-validate.md"
+      "started_at": "2026-11-13T21:47:01+00:00",
+      "completed_at": "2026-11-13T22:07:15+00:00",
+      "file": "sdd/tasks/completed/TASK-5636-procedure-validate.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5637",
@@ -127,16 +131,17 @@
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependency: stdlib-only module; the index shape it reads is fixed in spec §2.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5637-procedure-advice-matching.md"
+      "started_at": "2026-11-13T21:47:01+00:00",
+      "completed_at": "2026-11-13T21:58:03+00:00",
+      "file": "sdd/tasks/completed/TASK-5637-procedure-advice-matching.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5638",
@@ -145,7 +150,7 @@
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -154,9 +159,10 @@
       "parallel": true,
       "parallelism_notes": "Modifies procedure_advice.py and test_procedure_advice.py created by TASK-5637; calls its shared_root, load_index and match_guards.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5638-procedure-advice-decision.md"
+      "started_at": "2026-11-13T21:47:01+00:00",
+      "completed_at": "2026-11-13T22:07:17+00:00",
+      "file": "sdd/tasks/completed/TASK-5638-procedure-advice-decision.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5639",
@@ -165,7 +171,7 @@
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -175,9 +181,10 @@
       "parallel": true,
       "parallelism_notes": "Imports ProcedureSpec and INDEX_* from TASK-5633 (models.py); test_index_contract calls procedure_advice.load_index from TASK-5637.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5639-procedure-index.md"
+      "started_at": "2026-11-13T21:47:01+00:00",
+      "completed_at": "2026-11-13T22:07:18+00:00",
+      "file": "sdd/tasks/completed/TASK-5639-procedure-index.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5640",
@@ -186,7 +193,7 @@
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -196,9 +203,10 @@
       "parallel": true,
       "parallelism_notes": "Imports ProcedureSpec from TASK-5633; calls compile_index/publish_index from TASK-5639 (index.py) and modifies its test_index_plane.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5640-procedure-plane.md"
+      "started_at": "2026-11-13T21:47:01+00:00",
+      "completed_at": "2026-11-13T22:16:47+00:00",
+      "file": "sdd/tasks/completed/TASK-5640-procedure-plane.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5641",
@@ -207,7 +215,7 @@
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -217,9 +225,10 @@
       "parallel": true,
       "parallelism_notes": "Imports Resolution/ProbeCheck from TASK-5633 (models.py); reuses LOCAL_PROBES, apply_check, feature_index and current_branch from TASK-5638 (procedure_advice.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5641-procedure-probes-resolver.md"
+      "started_at": "2026-11-13T21:47:01+00:00",
+      "completed_at": "2026-11-13T22:16:48+00:00",
+      "file": "sdd/tasks/completed/TASK-5641-procedure-probes-resolver.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5642",
@@ -228,7 +237,7 @@
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -239,9 +248,10 @@
       "parallel": true,
       "parallelism_notes": "Calls manifest_specs from TASK-5635 (producers.py) and validate_graph from TASK-5636 (validate.py, and modifies its test_validate.py); reads PROBE_COSTS from TASK-5641 (procedure_probes.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5642-procedure-lint-pack.md"
+      "started_at": "2026-11-13T21:47:01+00:00",
+      "completed_at": "2026-11-13T22:53:00+00:00",
+      "file": "sdd/tasks/completed/TASK-5642-procedure-lint-pack.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5643",
@@ -250,7 +260,7 @@
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -262,9 +272,10 @@
       "parallel": true,
       "parallelism_notes": "Calls manifest_specs/load_manifest (TASK-5635), validate_graph (TASK-5636), ProcedurePlane and the index readers (TASK-5640, plane.py) and PROBE_COSTS (TASK-5641).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5643-procedure-cli-build.md"
+      "started_at": "2026-11-13T21:47:01+00:00",
+      "completed_at": "2026-11-13T22:53:01+00:00",
+      "file": "sdd/tasks/completed/TASK-5643-procedure-cli-build.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5644",
@@ -273,7 +284,7 @@
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -282,9 +293,10 @@
       "parallel": true,
       "parallelism_notes": "Modifies procedure.py, cli.py and test_procedure_cli.py written by TASK-5643; reuses its _load_specs and _settings.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5644-procedure-cli-next-brief.md"
+      "started_at": "2026-11-13T21:47:01+00:00",
+      "completed_at": "2026-11-13T23:11:44+00:00",
+      "file": "sdd/tasks/completed/TASK-5644-procedure-cli-next-brief.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5645",
@@ -293,7 +305,7 @@
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -302,9 +314,10 @@
       "parallel": true,
       "parallelism_notes": "Calls evaluate_command from TASK-5638 (procedure_advice.py); edits only dangerous_actions.py and its existing test.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5645-guard-dangerous-actions.md"
+      "started_at": "2026-11-13T21:47:01+00:00",
+      "completed_at": "2026-11-13T22:16:50+00:00",
+      "file": "sdd/tasks/completed/TASK-5645-guard-dangerous-actions.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5646",
@@ -313,7 +326,7 @@
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -322,9 +335,10 @@
       "parallel": true,
       "parallelism_notes": "Calls evaluate_command from TASK-5638 (procedure_advice.py); edits worktree_environment.py and native_claude_sandbox.py, creates test_procedure_guards.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5646-guard-worktree-environment.md"
+      "started_at": "2026-11-13T21:47:01+00:00",
+      "completed_at": "2026-11-13T22:16:51+00:00",
+      "file": "sdd/tasks/completed/TASK-5646-guard-worktree-environment.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5647",
@@ -333,7 +347,7 @@
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -344,9 +358,10 @@
       "parallel": false,
       "parallelism_notes": "Exclusive: regenerates the shared packaged-asset tree (check_asset_sync --write, _assets/manifest.json) and edits packages/ai-parrot/pyproject.toml. Its tests load the manifest with manifest_specs (TASK-5635), validate it with validate_graph (TASK-5636) against PROBE_COSTS (TASK-5641).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5647-sdd-workflow-manifest-asset.md"
+      "started_at": "2026-11-13T21:47:01+00:00",
+      "completed_at": "2026-11-13T22:39:37+00:00",
+      "file": "sdd/tasks/completed/TASK-5647-sdd-workflow-manifest-asset.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5648",
@@ -355,7 +370,7 @@
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -365,9 +380,10 @@
       "parallel": true,
       "parallelism_notes": "Calls procedure.build from TASK-5643 (sdd/scripts/procedure.py); installs the manifest asset TASK-5647 ships and modifies its test_procedure_assets.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5648-install-procedure-index-step.md"
+      "started_at": "2026-11-13T21:47:01+00:00",
+      "completed_at": "2026-11-13T23:11:45+00:00",
+      "file": "sdd/tasks/completed/TASK-5648-install-procedure-index-step.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5649",
@@ -376,7 +392,7 @@
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -386,9 +402,10 @@
       "parallel": true,
       "parallelism_notes": "Reads specs through ProcedurePlane from TASK-5640 (plane.py); calls resolve, SddProbeRunner and scope_for from TASK-5641.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5649-mcp-procedure-next.md"
+      "started_at": "2026-11-13T21:47:01+00:00",
+      "completed_at": "2026-11-13T22:53:02+00:00",
+      "file": "sdd/tasks/completed/TASK-5649-mcp-procedure-next.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5650",
@@ -397,7 +414,7 @@
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
-      "status": "pending",
+      "status": "done-with-issues",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -407,9 +424,10 @@
       "parallel": false,
       "parallelism_notes": "Exclusive: edits the shared /sdd-start command twins and regenerates the packaged assets. Calls render_brief from TASK-5644 (procedure.py, and modifies its test_procedure_cli.py); may edit the `procedure` scenario TASK-5651 adds to test_wheel_only_foreign_repo.py. Also gated on FEAT-887 being merged.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5650-task-start-procedure-block.md"
+      "started_at": "2026-11-13T21:47:01+00:00",
+      "completed_at": "2026-11-13T23:26:28+00:00",
+      "file": "sdd/tasks/completed/TASK-5650-task-start-procedure-block.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-5651",
@@ -418,7 +436,7 @@
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -430,9 +448,10 @@
       "parallel": true,
       "parallelism_notes": "Runs `procedure build/next` from TASK-5644; exercises the guard of TASK-5645 (dangerous_actions.py) and of TASK-5646 (and modifies its test_procedure_guards.py); the smoke asserts the index built by the install step of TASK-5648.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5651-procedure-smoke-and-pilot-e2e.md"
+      "started_at": "2026-11-13T21:47:01+00:00",
+      "completed_at": "2026-11-13T23:23:14+00:00",
+      "file": "sdd/tasks/completed/TASK-5651-procedure-smoke-and-pilot-e2e.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5652",
@@ -441,7 +460,7 @@
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "low",
       "effort": "M",
       "depends_on": [
@@ -455,9 +474,10 @@
       "parallel": true,
       "parallelism_notes": "Documents symbols created by TASK-5642 (lint pack), TASK-5644 (the six CLI verbs), TASK-5645 and TASK-5646 (guard behavior), TASK-5648 (install step) and TASK-5649 (MCP tool); last in the graph.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5652-procedure-documentation.md"
+      "started_at": "2026-11-13T21:47:01+00:00",
+      "completed_at": "2026-11-13T23:23:16+00:00",
+      "file": "sdd/tasks/completed/TASK-5652-procedure-documentation.md",
+      "verification": "verified"
     }
   ]
 }

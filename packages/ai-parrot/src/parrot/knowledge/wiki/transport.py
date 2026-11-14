@@ -65,6 +65,12 @@ from parrot.knowledge.wiki.operations import (
     op_sync_push,
     op_vault_ingest,
 )
+from parrot.knowledge.wiki.procedure.operations import (
+    PROCEDURE_NEXT_DESCRIPTION,
+    ProcedureNextInput,
+    op_procedure_next,
+    procedure_plane_available,
+)
 from parrot.knowledge.wiki.schema.operations import (
     SchemaLookupInput,
     SchemaNeighborsInput,
@@ -84,6 +90,7 @@ from parrot.knowledge.wiki.structural.operations import (
     op_symbol_lookup,
 )
 from parrot.knowledge.wiki.usage_operations import USAGE_REPORT_DESCRIPTION, UsageReportInput, op_usage_report
+
 
 class OperationDescriptor(BaseModel):
     """One wiki tool, independent of transport."""
@@ -231,6 +238,7 @@ _SPECS: dict[str, _Spec] = {
         SchemaSourcesInput,
         "List the declared SQL sources (alias, dialect, schemas). DSNs are never exposed — only env-var names.",
     ),
+    "wiki_procedure_next": _Spec("procedure", ProcedureNextInput, PROCEDURE_NEXT_DESCRIPTION),
     "vault_ingest": _Spec(
         "vault",
         VaultIngestInput,
@@ -408,6 +416,11 @@ def _operation_invoke(name: str, ctx: WikiOperationContext) -> Callable[[BaseMod
         async def invoke(params: BaseModel) -> OperationResult:
             return await op_schema_sources(None, params, service=schema)
 
+    elif name == "wiki_procedure_next":
+
+        async def invoke(params: BaseModel) -> OperationResult:
+            return await op_procedure_next(None, params, root=ctx.root)
+
     elif name == "ledger_open":
 
         async def invoke(params: BaseModel) -> OperationResult:
@@ -495,6 +508,8 @@ def mounted_operation_names(ctx: WikiOperationContext) -> list[str]:
         names.append("wiki_decision_generate")
     if ctx.schema_service is not None and ctx.config.schema_plane.enabled:
         names += [name for name, spec in _SPECS.items() if spec.mount == "schema"]
+    if procedure_plane_available(ctx.root):
+        names += [name for name, spec in _SPECS.items() if spec.mount == "procedure"]
     if ctx.vault_dir is not None:
         names.append("vault_ingest")
     return names

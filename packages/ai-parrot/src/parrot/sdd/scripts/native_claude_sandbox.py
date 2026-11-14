@@ -215,7 +215,7 @@ def _control_files(root: Path) -> list[Path]:
     """
     here = Path(__file__).resolve().parent
     parrot_dir = root / "packages" / "ai-parrot" / "src" / "parrot"
-    names = ("native_claude_sandbox.py", "worktree_environment.py")
+    names = ("native_claude_sandbox.py", "worktree_environment.py", "procedure_advice.py")
     found: list[Path] = []
     shim_dir = here.parent.parent / "flows" / "dev_loop"
     for directory in (here, parrot_dir / "sdd" / "scripts", parrot_dir / "flows" / "dev_loop", shim_dir):
@@ -1127,8 +1127,9 @@ def load_prefix_mcp_config(cwd: Path) -> dict[str, Any]:
         try:
             document = json.load(source)
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            sys.stderr.write(f"launch_worker: WARNING {path} is malformed ({exc.__class__.__name__}); "
-                             "treating as absent\n")
+            sys.stderr.write(
+                f"launch_worker: WARNING {path} is malformed ({exc.__class__.__name__}); " "treating as absent\n"
+            )
             return empty
     if not isinstance(document, dict) or not isinstance(document.get("mcpServers"), dict):
         return empty

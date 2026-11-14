@@ -615,6 +615,31 @@ def _load_native_sandbox() -> Any:
     return native_claude_sandbox
 
 
+def _load_procedure_advice() -> Any:
+    """Return the sibling ``procedure_advice`` module (FEAT-891), package or script mode."""
+    if __package__:
+        from . import procedure_advice
+    else:  # run as a script: this file's directory is sys.path[0]
+        import procedure_advice
+    return procedure_advice
+
+
+def _apply_procedure_advice(output: dict[str, Any], payload: dict[str, Any]) -> None:
+    """Add the procedure advice for a Bash payload to ``output`` in place; never raises."""
+    if "permissionDecision" in output or payload.get("tool_name") != "Bash":
+        return
+    try:
+        command = payload["tool_input"]["command"]
+        advice = _load_procedure_advice().evaluate_command(command, Path(payload["cwd"]))
+    except Exception:  # noqa: BLE001 — the procedure check never breaks the guard
+        return
+    if advice.decision == "deny":
+        output.pop("updatedInput", None)
+        output.update(permissionDecision="deny", permissionDecisionReason=advice.text)
+    elif advice.decision == "advise":
+        output["additionalContext"] = advice.text
+
+
 DEGRADED_BANNER = "echo '[sdd] degraded sandbox: no OS write boundary' >&2; "
 
 #: Hook backends. ``auto`` (the ``main()`` default) picks native or Bubblewrap when the command runs;
@@ -1072,6 +1097,7 @@ def hook_response(payload: dict[str, Any], *, backend: str = "bubblewrap") -> di
                 validate_write_path(cwd, cwd / path)
     except (OSError, ValueError, RuntimeError, KeyError) as exc:
         output.update(permissionDecision="deny", permissionDecisionReason=str(exc))
+    _apply_procedure_advice(output, payload)
     return {"hookSpecificOutput": output}
 
 
