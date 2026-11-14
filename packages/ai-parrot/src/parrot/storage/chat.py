@@ -35,6 +35,7 @@ DEFAULT_CONTEXT_TURNS = 10
 
 #: Hot-tier metadata key written when a missing hot entry is seeded from the cold tier.
 HOT_SEED_METADATA_KEY = "cold_seed"
+_HOT_SEED_RETRIES = 2  # seed attempts on a hot miss (the first, plus ONE retry if the key vanishes again): bounded
 
 
 class ChatStorage:
@@ -217,12 +218,16 @@ class ChatStorage:
         # keep_seed_suffix: the hot entry stays a contiguous newest suffix of the live conversation. A delayed or
         # replayed turn that predates a truncated seed is left to the cold tier instead of landing before the
         # suffix with a gap in between (the read-side coverage check cannot see a gap).
-        if await self._redis.upsert_turn(
-            turn.user_id, turn.session_id, hot, create=False, keep_seed_suffix=True, **key
-        ):
-            return
-        await self._seed_hot_tier(turn.user_id, turn.agent_id, turn.session_id)
-        await self._redis.upsert_turn(turn.user_id, turn.session_id, hot, keep_seed_suffix=True, **key)
+        for seeds_left in range(_HOT_SEED_RETRIES, -1, -1):
+            if await self._redis.upsert_turn(
+                turn.user_id, turn.session_id, hot, create=False, keep_seed_suffix=True, **key
+            ):
+                return
+            if seeds_left:
+                await self._seed_hot_tier(turn.user_id, turn.agent_id, turn.session_id)
+        # The entry vanished again between the seed and the upsert (TTL expiry, a delete). Never recreate it
+        # holding only this turn: raise so the bus retries the whole turn.
+        raise StorageWriteError(f"hot entry for turn {turn.turn_id} vanished again while it was being seeded")
 
     async def _seed_hot_tier(self, user_id: str, agent: str, session_id: str) -> None:
         """Install the cold tier's newest ``hot_seed_turns`` live turns as the hot entry (NX: never overwrites).
@@ -237,6 +242,7 @@ class ChatStorage:
         rows = await self._cold_window_rows(user_id, agent, session_id, window)
         turns = [self._hot_tier_turn(t) for t in self._stored_turns(rows, user_id, agent, session_id)]
         metadata = {HOT_SEED_METADATA_KEY: {"window": window, "complete": len(rows) < window}}
+        # False: another writer's entry won (NX) and that writer fences its own seed
         await self._redis.install_history(user_id, session_id, turns, chatbot_id=agent, metadata=metadata)
 
     @staticmethod

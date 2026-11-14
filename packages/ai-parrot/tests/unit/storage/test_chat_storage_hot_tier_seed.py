@@ -21,7 +21,7 @@ from parrot.memory import RedisConversation
 from parrot.memory.persistence import TurnPresentation
 from parrot.storage.backends.sqlite import ConversationSQLiteBackend
 from parrot.storage.chat import HOT_SEED_METADATA_KEY, ChatStorage
-from parrot.storage.errors import ConversationDeletedError
+from parrot.storage.errors import ConversationDeletedError, StorageWriteError
 from parrot.storage.models import ChatStorageTurn
 
 REDIS_URL = os.environ.get("TEST_REDIS_URL", "")
@@ -343,3 +343,49 @@ async def test_a_replay_inside_the_seed_window_is_replaced_in_place(storage):
 
     assert await _hot_ids(storage) == ["t4", "t5"]
     assert await _served(storage, limit=3) == ["q-t3", "q-t4", "q-t5"]
+
+
+def _vanishing_hot(hot_factory, times: int):
+    """A hot tier whose key disappears right after each of the first ``times`` installs (an expiry in the gap)."""
+    state = {"left": times, "installs": 0}
+
+    class _Vanishing(RedisConversation):
+        async def install_history(self, user_id: str, session_id: str, *a: Any, **kw: Any) -> bool:
+            installed = await super().install_history(user_id, session_id, *a, **kw)
+            state["installs"] += 1
+            if state["left"] > 0:
+                state["left"] -= 1
+                await self.redis.delete(self._get_key(user_id, session_id, kw.get("chatbot_id")))
+            return installed
+
+    return hot_factory(_Vanishing), state
+
+
+async def test_a_key_that_vanishes_between_install_and_upsert_is_reseeded_not_recreated_partial(cold, hot_factory):
+    hot, state = _vanishing_hot(hot_factory, times=0)
+    st = ChatStorage(redis_conversation=hot, dynamodb=cold)
+    st._initialized = True
+    await st.store_turn(_turn(1))
+    await st.store_turn(_turn(2))
+    await _expire_hot(st)
+    state.update(left=1, installs=0)
+
+    await st.store_turn(_turn(3))
+
+    assert state["installs"] == 2  # the seed, then exactly one retry of the seed path
+    assert await _hot_ids(st) == ["t1", "t2", "t3"]  # NOT the partial [t3] the old create=True upsert made
+
+
+async def test_the_seed_retry_is_bounded_and_never_leaves_a_partial_entry(cold, hot_factory):
+    hot, state = _vanishing_hot(hot_factory, times=0)
+    st = ChatStorage(redis_conversation=hot, dynamodb=cold)
+    st._initialized = True
+    await st.store_turn(_turn(1))
+    await _expire_hot(st)
+    state.update(left=99, installs=0)
+
+    with pytest.raises(StorageWriteError):
+        await st.store_turn(_turn(2))
+
+    assert state["installs"] == 2  # the seed plus exactly one retry — never a loop
+    assert await _hot_ids(st) == []  # no partial entry holding only t2
