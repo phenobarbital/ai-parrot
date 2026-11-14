@@ -3400,10 +3400,12 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         ``_propagate_output_verdict``, whether ``output`` passed or was
         transformed (FEAT-894).
 
-        Mirrors the pre-migration channel-egress guard
-        (`isinstance(response.output, str)`, `bots/base.py`): structured/
-        DataFrame outputs are left untouched — only plain-text responses are
-        scanned, matching today's behavior exactly.
+        A structured/DataFrame ``output`` is never rewritten. The text answer
+        kept beside it in ``response.response`` (what ``to_text`` prefers: a
+        client's explanation, a formatter's wrapped string, ``get_response``'s
+        markdown block) is scanned instead, and the verdict is applied to that
+        text only (issue:062128ff0d48). A structured output with no text answer
+        runs no guardrail.
 
         Args:
             response: The `AIMessage` to run OUTPUT guardrails against.
@@ -3415,7 +3417,10 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         """
         _OUTPUT_VERDICT.set(None)
         pipeline = self._guardrail_pipelines[GuardrailStage.OUTPUT]
-        if not pipeline.has_guardrails or not isinstance(response.output, str):
+        # A structured `output` is scanned through the text answer beside it; with none, there is nothing to scan.
+        structured = not isinstance(response.output, str)
+        text = response.response if structured else response.output
+        if not pipeline.has_guardrails or (structured and (not isinstance(text, str) or not text)):
             return response
 
         ctx = GuardrailContext(
@@ -3433,7 +3438,9 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
             # `ai_message` here is read-only context.
             extras=self._output_extras(response, pipeline),
         )
-        outcome = await pipeline.run(response.output, ctx)
+        outcome = await pipeline.run(text, ctx)
+        if structured:
+            return self._apply_verdict_beside_structured_output(response, text, outcome, ctx)
 
         original = response.output
         if outcome.blocked:
@@ -3457,6 +3464,39 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         if outcome.flag_reports:
             response.metadata.setdefault("guardrails", {}).update(outcome.flag_reports)
 
+        return response
+
+    def _apply_verdict_beside_structured_output(
+        self, response: AIMessage, text: str, outcome: PipelineOutcome, ctx: GuardrailContext
+    ) -> AIMessage:
+        """Apply an OUTPUT verdict on the text answer kept beside a structured output (issue:062128ff0d48).
+
+        Only ``response.response`` changes: the verdict judged that text, not the structured payload, so ``output``
+        keeps its type for callers that index into it. A BLOCK replaces the text with the blocked notice and marks
+        ``metadata["error"]``, as the plain-text BLOCK does; a TRANSFORM rewrites it; FLAG reports are merged.
+        ``_OUTPUT_VERDICT`` records the verdict so ``_stored_turn_text`` reuses it for the same text.
+
+        Args:
+            response: The response whose ``output`` is not a ``str``.
+            text: The non-empty ``response.response`` the pipeline ran on.
+            outcome: The pipeline's verdict on ``text``.
+            ctx: The OUTPUT ``GuardrailContext`` of that run.
+
+        Returns:
+            The same ``response`` instance, mutated in place.
+        """
+        if outcome.blocked:
+            response.response = _OUTPUT_BLOCKED_TEXT
+            _OUTPUT_VERDICT.set((id(response), text, _OUTPUT_BLOCKED_TEXT, ctx))
+            response.metadata["error"] = "security_block"
+            if outcome.reason:
+                response.metadata["block_reason"] = outcome.reason
+            return response
+        verdict = outcome.content if outcome.content is not None else text
+        _OUTPUT_VERDICT.set((id(response), text, verdict, ctx))
+        response.response = verdict
+        if outcome.flag_reports:
+            response.metadata.setdefault("guardrails", {}).update(outcome.flag_reports)
         return response
 
     async def _propagate_output_verdict(
