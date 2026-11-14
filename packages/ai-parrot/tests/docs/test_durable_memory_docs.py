@@ -37,7 +37,8 @@ SETTINGS = ["REDIS_HISTORY_EXPLICIT", "REDIS_HISTORY_URL", "CHAT_HOT_TTL_HOURS",
             "PARROT_TURN_BUS_OUTBOX_DIR", "PARROT_TURN_BUS_CHANNEL_PREFIX", "PARROT_TURN_BUS_DLQ_DSN"]
 METHODS = {
     "parrot.storage.backends.base.ConversationBackend": ["query_turn_window", "max_sequence", "put_tombstone",
-                                                          "is_deleted", "get_index_state", "backfill_batch"],
+                                                          "is_deleted", "get_index_state", "backfill_batch",
+                                                          "deleted_turn_ids", "deleted_session_ids"],
     "parrot.storage.chat.ChatStorage": ["store_turn", "handle_turn_completed", "handle_conversation_deleted",
                                          "register_memory_cleaner"],
     "parrot.memory.abstract.ConversationMemory": ["install_history"],

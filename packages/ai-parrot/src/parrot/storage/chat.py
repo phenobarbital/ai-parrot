@@ -7,7 +7,7 @@ FEAT-103: Migrated from DocumentDB to DynamoDB.
 """
 
 import asyncio
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, TYPE_CHECKING
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple, TYPE_CHECKING
 from datetime import datetime, timezone
 
 from navconfig.logging import logging
@@ -39,8 +39,6 @@ class ChatStorage:
 
     #: Attempts of the in-process post-delete cleanup retry.
     CLEANUP_RETRY_ATTEMPTS = 12
-    #: Most session-tombstone lookups in flight at once while listing conversations.
-    TOMBSTONE_LOOKUP_CONCURRENCY = 8
 
     def __init__(
         self,
@@ -222,10 +220,9 @@ class ChatStorage:
         if self._dynamo is None:
             return
         key = (turn.user_id, turn.agent_id, turn.session_id)
-        session_gone = await self._dynamo.is_deleted(*key)
-        turn_gone = await self._dynamo.is_deleted(*key, turn.turn_id)
-        if not (session_gone or turn_gone):
+        if not await self._dynamo.is_deleted(*key, turn.turn_id):  # session OR this turn: ONE read on the live path
             return
+        session_gone = await self._dynamo.is_deleted(*key)  # only after a deletion: the session, or just this turn?
         if session_gone:
             _, errors = await self._cleanup_conversation(turn.user_id, turn.agent_id, turn.session_id)
         else:
@@ -391,6 +388,10 @@ class ChatStorage:
     ) -> List[Dict[str, Any]]:
         """List conversations for a user from DynamoDB.
 
+        A tombstoned thread is hidden even while its cleanup is running, and ``limit`` counts LIVE threads: when
+        hidden threads leave a full window short, the window is read again, larger (``query_threads`` has no
+        cursor), until ``limit`` live threads are found, the store is exhausted or the ``since`` cutoff is reached.
+
         Returns:
             List of thread metadata dicts, sorted by updated_at desc.
         """
@@ -398,24 +399,24 @@ class ChatStorage:
             return []
         try:
             agent = agent_id or ""
-            threads = await self._dynamo.query_threads(
-                user_id=user_id,
-                agent_id=agent,
-                limit=limit,
-            )
-            # Filter by 'since' if provided
-            if since:
-                since_iso = since.isoformat()
-                threads = [t for t in threads if t.get("updated_at", "") >= since_iso]
-            deleted = await self._sessions_deleted(
-                user_id, [(t.get("agent_id") or agent, t.get("session_id", "")) for t in threads]
-            )
-            # Clean up DynamoDB internal fields; a tombstoned thread is hidden even while its cleanup is running
-            return [
-                {k: v for k, v in t.items() if k not in ("PK", "SK", "type", "ttl")}
-                for t, gone in zip(threads, deleted, strict=True)
-                if not gone
-            ]
+            since_iso = since.isoformat() if since else None
+            verdicts: Dict[Tuple[str, str], bool] = {}  # (agent, session) -> tombstoned; cached for this call only
+            window = limit
+            while True:
+                rows = await self._dynamo.query_threads(user_id=user_id, agent_id=agent, limit=window)
+                # Rows are newest first: once one predates ``since``, every row after it does too.
+                reached_since = since_iso is not None and any(r.get("updated_at", "") < since_iso for r in rows)
+                threads = [t for t in rows if since_iso is None or t.get("updated_at", "") >= since_iso]
+                keys = [(t.get("agent_id") or agent, t.get("session_id", "")) for t in threads]
+                unseen = list(dict.fromkeys(k for k in keys if k not in verdicts))
+                verdicts.update(zip(unseen, await self._sessions_deleted(user_id, unseen), strict=True))
+                live = [t for t, key in zip(threads, keys, strict=True) if not verdicts[key]]
+                hidden = len(threads) - len(live)
+                if len(live) >= limit or len(rows) < window or not hidden or reached_since:
+                    break
+                window = max(limit + hidden, 2 * window)  # geometric growth bounds the number of re-reads
+            # Clean up DynamoDB internal fields
+            return [{k: v for k, v in t.items() if k not in ("PK", "SK", "type", "ttl")} for t in live[:limit]]
         except StorageError:
             raise
         except Exception as exc:  # a failed read is raised, never reported as "empty"
@@ -561,30 +562,33 @@ class ChatStorage:
     async def _sessions_deleted(self, user_id: str, keys: List[Tuple[str, str]]) -> List[bool]:
         """Session-tombstone verdict for each ``(agent, session_id)`` in ``keys``, in the same order.
 
-        The backend contract has no batched session-tombstone read, so this is still one ``is_deleted`` per key;
-        the lookups run concurrently (at most ``TOMBSTONE_LOOKUP_CONCURRENCY`` in flight) instead of one round
-        trip after another.
+        ONE batched ``deleted_session_ids`` read per distinct agent (normally exactly one); the reads of different
+        agents run concurrently.
 
         Raises:
-            Exception: the first failed lookup, unchanged — an unknown verdict is never reported as "not deleted".
+            Exception: the first failed read, unchanged — an unknown verdict is never reported as "not deleted".
         """
         backend = self._dynamo
         if backend is None:  # no durable store: nothing can be tombstoned (same as ``_ensure_not_deleted``)
             return [False] * len(keys)
-        gate = asyncio.Semaphore(self.TOMBSTONE_LOOKUP_CONCURRENCY)
+        if not keys:
+            return []
+        by_agent: Dict[str, List[str]] = {}
+        for agent, session_id in keys:
+            by_agent.setdefault(agent, []).append(session_id)
+        agents = list(by_agent)
 
-        async def lookup(agent: str, session_id: str) -> bool:
-            async with gate:
-                return bool(await backend.is_deleted(user_id, agent, session_id))
+        async def lookup(agent: str) -> Set[str]:
+            return set(await backend.deleted_session_ids(user_id, agent, list(dict.fromkeys(by_agent[agent]))))
 
-        # return_exceptions: every lookup settles before a failure is raised, so none is left running unobserved
-        verdicts = await asyncio.gather(*(lookup(agent, session) for agent, session in keys), return_exceptions=True)
-        deleted: List[bool] = []
-        for verdict in verdicts:
-            if isinstance(verdict, BaseException):
-                raise verdict
-            deleted.append(verdict)
-        return deleted
+        # return_exceptions: every read settles before a failure is raised, so none is left running unobserved
+        results = await asyncio.gather(*(lookup(agent) for agent in agents), return_exceptions=True)
+        gone: Set[Tuple[str, str]] = set()
+        for agent, result in zip(agents, results, strict=True):
+            if isinstance(result, BaseException):
+                raise result
+            gone.update((agent, session_id) for session_id in result)
+        return [key in gone for key in keys]
 
     def _schedule_cleanup_retry(
         self, user_id: str, agent_id: Optional[str], session_id: str, turn_id: Optional[str] = None

@@ -58,6 +58,7 @@ def mock_dynamo():
     backend.query_threads = AsyncMock(return_value=[])
     backend.put_turn = AsyncMock()
     backend.is_deleted = AsyncMock(return_value=False)
+    backend.deleted_session_ids = AsyncMock(return_value=set())
     backend.put_tombstone = AsyncMock()
     backend.query_turns = AsyncMock(return_value=[])
     backend.query_turn_window = AsyncMock(return_value=[])

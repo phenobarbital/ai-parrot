@@ -29,6 +29,7 @@ def mock_dynamo():
     dynamo = AsyncMock()
     dynamo.put_turn = AsyncMock()
     dynamo.is_deleted = AsyncMock(return_value=False)
+    dynamo.deleted_session_ids = AsyncMock(return_value=set())
     dynamo.put_tombstone = AsyncMock()
     dynamo.put_thread = AsyncMock()
     dynamo.update_thread = AsyncMock()

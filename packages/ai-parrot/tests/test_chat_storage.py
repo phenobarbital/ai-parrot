@@ -58,6 +58,7 @@ async def mock_dynamo():
     dynamo.delete_turn = AsyncMock(return_value=True)
     dynamo.put_tombstone = AsyncMock()
     dynamo.is_deleted = AsyncMock(return_value=False)
+    dynamo.deleted_session_ids = AsyncMock(return_value=set())
     return dynamo
 
 

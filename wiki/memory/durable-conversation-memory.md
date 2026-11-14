@@ -180,8 +180,9 @@ with invalid sessions (a missing or unparseable timestamp; they stay unready and
   handler no longer persists anything.
 - Backends now raise typed errors on a failed or disconnected write (`StorageUnavailableError`,
   `StorageWriteError`) instead of returning silently. Custom `ConversationBackend` subclasses must implement
-  `query_turn_window`, `max_sequence`, `put_tombstone`, `is_deleted`, `get_index_state` and `backfill_batch`;
-  custom `ConversationMemory` subclasses must implement `_install_history`.
+  `query_turn_window`, `max_sequence`, `put_tombstone`, `is_deleted`, `deleted_turn_ids`, `deleted_session_ids`,
+  `get_index_state` and `backfill_batch`; custom `ConversationMemory` subclasses must implement `_install_history`.
+  `is_deleted` called with a `turn_id` must answer whether the session OR that turn is deleted.
 - The outbox directory must be on a volume that survives a container restart for crash recovery to hold.
 - Not part of this feature: LLM summaries (Stage 2 compaction), native provider tool blocks, a durable omission
   store, and re-keying ChatStorage.
