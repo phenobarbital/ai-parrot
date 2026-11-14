@@ -224,22 +224,31 @@ class ChatStorage:
             ):
                 return
             if seeds_left:
-                await self._seed_hot_tier(turn.user_id, turn.agent_id, turn.session_id)
+                if not await self._seed_hot_tier(turn.user_id, turn.agent_id, turn.session_id):
+                    return  # no trustworthy window to seed: no hot entry, reads go to the cold tier
         # The entry vanished again between the seed and the upsert (TTL expiry, a delete). Never recreate it
         # holding only this turn: raise so the bus retries the whole turn.
         raise StorageWriteError(f"hot entry for turn {turn.turn_id} vanished again while it was being seeded")
 
-    async def _seed_hot_tier(self, user_id: str, agent: str, session_id: str) -> None:
+    async def _seed_hot_tier(self, user_id: str, agent: str, session_id: str) -> bool:
         """Install the cold tier's newest ``hot_seed_turns`` live turns as the hot entry (NX: never overwrites).
 
         The window excludes tombstoned turns. ``metadata['cold_seed']['complete']`` records whether the window
         holds every live turn, so a read asking for more turns than a truncated seed holds goes to the cold tier.
 
+        Returns:
+            ``False`` when the chronological window is unavailable (legacy session whose index is not ready):
+            nothing is installed, because the legacy fallback returns the OLDEST rows, not the newest suffix,
+            and a seeded prefix would be served as coverage while newer cold turns are missing.
+
         Raises:
             StorageError: the cold window could not be read (the turn is retried; no partial hot entry is made).
         """
         window = self.hot_seed_turns
-        rows = await self._cold_window_rows(user_id, agent, session_id, window)
+        try:
+            rows = await self._cold_window_rows(user_id, agent, session_id, window, legacy_fallback=False)
+        except IndexNotReadyError:
+            return False
         turns = [self._hot_tier_turn(t) for t in self._stored_turns(rows, user_id, agent, session_id)]
         metadata = {HOT_SEED_METADATA_KEY: {"window": window, "complete": len(rows) < window}}
         # False: another writer's entry won (NX) and that writer fences its own seed
@@ -250,6 +259,7 @@ class ChatStorage:
         gone = await self._dynamo.deleted_turn_ids(user_id, agent, session_id)
         for stale in [t.turn_id for t in turns if t.turn_id in gone]:
             await self._delete_hot_turn(user_id, session_id, stale, agent)
+        return True
 
     @staticmethod
     def _hot_tier_turn(turn: ChatStorageTurn) -> "ConversationTurn":
@@ -409,8 +419,13 @@ class ChatStorage:
         except Exception as exc:  # a failed read is raised, never reported as "empty"
             raise StorageUnavailableError(f"{self._backend_label} load failed: {exc}") from exc
 
-    async def _cold_window_rows(self, user_id: str, agent: str, session_id: str, limit: int) -> List[Dict[str, Any]]:
+    async def _cold_window_rows(
+        self, user_id: str, agent: str, session_id: str, limit: int, *, legacy_fallback: bool = True
+    ) -> List[Dict[str, Any]]:
         """The newest ``limit`` LIVE turn rows of the cold tier, ascending (tombstoned turns excluded).
+
+        With ``legacy_fallback=False`` an unready chronological index raises ``IndexNotReadyError`` instead of
+        falling back to the legacy order (which yields the FIRST rows, not the newest suffix).
 
         Raises:
             StorageError: the cold tier could not be read — a failed read is raised, never reported as "empty".
@@ -422,6 +437,8 @@ class ChatStorage:
                 # turns and applies ``limit`` after doing so.
                 return await self._dynamo.query_turn_window(user_id, agent, session_id, limit)
             except IndexNotReadyError:
+                if not legacy_fallback:
+                    raise
                 # Legacy session not backfilled yet: the old (sort_key) order is the best available read.
                 # The window backends already exclude tombstoned turns; this path does not, so ask for the
                 # tombstoned count extra (ONE batched lookup), filter, then apply ``limit`` to live turns.

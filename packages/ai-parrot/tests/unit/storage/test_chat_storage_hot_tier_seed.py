@@ -460,3 +460,21 @@ async def test_a_conversation_tombstoned_between_the_cold_read_and_the_install_l
         await st.store_turn(_turn(2))
 
     assert await st._redis.redis.exists(st._redis._get_key(USER, SESSION, AGENT)) == 0
+
+
+async def test_an_unready_chronological_index_is_never_seeded_from_the_legacy_prefix(storage, cold):
+    """Real SQLite: one live row without ``ts_utc`` makes the session's index 'pending', so the window read raises
+    ``IndexNotReadyError`` and the legacy fallback would return the OLDEST rows. No hot entry may be built from it."""
+    for n in range(1, 6):
+        await storage.store_turn(_turn(n))
+    storage.hot_seed_turns = 2
+    await cold._conn.execute("UPDATE conversations SET ts_utc=NULL WHERE turn_id='t1'")
+    await cold._conn.commit()
+    assert await cold.get_index_state(USER, AGENT, SESSION) == "pending"
+    await _expire_hot(storage)
+
+    await storage.store_turn(_turn(6))
+
+    assert await _hot_ids(storage) == []  # no entry at all: the oldest-first prefix [t1, t2] was never installed
+    # (what the cold tier then serves for an unready session is the legacy read's own business, unchanged here)
+
