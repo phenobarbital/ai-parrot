@@ -489,7 +489,7 @@
       "feature_id": "FEAT-887",
       "feature": "sdd-experience-memory",
       "spec": "sdd/specs/sdd-experience-memory.spec.md",
-      "status": "in-progress",
+      "status": "pending",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -500,7 +500,7 @@
       "parallel": true,
       "parallelism_notes": "authoring-assets: TASK-5599: consumes the cli contract in packages/ai-parrot/src/parrot/sdd/scripts/experience_cli.py, packages/ai-parrot/src/parrot/sdd/cli.py; TASK-5606: serializes writes to packages/ai-parrot/tests/flows/dev_loop/test_worker_prompt_orchestrator.py; TASK-5607: consumes the engine contract in packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/engine.py",
       "assigned_to": null,
-      "started_at": "2026-11-13T19:26:22+00:00",
+      "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5608-authoring-assets.md"
     },
@@ -511,7 +511,7 @@
       "feature_id": "FEAT-887",
       "feature": "sdd-experience-memory",
       "spec": "sdd/specs/sdd-experience-memory.spec.md",
-      "status": "in-progress",
+      "status": "pending",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -522,7 +522,7 @@
       "parallel": true,
       "parallelism_notes": "lifecycle: TASK-5598: consumes the sync contract in packages/ai-parrot/src/parrot/knowledge/wiki/experience/sync.py; TASK-5599: consumes the cli contract in packages/ai-parrot/src/parrot/sdd/scripts/experience_cli.py, packages/ai-parrot/src/parrot/sdd/cli.py; TASK-5605: serializes writes to packages/ai-parrot/src/parrot/sdd/installer.py, packages/ai-parrot/tests/sdd/test_installer.py",
       "assigned_to": null,
-      "started_at": "2026-11-13T19:26:22+00:00",
+      "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5609-lifecycle.md"
     },
@@ -533,7 +533,7 @@
       "feature_id": "FEAT-887",
       "feature": "sdd-experience-memory",
       "spec": "sdd/specs/sdd-experience-memory.spec.md",
-      "status": "in-progress",
+      "status": "pending",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -551,7 +551,7 @@
       "parallel": true,
       "parallelism_notes": "integration: TASK-5596: consumes the hooks contract in packages/ai-parrot/src/parrot/sdd/scripts/experience_hook.py, packages/ai-parrot/src/parrot/launcher.py; TASK-5599: consumes the cli contract in packages/ai-parrot/src/parrot/sdd/scripts/experience_cli.py, packages/ai-parrot/src/parrot/sdd/cli.py; TASK-5600: consumes the claude-install contract in packages/ai-parrot/src/parrot/sdd/scripts/native_claude_sandbox.py, packages/ai-parrot/src/parrot/sdd/installer.py; TASK-5602: consumes the codex-replay contract in packages/ai-parrot/src/parrot/flows/dev_loop/dispatchers/codex.py; TASK-5603: consumes the agy-replay contract in packages/ai-parrot/src/parrot/flows/dev_loop/dispatchers/google_coding.py; TASK-5604: consumes the gemini-replay contract in packages/ai-parrot/src/parrot/flows/dev_loop/dispatchers/gemini.py; TASK-5605: consumes the host-install contract in packages/ai-parrot/src/parrot/sdd/installer.py, .codex/hooks.json; TASK-5607: consumes the engine contract in packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/engine.py; TASK-5608: consumes the authoring-assets contract in .claude/commands/sdd-start.md, .agent/workflows/sdd-start.md; TASK-5609: consumes the lifecycle contract in packages/ai-parrot/src/parrot/flows/dev_loop/feature_launcher.py, packages/ai-parrot/src/parrot/sdd/installer.py",
       "assigned_to": null,
-      "started_at": "2026-11-13T19:26:22+00:00",
+      "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5610-integration.md"
     },
@@ -562,7 +562,7 @@
       "feature_id": "FEAT-887",
       "feature": "sdd-experience-memory",
       "spec": "sdd/specs/sdd-experience-memory.spec.md",
-      "status": "in-progress",
+      "status": "pending",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -593,9 +593,10 @@
       "parallel": true,
       "parallelism_notes": "documentation: TASK-5588: consumes the fastpath contract in packages/ai-parrot/src/parrot/knowledge/wiki/experience/__init__.py, packages/ai-parrot/src/parrot/knowledge/wiki/experience/fastpath.py; TASK-5589: consumes the domain-models contract in packages/ai-parrot/src/parrot/knowledge/wiki/experience/models.py; TASK-5590: consumes the event-schemas contract in packages/ai-parrot/src/parrot/knowledge/wiki/experience/models.py; TASK-5591: consumes the reducer contract in packages/ai-parrot/src/parrot/knowledge/wiki/experience/reducer.py; TASK-5592: consumes the index contract in packages/ai-parrot/src/parrot/knowledge/wiki/experience/index.py, packages/ai-parrot/src/parrot/knowledge/wiki/project.py; TASK-5593: consumes the service contract in packages/ai-parrot/src/parrot/knowledge/wiki/experience/service.py; TASK-5594: consumes the sandbox contract in packages/ai-parrot/src/parrot/sdd/scripts/worktree_environment.py, packages/ai-parrot/src/parrot/sdd/scripts/native_claude_sandbox.py; TASK-5595: consumes the transitions contract in packages/ai-parrot/src/parrot/knowledge/wiki/experience/transitions.py; TASK-5596: consumes the hooks contract in packages/ai-parrot/src/parrot/sdd/scripts/experience_hook.py, packages/ai-parrot/src/parrot/launcher.py; TASK-5597: consumes the graduation contract in packages/ai-parrot/src/parrot/knowledge/wiki/experience/graduation.py; TASK-5598: consumes the sync contract in packages/ai-parrot/src/parrot/knowledge/wiki/experience/sync.py; TASK-5599: consumes the cli contract in packages/ai-parrot/src/parrot/sdd/scripts/experience_cli.py, packages/ai-parrot/src/parrot/sdd/cli.py; TASK-5600: consumes the claude-install contract in packages/ai-parrot/src/parrot/sdd/scripts/native_claude_sandbox.py, packages/ai-parrot/src/parrot/sdd/installer.py; TASK-5601: consumes the interceptor contract in packages/ai-parrot/src/parrot/flows/dev_loop/experience.py, packages/ai-parrot/src/parrot/flows/dev_loop/dispatchers/llm.py; TASK-5602: consumes the codex-replay contract in packages/ai-parrot/src/parrot/flows/dev_loop/dispatchers/codex.py; TASK-5603: consumes the agy-replay contract in packages/ai-parrot/src/parrot/flows/dev_loop/dispatchers/google_coding.py; TASK-5604: consumes the gemini-replay contract in packages/ai-parrot/src/parrot/flows/dev_loop/dispatchers/gemini.py; TASK-5605: consumes the host-install contract in packages/ai-parrot/src/parrot/sdd/installer.py, .codex/hooks.json; TASK-5606: consumes the output-models contract in packages/ai-parrot/src/parrot/flows/dev_loop/models/base.py, packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/models.py; TASK-5607: consumes the engine contract in packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/engine.py; TASK-5608: consumes the authoring-assets contract in .claude/commands/sdd-start.md, .agent/workflows/sdd-start.md; TASK-5609: consumes the lifecycle contract in packages/ai-parrot/src/parrot/flows/dev_loop/feature_launcher.py, packages/ai-parrot/src/parrot/sdd/installer.py; TASK-5610: consumes the tested A/B/C/D usage scenario in packages/ai-parrot/tests/knowledge/wiki/experience/test_end_to_end.py",
       "assigned_to": null,
-      "started_at": "2026-11-13T19:26:22+00:00",
+      "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5611-documentation.md"
     }
   ]
 }
+
