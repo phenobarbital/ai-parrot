@@ -389,3 +389,28 @@ async def test_the_seed_retry_is_bounded_and_never_leaves_a_partial_entry(cold, 
 
     assert state["installs"] == 2  # the seed plus exactly one retry — never a loop
     assert await _hot_ids(st) == []  # no partial entry holding only t2
+
+
+async def test_a_turn_deleted_between_the_cold_read_and_the_install_is_not_resurrected(cold, hot_factory):
+    armed = delete_landed = False
+
+    class _DeleteRaces(RedisConversation):
+        async def install_history(self, *a: Any, **kw: Any) -> bool:
+            nonlocal delete_landed
+            if armed and not delete_landed:  # the seed has read its window (t1, t2); now a delete of t2 runs to completion
+                delete_landed = True
+                await cold.put_tombstone(USER, AGENT, SESSION, "t2")
+                assert await self.remove_turn(USER, SESSION, "t2", chatbot_id=AGENT) is False  # no hot key yet
+            return await super().install_history(*a, **kw)
+
+    st = ChatStorage(redis_conversation=hot_factory(_DeleteRaces), dynamodb=cold)
+    st._initialized = True
+    await st.store_turn(_turn(1))
+    await st.store_turn(_turn(2))
+    await _expire_hot(st)
+    armed = True
+
+    await st.store_turn(_turn(3))
+
+    assert delete_landed
+    assert await _hot_ids(st) == ["t1", "t3"]  # read straight from the Redis key, as working memory does

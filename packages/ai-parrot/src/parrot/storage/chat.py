@@ -244,6 +244,12 @@ class ChatStorage:
         metadata = {HOT_SEED_METADATA_KEY: {"window": window, "complete": len(rows) < window}}
         # False: another writer's entry won (NX) and that writer fences its own seed
         await self._redis.install_history(user_id, session_id, turns, chatbot_id=agent, metadata=metadata)
+        # A turn delete may have committed its tombstone and its cold cleanup between the window read and the
+        # install; its hot cleanup then found no key and the install put the deleted turn back. Re-check the
+        # tombstones of the seeded ids (ONE batched read) and drop any resurrected turn from the hot entry.
+        gone = await self._dynamo.deleted_turn_ids(user_id, agent, session_id)
+        for stale in [t.turn_id for t in turns if t.turn_id in gone]:
+            await self._delete_hot_turn(user_id, session_id, stale, agent)
 
     @staticmethod
     def _hot_tier_turn(turn: ChatStorageTurn) -> "ConversationTurn":
