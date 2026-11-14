@@ -414,3 +414,49 @@ async def test_a_turn_deleted_between_the_cold_read_and_the_install_is_not_resur
 
     assert delete_landed
     assert await _hot_ids(st) == ["t1", "t3"]  # read straight from the Redis key, as working memory does
+
+
+async def test_a_conversation_tombstoned_after_put_turn_leaves_no_seeded_hot_entry(storage, cold):
+    """Reaches the seed itself: the tombstone lands AFTER ``put_turn``'s guard, BEFORE the hot write."""
+    await storage.store_turn(_turn(1))
+    await _expire_hot(storage)
+    inner_put = cold.put_turn
+
+    class _TombstoneAfterPut(_CountingBackend):
+        async def put_turn(self, *a: Any, **kw: Any) -> Any:
+            result = await inner_put(*a, **kw)
+            await cold.put_tombstone(USER, AGENT, SESSION)
+            return result
+
+    counting = _TombstoneAfterPut(cold)
+    storage._dynamo = counting
+
+    with pytest.raises(ConversationDeletedError):
+        await storage.store_turn(_turn(2))
+
+    assert "query_turn_window" in counting.calls  # the seed ran: the guard in put_turn did not raise this time
+    key = storage._redis._get_key(USER, SESSION, AGENT)
+    assert await storage._redis.redis.exists(key) == 0  # no hot entry with stored turns survives
+    assert await _hot_ids(storage) == []
+
+
+async def test_a_conversation_tombstoned_between_the_cold_read_and_the_install_leaves_no_hot_entry(cold, hot_factory):
+    """The cold window read passed; the session tombstone lands before the install: the write fence must clean up."""
+    armed = False
+
+    class _TombstoneBeforeInstall(RedisConversation):
+        async def install_history(self, *a: Any, **kw: Any) -> bool:
+            if armed:
+                await cold.put_tombstone(USER, AGENT, SESSION)
+            return await super().install_history(*a, **kw)
+
+    st = ChatStorage(redis_conversation=hot_factory(_TombstoneBeforeInstall), dynamodb=cold)
+    st._initialized = True
+    await st.store_turn(_turn(1))
+    await _expire_hot(st)
+    armed = True
+
+    with pytest.raises(ConversationDeletedError):
+        await st.store_turn(_turn(2))
+
+    assert await st._redis.redis.exists(st._redis._get_key(USER, SESSION, AGENT)) == 0
