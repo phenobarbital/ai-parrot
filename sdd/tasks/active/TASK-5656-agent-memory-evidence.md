@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-892 - Agent Memory — Unified Integration, User Knowledge and Dynamics
 **Spec**: `sdd/specs/agent-memory-mixin.spec.md`
-**Status**: blocked
+**Status**: pending
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-5655, TASK-5653
@@ -18,7 +18,7 @@ These are planning artifacts, not evidence that carried G1–G4 gates passed.
 
 ## Release Preconditions
 
-G3/G2: concrete trusted outcome/check adapter, dedupe encoding and revision/replay contracts need accepted amendments.
+G3/G2: ACCEPTED in the spec section "Gate amendment accepted for TASK-5656" (rev 0.5): C1–C3 evidence schema/authority/refs, C4 exposure, C5 dedupe identity, C6 revision/replay, C7 receipt invariants (adds `stale_revision`), C8 CheckedPattern, C9 ReviewBackend. The blueprint's FILL IN items and receipt Literal are superseded by that section. Released.
 
 Before releasing any blocked task, record the accepted amendment in the spec, expand its
 Validation Contract with the released module test paths, regenerate the index test contract
