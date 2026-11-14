@@ -133,7 +133,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -144,9 +144,10 @@
       "parallelism_notes": "Consumes MemoryRef/MemoryState/MemoryParameters and shared dynamics/models.py writer from TASK-5655; Consumes MemoryRequestScope from TASK-5653",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5656-agent-memory-evidence.md",
-      "blocked_reason": "G3/G2: concrete trusted outcome/check adapter, dedupe encoding and revision/replay contracts need accepted amendments."
+      "completed_at": "2026-11-14T01:25:38+00:00",
+      "file": "sdd/tasks/completed/TASK-5656-agent-memory-evidence.md",
+      "blocked_reason": "G3/G2: concrete trusted outcome/check adapter, dedupe encoding and revision/replay contracts need accepted amendments.",
+      "verification": "verified"
     },
     {
       "id": "TASK-5657",
