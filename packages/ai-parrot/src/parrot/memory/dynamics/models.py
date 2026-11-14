@@ -439,9 +439,7 @@ class ReviewReceipt(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    status: Literal[
-        "applied", "duplicate", "conflict", "stale_revision", "ignored", "pending", "storage_unavailable"
-    ]
+    status: Literal["applied", "duplicate", "conflict", "stale_revision", "ignored", "pending", "storage_unavailable"]
     dedupe_key: str = Field(min_length=1)
     outcome_id: str = Field(min_length=1)
     ref_key: str = Field(min_length=1)
