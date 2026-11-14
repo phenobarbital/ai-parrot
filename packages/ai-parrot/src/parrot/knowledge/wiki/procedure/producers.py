@@ -54,9 +54,9 @@ def manifest_specs(root: Path) -> tuple[list[ProcedureSpec], list[Path]]:
     for path in files:
         manifest = load_manifest(path, root=root)
 
-        def prefixed(value: str) -> str:
+        def prefixed(value: str, graph: str = manifest.graph) -> str:
             """Add the manifest graph to an unqualified procedure id."""
-            return value if ":" in value else f"{manifest.graph}:{value}"
+            return value if ":" in value else f"{graph}:{value}"
 
         excluded.update(prefixed(procedure_id) for procedure_id in manifest.exclude)
         for raw_spec in manifest.procedures:
