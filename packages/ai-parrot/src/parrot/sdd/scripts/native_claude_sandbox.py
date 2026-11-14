@@ -1127,8 +1127,9 @@ def load_prefix_mcp_config(cwd: Path) -> dict[str, Any]:
         try:
             document = json.load(source)
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            sys.stderr.write(f"launch_worker: WARNING {path} is malformed ({exc.__class__.__name__}); "
-                             "treating as absent\n")
+            sys.stderr.write(
+                f"launch_worker: WARNING {path} is malformed ({exc.__class__.__name__}); " "treating as absent\n"
+            )
             return empty
     if not isinstance(document, dict) or not isinstance(document.get("mcpServers"), dict):
         return empty

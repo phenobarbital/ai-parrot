@@ -91,6 +91,7 @@ from parrot.knowledge.wiki.structural.operations import (
 )
 from parrot.knowledge.wiki.usage_operations import USAGE_REPORT_DESCRIPTION, UsageReportInput, op_usage_report
 
+
 class OperationDescriptor(BaseModel):
     """One wiki tool, independent of transport."""
 

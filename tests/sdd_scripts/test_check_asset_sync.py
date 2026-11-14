@@ -18,8 +18,13 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 @pytest.fixture
 def mini_repo(tmp_path: Path) -> Path:
     """A git repo with one source per host family, committed (sources must be git-tracked)."""
-    for rel in (".claude/commands/sdd-spec.md", ".agents/skills/sdd-spec/SKILL.md",
-                ".agent/workflows/sdd-spec.md", "sdd/templates/task.md", "sdd/WORKFLOW.md"):
+    for rel in (
+        ".claude/commands/sdd-spec.md",
+        ".agents/skills/sdd-spec/SKILL.md",
+        ".agent/workflows/sdd-spec.md",
+        "sdd/templates/task.md",
+        "sdd/WORKFLOW.md",
+    ):
         path = tmp_path / rel
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(f"# {rel}\n", encoding="utf-8")
@@ -37,15 +42,18 @@ def test_write_then_check_is_clean(mini_repo: Path) -> None:
     assert _run(mini_repo, "--check") == 0
     manifest = json.loads((mini_repo / "assets" / "manifest.json").read_text())
     assert manifest["schema_version"] == 1
-    assert {"source": "sdd/sdd_templates/task.md", "target": "sdd/templates/task.md",
-            "hosts": ["claude", "codex", "google"]} in manifest["assets"]
+    assert {
+        "source": "sdd/sdd_templates/task.md",
+        "target": "sdd/templates/task.md",
+        "hosts": ["claude", "codex", "google"],
+    } in manifest["assets"]
 
 
 def test_divergence_missing_and_extra_fail(mini_repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
     _run(mini_repo, "--write")
-    (mini_repo / ".claude/commands/sdd-spec.md").write_text("changed\n")      # diverged
-    (mini_repo / "assets/agent/workflows/sdd-spec.md").unlink()                 # missing
-    (mini_repo / "assets/claude/stray.md").write_text("x")                       # extra
+    (mini_repo / ".claude/commands/sdd-spec.md").write_text("changed\n")  # diverged
+    (mini_repo / "assets/agent/workflows/sdd-spec.md").unlink()  # missing
+    (mini_repo / "assets/claude/stray.md").write_text("x")  # extra
     assert _run(mini_repo, "--check") == 1
     err = capsys.readouterr().err
     assert "diverged: claude/commands/sdd-spec.md" in err
@@ -61,18 +69,32 @@ def test_untracked_source_is_not_packaged(mini_repo: Path) -> None:
 
 def test_check_wheel_reports_missing_entry(tmp_path: Path) -> None:
     wheel = tmp_path / "ai_parrot-0-py3-none-any.whl"
-    manifest = {"schema_version": 1, "assets": [{"source": "claude/commands/a.md", "target": ".claude/commands/a.md", "hosts": ["claude"]}]}
+    manifest = {
+        "schema_version": 1,
+        "assets": [{"source": "claude/commands/a.md", "target": ".claude/commands/a.md", "hosts": ["claude"]}],
+    }
     with zipfile.ZipFile(wheel, "w") as zf:
         zf.writestr(cas.WHEEL_PREFIX + "manifest.json", json.dumps(manifest))
     assert cas.check_wheel(wheel) == [f"missing in wheel: {cas.WHEEL_PREFIX}claude/commands/a.md"]
 
 
-@pytest.mark.parametrize("planted", ["sdd/state/FEAT-1/notes.md", "sdd/ledger/issues.jsonl", ".parrot/wiki.db",
-                                     "sdd/tasks/.id_ledger.json", "sdd/references/x.md"])
+@pytest.mark.parametrize(
+    "planted",
+    [
+        "sdd/state/FEAT-1/notes.md",
+        "sdd/ledger/issues.jsonl",
+        ".parrot/wiki.db",
+        "sdd/tasks/.id_ledger.json",
+        "sdd/references/x.md",
+    ],
+)
 def test_check_wheel_rejects_forbidden_paths(tmp_path: Path, planted: str) -> None:
     """C11d: a complete manifest does not excuse a forbidden file in the asset tree."""
     wheel = tmp_path / "ai_parrot-0-py3-none-any.whl"
-    manifest = {"schema_version": 1, "assets": [{"source": "sdd/WORKFLOW.md", "target": "sdd/WORKFLOW.md", "hosts": ["claude"]}]}
+    manifest = {
+        "schema_version": 1,
+        "assets": [{"source": "sdd/WORKFLOW.md", "target": "sdd/WORKFLOW.md", "hosts": ["claude"]}],
+    }
     with zipfile.ZipFile(wheel, "w") as zf:
         zf.writestr(cas.WHEEL_PREFIX + "manifest.json", json.dumps(manifest))
         zf.writestr(cas.WHEEL_PREFIX + "sdd/WORKFLOW.md", "# ok\n")
@@ -101,7 +123,7 @@ def test_monorepo_path_is_reported(mini_repo: Path, capsys: pytest.CaptureFixtur
 
 def test_allowlisted_hook_line_passes_and_insight_never_ships(mini_repo: Path) -> None:
     """C22 D: the single allowlisted hook line is not a finding; C22: /sdd-insight is never packaged."""
-    (target, text), = cas.MONOREPO_PATH_ALLOWLIST
+    ((target, text),) = cas.MONOREPO_PATH_ALLOWLIST
     for rel, body in ((target, text + "\n"), (".claude/commands/sdd-insight.md", "# insight\n")):
         (mini_repo / rel).parent.mkdir(parents=True, exist_ok=True)
         (mini_repo / rel).write_text(body, encoding="utf-8")
@@ -115,7 +137,10 @@ def test_allowlisted_hook_line_passes_and_insight_never_ships(mini_repo: Path) -
 def test_check_wheel_reports_monorepo_path(tmp_path: Path) -> None:
     """C16: the wheel check reads each shipped entry FROM THE WHEEL and flags a monorepo source path."""
     wheel = tmp_path / "ai_parrot-0-py3-none-any.whl"
-    manifest = {"schema_version": 1, "assets": [{"source": "sdd/WORKFLOW.md", "target": "sdd/WORKFLOW.md", "hosts": ["claude"]}]}
+    manifest = {
+        "schema_version": 1,
+        "assets": [{"source": "sdd/WORKFLOW.md", "target": "sdd/WORKFLOW.md", "hosts": ["claude"]}],
+    }
     hook = 'command: python3 "$CLAUDE_PROJECT_DIR/packages/x.py" --hook'
     with zipfile.ZipFile(wheel, "w") as zf:
         zf.writestr(cas.WHEEL_PREFIX + "manifest.json", json.dumps(manifest))
@@ -140,9 +165,9 @@ def test_no_rulebook_and_no_dot_rules_ship() -> None:
     targets = {e["target"] for e in manifest["assets"]}
     assert not any(t.endswith("codebase-conventions.md") for t in targets)
     assert ".claude/rules/worktree-management.md" in targets
-    assert ".claude/skills/second-opinion/SKILL.md" in targets          # C9
-    assert "sdd/CONVENTIONS.md" in targets                              # C10
-    assert not any("sdd-insight" in t for t in targets)                  # rev 0.5 C22
+    assert ".claude/skills/second-opinion/SKILL.md" in targets  # C9
+    assert "sdd/CONVENTIONS.md" in targets  # C10
+    assert not any("sdd-insight" in t for t in targets)  # rev 0.5 C22
     assert (
         len(targets) == 93
     )  # FEAT-891 sdd/procedures/sdd-workflow.yaml + FEAT-847 docs/sdd/AGY.md (packaged-only) + rev 0.5 C22 + code-reviewer, qa-runner, CODEX.md (packaged-only) + FEAT-764 sdd_hooks.example.toml + TASK-5134 remove-worktree (x3) + FEAT-801 techwiki-page.md template + FEAT-847 AGY sdd-coder, code-reviewer, qa-runner agents (x3)
@@ -171,7 +196,7 @@ def test_dev_loop_prompts_load_from_packaged_assets() -> None:
         assert body and body in (agents / f"{name}.md").read_text(encoding="utf-8")
     ideation = load_flow("sdd-ideation")
     assert ideation and ideation in (agents / "sdd-ideation.md").read_text(encoding="utf-8")
-    assert load_loop("sdd-codereview")                                   # still served from _subagent_data/
+    assert load_loop("sdd-codereview")  # still served from _subagent_data/
     data_dir = files("parrot.flows.dev_loop") / "_subagent_data"
     assert sorted(p.name for p in data_dir.iterdir() if p.name.endswith(".md")) == ["sdd-codereview.md"]
 

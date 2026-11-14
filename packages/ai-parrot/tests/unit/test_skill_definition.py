@@ -1,9 +1,9 @@
 """Unit tests for SkillSource, SkillDefinition, and parse_skill_file."""
+
 import pytest
 from pathlib import Path
 from parrot.memory.skills.models import SkillSource, SkillDefinition
 from parrot.memory.skills.parsers import parse_skill_file
-
 
 VALID_SKILL_MD = """---
 name: resumen

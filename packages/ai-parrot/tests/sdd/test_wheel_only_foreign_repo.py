@@ -44,7 +44,13 @@ INSTALLED_DIRS = (".claude", ".agents", ".agent", ".codex", "sdd")
 #: ``CLAUDE_PROJECT_DIR`` is a launcher project pin too: inside a Claude Code session it would point the managed
 #: launcher at the outer checkout's ``.venv`` instead of the wheel under test.
 SCRUBBED_ENV = (
-    "PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV", "PARROT_VENV", "PARROT_PROJECT", "CLAUDE_PROJECT_DIR", "CONDA_PREFIX",
+    "PYTHONPATH",
+    "PYTHONHOME",
+    "VIRTUAL_ENV",
+    "PARROT_VENV",
+    "PARROT_PROJECT",
+    "CLAUDE_PROJECT_DIR",
+    "CONDA_PREFIX",
 )
 #: System tools the fixture PATH may expose; anything else must come from the wheel.
 TOOL_ALLOWLIST = ("git", "bash", "sh", "jq")
@@ -132,7 +138,8 @@ def _seed_feature(clone: Path) -> None:
     (clone / f"sdd/specs/{SLUG}-nosection.spec.md").write_text(SPEC_NO_SECTION_MD, encoding="utf-8")
     (clone / "sdd/tasks/active/TASK-001-demo-task.md").write_text(
         "# TASK-001: Demo task\n\n**Feature**: FEAT-001\n**Status**: pending\n\n## Validation Commands\n\n"
-        "- `pytest tests/test_demo.py -q`\n", encoding="utf-8"
+        "- `pytest tests/test_demo.py -q`\n",
+        encoding="utf-8",
     )
     index = {
         "feature": SLUG,
@@ -154,7 +161,16 @@ def _seed_worktree(clone: Path) -> None:
     """``_seed_feature`` plus the feature worktree (a plain `git worktree add`, as ensure_worktree would make)."""
     _seed_feature(clone)
     _git(clone, "fetch", "-q", "origin")
-    _git(clone, "worktree", "add", "-q", f".parrot/worktrees/feat-{FEAT}-{SLUG}", "-b", f"feat-{FEAT}-{SLUG}", "origin/dev")
+    _git(
+        clone,
+        "worktree",
+        "add",
+        "-q",
+        f".parrot/worktrees/feat-{FEAT}-{SLUG}",
+        "-b",
+        f"feat-{FEAT}-{SLUG}",
+        "origin/dev",
+    )
 
 
 def _seed_base_fix(clone: Path) -> None:
@@ -169,13 +185,17 @@ def _seed_hook_context(clone: Path) -> None:
     _seed_worktree(clone)
     hooks = clone / "hooks"
     hooks.mkdir()
-    (hooks / "context.json").write_text(json.dumps({
-        "feat_id": FEAT,
-        "spec_path": f"sdd/specs/{SLUG}.spec.md",
-        "branch": f"feat-{FEAT}-{SLUG}",
-        "base_branch": "dev",
-        "worktree": str(clone / f".parrot/worktrees/feat-{FEAT}-{SLUG}"),
-    }))
+    (hooks / "context.json").write_text(
+        json.dumps(
+            {
+                "feat_id": FEAT,
+                "spec_path": f"sdd/specs/{SLUG}.spec.md",
+                "branch": f"feat-{FEAT}-{SLUG}",
+                "base_branch": "dev",
+                "worktree": str(clone / f".parrot/worktrees/feat-{FEAT}-{SLUG}"),
+            }
+        )
+    )
 
 
 def _seed_on_dev(clone: Path) -> None:
@@ -233,8 +253,14 @@ def _seed_spec_tools(clone: Path) -> None:
     """``$DR`` with the six brief inputs + a sample ``suggestions.json``, and ``$STAGE/intake.json``."""
     dr = clone / "dr"
     dr.mkdir()
-    for name in ("problem_statement", "constraints_and_goals", "recommended_option_or_scope", "code_context_paths",
-                 "open_questions", "question"):
+    for name in (
+        "problem_statement",
+        "constraints_and_goals",
+        "recommended_option_or_scope",
+        "code_context_paths",
+        "open_questions",
+        "question",
+    ):
         (dr / f"{name}.txt").write_text(f"sample {name}\n", encoding="utf-8")
     suggestions = {
         "summary": "Looks fine.",
@@ -562,12 +588,18 @@ def foreign_repo(tmp_path: Path) -> tuple[Path, Path]:
     return repo, origin
 
 
-def test_parrot_resolves_to_managed_install(managed_home: Path, tools_dir: Path, foreign_repo: tuple[Path, Path]) -> None:
+def test_parrot_resolves_to_managed_install(
+    managed_home: Path, tools_dir: Path, foreign_repo: tuple[Path, Path]
+) -> None:
     repo, _ = foreign_repo
     env = _env(managed_home, tools_dir)
-    which = subprocess.run(["bash", "-c", "command -v parrot"], cwd=repo, env=env, capture_output=True, text=True, check=True)
+    which = subprocess.run(
+        ["bash", "-c", "command -v parrot"], cwd=repo, env=env, capture_output=True, text=True, check=True
+    )
     assert Path(which.stdout.strip()).resolve() == (managed_home / "venv/bin/parrot").resolve()
-    env_out = subprocess.run(["parrot", "self", "env"], cwd=repo, env=env, capture_output=True, text=True, check=True).stdout
+    env_out = subprocess.run(
+        ["parrot", "self", "env"], cwd=repo, env=env, capture_output=True, text=True, check=True
+    ).stdout
     assert str(managed_home / "venv") in env_out and "rule: managed" in env_out  # TASK-4080 `self env` format
 
 
@@ -624,7 +656,10 @@ def _argv_for(name: str, argv: str, scenario: Scenario, clone: Path) -> list[str
 def _install_all_hosts(repo: Path, env: dict[str, str]) -> None:
     subprocess.run(
         ["parrot", "sdd", "install", "--host", "claude", "--host", "codex", "--host", "google"],
-        cwd=repo, env=env, check=True, capture_output=True,
+        cwd=repo,
+        env=env,
+        check=True,
+        capture_output=True,
     )
     _commit_push(repo, "sdd: install")
 
@@ -650,7 +685,9 @@ def test_install_then_every_documented_helper_invocation(
         clone = tmp_path / f"scenario-{i}-{name}"
         # isolated state: a private bare copy of the origin per invocation (reserve_ids pushes to it)
         private_origin = tmp_path / f"origin-{i}.git"
-        subprocess.run(["git", "clone", "-q", "--bare", str(origin), str(private_origin)], check=True, capture_output=True)
+        subprocess.run(
+            ["git", "clone", "-q", "--bare", str(origin), str(private_origin)], check=True, capture_output=True
+        )
         subprocess.run(["git", "clone", "-q", str(private_origin), str(clone)], check=True, capture_output=True)
         for d in INSTALLED_DIRS:
             if (repo / d).is_dir():
@@ -662,11 +699,13 @@ def test_install_then_every_documented_helper_invocation(
             failures.append(str(exc))
             continue
         stdin = scenario.stdin(clone) if scenario.stdin else None
-        verb_argv = argv if argv == ["--help"] else argv[len(prefix):]  # the verb injects its own prefix
+        verb_argv = argv if argv == ["--help"] else argv[len(prefix) :]  # the verb injects its own prefix
         result = subprocess.run(
             ["parrot", "sdd", noun, verb, *verb_argv], cwd=clone, env=env, input=stdin, capture_output=True, text=True
         )
-        expected = scenario.expect_exit if argv != ["--help"] else (0, 1, 2)  # prose forms: dispatch + load only (some helpers hand-parse argv and print usage with 1)
+        expected = (
+            scenario.expect_exit if argv != ["--help"] else (0, 1, 2)
+        )  # prose forms: dispatch + load only (some helpers hand-parse argv and print usage with 1)
         problems = []
         if result.returncode not in expected:
             problems.append(f"exit {result.returncode} not in {expected}")
@@ -695,12 +734,20 @@ def test_installed_hook_denies_shared_environment_write(
         line = next(ln for ln in front.splitlines() if "worktree guard --hook" in ln)
         command = line.split("command:", 1)[1].strip().strip("'")
         assert command == GUARD_LINE, command  # managed launcher on PATH → the bare form
-        denied = {"cwd": str(repo), "tool_name": "Write", "tool_input": {"file_path": str(managed_home / "venv" / "x.py")}}
-        result = subprocess.run(["bash", "-c", command], cwd=repo, env=env, input=json.dumps(denied), capture_output=True, text=True)
+        denied = {
+            "cwd": str(repo),
+            "tool_name": "Write",
+            "tool_input": {"file_path": str(managed_home / "venv" / "x.py")},
+        }
+        result = subprocess.run(
+            ["bash", "-c", command], cwd=repo, env=env, input=json.dumps(denied), capture_output=True, text=True
+        )
         decision = json.loads(result.stdout)["hookSpecificOutput"].get("permissionDecision")
         assert decision == "deny", f"{agent}: {result.stdout}\n{result.stderr}"
         allowed = {"cwd": str(repo), "tool_name": "Write", "tool_input": {"file_path": str(repo / "README.md")}}
-        result = subprocess.run(["bash", "-c", command], cwd=repo, env=env, input=json.dumps(allowed), capture_output=True, text=True)
+        result = subprocess.run(
+            ["bash", "-c", command], cwd=repo, env=env, input=json.dumps(allowed), capture_output=True, text=True
+        )
         assert json.loads(result.stdout)["hookSpecificOutput"].get("permissionDecision") is None, result.stdout
 
 
@@ -712,18 +759,28 @@ def test_installed_hook_project_venv_only(
     repo, _ = foreign_repo
     venv = repo / ".venv"
     subprocess.run(["uv", "venv", str(venv), "--python", _python_for(wheel)], check=True, capture_output=True)
-    subprocess.run(["uv", "pip", "install", "--python", str(venv / "bin/python"), str(wheel)], check=True, capture_output=True)
+    subprocess.run(
+        ["uv", "pip", "install", "--python", str(venv / "bin/python"), str(wheel)], check=True, capture_output=True
+    )
     home = tmp_path / "no-managed-home"
     home.mkdir()
     env = _env(home, tools_dir, with_launcher=False)
-    subprocess.run([str(venv / "bin/parrot"), "sdd", "install", "--host", "claude"], cwd=repo, env=env, check=True, capture_output=True)
+    subprocess.run(
+        [str(venv / "bin/parrot"), "sdd", "install", "--host", "claude"],
+        cwd=repo,
+        env=env,
+        check=True,
+        capture_output=True,
+    )
     front = (repo / ".claude/agents/sdd-worker.md").read_text(encoding="utf-8").split("---", 2)[1]
     line = next(ln for ln in front.splitlines() if "worktree guard --hook" in ln)
     command = line.split("command:", 1)[1].strip()
     command = command[1:-1].replace("''", "'") if command.startswith("'") else command
     assert command != GUARD_LINE and command.startswith(str(venv / "bin/parrot")), command
     denied = {"cwd": str(repo), "tool_name": "Write", "tool_input": {"file_path": str(venv / "x.py")}}
-    result = subprocess.run(["sh", "-c", command], cwd=repo, env=env, input=json.dumps(denied), capture_output=True, text=True)
+    result = subprocess.run(
+        ["sh", "-c", command], cwd=repo, env=env, input=json.dumps(denied), capture_output=True, text=True
+    )
     decision = json.loads(result.stdout)["hookSpecificOutput"].get("permissionDecision")
     assert decision == "deny", f"{result.stdout}\n{result.stderr}"
 
@@ -750,8 +807,16 @@ def test_c21_test_step_outcomes(managed_home: Path, tools_dir: Path, foreign_rep
     assert nothing.returncode == 2 and "Traceback" not in nothing.stderr, nothing.stderr
     # D2: `--run` with the declared `pytest` absent from the foreign repo's PATH is a one-line refusal.
     no_runner = run(
-        "select_tests", "--tier", "merge", "--base", "origin/dev", "--worktree", str(repo),
-        "--task-file", "sdd/tasks/active/TASK-001-demo-task.md", "--run",
+        "select_tests",
+        "--tier",
+        "merge",
+        "--base",
+        "origin/dev",
+        "--worktree",
+        str(repo),
+        "--task-file",
+        "sdd/tasks/active/TASK-001-demo-task.md",
+        "--run",
     )
     assert no_runner.returncode == 1 and "Traceback" not in no_runner.stderr, no_runner.stderr
     assert "not run" in no_runner.stderr and "test_command" in no_runner.stderr, no_runner.stderr
