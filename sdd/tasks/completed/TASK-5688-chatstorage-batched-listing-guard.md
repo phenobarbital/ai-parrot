@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-897 — batched session-tombstone read for conversation listing
 **Spec**: `sdd/specs/backends-base-tech-debt.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5687
@@ -205,10 +205,25 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Resolves**:
-**Deviations from spec**:
+**Completed by**: Claude Code (/sdd-fix, actor agent:sdd-fix:814f17e6)
+**Date**: 2026-11-14
+**Notes**: Implemented in commit 2c564b0735. `_sessions_deleted` makes one `deleted_session_ids` read per distinct
+agent (concurrent across agents, first failure raised after all settle); `list_user_conversations` counts `limit` in
+live threads with the re-read loop of spec §2 (verdicts cached per call; stops at `limit` live rows, an exhausted
+store, a window with nothing hidden, or the `since` cutoff; window `max(limit + hidden, 2 * window)`);
+`_fence_after_write` makes one `is_deleted(…, turn_id)` read on the live path. `TOMBSTONE_LOOKUP_CONCURRENCY` and the
+two PR #2123 fan-out tests are gone, replaced by seven M2 tests on real SQLite. The three `AsyncMock` backends declare
+`deleted_session_ids`; both wiki pages and `test_durable_memory_docs.METHODS` cover the new reads.
+Validation (`PYTHONPATH=packages/ai-parrot/src`): the Validation Command → 78 passed, 18 skipped (the subscriber tests
+that need a local `redis-server`, not installed). Mutation checks: against the base `chat.py` 6 of the new tests fail
+(the 3 that pass guard kept behaviour); removing the `since` stop fails
+`test_listing_does_not_requery_past_the_since_cutoff`. `parrot sdd techwiki check` → `Docs: required — ok`;
+`ruff check` clean on the changed files. Broad run (storage, unit/storage, unit/bots, durable-memory integration,
+server handlers, repo-root `tests/storage`): 1587 passed, 37 failed + 46 errors — the SAME 83 node ids fail on a
+baseline tree at `309be75e05` in the same combined run (1576 passed there), and all 10 affected files pass in
+isolation on both trees (149 passed), so they are pre-existing test-order interference in that combination, not this
+change.
+**Resolves**: `issue:6393789b3d37` (together with TASK-5687)
+**Deviations from spec**: none in behaviour. `test_durable_memory_docs.METHODS` keeps its hand-aligned layout, which
+`black` would reflow as a whole (3 extra black lines). Filed `issue:86d3647fdc26` for the out-of-scope `query_threads`
+defects named in the spec's Non-Goals.
