@@ -84,7 +84,7 @@ class RecordingClient(AbstractClient):
 class _HotTier(InMemoryConversation):
     """Stand-in for the Redis hot tier — the one external service that cannot run here."""
 
-    async def upsert_turn(self, user_id, session_id, turn, chatbot_id=None, *, create=True):
+    async def upsert_turn(self, user_id, session_id, turn, chatbot_id=None, *, create=True, keep_seed_suffix=False):
         history = await self.get_history(user_id, session_id, chatbot_id)
         if history is None and not create:  # same contract as RedisConversation.upsert_turn(create=False)
             return False
