@@ -84,9 +84,11 @@ class RecordingClient(AbstractClient):
 class _HotTier(InMemoryConversation):
     """Stand-in for the Redis hot tier — the one external service that cannot run here."""
 
-    async def upsert_turn(self, user_id, session_id, turn, chatbot_id=None):
-        history = await self.get_history(user_id, session_id, chatbot_id) or await self.create_history(
-            user_id, session_id, chatbot_id=chatbot_id)
+    async def upsert_turn(self, user_id, session_id, turn, chatbot_id=None, *, create=True):
+        history = await self.get_history(user_id, session_id, chatbot_id)
+        if history is None and not create:  # same contract as RedisConversation.upsert_turn(create=False)
+            return False
+        history = history or await self.create_history(user_id, session_id, chatbot_id=chatbot_id)
         turns = list(history.turns)
         for i, old in enumerate(turns):
             if old.turn_id == turn.turn_id:
@@ -96,6 +98,7 @@ class _HotTier(InMemoryConversation):
             turns.append(turn)
         history.turns = turns
         await self.update_history(history)
+        return True
 
 
 async def _eventually(predicate: Callable[[], Awaitable[bool]], timeout: float = 5.0) -> None:

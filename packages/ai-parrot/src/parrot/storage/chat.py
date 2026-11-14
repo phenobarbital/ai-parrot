@@ -33,6 +33,9 @@ from .models import ChatStorageTurn, MessageRole
 DEFAULT_LIST_LIMIT = 50
 DEFAULT_CONTEXT_TURNS = 10
 
+#: Hot-tier metadata key written when a missing hot entry is seeded from the cold tier.
+HOT_SEED_METADATA_KEY = "cold_seed"
+
 
 class ChatStorage:
     """Unified chat persistence with Redis hot cache and DynamoDB cold storage."""
@@ -58,6 +61,8 @@ class ChatStorage:
         self._cleanup_retries: Dict[Tuple[str, str, str, Optional[str]], "asyncio.Task[None]"] = {}
         #: Base delay (seconds) of the in-process cleanup retry; doubles per attempt, capped at 60 s.
         self.cleanup_retry_base_delay: float = 1.0
+        #: Newest live cold turns copied into a MISSING hot entry before a turn is appended to it.
+        self.hot_seed_turns: int = DEFAULT_LIST_LIMIT
         self.logger = logging.getLogger("parrot.storage.ChatStorage")
 
     # ------------------------------------------------------------------
@@ -175,9 +180,7 @@ class ChatStorage:
             if self._dynamo is not None:
                 await self._store_cold(turn)
             if self._redis is not None:
-                await self._redis.upsert_turn(
-                    turn.user_id, turn.session_id, self._hot_tier_turn(turn), chatbot_id=turn.agent_id
-                )
+                await self._store_hot(turn)
             await self._fence_after_write(turn)
         except StorageError:
             raise
@@ -197,6 +200,39 @@ class ChatStorage:
             model=turn.presentation.model,
             provider=turn.presentation.provider,
         )
+
+    async def _store_hot(self, turn: ChatStorageTurn) -> None:
+        """Upsert ``turn`` in the hot tier; a MISSING hot entry is first seeded from the cold tier.
+
+        A hot entry that expired (``CHAT_HOT_TTL_HOURS``) must not be recreated holding only the new turn: every
+        hot-first read would then serve a partial conversation. The existence check runs inside the upsert's
+        compare-and-swap (``create=False``), so the steady state (hot entry present) costs no cold read; a miss
+        costs ONE cold window read, installed with the atomic NX install (a concurrent seed loses cleanly).
+        """
+        hot = self._hot_tier_turn(turn)
+        key = {"chatbot_id": turn.agent_id}
+        if self._dynamo is None:  # no cold tier: nothing to seed from
+            await self._redis.upsert_turn(turn.user_id, turn.session_id, hot, **key)
+            return
+        if await self._redis.upsert_turn(turn.user_id, turn.session_id, hot, create=False, **key):
+            return
+        await self._seed_hot_tier(turn.user_id, turn.agent_id, turn.session_id)
+        await self._redis.upsert_turn(turn.user_id, turn.session_id, hot, **key)
+
+    async def _seed_hot_tier(self, user_id: str, agent: str, session_id: str) -> None:
+        """Install the cold tier's newest ``hot_seed_turns`` live turns as the hot entry (NX: never overwrites).
+
+        The window excludes tombstoned turns. ``metadata['cold_seed']['complete']`` records whether the window
+        holds every live turn, so a read asking for more turns than a truncated seed holds goes to the cold tier.
+
+        Raises:
+            StorageError: the cold window could not be read (the turn is retried; no partial hot entry is made).
+        """
+        window = self.hot_seed_turns
+        rows = await self._cold_window_rows(user_id, agent, session_id, window)
+        turns = [self._hot_tier_turn(t) for t in self._stored_turns(rows, user_id, agent, session_id)]
+        metadata = {HOT_SEED_METADATA_KEY: {"window": window, "complete": len(rows) < window}}
+        await self._redis.install_history(user_id, session_id, turns, chatbot_id=agent, metadata=metadata)
 
     @staticmethod
     def _hot_tier_turn(turn: ChatStorageTurn) -> "ConversationTurn":
@@ -281,11 +317,12 @@ class ChatStorage:
                 if history and history.turns:
                     messages = []
                     # filter FIRST, then window: a read returns up to ``limit`` LIVE turns
-                    visible = (
-                        await self._drop_tombstoned_turns(
-                            user_id, agent_id or "", session_id, list(history.turns), lambda t: t.turn_id
-                        )
-                    )[-limit:]
+                    live = await self._drop_tombstoned_turns(
+                        user_id, agent_id or "", session_id, list(history.turns), lambda t: t.turn_id
+                    )
+                    if self._hot_holds_too_few(history, len(live), limit):
+                        return await self._load_cold(user_id, session_id, agent_id, limit)
+                    visible = live[-limit:]
                     for turn in visible:
                         messages.append(
                             {
@@ -324,6 +361,15 @@ class ChatStorage:
 
         return await self._load_cold(user_id, session_id, agent_id, limit)
 
+    @staticmethod
+    def _hot_holds_too_few(history: Any, live_turns: int, wanted: int) -> bool:
+        """``True`` when ``history`` was seeded with a TRUNCATED cold window and holds fewer live turns than wanted.
+
+        Such a hot entry is a contiguous suffix of the conversation: older live turns exist only in the cold tier.
+        """
+        seed = (getattr(history, "metadata", None) or {}).get(HOT_SEED_METADATA_KEY)
+        return isinstance(seed, dict) and seed.get("complete") is False and live_turns < wanted
+
     async def _load_cold(
         self, user_id: str, session_id: str, agent_id: Optional[str], limit: int
     ) -> List[Dict[str, Any]]:
@@ -336,11 +382,28 @@ class ChatStorage:
         """
         if not self._dynamo:
             return []
+        agent = agent_id or ""
+        rows = await self._cold_window_rows(user_id, agent, session_id, limit)
         try:
-            agent = agent_id or ""
+            messages: List[Dict[str, Any]] = []
+            for stored in self._stored_turns(rows, user_id, agent, session_id):
+                messages.extend(stored.to_messages())
+            return messages
+        except Exception as exc:  # a failed read is raised, never reported as "empty"
+            raise StorageUnavailableError(f"{self._backend_label} load failed: {exc}") from exc
+
+    async def _cold_window_rows(self, user_id: str, agent: str, session_id: str, limit: int) -> List[Dict[str, Any]]:
+        """The newest ``limit`` LIVE turn rows of the cold tier, ascending (tombstoned turns excluded).
+
+        Raises:
+            StorageError: the cold tier could not be read — a failed read is raised, never reported as "empty".
+        """
+        try:
             try:
                 # Chronological: the newest ``limit`` turns by (timestamp, sequence, turn_id), ascending.
-                turns = await self._dynamo.query_turn_window(user_id, agent, session_id, limit)
+                # NOT filtered again here: ``query_turn_window`` of every backend already excludes tombstoned
+                # turns and applies ``limit`` after doing so.
+                return await self._dynamo.query_turn_window(user_id, agent, session_id, limit)
             except IndexNotReadyError:
                 # Legacy session not backfilled yet: the old (sort_key) order is the best available read.
                 # The window backends already exclude tombstoned turns; this path does not, so ask for the
@@ -353,24 +416,25 @@ class ChatStorage:
                     limit=limit + len(gone),
                     newest_first=False,
                 )
-                turns = [t for t in turns if str(t.get("turn_id", "")) not in gone][:limit]
-            # NOT filtered again on the window path: ``query_turn_window`` of every backend already excludes
-            # tombstoned turns and applies ``limit`` after doing so.
-            messages = []
-            for row in turns:
-                try:
-                    stored = ChatStorageTurn.from_row(
-                        {"user_id": user_id, "session_id": session_id, "agent_id": agent, **row}
-                    )
-                except (InvalidTurnPayloadError, ValueError) as exc:
-                    self.logger.warning("skipping unreadable stored turn %s: %s", row.get("turn_id"), exc)
-                    continue
-                messages.extend(stored.to_messages())
-            return messages
+                return [t for t in turns if str(t.get("turn_id", "")) not in gone][:limit]
         except StorageError:
             raise
         except Exception as exc:  # a failed read is raised, never reported as "empty"
             raise StorageUnavailableError(f"{self._backend_label} load failed: {exc}") from exc
+
+    def _stored_turns(
+        self, rows: List[Dict[str, Any]], user_id: str, agent: str, session_id: str
+    ) -> List[ChatStorageTurn]:
+        """Parse cold rows into ``ChatStorageTurn``; an unreadable row is logged and skipped."""
+        parsed: List[ChatStorageTurn] = []
+        for row in rows:
+            try:
+                parsed.append(
+                    ChatStorageTurn.from_row({"user_id": user_id, "session_id": session_id, "agent_id": agent, **row})
+                )
+            except (InvalidTurnPayloadError, ValueError) as exc:
+                self.logger.warning("skipping unreadable stored turn %s: %s", row.get("turn_id"), exc)
+        return parsed
 
     async def get_conversation_metadata(self, session_id: str) -> Optional[Dict[str, Any]]:
         """Load conversation metadata.
@@ -822,9 +886,11 @@ class ChatStorage:
                     history.turns = await self._drop_tombstoned_turns(
                         user_id, agent_id or "", session_id, list(history.turns), lambda t: t.turn_id
                     )
-                    return [
-                        {"role": m.role, "content": m.content} for m in render_history(history, max_turns=max_turns)
-                    ]
+                    if not self._hot_holds_too_few(history, len(history.turns), max_turns):
+                        return [
+                            {"role": m.role, "content": m.content}
+                            for m in render_history(history, max_turns=max_turns)
+                        ]
             except Exception:
                 pass
 

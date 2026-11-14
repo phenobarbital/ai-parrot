@@ -26,11 +26,14 @@ pytestmark = pytest.mark.skipif(
 class _HotTier(InMemoryConversation):
     """Stand-in for the Redis hot tier (the one external service): same upsert contract."""
 
-    async def upsert_turn(self, user_id, session_id, turn, chatbot_id=None):
-        history = await self.get_history(user_id, session_id, chatbot_id) or await self.create_history(
-            user_id, session_id, chatbot_id=chatbot_id)
+    async def upsert_turn(self, user_id, session_id, turn, chatbot_id=None, *, create=True):
+        history = await self.get_history(user_id, session_id, chatbot_id)
+        if history is None and not create:  # same contract as RedisConversation.upsert_turn(create=False)
+            return False
+        history = history or await self.create_history(user_id, session_id, chatbot_id=chatbot_id)
         history.turns = [t for t in history.turns if t.turn_id != turn.turn_id] + [turn]
         await self.update_history(history)
+        return True
 
 
 class _Client(AbstractClient):
