@@ -140,7 +140,7 @@ _GUARD_MARKERS = ("worktree guard --hook", "worktree_environment")
 FileState = Literal["missing", "current", "outdated", "edited", "foreign"]
 #: Plan vocabulary (C5). install: write | upgrade | overwrite | skip-current | skip-edited | skip-foreign |
 #: seed | skip-seed | gitignore | gitattributes | ledger-hooks | ledger-seed | config-seed | base-branch | dangerous-guard |
-#: experience-hooks | toolkits. uninstall: remove |
+#: experience-hooks | experience-namespace | toolkits. uninstall: remove |
 #: keep-edited | keep-foreign | skip-missing | keep-shared | gitignore-remove | gitattributes-remove |
 #: keep-gitattributes | ledger-hooks-remove | keep-ledger-hooks | toolkits-remove | receipt-remove.
 #: stale: stale-remove | keep-stale | skip-symlink.   [rev 0.5 C23 / D5]
@@ -161,6 +161,7 @@ PlanAction = Literal[
     "base-branch",
     "dangerous-guard",
     "experience-hooks",
+    "experience-namespace",
     "dangerous-guard-remove",
     "experience-hooks-remove",
     "agy-permissions",
@@ -1151,6 +1152,7 @@ def plan_install(
         plan.append(PlannedAction(action="ledger-seed", target="sdd/tasks/.id_ledger.json"))
     if not (root / "sdd/config.json").exists():
         plan.append(PlannedAction(action="config-seed", target="sdd/config.json"))
+    plan.append(PlannedAction(action="experience-namespace", target=".parrot/wiki.json"))
     from parrot.sdd.config import load_sdd_config  # TASK-4299
 
     base = base_branch or load_sdd_config(root).base_branch
@@ -1522,6 +1524,26 @@ def _install_ledger_hooks_step(root: Path, receipt: dict[str, Any]) -> list[str]
     return actions
 
 
+def _install_experience_namespace(root: Path) -> list[str]:
+    """Register the shared experience namespace without making installation fatal.
+
+    Args:
+        root: Repository root passed to the installer.
+
+    Returns:
+        One advisory action describing whether namespace registration changed state.
+    """
+    from parrot.knowledge.wiki.experience.sync import register_namespace
+
+    try:
+        if register_namespace(root):
+            return [".parrot/wiki.json — experience namespace registered"]
+    except Exception:
+        logger.debug("sdd install: experience namespace registration skipped", exc_info=True)
+        return ["warning: .parrot/wiki.json — experience namespace unavailable; skipped"]
+    return [".parrot/wiki.json — experience namespace already registered or unavailable"]
+
+
 def _test_command_warning(config: "SddConfig") -> str | None:
     """rev 0.5 C21: one ``warning:`` line when ``sdd/config.json`` ``test_command`` is null, else None.
 
@@ -1833,6 +1855,8 @@ def install_sdd_integration(
             actions.append(_seed_id_ledger(root) or "")
         elif step.action == "config-seed":
             actions.append(_seed_config(root, seed))
+        elif step.action == "experience-namespace":
+            actions.extend(_install_experience_namespace(root))
         elif step.action == "base-branch":
             actions.extend(_base_branch_step(root, config, push=push_base, receipt=receipt))
         elif step.action == "dangerous-guard":

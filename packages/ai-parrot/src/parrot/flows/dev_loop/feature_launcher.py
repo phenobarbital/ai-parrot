@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -25,6 +26,9 @@ if __package__:
 else:  # run as a script (the tmux child): this file's directory is sys.path[0]
     import native_claude_sandbox
     import worktree_environment
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -94,6 +98,17 @@ def _invocation_dir() -> Path:
 
 def _preflight_sandbox(worktree: Path, allowed_domains: Sequence[str]) -> None:
     """Fail on the host, before any push or tmux session, when the sandbox cannot start."""
+    try:
+        # Keep these imports on the host-side preflight path: this module also runs as the
+        # ``python -S`` tmux child, where importing parrot would load project configuration.
+        from parrot.knowledge.wiki.experience.fastpath import resolve_plane_dir
+        from parrot.knowledge.wiki.experience.sync import sync_global
+
+        plane = resolve_plane_dir(worktree)
+        if plane is not None:
+            sync_global(plane)
+    except Exception:
+        logger.debug("experience global sync skipped during sandbox preflight", exc_info=True)
     try:
         native_claude_sandbox.plan_native_launch(worktree, allowed_domains=allowed_domains)
     except ValueError as exc:

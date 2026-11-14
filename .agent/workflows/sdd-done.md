@@ -387,9 +387,24 @@ jq --arg now "$NOW" '
   if all(.tasks[]; .status == "done") then .completed_at = $now else . end
 ' "$WORKTREE_PATH/$INDEX" > tmp && mv tmp "$WORKTREE_PATH/$INDEX"
 
+# Sync is advisory. Export runs in the feature worktree and returns one newly-created shared definition path.
+(cd "$WORKTREE_PATH" && parrot sdd experience sync) || echo "warning: experience sync skipped"
+EXPERIENCE_EXPORT="$(cd "$WORKTREE_PATH" && parrot sdd experience export)"
+if [[ -n "$EXPERIENCE_EXPORT" ]]; then
+  case "$EXPERIENCE_EXPORT" in
+    "$WORKTREE_PATH"/sdd/experience/lessons/*.jsonl)
+      git -C "$WORKTREE_PATH" add -- "$EXPERIENCE_EXPORT"
+      ;;
+    *)
+      echo "refusing unexpected experience export path: $EXPERIENCE_EXPORT" >&2
+      exit 2
+      ;;
+  esac
+fi
+
 # Commit on the feature branch (inside the worktree) — never on base_branch.
 git -C "$WORKTREE_PATH" add "$INDEX" sdd/tasks/completed/
-git -C "$WORKTREE_PATH" diff --cached --name-only   # sanity-check: only the index + this feature's task files
+git -C "$WORKTREE_PATH" diff --cached --name-only   # sanity-check: index, this feature's task files, and returned experience export only
 git -C "$WORKTREE_PATH" commit -m "sdd: close tasks for FEAT-<ID> — <slug>"
 ```
 
