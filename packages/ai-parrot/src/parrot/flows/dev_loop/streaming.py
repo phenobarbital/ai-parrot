@@ -109,6 +109,11 @@ class FlowStreamMultiplexer:
         self._cursors: Dict[str, str] = {}
         self._closed = asyncio.Event()
 
+    @property
+    def redis_client(self) -> Any:
+        """Return the Redis client owned by this multiplexer."""
+        return self._redis
+
     # ------------------------------------------------------------------
     # Discovery
     # ------------------------------------------------------------------

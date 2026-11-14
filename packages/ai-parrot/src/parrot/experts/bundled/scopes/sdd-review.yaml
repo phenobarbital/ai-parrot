@@ -1,0 +1,9 @@
+scope: sdd-review
+description: Security-focused advisory review for SDD documents.
+match:
+  tags: [security]
+stages:
+  - stage: review
+    experts: [cve-analyst]
+    mode: mob
+    synthesis: Consolidate security findings into an advisory review.

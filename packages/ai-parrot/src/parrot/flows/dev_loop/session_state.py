@@ -76,6 +76,15 @@ from typing import (
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from parrot.bots.flows.core.gates import (
+    AUTO_APPROVER,
+    GateError,
+    GateErrorCode,
+    GateRecord,
+    GateSpec,
+    is_registered,
+)
+
 # ─────────────────────────────────────────────────────────────────────
 # Channel URIs — neutral scheme. Mirrors AHP's channel *model* without
 # claiming wire compatibility; the parrot-* -> ahp-* (or A2A task-id)
@@ -1343,6 +1352,35 @@ def reduce_root(state: RunRegistryState, action: RootAction) -> RunRegistryState
 # ─────────────────────────────────────────────────────────────────────
 
 
+class _SessionGateStore:
+    """Session-scoped in-memory store used by the synchronous dev-loop host.
+
+    ``SessionHost.resolve_gate`` / ``expire_due_gates`` are synchronous and sequenced through ``apply``, while
+    ``GateHost`` is async, so the legacy host applies the same transitions to these ``GateRecord`` objects itself
+    (sharing ``AUTO_APPROVER``) instead of delegating. Keep the two in step when changing expiry policy.
+    """
+
+    def __init__(self) -> None:
+        """Initialize an empty gate record mapping."""
+        self.records: Dict[str, GateRecord] = {}
+
+    async def put(self, record: GateRecord) -> None:
+        """Persist one gate record in memory."""
+        self.records[record.gate_id] = record
+
+    async def get(self, gate_id: str) -> Optional[GateRecord]:
+        """Return a gate record by identifier."""
+        return self.records.get(gate_id)
+
+    async def pending(self, owner: Optional[str] = None) -> List[GateRecord]:
+        """Return pending records, optionally restricted to an owner."""
+        return [
+            record
+            for record in self.records.values()
+            if record.status == "pending" and (owner is None or record.owner == owner)
+        ]
+
+
 class SessionHost:
     """Minimal authoritative host for one session channel.
 
@@ -1379,6 +1417,22 @@ class SessionHost:
         self._log: List[ActionEnvelope] = []
         self._on_envelope = on_envelope
         self._gate_events: Dict[str, asyncio.Event] = {}
+        from .gate_adapter import register_devloop_gate_kinds
+
+        register_devloop_gate_kinds()
+        self._gate_store = _SessionGateStore()
+
+    def _seed_gate_store(self) -> None:
+        """Refresh generic records from the authoritative dev-loop state."""
+        from .gate_adapter import DevLoopGateAdapter
+
+        self._gate_store.records = {
+            gate.gate_id: DevLoopGateAdapter.to_record(
+                gate,
+                owner=f"{self._state.run_id}:{gate.node_id}",
+            )
+            for gate in self._state.gates.values()
+        }
 
     # -- read side ----------------------------------------------------
 
@@ -1488,13 +1542,25 @@ class SessionHost:
                 "requires at least one answer (use resolution='rejected' to "
                 "abort the ideation instead)"
             )
+        self._seed_gate_store()
+        record = self._gate_store.records[gate_id].model_copy(
+            update={
+                "status": resolution,
+                "resolved_by": resolved_by,
+                "resolved_at": time.time(),
+                "comment": comment,
+                "answers": answers,
+            }
+        )
+        self._gate_store.records[gate_id] = record
         return self.apply(
             GateResolved(
-                gate_id=gate_id,
-                resolution=resolution,
-                resolved_by=resolved_by,
-                comment=comment,
-                answers=answers,
+                gate_id=record.gate_id,
+                resolution=record.status,
+                resolved_by=record.resolved_by,
+                comment=record.comment,
+                answers=record.answers,
+                ts=record.resolved_at,
             ),
             origin=origin,
         )
@@ -1531,20 +1597,32 @@ class SessionHost:
         Returns:
             A ``(gate_id, envelope)`` tuple.
         """
-        now = time.time()
-        gate = ApprovalGate(
-            gate_id=uuid.uuid4().hex,
+        from .gate_adapter import DevLoopGateAdapter
+
+        spec = GateSpec(
             kind=kind,
-            node_id=node_id,
             title=title,
             instructions=instructions,
+            questions=list(questions or []),
+            ttl_seconds=ttl_seconds,
+            on_expiry=on_expiry,
+        )
+        if not is_registered(spec.kind):
+            raise GateError(GateErrorCode.UNKNOWN_KIND, spec.kind)
+        self._seed_gate_store()
+        now = time.time()
+        record = GateRecord(
+            gate_id=uuid.uuid4().hex,
+            kind=spec.kind,
+            owner=f"{self._state.run_id}:{node_id}",
+            spec=spec,
             payload_ref=payload_ref,
             opened_at=now,
-            expires_at=(now + ttl_seconds) if ttl_seconds else None,
-            on_expiry=on_expiry,
-            questions=list(questions or []),
+            expires_at=(now + spec.ttl_seconds) if spec.ttl_seconds else None,
         )
-        return gate.gate_id, self.apply(GateOpened(gate=gate))
+        self._gate_store.records[record.gate_id] = record
+        gate = DevLoopGateAdapter.from_record(record, node_id=node_id)
+        return record.gate_id, self.apply(GateOpened(gate=gate))
 
     def expire_due_gates(self, now: Optional[float] = None) -> List[ActionEnvelope]:
         """Expiry sweep — call periodically from the runner's loop.
@@ -1561,26 +1639,42 @@ class SessionHost:
         Returns:
             The list of envelopes emitted by this sweep pass.
         """
-        now = time.time() if now is None else now
+        self._seed_gate_store()
+        current_time = time.time() if now is None else now
+        recovered: List[GateRecord] = []
+        for record in self._gate_store.records.values():
+            if record.status != "pending" or record.expires_at is None or current_time < record.expires_at:
+                continue
+            if record.spec.on_expiry == "approve":
+                updated = record.model_copy(
+                    update={
+                        "status": "approved",
+                        "resolved_by": AUTO_APPROVER,
+                        "resolved_at": current_time,
+                        "comment": "TTL expired; fail-open policy.",
+                    }
+                )
+            else:
+                updated = record.model_copy(update={"status": "expired"})
+            self._gate_store.records[record.gate_id] = updated
+            recovered.append(updated)
         out: List[ActionEnvelope] = []
-        for gate in list(self._state.gates.values()):
-            if gate.status != "pending" or gate.expires_at is None:
-                continue
-            if now < gate.expires_at:
-                continue
-            if gate.on_expiry == "approve":
+        for record in recovered:
+            if record.status == "approved":
                 out.append(
                     self.apply(
                         GateResolved(
-                            gate_id=gate.gate_id,
+                            gate_id=record.gate_id,
                             resolution="approved",
-                            resolved_by="system:ttl-auto-approve",
-                            comment="TTL expired; fail-open policy.",
+                            resolved_by=record.resolved_by,
+                            comment=record.comment,
+                            answers=record.answers,
+                            ts=record.resolved_at,
                         )
                     )
                 )
             else:
-                out.append(self.apply(GateExpired(gate_id=gate.gate_id)))
+                out.append(self.apply(GateExpired(gate_id=record.gate_id)))
         return out
 
     async def wait_gate(self, gate_id: str) -> ApprovalGate:

@@ -366,6 +366,23 @@ Then continue with §5a — that assembly is **provisional**, because §5b re-ru
 over the tagged findings. With fewer than ~10 citations, or when your host cannot
 launch the probe, run the same checks inline.
 
+### 4e. Consult experts (optional, advisory — FEAT-890)
+
+Run `parrot sdd experts consult --doc <source-doc> [--feature <FEAT-ID>]`, where `<source-doc>` is the existing document the proposal is built from; skip this step when the request has no document yet.
+This is optional and non-blocking — it gathers advisory contributions from domain experts
+before synthesis. The command writes findings to `sdd/state/.contributions/<doc-slug>/`.
+
+- **List findings**: read each `<expert>.json` in the contributions directory.
+- **Record each decision** with `parrot sdd experts triage <contribution> <finding-id> confirm|reject|escalate --reason "..."`;
+  a confirmed finding can later become an unreviewed decision with `parrot sdd experts promote <contribution> <finding-id>`.
+- **Triage each finding** as CONFIRM, REJECT, or ESCALATE:
+  - CONFIRM: fold the finding into the synthesis with a reference to the contribution file.
+  - REJECT: note the rejection reason in a brief comment; do not include in synthesis.
+  - ESCALATE: move the finding to §8 Open Questions — it requires human clarification.
+- **Promote contributions** (if FEAT-ID is known): after triage, promote
+  `sdd/state/.contributions/<doc-slug>/` to `sdd/state/<FEAT-ID>/contributions/`
+  like design research.
+
 ### 5. Phase 3 — Synthesis
 
 #### 5a. Build the synthesis input
