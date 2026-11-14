@@ -34,30 +34,49 @@ of the turn event.
                            |
         +------------------+-------------------+
         v round start                          v round end
- _load_or_hydrate_history            save_conversation_turn
+ _load_or_hydrate_history            save_conversation_turn   (one save at a time per session)
         |                                      |
-        | hit -> render                        +--> ConversationMemory.add_turn      (awaited)
-        |                                      |
-        | miss                                 +--> TurnPublisher.publish            (optional)
-        v                                                |  SqliteOutbox -> Redis Streams
+        | hit -> render                        +--> TurnPublisher.publish            (optional, first)
+        |                                      |         |  SqliteOutbox -> Redis Streams
+        | miss                                 +--> ConversationMemory.add_turn      (awaited, after the append)
+        v                                                |
  HydrationSource (optional)                              v
         |  guard check, ordered window         ChatStorage.handle_turn_completed
         v                                                |  retry, backoff, DLQ
  ConversationMemory.install_history (NX)                 +--> ConversationBackend.put_turn   (fenced upsert)
-                                                         +--> RedisConversation.upsert_turn  (hot tier)
+                                                         +--> RedisConversation.upsert_turn  (hot tier, chat:)
 ```
 
-After `add_turn` succeeds, `AbstractBot.save_conversation_turn` hands the **raw, pre-normalization** turn, wrapped in a
+`AbstractBot.save_conversation_turn` first hands the **raw, pre-normalization** turn, wrapped in a
 `TurnCompletedEvent`, to the optional `TurnPublisher` (`BusTurnPublisher` over a `navigator_eventbus.EventBus`), which publishes one envelope on
-`TURN_COMPLETED_TOPIC` (`"conversation.turn.completed"`) with `event_id == turn_id`. The event is **not** emitted
+`TURN_COMPLETED_TOPIC` (`"conversation.turn.completed"`) with `event_id == turn_id`. That outbox append comes
+before the working-memory write (`ConversationMemory.add_turn`): the durable tier is the source of truth. The
+snapshot is still taken before `add_turn` normalizes the turn. The event is **not** emitted
 through `EventRegistry`: its payload holds conversation content and must not reach the observability fan-out.
 With no publisher configured the bot does nothing extra, and no event object is even built.
+
+Failures of the two writes:
+
+- A rejected append fails the round (the outbox raised: overflow, an unwritable SQLite file). Working memory is not
+  touched, so neither tier keeps the turn.
+- A working-memory failure after a successful append also fails the round. The durable tier already has the turn,
+  and nothing on the bus writes the bot's working memory: `ChatStorage`'s hot tier is its own store (`chat:` keys by
+  agent name), not the bot's `conversation:` history keyed by `memory_key_id`. When the bot has a
+  `hydration_source`, the session's working memory is dropped (best effort) so the next request rehydrates it from
+  the durable tier. A request that arrives before the subscriber stored the turn rehydrates a window without it.
+  Without a `hydration_source` working memory is left as it is.
+
+Saves run one save at a time per session in a process: an in-process lock keyed by
+`(memory_key_id, user_id, session_id)`, shared by every bot instance with that `memory_key_id`, covers the order
+stamp, the outbox append and the working-memory write. Answers are still generated concurrently; only the save
+waits, and different sessions never wait for each other. Across pods, ordering rests on the shared sequence
+allocator and the `(timestamp, sequence, turn_id)` order of every reader.
 
 `ChatStorage.handle_turn_completed` builds a `ChatStorageTurn` and upserts it by `turn_id` in the cold tier, then in
 the hot tier, and acknowledges only after both writes. Delivery is at-least-once, and both tiers are idempotent.
 A retryable `StorageError` propagates to the bus (three attempts with exponential backoff, then the dead-letter
 store); `ConversationDeletedError` and `InvalidTurnPayloadError` are terminal: they are logged and acknowledged,
-never retried. A publish failure inside the bot is logged at ERROR and never fails the round.
+never retried. Inside the bot, a rejected append fails the round (see the failure rules above).
 
 Publishing writes to a durable `SqliteOutbox` first (so an in-flight turn survives a pod crash) and only then
 relays to Redis Streams with back-pressure `block`.

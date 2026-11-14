@@ -97,3 +97,25 @@ def test_removed_api_is_not_documented_as_available():
 
 def test_pages_use_no_stale_version_claims():
     assert not re.search(r"shipped in \*\*\d", MAIN.read_text(encoding="utf-8"))
+
+
+def _section(text: str, heading: str) -> str:
+    start = text.index(f"## {heading}")
+    end = text.find("\n## ", start + 1)
+    return text[start:] if end == -1 else text[start:end]
+
+
+def test_turn_save_order_is_documented():
+    """FEAT-895: the outbox append precedes the working-memory write, and its failure fails the round."""
+    flow = _section(MAIN.read_text(encoding="utf-8"), "Event flow")
+    flat = " ".join(flow.split())
+    ownership = " ".join((WIKI / "memory" / "conversation-history-ownership.md").read_text(encoding="utf-8").split())
+    # the diagram draws the outbox append above the working-memory write
+    assert flow.index("TurnPublisher.publish") < flow.index("ConversationMemory.add_turn")
+    assert "before the working-memory write" in flat
+    assert "rejected append fails the round" in flat and "never fails the round" not in flat
+    assert "hydration_source" in flat  # the invalidation is limited to bots that can rehydrate
+    assert "one save at a time per session" in flat
+    assert "chat:" in flat  # ChatStorage's hot tier is its own store, not the bot's working memory
+    assert "publishes the raw turn after `add_turn`" not in ownership
+    assert "to the outbox before `add_turn`" in ownership

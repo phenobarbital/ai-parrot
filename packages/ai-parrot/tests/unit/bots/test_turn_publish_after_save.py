@@ -86,12 +86,15 @@ async def _round(bot: BaseBot, text: str = "hello", **kw) -> AIMessage:
     return await bot.ask(text, user_id="u", session_id="s", use_vector_context=False, **kw)
 
 
-async def test_publish_after_add_turn():
+async def test_publish_before_add_turn():
+    """FEAT-895: the outbox append comes first; working memory gets the turn only afterwards."""
     bot = await _bot(lambda mem: RecordingPublisher(mem, "uuid-1"))
     response = await _round(bot)
     pub = bot.turn_publisher
     assert len(pub.events) == 1
-    assert pub.memory_at_publish == [[response.turn_id]]  # the turn was already stored when it was published
+    assert pub.memory_at_publish in ([[]], [None])  # working memory did NOT hold the turn yet when it was published
+    stored = await bot.conversation_memory.get_history("u", "s", chatbot_id="uuid-1")
+    assert [t.turn_id for t in stored.turns] == [response.turn_id]
 
 
 async def test_event_identity_ordering_and_presentation():
@@ -123,13 +126,13 @@ async def test_snapshot_is_raw_before_normalization_and_offload():
     assert len(stored.tool_invocations[0].output) < len(big)
 
 
-async def test_publish_failure_does_not_fail_round(caplog):
+async def test_rejected_outbox_append_fails_the_round_and_leaves_memory_untouched():
+    """FEAT-895: the outbox is the durable write — a rejected append fails the round before working memory."""
     bot = await _bot(lambda mem: RecordingPublisher(mem, "uuid-1", fail=True))
-    response = await _round(bot)
-    assert response.response == "reply" or response.output == "reply"
+    with pytest.raises(RuntimeError, match="outbox full"):
+        await _round(bot)
     history = await bot.conversation_memory.get_history("u", "s", chatbot_id="uuid-1")
-    assert len(history.turns) == 1
-    assert any("turn publish failed" in r.getMessage() for r in caplog.records)
+    assert history is None or history.turns == []
 
 
 async def test_conversation_less_bot_builds_no_event_and_stamps_nothing():
@@ -425,3 +428,156 @@ async def test_fallback_sequence_reads_the_durable_floor_once_per_session():
         await bot._fallback_sequence("u1", "other-session")
         assert bot.hydration_source.calls == 2  # per session
 
+
+# ---------------------------------------------------------------------------
+# FEAT-895 — outbox first, one save at a time per session
+# ---------------------------------------------------------------------------
+
+
+class _OrderedPublisher:
+    """Logs ``publish:<turn_id>`` and yields, so an unserialized concurrent save would interleave with it."""
+
+    def __init__(self, log: list, mark_end: bool = False) -> None:
+        self.log, self.events, self._mark_end = log, [], mark_end
+
+    async def publish(self, event) -> None:
+        self.log.append(f"publish:{event.turn['turn_id']}")
+        await asyncio.sleep(0.05)
+        if self._mark_end:
+            self.log.append(f"published:{event.turn['turn_id']}")
+        self.events.append(event)
+
+
+def _log_stores(memory: InMemoryConversation, log: list) -> None:
+    """Wrap ``memory.add_turn`` so every completed working-memory write logs ``store:<turn_id>``."""
+    original = memory.add_turn
+
+    async def add_turn(user_id, session_id, turn, *a, **kw):
+        result = await original(user_id, session_id, turn, *a, **kw)
+        log.append(f"store:{turn.turn_id}")
+        return result
+
+    memory.add_turn = add_turn
+
+
+def _turn(turn_id: str):
+    from parrot.memory import ConversationTurn
+
+    return ConversationTurn(turn_id=turn_id, user_id="u", user_message="q", assistant_response="a", chatbot_id="uuid-1")
+
+
+def _hydration_source():
+    from parrot.memory.hydration import HydrationSource
+
+    class _Source(HydrationSource):
+        async def load_turns(self, *a, **kw):
+            return []
+
+        async def is_deleted(self, *a, **kw) -> bool:
+            return False
+
+        async def max_sequence(self, *a, **kw) -> int:
+            return 0
+
+    return _Source()
+
+
+async def _ordered_bot(log: list) -> BaseBot:
+    bot = await _bot(lambda mem: _OrderedPublisher(log))
+    _log_stores(bot.conversation_memory, log)
+    for session in ("s", "s2"):  # InMemoryConversation stores a turn only into an existing history
+        await bot.conversation_memory.create_history("u", session, chatbot_id="uuid-1")
+    return bot
+
+
+async def _broken_add_turn(*a, **kw):
+    raise RuntimeError("redis down")
+
+
+async def test_working_memory_failure_after_the_append_invalidates_a_hydrated_session():
+    bot = await _bot(lambda mem: RecordingPublisher(mem, "uuid-1"))
+    bot.hydration_source = _hydration_source()
+    await bot.conversation_memory.create_history("u", "s", chatbot_id="uuid-1")
+    await bot.save_conversation_turn("u", "s", _turn("old"))
+    bot.conversation_memory.add_turn = _broken_add_turn
+    with pytest.raises(RuntimeError, match="redis down"):
+        await bot.save_conversation_turn("u", "s", _turn("new"))
+    assert [e.turn["turn_id"] for e in bot.turn_publisher.events] == ["old", "new"]  # the durable tier has it
+    # dropped, so the next request rehydrates the session from the durable tier
+    assert await bot.conversation_memory.get_history("u", "s", chatbot_id="uuid-1") is None
+
+
+async def test_working_memory_failure_without_a_hydration_source_keeps_the_history():
+    bot = await _bot(lambda mem: RecordingPublisher(mem, "uuid-1"))
+    assert bot.hydration_source is None
+    await bot.conversation_memory.create_history("u", "s", chatbot_id="uuid-1")
+    await bot.save_conversation_turn("u", "s", _turn("old"))
+    bot.conversation_memory.add_turn = _broken_add_turn
+    with pytest.raises(RuntimeError, match="redis down"):
+        await bot.save_conversation_turn("u", "s", _turn("new"))
+    assert [e.turn["turn_id"] for e in bot.turn_publisher.events] == ["old", "new"]
+    history = await bot.conversation_memory.get_history("u", "s", chatbot_id="uuid-1")
+    assert [t.turn_id for t in history.turns] == ["old"]  # nothing could restore a dropped history: keep it
+
+
+async def test_same_session_saves_are_serialized():
+    log: list = []
+    bot = await _ordered_bot(log)
+    a, b = _turn("a"), _turn("b")
+    await asyncio.gather(bot.save_conversation_turn("u", "s", a), bot.save_conversation_turn("u", "s", b))
+    assert log == ["publish:a", "store:a", "publish:b", "store:b"]
+    assert a.sequence < b.sequence  # the order stamp agrees with the outbox and working-memory order
+    stored = await bot.conversation_memory.get_history("u", "s", chatbot_id="uuid-1")
+    assert [t.turn_id for t in stored.turns] == ["a", "b"]
+
+
+async def test_bots_sharing_a_memory_key_serialize_their_saves():
+    log: list = []
+    bot = await _ordered_bot(log)
+    twin = await _bot()
+    twin.conversation_memory, twin.turn_publisher = bot.conversation_memory, bot.turn_publisher
+    assert twin is not bot and twin.memory_key_id == bot.memory_key_id
+    await asyncio.gather(
+        bot.save_conversation_turn("u", "s", _turn("a")), twin.save_conversation_turn("u", "s", _turn("b"))
+    )
+    assert log == ["publish:a", "store:a", "publish:b", "store:b"]
+
+
+async def test_different_sessions_do_not_wait_for_each_other():
+    log: list = []
+    bot = await _ordered_bot(log)
+    await asyncio.gather(
+        bot.save_conversation_turn("u", "s", _turn("a")), bot.save_conversation_turn("u", "s2", _turn("b"))
+    )
+    assert log[:2] == ["publish:a", "publish:b"]  # the second session did not wait for the first one's save
+    assert sorted(log[2:]) == ["store:a", "store:b"]
+
+
+async def test_history_disabled_publication_is_serialized():
+    log: list = []
+    bot = await _bot(lambda mem: _OrderedPublisher(log, mark_end=True))
+    await asyncio.gather(
+        bot._save_or_snapshot_turn("u", "s", _turn("a"), use_history=False),
+        bot._save_or_snapshot_turn("u", "s", _turn("b"), use_history=False),
+    )
+    assert log == ["publish:a", "published:a", "publish:b", "published:b"]
+    assert await bot.conversation_memory.get_history("u", "s", chatbot_id="uuid-1") is None  # no working memory
+
+
+async def test_save_lock_registry_releases_idle_and_cancelled_entries():
+    from parrot.bots import abstract as abstract_mod
+
+    locks = abstract_mod._TURN_SAVE_LOCKS
+    log: list = []
+    bot = await _ordered_bot(log)
+    first = asyncio.create_task(bot.save_conversation_turn("u", "s", _turn("a")))
+    await asyncio.sleep(0.01)  # `a` holds the lock, sleeping inside its outbox append
+    waiter = asyncio.create_task(bot.save_conversation_turn("u", "s", _turn("b")))
+    await asyncio.sleep(0.01)
+    assert locks._entries[bot._turn_save_key("u", "s")][1] == 2  # one holder, one waiter
+    waiter.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await waiter
+    await first
+    assert locks._entries == {}
+    assert log == ["publish:a", "store:a"]  # the cancelled waiter never stamped, published or stored
