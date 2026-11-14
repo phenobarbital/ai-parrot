@@ -142,6 +142,10 @@ lifecycle: TASK-5598: consumes the sync contract in packages/ai-parrot/src/parro
 
 Use async service calls and bounded IO. Keep stdlib hook imports lazy, preserve the exception/cancellation semantics of callers, and log through the module logger. Blueprint gaps are planning instructions only: delivered code must contain no unfinished placeholders. All tests use temporary roots; do not mutate real global experience data. Each asset writer owns its packaged twins.
 
+**Retry notes (earlier attempts failed task-tier validation; fix exactly these):**
+- `packages/ai-parrot/tests/sdd/test_installer.py::test_closeout_exports_in_worktree` compared a repo `sdd-done` asset with its packaged twin and found them different: the repo copy was missing the closeout step "immediately before staging, run `parrot sdd experience sync` (best-effort) and then `parrot sdd experience export` inside the feature worktree; inspect the export path and stage only the newly returned ..." that the other copy carried. Every one of the three `sdd-done` pairs (`.claude/commands/sdd-done.md` + `_assets/claude/commands/sdd-done.md`, `.agent/workflows/sdd-done.md` + `_assets/agent/workflows/sdd-done.md`, `.agents/skills/sdd-done/SKILL.md` + `_assets/agents/skills/sdd-done/SKILL.md`) must end byte-identical to its twin.
+- `tests/sdd_scripts/test_check_asset_sync.py::test_repo_assets_in_sync` (`check_asset_sync --check`, a new red against the base) failed for the same reason: at least one pair had drifted. Write each pair from one source text, then re-run both tests above plus `tests/sdd/test_installer.py` before delivering.
+
 ## Implementation Blueprint
 
 ### Steps (in order)
