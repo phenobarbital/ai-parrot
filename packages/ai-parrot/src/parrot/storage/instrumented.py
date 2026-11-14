@@ -87,9 +87,7 @@ class InstrumentedBackend(ConversationBackend):
         return await self._measure("delete_turn", self._inner.delete_turn, *a, **kw)
 
     async def delete_thread_cascade(self, *a, **kw) -> int:
-        return await self._measure(
-            "delete_thread_cascade", self._inner.delete_thread_cascade, *a, **kw
-        )
+        return await self._measure("delete_thread_cascade", self._inner.delete_thread_cascade, *a, **kw)
 
     # ------------------------------------------------------------------
     # Durable conversation operations (FEAT-886)
@@ -106,6 +104,9 @@ class InstrumentedBackend(ConversationBackend):
 
     async def deleted_turn_ids(self, *a, **kw):
         return await self._measure("deleted_turn_ids", self._inner.deleted_turn_ids, *a, **kw)
+
+    async def deleted_session_ids(self, *a, **kw):
+        return await self._measure("deleted_session_ids", self._inner.deleted_session_ids, *a, **kw)
 
     async def is_deleted(self, *a, **kw) -> bool:
         return await self._measure("is_deleted", self._inner.is_deleted, *a, **kw)
@@ -127,19 +128,13 @@ class InstrumentedBackend(ConversationBackend):
         return await self._measure("get_artifact", self._inner.get_artifact, *a, **kw)
 
     async def query_artifacts(self, *a, **kw) -> List[dict]:
-        return await self._measure(
-            "query_artifacts", self._inner.query_artifacts, *a, **kw
-        )
+        return await self._measure("query_artifacts", self._inner.query_artifacts, *a, **kw)
 
     async def delete_artifact(self, *a, **kw) -> None:
-        return await self._measure(
-            "delete_artifact", self._inner.delete_artifact, *a, **kw
-        )
+        return await self._measure("delete_artifact", self._inner.delete_artifact, *a, **kw)
 
     async def delete_session_artifacts(self, *a, **kw) -> int:
-        return await self._measure(
-            "delete_session_artifacts", self._inner.delete_session_artifacts, *a, **kw
-        )
+        return await self._measure("delete_session_artifacts", self._inner.delete_session_artifacts, *a, **kw)
 
     # ------------------------------------------------------------------
     # Internal measurement helper

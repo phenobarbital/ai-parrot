@@ -10,7 +10,7 @@ See wiki/stores/storage-backends.md for the backend selection matrix.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List, Optional, Set, Tuple
+from typing import List, Optional, Sequence, Set, Tuple
 
 
 @dataclass(frozen=True)
@@ -18,7 +18,7 @@ class BackfillBatch:
     """Result of one :meth:`ConversationBackend.backfill_batch` call."""
 
     processed: int
-    next_cursor: Optional[str]      # None when the scan is complete
+    next_cursor: Optional[str]  # None when the scan is complete
     invalid_sessions: Tuple[str, ...]
 
 
@@ -154,9 +154,7 @@ class ConversationBackend(ABC):
     # ------------------------------------------------------------------
 
     @abstractmethod
-    async def query_turn_window(
-        self, user_id: str, agent_id: str, session_id: str, limit: int
-    ) -> List[dict]:
+    async def query_turn_window(self, user_id: str, agent_id: str, session_id: str, limit: int) -> List[dict]:
         """The newest ``limit`` turns by ``(timestamp, sequence, turn_id)``.
 
         ``limit`` is applied DESCENDING at the backend; the window is returned ASCENDING.
@@ -174,9 +172,7 @@ class ConversationBackend(ABC):
         """Highest stored ``sequence`` for the session, ``0`` when none."""
 
     @abstractmethod
-    async def put_tombstone(
-        self, user_id: str, agent_id: str, session_id: str, turn_id: Optional[str] = None
-    ) -> None:
+    async def put_tombstone(self, user_id: str, agent_id: str, session_id: str, turn_id: Optional[str] = None) -> None:
         """Durably record a session (``turn_id=None``) or turn deletion. Idempotent.
 
         Not subject to transcript TTL or :meth:`delete_thread_cascade`.
@@ -191,10 +187,24 @@ class ConversationBackend(ABC):
         """
 
     @abstractmethod
-    async def is_deleted(
-        self, user_id: str, agent_id: str, session_id: str, turn_id: Optional[str] = None
-    ) -> bool:
+    async def deleted_session_ids(self, user_id: str, agent_id: str, session_ids: Sequence[str]) -> Set[str]:
+        """The members of ``session_ids`` that carry a SESSION tombstone, in one bounded read.
+
+        Turn tombstones are ignored. An empty ``session_ids`` returns ``set()`` without touching the store;
+        duplicates in ``session_ids`` are harmless and only ids taken from it are returned.
+
+        Raises:
+            StorageUnavailableError: If it cannot be determined — never returns an empty set on failure
+                (also when the backend is disconnected).
+        """
+
+    @abstractmethod
+    async def is_deleted(self, user_id: str, agent_id: str, session_id: str, turn_id: Optional[str] = None) -> bool:
         """Whether the identity is tombstoned.
+
+        Without ``turn_id``: whether the SESSION is tombstoned. With ``turn_id``: whether the session OR that
+        turn is tombstoned — a session tombstone deletes every turn of the session, so one call answers
+        "may this turn exist?".
 
         Raises:
             StorageUnavailableError: If it cannot be determined — never returns ``False`` on failure.
@@ -300,7 +310,4 @@ class ConversationBackend(ABC):
             Key prefix string, e.g.
             ``"artifacts/USER#u#AGENT#a/THREAD#s/aid"``.
         """
-        return (
-            f"artifacts/USER#{user_id}#AGENT#{agent_id}"
-            f"/THREAD#{session_id}/{artifact_id}"
-        )
+        return f"artifacts/USER#{user_id}#AGENT#{agent_id}" f"/THREAD#{session_id}/{artifact_id}"

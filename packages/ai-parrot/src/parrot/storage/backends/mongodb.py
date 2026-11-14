@@ -13,7 +13,7 @@ FEAT-116: dynamodb-fallback-redis — Module 6 (MongoDB backend).
 
 import asyncio
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from navconfig.logging import logging
 
@@ -102,6 +102,7 @@ class ConversationMongoBackend(ConversationBackend):
         if self._initialized and self._client is not None:
             return
         import motor.motor_asyncio  # type: ignore[import]
+
         self._client = motor.motor_asyncio.AsyncIOMotorClient(self._dsn)
         self._db = self._client[self._database]
         self._conversations = self._db["conversations"]
@@ -127,16 +128,26 @@ class ConversationMongoBackend(ConversationBackend):
         self._tombstones = self._db["conversation_tombstones"]
         self._index_state = self._db["conversation_index_state"]
         await self._conversations.create_index(
-            [("user_id", 1), ("agent_id", 1), ("session_id", 1), ("kind", 1),
-             ("ts_utc", 1), ("seq", 1), ("turn_id", 1)],
+            [
+                ("user_id", 1),
+                ("agent_id", 1),
+                ("session_id", 1),
+                ("kind", 1),
+                ("ts_utc", 1),
+                ("seq", 1),
+                ("turn_id", 1),
+            ],
             name="conv_turn_chrono",
         )
         await self._tombstones.create_index(  # NO TTL: tombstones are kept indefinitely
             [("user_id", 1), ("agent_id", 1), ("session_id", 1), ("turn_id", 1)],
-            unique=True, name="tomb_unique",
+            unique=True,
+            name="tomb_unique",
         )
         await self._index_state.create_index(
-            [("user_id", 1), ("agent_id", 1), ("session_id", 1)], unique=True, name="idxstate_unique",
+            [("user_id", 1), ("agent_id", 1), ("session_id", 1)],
+            unique=True,
+            name="idxstate_unique",
         )
 
         # Artifacts indexes
@@ -204,24 +215,26 @@ class ConversationMongoBackend(ConversationBackend):
         cls = StorageWriteError if write else StorageUnavailableError
         return cls(f"MongoDB operation failed: {exc}")
 
-    async def _is_tombstoned(
-        self, user_id: str, agent_id: str, session_id: str, turn_id: Optional[str] = None
-    ) -> bool:
+    async def _is_tombstoned(self, user_id: str, agent_id: str, session_id: str, turn_id: Optional[str] = None) -> bool:
         """Session tombstone, or (when ``turn_id`` is given) session OR turn tombstone."""
         found = await self._tombstones.find_one(
-            {"user_id": user_id, "agent_id": agent_id, "session_id": session_id,
-             "turn_id": {"$in": ["", turn_id or ""]}},
+            {
+                "user_id": user_id,
+                "agent_id": agent_id,
+                "session_id": session_id,
+                "turn_id": {"$in": ["", turn_id or ""]},
+            },
             projection={"_id": 1},
         )
         return found is not None
 
     async def _build_turn_doc(self, key: Dict[str, Any], turn_id: str, data: dict) -> dict:
         """Document to write: payload spread at top level, fixed keys last, ordering kept if already set."""
-        payload = {k: (v.isoformat() if isinstance(v, datetime) else v)
-                   for k, v in data.items() if k not in _RESERVED}
+        payload = {k: (v.isoformat() if isinstance(v, datetime) else v) for k, v in data.items() if k not in _RESERVED}
         ts_us, seq = _chrono_fields(data)
         existing = await self._conversations.find_one(
-            key, projection={"ts_utc": 1, "seq": 1, "timestamp": 1, "sequence": 1})
+            key, projection={"ts_utc": 1, "seq": 1, "timestamp": 1, "sequence": 1}
+        )
         if existing is not None and existing.get("ts_utc") is not None:
             ts_us, seq = existing["ts_utc"], existing.get("seq", 0)
             for name in ("timestamp", "sequence"):  # immutable once set
@@ -229,9 +242,16 @@ class ConversationMongoBackend(ConversationBackend):
                     payload[name] = existing[name]
                 else:
                     payload.pop(name, None)
-        return {**payload, **key, "kind": "turn", "turn_id": turn_id,
-                "updated_at": datetime.now(timezone.utc), "expires_at": self._expires_at(),
-                "ts_utc": ts_us, "seq": seq}
+        return {
+            **payload,
+            **key,
+            "kind": "turn",
+            "turn_id": turn_id,
+            "updated_at": datetime.now(timezone.utc),
+            "expires_at": self._expires_at(),
+            "ts_utc": ts_us,
+            "seq": seq,
+        }
 
     def _clean(self, doc: dict) -> dict:
         """Strip internal Mongo fields and normalize datetimes."""
@@ -271,8 +291,7 @@ class ConversationMongoBackend(ConversationBackend):
             **payload,
         }
         await self._conversations.replace_one(
-            {"user_id": user_id, "agent_id": agent_id,
-             "session_id": session_id, "sort_key": "THREAD"},
+            {"user_id": user_id, "agent_id": agent_id, "session_id": session_id, "sort_key": "THREAD"},
             doc,
             upsert=True,
         )
@@ -287,8 +306,7 @@ class ConversationMongoBackend(ConversationBackend):
         if not self.is_connected or not updates:
             return
         existing = await self._conversations.find_one(
-            {"user_id": user_id, "agent_id": agent_id,
-             "session_id": session_id, "sort_key": "THREAD"},
+            {"user_id": user_id, "agent_id": agent_id, "session_id": session_id, "sort_key": "THREAD"},
         )
         if existing is None:
             await self.put_thread(user_id, agent_id, session_id, updates)
@@ -298,8 +316,7 @@ class ConversationMongoBackend(ConversationBackend):
         existing["updated_at"] = datetime.now(timezone.utc)
         existing["expires_at"] = self._expires_at()
         await self._conversations.replace_one(
-            {"user_id": user_id, "agent_id": agent_id,
-             "session_id": session_id, "sort_key": "THREAD"},
+            {"user_id": user_id, "agent_id": agent_id, "session_id": session_id, "sort_key": "THREAD"},
             existing,
             upsert=True,
         )
@@ -312,9 +329,13 @@ class ConversationMongoBackend(ConversationBackend):
     ) -> List[dict]:
         if not self.is_connected:
             return []
-        cursor = self._conversations.find(
-            {"user_id": user_id, "agent_id": agent_id, "kind": "thread"},
-        ).sort("updated_at", -1).limit(limit)
+        cursor = (
+            self._conversations.find(
+                {"user_id": user_id, "agent_id": agent_id, "kind": "thread"},
+            )
+            .sort("updated_at", -1)
+            .limit(limit)
+        )
         # Fix #8: always use the return value of _clean() for consistency
         result = []
         async for doc in cursor:
@@ -344,18 +365,17 @@ class ConversationMongoBackend(ConversationBackend):
             StorageWriteError: the write failed (nothing is swallowed).
         """
         self._require_connection()
-        key = {"user_id": user_id, "agent_id": agent_id, "session_id": session_id,
-               "sort_key": f"TURN#{turn_id}"}
+        key = {"user_id": user_id, "agent_id": agent_id, "session_id": session_id, "sort_key": f"TURN#{turn_id}"}
         try:
             if await self._is_tombstoned(user_id, agent_id, session_id, turn_id):
-                raise ConversationDeletedError(
-                    f"session {session_id} or turn {turn_id} is tombstoned; write rejected")
+                raise ConversationDeletedError(f"session {session_id} or turn {turn_id} is tombstoned; write rejected")
             doc = await self._build_turn_doc(key, turn_id, data)
             await self._conversations.replace_one(key, doc, upsert=True)
             if await self._is_tombstoned(user_id, agent_id, session_id, turn_id):  # phase 3: lost the race
                 await self._conversations.delete_one(key)
                 raise ConversationDeletedError(
-                    f"session {session_id} or turn {turn_id} was tombstoned during the write; rolled back")
+                    f"session {session_id} or turn {turn_id} was tombstoned during the write; rolled back"
+                )
         except StorageError:
             raise
         except Exception as exc:
@@ -372,10 +392,13 @@ class ConversationMongoBackend(ConversationBackend):
         self._require_connection()
         sort_dir = -1 if newest_first else 1
         try:
-            cursor = self._conversations.find(
-                {"user_id": user_id, "agent_id": agent_id,
-                 "session_id": session_id, "kind": "turn"},
-            ).sort("sort_key", sort_dir).limit(limit)
+            cursor = (
+                self._conversations.find(
+                    {"user_id": user_id, "agent_id": agent_id, "session_id": session_id, "kind": "turn"},
+                )
+                .sort("sort_key", sort_dir)
+                .limit(limit)
+            )
             result = []
             async for doc in cursor:
                 self._clean(doc)
@@ -395,8 +418,7 @@ class ConversationMongoBackend(ConversationBackend):
             return False
         sort_key = f"TURN#{turn_id}"
         result = await self._conversations.delete_one(
-            {"user_id": user_id, "agent_id": agent_id,
-             "session_id": session_id, "sort_key": sort_key},
+            {"user_id": user_id, "agent_id": agent_id, "session_id": session_id, "sort_key": sort_key},
         )
         return result.deleted_count > 0
 
@@ -420,9 +442,7 @@ class ConversationMongoBackend(ConversationBackend):
     # FEAT-886: ordered window, tombstones, index state, backfill
     # ------------------------------------------------------------------
 
-    async def query_turn_window(
-        self, user_id: str, agent_id: str, session_id: str, limit: int
-    ) -> List[dict]:
+    async def query_turn_window(self, user_id: str, agent_id: str, session_id: str, limit: int) -> List[dict]:
         """Newest ``limit`` turns by (ts_utc, seq, turn_id), limit applied descending, returned ascending."""
         self._require_connection()
         if await self.is_deleted(user_id, agent_id, session_id):
@@ -433,11 +453,12 @@ class ConversationMongoBackend(ConversationBackend):
             return []
         scope = {"user_id": user_id, "agent_id": agent_id, "session_id": session_id}
         try:
-            gone = [d["turn_id"] async for d in self._tombstones.find(
-                {**scope, "turn_id": {"$ne": ""}}, projection={"turn_id": 1})]
+            gone = [
+                d["turn_id"]
+                async for d in self._tombstones.find({**scope, "turn_id": {"$ne": ""}}, projection={"turn_id": 1})
+            ]
             cursor = (
-                self._conversations.find({**scope, "kind": "turn", "ts_utc": {"$ne": None},
-                                          "turn_id": {"$nin": gone}})
+                self._conversations.find({**scope, "kind": "turn", "ts_utc": {"$ne": None}, "turn_id": {"$nin": gone}})
                 .sort([("ts_utc", -1), ("seq", -1), ("turn_id", -1)])
                 .hint("conv_turn_chrono")
                 .limit(limit)
@@ -461,9 +482,7 @@ class ConversationMongoBackend(ConversationBackend):
             raise self._translate(exc, write=False) from exc
         return int(rows[0]["m"]) if rows and rows[0].get("m") is not None else 0
 
-    async def put_tombstone(
-        self, user_id: str, agent_id: str, session_id: str, turn_id: Optional[str] = None
-    ) -> None:
+    async def put_tombstone(self, user_id: str, agent_id: str, session_id: str, turn_id: Optional[str] = None) -> None:
         """Durably record a session (``turn_id=None``) or turn deletion. Idempotent; no TTL."""
         self._require_connection()
         if turn_id == "":
@@ -481,15 +500,35 @@ class ConversationMongoBackend(ConversationBackend):
         """Every turn-scoped tombstone of the session in one query."""
         self._require_connection()
         try:
-            return {d["turn_id"] async for d in self._tombstones.find(
-                {"user_id": user_id, "agent_id": agent_id, "session_id": session_id, "turn_id": {"$ne": ""}},
-                projection={"turn_id": 1})}
+            return {
+                d["turn_id"]
+                async for d in self._tombstones.find(
+                    {"user_id": user_id, "agent_id": agent_id, "session_id": session_id, "turn_id": {"$ne": ""}},
+                    projection={"turn_id": 1},
+                )
+            }
         except Exception as exc:
             raise self._translate(exc, write=False) from exc
 
-    async def is_deleted(
-        self, user_id: str, agent_id: str, session_id: str, turn_id: Optional[str] = None
-    ) -> bool:
+    async def deleted_session_ids(self, user_id: str, agent_id: str, session_ids: Sequence[str]) -> Set[str]:
+        """The session-tombstoned members of ``session_ids``: one ``$in`` query per 1000 ids."""
+        self._require_connection()
+        wanted = list(dict.fromkeys(session_ids))
+        gone: Set[str] = set()
+        try:
+            for start in range(0, len(wanted), 1000):
+                query = {
+                    "user_id": user_id,
+                    "agent_id": agent_id,
+                    "turn_id": "",
+                    "session_id": {"$in": wanted[start : start + 1000]},
+                }
+                gone.update([d["session_id"] async for d in self._tombstones.find(query, projection={"session_id": 1})])
+        except Exception as exc:
+            raise self._translate(exc, write=False) from exc
+        return gone
+
+    async def is_deleted(self, user_id: str, agent_id: str, session_id: str, turn_id: Optional[str] = None) -> bool:
         """Whether the session (or session OR this turn) is tombstoned; raises when it cannot be determined."""
         self._require_connection()
         try:
@@ -507,7 +546,8 @@ class ConversationMongoBackend(ConversationBackend):
         scope = {"user_id": user_id, "agent_id": agent_id, "session_id": session_id}
         try:
             unindexed = await self._conversations.find_one(
-                {**scope, "kind": "turn", "ts_utc": None}, projection={"_id": 1})
+                {**scope, "kind": "turn", "ts_utc": None}, projection={"_id": 1}
+            )
             if unindexed is None:
                 return "ready"
             state = await self._index_state.find_one(scope, projection={"state": 1})
@@ -519,13 +559,15 @@ class ConversationMongoBackend(ConversationBackend):
         """Write ``invalid`` / ``ready`` for a session touched by a batch (otherwise leave it pending)."""
         if saw_invalid:
             state = "invalid"
-        elif await self._conversations.find_one({**scope, "kind": "turn", "ts_utc": None},
-                                                projection={"_id": 1}) is None:
+        elif (
+            await self._conversations.find_one({**scope, "kind": "turn", "ts_utc": None}, projection={"_id": 1}) is None
+        ):
             state = "ready"
         else:
             return
         await self._index_state.update_one(
-            scope, {"$set": {"state": state, "updated_at": datetime.now(timezone.utc)}}, upsert=True)
+            scope, {"$set": {"state": state, "updated_at": datetime.now(timezone.utc)}}, upsert=True
+        )
 
     async def backfill_batch(self, cursor: Optional[str], batch_size: int) -> BackfillBatch:
         """Index up to ``batch_size`` legacy turns after ``cursor`` (resumable, safe next to new writes).
@@ -555,11 +597,12 @@ class ConversationMongoBackend(ConversationBackend):
                     touched[key] = True
                     continue
                 result = await self._conversations.update_one(
-                    {"_id": doc["_id"], "ts_utc": None}, {"$set": {"ts_utc": ts_us, "seq": seq}})
+                    {"_id": doc["_id"], "ts_utc": None}, {"$set": {"ts_utc": ts_us, "seq": seq}}
+                )
                 indexed_count += result.modified_count
                 touched.setdefault(key, False)
             for key, saw_invalid in touched.items():
-                scope = dict(zip(("user_id", "agent_id", "session_id"), key))
+                scope = dict(zip(("user_id", "agent_id", "session_id"), key, strict=False))
                 await self._finalize_session(scope, saw_invalid)
         except Exception as exc:
             raise self._translate(exc, write=True) from exc
@@ -595,8 +638,7 @@ class ConversationMongoBackend(ConversationBackend):
             **payload,
         }
         await self._artifacts.replace_one(
-            {"user_id": user_id, "agent_id": agent_id,
-             "session_id": session_id, "artifact_id": artifact_id},
+            {"user_id": user_id, "agent_id": agent_id, "session_id": session_id, "artifact_id": artifact_id},
             doc,
             upsert=True,
         )
@@ -611,8 +653,7 @@ class ConversationMongoBackend(ConversationBackend):
         if not self.is_connected:
             return None
         doc = await self._artifacts.find_one(
-            {"user_id": user_id, "agent_id": agent_id,
-             "session_id": session_id, "artifact_id": artifact_id},
+            {"user_id": user_id, "agent_id": agent_id, "session_id": session_id, "artifact_id": artifact_id},
         )
         if doc is None:
             return None
@@ -644,8 +685,7 @@ class ConversationMongoBackend(ConversationBackend):
         if not self.is_connected:
             return
         await self._artifacts.delete_one(
-            {"user_id": user_id, "agent_id": agent_id,
-             "session_id": session_id, "artifact_id": artifact_id},
+            {"user_id": user_id, "agent_id": agent_id, "session_id": session_id, "artifact_id": artifact_id},
         )
 
     async def delete_session_artifacts(

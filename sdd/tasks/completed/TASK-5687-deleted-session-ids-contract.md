@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-897 — batched session-tombstone read for conversation listing
 **Spec**: `sdd/specs/backends-base-tech-debt.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -216,10 +216,24 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Resolves**:
-**Deviations from spec**:
+**Completed by**: Claude Code (/sdd-fix, actor agent:sdd-fix:814f17e6)
+**Date**: 2026-11-14
+**Notes**: Implemented in commit 8a2ae9c09e. `deleted_session_ids` is abstract on `ConversationBackend` and implemented
+by SQLite (one query per 500 ids), Postgres (one `ANY($3::text[])` query), Mongo (one `$in` query per 1000 ids) and
+DynamoDB (`_batch_get` of deduplicated `TOMB#<session>` keys, ≤ 100 per request, `ClientError`/`BotoCoreError` →
+`StorageUnavailableError`), plus the measured `InstrumentedBackend` passthrough. `is_deleted`'s docstring states the
+session-OR-turn meaning; DynamoDB answers the turn form with one `_batch_get`. The shared contract gained
+`check_deleted_session_ids` (150 ids, so DynamoDB crosses a chunk) and `check_is_deleted_turn_includes_session`, and
+`check_disconnected_raises` covers the new read.
+Validation (`PYTHONPATH=packages/ai-parrot/src`): SQLite contract + `test_base_abc` + `test_storage_errors` +
+`test_instrumented_backend` + `test_leaky_abstractions_repaired` → 57 passed; DynamoDB contract through an ephemeral
+`uv run --no-project --with 'moto[server]'` overlay (shared venv unchanged; needs `SITE_ROOT` for navconfig) → 20
+passed, both new checks included. Postgres and Mongo contracts skipped: `POSTGRES_TEST_DSN` / `MONGO_TEST_DSN` not
+set. Mutation check: dropping `turn_id=''` from the SQLite query fails `check_deleted_session_ids`; a turn-only
+reference `is_deleted` fails `check_is_deleted_turn_includes_session`. `ruff check`: only the 5 findings already
+present at base (B905 ×2, E402 ×2, C416).
+**Resolves**: `issue:6393789b3d37` (together with TASK-5688)
+**Deviations from spec**: the new one-line stub methods in `test_base_abc.py`, `test_instrumented_backend.py` and
+`test_leaky_abstractions_repaired.py` follow those files' compact one-line style, which `black` would expand (as it
+would every neighbouring stub). All other changed lines add no `black` differences. `NEW_ABSTRACT` /
+`EXPECTED_ABSTRACT_METHODS` also gained `deleted_turn_ids`, which was abstract but missing from both sets.

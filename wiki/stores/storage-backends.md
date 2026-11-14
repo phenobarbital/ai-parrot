@@ -228,7 +228,18 @@ Every `ConversationBackend` implements the same durable contract; the shared che
 - **Tombstones.** `put_tombstone` / `is_deleted` record session- and turn-scoped deletions durably, outside
   transcript TTL and `delete_thread_cascade`, retained indefinitely. `put_turn` is atomic with the tombstone check
   (one SQL statement on SQLite, an advisory-lock transaction on Postgres, a guarded two-phase write on MongoDB,
-  one transaction on DynamoDB).
+  one transaction on DynamoDB). `is_deleted(user, agent, session)` asks whether the session is deleted;
+  `is_deleted(user, agent, session, turn_id)` asks whether the session OR that turn is deleted, so one call answers
+  "may this turn exist?".
+- **Batched tombstone reads.** Two reads replace one `is_deleted` per item, and both fail closed (they raise
+  `StorageUnavailableError` and never return an empty set for a failure):
+  - `deleted_turn_ids(user, agent, session)` returns every turn tombstone of one session.
+  - `deleted_session_ids(user, agent, session_ids)` returns the session-tombstoned members of `session_ids`: one
+    query per chunk on SQLite (500 ids), Postgres (`ANY($3::text[])`) and MongoDB (`$in`, 1000 ids), and a
+    consistent `BatchGetItem` of up to 100 keys per request on DynamoDB.
+
+  `ChatStorage.list_user_conversations` makes one `deleted_session_ids` call per agent per page and counts `limit`
+  in live conversations: when deleted threads leave a full page short, it reads a larger page.
 - **Index state.** `get_index_state` is `ready`, `pending` or `invalid`. Sessions written after this feature are
   `ready`; legacy sessions are `pending` until `backfill_batch` indexes them, and `invalid` when a turn has a
   missing or unparseable timestamp. `query_turn_window` on a session that is not `ready` raises

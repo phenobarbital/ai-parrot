@@ -1,4 +1,5 @@
 """FEAT-886 M18 — the durable-memory pages exist, name what they document, and what they name still exists."""
+
 from __future__ import annotations
 
 import importlib
@@ -18,28 +19,69 @@ PAGES = [
 ]
 
 SYMBOLS = {
-    "parrot.memory.persistence": ["TurnPresentation", "TurnPublisher", "BusTurnPublisher", "TURN_COMPLETED_TOPIC",
-                                  "CONVERSATION_DELETED_TOPIC"],
-    "parrot.memory.hydration": ["HydrationSource", "SequenceAllocator", "LocalSequenceAllocator",
-                                "RedisSequenceAllocator", "HydrationError", "HydrationUnavailableError",
-                                "HydrationNotReadyError", "SessionDeletedError"],
+    "parrot.memory.persistence": [
+        "TurnPresentation",
+        "TurnPublisher",
+        "BusTurnPublisher",
+        "TURN_COMPLETED_TOPIC",
+        "CONVERSATION_DELETED_TOPIC",
+    ],
+    "parrot.memory.hydration": [
+        "HydrationSource",
+        "SequenceAllocator",
+        "LocalSequenceAllocator",
+        "RedisSequenceAllocator",
+        "HydrationError",
+        "HydrationUnavailableError",
+        "HydrationNotReadyError",
+        "SessionDeletedError",
+    ],
     "parrot.memory.parts": ["MessagePart", "render_parts_text"],
-    "parrot.storage.errors": ["StorageError", "StorageUnavailableError", "StorageWriteError",
-                              "ConversationDeletedError", "IndexNotReadyError", "InvalidTurnPayloadError"],
+    "parrot.storage.errors": [
+        "StorageError",
+        "StorageUnavailableError",
+        "StorageWriteError",
+        "ConversationDeletedError",
+        "IndexNotReadyError",
+        "InvalidTurnPayloadError",
+    ],
     "parrot.storage.models": ["ChatStorageTurn"],
-    "parrot.storage.turn_bus": ["TurnPersistence", "setup_turn_persistence", "shutdown_turn_persistence",
-                                "replay_dead_letters"],
+    "parrot.storage.turn_bus": [
+        "TurnPersistence",
+        "setup_turn_persistence",
+        "shutdown_turn_persistence",
+        "replay_dead_letters",
+    ],
     "parrot.storage.hydration": ["ChatStorageHydrationSource"],
     "parrot.storage.backfill": ["run_backfill", "BackfillReport"],
     "parrot.core.events.lifecycle.events.memory": ["TurnCompletedEvent"],
 }
-SETTINGS = ["REDIS_HISTORY_EXPLICIT", "REDIS_HISTORY_URL", "CHAT_HOT_TTL_HOURS", "PARROT_TURN_BUS_REDIS_URL",
-            "PARROT_TURN_BUS_OUTBOX_DIR", "PARROT_TURN_BUS_CHANNEL_PREFIX", "PARROT_TURN_BUS_DLQ_DSN"]
+SETTINGS = [
+    "REDIS_HISTORY_EXPLICIT",
+    "REDIS_HISTORY_URL",
+    "CHAT_HOT_TTL_HOURS",
+    "PARROT_TURN_BUS_REDIS_URL",
+    "PARROT_TURN_BUS_OUTBOX_DIR",
+    "PARROT_TURN_BUS_CHANNEL_PREFIX",
+    "PARROT_TURN_BUS_DLQ_DSN",
+]
 METHODS = {
-    "parrot.storage.backends.base.ConversationBackend": ["query_turn_window", "max_sequence", "put_tombstone",
-                                                          "is_deleted", "get_index_state", "backfill_batch"],
-    "parrot.storage.chat.ChatStorage": ["store_turn", "handle_turn_completed", "handle_conversation_deleted",
-                                         "register_memory_cleaner"],
+    "parrot.storage.backends.base.ConversationBackend": [
+        "query_turn_window",
+        "max_sequence",
+        "put_tombstone",
+        "is_deleted",
+        "get_index_state",
+        "backfill_batch",
+        "deleted_turn_ids",
+        "deleted_session_ids",
+    ],
+    "parrot.storage.chat.ChatStorage": [
+        "store_turn",
+        "handle_turn_completed",
+        "handle_conversation_deleted",
+        "register_memory_cleaner",
+    ],
     "parrot.memory.abstract.ConversationMemory": ["install_history"],
     "parrot.memory.redis.RedisConversation": ["upsert_turn"],
     "parrot.bots.abstract.AbstractBot": ["_load_or_hydrate_history"],
@@ -55,11 +97,21 @@ def test_page_exists_and_is_clean(page):
 
 def test_main_page_has_every_mandatory_heading():
     text = MAIN.read_text(encoding="utf-8")
-    for heading in ("Two stores, one bridge", "Event flow", "Ordering fields", "Identity: agent name vs chatbot id",
-                    "Hydration", "Deletion protocol", "What a stored turn contains", "Structured history parts",
-                    "Operator settings", "Backfill runbook (legacy rows)", "Migration notes"):
+    for heading in (
+        "Two stores, one bridge",
+        "Event flow",
+        "Ordering fields",
+        "Identity: agent name vs chatbot id",
+        "Hydration",
+        "Deletion protocol",
+        "What a stored turn contains",
+        "Structured history parts",
+        "Operator settings",
+        "Backfill runbook (legacy rows)",
+        "Migration notes",
+    ):
         assert f"## {heading}" in text, heading
-    assert text.startswith("---\ntitle: \"Durable Conversation Memory\"\n---")
+    assert text.startswith('---\ntitle: "Durable Conversation Memory"\n---')
 
 
 def test_documented_symbols_exist_and_are_named_in_the_main_page():

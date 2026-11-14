@@ -1,4 +1,5 @@
 """FEAT-886 M4 — error hierarchy, abstract surface and a self-test of the shared durable checks."""
+
 from __future__ import annotations
 
 import dataclasses
@@ -23,20 +24,34 @@ from parrot.storage import (
 from . import durable_contract
 from .durable_contract import ALL_CHECKS, DurableHarness, check_window_newest_ascending
 
-NEW_ABSTRACT = {"query_turn_window", "max_sequence", "put_tombstone", "is_deleted", "get_index_state", "backfill_batch"}
+NEW_ABSTRACT = {
+    "query_turn_window",
+    "max_sequence",
+    "put_tombstone",
+    "is_deleted",
+    "get_index_state",
+    "backfill_batch",
+    "deleted_turn_ids",
+    "deleted_session_ids",
+}
 
 
 def test_error_hierarchy():
     """Every storage error is a StorageError, which is a ParrotError."""
-    for cls in (StorageUnavailableError, StorageWriteError, ConversationDeletedError,
-                IndexNotReadyError, InvalidTurnPayloadError):
+    for cls in (
+        StorageUnavailableError,
+        StorageWriteError,
+        ConversationDeletedError,
+        IndexNotReadyError,
+        InvalidTurnPayloadError,
+    ):
         assert issubclass(cls, StorageError)
     assert issubclass(StorageError, ParrotError)
     assert str(StorageWriteError("boom")) == "boom"
 
 
 def test_new_operations_are_abstract():
-    """The six new operations are @abstractmethod; the ABC is still not instantiable."""
+    """The durable operations are @abstractmethod; the ABC is still not instantiable."""
     assert NEW_ABSTRACT <= set(ConversationBackend.__abstractmethods__)
     with pytest.raises(TypeError):
         ConversationBackend()  # type: ignore[abstract]
@@ -80,7 +95,8 @@ class _ReferenceBackend(ConversationBackend):
         self.state: Dict[Tuple[str, str, str], str] = {}
 
     async def initialize(self): ...
-    async def close(self): self.connected = False
+    async def close(self):
+        self.connected = False
 
     @property
     def is_connected(self) -> bool:
@@ -88,13 +104,22 @@ class _ReferenceBackend(ConversationBackend):
 
     async def put_thread(self, *a, **kw): ...
     async def update_thread(self, *a, **kw): ...
-    async def query_threads(self, *a, **kw): return []
-    async def delete_turn(self, *a, **kw): return False
+    async def query_threads(self, *a, **kw):
+        return []
+
+    async def delete_turn(self, *a, **kw):
+        return False
+
     async def put_artifact(self, *a, **kw): ...
-    async def get_artifact(self, *a, **kw): return None
-    async def query_artifacts(self, *a, **kw): return []
+    async def get_artifact(self, *a, **kw):
+        return None
+
+    async def query_artifacts(self, *a, **kw):
+        return []
+
     async def delete_artifact(self, *a, **kw): ...
-    async def delete_session_artifacts(self, *a, **kw): return 0
+    async def delete_session_artifacts(self, *a, **kw):
+        return 0
 
     def _need(self) -> None:
         if not self.connected:
@@ -102,7 +127,12 @@ class _ReferenceBackend(ConversationBackend):
 
     async def put_turn(self, user_id, agent_id, session_id, turn_id, data):
         self._need()
-        if (user_id, agent_id, session_id, None) in self.tombs or (user_id, agent_id, session_id, turn_id) in self.tombs:
+        if (user_id, agent_id, session_id, None) in self.tombs or (
+            user_id,
+            agent_id,
+            session_id,
+            turn_id,
+        ) in self.tombs:
             raise ConversationDeletedError(turn_id)
         if self.fail_writes:
             raise StorageWriteError("injected")
@@ -127,8 +157,10 @@ class _ReferenceBackend(ConversationBackend):
         key = (user_id, agent_id, session_id)
         if self.state.get(key, "ready") != "ready":
             raise IndexNotReadyError(session_id)
-        rows = sorted(self.turns.get(key, {}).values(),
-                      key=lambda r: (_parse(r["timestamp"]), r.get("sequence") or 0, r["turn_id"]))
+        rows = sorted(
+            self.turns.get(key, {}).values(),
+            key=lambda r: (_parse(r["timestamp"]), r.get("sequence") or 0, r["turn_id"]),
+        )
         return rows[:limit] if self.ascending_limit else rows[-limit:]
 
     async def max_sequence(self, user_id, agent_id, session_id):
@@ -142,9 +174,14 @@ class _ReferenceBackend(ConversationBackend):
         self._need()
         return {t for (u, a, s_, t) in self.tombs if (u, a, s_) == (user_id, agent_id, session_id) and t}
 
+    async def deleted_session_ids(self, user_id, agent_id, session_ids):
+        self._need()
+        return {s for s in session_ids if (user_id, agent_id, s, None) in self.tombs}
+
     async def is_deleted(self, user_id, agent_id, session_id, turn_id=None):
         self._need()
-        return (user_id, agent_id, session_id, turn_id) in self.tombs
+        session_gone = (user_id, agent_id, session_id, None) in self.tombs
+        return session_gone or (turn_id is not None and (user_id, agent_id, session_id, turn_id) in self.tombs)
 
     async def get_index_state(self, user_id, agent_id, session_id):
         return self.state.get((user_id, agent_id, session_id), "ready")

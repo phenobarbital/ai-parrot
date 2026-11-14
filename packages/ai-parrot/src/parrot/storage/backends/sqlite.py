@@ -21,7 +21,7 @@ import sqlite3
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 import aiosqlite
 from navconfig.logging import logging
@@ -235,7 +235,7 @@ class ConversationSQLiteBackend(ConversationBackend):
             try:
                 await self._conn.execute(statement)
             except sqlite3.OperationalError as exc:
-                if "duplicate column name" not in str(exc).lower():   # a concurrent initialize won
+                if "duplicate column name" not in str(exc).lower():  # a concurrent initialize won
                     raise
         await self._conn.execute(self._CREATE_CHRONO_IDX)
         await self._conn.execute(self._CREATE_TOMBSTONES)
@@ -290,7 +290,7 @@ class ConversationSQLiteBackend(ConversationBackend):
         if not self.is_connected:
             return
         now = self._now_epoch()
-        payload = {k: v for k, v in metadata.items()}
+        payload = dict(metadata)
         # Serialize datetime values
         for k in list(payload):
             if isinstance(payload[k], datetime):
@@ -405,22 +405,28 @@ class ConversationSQLiteBackend(ConversationBackend):
         ts, seq = _chrono_fields(data)
         now = self._now_epoch()
         params = (
-            user_id, agent_id, session_id, f"TURN#{turn_id}",
-            json.dumps(payload, default=str), now, self._expires_at(now),
-            ts.timestamp() if ts is not None else None, seq, turn_id,
-            user_id, agent_id, session_id, turn_id,
+            user_id,
+            agent_id,
+            session_id,
+            f"TURN#{turn_id}",
+            json.dumps(payload, default=str),
+            now,
+            self._expires_at(now),
+            ts.timestamp() if ts is not None else None,
+            seq,
+            turn_id,
+            user_id,
+            agent_id,
+            session_id,
+            turn_id,
         )
         try:
             cursor = await self._conn.execute(self._UPSERT_TURN, params)
             await self._conn.commit()
         except sqlite3.Error as exc:
-            raise StorageWriteError(
-                f"SQLite put_turn failed for session {session_id} turn {turn_id}: {exc}"
-            ) from exc
+            raise StorageWriteError(f"SQLite put_turn failed for session {session_id} turn {turn_id}: {exc}") from exc
         if cursor.rowcount == 0:
-            raise ConversationDeletedError(
-                f"session {session_id} or turn {turn_id} is tombstoned; write rejected"
-            )
+            raise ConversationDeletedError(f"session {session_id} or turn {turn_id} is tombstoned; write rejected")
 
     async def query_turns(
         self,
@@ -459,9 +465,7 @@ class ConversationSQLiteBackend(ConversationBackend):
             entry = {
                 "session_id": session_id,
                 "turn_id": turn_id,
-                "updated_at": datetime.fromtimestamp(
-                    row["updated_at"], tz=timezone.utc
-                ).isoformat(),
+                "updated_at": datetime.fromtimestamp(row["updated_at"], tz=timezone.utc).isoformat(),
                 **payload,
             }
             result.append(entry)
@@ -544,8 +548,7 @@ class ConversationSQLiteBackend(ConversationBackend):
                 (user_id, agent_id, session_id, artifact_id, payload, updated_at, expires_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (user_id, agent_id, session_id, artifact_id,
-             json.dumps(payload, default=str), now, expires),
+            (user_id, agent_id, session_id, artifact_id, json.dumps(payload, default=str), now, expires),
         )
         await self._conn.commit()
 
@@ -575,9 +578,7 @@ class ConversationSQLiteBackend(ConversationBackend):
         return {
             "artifact_id": row["artifact_id"],
             "session_id": session_id,
-            "updated_at": datetime.fromtimestamp(
-                row["updated_at"], tz=timezone.utc
-            ).isoformat(),
+            "updated_at": datetime.fromtimestamp(row["updated_at"], tz=timezone.utc).isoformat(),
             **payload,
         }
 
@@ -604,14 +605,14 @@ class ConversationSQLiteBackend(ConversationBackend):
         result = []
         for row in rows:
             payload = json.loads(row["payload"])
-            result.append({
-                "artifact_id": row["artifact_id"],
-                "session_id": session_id,
-                "updated_at": datetime.fromtimestamp(
-                    row["updated_at"], tz=timezone.utc
-                ).isoformat(),
-                **payload,
-            })
+            result.append(
+                {
+                    "artifact_id": row["artifact_id"],
+                    "session_id": session_id,
+                    "updated_at": datetime.fromtimestamp(row["updated_at"], tz=timezone.utc).isoformat(),
+                    **payload,
+                }
+            )
         return result
 
     async def delete_artifact(
@@ -657,9 +658,7 @@ class ConversationSQLiteBackend(ConversationBackend):
     # FEAT-886: ordered window, tombstones, index state, backfill
     # ------------------------------------------------------------------
 
-    async def query_turn_window(
-        self, user_id: str, agent_id: str, session_id: str, limit: int
-    ) -> List[dict]:
+    async def query_turn_window(self, user_id: str, agent_id: str, session_id: str, limit: int) -> List[dict]:
         """Newest ``limit`` turns by (ts_utc, seq, turn_id), limit applied descending, returned ascending."""
         self._require_connection()
         if await self.is_deleted(user_id, agent_id, session_id):
@@ -701,9 +700,7 @@ class ConversationSQLiteBackend(ConversationBackend):
             raise StorageUnavailableError(f"SQLite max_sequence failed: {exc}") from exc
         return int(row["m"])
 
-    async def put_tombstone(
-        self, user_id: str, agent_id: str, session_id: str, turn_id: Optional[str] = None
-    ) -> None:
+    async def put_tombstone(self, user_id: str, agent_id: str, session_id: str, turn_id: Optional[str] = None) -> None:
         """Durably record a session (``turn_id=None``) or turn deletion. Idempotent; no TTL."""
         self._require_connection()
         if turn_id == "":
@@ -731,9 +728,26 @@ class ConversationSQLiteBackend(ConversationBackend):
         except sqlite3.Error as exc:
             raise StorageUnavailableError(f"SQLite deleted_turn_ids failed for session {session_id}: {exc}") from exc
 
-    async def is_deleted(
-        self, user_id: str, agent_id: str, session_id: str, turn_id: Optional[str] = None
-    ) -> bool:
+    async def deleted_session_ids(self, user_id: str, agent_id: str, session_ids: Sequence[str]) -> Set[str]:
+        """The session-tombstoned members of ``session_ids``: one query per 500 ids (below SQLite's variable limit)."""
+        self._require_connection()
+        wanted = list(dict.fromkeys(session_ids))
+        gone: Set[str] = set()
+        try:
+            for start in range(0, len(wanted), 500):
+                chunk = wanted[start : start + 500]
+                marks = ", ".join("?" * len(chunk))
+                cursor = await self._conn.execute(
+                    "SELECT session_id FROM conversation_tombstones"
+                    f" WHERE user_id=? AND agent_id=? AND turn_id='' AND session_id IN ({marks})",
+                    (user_id, agent_id, *chunk),
+                )
+                gone.update(row["session_id"] for row in await cursor.fetchall())
+        except sqlite3.Error as exc:
+            raise StorageUnavailableError(f"SQLite deleted_session_ids failed: {exc}") from exc
+        return gone
+
+    async def is_deleted(self, user_id: str, agent_id: str, session_id: str, turn_id: Optional[str] = None) -> bool:
         """Whether the session (or session OR this turn) is tombstoned; raises when it cannot be determined."""
         self._require_connection()
         try:
@@ -754,9 +768,7 @@ class ConversationSQLiteBackend(ConversationBackend):
         """
         self._require_connection()
         try:
-            cursor = await self._conn.execute(
-                self._HAS_UNINDEXED, (user_id, agent_id, session_id, self._not_expired())
-            )
+            cursor = await self._conn.execute(self._HAS_UNINDEXED, (user_id, agent_id, session_id, self._not_expired()))
             if await cursor.fetchone() is None:
                 return "ready"
             cursor = await self._conn.execute(
@@ -787,8 +799,15 @@ class ConversationSQLiteBackend(ConversationBackend):
         await self._conn.execute(
             "UPDATE conversations SET ts_utc=?, seq=?, turn_id=?"
             " WHERE user_id=? AND agent_id=? AND session_id=? AND kind='turn' AND sort_key=? AND ts_utc IS NULL",
-            (ts.timestamp(), seq, row["sort_key"].replace("TURN#", "", 1),
-             row["user_id"], row["agent_id"], row["session_id"], row["sort_key"]),
+            (
+                ts.timestamp(),
+                seq,
+                row["sort_key"].replace("TURN#", "", 1),
+                row["user_id"],
+                row["agent_id"],
+                row["session_id"],
+                row["sort_key"],
+            ),
         )
         return True
 
@@ -817,9 +836,7 @@ class ConversationSQLiteBackend(ConversationBackend):
         touched: Dict[Tuple[str, str, str], bool] = {}
         indexed_count = 0
         try:
-            cur = await self._conn.execute(
-                self._SELECT_LEGACY, (now, *self._decode_cursor(cursor), batch_size)
-            )
+            cur = await self._conn.execute(self._SELECT_LEGACY, (now, *self._decode_cursor(cursor), batch_size))
             rows = await cur.fetchall()
             for row in rows:
                 key = (row["user_id"], row["agent_id"], row["session_id"])

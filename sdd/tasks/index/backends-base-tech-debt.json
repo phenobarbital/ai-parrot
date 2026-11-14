@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-13T23:40:57+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-14T00:30:59+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -44,28 +44,31 @@
     {
       "id": "TASK-5687",
       "slug": "deleted-session-ids-contract",
-      "title": "Backend contract — batched deleted_session_ids and session-or-turn is_deleted",
+      "title": "Backend contract \u2014 batched deleted_session_ids and session-or-turn is_deleted",
       "feature_id": "FEAT-897",
       "feature": "backends-base-tech-debt",
       "spec": "sdd/specs/backends-base-tech-debt.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "backend files + storage test stubs; TASK-5688 depends on the new abstract method",
-      "assigned_to": null,
+      "assigned_to": "claude-code:sdd-fix",
       "discovered_from": "issue:6393789b3d37",
-      "file": "sdd/tasks/active/TASK-5687-deleted-session-ids-contract.md"
+      "file": "sdd/tasks/completed/TASK-5687-deleted-session-ids-contract.md",
+      "started_at": "2026-11-13T23:41:33+00:00",
+      "completed_at": "2026-11-13T23:47:25+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-5688",
       "slug": "chatstorage-batched-listing-guard",
-      "title": "ChatStorage — batched listing guard, limit after filtering, one-read fence, docs",
+      "title": "ChatStorage \u2014 batched listing guard, limit after filtering, one-read fence, docs",
       "feature_id": "FEAT-897",
       "feature": "backends-base-tech-debt",
       "spec": "sdd/specs/backends-base-tech-debt.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -73,9 +76,12 @@
       ],
       "parallel": false,
       "parallelism_notes": "chat.py + its tests + two wiki pages; needs deleted_session_ids from TASK-5687",
-      "assigned_to": null,
+      "assigned_to": "claude-code:sdd-fix",
       "discovered_from": "issue:6393789b3d37",
-      "file": "sdd/tasks/active/TASK-5688-chatstorage-batched-listing-guard.md"
+      "file": "sdd/tasks/completed/TASK-5688-chatstorage-batched-listing-guard.md",
+      "started_at": "2026-11-13T23:47:48+00:00",
+      "completed_at": "2026-11-14T00:27:36+00:00",
+      "verification": "verified"
     }
   ]
 }
