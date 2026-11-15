@@ -406,3 +406,19 @@ def test_unlinked_rows_reach_the_report_payload(techwiki_repo: Path, tmp_path: P
     write_bundle(pages, report, cfg, out)
     written = json.loads((out / "techwiki-report.json").read_text(encoding="utf-8"))
     assert written["unlinked"] == report.unlinked and written["dangling"] == []
+
+
+def test_bundle_strict_ignores_native_modules(api_repo: Path, tmp_path: Path) -> None:
+    """A native module is listed in the bundle report but never turns ``--strict`` into exit 4."""
+    package = api_repo / "packages" / "sample" / "src" / "samplepkg"
+    (package / "speed.pyx").write_text("def go():\n    return 1\n", encoding="utf-8")
+    plain_out, strict_out = tmp_path / "plain", tmp_path / "strict"
+    plain = main(["--root", str(api_repo), "--out", str(plain_out)])
+    strict = main(["--root", str(api_repo), "--out", str(strict_out), "--strict"])
+    assert strict == plain == 0
+    report = json.loads((strict_out / "techwiki-report.json").read_text(encoding="utf-8"))
+    assert report["skipped_modules"] == [
+        {"module": "samplepkg.speed", "reason": report["skipped_modules"][0]["reason"], "kind": "native"}
+    ]
+    (package / "broken.py").write_text("def broken(:\n    pass\n", encoding="utf-8")
+    assert main(["--root", str(api_repo), "--out", str(tmp_path / "broken"), "--strict"]) == 4
