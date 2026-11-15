@@ -18,7 +18,6 @@ from parrot.memory.user.store import UserMemoryStore
 
 from .models import AgentMemoryConfig
 
-
 logger = logging.getLogger(__name__)
 
 
