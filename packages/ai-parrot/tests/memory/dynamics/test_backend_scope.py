@@ -236,7 +236,7 @@ def test_unsupported_reviews_fail_visible() -> None:
         assert isinstance(backend, AbstractEpisodeBackend)
         assert not isinstance(backend, ReviewBackend)
         with pytest.raises(AttributeError):
-            getattr(backend, "apply_review")
+            backend.apply_review
 
 
 @pytest.mark.asyncio
