@@ -1,0 +1,12 @@
+scope: security-patch
+description: Triage a CVE, await approval, then prepare a remediation plan.
+stages:
+  - stage: intake
+    experts: [cve-analyst]
+    mode: subagent
+    gate:
+      kind: approval
+      title: Approve CVE remediation planning
+  - stage: plan
+    experts: [cve-remediation]
+    mode: subagent

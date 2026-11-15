@@ -296,6 +296,7 @@ class ProcedureManifest(BaseModel):
     graph: str                              # producer prefix, e.g. "sdd"
     exclude: list[str] = []                 # overlay only: ids removed from the merged graph
     procedures: list[ProcedureSpec] = []    # ids written without the prefix; the producer adds it
+    uncovered_ok: list[str] = []            # /sdd-* commands deliberately left without a procedure node
 
 class ProbeResult(BaseModel):
     check: ProbeCheck

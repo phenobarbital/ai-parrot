@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import importlib
 import json
 import os
 import re
@@ -433,6 +434,39 @@ def _render(verdict: Verdict) -> dict[str, Any]:
     return {}
 
 
+def _procedure_advice(payload: dict[str, Any]) -> Any | None:
+    """Advice for a Bash payload, or None for other tools or on any failure."""
+    if payload.get("tool_name") != "Bash":
+        return None
+    tool_input = payload.get("tool_input")
+    command = tool_input.get("command") if isinstance(tool_input, dict) else None
+    if not isinstance(command, str) or not command:
+        return None
+    try:
+        module = importlib.import_module("parrot.sdd.scripts.procedure_advice")
+        return module.evaluate_command(command, Path(payload.get("cwd") or os.getcwd()))
+    except Exception:  # noqa: BLE001 — the procedure check never breaks the guard
+        return None
+
+
+def _with_procedure(verdict: Verdict, advice: Any | None) -> dict[str, Any]:
+    """Render ``verdict``, then add the procedure advice."""
+    result = _render(verdict)
+    if verdict.decision == "deny" or advice is None:
+        return result
+    if advice.decision == "deny":
+        return {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": advice.text,
+            }
+        }
+    if advice.decision == "advise":
+        result["hookSpecificOutput"] = {"hookEventName": "PreToolUse", "additionalContext": advice.text}
+    return result
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     """Serve a PreToolUse hook: read the payload on stdin, write one JSON line, always exit 0."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -443,7 +477,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         if not isinstance(payload, dict):
             raise ValueError("payload is not a JSON object")
         root = find_root(payload.get("cwd") or os.getcwd())
-        result = _render(evaluate(payload, root=root))
+        verdict = evaluate(payload, root=root)
+        advice = None if verdict.decision == "deny" else _procedure_advice(payload)
+        result = _with_procedure(verdict, advice)
     except Exception as exc:  # noqa: BLE001 — documented fail-open, now visible
         result = {"systemMessage": f"dangerous-actions guard: checks skipped ({type(exc).__name__}: {exc})"}
     sys.stdout.write(json.dumps(result) + "\n")

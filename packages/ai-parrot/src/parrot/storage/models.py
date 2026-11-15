@@ -7,12 +7,19 @@ Also contains Pydantic models for artifact and thread persistence
 (FEAT-103: agent-artifact-persistency).
 """
 
-from typing import List, Dict, Any, Optional
+import json
+from decimal import Decimal
+from typing import List, Dict, Any, Mapping, Optional
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+
+from parrot.memory.abstract import ConversationTurn
+from parrot.memory.compaction.models import TokenCount, ToolInvocation, ToolStatus, TurnState
+from parrot.memory.persistence import TurnPresentation
+from .errors import InvalidTurnPayloadError
 
 
 class MessageRole(str, Enum):
@@ -433,3 +440,249 @@ class CanvasDefinition(BaseModel):
     blocks: List[CanvasBlock] = Field(default_factory=list)
     layout: str = "vertical"
     export_config: Optional[Dict[str, Any]] = None
+
+
+# ---------------------------------------------------------------------------
+# FEAT-886: ChatStorageTurn — the full audit record of one turn
+# ---------------------------------------------------------------------------
+
+_EPOCH_SENTINEL = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+def _parse_utc(value: Any) -> Optional[datetime]:
+    """Parse ``value`` into a tz-aware UTC datetime, or ``None`` when absent/unparseable.
+
+    Naive datetimes and naive ISO strings are interpreted as UTC (spec §7).
+    """
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, str) and value.strip():
+        try:
+            parsed = datetime.fromisoformat(value.strip())
+        except ValueError:
+            return None
+    else:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _json_default(obj: Any) -> Any:
+    """``json.dumps`` fallback: datetimes, model-ish objects, Decimals, sets/bytes, then ``str``."""
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    if isinstance(obj, Decimal):
+        return int(obj) if obj == obj.to_integral_value() else float(obj)
+    if isinstance(obj, (set, frozenset)):
+        return sorted(obj, key=str)
+    if isinstance(obj, (bytes, bytearray)):
+        return bytes(obj).decode("utf-8", errors="replace")
+    for attr in ("model_dump", "to_dict"):
+        method = getattr(obj, attr, None)
+        if callable(method):
+            return method()
+    return str(obj)
+
+
+def _json_safe(obj: Any) -> Any:
+    """Round-trip ``obj`` through JSON so the result holds only JSON types."""
+    return json.loads(json.dumps(obj, default=_json_default))
+
+
+_FAILED_TOOL_STATUSES = {"error", "failed", "failure"}
+
+
+def _legacy_tool_call_to_invocation(call: Mapping[str, Any]) -> Dict[str, Any]:
+    """Map a legacy ``{name, status, output, arguments}`` tool call onto ``ToolInvocation.to_dict()``."""
+    output = call.get("output")
+    if output is not None and not isinstance(output, str):
+        output = json.dumps(output, default=_json_default, sort_keys=True)
+    failed = str(call.get("status", "completed")).lower() in _FAILED_TOOL_STATUSES
+    return ToolInvocation(
+        tool_name=str(call.get("name") or "unknown"),
+        input=dict(call.get("arguments") or {}),
+        output=output,
+        status=ToolStatus.ERROR if failed else ToolStatus.COMPLETED,
+        error=(output if failed else None),
+    ).to_dict()
+
+
+class ChatStorageTurn(BaseModel):
+    """Full audit record of one conversation turn (spec FEAT-886 §2 Data Models).
+
+    ``agent_id`` is the agent NAME (the ChatStorage key); ``chatbot_id`` is the bot's
+    ``memory_key_id`` and may differ. ``timestamp`` and ``sequence`` are emitter-owned
+    and immutable once stored.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    schema_version: int = 2
+    turn_id: str
+    user_id: str
+    session_id: str
+    agent_id: str
+    chatbot_id: Optional[str] = None
+    timestamp: datetime
+    sequence: int = 0
+    user_message: str
+    assistant_response: str
+    context_used: Optional[str] = None
+    tools_used: List[str] = Field(default_factory=list)
+    tool_invocations: List[Dict[str, Any]] = Field(default_factory=list)
+    error: Optional[str] = None
+    token_count: Optional[Dict[str, Any]] = None
+    state: str = "raw"
+    norm_version: Optional[str] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    presentation: TurnPresentation = Field(default_factory=TurnPresentation)
+
+    @field_validator("timestamp", mode="after")
+    @classmethod
+    def _force_utc(cls, value: datetime) -> datetime:
+        """Naive → UTC, aware → converted to UTC."""
+        return _parse_utc(value) or value
+
+    @classmethod
+    def from_event_payload(cls, payload: Dict[str, Any]) -> "ChatStorageTurn":
+        """Build from a ``TurnCompletedEvent`` payload.
+
+        Raises:
+            InvalidTurnPayloadError: ``turn_id``, ``user_id``, ``session_id``, ``agent_name``
+                or a parseable timestamp is missing (permanent defect — never retried).
+        """
+        turn = payload.get("turn") if isinstance(payload, dict) else None
+        if not isinstance(turn, dict):
+            raise InvalidTurnPayloadError("turn event payload has no 'turn' object")
+        ident = {
+            "turn_id": turn.get("turn_id"),
+            "user_id": payload.get("user_id") or turn.get("user_id"),
+            "session_id": payload.get("session_id"),
+            "agent_name": payload.get("agent_name"),
+        }
+        missing = [name for name, value in ident.items() if not value]
+        timestamp = _parse_utc(turn.get("timestamp"))
+        if missing or timestamp is None:
+            bad = missing + ([] if timestamp else ["timestamp"])
+            raise InvalidTurnPayloadError(
+                f"turn {ident['turn_id']!r}: missing or invalid {', '.join(bad)}")
+        try:
+            return cls(
+                turn_id=ident["turn_id"], user_id=ident["user_id"],
+                session_id=ident["session_id"], agent_id=ident["agent_name"],
+                chatbot_id=payload.get("chatbot_id") or turn.get("chatbot_id") or None,
+                timestamp=timestamp, sequence=int(turn.get("sequence") or 0),
+                user_message=turn.get("user_message", ""),
+                assistant_response=turn.get("assistant_response", ""),
+                context_used=turn.get("context_used"),
+                tools_used=list(turn.get("tools_used") or []),
+                tool_invocations=list(turn.get("tool_invocations") or []),
+                error=turn.get("error"), token_count=turn.get("token_count"),
+                state=str(turn.get("state") or "raw"), norm_version=turn.get("norm_version"),
+                metadata=dict(turn.get("metadata") or {}),
+                presentation=TurnPresentation.model_validate(payload.get("presentation") or {}),
+            )
+        except (ValidationError, TypeError, ValueError) as exc:
+            raise InvalidTurnPayloadError(f"turn {ident['turn_id']!r}: {exc}") from exc
+
+    @classmethod
+    def from_row(cls, row: Dict[str, Any], *, user_id: str = "", agent_id: str = "",
+                 session_id: str = "") -> "ChatStorageTurn":
+        """Tolerant reader for rows written before and after FEAT-886.
+
+        A row carrying ``schema_version >= 2`` is the current layout. A row without it is
+        legacy: missing fields default, ``tool_calls`` map to ``tool_invocations`` and the
+        reported ``schema_version`` is ``1``. ``user_id`` / ``agent_id`` / ``session_id`` are
+        used only when the row itself does not carry them (legacy rows don't: they are key
+        parts of the backend row).
+        """
+        if int(row.get("schema_version") or 1) >= 2:
+            data = {k: v for k, v in row.items() if k != "updated_at"}
+            data.setdefault("user_id", user_id)
+            data.setdefault("agent_id", agent_id)
+            data.setdefault("session_id", session_id)
+            return cls.model_validate(data)
+        return cls._from_legacy_row(row, user_id, agent_id, session_id)
+
+    @classmethod
+    def _from_legacy_row(cls, row: Dict[str, Any], user_id: str, agent_id: str,
+                         session_id: str) -> "ChatStorageTurn":
+        """Map the pre-FEAT-886 flat layout onto the model (``schema_version=1``)."""
+        metadata = dict(row.get("metadata") or {})
+        timestamp = _parse_utc(row.get("timestamp"))
+        if timestamp is None:
+            timestamp = _parse_utc(row.get("updated_at")) or _EPOCH_SENTINEL
+            metadata["legacy_timestamp_missing"] = True
+        calls = [c for c in (row.get("tool_calls") or []) if isinstance(c, dict)]
+        return cls(
+            schema_version=1,
+            turn_id=str(row.get("turn_id") or ""),
+            user_id=str(row.get("user_id") or user_id),
+            session_id=str(row.get("session_id") or session_id),
+            agent_id=str(row.get("agent_id") or agent_id),
+            timestamp=timestamp,
+            sequence=0,
+            user_message=row.get("user_message") or "",
+            assistant_response=row.get("assistant_response") or "",
+            tools_used=[str(c.get("name") or "unknown") for c in calls],
+            tool_invocations=[_legacy_tool_call_to_invocation(c) for c in calls],
+            metadata=metadata,
+            presentation=TurnPresentation(
+                output=row.get("output"), output_mode=row.get("output_mode"),
+                data=row.get("data"), code=row.get("code"),
+                sources=list(row.get("sources") or []),
+                response_time_ms=row.get("response_time_ms"),
+                model=row.get("model"), provider=row.get("provider"),
+            ),
+        )
+
+    def to_row(self) -> Dict[str, Any]:
+        """JSON-safe dict for ``ConversationBackend.put_turn``.
+
+        ``timestamp`` is ISO-8601 UTC and ``sequence`` an int: the backends derive their
+        chronological index from exactly these two keys.
+        """
+        row = _json_safe(self.model_dump(exclude={"presentation"}))
+        row["timestamp"] = self.timestamp.astimezone(timezone.utc).isoformat()
+        row["presentation"] = _json_safe(self.presentation.model_dump())
+        return row
+
+    def to_conversation_turn(self) -> ConversationTurn:
+        """Project onto the working-memory turn; ``presentation`` is dropped."""
+        return ConversationTurn(
+            turn_id=self.turn_id, user_id=self.user_id,
+            user_message=self.user_message, assistant_response=self.assistant_response,
+            context_used=self.context_used, tools_used=list(self.tools_used),
+            timestamp=self.timestamp, metadata=dict(self.metadata),
+            chatbot_id=self.chatbot_id,
+            tool_invocations=[ToolInvocation.from_dict(d) for d in self.tool_invocations],
+            error=self.error,
+            token_count=TokenCount.from_dict(self.token_count) if self.token_count else None,
+            state=TurnState(self.state), norm_version=self.norm_version,
+            sequence=self.sequence or None,
+        )
+
+    def to_messages(self) -> List[Dict[str, Any]]:
+        """The user + assistant dicts ``ChatStorage.load_conversation`` returns, with rich fields."""
+        stamp = self.timestamp.astimezone(timezone.utc).isoformat()
+        p = self.presentation
+        legacy_calls = [
+            {"name": inv.get("tool_name"), "status": inv.get("status", "completed"),
+             "output": inv.get("output"), "arguments": inv.get("input")}
+            for inv in self.tool_invocations
+        ]
+        user = {"role": MessageRole.USER.value, "content": self.user_message,
+                "timestamp": stamp, "turn_id": self.turn_id}
+        assistant = {
+            "role": MessageRole.ASSISTANT.value, "content": self.assistant_response,
+            "timestamp": stamp, "turn_id": self.turn_id,
+            "output": p.output, "output_mode": p.output_mode, "data": p.data, "code": p.code,
+            "model": p.model, "provider": p.provider, "response_time_ms": p.response_time_ms,
+            "tool_calls": legacy_calls, "sources": list(p.sources), "metadata": dict(self.metadata),
+            # --- FEAT-886 rich fields ---
+            "tools_used": list(self.tools_used), "tool_invocations": list(self.tool_invocations),
+            "usage": p.usage, "cost_usd": p.cost_usd, "tenant": p.tenant, "error": self.error,
+            "sequence": self.sequence, "schema_version": self.schema_version,
+        }
+        return [user, assistant]

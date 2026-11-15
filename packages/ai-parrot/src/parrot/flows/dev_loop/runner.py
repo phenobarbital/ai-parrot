@@ -40,6 +40,8 @@ from parrot.bots.flows.core.checkpoint import (
     get_checkpoint_store,
 )
 from parrot.bots.flows.core.context import FlowContext
+from parrot.bots.flows.core.gates import GateHost
+from parrot.bots.flows.core.gates.stores import resolve_gate_store
 from parrot.bots.flows.core.result import FlowResult
 from parrot.flows.dev_loop.checkpoint import (
     TOPOLOGY_VERSION,
@@ -498,6 +500,11 @@ class DevLoopRunner:
         # FlowEventPublisher's own client — same lazy-connect, swallow-all
         # pattern (flow.py:122-128).
         self._actions_redis: Any = None
+        # Generic gate persistence shares the actions-stream Redis client in
+        # production.  It stays lazy so constructing a runner never opens a
+        # network connection and runners without Redis keep their historical
+        # in-memory SessionHost behaviour.
+        self._gate_host: Optional[GateHost] = None
         # run_id -> epoch seconds after which flow:{run_id}:actions is
         # eligible for deletion (DEV_LOOP_ACTIONS_RETENTION_DAYS). Checked by
         # the periodic sweep alongside gate expiry.
@@ -553,6 +560,40 @@ class DevLoopRunner:
         self._hosts[run_id] = host
         self._ensure_sweep_task()
         return host
+
+    async def _ensure_gate_host(self) -> Optional[GateHost]:
+        """Return the generic gate host backed by the runner's Redis client.
+
+        Returns:
+            The cached generic host, or ``None`` when this runner has no
+            Redis configuration and therefore uses the legacy in-memory
+            session gate store only.
+        """
+        if self._gate_host is None and self._redis_url:
+            redis_client = await self._ensure_actions_redis()
+            self._gate_host = GateHost(resolve_gate_store(redis_client=redis_client))
+        return self._gate_host
+
+    async def _attach_gate_host(self, host: SessionHost, *, now: Optional[float] = None) -> None:
+        """Recover durable gate state when a session host is attached.
+
+        Args:
+            host: The live dev-loop host being attached to this runner.
+            now: Optional deterministic recovery clock for tests.
+        """
+        gate_host = await self._ensure_gate_host()
+        if gate_host is None:
+            return
+        try:
+            await gate_host.recover(now=now)
+        except Exception:  # noqa: BLE001 - persistence must not prevent a run attaching
+            self.logger.debug(
+                "gate recovery failed while attaching run %s",
+                host.state.run_id,
+                exc_info=True,
+            )
+            return
+        host.expire_due_gates(now=now)
 
     def _discard_host(self, run_id: str) -> None:
         """Remove a terminated run's host from the registry.
@@ -724,6 +765,36 @@ class DevLoopRunner:
             if envelope is None:
                 return
             await self._xadd_envelope(run_id, envelope)
+            await self._persist_opened_gate(run_id, envelope)
+
+    async def _persist_opened_gate(self, run_id: str, envelope: ActionEnvelope) -> None:
+        """Persist a gate-open action through the generic gate store.
+
+        Args:
+            run_id: Run owning the gate.
+            envelope: Ordered session envelope that may contain a gate open.
+        """
+        if envelope.action.type != "gate/opened":
+            return
+        try:
+            from parrot.flows.dev_loop.gate_adapter import DevLoopGateAdapter
+
+            gate_host = await self._ensure_gate_host()
+            if gate_host is not None:
+                gate = envelope.action.gate
+                if await gate_host.store.get(gate.gate_id) is None:
+                    await gate_host.store.put(
+                        DevLoopGateAdapter.to_record(
+                            gate,
+                            owner=f"{run_id}:{gate.node_id}",
+                        )
+                    )
+        except Exception:  # noqa: BLE001 - durable mirror must never break the run
+            self.logger.debug(
+                "gate persistence failed for run %s",
+                run_id,
+                exc_info=True,
+            )
 
     async def _flush_actions_queue(self, run_id: str, timeout: float = 5.0) -> None:
         """Publish ``run_id``'s remaining envelopes, then retire its writer.
@@ -1039,6 +1110,32 @@ class DevLoopRunner:
         host = self._hosts.get(run_id)
         if host is None:
             raise KeyError(f"no active session host for run_id={run_id!r}")
+        gate_host = await self._ensure_gate_host()
+        if gate_host is not None:
+            from parrot.flows.dev_loop.gate_adapter import DevLoopGateAdapter
+
+            gate = host.state.gates.get(gate_id)
+            if gate is not None:
+                if gate.kind == "open_questions" and resolution == "approved" and not answers:
+                    raise ValueError(
+                        f"gate {gate_id} is an 'open_questions' gate: approving it "
+                        "requires at least one answer (use resolution='rejected' to "
+                        "abort the ideation instead)"
+                    )
+                if await gate_host.store.get(gate_id) is None:
+                    await gate_host.store.put(
+                        DevLoopGateAdapter.to_record(
+                            gate,
+                            owner=f"{run_id}:{gate.node_id}",
+                        )
+                    )
+            await gate_host.resolve(
+                gate_id,
+                resolution,
+                resolved_by=resolved_by,
+                comment=comment,
+                answers=answers,
+            )
         return host.resolve_gate(
             gate_id,
             resolution,
@@ -1258,6 +1355,7 @@ class DevLoopRunner:
         # reference — QANode/DeploymentHandoffNode read
         # ``shared["session_host"]``, they never import the runner).
         host = self._register_host(rid)
+        await self._attach_gate_host(host)
         self._create_run_registry(rid)  # FEAT-479 M5
         host.apply(
             RunCreated(
@@ -1694,6 +1792,7 @@ class DevLoopRunner:
         rid = run_id or f"run-{uuid.uuid4().hex[:8]}"
 
         host = self._register_host(rid)
+        await self._attach_gate_host(host)
         self._create_run_registry(rid)  # FEAT-479 M5
         # NOTE: RunCreated.work_kind is a closed Literal["bug","enhancement",
         # "new_feature"] deliberately NOT extended with "feature" (TASK-1918)
@@ -1829,6 +1928,7 @@ class DevLoopRunner:
 
         # AHP-style host — same lifecycle as ``run()`` (revision=True).
         host = self._register_host(rid)
+        await self._attach_gate_host(host)
         self._create_run_registry(rid)  # FEAT-479 M5
         host.apply(
             RunCreated(

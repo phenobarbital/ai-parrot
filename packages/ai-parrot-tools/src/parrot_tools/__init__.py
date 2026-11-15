@@ -139,6 +139,7 @@ TOOL_REGISTRY: dict[str, str] = {
     "wiki_schema_search": "parrot_tools.wiki.schema.WikiSchemaSearchTool",
     "wiki_schema_neighbors": "parrot_tools.wiki.schema.WikiSchemaNeighborsTool",
     "wiki_schema_sources": "parrot_tools.wiki.schema.WikiSchemaSourcesTool",
+    "wiki_procedure_next": "parrot_tools.wiki.procedure.WikiProcedureNextTool",
     "schema_plane": "parrot_tools.wiki.schema.SchemaPlaneToolkit",
     "wiki_symbol_lookup": "parrot_tools.wiki.structural.WikiSymbolLookupTool",
     "wiki_code_outline": "parrot_tools.wiki.structural.WikiCodeOutlineTool",

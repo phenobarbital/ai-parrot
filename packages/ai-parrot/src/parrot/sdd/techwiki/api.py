@@ -6,6 +6,7 @@ import ast
 import importlib.resources
 import logging
 import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -17,6 +18,10 @@ if TYPE_CHECKING:
     import jinja2
 
 logger = logging.getLogger(__name__)
+
+NATIVE_SKIP_KIND = "native"
+NATIVE_SKIP_REASON = "native module without Python sources or stubs (static analysis only)"
+_NATIVE_SUFFIXES = frozenset({".so", ".pyd", ".pyx"})
 
 
 @dataclass(frozen=True)
@@ -98,6 +103,10 @@ def load_packages(cfg: TechwikiConfig, root: Path) -> "list[griffe.Module]":
     (see :func:`generate`) keeps every satellite module in the reference. A root that a distribution does
     not contain is skipped, so griffe is never allowed to fall back to an installed copy.
 
+    Inspection is disabled: griffe only visits ``.py`` / ``.pyi`` files, so a configured module is never
+    imported. A compiled module without a source or stub is dropped by griffe and reported by
+    :func:`_native_modules` instead.
+
     Args:
         cfg: Techwiki configuration.
         root: Repository root.
@@ -111,7 +120,7 @@ def load_packages(cfg: TechwikiConfig, root: Path) -> "list[griffe.Module]":
         source_root = root / package.src
         for module_root in package.roots:
             if _root_exists(source_root, module_root):
-                modules.append(griffe_module.load(module_root, search_paths=[source_root]))
+                modules.append(griffe_module.load(module_root, search_paths=[source_root], allow_inspection=False))
     return modules
 
 
@@ -152,6 +161,81 @@ def _syntax_errors(cfg: TechwikiConfig, root: Path) -> list[dict[str, str]]:
                     parts.pop()
                 skipped.append({"module": ".".join(parts), "reason": reason})
     return sorted(skipped, key=lambda item: item["module"])
+
+
+def _is_package_dir(path: Path) -> bool:
+    """Whether ``path`` is a regular package griffe descends into (it holds an init module or stub)."""
+    return (path / "__init__.py").is_file() or (path / "__init__.pyi").is_file()
+
+
+def _native_names(package_dir: Path, prefix: str) -> set[str]:
+    """Collect the native module names of one regular package and its public sub-packages.
+
+    Args:
+        package_dir: Directory of a regular package.
+        prefix: Dotted name of that package.
+
+    Returns:
+        Dotted names of the public native modules that have no ``.py`` source, ``.pyi`` stub or
+        same-named sub-package next to them.
+    """
+    names: set[str] = set()
+    for entry in sorted(package_dir.iterdir()):
+        if entry.is_dir():
+            if entry.name != "__pycache__" and not entry.name.startswith("_") and _is_package_dir(entry):
+                names |= _native_names(entry, f"{prefix}.{entry.name}")
+            continue
+        if entry.suffix not in _NATIVE_SUFFIXES:
+            continue
+        stem = entry.name.split(".", 1)[0]  # `types.cpython-312-x86_64-linux-gnu.so` -> `types`, as griffe does
+        if not stem.isidentifier() or stem.startswith("_"):
+            continue
+        documented = (
+            (package_dir / f"{stem}.py").is_file()
+            or (package_dir / f"{stem}.pyi").is_file()
+            or _is_package_dir(package_dir / stem)
+        )
+        if not documented:
+            names.add(f"{prefix}.{stem}")
+    return names
+
+
+def _native_modules(cfg: TechwikiConfig, root: Path) -> list[dict[str, str]]:
+    """Report public native modules that have neither a Python source nor a stub.
+
+    Inspection is disabled in :func:`load_packages`, so griffe drops a compiled module (it only logs at
+    debug level). A Cython source (``.pyx``) and a built extension (``.so`` / ``.pyd``) of the same module
+    yield one entry, so the report does not depend on whether the checkout was built. Private modules
+    and files outside a regular package are ignored: they never get a page either.
+
+    Args:
+        cfg: Techwiki configuration.
+        root: Repository root.
+
+    Returns:
+        One ``{"module", "reason", "kind"}`` entry per native module, sorted by module.
+    """
+    names: set[str] = set()
+    for package in cfg.packages:
+        source_root = root / package.src
+        for module_root in package.roots:
+            base = source_root.joinpath(*module_root.split("."))
+            if any(part.startswith("_") for part in module_root.split(".")) or not _is_package_dir(base):
+                continue
+            names |= _native_names(base, module_root)
+    return [{"module": name, "reason": NATIVE_SKIP_REASON, "kind": NATIVE_SKIP_KIND} for name in sorted(names)]
+
+
+def strict_failures(skipped: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    """Return the skipped entries that fail ``--strict``: every entry except native-module ones.
+
+    Args:
+        skipped: Skipped-module entries as returned by :func:`generate`.
+
+    Returns:
+        The entries whose ``kind`` is not ``"native"``, in input order.
+    """
+    return [item for item in skipped if item.get("kind") != NATIVE_SKIP_KIND]
 
 
 def _module_all(module: Any) -> set[str] | None:
@@ -660,6 +744,7 @@ def _generate(cfg: TechwikiConfig, root: Path, release: str | None) -> tuple[lis
         logger.warning("Unable to load configured API roots: %s", exc)
         return [], [{"module": "<configured roots>", "reason": str(exc)}]
     skipped.extend(_syntax_errors(cfg, root))
+    skipped.extend(_native_modules(cfg, root))
     for root_module in modules:
         for module in _module_tree(root_module):
             try:

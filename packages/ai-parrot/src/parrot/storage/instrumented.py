@@ -77,7 +77,7 @@ class InstrumentedBackend(ConversationBackend):
     # Turns
     # ------------------------------------------------------------------
 
-    async def put_turn(self, *a, **kw) -> None:
+    async def put_turn(self, *a, **kw) -> dict:
         return await self._measure("put_turn", self._inner.put_turn, *a, **kw)
 
     async def query_turns(self, *a, **kw) -> List[dict]:
@@ -87,9 +87,35 @@ class InstrumentedBackend(ConversationBackend):
         return await self._measure("delete_turn", self._inner.delete_turn, *a, **kw)
 
     async def delete_thread_cascade(self, *a, **kw) -> int:
-        return await self._measure(
-            "delete_thread_cascade", self._inner.delete_thread_cascade, *a, **kw
-        )
+        return await self._measure("delete_thread_cascade", self._inner.delete_thread_cascade, *a, **kw)
+
+    # ------------------------------------------------------------------
+    # Durable conversation operations (FEAT-886)
+    # ------------------------------------------------------------------
+
+    async def query_turn_window(self, *a, **kw) -> List[dict]:
+        return await self._measure("query_turn_window", self._inner.query_turn_window, *a, **kw)
+
+    async def max_sequence(self, *a, **kw) -> int:
+        return await self._measure("max_sequence", self._inner.max_sequence, *a, **kw)
+
+    async def put_tombstone(self, *a, **kw) -> None:
+        return await self._measure("put_tombstone", self._inner.put_tombstone, *a, **kw)
+
+    async def deleted_turn_ids(self, *a, **kw):
+        return await self._measure("deleted_turn_ids", self._inner.deleted_turn_ids, *a, **kw)
+
+    async def deleted_session_ids(self, *a, **kw):
+        return await self._measure("deleted_session_ids", self._inner.deleted_session_ids, *a, **kw)
+
+    async def is_deleted(self, *a, **kw) -> bool:
+        return await self._measure("is_deleted", self._inner.is_deleted, *a, **kw)
+
+    async def get_index_state(self, *a, **kw) -> str:
+        return await self._measure("get_index_state", self._inner.get_index_state, *a, **kw)
+
+    async def backfill_batch(self, *a, **kw):
+        return await self._measure("backfill_batch", self._inner.backfill_batch, *a, **kw)
 
     # ------------------------------------------------------------------
     # Artifacts
@@ -102,19 +128,13 @@ class InstrumentedBackend(ConversationBackend):
         return await self._measure("get_artifact", self._inner.get_artifact, *a, **kw)
 
     async def query_artifacts(self, *a, **kw) -> List[dict]:
-        return await self._measure(
-            "query_artifacts", self._inner.query_artifacts, *a, **kw
-        )
+        return await self._measure("query_artifacts", self._inner.query_artifacts, *a, **kw)
 
     async def delete_artifact(self, *a, **kw) -> None:
-        return await self._measure(
-            "delete_artifact", self._inner.delete_artifact, *a, **kw
-        )
+        return await self._measure("delete_artifact", self._inner.delete_artifact, *a, **kw)
 
     async def delete_session_artifacts(self, *a, **kw) -> int:
-        return await self._measure(
-            "delete_session_artifacts", self._inner.delete_session_artifacts, *a, **kw
-        )
+        return await self._measure("delete_session_artifacts", self._inner.delete_session_artifacts, *a, **kw)
 
     # ------------------------------------------------------------------
     # Internal measurement helper

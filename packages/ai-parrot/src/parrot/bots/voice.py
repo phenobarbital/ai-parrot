@@ -399,7 +399,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
             await super().configure(app)
             return
         # Default to Redis memory for VoiceBot if not specified
-        if not self.memory_type or self.memory_type == "memory":
+        if not self.memory_type or self.memory_type in ("memory", "auto"):
             self.memory_type = "redis"
         url = getattr(self, "url", None)
         if url and app:
@@ -683,6 +683,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
                                     metadata={"timestamp": str(datetime.now())},
                                     chatbot_id=self.memory_key_id,
                                 )
+                                await self._guard_session(user_id, session_id)  # a deleted session is not revived
                                 await self.save_conversation_turn(user_id, session_id, turn)
                                 self.logger.debug(f"Saved turn {current_turn_id} to memory")
 
@@ -722,6 +723,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
                         metadata={"timestamp": str(datetime.now())},
                         chatbot_id=self.memory_key_id,
                     )
+                    await self._guard_session(user_id, session_id)  # a deleted session is not revived
                     await self.save_conversation_turn(user_id, session_id, turn)
                     self.logger.debug(f"Saved final turn {current_turn_id} to memory")
 

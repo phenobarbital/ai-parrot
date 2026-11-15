@@ -23,10 +23,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--root", type=Path, default=Path("."), help="Repository root")
     parser.add_argument("--release", type=str, default=None, help="Release tag for source links")
     parser.add_argument("--json", action="store_true", dest="as_json", help="JSON report on stdout")
-    parser.add_argument("--strict", action="store_true", help="Exit 4 when any module is skipped")
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Exit 4 when a module was skipped by a parse or load failure (native modules are listed, not fatal)",
+    )
     args = parser.parse_args(argv)
 
-    from parrot.sdd.techwiki.api import GriffeUnavailable, generate
+    from parrot.sdd.techwiki.api import GriffeUnavailable, generate, strict_failures
     from parrot.sdd.techwiki.config import load_techwiki_config
 
     try:
@@ -50,7 +54,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"Generated {len(pages)} API reference pages")
     for skipped_module in skipped:
         print(f"Skipped {skipped_module['module']}: {skipped_module['reason']}", file=sys.stderr)
-    return 4 if args.strict and skipped else 0
+    return 4 if args.strict and strict_failures(skipped) else 0
 
 
 if __name__ == "__main__":

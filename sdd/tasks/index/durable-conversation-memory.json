@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-13T02:45:32+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-13T04:55:25+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -82,20 +82,21 @@
     {
       "id": "TASK-5568",
       "slug": "durable-memory-correctness-fixes",
-      "title": "Correctness fixes (P0) — AgentTalk memory injection, ask_stream commit, hot-tier delete_turn, hot TTL setting",
+      "title": "Correctness fixes (P0) \u2014 AgentTalk memory injection, ask_stream commit, hot-tier delete_turn, hot TTL setting",
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependency: three correctness edit sites plus CHAT_HOT_TTL_HOURS in conf.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5568-durable-memory-correctness-fixes.md"
+      "started_at": "2026-11-13T03:25:54+00:00",
+      "completed_at": "2026-11-13T03:30:01+00:00",
+      "file": "sdd/tasks/completed/TASK-5568-durable-memory-correctness-fixes.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5569",
@@ -104,34 +105,36 @@
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependency: new parrot/memory/persistence.py and ConversationTurn.sequence.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5569-turn-event-ordering-publisher.md"
+      "started_at": "2026-11-13T03:25:54+00:00",
+      "completed_at": "2026-11-13T03:36:27+00:00",
+      "file": "sdd/tasks/completed/TASK-5569-turn-event-ordering-publisher.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5570",
       "slug": "storage-backend-contract-errors",
-      "title": "Backend contract — typed errors, ordered window, tombstones, index state",
+      "title": "Backend contract \u2014 typed errors, ordered window, tombstones, index state",
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependency: storage/errors.py and the ConversationBackend ABC. Concrete backends stay abstract until TASK-5574..5577 land (recorded in the task).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5570-storage-backend-contract-errors.md"
+      "started_at": "2026-11-13T03:25:54+00:00",
+      "completed_at": "2026-11-13T03:46:44+00:00",
+      "file": "sdd/tasks/completed/TASK-5570-storage-backend-contract-errors.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5571",
@@ -140,7 +143,7 @@
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -149,18 +152,19 @@
       "parallel": true,
       "parallelism_notes": "Serialized after TASK-5568: both modify parrot/conf.py (CHAT_HOT_TTL_HOURS vs REDIS_HISTORY_EXPLICIT).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5571-auto-memory-default.md"
+      "started_at": "2026-11-13T03:25:54+00:00",
+      "completed_at": "2026-11-13T03:54:25+00:00",
+      "file": "sdd/tasks/completed/TASK-5571-auto-memory-default.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5572",
       "slug": "rich-history-parts",
-      "title": "Rich history parts — `MessagePart`, budgeted parts on views, canonical text, renderer",
+      "title": "Rich history parts \u2014 `MessagePart`, budgeted parts on views, canonical text, renderer",
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -169,9 +173,10 @@
       "parallel": true,
       "parallelism_notes": "Serialized after TASK-5569: both modify parrot/memory/__init__.py exports.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5572-rich-history-parts.md"
+      "started_at": "2026-11-13T03:25:54+00:00",
+      "completed_at": "2026-11-13T04:07:28+00:00",
+      "file": "sdd/tasks/completed/TASK-5572-rich-history-parts.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5573",
@@ -180,7 +185,7 @@
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -190,18 +195,19 @@
       "parallel": true,
       "parallelism_notes": "Imports TurnPresentation from TASK-5569 (memory/persistence.py); InvalidTurnPayloadError and storage/__init__.py exports from TASK-5570.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5573-chat-storage-turn-model.md"
+      "started_at": "2026-11-13T03:25:54+00:00",
+      "completed_at": "2026-11-13T03:56:57+00:00",
+      "file": "sdd/tasks/completed/TASK-5573-chat-storage-turn-model.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5574",
       "slug": "sqlite-durable-backend",
-      "title": "SQLite backend — durable writes, ordered window, tombstones, index state",
+      "title": "SQLite backend \u2014 durable writes, ordered window, tombstones, index state",
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -210,18 +216,19 @@
       "parallel": true,
       "parallelism_notes": "Implements the abstract methods TASK-5570 adds to storage/backends/base.py; runs its durable_contract.py checks.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5574-sqlite-durable-backend.md"
+      "started_at": "2026-11-13T03:25:54+00:00",
+      "completed_at": "2026-11-13T04:01:39+00:00",
+      "file": "sdd/tasks/completed/TASK-5574-sqlite-durable-backend.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5575",
       "slug": "postgres-durable-backend",
-      "title": "Postgres backend — durable writes, ordered window, tombstones, index state",
+      "title": "Postgres backend \u2014 durable writes, ordered window, tombstones, index state",
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -230,18 +237,19 @@
       "parallel": true,
       "parallelism_notes": "Implements TASK-5570's abstract methods in backends/postgres.py; reuses tests/storage/durable_contract.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5575-postgres-durable-backend.md"
+      "started_at": "2026-11-13T03:25:54+00:00",
+      "completed_at": "2026-11-13T04:09:26+00:00",
+      "file": "sdd/tasks/completed/TASK-5575-postgres-durable-backend.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-5576",
       "slug": "mongo-durable-backend",
-      "title": "Mongo backend — durable writes, ordered window, tombstones, index state",
+      "title": "Mongo backend \u2014 durable writes, ordered window, tombstones, index state",
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -250,18 +258,19 @@
       "parallel": true,
       "parallelism_notes": "Implements TASK-5570's abstract methods in backends/mongodb.py; reuses tests/storage/durable_contract.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5576-mongo-durable-backend.md"
+      "started_at": "2026-11-13T03:25:54+00:00",
+      "completed_at": "2026-11-13T04:11:54+00:00",
+      "file": "sdd/tasks/completed/TASK-5576-mongo-durable-backend.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-5577",
       "slug": "dynamodb-durable-backend",
-      "title": "DynamoDB backend — transactional turn writes, chronological companions, tombstones, index state",
+      "title": "DynamoDB backend \u2014 transactional turn writes, chronological companions, tombstones, index state",
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -270,18 +279,19 @@
       "parallel": true,
       "parallelism_notes": "Implements TASK-5570's abstract methods in backends/dynamodb.py (companion items, TransactWriteItems); reuses durable_contract.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5577-dynamodb-durable-backend.md"
+      "started_at": "2026-11-13T03:25:54+00:00",
+      "completed_at": "2026-11-13T04:55:25+00:00",
+      "file": "sdd/tasks/completed/TASK-5577-dynamodb-durable-backend.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5578",
       "slug": "backfill-tool",
-      "title": "Backfill tool — resumable batched driver over `backfill_batch`",
+      "title": "Backfill tool \u2014 resumable batched driver over `backfill_batch`",
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -291,9 +301,10 @@
       "parallel": true,
       "parallelism_notes": "Calls ConversationBackend.backfill_batch / mark_index_ready from TASK-5570; tests run on the SQLite backend from TASK-5574.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5578-backfill-tool.md"
+      "started_at": "2026-11-13T03:25:54+00:00",
+      "completed_at": "2026-11-13T04:15:45+00:00",
+      "file": "sdd/tasks/completed/TASK-5578-backfill-tool.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5579",
@@ -302,7 +313,7 @@
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -314,18 +325,19 @@
       "parallel": true,
       "parallelism_notes": "Modifies storage/chat.py after TASK-5568; builds ChatStorageTurn from TASK-5573; uses put_tombstone and StorageError from TASK-5570; tests on SQLite (TASK-5574).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5579-chatstorage-subscriber-deletion.md"
+      "started_at": "2026-11-13T03:25:54+00:00",
+      "completed_at": "2026-11-13T04:25:16+00:00",
+      "file": "sdd/tasks/completed/TASK-5579-chatstorage-subscriber-deletion.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5580",
       "slug": "hydration-core",
-      "title": "Hydration core — source interface, sequence allocator, guarded atomic install",
+      "title": "Hydration core \u2014 source interface, sequence allocator, guarded atomic install",
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -336,18 +348,19 @@
       "parallel": true,
       "parallelism_notes": "Uses ConversationTurn.sequence from TASK-5569 (memory/abstract.py); memory/redis.py after TASK-5579; memory/__init__.py after TASK-5572.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5580-hydration-core.md"
+      "started_at": "2026-11-13T03:25:54+00:00",
+      "completed_at": "2026-11-13T04:28:53+00:00",
+      "file": "sdd/tasks/completed/TASK-5580-hydration-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5581",
       "slug": "turn-bus-setup",
-      "title": "Turn bus setup — Streams bus, outbox, dead letters, ChatStorage subscriptions",
+      "title": "Turn bus setup \u2014 Streams bus, outbox, dead letters, ChatStorage subscriptions",
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -358,18 +371,19 @@
       "parallel": true,
       "parallelism_notes": "Wraps BusTurnPublisher/topics from TASK-5569; subscribes ChatStorage.handle_turn_completed from TASK-5579; conf.py after TASK-5571.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5581-turn-bus-setup.md"
+      "started_at": "2026-11-13T03:25:54+00:00",
+      "completed_at": "2026-11-13T04:31:56+00:00",
+      "file": "sdd/tasks/completed/TASK-5581-turn-bus-setup.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5582",
       "slug": "chatstorage-hydration-source",
-      "title": "`ChatStorageHydrationSource` — backend errors to hydration errors, rows to turns",
+      "title": "`ChatStorageHydrationSource` \u2014 backend errors to hydration errors, rows to turns",
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -381,18 +395,19 @@
       "parallel": true,
       "parallelism_notes": "Implements HydrationSource from TASK-5580 over ChatStorage.cold_backend (TASK-5579 via TASK-5580), ChatStorageTurn.from_row (TASK-5573), M4 errors (TASK-5570); tests on SQLite (TASK-5574).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5582-chatstorage-hydration-source.md"
+      "started_at": "2026-11-13T03:25:54+00:00",
+      "completed_at": "2026-11-13T04:33:47+00:00",
+      "file": "sdd/tasks/completed/TASK-5582-chatstorage-hydration-source.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5583",
       "slug": "bot-integration-durable-memory",
-      "title": "Bot integration — hydrate on miss, stamp ordering, publish after save, honor `turn_id`",
+      "title": "Bot integration \u2014 hydrate on miss, stamp ordering, publish after save, honor `turn_id`",
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -404,18 +419,19 @@
       "parallel": true,
       "parallelism_notes": "bots/base.py after TASK-5568; TurnPublisher/TurnPresentation from TASK-5569; 'auto' and bots/abstract.py after TASK-5571; install_history/SequenceAllocator from TASK-5580.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5583-bot-integration-durable-memory.md"
+      "started_at": "2026-11-13T03:25:54+00:00",
+      "completed_at": "2026-11-13T04:41:02+00:00",
+      "file": "sdd/tasks/completed/TASK-5583-bot-integration-durable-memory.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5584",
       "slug": "server-wiring-turn-persistence",
-      "title": "Server wiring — start the turn bus, attach durable memory to bots, make AgentTalk persistence-free",
+      "title": "Server wiring \u2014 start the turn bus, attach durable memory to bots, make AgentTalk persistence-free",
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -428,18 +444,19 @@
       "parallel": true,
       "parallelism_notes": "handlers/agent.py after TASK-5568; setup_turn_persistence from TASK-5581; ChatStorageHydrationSource from TASK-5582; cold_backend/hot_redis_client from TASK-5579; bot injection points from TASK-5583.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5584-server-wiring-turn-persistence.md"
+      "started_at": "2026-11-13T03:25:54+00:00",
+      "completed_at": "2026-11-13T04:45:43+00:00",
+      "file": "sdd/tasks/completed/TASK-5584-server-wiring-turn-persistence.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5585",
       "slug": "durable-memory-integration-suite",
-      "title": "Durable conversation memory — integration suite (the nine spec §4 scenarios)",
+      "title": "Durable conversation memory \u2014 integration suite (the nine spec \u00a74 scenarios)",
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -448,18 +465,19 @@
       "parallel": true,
       "parallelism_notes": "Drives the full wiring from TASK-5584 (bus, subscriber, hydration, deletion) end to end.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5585-durable-memory-integration-suite.md"
+      "started_at": "2026-11-13T03:25:54+00:00",
+      "completed_at": "2026-11-13T04:49:26+00:00",
+      "file": "sdd/tasks/completed/TASK-5585-durable-memory-integration-suite.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-5586",
       "slug": "durable-memory-documentation",
-      "title": "Documentation — durable conversation memory (architecture page, operator notes, three page updates)",
+      "title": "Documentation \u2014 durable conversation memory (architecture page, operator notes, three page updates)",
       "feature_id": "FEAT-886",
       "feature": "durable-conversation-memory",
       "spec": "sdd/specs/durable-conversation-memory.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "low",
       "effort": "M",
       "depends_on": [
@@ -469,9 +487,10 @@
       "parallel": true,
       "parallelism_notes": "Documents the final behavior verified by TASK-5585's integration suite. Also documents the backfill tool parrot/storage/backfill.py created by TASK-5578.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5586-durable-memory-documentation.md"
+      "started_at": "2026-11-13T03:25:54+00:00",
+      "completed_at": "2026-11-13T04:51:47+00:00",
+      "file": "sdd/tasks/completed/TASK-5586-durable-memory-documentation.md",
+      "verification": "verified"
     }
   ]
 }

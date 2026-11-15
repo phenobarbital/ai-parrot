@@ -18,10 +18,9 @@ These are planning artifacts, not evidence that carried G1–G4 gates passed.
 
 ## Release Preconditions
 
-**Q7 open (spec rev 0.3).** What a FEAT-886 conversation or turn delete does to knowledge and episodes derived
-from it is undecided (spec §8 Q7). Do not implement any deletion cascade until Q7 is accepted in the spec. The
-fixed part of spec F5/F7 is in scope now: evidence that resolves to a tombstoned session/turn, or to another
-tenant, is unavailable — never re-read, never re-extracted.
+**Q7 accepted (spec rev 0.4).** Deleting a conversation or turn (FEAT-886 tombstone) does not delete the episodes
+or user knowledge learned from it. Implement no deletion cascade. Per spec F5/F7, evidence that resolves to a
+tombstoned session/turn, or to another tenant, is unavailable: never re-read, never re-extracted.
 
 No additional owner decision is required beyond completed dependency contracts. Do not bypass a blocked dependency.
 
@@ -165,6 +164,7 @@ def test_tombstoned_or_foreign_tenant_evidence_unavailable() -> None:
     """Verify tombstoned or foreign-tenant ChatStorage evidence is never re-read."""
     # FILL IN: evidence in a deleted session/turn or with a mismatched/missing stored tenant resolves as
     # unavailable and reveals nothing; the delete writes no suppression marker (spec F5/F7).
+    # Q7: after the delete, knowledge learned from that conversation is still active and recallable.
     raise NotImplementedError
 ```
 
@@ -182,7 +182,7 @@ def test_tombstoned_or_foreign_tenant_evidence_unavailable() -> None:
 - [ ] AC06/Q2: physical deletion removes fact content and persists a minimal suppression marker; re-extraction/replay from retained evidence cannot recreate it.
 - [ ] AC06: only later explicit same-user evidence lifts suppression; duplicate forget is idempotent and disablement alone never deletes facts.
 - [ ] AC15: derivative invalidation is keyed by tenant/source-episode lineage, remains retryable across restart, and uses only the sibling service boundary.
-- [ ] AC06 (F5/F7): evidence resolving to a FEAT-886-tombstoned session/turn, or to a stored tenant that differs from the scope or is missing, is unavailable and reveals nothing; a conversation delete writes no suppression marker.
+- [ ] AC06 (F5/F7): evidence resolving to a FEAT-886-tombstoned session/turn, or to a stored tenant that differs from the scope or is missing, is unavailable and reveals nothing; a conversation delete writes no suppression marker and leaves the knowledge learned from it active (Q7).
 - [ ] Narrow task checks pass; scoped black/ruff pass for touched Python; validation logs identify skipped external coverage explicitly.
 
 ## Validation Commands
@@ -195,7 +195,7 @@ def test_tombstoned_or_foreign_tenant_evidence_unavailable() -> None:
 - `stale_replay_cannot_resurrect`: AC06: only later explicit same-user evidence lifts suppression; duplicate forget is idempotent and disablement alone never deletes facts.
 - `later_explicit_statement_lifts_marker`: AC15: derivative invalidation is keyed by tenant/source-episode lineage, remains retryable across restart, and uses only the sibling service boundary.
 - `derivative_retry_survives_restart`: AC06/Q2: physical deletion removes fact content and persists a minimal suppression marker; re-extraction/replay from retained evidence cannot recreate it.
-- `tombstoned_or_foreign_tenant_evidence_unavailable`: AC06 (F5/F7): evidence resolving to a FEAT-886-tombstoned session/turn, or to a stored tenant that differs from the scope or is missing, is unavailable and reveals nothing; a conversation delete writes no suppression marker.
+- `tombstoned_or_foreign_tenant_evidence_unavailable`: AC06 (F5/F7): evidence resolving to a FEAT-886-tombstoned session/turn, or to a stored tenant that differs from the scope or is missing, is unavailable and reveals nothing; a conversation delete writes no suppression marker and leaves the knowledge learned from it active (Q7).
 
 Use deterministic clocks, runtime-derived identities and isolated temporary stores. Preserve
 CancelledError. Use subprocesses for crash/multiprocess checks, never shared production data.

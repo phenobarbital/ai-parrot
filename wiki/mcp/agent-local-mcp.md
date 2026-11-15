@@ -1,5 +1,5 @@
 ---
-title: "Agent as a Local MCP Server (`parrot toolkits install --agent`)"
+title: "Agent as a Local MCP Server (parrot toolkits install agent)"
 summary: Serve a registered agent's own async methods as a local stdio MCP server for Claude Code, Codex and Antigravity.
 ---
 
@@ -27,9 +27,9 @@ For agents served over the network, see [MCP integration: client, server and age
 
 ## Public API
 
-- [`AgentToolkit`](ref:parrot.mcp.agent_toolkit.AgentToolkit) — serves one agent's own async methods as tools
-- [`resolve_exposable_agent`](ref:parrot.mcp.agent_toolkit.resolve_exposable_agent) — resolve and validate an agent by name
-- [`list_exposable_agents`](ref:parrot.mcp.agent_toolkit.list_exposable_agents) — every declared, exposable agent
+- [`AgentToolkit`](ref:parrot.mcp.agent_toolkit) — serves one agent's own async methods as tools
+- [`resolve_exposable_agent`](ref:parrot.mcp.agent_toolkit) — resolve and validate an agent by name
+- [`list_exposable_agents`](ref:parrot.mcp.agent_toolkit) — every declared, exposable agent
 
 ## Configuration & Parameters
 

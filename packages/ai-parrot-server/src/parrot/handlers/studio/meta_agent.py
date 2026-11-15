@@ -28,6 +28,7 @@ from typing import Any, Literal, NamedTuple
 from aiohttp import web
 from navigator_auth.decorators import is_authenticated, user_session
 from parrot.bots.studio import AgentStudioAgent
+from parrot.bots.studio.agent import build_studio_client, studio_agent_provider
 from pydantic import BaseModel
 
 from ._base import StudioBaseView
@@ -241,8 +242,9 @@ class StudioAssistantHandler(StudioBaseView):
         default_llm = agent.llm if api_key else None
         try:
             if api_key:
-                agent.llm = type(default_llm)(
-                    api_key=api_key, model=default_llm.model, tool_manager=agent.tool_manager
+                # same factory path as the default client: provider AND backend (bedrock / anthropic-aws) match
+                agent.llm = build_studio_client(
+                    studio_agent_provider(), default_llm.model, api_key, tool_manager=agent.tool_manager
                 )
             self.request.session = session
             # user_id is REQUIRED by the meta-agent's mutating tools: they stamp/enforce ownership from the context
@@ -275,10 +277,11 @@ class StudioAssistantHandler(StudioBaseView):
         user, session = await self._get_user(), await self._resolve_session()
         api_key = None
         if ask_request.use_byok or ask_request.key_source is not None:
-            stored = await resolve_user_api_key(self.request.app, user.user_id, "anthropic")
+            provider = studio_agent_provider()
+            stored = await resolve_user_api_key(self.request.app, user.user_id, provider)
             try:
                 source = choose_key_source(
-                    "anthropic", has_byok=bool(stored), requested=ask_request.key_source,
+                    provider, has_byok=bool(stored), requested=ask_request.key_source,
                     use_byok=ask_request.use_byok, ask_when_both=key_source_choice_enabled(self.request.app),
                 )
             except KeySourceRefusal as refusal:
