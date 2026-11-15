@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-887 — SDD Experience Memory (experience.pitfall)
 **Spec**: `sdd/specs/sdd-experience-memory.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5596, TASK-5599, TASK-5600, TASK-5602, TASK-5603, TASK-5604, TASK-5605, TASK-5607, TASK-5608, TASK-5609
@@ -166,3 +166,19 @@ Use the spec §4 payload fixtures, with deterministic temporary Git roots and PA
 2. Verify dependencies are done in `sdd/tasks/index/sdd-experience-memory.json` and recheck this contract after they land.
 3. Implement only the declared files, run validation, and commit scoped changes.
 4. Use `parrot sdd task finalize` with real TaskCompletionEvidence and the exact implementation HEAD. The finalizer owns the completion note and active-to-completed move; never edit them manually.
+
+## Completion Note
+
+- Task: TASK-5610
+- Feature: sdd-experience-memory
+- Implementation SHA: f0f5789da001df653b325e91403a8ebef151d30b
+- Closed at (UTC): 2026-11-15T03:04:36+00:00
+- Fix commits: f0f5789da001df653b325e91403a8ebef151d30b
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 1 |
+| feedback | coder-feedback:6533b5f29042a1d79d862600 (pattern new-invocation-scenario-bare-prose-mention, fixed in f0f5789da0) |
+| residual_reds | 5 documented-invocation failures (worktree_sync x3, worktree_push_protection x2) plus test_installed_hook_denies_shared_environment_write are sandbox/host-only baseline reds unrelated to experience |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 554s · Tokens: n/a |
