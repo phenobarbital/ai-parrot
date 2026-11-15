@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-899 — Procedure guards and plane — FEAT-891 review follow-ups
 **Spec**: `sdd/specs/fixgroup-848b9a0ceee1.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5689
@@ -263,10 +263,15 @@ See the three test stubs in the blueprint; spec §4 rows 4–6 state what each a
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Code (`/sdd-fix` session, actor `agent:sdd-fix:cb69fd31`)
+**Date**: 2026-11-15
+**Notes**: `_bounded_text` builds the deny and advise messages and truncates only the variable middle
+(marked with `…`), so the `PARROT_ALLOW_PROCEDURE=1` hint always survives and no message exceeds
+`MAX_ADVICE_CHARS`; a message within the limit is unchanged (asserted byte-for-byte in the test).
+`CLOSED_STATUSES` is shared by `task.depends_done` and `feature.tasks_done`. `branch.pushed` returns
+`None` on a non-zero `git rev-list` exit. Code commit `508ae0681b`. Validation:
+`pytest packages/ai-parrot/tests/sdd/test_procedure_advice.py packages/ai-parrot/tests/sdd/test_procedure_cli.py`
+→ 60 passed (66 with `test_procedure_guards.py`); `ruff check` and `black --check` clean on the four files.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: none. `test_branch_pushed_unknown_on_git_failure` goes through
+`SddProbeRunner.run` (the public path) and is parametrized over five git outcomes.
