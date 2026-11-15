@@ -47,6 +47,7 @@ anything FEAT-887 owns.
 | `packages/ai-parrot/src/parrot/sdd/_assets/claude/commands/sdd-start.md` | MODIFY | Generated twin (`--write`) |
 | `packages/ai-parrot/src/parrot/sdd/_assets/agent/workflows/sdd-start.md` | MODIFY | Generated twin (`--write`) |
 | `packages/ai-parrot/tests/sdd/test_procedure_cli.py` | MODIFY | Engine briefing test |
+| `packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_engine_dispatch.py` | MODIFY | Authorized integration repair: verify combined briefing reaches native and MCP seats |
 | `packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py` | MODIFY | Only if the documented placeholder is not resolved by the `procedure` scenario |
 
 ---
@@ -68,26 +69,28 @@ from parrot.sdd.config import load_sdd_config                    # sdd/config.py
 ```
 
 ### Existing Signatures to Use
-```python
-# packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/engine.py
-#   (unverified — FEAT-887 not merged) an async method that returns the experience briefing text for one task:
-#       async def _experience_briefing_for(self, ctx: _FeatureCtx, task: PlannedTask) -> str
-#   and the call site where its result is put into the coder's task context.
-#   `grep -c '_experience_briefing_for' …/engine.py` returned 0 at 9a3a611b0c.
 
-# .claude/commands/sdd-start.md  (unverified — FEAT-887 not merged)
-#   a step that runs `parrot sdd experience brief --task-file <…>`; `grep -c 'experience brief'` returned 0 at 9a3a611b0c.
+Verified for the authorized PR #2130 integration repair, after merging FEAT-887
+commit `37b856184262dc3bcfb8d1d4ab1ee40809c517bc` (merge `47f5c1b840`):
 
-# Dependency-provided by this feature (verified by their own tasks):
-def render_brief(resolution: Resolution, *, max_lines: int) -> str          # '' when there is nothing to say
-def resolve(specs, scope, runner, *, allow_remote: bool = True, stale: bool = False) -> Resolution
-class ProcedurePlane: @classmethod for_root(cls, start=None) -> "ProcedurePlane | None"; async def specs(self) -> list[ProcedureSpec]
-# scripts/sdd/check_asset_sync.py --write regenerates the packaged twins of .claude/commands/sdd-*.md and .agent/workflows/sdd-*.md
-```
+- `engine.py:3984`: `async def _experience_briefing_for(self, ctx: _FeatureCtx, task: PlannedTask) -> str`.
+  Three occurrences: definition and call sites at 2593 (`prepare_native`) and 3840 (`_run_attempt`).
+- `_FeatureCtx.worktree` is the task checkout; `.feature` is the feature slug. `PlannedTask.task_id`
+  is the task id. `experience_briefing` is delivered through `NativePrep` and `TaskScopedBrief`.
+- TASK-5608 prerequisite now supplies `parrot sdd experience brief --task-file <task.md>` once
+  in each source command/workflow and in the Codex skill. Reuse exactly `<task.md>`.
+- `ProcedurePlane.for_root(start)` resolves the shared plane, `.specs()` is async;
+  `read_index(plane_dir)` and `is_stale(document, root=shared_root)` are synchronous.
+- `resolve(specs, scope, runner, *, allow_remote=True, stale=False)` and
+  `render_brief(resolution, *, max_lines)` are implemented by this feature.
+- `load_sdd_config(worktree).procedure` is optional; use `ProcedureSettings()` defaults.
+
+The initial gate-failure Completion Note below is historical. This repair uses the
+same briefing field and does not introduce a second delivery channel.
 
 ### Does NOT Exist
-- ~~`parrot.knowledge.wiki.experience`~~, ~~`SddCoderEngine._experience_briefing_for`~~,
-  ~~`parrot sdd experience brief`~~ — specified by FEAT-887; absent at `9a3a611b0c`.
+- The FEAT-887 experience module, engine method, and CLI were absent at `9a3a611b0c`;
+  all are present in this authorized integration repair (see verified contract above).
 - ~~A pre-tool or prompt-submit hook for briefings~~ — neither feature registers one.
 - ~~`parrot sdd task start`~~ — not a CLI verb.
 - ~~A second briefing channel~~ — forbidden by spec §5.
