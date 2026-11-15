@@ -412,3 +412,50 @@ def test_new_overlay_invalidates_hook(tmp_path: Path) -> None:
     assert is_stale(index, root=root)
     assert not advice._fresh_sources(root, index)
     assert advice.evaluate_command("gh pr create --base main", root, env={}).decision == "none"
+
+
+def test_deny_text_keeps_escape_hint(tmp_path: Path) -> None:
+    """A long instruction is truncated in the middle; the deliberate-exception hint survives."""
+    root = _repo(tmp_path)
+    command = "git mv sdd/tasks/active/TASK-1.md sdd/tasks/completed/"
+    hint = "(Deliberate exception: ask the user to re-run with PARROT_ALLOW_PROCEDURE=1.)"
+
+    short = advice.evaluate_command(command, root, env={})
+    assert short.text == (
+        "Procedure sdd:task-close is mandatory: do not replace this procedure by hand. "
+        f"Use: parrot sdd task close <TASK> <slug> verified. {hint}"
+    )
+
+    index_path = root / advice.PLANE_DIR / advice.INDEX_FILE
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    index["procedures"]["sdd:task-close"]["use_instead"] = "parrot sdd task close " + "x" * (
+        advice.MAX_ADVICE_CHARS * 2
+    )
+    index["procedures"]["sdd:task-close"]["advice"] = "y" * (advice.MAX_ADVICE_CHARS * 2)
+    index_path.write_text(json.dumps(index), encoding="utf-8")
+
+    denied = advice.evaluate_command(command, root, env={})
+    assert denied.decision == "deny"
+    assert len(denied.text) == advice.MAX_ADVICE_CHARS
+    assert denied.text.startswith("Procedure sdd:task-close is mandatory: do not replace this procedure by hand.")
+    assert denied.text.endswith(f"…. {hint}")
+
+    advised = advice.evaluate_command(command, root, env={advice.ESCAPE_ENV: "1"})
+    assert advised.decision == "advise"
+    assert len(advised.text) == advice.MAX_ADVICE_CHARS
+    assert advised.text.endswith("…")
+
+    assert advice._bounded_text("ab", "cdef", "gh", limit=7) == "abcd…gh"
+    assert advice._bounded_text("abcd", "efgh", "ijkl", limit=6) == "abcdef"
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [("done", True), ("done-with-issues", True), ("in-progress", False), ("pending", False)],
+)
+def test_depends_done_accepts_done_with_issues(tmp_path: Path, status: str, expected: bool) -> None:
+    """A dependency closed with issues satisfies ``task.depends_done``; an open one does not."""
+    root = _repo(tmp_path, status=status)
+    check = {"probe": "task.depends_done", "expect": True}
+    assert advice.apply_check(check, root, {"feature": "demo", "task": "TASK-2"}) is expected
+    assert advice.apply_check({"probe": "feature.tasks_done", "expect": True}, root, {"feature": "demo"}) is False

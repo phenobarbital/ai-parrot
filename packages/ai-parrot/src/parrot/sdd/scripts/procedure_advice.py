@@ -26,6 +26,8 @@ PLANE_DIR = Path(".parrot") / "procedure"
 INDEX_FILE = "procedures.json"
 MAX_INDEX_BYTES = 262144
 _OPERATORS = frozenset({"&&", "||", ";", "|", "&", "\n"})
+#: Task statuses that count as closed, for dependencies and for the whole feature alike.
+CLOSED_STATUSES: frozenset[str] = frozenset({"done", "done-with-issues"})
 
 
 @dataclass(frozen=True)
@@ -553,7 +555,7 @@ def _probe_task_status(checkout: Path, scope: Mapping[str, str], args: Mapping[s
 
 
 def _probe_task_depends_done(checkout: Path, scope: Mapping[str, str], args: Mapping[str, str]) -> bool | None:
-    """Return whether all dependencies of the scoped task are done."""
+    """Return whether all dependencies of the scoped task are closed (``CLOSED_STATUSES``)."""
     index = feature_index(checkout, scope)
     task = _task(index, scope.get("task"))
     if task is None or index is None:
@@ -565,7 +567,7 @@ def _probe_task_depends_done(checkout: Path, scope: Mapping[str, str], args: Map
     dependencies = task.get("depends_on", [])
     if not isinstance(dependencies, list) or not all(isinstance(item, str) for item in dependencies):
         return None
-    return all(statuses.get(dependency) == "done" for dependency in dependencies)
+    return all(statuses.get(dependency) in CLOSED_STATUSES for dependency in dependencies)
 
 
 def _probe_feature_tasks_done(checkout: Path, scope: Mapping[str, str], args: Mapping[str, str]) -> bool | None:
@@ -576,7 +578,7 @@ def _probe_feature_tasks_done(checkout: Path, scope: Mapping[str, str], args: Ma
     tasks = index.get("tasks", [])
     if not isinstance(tasks, list):
         return None
-    return all(isinstance(item, Mapping) and item.get("status") in {"done", "done-with-issues"} for item in tasks)
+    return all(isinstance(item, Mapping) and item.get("status") in CLOSED_STATUSES for item in tasks)
 
 
 def _probe_flow_base_allowed(checkout: Path, scope: Mapping[str, str], args: Mapping[str, str]) -> bool | None:
@@ -706,6 +708,28 @@ def _fresh_sources(root: Path, index: Mapping[str, Any]) -> bool:
     return True
 
 
+def _bounded_text(prefix: str, variable: str, suffix: str = "", *, limit: int = MAX_ADVICE_CHARS) -> str:
+    """Return ``prefix + variable + suffix`` within ``limit``, truncating only ``variable`` (marked with ``…``).
+
+    Args:
+        prefix: Fixed opening of the message; never cut.
+        variable: Middle part that may be shortened.
+        suffix: Fixed closing of the message; never cut.
+        limit: Maximum length of the result.
+
+    Returns:
+        The full text when it fits. Otherwise ``variable`` is shortened and ends with ``…`` so the result is
+        exactly ``limit`` long; when the fixed parts alone leave no room, the text is cut at ``limit``.
+    """
+    text = f"{prefix}{variable}{suffix}"
+    if len(text) <= limit:
+        return text
+    room = limit - len(prefix) - len(suffix) - 1
+    if room <= 0:
+        return text[:limit]
+    return f"{prefix}{variable[:room]}…{suffix}"
+
+
 def evaluate_command(command: str, cwd: Path, *, env: Mapping[str, str] | None = None) -> Advice:
     """Apply the compiled plane's guard decision table to one shell command."""
     try:
@@ -781,14 +805,14 @@ def evaluate_command(command: str, cwd: Path, *, env: Mapping[str, str] | None =
         ):
             decision = "advise"
         if decision == "deny":
-            text = (
-                f"Procedure {procedure_id} is mandatory: {reason}. Use: "
-                f"{procedure.get('use_instead') or procedure.get('command')}. "
-                "(Deliberate exception: ask the user to re-run with PARROT_ALLOW_PROCEDURE=1.)"
+            text = _bounded_text(
+                f"Procedure {procedure_id} is mandatory: ",
+                f"{reason}. Use: {procedure.get('use_instead') or procedure.get('command')}",
+                ". (Deliberate exception: ask the user to re-run with PARROT_ALLOW_PROCEDURE=1.)",
             )
         else:
             advice_text = procedure.get("advice") or procedure.get("use_instead") or procedure.get("command") or ""
-            text = f"Procedure {procedure_id}: {reason}. {advice_text}"
-        return Advice(decision, text[:MAX_ADVICE_CHARS])
+            text = _bounded_text(f"Procedure {procedure_id}: ", f"{reason}. {advice_text}")
+        return Advice(decision, text)
     except Exception:  # noqa: BLE001 — a hook helper never raises
         return Advice("none")

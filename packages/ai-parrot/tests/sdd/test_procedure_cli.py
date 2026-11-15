@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -20,6 +21,7 @@ from parrot.knowledge.wiki.procedure.producers import MANIFEST_DIR
 from parrot.sdd.cli import VERBS, mounted_modules
 from parrot.sdd.config import ProcedureSettings, SddConfig
 from parrot.sdd.scripts import procedure
+from parrot.sdd.scripts.procedure_probes import SddProbeRunner
 
 MANIFEST = """\
 schema_version: 1
@@ -243,3 +245,31 @@ def test_render_brief_limits_lines() -> None:
     assert "never by hand; use `parrot sdd task close TASK-1 demo verified`" in brief
     assert len(procedure.render_brief(resolution, max_lines=2).splitlines()) <= 2
     assert procedure.render_brief(Resolution(scope={}, stale=False, next=[], mandatory=[]), max_lines=8) == ""
+
+
+@pytest.mark.parametrize(
+    ("returncode", "stdout", "expected"),
+    [
+        (128, "", None),
+        (1, "0\n", None),
+        (0, "0\n", True),
+        (0, "2\n", False),
+        (0, "not a number\n", None),
+    ],
+)
+def test_branch_pushed_unknown_on_git_failure(
+    repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    returncode: int,
+    stdout: str,
+    expected: bool | None,
+) -> None:
+    """A git failure is unknown; only a successful count decides pushed or not."""
+
+    def fake_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        """Return a canned ``git rev-list`` result."""
+        return subprocess.CompletedProcess(args=["git"], returncode=returncode, stdout=stdout, stderr="")
+
+    monkeypatch.setattr("parrot.sdd.scripts.procedure_probes.subprocess.run", fake_run)
+    runner = SddProbeRunner(repo)
+    assert runner.run(ProbeCheck(probe="branch.pushed"), {}) is expected

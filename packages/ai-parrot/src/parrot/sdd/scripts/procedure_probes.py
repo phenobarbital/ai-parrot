@@ -73,7 +73,7 @@ class SddProbeRunner:
         scope: Mapping[str, str],
         args: Mapping[str, str],
     ) -> bool | None:
-        """Return whether HEAD is not ahead of its configured upstream."""
+        """Return whether HEAD is not ahead of its configured upstream; None when git cannot answer."""
         del scope, args
         try:
             completed = subprocess.run(
@@ -86,7 +86,8 @@ class SddProbeRunner:
             _LOGGER.debug("branch.pushed probe failed", exc_info=True)
             return None
         if completed.returncode != 0:
-            return False
+            # No upstream, a detached HEAD or a broken repository: the answer is unknown, not "unpushed".
+            return None
         if not isinstance(completed.stdout, str):
             return None
         output = completed.stdout.strip()
