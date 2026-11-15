@@ -349,6 +349,7 @@ class Scenario:
     tools: tuple[str, ...] = ("git",)
     stdin: Callable[[Path], str] | None = None  # e.g. the worktree_environment hook's PreToolUse payload
     expect_stdout: str = ""  # substring the helper's stdout must contain (e.g. '"permissionDecision": "deny"')
+    expect_silent: bool = False  # non-help invocations must not write to stdout
     #: Documented argv texts that are prose fragments (an abbreviated flag list, a sentence), not full command
     #: lines: they are exercised as ``--help`` so the helper is still dispatched and loaded.
     prose: tuple[str, ...] = ()
@@ -360,10 +361,26 @@ _FEATURE = Scenario(prepare=_seed_feature)
 _WORKTREE = Scenario(prepare=_seed_worktree)
 _ANY_CLEAN = (0, 1, 2)  # a controlled refusal is fine; a traceback is not
 
+
+def _experience_hook_post(repo: Path) -> str:
+    """Return a bounded successful Claude post-hook payload for a foreign checkout."""
+    return json.dumps(
+        {
+            "session_id": "wheel-smoke",
+            "cwd": str(repo),
+            "tool_name": "Bash",
+            "tool_input": {"command": "gh api --version"},
+            "tool_use_id": "wheel-smoke-command",
+        }
+    )
+
+
 SCENARIOS: dict[str, Scenario] = {
     "backfill_taxonomy": Scenario(prepare=_seed_feature),
-    "brief_meta": Scenario(prepare=_seed_brief, placeholders={
-        "<brief.md>": "<repo>/brief.md", "<tasks.json>": "<repo>/tasks.json", "<wt>": "<repo>/wt"}),
+    "brief_meta": Scenario(
+        prepare=_seed_brief,
+        placeholders={"<brief.md>": "<repo>/brief.md", "<tasks.json>": "<repo>/tasks.json", "<wt>": "<repo>/wt"},
+    ),
     "cache_test_contract": Scenario(prepare=_seed_feature),
     "check_e2e_closeout": Scenario(
         prepare=_seed_worktree,
@@ -398,7 +415,11 @@ SCENARIOS: dict[str, Scenario] = {
     "reserve_ids": Scenario(
         prepare=_seed_on_dev,  # reserve_ids must run with the base branch checked out
         # a new slug: the fixture feature already owns FEAT-001 and the allocator refuses a second reservation
-        placeholders={"<feature-slug>": "new-feature", "<suggested_slug>": "new-feature", "<feature-name>": "new-feature"},
+        placeholders={
+            "<feature-slug>": "new-feature",
+            "<suggested_slug>": "new-feature",
+            "<feature-name>": "new-feature",
+        },
     ),
     # a minimal fixture has no per-feature settlement index: exit 3 is the helper's controlled refusal
     "review_checkpoint": Scenario(
@@ -419,18 +440,31 @@ SCENARIOS: dict[str, Scenario] = {
             "<one line>": "demo summary",
         },
     ),
-    "sdd_meta": Scenario(prepare=_seed_proposal, placeholders={
-        "<brainstorm-or-proposal-path>": "<repo>/sdd/proposals/demo.brainstorm.md",
-        "<--type value>": "feature",
-        "<--base-branch value>": "dev",
-    }),
+    "sdd_meta": Scenario(
+        prepare=_seed_proposal,
+        placeholders={
+            "<brainstorm-or-proposal-path>": "<repo>/sdd/proposals/demo.brainstorm.md",
+            "<--type value>": "feature",
+            "<--base-branch value>": "dev",
+        },
+    ),
     # `--run` executes the planned runner, which a foreign repo may not have: a missing runner is a one-line
     # refusal (exit 1), never a traceback (rev 0.5 D2 / C21).
     "select_tests": Scenario(prepare=_seed_worktree, expect_exit=_ANY_CLEAN),
-    "spec_tools": Scenario(prepare=_seed_spec_tools, placeholders={
-        "$DR": "<repo>/dr", "$MODEL": "gpt", "$CODEX_VERSION": "0.0", "$STARTED_AT": "2026-01-01T00:00:00Z",
-        "$ENDED_AT": "2026-01-01T00:00:01Z", "$rc": "0", "$STAGE": "<repo>/stage", "$REPO_ROOT": "<repo>",
-        "<path>": "<repo>/README.md"}),
+    "spec_tools": Scenario(
+        prepare=_seed_spec_tools,
+        placeholders={
+            "$DR": "<repo>/dr",
+            "$MODEL": "gpt",
+            "$CODEX_VERSION": "0.0",
+            "$STARTED_AT": "2026-01-01T00:00:00Z",
+            "$ENDED_AT": "2026-01-01T00:00:01Z",
+            "$rc": "0",
+            "$STAGE": "<repo>/stage",
+            "$REPO_ROOT": "<repo>",
+            "<path>": "<repo>/README.md",
+        },
+    ),
     "test_report": Scenario(prepare=_seed_worktree),
     "worktree_environment": Scenario(
         prepare=_seed_venv_marker,
@@ -442,23 +476,35 @@ SCENARIOS: dict[str, Scenario] = {
     "worktree_root": Scenario(prepare=_seed_feature, placeholders={"$MAIN_ROOT": "<repo>", "<MAIN_ROOT>": "<repo>"}),
     # `worktree list|remove`: removing the seeded feature worktree (or refusing it) is fine, a traceback is not
     "remove_worktree": Scenario(
-        prepare=_seed_worktree, expect_exit=_ANY_CLEAN, placeholders={"<target>": f"feat-{FEAT}-{SLUG}"}),
+        prepare=_seed_worktree, expect_exit=_ANY_CLEAN, placeholders={"<target>": f"feat-{FEAT}-{SLUG}"}
+    ),
     # the foreign repo has no techwiki pages: a controlled skip/refusal is the expected outcome
     "techwiki_check": Scenario(
-        prepare=_seed_worktree, expect_exit=_ANY_CLEAN, placeholders={"$SPEC_PATH": f"sdd/specs/{SLUG}.spec.md"}),
+        prepare=_seed_worktree, expect_exit=_ANY_CLEAN, placeholders={"$SPEC_PATH": f"sdd/specs/{SLUG}.spec.md"}
+    ),
     "worktree_baseline": Scenario(
-        prepare=_seed_feature, expect_exit=_ANY_CLEAN, placeholders={"<path>": "<repo>/.parrot/worktrees/baseline-demo"}),
+        prepare=_seed_feature, expect_exit=_ANY_CLEAN, placeholders={"<path>": "<repo>/.parrot/worktrees/baseline-demo"}
+    ),
     "worktree_push_protection": Scenario(
-        prepare=_seed_worktree, expect_exit=_ANY_CLEAN,
-        placeholders={"<worktree-path>": f"<repo>/.parrot/worktrees/feat-{FEAT}-{SLUG}"}),
+        prepare=_seed_worktree,
+        expect_exit=_ANY_CLEAN,
+        placeholders={"<worktree-path>": f"<repo>/.parrot/worktrees/feat-{FEAT}-{SLUG}"},
+    ),
     # <head> is the base fix on origin/dev that the seeded worktree lacks: a clean cherry-pick must succeed
     "worktree_sync": Scenario(
-        prepare=_seed_base_fix, placeholders={"<FEAT-ID|KEY|name|path>": FEAT, "<sha>": "<head>"}),
+        prepare=_seed_base_fix, placeholders={"<FEAT-ID|KEY|name|path>": FEAT, "<sha>": "<head>"}
+    ),
     # present in the packaged scripts; markdown does not (yet) invoke them, so they are exercised only if it does
     "check_id_collisions": Scenario(prepare=_seed_feature, expect_exit=_ANY_CLEAN),
     "check_task_state": Scenario(prepare=_seed_feature, expect_exit=_ANY_CLEAN),
     "id_ledger": Scenario(prepare=_seed_feature, expect_exit=_ANY_CLEAN),
     "migrate_index": Scenario(prepare=_seed_feature, expect_exit=_ANY_CLEAN),
+    "experience_cli": Scenario(
+        prepare=_seed_feature,
+        placeholders={"<task-file>": "sdd/tasks/active/TASK-001-demo-task.md"},
+        expect_silent=True,
+    ),
+    "experience_hook": Scenario(prepare=_seed_feature, stdin=_experience_hook_post),
 }
 
 
@@ -643,6 +689,8 @@ def test_install_then_every_documented_helper_invocation(
             problems.append("traceback on stderr")
         if scenario.expect_stdout and argv != ["--help"] and scenario.expect_stdout not in result.stdout:
             problems.append(f"stdout lacks {scenario.expect_stdout!r}")
+        if scenario.expect_silent and argv != ["--help"] and result.stdout:
+            problems.append(f"stdout is not silent: {result.stdout[-400:]}")
         if problems:
             failures.append(
                 f"{name} {documented!r} -> {argv}: {'; '.join(problems)}\n  stdout: {result.stdout[-400:]}\n"
