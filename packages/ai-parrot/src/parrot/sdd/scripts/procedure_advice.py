@@ -280,21 +280,114 @@ def leading_command(command: str) -> tuple[str, list[str]]:
     return "", []
 
 
-def _normalise_path(value: str) -> str:
-    """Normalize a guard argument to a POSIX-style repository-relative path."""
-    normalized = os.path.normpath(value).replace(os.sep, "/").replace("\\", "/")
+def _normalise_path(value: str, *, base: str = "", checkout: Path | None = None) -> str:
+    """Normalize a guard argument to a POSIX-style checkout-relative path.
+
+    A relative ``value`` is joined to ``base``; an absolute ``value`` inside ``checkout`` is made relative.
+
+    Args:
+        value: Path argument as written in the command.
+        base: Effective directory of the command segment, relative to the checkout (or absolute when the
+            segment runs outside it).
+        checkout: Checkout root used to relativize absolute paths; ``None`` leaves them absolute.
+
+    Returns:
+        The normalized path. A path outside the checkout keeps its absolute form or its leading ``..``.
+    """
+    text = value
+    if os.path.isabs(text):
+        if checkout is not None:
+            root = os.path.normpath(str(checkout)).replace(os.sep, "/").rstrip("/")
+            absolute = os.path.normpath(text).replace(os.sep, "/")
+            if absolute == root:
+                return "."
+            if absolute.startswith(f"{root}/"):
+                text = absolute[len(root) + 1 :]
+    elif base:
+        text = f"{base}/{text}"
+    normalized = os.path.normpath(text).replace(os.sep, "/").replace("\\", "/")
     while normalized.startswith("./"):
         normalized = normalized[2:]
     return normalized
 
 
-def match_guards(index: Mapping[str, Any], command: str) -> list[dict[str, Any]]:
-    """Return index guards matching any command segment, preserving index order."""
+def _relative_directory(base: str, target: str, checkout: Path | None) -> str:
+    """Return ``target`` as a checkout-relative POSIX directory, joined to ``base`` when relative."""
+    directory = _normalise_path(target, base=base, checkout=checkout)
+    return "" if directory == "." else directory
+
+
+def _change_directory(tokens: list[str]) -> str | None:
+    """Return the target of a plain ``cd <dir>`` segment, or None for any other segment."""
+    index = 0
+    while index < len(tokens) and _assignment(tokens[index]):
+        index += 1
+    if index >= len(tokens) or os.path.basename(tokens[index]) != "cd":
+        return None
+    targets = [token for token in tokens[index + 1 :] if not token.startswith("-")]
+    return targets[0] if len(targets) == 1 else None
+
+
+def _git_directory(argv: list[str]) -> tuple[list[str], str | None]:
+    """Strip leading git global ``-C <dir>`` options; return (remaining argv, last directory or None)."""
+    directory: str | None = None
+    index = 0
+    while index + 1 < len(argv) and argv[index] == "-C":
+        target = argv[index + 1]
+        directory = target if directory is None or os.path.isabs(target) else f"{directory}/{target}"
+        index += 2
+    return argv[index:], directory
+
+
+def _located_segments(command: str, checkout: Path | None, cwd: Path | None) -> list[tuple[str, list[str], str]]:
+    """Return ``(executable, argv, effective directory)`` for every non-``cd`` segment, in order.
+
+    The effective directory is relative to ``checkout``. It starts at ``cwd``, follows plain ``cd <dir>``
+    segments, and for a ``git`` segment also honours leading ``-C <dir>`` options (that segment only).
+    """
+    base = ""
+    if checkout is not None and cwd is not None:
+        base = _relative_directory("", str(Path(cwd).resolve()), checkout)
+    located: list[tuple[str, list[str], str]] = []
+    for tokens in command_segments(command):
+        target = _change_directory(tokens)
+        if target is not None:
+            base = _relative_directory(base, target, checkout)
+            continue
+        executable, argv = _clean(tokens)
+        directory = base
+        if executable == "git":
+            argv, git_directory = _git_directory(argv)
+            if git_directory is not None:
+                directory = _relative_directory(base, git_directory, checkout)
+        located.append((executable, argv, directory))
+    return located
+
+
+def match_guards(
+    index: Mapping[str, Any],
+    command: str,
+    *,
+    checkout: Path | None = None,
+    cwd: Path | None = None,
+) -> list[dict[str, Any]]:
+    """Return index guards matching any command segment, preserving index order.
+
+    Args:
+        index: Compiled procedure index.
+        command: Shell command to inspect.
+        checkout: Checkout root; makes absolute path arguments checkout-relative before the glob test.
+        cwd: Directory the command starts in; with ``checkout`` it seeds the effective directory.
+
+    Returns:
+        One copy of each matching guard per matching segment, with ``argv`` set to the segment's
+        arguments after the guard's ``argv_prefix``. Never raises.
+    """
     try:
         guards = index.get("guards", [])
         if not isinstance(guards, list):
             return []
-        segments = command_segments(command)
+        segments = _located_segments(command, checkout, cwd)
         matches: list[dict[str, Any]] = []
         for guard in guards:
             if not isinstance(guard, Mapping):
@@ -310,13 +403,12 @@ def match_guards(index: Mapping[str, Any], command: str) -> list[dict[str, Any]]
                 continue
             if not isinstance(path_globs, list) or not all(isinstance(item, str) for item in path_globs):
                 continue
-            for tokens in segments:
-                actual_executable, argv = _clean(tokens)
+            for actual_executable, argv, directory in segments:
                 if actual_executable != executable or argv[: len(argv_prefix)] != argv_prefix:
                     continue
                 remaining = argv[len(argv_prefix) :]
                 if path_globs and not any(
-                    fnmatch.fnmatchcase(_normalise_path(argument), pattern)
+                    fnmatch.fnmatchcase(_normalise_path(argument, base=directory, checkout=checkout), pattern)
                     for argument in remaining
                     for pattern in path_globs
                 ):
@@ -325,7 +417,7 @@ def match_guards(index: Mapping[str, Any], command: str) -> list[dict[str, Any]]
                 matched["argv"] = list(remaining)
                 matches.append(matched)
         return matches
-    except (AttributeError, IndexError, OSError, TypeError, ValueError):
+    except (AttributeError, IndexError, OSError, RuntimeError, TypeError, ValueError):
         return []
 
 
@@ -628,7 +720,7 @@ def evaluate_command(command: str, cwd: Path, *, env: Mapping[str, str] | None =
         settings = _settings(root)
         if not settings["enabled"]:
             return Advice("none")
-        matches = match_guards(index, command)
+        matches = match_guards(index, command, checkout=checkout, cwd=Path(cwd))
         if not matches:
             return Advice("none")
         if not _fresh_sources(root, index):

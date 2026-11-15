@@ -74,6 +74,65 @@ def test_match_guards_every_segment() -> None:
     assert matched[0]["argv"] == ["TASK-1", "demo", "verified"]
 
 
+def test_match_guards_resolves_effective_directory(tmp_path: Path) -> None:
+    """``cd``, ``git -C`` and absolute paths cannot hide the path a bypass guard protects."""
+    checkout = tmp_path / "repo"
+    (checkout / "sdd" / "tasks" / "active").mkdir(parents=True)
+    index = {"schema_version": advice.INDEX_SCHEMA_VERSION, "guards": GUARDS}
+
+    def bypassed(command: str, *, cwd: Path = checkout) -> bool:
+        matches = advice.match_guards(index, command, checkout=checkout, cwd=cwd)
+        return any(match["kind"] == "bypass" for match in matches)
+
+    assert bypassed("cd sdd/tasks/active && git mv TASK-1.md ../completed/")
+    assert bypassed("cd sdd && cd tasks/active; git mv TASK-1.md ../completed/")
+    assert bypassed("git -C sdd/tasks/active mv TASK-1.md ../completed/")
+    assert bypassed("git -C sdd -C tasks/active mv TASK-1.md ../completed/")
+    assert bypassed(f"git mv {checkout}/sdd/tasks/active/TASK-1.md {checkout}/sdd/tasks/completed/")
+    assert bypassed(f"cd {checkout}/sdd/tasks && git mv active/TASK-1.md completed/")
+    assert bypassed("git mv TASK-1.md ../completed/", cwd=checkout / "sdd" / "tasks" / "active")
+    assert bypassed("cd sdd/tasks/completed && git mv ../active/TASK-1.md .")
+
+    matched = advice.match_guards(index, "git -C sdd/tasks/active mv TASK-1.md ../completed/", checkout=checkout)
+    assert matched[0]["argv"] == ["TASK-1.md", "../completed/"]
+
+    assert not bypassed("cd docs && git mv a.md b.md")
+    assert not bypassed("cd sdd/tasks/active && cd ../../.. && git mv README.md docs/")
+    assert not bypassed(f"cd {tmp_path} && git mv sdd/tasks/active/TASK-1.md sdd/tasks/completed/")
+    assert not bypassed(f"git mv {tmp_path}/other/sdd/tasks/active/TASK-1.md {tmp_path}/other/done/")
+    assert not bypassed("git mv ../sdd/tasks/active/TASK-1.md ../done/")
+
+
+def test_match_guards_default_arguments_unchanged() -> None:
+    """Without ``checkout``/``cwd`` a command with no ``cd`` and no ``git -C`` matches as before."""
+    index = {"schema_version": advice.INDEX_SCHEMA_VERSION, "guards": GUARDS}
+    matched = advice.match_guards(index, "mkdir -p x && git mv ./sdd/tasks/active/TASK-1-a.md sdd/tasks/completed/")
+    assert [match["kind"] for match in matched] == ["bypass"]
+    assert matched[0]["argv"] == ["./sdd/tasks/active/TASK-1-a.md", "sdd/tasks/completed/"]
+    assert advice.match_guards(index, "git mv README.md docs/") == []
+    assert advice.match_guards(index, "git mv /abs/sdd/tasks/active/TASK-1.md /abs/sdd/tasks/completed/") == []
+    assert advice.match_guards(index, "parrot sdd task close TASK-1 demo verified")[0]["argv"] == [
+        "TASK-1",
+        "demo",
+        "verified",
+    ]
+
+
+def test_evaluate_command_denies_cd_bypass(tmp_path: Path) -> None:
+    """The hook entry point denies a hand move hidden behind ``cd`` or ``git -C``."""
+    root = _repo(tmp_path)
+    for command in (
+        "cd sdd/tasks/active && git mv TASK-1.md ../completed/",
+        "git -C sdd/tasks/active mv TASK-1.md ../completed/",
+        f"git mv {root}/sdd/tasks/active/TASK-1.md {root}/sdd/tasks/completed/",
+    ):
+        assert advice.evaluate_command(command, root, env={}).decision == "deny", command
+    assert advice.evaluate_command("cd docs && git mv a.md b.md", root, env={}).decision == "none"
+    nested = root / "sdd" / "tasks" / "active"
+    nested.mkdir(parents=True)
+    assert advice.evaluate_command("git mv TASK-1.md ../completed/", nested, env={}).decision == "deny"
+
+
 def test_shared_root_plain_and_worktree(tmp_path: Path) -> None:
     """A plain checkout and linked worktree resolve to the primary checkout."""
     main = tmp_path / "main"
