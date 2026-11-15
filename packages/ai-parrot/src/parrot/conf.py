@@ -172,11 +172,17 @@ ONTOLOGY_REVIEW_DIR = config.get("ONTOLOGY_REVIEW_DIR", fallback=None)
 if ONTOLOGY_REVIEW_DIR is not None:
     ONTOLOGY_REVIEW_DIR = Path(ONTOLOGY_REVIEW_DIR).resolve()
 
-# AgentStudio meta-agent (FEAT-467 TASK-2521): default LLM model for
-# AgentStudioAgent, overridable per-deployment. Per-user BYOK override
-# (when a stored Anthropic key exists) takes precedence at instance
-# build time — see parrot/bots/studio/agent.py.
-STUDIO_AGENT_MODEL = config.get("STUDIO_AGENT_MODEL", fallback="claude-opus-5")
+# AgentStudio meta-agent (FEAT-467 TASK-2521): which LLM provider drives
+# AgentStudioAgent (``STUDIO_AGENT_LLM``: ``anthropic`` (default), ``google``,
+# or any key registered in ``parrot.clients.factory.SUPPORTED_CLIENTS``) and
+# which model it uses (``STUDIO_AGENT_MODEL``). When the model is unset the
+# provider's own default applies (``anthropic`` -> ``claude-opus-5``,
+# ``google`` -> ``gemini-flash-latest``) — a Claude model is never sent to
+# another provider. Per-user BYOK override (when a stored key for the
+# configured provider exists) takes precedence at instance build time — see
+# parrot/bots/studio/agent.py.
+STUDIO_AGENT_LLM = config.get("STUDIO_AGENT_LLM", fallback="anthropic")
+STUDIO_AGENT_MODEL = config.get("STUDIO_AGENT_MODEL", fallback=None)
 
 # Agents Directory
 AGENTS_DIR = config.get("AGENTS_DIR", fallback=BASE_DIR.joinpath("agents"))
