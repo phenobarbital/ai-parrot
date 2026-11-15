@@ -20,6 +20,8 @@ These are planning artifacts, not evidence that carried G1–G4 gates passed.
 
 No additional owner decision is required beyond completed dependency contracts. Do not bypass a blocked dependency.
 
+Contract correction (2026-11-15, owner-confirmed): two coder seats stopped on this blueprint because `rank_candidates` had no source for a `MemoryState` (`MemoryCandidate` carries only `dynamics_state_ref`) and `select_grade(attributed: bool)` could not express the overlap cap of AC11. The signatures below now take `states` and `attribution`. `packages/ai-parrot/src/parrot/memory/unified/models.py` stays untouched.
+
 Before releasing any blocked task, record the accepted amendment in the spec, expand its
 Validation Contract with the released module test paths, regenerate the index test contract
 using `parrot sdd tests contract`, and change status through the normal SDD workflow.
@@ -61,8 +63,10 @@ BrainService TYPE_CHECKING reference is explicitly external/future, never a veri
 ```python
 from .fsrs import retrievability
 from .models import Grade, ReviewSignal
-from .models import MemoryParameters
+from .models import MemoryParameters, MemoryState
+from collections.abc import Mapping
 from datetime import datetime
+from typing import Literal
 from parrot.memory.unified.models import MemoryCandidate
 import pytest
 ```
@@ -130,12 +134,15 @@ parrot.memory.agent_memory; do not move it into parrot_tools.
 
 ```python
 """Grade selection after trusted evidence and attribution admission."""
+from typing import Literal
 from .models import Grade, ReviewSignal
 
-def select_grade(signal: ReviewSignal, *, attributed: bool,
+def select_grade(signal: ReviewSignal, *, attribution: Literal["cited", "overlap"] | None,
                  memory_error_signature: str | None, verified_recovery: bool) -> Grade | None:
     """Choose AGAIN/EASY/HARD/GOOD in contract order, or no review."""
-    # FILL IN: repeated normalized nonempty matching failure -> AGAIN; linked recovery -> EASY;
+    # attribution=None means the memory was not attributed -> None (no review).
+    # FILL IN: repeated normalized nonempty matching failure -> AGAIN; linked recovery -> EASY
+    # when attribution == "cited", capped to GOOD when attribution == "overlap";
     # confirmed corrections -> HARD; verified first-attempt success -> GOOD — AC11/G3.
     # Missing attribution, unrelated failure, cancellation or incomplete outcome -> None.
     raise NotImplementedError
@@ -147,14 +154,20 @@ def select_grade(signal: ReviewSignal, *, attributed: bool,
 
 ```python
 """Deterministic ranking for experiential candidates, separate from fact validity."""
+from collections.abc import Mapping
 from datetime import datetime
 from parrot.memory.unified.models import MemoryCandidate
-from .models import MemoryParameters
+from .models import MemoryParameters, MemoryState
 from .fsrs import retrievability
 
 def rank_candidates(candidates: list[MemoryCandidate], *, now: datetime,
-                    parameters: MemoryParameters) -> list[MemoryCandidate]:
+                    parameters: MemoryParameters,
+                    states: Mapping[str, MemoryState]) -> list[MemoryCandidate]:
     """Rank experiential candidates with stable-ID ties and anti-pattern grouping."""
+    # states is keyed by MemoryCandidate.dynamics_state_ref and is resolved by the caller
+    # (TASK-5665); this function stays pure and never reads a store. A candidate whose
+    # dynamics_state_ref is None or absent from states is neutral: retrievability 1.0.
+    # Return new candidates (model_copy) with ranking_score set; never mutate the input.
     # FILL IN: relevance * retrievability * (1 + importance/10) — AC14.
     # Preserve raw similarity; keep user-knowledge relevance/validity outside FSRS.
     raise NotImplementedError

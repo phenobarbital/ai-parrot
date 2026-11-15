@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-892 - Agent Memory — Unified Integration, User Knowledge and Dynamics
 **Spec**: `sdd/specs/agent-memory-mixin.spec.md`
-**Status**: blocked
+**Status**: pending
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-5660
@@ -18,7 +18,7 @@ These are planning artifacts, not evidence that carried G1–G4 gates passed.
 
 ## Release Preconditions
 
-G2/Q5: select canonical benchmark evidence and numeric supported ceiling; amend transaction/schema details before production backend release.
+G2/Q5: ACCEPTED in the spec section "Gate amendment accepted for TASK-5660 and TASK-5661" (rev 0.6): D5 canonical S2 run, D6 exact-search ceiling of 5,000 filtered rows (p95 ≤ 150 ms), D7 degradation (`vector_ceiling` constructor setting, `vector_status(namespace_filter)`, FTS never masks it), D8 storage protocol and schema versioning, D9 lexical route and retention. `reviews`/`memory_state`/`apply_review` stay with TASK-5662. The blueprint's FILL IN items are superseded by that section where they differ. Released.
 
 Before releasing any blocked task, record the accepted amendment in the spec, expand its
 Validation Contract with the released module test paths, regenerate the index test contract

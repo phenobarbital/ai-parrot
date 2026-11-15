@@ -220,7 +220,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "blocked",
+      "status": "pending",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -241,7 +241,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "blocked",
+      "status": "pending",
       "priority": "high",
       "effort": "M",
       "depends_on": [

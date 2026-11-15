@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-892 - Agent Memory — Unified Integration, User Knowledge and Dynamics
 **Spec**: `sdd/specs/agent-memory-mixin.spec.md`
-**Status**: blocked
+**Status**: pending
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-5656
@@ -18,7 +18,7 @@ These are planning artifacts, not evidence that carried G1–G4 gates passed.
 
 ## Release Preconditions
 
-G2: canonical namespace encoding and SQL/cache migration rules must be frozen; no guessed UUID namespace.
+G2: ACCEPTED in the spec section "Gate amendment accepted for TASK-5660 and TASK-5661" (rev 0.6): D1 model scope outside canonical identity, D2 filter semantics for legacy NULL rows, D3 Redis key encoding (`model:<percent-encoded>`; prefix unchanged without `model_id`), D4 permanent `FEEDBACK_IMPORT_NAMESPACE` and additive migration. The blueprint's FILL IN items are superseded by that section where they differ. Released.
 
 Before releasing any blocked task, record the accepted amendment in the spec, expand its
 Validation Contract with the released module test paths, regenerate the index test contract
