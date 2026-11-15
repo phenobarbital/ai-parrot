@@ -510,7 +510,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -521,7 +521,7 @@
       "parallel": true,
       "parallelism_notes": "Consumes AgentMemoryMixin and shared brain-contract tests from TASK-5672; Consumes bind_memory_scope/reset_memory_scope from TASK-5654; Consumes single prepare_context/record_event path from TASK-5670",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-15T23:47:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5673-agent-memory-lifecycle.md"
     },
@@ -729,3 +729,4 @@
     }
   ]
 }
+
