@@ -69,7 +69,10 @@ async def test_gh_pr_edit_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyP
     service = ExperienceService.from_root(root)
 
     session_a = ExperienceInterceptor(session="session-a", cwd=str(root), seat="nova")
-    assert await _command(session_a, ["gh", "pr", "edit", "12"], ok=False, error="Projects classic is no longer supported") == []
+    assert (
+        await _command(session_a, ["gh", "pr", "edit", "12"], ok=False, error="Projects classic is no longer supported")
+        == []
+    )
     lesson_id = await service.record(_draft(), session="session-a", source="authored", seat="nova")
     assert lesson_id
     await service.refresh()
@@ -86,11 +89,14 @@ async def test_gh_pr_edit_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyP
         )
         assert len(advice) == 1
         assert "candidate" in advice[0] and "Unverified note" in advice[0]
-        assert await _command(
-            interceptor,
-            ["gh", "api", "-X", "PATCH", "repos/acme/widgets/pulls/12"],
-            ok=True,
-        ) == []
+        assert (
+            await _command(
+                interceptor,
+                ["gh", "api", "-X", "PATCH", "repos/acme/widgets/pulls/12"],
+                ok=True,
+            )
+            == []
+        )
 
     await service.refresh()
     confirmed = await service.get_lesson(lesson_id)
@@ -115,7 +121,10 @@ async def test_gh_pr_edit_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyP
     await service.refresh()
     retired = await service.get_lesson(lesson_id)
     assert retired is not None and retired.state == "retired"
-    assert await service.match_failure("gh pr edit 12", "Projects classic is no longer supported", session="session-e") is None
+    assert (
+        await service.match_failure("gh pr edit 12", "Projects classic is no longer supported", session="session-e")
+        is None
+    )
 
 
 @pytest.mark.asyncio
