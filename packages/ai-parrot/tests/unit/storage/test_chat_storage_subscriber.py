@@ -210,9 +210,11 @@ async def test_tombstone_failure_aborts_the_delete(storage, cold, monkeypatch):
 
 async def test_delete_landing_between_cold_and_hot_write_wins(cold, redis_url):
     class _RacyHot(RedisConversation):
-        async def upsert_turn(self, user_id, session_id, turn, chatbot_id=None):
+        async def upsert_turn(self, user_id, session_id, turn, chatbot_id=None, *, create=True, keep_seed_suffix=False):
             await cold.put_tombstone(user_id, chatbot_id, session_id)  # the delete lands mid-store
-            await super().upsert_turn(user_id, session_id, turn, chatbot_id)
+            return await super().upsert_turn(
+                user_id, session_id, turn, chatbot_id, create=create, keep_seed_suffix=keep_seed_suffix
+            )
 
     hot = _RacyHot(redis_url=redis_url, key_prefix="chat-race")
     st = ChatStorage(redis_conversation=hot, dynamodb=cold)

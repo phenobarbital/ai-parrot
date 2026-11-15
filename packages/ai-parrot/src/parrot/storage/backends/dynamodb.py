@@ -426,7 +426,7 @@ class ConversationDynamoDB(ConversationBackend):
         session_id: str,
         turn_id: str,
         data: dict,
-    ) -> None:
+    ) -> dict:
         """Idempotent transactional upsert of a turn and its chronological companion.
 
         Raises:
@@ -445,7 +445,7 @@ class ConversationDynamoDB(ConversationBackend):
             items = self._plan_put(pk, session_id, turn_id, payload, micros, seq, existing, state_op)
             try:
                 await self._transact(items)
-                return
+                return payload
             except _OrderingRace:
                 continue  # a concurrent first write won: re-read, reuse its ordering
         raise StorageWriteError(f"turn {turn_id}: lost the ordering race 3 times")

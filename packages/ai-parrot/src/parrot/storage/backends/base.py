@@ -96,10 +96,12 @@ class ConversationBackend(ABC):
         session_id: str,
         turn_id: str,
         data: dict,
-    ) -> None:
+    ) -> dict:
         """Idempotent upsert by ``turn_id``, atomic with the deletion guard and the chronological entry.
 
         Ordering fields (timestamp, sequence) of an existing turn are never changed.
+        Returns the committed payload with those canonical ordering fields, so downstream
+        caches do not insert updates using the incoming (possibly changed) ordering.
 
         Raises:
             StorageUnavailableError: When the backend is disconnected.

@@ -26,10 +26,6 @@ from typing import Dict, List, Optional, Sequence, Set, Tuple
 import aiosqlite
 from navconfig.logging import logging
 
-# aiosqlite logs the full SQL + bind params at DEBUG, which leaks
-# conversation payloads into stdout/CloudWatch. Silence at import time.
-logging.getLogger("aiosqlite").setLevel(logging.INFO)
-
 from parrot.storage.backends.base import BackfillBatch, ConversationBackend
 from parrot.storage.errors import (
     ConversationDeletedError,
@@ -37,6 +33,10 @@ from parrot.storage.errors import (
     StorageUnavailableError,
     StorageWriteError,
 )
+
+# aiosqlite logs the full SQL + bind params at DEBUG, which leaks
+# conversation payloads into stdout/CloudWatch. Silence at import time.
+logging.getLogger("aiosqlite").setLevel(logging.INFO)
 
 
 def _chrono_fields(data: dict) -> Tuple[Optional[datetime], int]:
@@ -392,7 +392,7 @@ class ConversationSQLiteBackend(ConversationBackend):
         session_id: str,
         turn_id: str,
         data: dict,
-    ) -> None:
+    ) -> dict:
         """Idempotent upsert by ``turn_id``, atomic with the tombstone guard.
 
         Raises:
@@ -421,12 +421,15 @@ class ConversationSQLiteBackend(ConversationBackend):
             turn_id,
         )
         try:
-            cursor = await self._conn.execute(self._UPSERT_TURN, params)
+            async with self._conn.execute(self._UPSERT_TURN + " RETURNING payload", params) as cursor:
+                stored = await cursor.fetchone()
             await self._conn.commit()
         except sqlite3.Error as exc:
             raise StorageWriteError(f"SQLite put_turn failed for session {session_id} turn {turn_id}: {exc}") from exc
-        if cursor.rowcount == 0:
+        if stored is None:
             raise ConversationDeletedError(f"session {session_id} or turn {turn_id} is tombstoned; write rejected")
+
+        return json.loads(stored["payload"])
 
     async def query_turns(
         self,

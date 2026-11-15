@@ -1,8 +1,10 @@
 """FEAT-886 M17 — BotManager turn-persistence lifecycle and durable-memory attachment (real manager, real bus)."""
+
 from __future__ import annotations
 
 import inspect
 import uuid
+from typing import Any, Callable, Dict, Optional
 
 import pytest
 from aiohttp import web
@@ -26,11 +28,31 @@ pytestmark = pytest.mark.skipif(
 class _HotTier(InMemoryConversation):
     """Stand-in for the Redis hot tier (the one external service): same upsert contract."""
 
-    async def upsert_turn(self, user_id, session_id, turn, chatbot_id=None):
-        history = await self.get_history(user_id, session_id, chatbot_id) or await self.create_history(
-            user_id, session_id, chatbot_id=chatbot_id)
+    async def upsert_turn(self, user_id, session_id, turn, chatbot_id=None, *, create=True, keep_seed_suffix=False):
+        history = await self.get_history(user_id, session_id, chatbot_id)
+        if history is None and not create:  # same contract as RedisConversation.upsert_turn(create=False)
+            return False
+        if keep_seed_suffix and history and (history.metadata.get("cold_seed") or {}).get("validation_pending"):
+            return False
+        history = history or await self.create_history(user_id, session_id, chatbot_id=chatbot_id)
         history.turns = [t for t in history.turns if t.turn_id != turn.turn_id] + [turn]
         await self.update_history(history)
+        return True
+
+    async def merge_metadata(
+        self,
+        user_id: str,
+        session_id: str,
+        chatbot_id: Optional[str] = None,
+        *,
+        mutate: Callable[[Dict[str, Any]], Dict[str, Any]],
+        ttl: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Apply the production hot tier's metadata mutation contract to the in-memory stand-in."""
+        history = await self.get_history(user_id, session_id, chatbot_id)
+        history.metadata = mutate(dict(history.metadata))
+        await self.update_history(history)
+        return history.metadata
 
 
 class _Client(AbstractClient):
@@ -61,8 +83,9 @@ class _Client(AbstractClient):
 
 
 def _manager() -> BotManager:
-    return BotManager(enable_database_bots=False, enable_crews=False, enable_registry_bots=True,
-                      enable_swagger_api=False)
+    return BotManager(
+        enable_database_bots=False, enable_crews=False, enable_registry_bots=True, enable_swagger_api=False
+    )
 
 
 def _bot(name: str = "alpha", **kw) -> BaseBot:
@@ -190,8 +213,7 @@ async def test_bus_start_failure_does_not_block_startup(monkeypatch, caplog, sto
     await runner.setup()  # startup finishes
     try:
         assert "turn_persistence" not in app
-        assert any(r.levelname == "ERROR" and "Turn persistence not started" in r.getMessage()
-                   for r in caplog.records)
+        assert any(r.levelname == "ERROR" and "Turn persistence not started" in r.getMessage() for r in caplog.records)
         bot = _bot()
         mgr.add_bot(bot)
         assert bot.turn_publisher is None and bot.hydration_source is None
@@ -316,8 +338,13 @@ class _RecordingAsk(_Client):
         from parrot.models.responses import CompletionUsage
 
         self.histories.append([m.content for m in history])
-        return AIMessage(input=prompt, output="ok", model="stub", provider="stub",
-                         usage=CompletionUsage(prompt_tokens=1, completion_tokens=1))
+        return AIMessage(
+            input=prompt,
+            output="ok",
+            model="stub",
+            provider="stub",
+            usage=CompletionUsage(prompt_tokens=1, completion_tokens=1),
+        )
 
 
 async def test_a_deleted_turn_is_not_fed_to_the_llm_by_the_next_ask(wired, storage):
@@ -327,8 +354,7 @@ async def test_a_deleted_turn_is_not_fed_to_the_llm_by_the_next_ask(wired, stora
     await runner.setup()
     try:
         client = _RecordingAsk()
-        bot = BaseBot(name="alpha", llm=client, memory_type="memory", injection_detection=False,
-                      chatbot_id="uuid-1")
+        bot = BaseBot(name="alpha", llm=client, memory_type="memory", injection_detection=False, chatbot_id="uuid-1")
         await bot.configure()
         bot.conversation_memory = InMemoryConversation()
         mgr._attach_durable_memory(bot)

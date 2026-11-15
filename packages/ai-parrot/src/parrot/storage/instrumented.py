@@ -77,7 +77,7 @@ class InstrumentedBackend(ConversationBackend):
     # Turns
     # ------------------------------------------------------------------
 
-    async def put_turn(self, *a, **kw) -> None:
+    async def put_turn(self, *a, **kw) -> dict:
         return await self._measure("put_turn", self._inner.put_turn, *a, **kw)
 
     async def query_turns(self, *a, **kw) -> List[dict]:

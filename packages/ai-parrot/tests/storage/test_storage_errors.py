@@ -141,6 +141,10 @@ class _ReferenceBackend(ConversationBackend):
         if turn_id not in rows:
             rows[turn_id] = dict(data)
             self.state.setdefault(key, "ready")
+        else:
+            original = rows[turn_id]
+            rows[turn_id] = {**data, "timestamp": original.get("timestamp"), "sequence": original.get("sequence")}
+        return dict(rows[turn_id])
 
     async def query_turns(self, user_id, agent_id, session_id, limit=10, newest_first=True):
         self._need()
