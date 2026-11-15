@@ -8,19 +8,23 @@ token-budgeted context assembly.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import logging
-from typing import TYPE_CHECKING, Any, Optional, Protocol, runtime_checkable
+from typing import Any, Optional, Protocol, runtime_checkable
 
 from parrot.memory.abstract import ConversationMemory
+from parrot.memory.agent_memory.models import MemoryEvent, MemoryRequestScope, MemoryWriteReceipt
 from parrot.memory.episodic.models import EpisodeCategory, EpisodeOutcome, MemoryNamespace
 from parrot.memory.episodic.store import EpisodicMemoryStore
+from parrot.memory.unified.models import MemoryCandidate
+from parrot.memory.user.extraction import extract_user_knowledge
+from parrot.memory.user.models import UserKnowledge, UserKnowledgeCommand, UserMemoryReceipt
+from parrot.memory.user.store import UserMemoryStore
 
 from .context import ContextAssembler
 from .models import MemoryConfig, MemoryContext
 from .routing import CrossDomainRouter
-
-if TYPE_CHECKING:
-    from parrot.memory.dream import BrainStore
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +73,9 @@ class UnifiedMemoryManager:
             protocol).
         config: Optional memory configuration; defaults to ``MemoryConfig()``.
         cross_domain_router: Optional router for multi-agent memory sharing.
+        user_memory_store: Optional independently-owned user knowledge store.
+        extraction_client: Optional client used for bounded user-knowledge extraction.
+        brain_service: Optional injected tenant-bound brain service.
 
     Example:
         manager = UnifiedMemoryManager(
@@ -88,8 +95,9 @@ class UnifiedMemoryManager:
         skill_registry: Optional[Any] = None,
         config: Optional[MemoryConfig] = None,
         cross_domain_router: Optional[CrossDomainRouter] = None,
-        brain: Optional[BrainStore] = None,
-        org_brain: Optional[BrainStore] = None,
+        user_memory_store: UserMemoryStore | None = None,
+        extraction_client: Any | None = None,
+        brain_service: Any | None = None,
     ) -> None:
         self.namespace = namespace
         self.conversation = conversation_memory
@@ -98,8 +106,9 @@ class UnifiedMemoryManager:
         self.config = config or MemoryConfig()
         self._assembler = ContextAssembler(self.config)
         self._cross_domain_router = cross_domain_router
-        self.brain = brain
-        self.org_brain = org_brain
+        self.user_memory_store = user_memory_store
+        self.extraction_client = extraction_client
+        self.brain_service = brain_service
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
     # ------------------------------------------------------------------
@@ -127,7 +136,7 @@ class UnifiedMemoryManager:
         Calls ``cleanup()`` on each subsystem that exposes it.
         """
         for name, subsystem in self._subsystems():
-            method = getattr(subsystem, "cleanup", None)
+            method = getattr(subsystem, "cleanup", None) or getattr(subsystem, "close", None)
             if callable(method):
                 self.logger.debug("Cleaning up subsystem: %s", name)
                 await method()
@@ -173,6 +182,84 @@ class UnifiedMemoryManager:
             relevant_skills=skills_text,
             conversation=conv_text,
             semantic_knowledge=brain_text,
+        )
+
+    async def prepare_context(self, query: str, *, scope: MemoryRequestScope) -> MemoryContext:
+        """Retrieve enabled supplementary capabilities under an immutable request scope.
+
+        Unlike :meth:`get_context_for_query`, this agent-owned path never retrieves
+        conversation history.  The host already owns hydrated history and adding it
+        here would create a second, unguarded history source.
+
+        Args:
+            query: Current user query used for scoped retrieval.
+            scope: Server-resolved immutable request identity.
+
+        Returns:
+            One bounded supplementary context assembled from complete candidates.
+        """
+        episodic_task = self._get_episodic_candidates(query, scope)
+        skills_task = self._get_skill_candidates(query, scope)
+        user_task = self._get_user_candidates(query, scope)
+        brain_task = self._get_brain_candidates(query, scope)
+        candidate_groups = await asyncio.gather(episodic_task, skills_task, user_task, brain_task)
+        candidates = [candidate for group in candidate_groups for candidate in group]
+        context = self._assembler.assemble_candidates(candidates, scope=scope)
+
+        # BrainService phase one returns plain text.  It is useful contextual data,
+        # but it does not identify a versioned brain page and therefore cannot be
+        # exposed as reviewable evidence.
+        brain_prefix = "brain_text:"
+        return context.model_copy(
+            update={"delivered_refs": tuple(ref for ref in context.delivered_refs if not ref.startswith(brain_prefix))}
+        )
+
+    async def record_event(self, event: MemoryEvent) -> MemoryWriteReceipt:
+        """Route an observed event to its owning stores without replaying tool attempts.
+
+        A response without verified outcome evidence becomes one PARTIAL episodic
+        record.  Tool observations remain owned by their execution hook, so they are
+        never replayed as either tool or response episodes here.  User extraction is
+        independent of episodic recording and preserves any durable write failures in
+        the returned receipt.
+
+        Args:
+            event: Validated, scoped observation from one request lifecycle.
+
+        Returns:
+            A receipt describing only durable effects and recorded failures.
+        """
+        if event.kind == "tool":
+            return MemoryWriteReceipt(event_id=event.event_id, scope=event.scope, status="ignored")
+
+        episode_ids: list[str] = []
+        knowledge_ids: list[str] = []
+        statuses: list[str] = []
+        failures: list[str] = []
+
+        if event.kind == "response" and self.config.enable_episodic and self.episodic is not None:
+            try:
+                episode = await self._record_response_event(event)
+                episode_ids.append(episode.episode_id)
+                statuses.append("applied")
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning("response episode recording failed: %s", type(exc).__name__)
+                statuses.append("storage_unavailable")
+                failures.append(f"episodic:{type(exc).__name__}")
+
+        if event.kind in {"response", "user_knowledge"}:
+            user_statuses, user_ids, user_failures = await self._record_user_knowledge(event)
+            statuses.extend(user_statuses)
+            knowledge_ids.extend(user_ids)
+            failures.extend(user_failures)
+
+        return MemoryWriteReceipt(
+            event_id=event.event_id,
+            scope=event.scope,
+            status=self._receipt_status(statuses),
+            episode_ids=tuple(episode_ids),
+            knowledge_ids=tuple(knowledge_ids),
+            failures=tuple(failures),
         )
 
     async def record_interaction(
@@ -325,13 +412,7 @@ class UnifiedMemoryManager:
             return ""
 
     async def _get_brain_knowledge(self, query: str) -> str:
-        """Retrieve distilled knowledge from the agent's brain wiki (FEAT-390).
-
-        Queries ``brain`` and, when configured, ``org_brain`` in sequence
-        (both fast, in-process SQLite reads); non-empty results are joined
-        with a blank-line separator. Any failure — or no brain configured
-        at all — degrades to an empty string; this must never raise or
-        delay the surrounding ``asyncio.gather``.
+        """Retrieve plain-text brain knowledge for the legacy text API.
 
         Args:
             query: Current user query.
@@ -339,26 +420,215 @@ class UnifiedMemoryManager:
         Returns:
             Packed brain-knowledge text, or ``""`` when unavailable.
         """
-        if self.brain is None:
+        if self.brain_service is None:
             return ""
-
-        parts: list[str] = []
         try:
-            agent_result = await self.brain.search(query)
-            if agent_result:
-                parts.append(agent_result)
+            result = await self.brain_service.search(
+                query,
+                self.namespace.tenant_id,
+                self.config.max_context_tokens,
+            )
+            return result if isinstance(result, str) else ""
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("Brain retrieval failed: %s", exc)
+            return ""
 
-        if self.org_brain is not None:
+    async def _get_episodic_candidates(
+        self,
+        query: str,
+        scope: MemoryRequestScope,
+    ) -> list[MemoryCandidate]:
+        """Retrieve scoped experiential candidates without mutating manager state."""
+        if not self.config.enable_episodic or self.episodic is None:
+            return []
+        try:
+            episodes = await self.episodic.recall_similar(
+                query=query,
+                namespace=self._namespace_for_scope(scope),
+                top_k=self.config.episodic_max_warnings,
+                include_failures_only=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning("Episodic candidate retrieval failed: %s", type(exc).__name__)
+            return []
+
+        candidates: list[MemoryCandidate] = []
+        for episode in episodes:
+            text = episode.searchable_text()
+            if not text:
+                continue
+            score = episode.ranking_score if episode.ranking_score is not None else episode.score
+            candidates.append(
+                MemoryCandidate(
+                    scope=scope,
+                    memory_id=episode.episode_id,
+                    content_version="v1",
+                    source="episodic",
+                    text=text,
+                    relevance=min(max(score, 0.0), 1.0),
+                    similarity=min(max(episode.score, 0.0), 1.0),
+                    ranking_score=score,
+                    candidate_type="episodic",
+                    importance=episode.importance,
+                )
+            )
+        return candidates
+
+    async def _get_skill_candidates(self, query: str, scope: MemoryRequestScope) -> list[MemoryCandidate]:
+        """Return the formatted skill result as one non-experiential candidate."""
+        if not self.config.enable_skills:
+            return []
+        text = await self._get_relevant_skills(query)
+        if not text:
+            return []
+        return [
+            MemoryCandidate(
+                scope=scope,
+                memory_id=self._text_id("skill", query),
+                content_version="text-v1",
+                source="skill",
+                text=text,
+                relevance=1.0,
+                candidate_type="skill",
+            )
+        ]
+
+    async def _get_user_candidates(self, query: str, scope: MemoryRequestScope) -> list[MemoryCandidate]:
+        """Retrieve active user knowledge independently of episodic capability."""
+        if not self.config.enable_user_memory or self.user_memory_store is None or scope.user_id is None:
+            return []
+        try:
+            knowledge = await self.user_memory_store.recall(query, scope=scope)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning("User knowledge retrieval failed: %s", type(exc).__name__)
+            return []
+        return [self._user_candidate(item, scope) for item in knowledge]
+
+    async def _get_brain_candidates(self, query: str, scope: MemoryRequestScope) -> list[MemoryCandidate]:
+        """Retrieve tenant-bound plain-text brain context without a page reference."""
+        if not self.config.enable_brain or self.brain_service is None:
+            return []
+        try:
+            text = await self.brain_service.search(query, scope.tenant_id, self.config.max_context_tokens)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning("Brain candidate retrieval failed: %s", type(exc).__name__)
+            return []
+        if not isinstance(text, str) or not text:
+            return []
+        return [
+            MemoryCandidate(
+                scope=scope,
+                memory_id=self._text_id("brain", query),
+                content_version="text-only",
+                source="brain_text",
+                text=text,
+                relevance=1.0,
+                candidate_type="brain",
+            )
+        ]
+
+    async def _record_response_event(self, event: MemoryEvent) -> Any:
+        """Persist one unverified response as a PARTIAL query-resolution episode."""
+        query = self._event_text(event.payload, "query", "user_message", "prompt")
+        response = self._event_text(event.payload, "response", "response_text", "assistant_message")
+        return await self.episodic.record_episode(  # type: ignore[union-attr]
+            namespace=self._namespace_for_scope(event.scope),
+            situation=query[:500],
+            action_taken=f"Responded: {response}",
+            outcome=EpisodeOutcome.PARTIAL,
+            category=EpisodeCategory.QUERY_RESOLUTION,
+        )
+
+    async def _record_user_knowledge(self, event: MemoryEvent) -> tuple[list[str], list[str], list[str]]:
+        """Extract and persist scoped user knowledge, retaining each durable result."""
+        if not self.config.enable_user_memory or self.user_memory_store is None or self.extraction_client is None:
+            return [], [], []
+        try:
+            candidates = await extract_user_knowledge(event, client=self.extraction_client)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning("User knowledge extraction failed: %s", type(exc).__name__)
+            return ["storage_unavailable"], [], [f"user_extraction:{type(exc).__name__}"]
+
+        statuses: list[str] = []
+        knowledge_ids: list[str] = []
+        failures: list[str] = []
+        for index, candidate in enumerate(candidates):
+            command = UserKnowledgeCommand(
+                event_id=self._candidate_event_id(event.event_id, index),
+                candidate=candidate,
+                evidence_refs=event.evidence_refs,
+            )
             try:
-                org_result = await self.org_brain.search(query)
-                if org_result:
-                    parts.append(org_result)
+                receipt: UserMemoryReceipt = await self.user_memory_store.upsert(command, scope=event.scope)
             except Exception as exc:  # noqa: BLE001
-                self.logger.warning("Org-brain retrieval failed: %s", exc)
+                self.logger.warning("User knowledge persistence failed: %s", type(exc).__name__)
+                statuses.append("storage_unavailable")
+                failures.append(f"user_memory:{type(exc).__name__}")
+                continue
+            statuses.append(receipt.status)
+            if receipt.knowledge_id is not None:
+                knowledge_ids.append(receipt.knowledge_id)
+        return statuses, knowledge_ids, failures
 
-        return "\n\n".join(parts)
+    @staticmethod
+    def _namespace_for_scope(scope: MemoryRequestScope) -> MemoryNamespace:
+        """Build a per-request episodic namespace without changing ``self.namespace``."""
+        return MemoryNamespace(
+            tenant_id=scope.tenant_id,
+            agent_id=scope.agent_id,
+            model_id=scope.model_id,
+            user_id=scope.user_id,
+            session_id=scope.session_id,
+            room_id=scope.room_id,
+            crew_id=scope.crew_id,
+        )
+
+    @staticmethod
+    def _event_text(payload: dict[str, Any], *keys: str) -> str:
+        """Return the first textual payload value from trusted event data."""
+        for key in keys:
+            value = payload.get(key)
+            if isinstance(value, str):
+                return value
+        return ""
+
+    @staticmethod
+    def _candidate_event_id(event_id: str, index: int) -> str:
+        """Derive a bounded, deterministic store event identity per extracted claim."""
+        material = f"{event_id}\x00{index}".encode("utf-8")
+        return f"knowledge-{hashlib.sha256(material).hexdigest()}"
+
+    @staticmethod
+    def _text_id(kind: str, text: str) -> str:
+        """Return a stable identifier for non-versioned contextual text."""
+        return f"{kind}-{hashlib.sha256(text.encode('utf-8')).hexdigest()}"
+
+    @staticmethod
+    def _receipt_status(statuses: list[str]) -> str:
+        """Summarize component receipts without claiming success after a failed write."""
+        if "applied" in statuses:
+            return "applied"
+        if "duplicate" in statuses:
+            return "duplicate"
+        if "conflict" in statuses:
+            return "conflict"
+        if "storage_unavailable" in statuses:
+            return "storage_unavailable"
+        return "ignored"
+
+    @staticmethod
+    def _user_candidate(knowledge: UserKnowledge, scope: MemoryRequestScope) -> MemoryCandidate:
+        """Translate a durable user fact into a contextual candidate."""
+        value = json.dumps(knowledge.value, ensure_ascii=False, sort_keys=True)
+        return MemoryCandidate(
+            scope=scope,
+            memory_id=knowledge.knowledge_id,
+            content_version=str(knowledge.revision),
+            source="user_memory",
+            text=f"{knowledge.kind}: {value}",
+            relevance=1.0,
+            candidate_type="user",
+        )
 
     async def _record_episodic(
         self,
@@ -418,8 +688,7 @@ class UnifiedMemoryManager:
                 ("episodic", self.episodic),
                 ("skills", self.skills),
                 ("conversation", self.conversation),
-                ("brain", self.brain),
-                ("org_brain", self.org_brain),
+                ("user_memory", self.user_memory_store),
             ]
             if obj is not None
         ]
