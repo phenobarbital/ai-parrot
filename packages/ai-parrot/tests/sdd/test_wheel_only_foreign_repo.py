@@ -516,6 +516,15 @@ SCENARIOS: dict[str, Scenario] = {
         expect_exit=_ANY_CLEAN,
         placeholders={"<task.md>": "sdd/tasks/active/TASK-001-demo-task.md"},
     ),
+    "experience_cli": Scenario(
+        prepare=_seed_feature,
+        expect_exit=_ANY_CLEAN,
+        placeholders={
+            "<task.md>": "sdd/tasks/active/TASK-001-demo-task.md",
+            "<command>": "pytest",
+            "<observed correction>": "Use the configured test command.",
+        },
+    ),
 }
 
 

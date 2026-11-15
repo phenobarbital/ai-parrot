@@ -1584,7 +1584,10 @@ async def test_record_lessons_from_output(tmp_path: Path, noop_probe, fake_exper
 
 
 @pytest.mark.asyncio
-async def test_engine_briefing_both_seats(git_sandbox_feature, noop_probe, fake_experience, monkeypatch) -> None:
+@pytest.mark.parametrize("procedure_block", ["", "### Procedure\nNext: Close the task."])
+async def test_engine_briefing_both_seats(
+    git_sandbox_feature, noop_probe, fake_experience, monkeypatch, procedure_block
+) -> None:
     """The briefing reaches the MCP TaskScopedBrief and NativePrep; failures degrade to empty text."""
     worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
     builder = fake_builder_factory({})
@@ -1598,17 +1601,23 @@ async def test_engine_briefing_both_seats(git_sandbox_feature, noop_probe, fake_
     engine = SddCoderEngine(
         roster=roster, probe=noop_probe, worktree_base_path=str(base_path), dispatcher_builder=builder
     )
+
+    async def procedure_for(ctx, task) -> str:
+        return procedure_block
+
+    monkeypatch.setattr(engine, "_procedure_briefing_for", procedure_for)
+    expected_briefing = "\n\n".join(block for block in (fake_experience.brief_text, procedure_block) if block)
     plan = await engine.plan("demo", str(worktree))
     native_id = next(t.task_id for t in plan.chunks[0].tasks if t.native)
     prep = await engine.prepare_native("demo", str(worktree), native_id)
-    assert prep.experience_briefing == fake_experience.brief_text
+    assert prep.experience_briefing == expected_briefing
     assert fake_experience.refreshed >= 1
 
     mcp_id = next(t.task_id for t in plan.chunks[0].tasks if not t.native)
     job = await engine.run_chunk("demo", str(worktree), [mcp_id])
     await engine.wait(job.job_id, 5)
     calls = [c for d in builder.dispatchers.values() for c in d.calls]
-    assert calls and all(c["brief"].experience_briefing == fake_experience.brief_text for c in calls)
+    assert calls and all(c["brief"].experience_briefing == expected_briefing for c in calls)
 
     # Service failure: empty briefing, dispatch unaffected.
     def _down(cls, root=None):

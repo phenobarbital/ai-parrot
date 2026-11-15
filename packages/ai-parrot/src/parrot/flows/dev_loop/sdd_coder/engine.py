@@ -2590,7 +2590,14 @@ class SddCoderEngine:
             self._feedback_sources[attempt_uid] = (ctx.worktree, task.task_id, "native", model)
             feedback_context = await self._feedback_for(ctx, task, "native", model)
             self._feedback_contexts[attempt_uid] = feedback_context
-            experience_briefing = await self._experience_briefing_for(ctx, task)
+            experience_briefing = "\n\n".join(
+                block
+                for block in (
+                    await self._experience_briefing_for(ctx, task),
+                    await self._procedure_briefing_for(ctx, task),
+                )
+                if block
+            )
 
             # FEAT-584 M8/R8: register a `pending` handle for this native reservation --
             # `native_observation` (below) is the ONLY authority that later links it to
@@ -3837,7 +3844,14 @@ class SddCoderEngine:
             )
             feedback_context = await self._feedback_for(ctx, task, seat.backend, seat.model)
             self._feedback_contexts[attempt_uid] = feedback_context
-            experience_briefing = await self._experience_briefing_for(ctx, task)
+            experience_briefing = "\n\n".join(
+                block
+                for block in (
+                    await self._experience_briefing_for(ctx, task),
+                    await self._procedure_briefing_for(ctx, task),
+                )
+                if block
+            )
             capability = self._validation_capability(
                 ctx, task, path=path, attempt_uid=attempt_uid, execution_id=execution_id or ""
             )
@@ -3998,6 +4012,41 @@ class SddCoderEngine:
             return await service.brief(task.title or task.task_id, files)
         except Exception:  # noqa: BLE001 - experience is advisory and must never break dispatch
             self.logger.warning("experience briefing unavailable for %s", task.task_id, exc_info=True)
+            return ""
+
+    async def _procedure_briefing_for(self, ctx: _FeatureCtx, task: PlannedTask) -> str:
+        """Return local procedure guidance; absent, stale, disabled or failed planes are silent."""
+        try:
+            from parrot.knowledge.wiki.procedure.index import is_stale, read_index
+            from parrot.knowledge.wiki.procedure.plane import ProcedurePlane
+            from parrot.knowledge.wiki.procedure.resolver import resolve
+            from parrot.sdd.config import ProcedureSettings, load_sdd_config
+            from parrot.sdd.scripts.procedure import render_brief
+            from parrot.sdd.scripts.procedure_probes import SddProbeRunner, scope_for
+
+            root = Path(ctx.worktree)
+            config = await asyncio.to_thread(load_sdd_config, root)
+            settings = config.procedure or ProcedureSettings()
+            if not settings.enabled:
+                return ""
+            plane = await asyncio.to_thread(ProcedurePlane.for_root, root)
+            if plane is None:
+                return ""
+            document = await asyncio.to_thread(read_index, plane.plane_dir)
+            shared = plane.plane_dir.parent.parent
+            if await asyncio.to_thread(is_stale, document, root=shared):
+                return ""
+            specs = await plane.specs()
+
+            def local_brief() -> str:
+                """Read task-worktree state off the event loop, without remote probes."""
+                scope = scope_for(root, feature=ctx.feature, task=task.task_id)
+                resolution = resolve(specs, scope, SddProbeRunner(root), allow_remote=False)
+                return render_brief(resolution, max_lines=settings.brief_max_lines)
+
+            return await asyncio.to_thread(local_brief)
+        except Exception:  # noqa: BLE001 — advisory context must never break dispatch
+            self.logger.debug("procedure briefing skipped for %s", task.task_id, exc_info=True)
             return ""
 
     async def _record_lessons(

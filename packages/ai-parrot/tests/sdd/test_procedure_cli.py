@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -243,3 +244,165 @@ def test_render_brief_limits_lines() -> None:
     assert "never by hand; use `parrot sdd task close TASK-1 demo verified`" in brief
     assert len(procedure.render_brief(resolution, max_lines=2).splitlines()) <= 2
     assert procedure.render_brief(Resolution(scope={}, stale=False, next=[], mandatory=[]), max_lines=8) == ""
+
+
+def _write_skill(path: Path, name: str, procedure_fields: str = "  mode: advisory\n") -> None:
+    """Write a real parser-compatible skill with optional procedure metadata."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    metadata = f"procedure:\n{procedure_fields}" if procedure_fields else ""
+    path.write_text(
+        f"---\nname: {name}\ndescription: {name}\ntriggers: []\n{metadata}---\nPerform {name}.\n",
+        encoding="utf-8",
+    )
+
+
+def test_skill_build_check_and_discovery_invalidation(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Both skill layouts reach CLI output, and source changes invalidate both readers."""
+    from parrot.knowledge.wiki.procedure.index import is_stale, read_index
+    from parrot.sdd.scripts.procedure_advice import _fresh_sources
+
+    _write_skill(repo / "skills/first.md", "first", "  next: [second, sdd:spec]\n")
+    _write_skill(repo / "skills/second/SKILL.md", "second")
+    _write_skill(repo / "skills/learned/lesson.md", "lesson", "  mode: mandatory\n  confirm: true\n")
+    _write_skill(repo / "skills/plain.md", "plain", "")
+    assert procedure.main(["build"]) == 0
+    capsys.readouterr()
+    assert procedure.main(["list", "--json"]) == 0
+    specs = {item["id"]: item for item in json.loads(capsys.readouterr().out)}
+    assert specs["skill:first"]["next"] == ["skill:second", "sdd:spec"]
+    assert specs["skill:lesson"]["mode"] == "advisory"
+    assert not specs["skill:lesson"]["confirm"]
+    assert "skill:plain" not in specs
+    assert procedure.main(["check"]) == 0
+    index = read_index(repo / PLANE_DIR)
+    assert not is_stale(index, root=repo)
+    assert _fresh_sources(repo, index)
+
+    _write_skill(repo / "skills/plain.md", "plain")
+    assert is_stale(index, root=repo)
+    assert not _fresh_sources(repo, index)
+    assert procedure.main(["build"]) == 0
+    index = read_index(repo / PLANE_DIR)
+    _write_skill(repo / "skills/new/SKILL.md", "new")
+    assert is_stale(index, root=repo)
+    assert not _fresh_sources(repo, index)
+    assert procedure.main(["build"]) == 0
+    index = read_index(repo / PLANE_DIR)
+    (repo / "skills/new/SKILL.md").unlink()
+    assert is_stale(index, root=repo)
+    assert not _fresh_sources(repo, index)
+
+    _write_skill(repo / "skills/first.md", "first", "  next: [missing]\n")
+    assert procedure.main(["check"]) == 1
+    assert procedure.main(["build"]) == 1
+
+
+def test_configured_skill_directories(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Custom locations are discovered and a configuration change expires the index."""
+    from parrot.knowledge.wiki.procedure.index import is_stale, read_index
+    from parrot.sdd.scripts.procedure_advice import _fresh_sources
+
+    (repo / "sdd/config.json").write_text('{"procedure":{"skill_directories":[".agents/skills"]}}')
+    _write_skill(repo / ".agents/skills/custom/SKILL.md", "custom")
+    assert procedure.main(["build"]) == 0
+    capsys.readouterr()
+    assert procedure.main(["show", "skill:custom", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["id"] == "skill:custom"
+    index = read_index(repo / PLANE_DIR)
+    (repo / "sdd/config.json").write_text('{"procedure":{"skill_directories":[]}}')
+    assert is_stale(index, root=repo)
+    assert not _fresh_sources(repo, index)
+
+
+def test_engine_procedure_briefing(
+    repo: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Engine matches CLI output, uses local probes, and is silent on unavailable planes."""
+    from parrot.flows.dev_loop.sdd_coder.engine import SddCoderEngine, _FeatureCtx
+    from parrot.flows.dev_loop.sdd_coder.models import PlannedTask, RosterConfig, RosterSeat
+    from parrot.knowledge.wiki.procedure.plane import ProcedurePlane
+
+    task_file = _seed_feature(repo)
+    manifest = repo / MANIFEST_DIR / "demo.yaml"
+    manifest.write_text(
+        MANIFEST + "  - {id: remote, title: Push, kind: command, preconditions: [{probe: branch.pushed}]}\n"
+    )
+    engine = SddCoderEngine(roster=RosterConfig(seats=[RosterSeat(label="native", kind="native")]))
+    ctx = _FeatureCtx(str(repo), "FEAT-1", "demo", "feat-FEAT-1-demo", "", "", "dev")
+    task = PlannedTask(task_id="TASK-1", task_file=str(task_file), seat_label="native")
+
+    def briefing() -> str:
+        """Run the real async briefing method from this synchronous CLI test."""
+        return asyncio.run(engine._procedure_briefing_for(ctx, task))
+
+    assert briefing() == ""
+    assert procedure.main(["build"]) == 0
+    capsys.readouterr()
+
+    def no_remote(*args: object, **kwargs: object) -> None:
+        """Remote subprocess probes are forbidden in task context."""
+        raise AssertionError("remote probe invoked")
+
+    monkeypatch.setattr("parrot.sdd.scripts.procedure_probes.subprocess.run", no_remote)
+    assert procedure.main(["brief", "--task-file", str(task_file)]) == 0
+    expected = capsys.readouterr().out.rstrip("\n")
+    assert expected.startswith("### Procedure\n")
+    assert briefing() == expected
+    (repo / "sdd/config.json").write_text('{"procedure":{"enabled":false}}')
+    assert briefing() == ""
+    (repo / "sdd/config.json").write_text('{"procedure":{"brief_max_lines":2}}')
+    assert len(briefing().splitlines()) == 2
+    manifest.write_text(MANIFEST)
+    assert briefing() == ""  # Engine never rebuilds a stale shared plane.
+    assert procedure.main(["build"]) == 0
+
+    async def broken_specs(self: ProcedurePlane) -> list[ProcedureSpec]:
+        """Exercise the advisory failure boundary."""
+        raise OSError("unreadable plane")
+
+    monkeypatch.setattr(ProcedurePlane, "specs", broken_specs)
+    assert briefing() == ""
+
+    async def cancelled_specs(self: ProcedurePlane) -> list[ProcedureSpec]:
+        """Cancellation must propagate rather than become an empty successful result."""
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(ProcedurePlane, "specs", cancelled_specs)
+    with pytest.raises(asyncio.CancelledError):
+        briefing()
+
+
+def test_engine_uses_task_worktree_state(repo: Path, tmp_path: Path) -> None:
+    """Shared plane definitions resolve against the task checkout, not the primary checkout."""
+    from parrot.flows.dev_loop.sdd_coder.engine import SddCoderEngine, _FeatureCtx
+    from parrot.flows.dev_loop.sdd_coder.models import PlannedTask, RosterConfig, RosterSeat
+
+    _seed_feature(repo)
+    assert procedure.main(["build"]) == 0
+    worktree = tmp_path / "task-worktree"
+    worktree.mkdir()
+    admin = repo / ".git/worktrees/task-worktree"
+    admin.mkdir(parents=True)
+    (admin / "commondir").write_text("../..\n")
+    (admin / "HEAD").write_text("ref: refs/heads/feat-FEAT-1-demo\n")
+    (worktree / ".git").write_text(f"gitdir: {admin}\n")
+    engine = SddCoderEngine(roster=RosterConfig(seats=[RosterSeat(label="native", kind="native")]))
+    task = PlannedTask(task_id="TASK-1", task_file="sdd/tasks/active/TASK-1-demo.md", seat_label="native")
+    ctx = _FeatureCtx(str(worktree), "FEAT-1", "demo", "feat-FEAT-1-demo", "", "", "dev")
+    text = asyncio.run(engine._procedure_briefing_for(ctx, task))
+    assert "Write the spec" in text
+    assert "Decompose" not in text
+    _seed_feature(worktree)
+    text = asyncio.run(engine._procedure_briefing_for(ctx, task))
+    assert "Decompose" in text
+    assert "Write the spec" not in text
+
+
+def test_cross_producer_duplicate_is_rejected(repo: Path) -> None:
+    """A manifest cannot silently overwrite a skill with the same qualified id."""
+    _write_skill(repo / "skills/review.md", "review")
+    (repo / MANIFEST_DIR / "demo.yaml").write_text(
+        MANIFEST + "  - {id: 'skill:review', title: Collision, kind: command}\n"
+    )
+    assert procedure.main(["build"]) == 1
+    assert procedure.main(["check"]) == 1
