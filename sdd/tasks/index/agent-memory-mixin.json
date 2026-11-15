@@ -243,7 +243,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -253,9 +253,10 @@
       "parallelism_notes": "Consumes EpisodicMemory/model_id and baseline backend protocol from TASK-5660",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5661-agent-memory-sqlite.md",
-      "blocked_reason": "G2/Q5: select canonical benchmark evidence and numeric supported ceiling; amend transaction/schema details before production backend release."
+      "completed_at": "2026-11-15T01:31:46+00:00",
+      "file": "sdd/tasks/completed/TASK-5661-agent-memory-sqlite.md",
+      "blocked_reason": "G2/Q5: select canonical benchmark evidence and numeric supported ceiling; amend transaction/schema details before production backend release.",
+      "verification": "verified"
     },
     {
       "id": "TASK-5662",
@@ -285,7 +286,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -295,8 +296,9 @@
       "parallelism_notes": "Consumes MemoryNamespace.model_id and accepted serialization/filter contract from TASK-5660",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5663-agent-memory-legacy-backends.md"
+      "completed_at": "2026-11-15T01:32:05+00:00",
+      "file": "sdd/tasks/completed/TASK-5663-agent-memory-legacy-backends.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5664",
