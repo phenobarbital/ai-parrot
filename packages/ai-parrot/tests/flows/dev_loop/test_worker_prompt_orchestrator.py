@@ -361,14 +361,25 @@ def test_experience_asset_twins_are_identical():
     pairs = (
         (".claude/commands/sdd-start.md", "packages/ai-parrot/src/parrot/sdd/_assets/claude/commands/sdd-start.md"),
         (".agent/workflows/sdd-start.md", "packages/ai-parrot/src/parrot/sdd/_assets/agent/workflows/sdd-start.md"),
-        (".agents/skills/sdd-start/SKILL.md", "packages/ai-parrot/src/parrot/sdd/_assets/agents/skills/sdd-start/SKILL.md"),
+        (
+            ".agents/skills/sdd-start/SKILL.md",
+            "packages/ai-parrot/src/parrot/sdd/_assets/agents/skills/sdd-start/SKILL.md",
+        ),
         (".claude/agents/sdd-coder.md", "packages/ai-parrot/src/parrot/sdd/_assets/claude/agents/sdd-coder.md"),
         (".claude/agents/sdd-worker.md", "packages/ai-parrot/src/parrot/sdd/_assets/claude/agents/sdd-worker.md"),
-        (".agents/agents/sdd-coder/agent.md", "packages/ai-parrot/src/parrot/sdd/_assets/agents/agents/sdd-coder/agent.md"),
-        (".agents/agents/sdd-worker/agent.md", "packages/ai-parrot/src/parrot/sdd/_assets/agents/agents/sdd-worker/agent.md"),
+        (
+            ".agents/agents/sdd-coder/agent.md",
+            "packages/ai-parrot/src/parrot/sdd/_assets/agents/agents/sdd-coder/agent.md",
+        ),
+        (
+            ".agents/agents/sdd-worker/agent.md",
+            "packages/ai-parrot/src/parrot/sdd/_assets/agents/agents/sdd-worker/agent.md",
+        ),
     )
     for live_path, asset_path in pairs:
-        assert (root / live_path).read_text(encoding="utf-8") == (root / asset_path).read_text(encoding="utf-8"), live_path
+        assert (root / live_path).read_text(encoding="utf-8") == (root / asset_path).read_text(
+            encoding="utf-8"
+        ), live_path
 
 
 def test_native_worker_prompt_forwards_experience_separately_from_feedback():
