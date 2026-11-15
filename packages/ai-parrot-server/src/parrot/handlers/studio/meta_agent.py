@@ -28,6 +28,7 @@ from typing import Any, Literal, NamedTuple
 from aiohttp import web
 from navigator_auth.decorators import is_authenticated, user_session
 from parrot.bots.studio import AgentStudioAgent
+from parrot.bots.studio.agent import studio_agent_provider
 from pydantic import BaseModel
 
 from ._base import StudioBaseView
@@ -275,10 +276,11 @@ class StudioAssistantHandler(StudioBaseView):
         user, session = await self._get_user(), await self._resolve_session()
         api_key = None
         if ask_request.use_byok or ask_request.key_source is not None:
-            stored = await resolve_user_api_key(self.request.app, user.user_id, "anthropic")
+            provider = studio_agent_provider()
+            stored = await resolve_user_api_key(self.request.app, user.user_id, provider)
             try:
                 source = choose_key_source(
-                    "anthropic", has_byok=bool(stored), requested=ask_request.key_source,
+                    provider, has_byok=bool(stored), requested=ask_request.key_source,
                     use_byok=ask_request.use_byok, ask_when_both=key_source_choice_enabled(self.request.app),
                 )
             except KeySourceRefusal as refusal:

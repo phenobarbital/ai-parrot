@@ -252,3 +252,27 @@ async def test_assistant_honours_key_source(aiohttp_client, pool, clean_keys, as
     assert status == 200 and body["response"] == "key:sk-ant-user-own-1234"
     status, body = await _say(client, key_source="server")
     assert status == 422 and body["code"] == "key_source_unavailable"
+
+
+async def test_assistant_google_provider_uses_google_key_source(
+    aiohttp_client, pool, clean_keys, assistant, monkeypatch  # noqa: F811
+):
+    """With ``STUDIO_AGENT_LLM=google`` the BYOK lookup, the refusal and the 409 details name ``google``."""
+    from parrot.bots.studio import agent as agent_module
+
+    monkeypatch.setattr(agent_module, "STUDIO_AGENT_LLM", "google")
+    app = partition_app(pool, resolver=False)
+    app[STUDIO_KEY_SOURCE_CHOICE] = True
+    client = await aiohttp_client(app)
+    await _store_key(client, "google", USER_GOOGLE)
+    await _store_key(client, "anthropic", "sk-ant-user-own-1234")  # must NOT be the key the assistant picks up
+    monkeypatch.setenv("GOOGLE_API_KEY", "g-server-key")
+    status, body = await _say(client)
+    assert status == 409 and body["code"] == "key_source_required"
+    assert body["details"] == {"provider": "google", "options": ["server", "byok"]}
+    status, body = await _say(client, key_source="byok")
+    assert status == 200 and body["response"] == f"key:{USER_GOOGLE}"
+    monkeypatch.delenv("GOOGLE_API_KEY")
+    status, body = await _say(client, key_source="server")
+    assert status == 422 and body["code"] == "key_source_unavailable"
+    assert body["details"] == {"provider": "google", "requested": "server"}

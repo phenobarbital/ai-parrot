@@ -66,6 +66,65 @@ def _patch_fake_anthropic(monkeypatch):
     return captured
 
 
+class TestProviderResolution:
+    """``STUDIO_AGENT_LLM`` picks the client; real client classes, no network (key passed explicitly)."""
+
+    def test_default_is_anthropic_with_opus(self, monkeypatch):
+        from parrot.clients.anthropic import AnthropicClient
+
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_LLM", "anthropic")
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_MODEL", None)
+        monkeypatch.setattr(tools_module, "build_studio_tools", list)
+
+        bot = AgentStudioAgent(name="t", api_key="k")
+
+        assert type(bot.llm) is AnthropicClient
+        assert bot.llm.model == "claude-opus-5"
+
+    def test_google_uses_gemini_default_never_a_claude_model(self, monkeypatch):
+        from parrot.clients.google import GoogleGenAIClient
+
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_LLM", "google")
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_MODEL", None)
+        monkeypatch.setattr(tools_module, "build_studio_tools", list)
+
+        bot = AgentStudioAgent(name="t", api_key="k")
+
+        assert type(bot.llm) is GoogleGenAIClient
+        assert bot.llm.model == "gemini-flash-latest"
+
+    def test_google_with_explicit_model(self, monkeypatch):
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_LLM", "google")
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_MODEL", "gemini-2.5-pro")
+        monkeypatch.setattr(tools_module, "build_studio_tools", list)
+
+        bot = AgentStudioAgent(name="t", api_key="k")
+
+        assert bot.llm.model == "gemini-2.5-pro"
+
+    def test_unknown_provider_fails_at_construction(self, monkeypatch):
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_LLM", "no-such-provider")
+        monkeypatch.setattr(tools_module, "build_studio_tools", list)
+
+        with pytest.raises(ValueError, match="no-such-provider"):
+            AgentStudioAgent(name="t", api_key="k")
+
+    def test_explicit_llm_wins(self, monkeypatch):
+        from parrot.clients.google import GoogleGenAIClient
+
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_LLM", "no-such-provider")
+        monkeypatch.setattr(tools_module, "build_studio_tools", list)
+        explicit = GoogleGenAIClient(api_key="k", model="gemini-flash-latest")
+
+        bot = AgentStudioAgent(name="t", llm=explicit)
+
+        assert bot.llm is explicit
+
+    def test_provider_helper_normalises(self, monkeypatch):
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_LLM", " Google ")
+        assert agent_module.studio_agent_provider() == "google"
+
+
 class TestModelResolution:
     def test_default_model(self, monkeypatch):
         monkeypatch.setattr(agent_module, "STUDIO_AGENT_MODEL", "claude-opus-5")
@@ -352,6 +411,47 @@ def _make_handler(app, *, method="POST", path="/assistant", json_body=None, sess
     handler._get_user = AsyncMock(return_value=StudioUser(user_id="1"))
     handler._resolve_session = AsyncMock(return_value=session if session is not None else {})
     return handler
+
+
+class TestAssistantProviderKeySource:
+    """The BYOK lookup and the key-source refusal follow ``STUDIO_AGENT_LLM`` (real ``choose_key_source``)."""
+
+    @pytest.mark.asyncio
+    async def test_google_provider_drives_byok_lookup_and_refusal(self, monkeypatch):
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_LLM", "google")
+        looked_up: list[str] = []
+
+        async def _resolve(_app, _user_id, provider):
+            looked_up.append(provider)
+            return None  # no personal key
+
+        monkeypatch.setattr(meta_agent_module, "resolve_user_api_key", _resolve)
+        monkeypatch.setattr(meta_agent_module, "AgentStudioAgent", lambda **kw: _FakeAssistantAgent())
+
+        handler = _make_handler(web.Application(), json_body={"query": "hi", "key_source": "byok"})
+        response = await _unwrap(StudioAssistantHandler.post)(handler)
+
+        assert looked_up == ["google"]
+        body = await _decode(response)
+        assert response.status == 422 and body["code"] == "key_source_unavailable"
+        assert body["details"] == {"provider": "google", "requested": "byok"}
+
+    @pytest.mark.asyncio
+    async def test_default_provider_stays_anthropic(self, monkeypatch):
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_LLM", "anthropic")
+        looked_up: list[str] = []
+
+        async def _resolve(_app, _user_id, provider):
+            looked_up.append(provider)
+            return None
+
+        monkeypatch.setattr(meta_agent_module, "resolve_user_api_key", _resolve)
+
+        handler = _make_handler(web.Application(), json_body={"query": "hi", "key_source": "byok"})
+        response = await _unwrap(StudioAssistantHandler.post)(handler)
+
+        assert looked_up == ["anthropic"]
+        assert (await _decode(response))["details"]["provider"] == "anthropic"
 
 
 class TestAssistantSessionInstance:

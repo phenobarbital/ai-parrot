@@ -787,9 +787,37 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             except Exception as exc:
                 self.logger.error(f"Failed to initialize Vertex AI client: {exc}")
                 raise
-        if self.generation_budget is not None:
-            kwargs["http_options"] = HttpOptions(retry_options=types.HttpRetryOptions(attempts=1))
+        kwargs["http_options"] = self._api_key_http_options(kwargs.get("http_options"))
         return genai.Client(api_key=self.api_key, **kwargs)
+
+    def _api_key_http_options(self, provided: Any = None) -> HttpOptions:
+        """Build the ``HttpOptions`` for the Gemini Developer API (API-key) path.
+
+        ``google-genai`` 3.x defaults the Developer API to ``v1``, which rejects
+        every request that carries tools (``400 Function calling is not enabled
+        for api version v1``). Unless the caller already chose an
+        ``api_version`` the path therefore pins ``v1beta``; a generation budget
+        additionally pins the one-attempt SDK retry policy, merged into the same
+        object rather than replacing a caller-provided one.
+
+        Args:
+            provided: Caller-supplied ``http_options`` (``HttpOptions``, dict or
+                ``None``).
+
+        Returns:
+            The merged ``HttpOptions``.
+        """
+        if provided is None:
+            options = HttpOptions()
+        elif isinstance(provided, dict):
+            options = HttpOptions(**provided)
+        else:
+            options = provided.model_copy()
+        if not options.api_version:
+            options.api_version = "v1beta"
+        if self.generation_budget is not None:
+            options.retry_options = types.HttpRetryOptions(attempts=1)
+        return options
 
     @staticmethod
     def _budget_json_default(value: Any) -> Any:

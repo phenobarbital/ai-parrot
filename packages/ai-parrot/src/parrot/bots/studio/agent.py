@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from parrot.bots.agent import Agent
-from parrot.conf import STUDIO_AGENT_MODEL
+from parrot.conf import STUDIO_AGENT_LLM, STUDIO_AGENT_MODEL
 from parrot.skills.mixin import SkillRegistryMixin
 
 from .tools import build_studio_tools
@@ -51,6 +51,42 @@ for the conventions each artifact type must follow.
 """
 
 
+#: Model used when ``STUDIO_AGENT_MODEL`` is unset, per provider key. A provider
+#: missing here uses its client class's own default model.
+_PROVIDER_DEFAULT_MODELS: dict[str, str] = {"anthropic": "claude-opus-5"}
+
+
+def studio_agent_provider() -> str:
+    """Return the configured Studio Assistant provider key (``STUDIO_AGENT_LLM``), normalised.
+
+    This is the single source of the provider name: the agent builds its client
+    from it and the HTTP handler resolves BYOK keys / key-source choice with it.
+
+    Returns:
+        The lower-cased provider key (``"anthropic"`` by default).
+    """
+    return str(STUDIO_AGENT_LLM or "anthropic").strip().lower()
+
+
+def _resolve_studio_client_class(provider: str) -> type:
+    """Resolve ``provider`` through the client registry (lazy; no provider module at import time).
+
+    Raises:
+        ValueError: If ``provider`` is not a registered client provider.
+    """
+    from parrot.clients.factory import SUPPORTED_CLIENTS
+
+    if provider not in SUPPORTED_CLIENTS:
+        raise ValueError(
+            f"Unknown STUDIO_AGENT_LLM provider '{provider}'. "
+            f"Supported: {sorted(SUPPORTED_CLIENTS)}"
+        )
+    client_class = SUPPORTED_CLIENTS[provider]
+    if callable(client_class) and not isinstance(client_class, type):
+        client_class = client_class()
+    return client_class
+
+
 class AgentStudioAgent(SkillRegistryMixin, Agent):
     """Meta-agent for AgentStudio (spec §3 Module 13).
 
@@ -75,13 +111,15 @@ class AgentStudioAgent(SkillRegistryMixin, Agent):
 
         Args:
             name: Bot instance name.
-            api_key: Optional Anthropic API key override — the caller
-                (``StudioAssistantHandler``) resolves the session's BYOK
-                key (TASK-2516) BEFORE construction and passes it here;
-                ``None`` falls back to the server's configured
-                ``ANTHROPIC_API_KEY`` (``AnthropicClient``'s own default).
+            api_key: Optional API key override for the configured provider
+                (``STUDIO_AGENT_LLM``) — the caller (``StudioAssistantHandler``)
+                resolves the session's BYOK key (TASK-2516) BEFORE construction
+                and passes it here; ``None`` falls back to the provider
+                client's own server-key default (e.g. ``ANTHROPIC_API_KEY``,
+                ``GOOGLE_API_KEY``).
             model: Optional model id override. Falls back to
-                ``parrot.conf.STUDIO_AGENT_MODEL``.
+                ``parrot.conf.STUDIO_AGENT_MODEL`` and, when that is unset, to
+                the configured provider's own default model.
             system_prompt: Optional system prompt override. Falls back to
                 this module's default AgentStudio prompt.
             declarative_only: Tenant partitions (FEAT-621 X11): offer
@@ -90,16 +128,27 @@ class AgentStudioAgent(SkillRegistryMixin, Agent):
                 explicit ``llm=`` kwarg (instance/class/string) takes
                 precedence over the ``api_key``/``model`` construction
                 path below.
+
+        Raises:
+            ValueError: ``STUDIO_AGENT_LLM`` names an unknown provider (and no
+                explicit ``llm=`` was given).
         """
         self._declarative_only = declarative_only
         llm = kwargs.pop("llm", None)
         if llm is None:
-            # FEAT-523 (TASK-2846): lazy import — core must not import a
-            # provider module at module scope (AC-3).
-            from parrot.clients.anthropic import AnthropicClient
-
-            resolved_model = model or STUDIO_AGENT_MODEL
-            llm = AnthropicClient(api_key=api_key, model=resolved_model)
+            # FEAT-523 (TASK-2846): resolved lazily through the client
+            # registry — core must not import a provider module at module
+            # scope (AC-3).
+            provider = studio_agent_provider()
+            client_class = _resolve_studio_client_class(provider)
+            resolved_model = (
+                model
+                or STUDIO_AGENT_MODEL
+                or _PROVIDER_DEFAULT_MODELS.get(provider)
+                or getattr(client_class, "_default_model", None)
+                or getattr(client_class, "default_model", None)
+            )
+            llm = client_class(api_key=api_key, model=resolved_model)
         super().__init__(
             name=name,
             llm=llm,
