@@ -503,6 +503,9 @@ SCENARIOS: dict[str, Scenario] = {
         prepare=_seed_feature,
         placeholders={"<task-file>": "sdd/tasks/active/TASK-001-demo-task.md"},
         expect_silent=True,
+        # the assets mention `parrot sdd experience record` as prose (its flags are authored per lesson), so it
+        # is exercised as `--help`: the verb is still dispatched and loaded.
+        prose=("record",),
     ),
     "experience_hook": Scenario(prepare=_seed_feature, stdin=_experience_hook_post),
 }
