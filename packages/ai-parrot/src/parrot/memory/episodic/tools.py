@@ -7,14 +7,12 @@ during their reasoning loop.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
 
+from parrot.memory.agent_memory.runtime import current_memory_exposure, current_memory_scope
 from parrot.tools.toolkit import AbstractToolkit
 
 from .models import EpisodeCategory, EpisodeOutcome, MemoryNamespace
-
-if TYPE_CHECKING:
-    from .store import EpisodicMemoryStore
+from .store import EpisodicMemoryStore, _EXPLICIT_LESSON_KEY, _EXPLICIT_REFLECTION_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -22,10 +20,11 @@ logger = logging.getLogger(__name__)
 class EpisodicMemoryToolkit(AbstractToolkit):
     """Toolkit exposing episodic memory as agent-callable tools.
 
-    Provides three tools for LLM agents:
+    Provides four tools for LLM agents:
     - search_episodic_memory: Semantic search over past experiences.
     - record_lesson: Explicitly record a lesson for future reference.
     - get_warnings: Retrieve relevant past failure warnings.
+    - cite_memory: Attribute delivered memories without reinforcing them.
 
     Args:
         store: The EpisodicMemoryStore instance.
@@ -136,10 +135,11 @@ class EpisodicMemoryToolkit(AbstractToolkit):
                 category=cat,
                 importance=max(1, min(10, importance)),
                 generate_reflection=False,
+                metadata={
+                    _EXPLICIT_LESSON_KEY: lesson,
+                    _EXPLICIT_REFLECTION_KEY: f"Agent explicitly recorded: {lesson}",
+                },
             )
-            # Set the lesson directly since we skipped reflection
-            episode.lesson_learned = lesson
-            episode.reflection = f"Agent explicitly recorded: {lesson}"
 
             return (
                 f"Lesson recorded (id: {episode.episode_id[:8]}). "
@@ -149,6 +149,51 @@ class EpisodicMemoryToolkit(AbstractToolkit):
         except Exception as e:
             logger.warning("record_lesson failed: %s", e)
             return f"Error recording lesson: {e}"
+
+    async def cite_memory(self, episode_ids: list[str]) -> str:
+        """Cite delivered episode versions without selecting a review grade.
+
+        Args:
+            episode_ids: Episode identifiers present in the runtime-delivered memory exposure.
+
+        Returns:
+            A bounded acknowledgement, or a non-leaking rejection message.
+        """
+        scope = current_memory_scope()
+        exposure_id = current_memory_exposure()
+        if scope is None or exposure_id is None:
+            return "Error citing episodic memory: no runtime memory exposure is bound."
+
+        try:
+            namespace = MemoryNamespace(
+                tenant_id=scope.tenant_id,
+                agent_id=scope.agent_id,
+                user_id=scope.user_id,
+                session_id=scope.session_id,
+                room_id=scope.room_id,
+                crew_id=scope.crew_id,
+                model_id=scope.model_id,
+            )
+            if not self._namespace_allows(namespace):
+                raise ValueError("runtime memory scope does not match the toolkit namespace")
+            citation = await self._store.cite(episode_ids, namespace=namespace, exposure_id=exposure_id)
+            return f"Cited {len(citation.refs)} delivered episodic memories."
+        except Exception as exc:
+            logger.warning("cite_memory rejected runtime references: %s", exc)
+            return "Error citing episodic memory: one or more references are unavailable."
+
+    def _namespace_allows(self, runtime_namespace: MemoryNamespace) -> bool:
+        """Require configured scope dimensions to agree with the runtime-derived scope."""
+        if (
+            self._namespace.tenant_id != runtime_namespace.tenant_id
+            or self._namespace.agent_id != runtime_namespace.agent_id
+        ):
+            return False
+        for field in ("user_id", "session_id", "room_id", "crew_id", "model_id"):
+            configured = getattr(self._namespace, field)
+            if configured is not None and configured != getattr(runtime_namespace, field):
+                return False
+        return True
 
     async def get_warnings(
         self,
