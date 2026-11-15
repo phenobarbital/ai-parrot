@@ -440,7 +440,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -453,8 +453,9 @@
       "parallelism_notes": "Consumes assemble_candidates from TASK-5669; Consumes UserMemoryStore and suppression semantics from TASK-5668; Consumes scope-correct episodic routes and store review/event behavior from TASK-5665; Consumes extract_user_knowledge from TASK-5666",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5670-agent-memory-manager.md"
+      "completed_at": "2026-11-15T02:48:50+00:00",
+      "file": "sdd/tasks/completed/TASK-5670-agent-memory-manager.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5671",
