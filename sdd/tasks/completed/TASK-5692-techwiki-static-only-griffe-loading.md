@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-900 — Techwiki static-only Griffe loading — FEAT-801 review follow-up
 **Spec**: `sdd/specs/fixgroup-d908bfcc4d62.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -378,3 +378,17 @@ See the test stubs in the blueprint; spec §4 rows 1–6 state what each asserts
 
 ## Completion Note
 
+**Completed by**: Claude Code (`/sdd-fix` session, actor `agent:sdd-fix:3439edad`)
+**Date**: 2026-11-15
+**Notes**: `load_packages` passes `allow_inspection=False`; `_native_modules` (with the helpers
+`_is_package_dir` and `_native_names`) lists public native modules that have no `.py` source, `.pyi` stub
+or same-named sub-package, one entry per module whatever the number of `.so` / `.pyd` / `.pyx` files;
+`strict_failures` keeps `--strict` exit 4 for parse and load failures in `techwiki api` and
+`techwiki bundle`. Validation: both Validation Commands pass (51 passed, 1 skipped — the opt-in
+full-repository bundle test, which also passes with `TECHWIKI_FULL_BUNDLE=1`); `ruff check` and `black`
+are clean on the five files. On this repository the strict dry-run bundle exits 0 and lists
+`parrot.utils.parsers.toml` and `parrot.utils.types` as native, with no dangling link and no collision.
+
+**Deviations from spec**: none. The walk is split into `_native_names` (recursive, one package) and
+`_native_modules` (configured roots); a configured root whose own dotted name has a private part is not
+scanned, the same rule the spec gives for package names below the source root.
