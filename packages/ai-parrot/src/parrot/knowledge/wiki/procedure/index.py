@@ -12,8 +12,8 @@ from pathlib import Path
 from typing import Any
 
 from parrot.knowledge.wiki.procedure.models import INDEX_FILE, INDEX_SCHEMA_VERSION, ProbeCost, ProcedureSpec
+from parrot.sdd.scripts.procedure_sources import skill_directories, source_paths
 
-_MANIFEST_DIR = Path("sdd") / "procedures"
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -36,6 +36,7 @@ def compile_index(
     *,
     root: Path,
     probe_costs: Mapping[str, ProbeCost],
+    skill_dirs: list[str] | None = None,
 ) -> dict[str, Any]:
     """Return the index document; 'generation' is the sha1 of its canonical JSON.
 
@@ -49,6 +50,8 @@ def compile_index(
         The index document including its ``generation`` key.
     """
     document: dict[str, Any] = {"schema_version": INDEX_SCHEMA_VERSION}
+    if skill_dirs is not None:
+        document["skill_directories"] = skill_dirs
     entries = [{"path": _relative_posix(path, root), "sha1": _sha1_file(path)} for path in sources]
     document["sources"] = sorted(entries, key=lambda entry: entry["path"])
 
@@ -140,9 +143,10 @@ def is_stale(document: Mapping[str, Any] | None, *, root: Path) -> bool:
                 return True
         except OSError:
             return True
-    manifest_dir = root / _MANIFEST_DIR
-    if manifest_dir.is_dir():
-        for found in manifest_dir.glob("*.yaml"):
-            if _relative_posix(found, root) not in listed:
-                return True
+    directories = document.get("skill_directories", skill_directories(root))
+    if "skill_directories" in document and directories != skill_directories(root):
+        return True
+    for found in source_paths(root, directories):
+        if _relative_posix(found, root) not in listed:
+            return True
     return False

@@ -92,7 +92,14 @@ def skill_spec(skill: SkillDefinition, *, root: Path | None = None) -> Procedure
     if skill.source is SkillSource.LEARNED:
         data.update(mode="advisory", confirm=False)
     try:
-        return ProcedureSpec.model_validate(data)
+        spec = ProcedureSpec.model_validate(data)
+        for field_name in _PREFIXED_FIELDS:
+            setattr(
+                spec,
+                field_name,
+                [target if ":" in target else f"skill:{target}" for target in getattr(spec, field_name)],
+            )
+        return spec
     except ValidationError as exc:
         raise ValueError(f"{data['origin_path']}: invalid 'procedure' frontmatter: {exc}") from exc
 
