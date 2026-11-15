@@ -64,7 +64,7 @@ BrainService TYPE_CHECKING reference is explicitly external/future, never a veri
 from .fsrs import retrievability
 from .models import Grade, ReviewSignal
 from .models import MemoryParameters, MemoryState
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from datetime import datetime
 from typing import Literal
 from parrot.memory.unified.models import MemoryCandidate
@@ -154,7 +154,7 @@ def select_grade(signal: ReviewSignal, *, attribution: Literal["cited", "overlap
 
 ```python
 """Deterministic ranking for experiential candidates, separate from fact validity."""
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from datetime import datetime
 from parrot.memory.unified.models import MemoryCandidate
 from .models import MemoryParameters, MemoryState
@@ -162,12 +162,16 @@ from .fsrs import retrievability
 
 def rank_candidates(candidates: list[MemoryCandidate], *, now: datetime,
                     parameters: MemoryParameters,
-                    states: Mapping[str, MemoryState]) -> list[MemoryCandidate]:
+                    states: Mapping[str, MemoryState],
+                    anti_pattern_ids: Collection[str] = frozenset()) -> list[MemoryCandidate]:
     """Rank experiential candidates with stable-ID ties and anti-pattern grouping."""
     # states is keyed by MemoryCandidate.dynamics_state_ref and is resolved by the caller
     # (TASK-5665); this function stays pure and never reads a store. A candidate whose
     # dynamics_state_ref is None or absent from states is neutral: retrievability 1.0.
     # Return new candidates (model_copy) with ranking_score set; never mutate the input.
+    # anti_pattern_ids: memory_ids the caller flagged from episode metadata; they form the first
+    # group and the same score orders each group. Non-experiential candidates (user, skill) are
+    # returned after the ranked ones, unchanged.
     # FILL IN: relevance * retrievability * (1 + importance/10) — AC14.
     # Preserve raw similarity; keep user-knowledge relevance/validity outside FSRS.
     raise NotImplementedError
