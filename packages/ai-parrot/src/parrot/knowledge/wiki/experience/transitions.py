@@ -10,7 +10,13 @@ from pathlib import Path
 import time
 from typing import TYPE_CHECKING, Any
 
-from parrot.knowledge.wiki.experience.fastpath import append_event, leading_command, update_session
+from parrot.knowledge.wiki.experience.fastpath import (
+    append_event,
+    failure_signature,
+    leading_command,
+    lesson_id_for,
+    update_session,
+)
 
 if TYPE_CHECKING:
     from parrot.knowledge.wiki.experience.models import CommandOutcome
@@ -420,9 +426,8 @@ def _event_id(
 
 
 def _lesson_id(executable: str, subcommand: str, error: str) -> str:
-    """Return the documented deterministic identity for a paired failure."""
-    signature = "|".join((executable, subcommand, " ".join(error.split())))
-    return f"pit-{hashlib.sha1(signature.encode('utf-8')).hexdigest()[:12]}"  # noqa: S324 - stable lesson identity
+    """Return the deterministic identity shared with ``ExperienceService.record``."""
+    return lesson_id_for(failure_signature(executable, subcommand, error))
 
 
 def _render_advice(stub: Mapping[str, str]) -> str:
