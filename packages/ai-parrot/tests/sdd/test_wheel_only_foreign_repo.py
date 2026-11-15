@@ -349,6 +349,7 @@ class Scenario:
     tools: tuple[str, ...] = ("git",)
     stdin: Callable[[Path], str] | None = None  # e.g. the worktree_environment hook's PreToolUse payload
     expect_stdout: str = ""  # substring the helper's stdout must contain (e.g. '"permissionDecision": "deny"')
+    expect_silent: bool = False  # non-help invocations must not write to stdout
     #: Documented argv texts that are prose fragments (an abbreviated flag list, a sentence), not full command
     #: lines: they are exercised as ``--help`` so the helper is still dispatched and loaded.
     prose: tuple[str, ...] = ()
@@ -359,6 +360,19 @@ class Scenario:
 _FEATURE = Scenario(prepare=_seed_feature)
 _WORKTREE = Scenario(prepare=_seed_worktree)
 _ANY_CLEAN = (0, 1, 2)  # a controlled refusal is fine; a traceback is not
+
+
+def _experience_hook_post(repo: Path) -> str:
+    """Return a bounded successful Claude post-hook payload for a foreign checkout."""
+    return json.dumps(
+        {
+            "session_id": "wheel-smoke",
+            "cwd": str(repo),
+            "tool_name": "Bash",
+            "tool_input": {"command": "gh api --version"},
+            "tool_use_id": "wheel-smoke-command",
+        }
+    )
 
 SCENARIOS: dict[str, Scenario] = {
     "backfill_taxonomy": Scenario(prepare=_seed_feature),
@@ -459,6 +473,12 @@ SCENARIOS: dict[str, Scenario] = {
     "check_task_state": Scenario(prepare=_seed_feature, expect_exit=_ANY_CLEAN),
     "id_ledger": Scenario(prepare=_seed_feature, expect_exit=_ANY_CLEAN),
     "migrate_index": Scenario(prepare=_seed_feature, expect_exit=_ANY_CLEAN),
+    "experience_cli": Scenario(
+        prepare=_seed_feature,
+        placeholders={"<task-file>": "sdd/tasks/active/TASK-001-demo-task.md"},
+        expect_silent=True,
+    ),
+    "experience_hook": Scenario(prepare=_seed_feature, stdin=_experience_hook_post),
 }
 
 
@@ -643,6 +663,8 @@ def test_install_then_every_documented_helper_invocation(
             problems.append("traceback on stderr")
         if scenario.expect_stdout and argv != ["--help"] and scenario.expect_stdout not in result.stdout:
             problems.append(f"stdout lacks {scenario.expect_stdout!r}")
+        if scenario.expect_silent and argv != ["--help"] and result.stdout:
+            problems.append(f"stdout is not silent: {result.stdout[-400:]}")
         if problems:
             failures.append(
                 f"{name} {documented!r} -> {argv}: {'; '.join(problems)}\n  stdout: {result.stdout[-400:]}\n"
