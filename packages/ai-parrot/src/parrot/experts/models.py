@@ -69,6 +69,7 @@ class KnowledgeSourceKind(str, Enum):
     GRAPHINDEX = "graphindex"
     ADR = "adr"
     KB = "kb"
+    EPISODES = "episodes"
 
 
 class ExpertTier(str, Enum):

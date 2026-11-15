@@ -1049,7 +1049,7 @@ parrot = ["py.typed", "templates/*.tpl", "**/*.pyx", "**/*.pxd"]
 ]
 "parrot.flows.dev_loop" = ["_subagent_data/*.md"]
 # FEAT-778: package-bundled domain experts, read via importlib.resources by parrot.experts.loader.
-"parrot.experts.bundled" = ["*/expert.yaml", "*/persona.md", "*/identity/*.md", "*/knowledge/*.md", "*/rules/*.md", "*/adr/*.md"]
+"parrot.experts.bundled" = ["*/expert.yaml", "*/persona.md", "*/identity/*.md", "*/knowledge/*.md", "*/rules/*.md", "*/adr/*.md", "scopes/*.yaml"]
 # FEAT-556: `parrot <host> install --toolkits` seeds .parrot/mcp-toolkits.yaml
 # from these templates, read via importlib.resources — they MUST be in the wheel.
 "parrot.mcp" = ["_toolkit_templates/*.yaml"]
