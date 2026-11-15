@@ -170,7 +170,9 @@ class ContextAssembler:
         for candidate in candidates:
             if candidate.scope != scope or not candidate.text:
                 continue
-            section = "user_knowledge" if candidate.source in user_sources else section_for_type[candidate.candidate_type]
+            section = (
+                "user_knowledge" if candidate.source in user_sources else section_for_type[candidate.candidate_type]
+            )
             if section == "user_knowledge" and scope.user_id is None:
                 continue
             if section not in self.config.normalized_section_weights:
@@ -229,9 +231,7 @@ class ContextAssembler:
         packed_text = context.to_prompt_string()
         if not packed_text:
             return context
-        return context.model_copy(
-            update={"packed_digest": hashlib.sha256(packed_text.encode("utf-8")).hexdigest()}
-        )
+        return context.model_copy(update={"packed_digest": hashlib.sha256(packed_text.encode("utf-8")).hexdigest()})
 
     # ------------------------------------------------------------------
     # Private helpers
