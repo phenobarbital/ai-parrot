@@ -103,13 +103,38 @@ same briefing field and does not introduce a second delivery channel.
 {
   "schema_version": 1,
   "targets": [
-    {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/engine.py", "action": "MODIFY"},
-    {"path": ".claude/commands/sdd-start.md", "action": "MODIFY"},
-    {"path": ".agent/workflows/sdd-start.md", "action": "MODIFY"},
-    {"path": "packages/ai-parrot/src/parrot/sdd/_assets/claude/commands/sdd-start.md", "action": "MODIFY"},
-    {"path": "packages/ai-parrot/src/parrot/sdd/_assets/agent/workflows/sdd-start.md", "action": "MODIFY"},
-    {"path": "packages/ai-parrot/tests/sdd/test_procedure_cli.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py", "action": "MODIFY"}
+    {
+      "path": "packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/engine.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": ".claude/commands/sdd-start.md",
+      "action": "MODIFY"
+    },
+    {
+      "path": ".agent/workflows/sdd-start.md",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/sdd/_assets/claude/commands/sdd-start.md",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/sdd/_assets/agent/workflows/sdd-start.md",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot/tests/sdd/test_procedure_cli.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_engine_dispatch.py",
+      "action": "MODIFY"
+    }
   ],
   "contract_symbols": []
 }
