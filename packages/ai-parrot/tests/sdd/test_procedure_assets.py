@@ -12,7 +12,7 @@ import pytest
 import parrot.sdd
 from parrot.knowledge.wiki.procedure.producers import load_manifest, manifest_specs
 from parrot.knowledge.wiki.procedure.validate import validate_graph
-from parrot.sdd.installer import install_sdd_integration, plan_install
+from parrot.sdd.installer import _install_procedure_index_step, install_sdd_integration, plan_install
 from parrot.sdd.scripts import procedure
 from parrot.sdd.scripts.procedure_probes import PROBE_COSTS
 
@@ -148,3 +148,29 @@ def test_dry_run_lists_the_step_and_writes_nothing(tmp_path: Path) -> None:
 
     assert actions[-1] == "plan: procedure-index .parrot/procedure/procedures.json"
     assert not (root / ".parrot/procedure").exists()
+
+
+def test_install_skips_procedure_index_when_disabled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A disabled procedure plane is not built by the installer step; an enabled one still is."""
+    root = _installed(tmp_path)
+    config = root / "sdd" / "config.json"
+    config.write_text(json.dumps({"procedure": {"enabled": False}}), encoding="utf-8")
+    built: list[Path] = []
+    real_build = procedure.build
+
+    async def recording_build(path: Path) -> dict[str, int]:
+        """Record the call, then build for real."""
+        built.append(path)
+        return await real_build(path)
+
+    monkeypatch.setattr(procedure, "build", recording_build)
+
+    assert _install_procedure_index_step(root, {}) == ["procedure index: skipped (procedure.enabled is false)"]
+    assert built == []
+    assert not (root / ".parrot" / "procedure").exists()
+
+    config.write_text(json.dumps({"procedure": {"enabled": True}}), encoding="utf-8")
+    actions = _install_procedure_index_step(root, {})
+    assert built == [root]
+    assert actions[0].startswith(".parrot/procedure/procedures.json — built")
+    assert (root / ".parrot" / "procedure" / "procedures.json").is_file()

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import subprocess
 from collections.abc import Mapping
@@ -73,7 +74,11 @@ class SddProbeRunner:
         scope: Mapping[str, str],
         args: Mapping[str, str],
     ) -> bool | None:
-        """Return whether HEAD is not ahead of its configured upstream."""
+        """Return whether HEAD is not ahead of its configured upstream.
+
+        A branch with no upstream has never been pushed with ``-u`` and is reported as not pushed. Any
+        other git failure (detached HEAD, broken repository) is unknown and returns None.
+        """
         del scope, args
         try:
             completed = subprocess.run(
@@ -81,12 +86,14 @@ class SddProbeRunner:
                 capture_output=True,
                 text=True,
                 timeout=self.timeout,
+                env={**os.environ, "LC_ALL": "C"},  # the stderr text below is matched in English
             )
         except (OSError, subprocess.SubprocessError):
             _LOGGER.debug("branch.pushed probe failed", exc_info=True)
             return None
         if completed.returncode != 0:
-            return False
+            stderr = completed.stderr if isinstance(completed.stderr, str) else ""
+            return False if "no upstream configured" in stderr else None
         if not isinstance(completed.stdout, str):
             return None
         output = completed.stdout.strip()

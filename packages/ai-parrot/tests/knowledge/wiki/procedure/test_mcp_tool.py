@@ -95,3 +95,44 @@ async def test_operation_without_plane_is_not_an_error(tmp_path: Path) -> None:
     """op_procedure_next answers with a one-line message when no plane exists."""
     result = await op_procedure_next(None, ProcedureNextInput(), root=tmp_path)
     assert not result.is_error and "parrot sdd procedure build" in result.text
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        (RuntimeError("boom"), "RuntimeError: boom"),
+        (KeyError("procedures"), "KeyError: 'procedures'"),
+        (ValueError("bad plane"), "bad plane"),
+    ],
+)
+def test_operation_reports_unexpected_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: Exception, expected: str
+) -> None:
+    """A failure outside ValueError/OSError becomes an error result instead of escaping the tool."""
+    _project(tmp_path, with_plane=True)
+
+    async def failing_specs(self: ProcedurePlane) -> list[ProcedureSpec]:
+        """Fail the way a broken plane store would."""
+        raise error
+
+    monkeypatch.setattr(ProcedurePlane, "specs", failing_specs)
+    result = asyncio.run(op_procedure_next(None, ProcedureNextInput(), root=tmp_path))
+    assert result.is_error
+    assert result.text == expected
+    assert result.data is None
+
+
+def test_operation_reports_rendering_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failure while rendering the resolution is reported too, not raised."""
+    from parrot.knowledge.wiki.procedure import operations
+
+    _project(tmp_path, with_plane=True)
+
+    def failing_payload(resolution: object) -> dict[str, object]:
+        """Fail the way an unexpected resolution shape would."""
+        raise AttributeError("no spec")
+
+    monkeypatch.setattr(operations, "_resolution_payload", failing_payload)
+    result = asyncio.run(op_procedure_next(None, ProcedureNextInput(), root=tmp_path))
+    assert result.is_error
+    assert result.text == "AttributeError: no spec"

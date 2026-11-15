@@ -74,6 +74,96 @@ def test_match_guards_every_segment() -> None:
     assert matched[0]["argv"] == ["TASK-1", "demo", "verified"]
 
 
+def test_match_guards_resolves_effective_directory(tmp_path: Path) -> None:
+    """``cd``, ``git -C`` and absolute paths cannot hide the path a bypass guard protects."""
+    checkout = tmp_path / "repo"
+    (checkout / "sdd" / "tasks" / "active").mkdir(parents=True)
+    index = {"schema_version": advice.INDEX_SCHEMA_VERSION, "guards": GUARDS}
+
+    def bypassed(command: str, *, cwd: Path = checkout) -> bool:
+        matches = advice.match_guards(index, command, checkout=checkout, cwd=cwd)
+        return any(match["kind"] == "bypass" for match in matches)
+
+    assert bypassed("cd sdd/tasks/active && git mv TASK-1.md ../completed/")
+    assert bypassed("cd sdd && cd tasks/active; git mv TASK-1.md ../completed/")
+    assert bypassed("git -C sdd/tasks/active mv TASK-1.md ../completed/")
+    assert bypassed("git -C sdd -C tasks/active mv TASK-1.md ../completed/")
+    assert bypassed(f"git mv {checkout}/sdd/tasks/active/TASK-1.md {checkout}/sdd/tasks/completed/")
+    assert bypassed(f"cd {checkout}/sdd/tasks && git mv active/TASK-1.md completed/")
+    assert bypassed("git mv TASK-1.md ../completed/", cwd=checkout / "sdd" / "tasks" / "active")
+    assert bypassed("cd sdd/tasks/completed && git mv ../active/TASK-1.md .")
+
+    matched = advice.match_guards(index, "git -C sdd/tasks/active mv TASK-1.md ../completed/", checkout=checkout)
+    assert matched[0]["argv"] == ["TASK-1.md", "../completed/"]
+
+    assert not bypassed("cd docs && git mv a.md b.md")
+    assert not bypassed("cd sdd/tasks/active && cd ../../.. && git mv README.md docs/")
+    assert not bypassed(f"git mv {tmp_path}/other/sdd/tasks/active/TASK-1.md {tmp_path}/other/done/")
+    assert not bypassed("git mv ../sdd/tasks/active/TASK-1.md ../done/")
+
+
+def test_match_guards_keeps_as_written_match(tmp_path: Path) -> None:
+    """Changing into another checkout or an unresolvable directory never turns a guard off."""
+    checkout = tmp_path / "repo"
+    (checkout / "sdd" / "tasks" / "active").mkdir(parents=True)
+    index = {"schema_version": advice.INDEX_SCHEMA_VERSION, "guards": GUARDS}
+    move = "git mv sdd/tasks/active/TASK-1.md sdd/tasks/completed/"
+
+    def bypassed(command: str) -> bool:
+        matches = advice.match_guards(index, command, checkout=checkout, cwd=checkout)
+        return any(match["kind"] == "bypass" for match in matches)
+
+    for prefix in (
+        "cd .parrot/worktrees/feat-FEAT-1-demo",
+        f"cd {tmp_path}/other-checkout",
+        'cd "$WORKTREES_DIR/feat-FEAT-1-demo"',
+        "cd ~/proyectos/demo",
+        "cd $(git rev-parse --show-toplevel)",
+        "cd -",
+        "cd",
+    ):
+        assert bypassed(f"{prefix} && {move}"), prefix
+    assert bypassed("git -C .parrot/worktrees/feat-FEAT-1-demo mv sdd/tasks/active/TASK-1.md sdd/tasks/completed/")
+    assert bypassed('git -C "$WT" mv sdd/tasks/active/TASK-1.md sdd/tasks/completed/')
+
+    # An unresolvable directory change stops directory tracking instead of reusing the previous directory.
+    assert not bypassed("cd sdd/tasks/active && ls; cd - && git mv README.md docs/")
+    assert not bypassed("cd sdd/tasks/active && ls; cd && git mv README.md docs/")
+    assert not bypassed('cd sdd/tasks/active; cd "$HOME" && git mv README.md docs/')
+    # An absolute directory makes it known again.
+    assert bypassed(f"cd - && cd {checkout}/sdd/tasks/active && git mv TASK-1.md ../completed/")
+
+
+def test_match_guards_default_arguments_unchanged() -> None:
+    """Without ``checkout``/``cwd`` a command with no ``cd`` and no ``git -C`` matches as before."""
+    index = {"schema_version": advice.INDEX_SCHEMA_VERSION, "guards": GUARDS}
+    matched = advice.match_guards(index, "mkdir -p x && git mv ./sdd/tasks/active/TASK-1-a.md sdd/tasks/completed/")
+    assert [match["kind"] for match in matched] == ["bypass"]
+    assert matched[0]["argv"] == ["./sdd/tasks/active/TASK-1-a.md", "sdd/tasks/completed/"]
+    assert advice.match_guards(index, "git mv README.md docs/") == []
+    assert advice.match_guards(index, "git mv /abs/sdd/tasks/active/TASK-1.md /abs/sdd/tasks/completed/") == []
+    assert advice.match_guards(index, "parrot sdd task close TASK-1 demo verified")[0]["argv"] == [
+        "TASK-1",
+        "demo",
+        "verified",
+    ]
+
+
+def test_evaluate_command_denies_cd_bypass(tmp_path: Path) -> None:
+    """The hook entry point denies a hand move hidden behind ``cd`` or ``git -C``."""
+    root = _repo(tmp_path)
+    for command in (
+        "cd sdd/tasks/active && git mv TASK-1.md ../completed/",
+        "git -C sdd/tasks/active mv TASK-1.md ../completed/",
+        f"git mv {root}/sdd/tasks/active/TASK-1.md {root}/sdd/tasks/completed/",
+    ):
+        assert advice.evaluate_command(command, root, env={}).decision == "deny", command
+    assert advice.evaluate_command("cd docs && git mv a.md b.md", root, env={}).decision == "none"
+    nested = root / "sdd" / "tasks" / "active"
+    nested.mkdir(parents=True)
+    assert advice.evaluate_command("git mv TASK-1.md ../completed/", nested, env={}).decision == "deny"
+
+
 def test_shared_root_plain_and_worktree(tmp_path: Path) -> None:
     """A plain checkout and linked worktree resolve to the primary checkout."""
     main = tmp_path / "main"
@@ -353,3 +443,50 @@ def test_new_overlay_invalidates_hook(tmp_path: Path) -> None:
     assert is_stale(index, root=root)
     assert not advice._fresh_sources(root, index)
     assert advice.evaluate_command("gh pr create --base main", root, env={}).decision == "none"
+
+
+def test_deny_text_keeps_escape_hint(tmp_path: Path) -> None:
+    """A long instruction is truncated in the middle; the deliberate-exception hint survives."""
+    root = _repo(tmp_path)
+    command = "git mv sdd/tasks/active/TASK-1.md sdd/tasks/completed/"
+    hint = "(Deliberate exception: ask the user to re-run with PARROT_ALLOW_PROCEDURE=1.)"
+
+    short = advice.evaluate_command(command, root, env={})
+    assert short.text == (
+        "Procedure sdd:task-close is mandatory: do not replace this procedure by hand. "
+        f"Use: parrot sdd task close <TASK> <slug> verified. {hint}"
+    )
+
+    index_path = root / advice.PLANE_DIR / advice.INDEX_FILE
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    index["procedures"]["sdd:task-close"]["use_instead"] = "parrot sdd task close " + "x" * (
+        advice.MAX_ADVICE_CHARS * 2
+    )
+    index["procedures"]["sdd:task-close"]["advice"] = "y" * (advice.MAX_ADVICE_CHARS * 2)
+    index_path.write_text(json.dumps(index), encoding="utf-8")
+
+    denied = advice.evaluate_command(command, root, env={})
+    assert denied.decision == "deny"
+    assert len(denied.text) == advice.MAX_ADVICE_CHARS
+    assert denied.text.startswith("Procedure sdd:task-close is mandatory: do not replace this procedure by hand.")
+    assert denied.text.endswith(f"…. {hint}")
+
+    advised = advice.evaluate_command(command, root, env={advice.ESCAPE_ENV: "1"})
+    assert advised.decision == "advise"
+    assert len(advised.text) == advice.MAX_ADVICE_CHARS
+    assert advised.text.endswith("…")
+
+    assert advice._bounded_text("ab", "cdef", "gh", limit=7) == "abcd…gh"
+    assert advice._bounded_text("abcd", "efgh", "ijkl", limit=6) == "abcdef"
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [("done", True), ("done-with-issues", True), ("in-progress", False), ("pending", False)],
+)
+def test_depends_done_accepts_done_with_issues(tmp_path: Path, status: str, expected: bool) -> None:
+    """A dependency closed with issues satisfies ``task.depends_done``; an open one does not."""
+    root = _repo(tmp_path, status=status)
+    check = {"probe": "task.depends_done", "expect": True}
+    assert advice.apply_check(check, root, {"feature": "demo", "task": "TASK-2"}) is expected
+    assert advice.apply_check({"probe": "feature.tasks_done", "expect": True}, root, {"feature": "demo"}) is False

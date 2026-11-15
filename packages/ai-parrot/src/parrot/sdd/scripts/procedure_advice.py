@@ -26,6 +26,8 @@ PLANE_DIR = Path(".parrot") / "procedure"
 INDEX_FILE = "procedures.json"
 MAX_INDEX_BYTES = 262144
 _OPERATORS = frozenset({"&&", "||", ";", "|", "&", "\n"})
+#: Task statuses that count as closed, for dependencies and for the whole feature alike.
+CLOSED_STATUSES: frozenset[str] = frozenset({"done", "done-with-issues"})
 
 
 @dataclass(frozen=True)
@@ -280,21 +282,154 @@ def leading_command(command: str) -> tuple[str, list[str]]:
     return "", []
 
 
-def _normalise_path(value: str) -> str:
-    """Normalize a guard argument to a POSIX-style repository-relative path."""
-    normalized = os.path.normpath(value).replace(os.sep, "/").replace("\\", "/")
+def _normalise_path(value: str, *, base: str = "", checkout: Path | None = None) -> str:
+    """Normalize a guard argument to a POSIX-style checkout-relative path.
+
+    A relative ``value`` is joined to ``base``; an absolute ``value`` inside ``checkout`` is made relative.
+
+    Args:
+        value: Path argument as written in the command.
+        base: Effective directory of the command segment, relative to the checkout (or absolute when the
+            segment runs outside it).
+        checkout: Checkout root used to relativize absolute paths; ``None`` leaves them absolute.
+
+    Returns:
+        The normalized path. A path outside the checkout keeps its absolute form or its leading ``..``.
+    """
+    text = value
+    if os.path.isabs(text):
+        if checkout is not None:
+            root = os.path.normpath(str(checkout)).replace(os.sep, "/").rstrip("/")
+            absolute = os.path.normpath(text).replace(os.sep, "/")
+            if absolute == root:
+                return "."
+            if absolute.startswith(f"{root}/"):
+                text = absolute[len(root) + 1 :]
+    elif base:
+        text = f"{base}/{text}"
+    normalized = os.path.normpath(text).replace(os.sep, "/").replace("\\", "/")
     while normalized.startswith("./"):
         normalized = normalized[2:]
     return normalized
 
 
-def match_guards(index: Mapping[str, Any], command: str) -> list[dict[str, Any]]:
-    """Return index guards matching any command segment, preserving index order."""
+def _relative_directory(base: str, target: str, checkout: Path | None) -> str:
+    """Return ``target`` as a checkout-relative POSIX directory, joined to ``base`` when relative."""
+    directory = _normalise_path(target, base=base, checkout=checkout)
+    return "" if directory == "." else directory
+
+
+def _is_change_directory(tokens: list[str]) -> bool:
+    """Return whether the segment is a ``cd`` command (after leading assignments)."""
+    index = 0
+    while index < len(tokens) and _assignment(tokens[index]):
+        index += 1
+    return index < len(tokens) and os.path.basename(tokens[index]) == "cd"
+
+
+def _literal_directory(target: str) -> bool:
+    """Return whether ``target`` is a literal path, free of shell expansion the guard cannot resolve."""
+    return bool(target) and not target.startswith("~") and not any(mark in target for mark in ("$", "`", "*", "?"))
+
+
+def _change_directory(tokens: list[str]) -> str | None:
+    """Return the target of a plain ``cd <dir>`` segment, or None for any other segment.
+
+    None is also returned for a ``cd`` whose destination cannot be known statically: ``cd``, ``cd -``,
+    several arguments, or a target with shell expansion (``~``, ``$VAR``, command substitution, globs).
+    """
+    if not _is_change_directory(tokens):
+        return None
+    index = next(position for position, token in enumerate(tokens) if os.path.basename(token) == "cd")
+    targets = [token for token in tokens[index + 1 :] if not token.startswith("-")]
+    if len(targets) != 1 or not _literal_directory(targets[0]):
+        return None
+    return targets[0]
+
+
+def _git_directory(argv: list[str]) -> tuple[list[str], str | None]:
+    """Strip leading git global ``-C <dir>`` options; return (remaining argv, last directory or None)."""
+    directory: str | None = None
+    index = 0
+    while index + 1 < len(argv) and argv[index] == "-C":
+        target = argv[index + 1]
+        directory = target if directory is None or os.path.isabs(target) else f"{directory}/{target}"
+        index += 2
+    return argv[index:], directory
+
+
+def _step_directory(base: str | None, target: str | None, checkout: Path | None) -> str | None:
+    """Return the directory reached from ``base`` by ``target``; None when it cannot be known."""
+    if target is None or not _literal_directory(target):
+        return None
+    if base is None and not os.path.isabs(target):
+        return None
+    return _relative_directory(base or "", target, checkout)
+
+
+def _located_segments(command: str, checkout: Path | None, cwd: Path | None) -> list[tuple[str, list[str], str | None]]:
+    """Return ``(executable, argv, effective directory)`` for every non-``cd`` segment, in order.
+
+    The effective directory is relative to ``checkout``. It starts at ``cwd``, follows plain ``cd <dir>``
+    segments, and for a ``git`` segment also honours leading ``-C <dir>`` options (that segment only).
+    It is ``None`` once a directory change cannot be resolved statically (``cd -``, ``cd $VAR``, …).
+    """
+    base: str | None = ""
+    if checkout is not None and cwd is not None:
+        base = _relative_directory("", str(Path(cwd).resolve()), checkout)
+    located: list[tuple[str, list[str], str | None]] = []
+    for tokens in command_segments(command):
+        if _is_change_directory(tokens):
+            base = _step_directory(base, _change_directory(tokens), checkout)
+            continue
+        executable, argv = _clean(tokens)
+        directory = base
+        if executable == "git":
+            argv, git_directory = _git_directory(argv)
+            if git_directory is not None:
+                directory = _step_directory(base, git_directory, checkout)
+        located.append((executable, argv, directory))
+    return located
+
+
+def _guarded_path(argument: str, pattern: str, directory: str | None, checkout: Path | None) -> bool:
+    """Return whether ``argument`` hits ``pattern`` as written or after directory resolution.
+
+    The as-written test keeps a guard firing when the command first changes into another checkout
+    (a worktree) or into a directory the guard cannot resolve; the resolved test catches a path made
+    relative to a ``cd`` or ``git -C`` directory, or written as an absolute path inside the checkout.
+    """
+    if fnmatch.fnmatchcase(_normalise_path(argument), pattern):
+        return True
+    if directory is None:
+        return False
+    return fnmatch.fnmatchcase(_normalise_path(argument, base=directory, checkout=checkout), pattern)
+
+
+def match_guards(
+    index: Mapping[str, Any],
+    command: str,
+    *,
+    checkout: Path | None = None,
+    cwd: Path | None = None,
+) -> list[dict[str, Any]]:
+    """Return index guards matching any command segment, preserving index order.
+
+    Args:
+        index: Compiled procedure index.
+        command: Shell command to inspect.
+        checkout: Checkout root; makes absolute path arguments checkout-relative before the glob test.
+        cwd: Directory the command starts in; with ``checkout`` it seeds the effective directory.
+
+    Returns:
+        One copy of each matching guard per matching segment, with ``argv`` set to the segment's
+        arguments after the guard's ``argv_prefix``. Never raises.
+    """
     try:
         guards = index.get("guards", [])
         if not isinstance(guards, list):
             return []
-        segments = command_segments(command)
+        segments = _located_segments(command, checkout, cwd)
         matches: list[dict[str, Any]] = []
         for guard in guards:
             if not isinstance(guard, Mapping):
@@ -310,13 +445,12 @@ def match_guards(index: Mapping[str, Any], command: str) -> list[dict[str, Any]]
                 continue
             if not isinstance(path_globs, list) or not all(isinstance(item, str) for item in path_globs):
                 continue
-            for tokens in segments:
-                actual_executable, argv = _clean(tokens)
+            for actual_executable, argv, directory in segments:
                 if actual_executable != executable or argv[: len(argv_prefix)] != argv_prefix:
                     continue
                 remaining = argv[len(argv_prefix) :]
                 if path_globs and not any(
-                    fnmatch.fnmatchcase(_normalise_path(argument), pattern)
+                    _guarded_path(argument, pattern, directory, checkout)
                     for argument in remaining
                     for pattern in path_globs
                 ):
@@ -325,7 +459,7 @@ def match_guards(index: Mapping[str, Any], command: str) -> list[dict[str, Any]]
                 matched["argv"] = list(remaining)
                 matches.append(matched)
         return matches
-    except (AttributeError, IndexError, OSError, TypeError, ValueError):
+    except (AttributeError, IndexError, OSError, RuntimeError, TypeError, ValueError):
         return []
 
 
@@ -461,7 +595,7 @@ def _probe_task_status(checkout: Path, scope: Mapping[str, str], args: Mapping[s
 
 
 def _probe_task_depends_done(checkout: Path, scope: Mapping[str, str], args: Mapping[str, str]) -> bool | None:
-    """Return whether all dependencies of the scoped task are done."""
+    """Return whether all dependencies of the scoped task are closed (``CLOSED_STATUSES``)."""
     index = feature_index(checkout, scope)
     task = _task(index, scope.get("task"))
     if task is None or index is None:
@@ -473,7 +607,7 @@ def _probe_task_depends_done(checkout: Path, scope: Mapping[str, str], args: Map
     dependencies = task.get("depends_on", [])
     if not isinstance(dependencies, list) or not all(isinstance(item, str) for item in dependencies):
         return None
-    return all(statuses.get(dependency) == "done" for dependency in dependencies)
+    return all(statuses.get(dependency) in CLOSED_STATUSES for dependency in dependencies)
 
 
 def _probe_feature_tasks_done(checkout: Path, scope: Mapping[str, str], args: Mapping[str, str]) -> bool | None:
@@ -484,7 +618,7 @@ def _probe_feature_tasks_done(checkout: Path, scope: Mapping[str, str], args: Ma
     tasks = index.get("tasks", [])
     if not isinstance(tasks, list):
         return None
-    return all(isinstance(item, Mapping) and item.get("status") in {"done", "done-with-issues"} for item in tasks)
+    return all(isinstance(item, Mapping) and item.get("status") in CLOSED_STATUSES for item in tasks)
 
 
 def _probe_flow_base_allowed(checkout: Path, scope: Mapping[str, str], args: Mapping[str, str]) -> bool | None:
@@ -614,6 +748,28 @@ def _fresh_sources(root: Path, index: Mapping[str, Any]) -> bool:
     return True
 
 
+def _bounded_text(prefix: str, variable: str, suffix: str = "", *, limit: int = MAX_ADVICE_CHARS) -> str:
+    """Return ``prefix + variable + suffix`` within ``limit``, truncating only ``variable`` (marked with ``…``).
+
+    Args:
+        prefix: Fixed opening of the message; never cut.
+        variable: Middle part that may be shortened.
+        suffix: Fixed closing of the message; never cut.
+        limit: Maximum length of the result.
+
+    Returns:
+        The full text when it fits. Otherwise ``variable`` is shortened and ends with ``…`` so the result is
+        exactly ``limit`` long; when the fixed parts alone leave no room, the text is cut at ``limit``.
+    """
+    text = f"{prefix}{variable}{suffix}"
+    if len(text) <= limit:
+        return text
+    room = limit - len(prefix) - len(suffix) - 1
+    if room <= 0:
+        return text[:limit]
+    return f"{prefix}{variable[:room]}…{suffix}"
+
+
 def evaluate_command(command: str, cwd: Path, *, env: Mapping[str, str] | None = None) -> Advice:
     """Apply the compiled plane's guard decision table to one shell command."""
     try:
@@ -628,7 +784,7 @@ def evaluate_command(command: str, cwd: Path, *, env: Mapping[str, str] | None =
         settings = _settings(root)
         if not settings["enabled"]:
             return Advice("none")
-        matches = match_guards(index, command)
+        matches = match_guards(index, command, checkout=checkout, cwd=Path(cwd))
         if not matches:
             return Advice("none")
         if not _fresh_sources(root, index):
@@ -689,14 +845,14 @@ def evaluate_command(command: str, cwd: Path, *, env: Mapping[str, str] | None =
         ):
             decision = "advise"
         if decision == "deny":
-            text = (
-                f"Procedure {procedure_id} is mandatory: {reason}. Use: "
-                f"{procedure.get('use_instead') or procedure.get('command')}. "
-                "(Deliberate exception: ask the user to re-run with PARROT_ALLOW_PROCEDURE=1.)"
+            text = _bounded_text(
+                f"Procedure {procedure_id} is mandatory: ",
+                f"{reason}. Use: {procedure.get('use_instead') or procedure.get('command')}",
+                ". (Deliberate exception: ask the user to re-run with PARROT_ALLOW_PROCEDURE=1.)",
             )
         else:
             advice_text = procedure.get("advice") or procedure.get("use_instead") or procedure.get("command") or ""
-            text = f"Procedure {procedure_id}: {reason}. {advice_text}"
-        return Advice(decision, text[:MAX_ADVICE_CHARS])
+            text = _bounded_text(f"Procedure {procedure_id}: ", f"{reason}. {advice_text}")
+        return Advice(decision, text)
     except Exception:  # noqa: BLE001 — a hook helper never raises
         return Advice("none")

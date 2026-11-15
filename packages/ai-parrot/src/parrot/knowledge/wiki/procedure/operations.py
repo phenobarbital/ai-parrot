@@ -88,7 +88,10 @@ def _resolution_text(data: dict[str, Any]) -> str:
 
 
 async def op_procedure_next(store: Any, params: ProcedureNextInput, **context: Any) -> OperationResult:
-    """Resolve the next valid procedure step(s) for ``context['root']`` with local probes only."""
+    """Resolve the next valid procedure step(s) for ``context['root']`` with local probes only.
+
+    Never raises: any failure while loading the plane or resolving is returned as an ``is_error`` result.
+    """
     del store
     root = context.get("root")
     if not procedure_plane_available(root):
@@ -115,8 +118,9 @@ async def op_procedure_next(store: Any, params: ProcedureNextInput, **context: A
             return resolve(specs, scope, SddProbeRunner(checkout), allow_remote=False, stale=stale)
 
         resolution = await asyncio.to_thread(resolve_local)
+        data = _resolution_payload(resolution)
+        return OperationResult(text=_resolution_text(data), data=data)
     except (ValueError, OSError) as exc:
         return OperationResult(text=str(exc), is_error=True)
-
-    data = _resolution_payload(resolution)
-    return OperationResult(text=_resolution_text(data), data=data)
+    except Exception as exc:  # noqa: BLE001 — a tool operation reports failures, it never raises
+        return OperationResult(text=f"{type(exc).__name__}: {exc}", is_error=True)
