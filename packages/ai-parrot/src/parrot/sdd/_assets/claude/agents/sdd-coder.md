@@ -251,7 +251,7 @@ confirmed. A valid example is:
   "symptom": "The pull-request edit command fails before applying the change.",
   "solution": "Use the REST pull-request endpoint for the same update.",
   "fix_example": "gh api -X PATCH repos/acme/widgets/pulls/42",
-  "scope_paths": ["packages/ai-parrot"]
+  "scope_paths": ["src/widgets"]
 }
 ```
 
