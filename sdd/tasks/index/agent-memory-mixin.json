@@ -221,7 +221,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -231,9 +231,10 @@
       "parallelism_notes": "Consumes ReviewBackend capability and MemoryRef canonical scope contract from TASK-5656",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5660-agent-memory-episode-scope.md",
-      "blocked_reason": "G2: canonical namespace encoding and SQL/cache migration rules must be frozen; no guessed UUID namespace."
+      "completed_at": "2026-11-15T01:18:55+00:00",
+      "file": "sdd/tasks/completed/TASK-5660-agent-memory-episode-scope.md",
+      "blocked_reason": "G2: canonical namespace encoding and SQL/cache migration rules must be frozen; no guessed UUID namespace.",
+      "verification": "verified"
     },
     {
       "id": "TASK-5661",
