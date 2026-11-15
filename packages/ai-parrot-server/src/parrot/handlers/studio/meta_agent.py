@@ -28,7 +28,7 @@ from typing import Any, Literal, NamedTuple
 from aiohttp import web
 from navigator_auth.decorators import is_authenticated, user_session
 from parrot.bots.studio import AgentStudioAgent
-from parrot.bots.studio.agent import studio_agent_provider
+from parrot.bots.studio.agent import build_studio_client, studio_agent_provider
 from pydantic import BaseModel
 
 from ._base import StudioBaseView
@@ -242,8 +242,9 @@ class StudioAssistantHandler(StudioBaseView):
         default_llm = agent.llm if api_key else None
         try:
             if api_key:
-                agent.llm = type(default_llm)(
-                    api_key=api_key, model=default_llm.model, tool_manager=agent.tool_manager
+                # same factory path as the default client: provider AND backend (bedrock / anthropic-aws) match
+                agent.llm = build_studio_client(
+                    studio_agent_provider(), default_llm.model, api_key, tool_manager=agent.tool_manager
                 )
             self.request.session = session
             # user_id is REQUIRED by the meta-agent's mutating tools: they stamp/enforce ownership from the context

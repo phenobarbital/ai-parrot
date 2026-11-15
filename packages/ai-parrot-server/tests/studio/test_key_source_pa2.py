@@ -255,11 +255,27 @@ async def test_assistant_honours_key_source(aiohttp_client, pool, clean_keys, as
 
 
 async def test_assistant_google_provider_uses_google_key_source(
-    aiohttp_client, pool, clean_keys, assistant, monkeypatch  # noqa: F811
+    aiohttp_client, pool, clean_keys, monkeypatch  # noqa: F811
 ):
-    """With ``STUDIO_AGENT_LLM=google`` the BYOK lookup, the refusal and the 409 details name ``google``."""
-    from parrot.bots.studio import agent as agent_module
+    """With ``STUDIO_AGENT_LLM=google`` (NO injected ``llm=``) the BYOK lookup, the refusal and the 409 details name
+    ``google``, and both the default and the BYOK-swapped client are the real ``GoogleGenAIClient``.
 
+    Only ``GoogleGenAIClient.ask`` is replaced (network); provider resolution, the factory and the swap are real.
+    """
+    from parrot.bots.studio import agent as agent_module
+    from parrot.clients.google import GoogleGenAIClient
+    from parrot.models import AIMessage, CompletionUsage
+
+    served: list[tuple[type, str | None]] = []
+
+    async def _echo(self, prompt, model=None, *args, **kwargs):
+        served.append((type(self), self.api_key))
+        text = f"key:{self.api_key}"
+        return AIMessage(input=prompt, output=text, response=text, model=model or "m", provider="google",
+                         usage=CompletionUsage())
+
+    monkeypatch.setattr(GoogleGenAIClient, "ask", _echo)
+    monkeypatch.setattr(meta_agent, "AgentStudioAgent", AgentStudioAgent)  # the real class, no llm= injection
     monkeypatch.setattr(agent_module, "STUDIO_AGENT_LLM", "google")
     app = partition_app(pool, resolver=False)
     app[STUDIO_KEY_SOURCE_CHOICE] = True
@@ -272,6 +288,11 @@ async def test_assistant_google_provider_uses_google_key_source(
     assert body["details"] == {"provider": "google", "options": ["server", "byok"]}
     status, body = await _say(client, key_source="byok")
     assert status == 200 and body["response"] == f"key:{USER_GOOGLE}"
+    status, body = await _say(client, key_source="server")
+    assert status == 200 and body["response"] == "key:g-server-key"
+    # the BYOK-swapped client and the default client are both the real Google client
+    assert [cls for cls, _ in served] == [GoogleGenAIClient, GoogleGenAIClient]
+    assert [key for _, key in served] == [USER_GOOGLE, "g-server-key"]
     monkeypatch.delenv("GOOGLE_API_KEY")
     status, body = await _say(client, key_source="server")
     assert status == 422 and body["code"] == "key_source_unavailable"

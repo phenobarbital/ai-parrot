@@ -52,8 +52,8 @@ for the conventions each artifact type must follow.
 
 
 #: Model used when ``STUDIO_AGENT_MODEL`` is unset, per provider key. A provider
-#: missing here uses its client class's own default model.
-_PROVIDER_DEFAULT_MODELS: dict[str, str] = {"anthropic": "claude-opus-5"}
+#: missing here omits the model, so the client constructor's own default applies.
+_PROVIDER_DEFAULT_MODELS: dict[str, str] = {"anthropic": "claude-opus-5", "google": "gemini-flash-latest"}
 
 
 def studio_agent_provider() -> str:
@@ -85,6 +85,44 @@ def _resolve_studio_client_class(provider: str) -> type:
     if callable(client_class) and not isinstance(client_class, type):
         client_class = client_class()
     return client_class
+
+
+def build_studio_client(
+    provider: str,
+    model: str | None = None,
+    api_key: str | None = None,
+    tool_manager: Any = None,
+) -> Any:
+    """Build the Studio Assistant LLM client for ``provider`` through ``LLMFactory``.
+
+    The single construction path for BOTH the agent's default client and the
+    handler's per-ask BYOK client, so provider-specific wiring
+    (``PROVIDER_BACKEND``: bedrock / anthropic-aws) always matches.
+
+    Args:
+        provider: Registered provider key (validated; unknown → ``ValueError``).
+        model: Model id. Only a real, non-empty string is used; anything else is
+            ignored and the client's own constructor default applies.
+        api_key: Credential to use; forwarded only when not ``None`` (an explicit
+            ``None`` would disable the client's own navconfig key fallback).
+        tool_manager: Optional ToolManager to attach.
+
+    Returns:
+        The initialised client.
+
+    Raises:
+        ValueError: ``provider`` is not a registered client provider.
+    """
+    _resolve_studio_client_class(provider)
+    from parrot.clients.factory import LLMFactory
+
+    create_kwargs: dict[str, Any] = {}
+    if api_key is not None:
+        create_kwargs["api_key"] = api_key
+    if tool_manager is not None:
+        create_kwargs["tool_manager"] = tool_manager
+    spec = f"{provider}:{model}" if isinstance(model, str) and model else provider
+    return LLMFactory.create(spec, **create_kwargs)
 
 
 class AgentStudioAgent(SkillRegistryMixin, Agent):
@@ -140,25 +178,11 @@ class AgentStudioAgent(SkillRegistryMixin, Agent):
             # registry — core must not import a provider module at module
             # scope (AC-3).
             provider = studio_agent_provider()
-            client_class = _resolve_studio_client_class(provider)
-            resolved_model = (
-                model
-                or STUDIO_AGENT_MODEL
-                or _PROVIDER_DEFAULT_MODELS.get(provider)
-                or getattr(client_class, "_default_model", None)
-                or getattr(client_class, "default_model", None)
-            )
-            # Build through the factory so provider-specific wiring
-            # (``PROVIDER_BACKEND``: bedrock / anthropic-aws) is applied.
-            # ``api_key`` is only forwarded when set: an explicit ``None``
-            # would disable the client's own navconfig key fallback.
-            from parrot.clients.factory import LLMFactory
-
-            create_kwargs: dict[str, Any] = {}
-            if api_key is not None:
-                create_kwargs["api_key"] = api_key
-            spec = f"{provider}:{resolved_model}" if resolved_model else provider
-            llm = LLMFactory.create(spec, **create_kwargs)
+            # Only real string defaults: the Studio per-provider table, else
+            # omit the model so the client's own constructor default applies
+            # (class attrs may be properties, e.g. Gemma4/Transformers).
+            resolved_model = model or STUDIO_AGENT_MODEL or _PROVIDER_DEFAULT_MODELS.get(provider)
+            llm = build_studio_client(provider, resolved_model, api_key)
         super().__init__(
             name=name,
             llm=llm,
