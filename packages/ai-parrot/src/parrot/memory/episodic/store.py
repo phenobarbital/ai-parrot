@@ -10,6 +10,9 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from parrot.memory.dynamics.grade import select_grade
+from parrot.memory.dynamics.models import MemoryCitation, MemoryRef, ReviewCommand, ReviewReceipt, ReviewSignal
+
 from .backends.abstract import AbstractEpisodeBackend
 from .cache import EpisodeRedisCache
 from .embedding import EpisodeEmbeddingProvider
@@ -25,6 +28,9 @@ from .reflection import ReflectionEngine
 from .scoring import ImportanceScorer
 
 logger = logging.getLogger(__name__)
+
+_EXPLICIT_LESSON_KEY = "_parrot_explicit_lesson"
+_EXPLICIT_REFLECTION_KEY = "_parrot_explicit_reflection"
 
 # Known error types that boost importance
 _KNOWN_ERROR_TYPES = {
@@ -100,6 +106,9 @@ class EpisodicMemoryStore:
         self._default_ttl_days = default_ttl_days
         self._importance_scorer = importance_scorer
         self._recall_strategy = recall_strategy
+        self._citations: dict[str, MemoryCitation] = {}
+        self._review_revisions: dict[str, int] = {}
+        self._review_expected_revisions: dict[str, int] = {}
 
     # ── Recording API ──
 
@@ -159,6 +168,10 @@ class EpisodicMemoryStore:
         if effective_ttl > 0:
             expires_at = datetime.now(timezone.utc) + timedelta(days=effective_ttl)
 
+        episode_metadata = dict(metadata or {})
+        explicit_lesson = episode_metadata.pop(_EXPLICIT_LESSON_KEY, None)
+        explicit_reflection = episode_metadata.pop(_EXPLICIT_REFLECTION_KEY, None)
+
         # Generate reflection
         reflection = None
         lesson_learned = None
@@ -173,6 +186,11 @@ class EpisodicMemoryStore:
                 suggested_action = result.suggested_action
             except Exception as e:
                 logger.warning("Reflection generation failed: %s", e)
+
+        if explicit_lesson is not None:
+            lesson_learned = str(explicit_lesson)
+        if explicit_reflection is not None:
+            reflection = str(explicit_reflection)
 
         # Build episode
         episode = EpisodicMemory(
@@ -197,7 +215,7 @@ class EpisodicMemoryStore:
             related_tools=related_tools or [],
             related_entities=related_entities or [],
             expires_at=expires_at,
-            metadata=metadata or {},
+            metadata=episode_metadata,
         )
 
         # Apply importance scorer if provided (overrides inline heuristic)
@@ -231,6 +249,246 @@ class EpisodicMemoryStore:
             outcome.value,
         )
         return episode
+
+    async def cite(
+        self,
+        memory_ids: list[str],
+        *,
+        namespace: MemoryNamespace,
+        exposure_id: str,
+    ) -> MemoryCitation:
+        """Bind in-scope episode versions to one delivered runtime exposure.
+
+        Citation is intentionally bookkeeping-only: it does not call the
+        review backend and therefore cannot change earned dynamics state.
+
+        Args:
+            memory_ids: Episode identifiers cited from the delivered context.
+            namespace: Trusted runtime namespace for the delivery.
+            exposure_id: Runtime-minted final-delivery identifier.
+
+        Returns:
+            The validated citation for the requested episode versions.
+
+        Raises:
+            ValueError: If the exposure, cardinality, or any reference is unavailable.
+        """
+        if not exposure_id.strip():
+            raise ValueError("exposure_id must be non-blank")
+        unique_ids = list(dict.fromkeys(memory_ids))
+        if not unique_ids or len(unique_ids) > 64:
+            raise ValueError("citation must contain between 1 and 64 memory references")
+
+        episodes = await self._resolve_episodes(unique_ids, namespace=namespace)
+        refs = tuple(self._episode_ref(episodes[memory_id], namespace=namespace) for memory_id in unique_ids)
+        citation = MemoryCitation(exposure_id=exposure_id, refs=refs)
+
+        previous = self._citations.get(exposure_id)
+        if previous is not None:
+            previous_namespace = previous.refs[0].namespace
+            if previous_namespace != namespace:
+                raise ValueError("one or more memory references are unavailable")
+            combined = list(previous.refs)
+            known = {ref.canonical_key for ref in combined}
+            combined.extend(ref for ref in refs if ref.canonical_key not in known)
+            if len(combined) > 64:
+                raise ValueError("citation must contain at most 64 memory references")
+            self._citations[exposure_id] = MemoryCitation(exposure_id=exposure_id, refs=tuple(combined))
+        else:
+            self._citations[exposure_id] = citation
+        return citation
+
+    async def review(
+        self,
+        memory_ids: list[str],
+        signal: ReviewSignal,
+        *,
+        namespace: MemoryNamespace,
+        exposure_id: str,
+    ) -> list[ReviewReceipt]:
+        """Admit cited evidence and apply each review durably at most once.
+
+        Args:
+            memory_ids: Episode identifiers attributed to the verified outcome.
+            signal: Trusted runtime or coder outcome evidence.
+            namespace: Trusted runtime namespace for the reviewed episodes.
+            exposure_id: Final-delivery exposure previously bound by :meth:`cite`.
+
+        Returns:
+            One durable or explicitly ignored receipt per distinct episode.
+
+        Raises:
+            ValueError: If scope, exposure, or delivered-version admission fails.
+        """
+        unique_ids = list(dict.fromkeys(memory_ids))
+        if not unique_ids:
+            return []
+        if not self._signal_matches_namespace(signal, namespace):
+            raise ValueError("review scope or delivered exposure is unavailable")
+
+        citation = self._citations.get(exposure_id)
+        if citation is None or citation.exposure_id != exposure_id:
+            raise ValueError("review scope or delivered exposure is unavailable")
+        cited_refs = {ref.memory_id: ref for ref in citation.refs if ref.namespace == namespace}
+        if any(memory_id not in cited_refs for memory_id in unique_ids):
+            raise ValueError("review scope or delivered exposure is unavailable")
+        if not signal.can_review:
+            return []
+
+        episodes = await self._resolve_episodes(unique_ids, namespace=namespace)
+        apply_review = getattr(self._backend, "apply_review", None)
+        if not callable(apply_review):
+            return [
+                self._unavailable_receipt(cited_refs[memory_id], signal, reason="backend has no review capability")
+                for memory_id in unique_ids
+            ]
+
+        receipts: list[ReviewReceipt] = []
+        for memory_id in unique_ids:
+            ref = cited_refs[memory_id]
+            episode = episodes[memory_id]
+            grade = select_grade(
+                signal,
+                attribution="cited",
+                memory_error_signature=episode.error_message or episode.error_type,
+                verified_recovery=bool(signal.recovery_refs),
+            )
+            provisional = ReviewCommand(
+                ref=ref,
+                signal=signal,
+                exposure_id=exposure_id,
+                expected_revision=0,
+            )
+            if grade is None:
+                receipts.append(
+                    ReviewReceipt(
+                        status="ignored",
+                        dedupe_key=provisional.dedupe_key,
+                        outcome_id=signal.outcome_id,
+                        ref_key=ref.canonical_key,
+                        reason="verified evidence selected no review grade",
+                    )
+                )
+                continue
+
+            expected_revision = self._review_expected_revisions.get(
+                provisional.dedupe_key,
+                self._review_revisions.get(ref.canonical_key, 0),
+            )
+            command = provisional.model_copy(update={"expected_revision": expected_revision})
+            try:
+                receipt, command = await self._apply_review_with_current_revision(apply_review, command)
+            except Exception as exc:
+                logger.warning("Review application failed for %s: %s", ref.canonical_key, exc)
+                receipts.append(self._unavailable_receipt(ref, signal, reason="review storage is unavailable"))
+                continue
+
+            self._review_expected_revisions[command.dedupe_key] = command.expected_revision
+            if receipt.apply_revision is not None:
+                self._review_revisions[ref.canonical_key] = max(
+                    receipt.apply_revision,
+                    self._review_revisions.get(ref.canonical_key, 0),
+                )
+            receipts.append(receipt)
+        return receipts
+
+    async def _apply_review_with_current_revision(
+        self,
+        apply_review: Any,
+        command: ReviewCommand,
+    ) -> tuple[ReviewReceipt, ReviewCommand]:
+        """Retry only a compare-and-swap miss using the backend's committed revision."""
+        current_command = command
+        for _ in range(3):
+            receipt = await apply_review(current_command)
+            expected_miss = (
+                receipt.status == "stale_revision"
+                and receipt.apply_revision is not None
+                and receipt.reason is not None
+                and receipt.reason.startswith("expected apply_revision=")
+            )
+            if not expected_miss:
+                return receipt, current_command
+            current_command = current_command.model_copy(update={"expected_revision": receipt.apply_revision})
+        return receipt, current_command
+
+    async def _resolve_episodes(
+        self,
+        memory_ids: list[str],
+        *,
+        namespace: MemoryNamespace,
+    ) -> dict[str, EpisodicMemory]:
+        """Resolve exact-scope episodes without distinguishing missing from cross-scope IDs."""
+        namespace_filter = namespace.build_filter()
+        count = await self._backend.count(namespace_filter)
+        episodes = await self._backend.get_recent(namespace_filter=namespace_filter, limit=max(1, count))
+        resolved = {
+            episode.episode_id: episode
+            for episode in episodes
+            if episode.episode_id in memory_ids and self._episode_matches_namespace(episode, namespace)
+        }
+        if any(memory_id not in resolved for memory_id in memory_ids):
+            raise ValueError("one or more memory references are unavailable")
+        return resolved
+
+    @staticmethod
+    def _episode_ref(episode: EpisodicMemory, *, namespace: MemoryNamespace) -> MemoryRef:
+        """Create the immutable write-once version reference for one episode."""
+        return MemoryRef(namespace=namespace, kind="episode", memory_id=episode.episode_id, content_version="v1")
+
+    @staticmethod
+    def _episode_matches_namespace(episode: EpisodicMemory, namespace: MemoryNamespace) -> bool:
+        """Require every namespace dimension, including absent values, to match."""
+        return (
+            episode.tenant_id,
+            episode.agent_id,
+            episode.user_id,
+            episode.session_id,
+            episode.room_id,
+            episode.crew_id,
+            episode.model_id,
+        ) == (
+            namespace.tenant_id,
+            namespace.agent_id,
+            namespace.user_id,
+            namespace.session_id,
+            namespace.room_id,
+            namespace.crew_id,
+            namespace.model_id,
+        )
+
+    @staticmethod
+    def _signal_matches_namespace(signal: ReviewSignal, namespace: MemoryNamespace) -> bool:
+        """Compare the outcome's trusted scope with every episodic namespace dimension."""
+        return (
+            signal.scope.tenant_id,
+            signal.scope.agent_id,
+            signal.scope.user_id,
+            signal.scope.session_id,
+            signal.scope.room_id,
+            signal.scope.crew_id,
+            signal.scope.model_id,
+        ) == (
+            namespace.tenant_id,
+            namespace.agent_id,
+            namespace.user_id,
+            namespace.session_id,
+            namespace.room_id,
+            namespace.crew_id,
+            namespace.model_id,
+        )
+
+    @staticmethod
+    def _unavailable_receipt(ref: MemoryRef, signal: ReviewSignal, *, reason: str) -> ReviewReceipt:
+        """Return a failure receipt without claiming an applied or durable pending write."""
+        command = ReviewCommand(ref=ref, signal=signal, exposure_id="unavailable", expected_revision=0)
+        return ReviewReceipt(
+            status="storage_unavailable",
+            dedupe_key=command.dedupe_key,
+            outcome_id=signal.outcome_id,
+            ref_key=ref.canonical_key,
+            reason=reason,
+        )
 
     async def record_tool_episode(
         self,
@@ -337,7 +595,7 @@ class EpisodicMemoryStore:
         crew_ep = await self.record_episode(
             namespace=namespace,
             situation=f"Crew execution: {flow_description}",
-            action_taken=f"Ran crew workflow with agents",
+            action_taken="Ran crew workflow with agents",
             outcome=outcome,
             error_message=str(error)[:500] if error else None,
             category=EpisodeCategory.WORKFLOW_PATTERN,
@@ -362,7 +620,7 @@ class EpisodicMemoryStore:
                 agent_ep = await self.record_episode(
                     namespace=agent_ns,
                     situation=f"Agent participation in crew: {flow_description}",
-                    action_taken=f"Executed assigned task in crew workflow",
+                    action_taken="Executed assigned task in crew workflow",
                     outcome=agent_outcome,
                     error_message=str(agent_error)[:500] if agent_error else None,
                     category=EpisodeCategory.WORKFLOW_PATTERN,
