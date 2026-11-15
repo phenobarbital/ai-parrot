@@ -6,18 +6,21 @@ import asyncio
 import hashlib
 import json
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
 import aiosqlite
 
-from parrot.memory.agent_memory.models import MemoryRequestScope
+from parrot.memory.agent_memory.models import ChatStorageEvidenceRef, MemoryRequestScope
 
-from .models import UserKnowledge, UserKnowledgeCommand, UserMemoryReceipt
+from .models import UserKnowledge, UserKnowledgeCandidate, UserKnowledgeCommand, UserMemoryReceipt
 
 _MAX_QUERY_CHARS = 2_048
 _MAX_RESULT_LIMIT = 100
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
+_EPISODE_REF_PREFIXES = ("episode:", "episode/v1/")
+EvidenceTenantResolver = Callable[[ChatStorageEvidenceRef], Awaitable[str | None]]
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS user_memory_schema (
     component TEXT PRIMARY KEY,
@@ -55,19 +58,38 @@ CREATE TABLE IF NOT EXISTS user_knowledge_events (
     revision INTEGER,
     PRIMARY KEY (tenant_id, agent_id, user_id, event_id)
 );
+CREATE TABLE IF NOT EXISTS user_knowledge_suppressions (
+    tenant_id TEXT NOT NULL,
+    agent_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    claim_key TEXT NOT NULL,
+    forgotten_at TEXT NOT NULL,
+    blocked_evidence_hashes TEXT NOT NULL,
+    PRIMARY KEY (tenant_id, agent_id, user_id, claim_key)
+);
+CREATE TABLE IF NOT EXISTS user_derivative_forgets (
+    tenant_id TEXT NOT NULL,
+    source_episode_id TEXT NOT NULL,
+    forget_event_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (tenant_id, source_episode_id)
+);
 """
 
 
 class UserMemoryStore:
     """Manage revisioned cross-session facts without constructing an episodic store."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, evidence_tenant_resolver: EvidenceTenantResolver | None = None) -> None:
         """Retain SQLite configuration; user-only mode acquires only its own resources.
 
         Args:
             path: Configured SQLite database shared safely with other memory planes.
+            evidence_tenant_resolver: Optional metadata-only ChatStorage resolver. It returns the
+                stored tenant for a live turn, or ``None`` for missing/tombstoned evidence.
         """
         self.path = Path(path)
+        self._evidence_tenant_resolver = evidence_tenant_resolver
         self.logger = logging.getLogger(__name__)
         self._db: aiosqlite.Connection | None = None
         self._lock = asyncio.Lock()
@@ -199,6 +221,7 @@ class UserMemoryStore:
         if command.operation != "upsert" or command.candidate is None:
             raise ValueError("invalid_parameters: upsert requires an upsert command")
         command_payload = self._command_payload(command)
+        evidence_available = await self._evidence_available(command, scope)
         async with self._lock:
             database = await self._configure_locked()
             await database.execute("BEGIN IMMEDIATE")
@@ -208,7 +231,25 @@ class UserMemoryStore:
                     await database.execute("COMMIT")
                     return replay
 
+                if not evidence_available:
+                    receipt = UserMemoryReceipt(status="ignored")
+                    await self._record_event(database, identity, command, command_payload, receipt)
+                    await database.execute("COMMIT")
+                    return receipt
+
                 candidate = command.candidate
+                suppression = await self._suppression(database, identity, self._candidate_claim_key(candidate))
+                if suppression is not None:
+                    if candidate.provenance != "explicit" or not self._has_new_evidence(command, suppression):
+                        receipt = UserMemoryReceipt(status="ignored")
+                        await self._record_event(database, identity, command, command_payload, receipt)
+                        await database.execute("COMMIT")
+                        return receipt
+                    await database.execute(
+                        "DELETE FROM user_knowledge_suppressions "
+                        "WHERE tenant_id = ? AND agent_id = ? AND user_id = ? AND claim_key = ?",
+                        (*identity, self._candidate_claim_key(candidate)),
+                    )
                 current = await self._matching_active(database, identity, candidate)
                 if candidate.provenance == "inferred" and command.expected_revision is not None:
                     receipt = UserMemoryReceipt(status="conflict")
@@ -272,6 +313,7 @@ class UserMemoryStore:
         if command.operation != "correct" or command.candidate is None:
             raise ValueError("invalid_parameters: correct requires a correction command")
         command_payload = self._command_payload(command)
+        evidence_available = await self._evidence_available(command, scope)
         async with self._lock:
             database = await self._configure_locked()
             await database.execute("BEGIN IMMEDIATE")
@@ -282,7 +324,9 @@ class UserMemoryStore:
                     return replay
 
                 current = await self._knowledge_by_id(database, identity, command.knowledge_id or "")
-                if current is None:
+                if not evidence_available:
+                    receipt = UserMemoryReceipt(status="ignored")
+                elif current is None:
                     receipt = UserMemoryReceipt(status="ignored")
                 elif current.status not in ("active", "pending") or current.revision != command.expected_revision:
                     receipt = UserMemoryReceipt(
@@ -319,6 +363,99 @@ class UserMemoryStore:
                 await self._rollback(database)
                 raise
 
+    async def forget(
+        self,
+        command: UserKnowledgeCommand,
+        *,
+        scope: MemoryRequestScope,
+    ) -> UserMemoryReceipt:
+        """Delete a fact, suppress stale replay, and retain derivative invalidation work.
+
+        Args:
+            command: Revision-checked forget command with a retry-stable event identity.
+            scope: Trusted principal used before target lookup or mutation.
+
+        Returns:
+            A receipt for the committed erasure, duplicate, conflict, or unknown target.
+
+        Raises:
+            ValueError: If identity is missing or the command is not a forget operation.
+        """
+        identity = self._require_identity(scope)
+        if command.operation != "forget":
+            raise ValueError("invalid_parameters: forget requires a forget command")
+        command_payload = self._command_payload(command)
+        async with self._lock:
+            database = await self._configure_locked()
+            await database.execute("BEGIN IMMEDIATE")
+            try:
+                replay = await self._event_replay(database, identity, command.event_id, command_payload)
+                if replay is not None:
+                    await database.execute("COMMIT")
+                    return replay
+
+                current = await self._knowledge_by_id(database, identity, command.knowledge_id or "")
+                if current is None:
+                    receipt = UserMemoryReceipt(status="ignored")
+                elif current.status not in ("active", "pending") or current.revision != command.expected_revision:
+                    receipt = UserMemoryReceipt(
+                        knowledge_id=current.knowledge_id,
+                        revision=current.revision,
+                        status="conflict",
+                    )
+                else:
+                    now = datetime.now(timezone.utc)
+                    claim_key = self._knowledge_claim_key(current)
+                    related = await self._knowledge_for_claim(database, identity, claim_key)
+                    evidence_refs = tuple(
+                        dict.fromkeys(ref for knowledge in related for ref in knowledge.evidence_refs)
+                    )
+                    evidence_refs = tuple(dict.fromkeys((*evidence_refs, *command.evidence_refs)))
+                    blocked_hashes = json.dumps(
+                        sorted(self._evidence_hash(ref) for ref in evidence_refs),
+                        separators=(",", ":"),
+                    )
+                    await database.execute(
+                        "INSERT INTO user_knowledge_suppressions "
+                        "(tenant_id, agent_id, user_id, claim_key, forgotten_at, blocked_evidence_hashes) "
+                        "VALUES (?, ?, ?, ?, ?, ?) "
+                        "ON CONFLICT(tenant_id, agent_id, user_id, claim_key) DO UPDATE SET "
+                        "forgotten_at = excluded.forgotten_at, blocked_evidence_hashes = excluded.blocked_evidence_hashes",
+                        (*identity, claim_key, now.isoformat(), blocked_hashes),
+                    )
+                    related_ids = tuple(knowledge.knowledge_id for knowledge in related)
+                    if related_ids:
+                        placeholders = ", ".join("?" for _ in related_ids)
+                        await database.execute(
+                            f"DELETE FROM user_knowledge_events WHERE tenant_id = ? AND agent_id = ? AND user_id = ? "
+                            f"AND knowledge_id IN ({placeholders})",
+                            (*identity, *related_ids),
+                        )
+                        await database.execute(
+                            f"DELETE FROM user_knowledge WHERE tenant_id = ? AND agent_id = ? AND user_id = ? "
+                            f"AND knowledge_id IN ({placeholders})",
+                            (*identity, *related_ids),
+                        )
+                    for episode_id in self._source_episode_ids(evidence_refs):
+                        await database.execute(
+                            "INSERT INTO user_derivative_forgets "
+                            "(tenant_id, source_episode_id, forget_event_id, created_at) VALUES (?, ?, ?, ?) "
+                            "ON CONFLICT(tenant_id, source_episode_id) DO UPDATE SET "
+                            "forget_event_id = excluded.forget_event_id, created_at = excluded.created_at",
+                            (scope.tenant_id, episode_id, command.event_id, now.isoformat()),
+                        )
+                    receipt = UserMemoryReceipt(
+                        knowledge_id=current.knowledge_id,
+                        revision=current.revision,
+                        status="applied",
+                    )
+                await self._record_event(database, identity, command, command_payload, receipt)
+                await database.execute("COMMIT")
+                return receipt
+            except BaseException:
+                await self._rollback(database)
+                raise
+
     async def _configure_locked(self) -> aiosqlite.Connection:
         """Open and migrate the user-owned schema while the lifecycle lock is held."""
         if self._db is not None:
@@ -328,6 +465,7 @@ class UserMemoryStore:
             await database.execute("PRAGMA journal_mode=WAL")
             await database.execute("PRAGMA busy_timeout=5000")
             await database.execute("PRAGMA synchronous=NORMAL")
+            await database.execute("PRAGMA secure_delete=ON")
             await database.executescript(_SCHEMA)
             cursor = await database.execute("SELECT version FROM user_memory_schema WHERE component = 'user_knowledge'")
             row = await cursor.fetchone()
@@ -390,6 +528,123 @@ class UserMemoryStore:
             digest.update(len(encoded).to_bytes(4, "big"))
             digest.update(encoded)
         return f"uk-{digest.hexdigest()}"
+
+    @staticmethod
+    def _claim_key(*, kind: str, normalized_key: str | None, value: object, context: dict[str, str]) -> str:
+        """Hash claim identity without retaining forgotten fact content."""
+        material = {
+            "kind": kind,
+            "normalized_key": normalized_key,
+            "context": context,
+            "unkeyed_value": value if normalized_key is None else None,
+        }
+        encoded = json.dumps(material, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        return f"uks-{hashlib.sha256(encoded.encode('utf-8')).hexdigest()}"
+
+    @classmethod
+    def _candidate_claim_key(cls, candidate: UserKnowledgeCandidate) -> str:
+        """Return the suppression identity for a validated candidate."""
+        return cls._claim_key(
+            kind=candidate.kind,
+            normalized_key=candidate.normalized_key,
+            value=candidate.value,
+            context=candidate.context,
+        )
+
+    @classmethod
+    def _knowledge_claim_key(cls, knowledge: UserKnowledge) -> str:
+        """Return the suppression identity for persisted knowledge."""
+        return cls._claim_key(
+            kind=knowledge.kind,
+            normalized_key=knowledge.normalized_key,
+            value=knowledge.value,
+            context=knowledge.context,
+        )
+
+    @staticmethod
+    def _evidence_hash(reference: str) -> str:
+        """Hash evidence identity so suppression never retains source content."""
+        return hashlib.sha256(reference.encode("utf-8")).hexdigest()
+
+    @classmethod
+    def _has_new_evidence(cls, command: UserKnowledgeCommand, blocked_hashes_json: str) -> bool:
+        """Return whether an explicit declaration carries evidence newer than the forgotten claim."""
+        candidate = command.candidate
+        if candidate is None:
+            return False
+        blocked_hashes = set(json.loads(blocked_hashes_json))
+        evidence_refs = tuple(dict.fromkeys((*candidate.evidence_refs, *command.evidence_refs)))
+        return any(cls._evidence_hash(reference) not in blocked_hashes for reference in evidence_refs)
+
+    async def _evidence_available(self, command: UserKnowledgeCommand, scope: MemoryRequestScope) -> bool:
+        """Fail closed for malformed, cross-scope, tombstoned, or tenant-mismatched ChatStorage evidence."""
+        candidate = command.candidate
+        references = command.evidence_refs
+        if candidate is not None:
+            references = tuple(dict.fromkeys((*candidate.evidence_refs, *references)))
+        for reference in references:
+            if not reference.startswith("chatstorage/"):
+                continue
+            try:
+                evidence = ChatStorageEvidenceRef.parse(reference)
+            except ValueError:
+                return False
+            if (
+                evidence.tenant_id != scope.tenant_id
+                or evidence.agent_name != scope.agent_id
+                or evidence.user_id != scope.user_id
+                or evidence.session_id != scope.session_id
+            ):
+                return False
+            if self._evidence_tenant_resolver is None:
+                return False
+            stored_tenant = await self._evidence_tenant_resolver(evidence)
+            if stored_tenant is None or stored_tenant != scope.tenant_id:
+                return False
+        return True
+
+    @staticmethod
+    def _source_episode_ids(references: tuple[str, ...]) -> tuple[str, ...]:
+        """Extract explicit source-episode lineage without importing brain internals."""
+        episode_ids: list[str] = []
+        for reference in references:
+            for prefix in _EPISODE_REF_PREFIXES:
+                if reference.startswith(prefix):
+                    episode_id = reference[len(prefix) :]
+                    if episode_id:
+                        episode_ids.append(episode_id)
+                    break
+        return tuple(dict.fromkeys(episode_ids))
+
+    async def _suppression(
+        self,
+        database: aiosqlite.Connection,
+        identity: tuple[str, str, str],
+        claim_key: str,
+    ) -> str | None:
+        """Return hashed blocked evidence for a suppressed claim."""
+        cursor = await database.execute(
+            "SELECT blocked_evidence_hashes FROM user_knowledge_suppressions "
+            "WHERE tenant_id = ? AND agent_id = ? AND user_id = ? AND claim_key = ?",
+            (*identity, claim_key),
+        )
+        row = await cursor.fetchone()
+        return str(row[0]) if row is not None else None
+
+    async def _knowledge_for_claim(
+        self,
+        database: aiosqlite.Connection,
+        identity: tuple[str, str, str],
+        claim_key: str,
+    ) -> list[UserKnowledge]:
+        """Load scoped history rows matching a claim before their physical erasure."""
+        cursor = await database.execute(
+            "SELECT payload FROM user_knowledge WHERE tenant_id = ? AND agent_id = ? AND user_id = ?",
+            identity,
+        )
+        rows = await cursor.fetchall()
+        knowledge = [UserKnowledge.model_validate_json(row[0]) for row in rows]
+        return [item for item in knowledge if self._knowledge_claim_key(item) == claim_key]
 
     async def _event_replay(
         self,
