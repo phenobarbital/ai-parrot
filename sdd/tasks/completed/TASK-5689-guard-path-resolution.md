@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-899 — Procedure guards and plane — FEAT-891 review follow-ups
 **Spec**: `sdd/specs/fixgroup-848b9a0ceee1.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -290,10 +290,15 @@ See the three test stubs in the blueprint; spec §4 rows 1–3 state what each a
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Code (`/sdd-fix` session, actor `agent:sdd-fix:cb69fd31`)
+**Date**: 2026-11-15
+**Notes**: `match_guards` now takes `checkout`/`cwd` and resolves each argument against the segment's
+effective directory: plain `cd <dir>` segments are followed, leading `git -C <dir>` options are stripped
+before the `argv_prefix` test and applied to that segment, and absolute paths inside the checkout become
+checkout-relative. `evaluate_command` passes both arguments. Code commit `ca79abefec`. Validation:
+`pytest packages/ai-parrot/tests/sdd/test_procedure_advice.py packages/ai-parrot/tests/sdd/test_procedure_guards.py`
+→ 45 passed; `ruff check` and `black --check` clean on both files.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: none. Two details beyond the blueprint: a private `_located_segments` helper
+holds the per-segment walk, and `match_guards` also catches `RuntimeError` (a symlink loop in
+`Path.resolve()` on Python < 3.13) so it keeps its never-raises contract.
