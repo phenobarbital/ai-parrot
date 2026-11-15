@@ -198,7 +198,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -210,8 +210,9 @@
       "parallelism_notes": "Consumes ReviewSignal from TASK-5656; Consumes retrievability from TASK-5657; Consumes MemoryCandidate from TASK-5658",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5659-agent-memory-grade-rank.md"
+      "completed_at": "2026-11-15T00:25:39+00:00",
+      "file": "sdd/tasks/completed/TASK-5659-agent-memory-grade-rank.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5660",

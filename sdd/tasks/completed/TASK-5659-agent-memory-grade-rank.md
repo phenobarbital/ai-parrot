@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-892 - Agent Memory — Unified Integration, User Knowledge and Dynamics
 **Spec**: `sdd/specs/agent-memory-mixin.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-5656, TASK-5657, TASK-5658
@@ -270,3 +270,20 @@ CancelledError. Use subprocesses for crash/multiprocess checks, never shared pro
 5. Run validation, commit scoped implementation, and finalize with `parrot sdd task finalize`
    using real TaskCompletionEvidence and the exact implementation HEAD. Let finalization own
    the completion note and active-to-completed move; do not fabricate completion evidence.
+
+## Completion Note
+
+- Task: TASK-5659
+- Feature: agent-memory-mixin
+- Implementation SHA: 20260b0c0d1693e43d3cd93bbe2d16315ef5ad9c
+- Closed at (UTC): 2026-11-15T00:25:57+00:00
+- Fix commits: none
+- Closed by hand with `scripts/sdd/close_task.sh` (interactive Claude Code session, model claude-fable-5-2), not through `parrot sdd task finalize`: no coder execution, no independent review evidence.
+- Validation: `pytest packages/ai-parrot/tests/memory/dynamics/test_reviews.py packages/ai-parrot/tests/memory/dynamics/test_ranking.py -q` with `PYTHONPATH=packages/ai-parrot/src` — 5 passed; `ruff check` clean on the four files.
+- Contract changes versus the original blueprint (owner-confirmed 2026-11-15, after two codex seats stopped with empty deliveries): `select_grade` takes `attribution: Literal["cited", "overlap"] | None` instead of `attributed: bool`; `rank_candidates` takes caller-resolved `states` keyed by `dynamics_state_ref`.
+- Decisions made during implementation, for the consumers (TASK-5664, TASK-5665):
+  - `rank_candidates` also takes `anti_pattern_ids` (memory ids the caller flags from episode metadata), because `MemoryCandidate` carries no metadata; anti-patterns form the first group.
+  - Non-experiential candidates (`user`, `skill`) are returned after the ranked ones, unchanged and unscored, rather than dropped.
+  - A recovery earns EASY (GOOD under overlap) only when `verified_recovery` is true and the signal carries at least one `recovery_refs` entry.
+  - A success that was neither first-attempt, corrected nor a verified recovery earns no review.
+- The blueprint listed the same three test names for both test files; grade cases live in `test_reviews.py` and ranking cases in `test_ranking.py`.
