@@ -31,9 +31,7 @@ def test_legacy_and_model_scoped_round_trip() -> None:
     legacy_data = legacy.to_dict()
 
     assert legacy_data["model_id"] is None
-    restored_legacy = EpisodicMemory.from_dict(
-        {key: value for key, value in legacy_data.items() if key != "model_id"}
-    )
+    restored_legacy = EpisodicMemory.from_dict({key: value for key, value in legacy_data.items() if key != "model_id"})
     assert restored_legacy.model_id is None
 
     scoped = _episode(model_id="openai:gpt-4o")
@@ -48,12 +46,8 @@ def test_legacy_and_model_scoped_round_trip() -> None:
 def test_namespace_encoding_no_collisions() -> None:
     """Verify model scope filters and Redis prefixes use collision-safe encoding."""
     legacy = MemoryNamespace(tenant_id="tenant", agent_id="agent")
-    scoped = MemoryNamespace(
-        tenant_id="tenant", agent_id="agent", model_id="openai:gpt-4o/mini"
-    )
-    other = MemoryNamespace(
-        tenant_id="tenant", agent_id="agent", model_id="openai:gpt-4o%2Fmini"
-    )
+    scoped = MemoryNamespace(tenant_id="tenant", agent_id="agent", model_id="openai:gpt-4o/mini")
+    other = MemoryNamespace(tenant_id="tenant", agent_id="agent", model_id="openai:gpt-4o%2Fmini")
 
     assert legacy.build_filter() == {"tenant_id": "tenant", "agent_id": "agent"}
     assert legacy.redis_prefix == "tenant:agent"
@@ -65,9 +59,7 @@ def test_namespace_encoding_no_collisions() -> None:
         MemoryNamespace(tenant_id="tenant", agent_id="agent", model_id="")
 
 
-@pytest.mark.parametrize(
-    "field", ("score", "ranking_score", "retrievability", "stability")
-)
+@pytest.mark.parametrize("field", ("score", "ranking_score", "retrievability", "stability"))
 @pytest.mark.parametrize("value", (float("inf"), float("nan")))
 def test_search_result_rejects_non_finite_float_fields(field: str, value: float) -> None:
     """Verify every floating-point search field rejects infinity and NaN."""
@@ -130,9 +122,7 @@ async def test_baseline_backend_without_review() -> None:
             """Return no records from the isolated baseline backend."""
             return 0
 
-        async def update_metadata(
-            self, episode_ids: list[str], patch: dict[str, object]
-        ) -> int:
+        async def update_metadata(self, episode_ids: list[str], patch: dict[str, object]) -> int:
             """Report no metadata updates from the isolated baseline backend."""
             return 0
 
