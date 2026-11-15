@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import ValidationError
 
-from parrot.clients.base import AbstractClient
 from parrot.memory.agent_memory.models import MemoryEvent
 
 from .models import UserKnowledgeCandidate
+
+if TYPE_CHECKING:
+    from parrot.clients.base import AbstractClient
 
 logger = logging.getLogger(__name__)
 
