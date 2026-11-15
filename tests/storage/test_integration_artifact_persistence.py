@@ -56,7 +56,8 @@ def mock_dynamo():
     backend.put_thread = AsyncMock()
     backend.update_thread = AsyncMock()
     backend.query_threads = AsyncMock(return_value=[])
-    backend.put_turn = AsyncMock()
+    # A successful first write returns the committed row for the hot-tier upsert.
+    backend.put_turn = AsyncMock(side_effect=lambda user_id, agent_id, session_id, turn_id, data: dict(data))
     backend.is_deleted = AsyncMock(return_value=False)
     backend.deleted_session_ids = AsyncMock(return_value=set())
     backend.put_tombstone = AsyncMock()

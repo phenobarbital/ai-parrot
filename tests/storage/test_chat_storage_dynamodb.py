@@ -27,7 +27,8 @@ def mock_redis():
 @pytest.fixture
 def mock_dynamo():
     dynamo = AsyncMock()
-    dynamo.put_turn = AsyncMock()
+    # A successful first write returns the committed row for the hot-tier upsert.
+    dynamo.put_turn = AsyncMock(side_effect=lambda user_id, agent_id, session_id, turn_id, data: dict(data))
     dynamo.is_deleted = AsyncMock(return_value=False)
     dynamo.deleted_session_ids = AsyncMock(return_value=set())
     dynamo.put_tombstone = AsyncMock()
@@ -77,6 +78,10 @@ class TestStoreTurn:
         assert (user_id, agent_id, session_id, turn_id) == ("u1", "bot1", "sess1", "t-1")
         assert data["user_message"] == "hello" and data["assistant_response"] == "hi"
         mock_redis.upsert_turn.assert_awaited_once()
+        hot_turn = mock_redis.upsert_turn.await_args.args[2]
+        assert hot_turn.turn_id == "t-1"
+        assert hot_turn.user_message == "hello"
+        assert hot_turn.assistant_response == "hi"
 
     @pytest.mark.asyncio
     async def test_uses_provided_turn_id(self, storage, mock_dynamo):
