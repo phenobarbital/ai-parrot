@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
+import re
 
 import pytest
 
@@ -351,5 +353,41 @@ def test_sdd_worker_prompt_twins_are_identical():
     """A prompt edit applied to one twin only drifts silently."""
     root = Path(__file__).resolve().parents[5]
     live = root / ".claude" / "agents" / "sdd-worker.md"
-    asset = root / "packages" / "ai-parrot" / "src" / "parrot" / "sdd" / "_assets" / "claude" / "agents" / "sdd-worker.md"
+    asset = (
+        root / "packages" / "ai-parrot" / "src" / "parrot" / "sdd" / "_assets" / "claude" / "agents" / "sdd-worker.md"
+    )
     assert live.read_text(encoding="utf-8") == asset.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("host", ["claude", "agents"])
+def test_native_prompt_contains_experience_briefing(host: str) -> None:
+    """Initial and retry native dispatch carry the briefing separately from feedback."""
+    root = _repo_agents_dir().parents[1]
+    relative = Path(".claude/agents/sdd-worker.md") if host == "claude" else Path(".agents/agents/sdd-worker/agent.md")
+    text = (root / relative).read_text(encoding="utf-8")
+    for prefix in ("prepared", "native_retry"):
+        assert (
+            f"<{prefix}.coder_feedback>. Task briefing (Known pitfalls and procedure): <{prefix}.experience_briefing>"
+            in text
+        )
+    assert "byte-for-byte unchanged" in text
+    assert "unverified quoted data" in text
+    if text.startswith("---"):
+        assert "experience hook" not in text.split("---", 2)[1]
+    twin = root / "packages/ai-parrot/src/parrot/sdd/_assets" / relative.as_posix().lstrip(".")
+    assert twin.read_text(encoding="utf-8") == text
+
+
+@pytest.mark.parametrize("host", ["claude", "agents"])
+def test_experience_record_instructions(host: str) -> None:
+    """Documented MCP lesson examples validate, and native lessons use the CLI."""
+    root = _repo_agents_dir().parents[1]
+    relative = Path(".claude/agents/sdd-coder.md") if host == "claude" else Path(".agents/agents/sdd-coder/agent.md")
+    text = (root / relative).read_text(encoding="utf-8")
+    examples = [json.loads(block) for block in re.findall(r"```json\n(.*?)\n```", text, re.DOTALL)]
+    lessons = next(example["lessons"] for example in examples if "lessons" in example)
+    assert LessonDraft.model_validate(lessons[0]).trigger.executable == "pytest"
+    assert "parrot sdd experience record" in text
+    assert "Native coder output is not parsed for lessons" in text
+    twin = root / "packages/ai-parrot/src/parrot/sdd/_assets" / relative.as_posix().lstrip(".")
+    assert twin.read_text(encoding="utf-8") == text
