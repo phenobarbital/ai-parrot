@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-887 — SDD Experience Memory (experience.pitfall)
 **Spec**: `sdd/specs/sdd-experience-memory.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5599, TASK-5606, TASK-5607
@@ -414,3 +414,19 @@ Use the spec §4 payload fixtures, with deterministic temporary Git roots and PA
 2. Verify dependencies are done in `sdd/tasks/index/sdd-experience-memory.json` and recheck this contract after they land.
 3. Implement only the declared files, run validation, and commit scoped changes.
 4. Use `parrot sdd task finalize` with real TaskCompletionEvidence and the exact implementation HEAD. The finalizer owns the completion note and active-to-completed move; never edit them manually.
+
+## Completion Note
+
+- Task: TASK-5608
+- Feature: sdd-experience-memory
+- Implementation SHA: 2346e577cb849da85f2ca32cfd604ef32d3bcc5b
+- Closed at (UTC): 2026-11-15T00:36:51+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| integration | Completed in isolated PR 2130 integration branch; live FEAT-887 worktree unchanged. |
+| scope | All 15 authoring asset and test files delivered; packaged twins synchronized; initial and retry native briefing preserved separately from feedback. |
+| tests | 53 passed |

@@ -489,7 +489,7 @@
       "feature_id": "FEAT-887",
       "feature": "sdd-experience-memory",
       "spec": "sdd/specs/sdd-experience-memory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -501,8 +501,9 @@
       "parallelism_notes": "authoring-assets: TASK-5599: consumes the cli contract in packages/ai-parrot/src/parrot/sdd/scripts/experience_cli.py, packages/ai-parrot/src/parrot/sdd/cli.py; TASK-5606: serializes writes to packages/ai-parrot/tests/flows/dev_loop/test_worker_prompt_orchestrator.py; TASK-5607: consumes the engine contract in packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/engine.py",
       "assigned_to": null,
       "started_at": "2026-11-14T23:59:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5608-authoring-assets.md"
+      "completed_at": "2026-11-15T00:36:51+00:00",
+      "file": "sdd/tasks/completed/TASK-5608-authoring-assets.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5609",
