@@ -409,7 +409,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -420,8 +420,9 @@
       "parallelism_notes": "Consumes MemoryCandidate and extended MemoryContext from TASK-5658; Consumes versioned MemoryExposure/MemoryCitation schema from TASK-5656",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5669-agent-memory-context.md"
+      "completed_at": "2026-11-15T00:05:33+00:00",
+      "file": "sdd/tasks/completed/TASK-5669-agent-memory-context.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5670",
