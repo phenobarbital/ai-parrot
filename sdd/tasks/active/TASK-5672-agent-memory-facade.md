@@ -20,7 +20,7 @@ These are planning artifacts, not evidence that carried G1–G4 gates passed.
 
 **FEAT-886 merged — satisfied (spec rev 0.5).** PR #2121 was merged into `dev` as `bfdbe3fd84`: it moved
 `AbstractBot.configure`/`cleanup` and makes the host's conversation-memory configuration raise when Redis was
-selected (spec F8). The anchors below are verified there.
+selected (spec F8). The anchors below were re-verified on the feature branch after merging `dev` `a8f4df5cf3` (merge `6123d22199`).
 
 No additional owner decision is required beyond completed dependency contracts. Do not bypass a blocked dependency.
 
@@ -77,16 +77,16 @@ import pytest
 ### Existing Signatures and Anchors
 
 - `packages/ai-parrot/src/parrot/memory/agent_memory/__init__.py` is created by TASK-5653; anchor `"""Agent persistent-memory contracts; no eager storage or brain imports."""` is planned, not an existing verified symbol.
-- `packages/ai-parrot/src/parrot/bots/abstract.py`: 216:class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin, ToolInterface, VectorInterface, ABC):
-- `packages/ai-parrot/src/parrot/memory/unified/manager.py`: 53:class UnifiedMemoryManager:
-- `packages/ai-parrot/src/parrot/bots/abstract.py:1724` — `AbstractBot.configure`: `async def configure(self, app=None) -> None:`
-- `packages/ai-parrot/src/parrot/bots/abstract.py:6011` — `AbstractBot.cleanup`: `async def cleanup(self) -> None:`
-- Verified on `dev` `bfdbe3fd84` (after PR #2121): `AbstractBot.configure_conversation_memory(self) -> None` at abstract.py:1470, which re-raises a configuration error when `memory_type` is `"redis"` or `"auto"` with an explicit history URL (spec F8).
-- `packages/ai-parrot/src/parrot/memory/unified/manager.py:83` — `UnifiedMemoryManager.__init__`: `def __init__(self, namespace: MemoryNamespace, conversation_memory: Optional[ConversationMemory]=None, episodic_store: Optional[EpisodicMemoryStore]=None, skill_registry: Optional[Any]=None, config: Optional[MemoryConfig]=None, cross_domain_router: Optional[CrossDomainRouter]=None, brain: Optional[BrainStore]=None, org_brain: Optional[BrainStore]=None) -> None:`
-- `packages/ai-parrot/src/parrot/memory/unified/manager.py:109` — `UnifiedMemoryManager.configure`: `async def configure(self, **kwargs: Any) -> None:`
-- `packages/ai-parrot/src/parrot/memory/unified/manager.py:124` — `UnifiedMemoryManager.cleanup`: `async def cleanup(self) -> None:`
-- `packages/ai-parrot/src/parrot/memory/unified/manager.py:139` — `UnifiedMemoryManager.get_context_for_query`: `async def get_context_for_query(self, query: str, user_id: str, session_id: str) -> MemoryContext:`
-- `packages/ai-parrot/src/parrot/memory/unified/manager.py:178` — `UnifiedMemoryManager.record_interaction`: `async def record_interaction(self, query: str, response: Any, tool_calls: list[Any], user_id: str, session_id: str) -> None:`
+- `packages/ai-parrot/src/parrot/bots/abstract.py`: 279:class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin, ToolInterface, VectorInterface, ABC):
+- `packages/ai-parrot/src/parrot/memory/unified/manager.py`: 57:class UnifiedMemoryManager:
+- `packages/ai-parrot/src/parrot/bots/abstract.py:1758` — `AbstractBot.configure`: `async def configure(self, app=None) -> None:`
+- `packages/ai-parrot/src/parrot/bots/abstract.py:6155` — `AbstractBot.cleanup`: `async def cleanup(self) -> None:`
+- Introduced by PR #2121 (`bfdbe3fd84`), re-verified on the feature branch after merging `dev` `a8f4df5cf3` (merge `6123d22199`): `AbstractBot.configure_conversation_memory(self) -> None` at abstract.py:1504, which re-raises a configuration error when `memory_type` is `"redis"` or `"auto"` with an explicit history URL (spec F8).
+- `packages/ai-parrot/src/parrot/memory/unified/manager.py:90` — `UnifiedMemoryManager.__init__`: `def __init__(self, namespace: MemoryNamespace, conversation_memory: Optional[ConversationMemory]=None, episodic_store: Optional[EpisodicMemoryStore]=None, skill_registry: Optional[Any]=None, config: Optional[MemoryConfig]=None, cross_domain_router: Optional[CrossDomainRouter]=None, user_memory_store: UserMemoryStore | None=None, extraction_client: Any | None=None, brain_service: Any | None=None) -> None:`
+- `packages/ai-parrot/src/parrot/memory/unified/manager.py:118` — `UnifiedMemoryManager.configure`: `async def configure(self, **kwargs: Any) -> None:`
+- `packages/ai-parrot/src/parrot/memory/unified/manager.py:133` — `UnifiedMemoryManager.cleanup`: `async def cleanup(self) -> None:`
+- `packages/ai-parrot/src/parrot/memory/unified/manager.py:148` — `UnifiedMemoryManager.get_context_for_query`: `async def get_context_for_query(self, query: str, user_id: str, session_id: str) -> MemoryContext:`
+- `packages/ai-parrot/src/parrot/memory/unified/manager.py:265` — `UnifiedMemoryManager.record_interaction`: `async def record_interaction(self, query: str, response: Any, tool_calls: list[Any], user_id: str, session_id: str) -> None:`
 
 ### Does NOT Exist
 

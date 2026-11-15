@@ -21,7 +21,7 @@ These are planning artifacts, not evidence that carried G1–G4 gates passed.
 G3: concrete runtime outcome adapter and verified-check schema must be accepted; generic tool return values are not a substitute.
 
 **FEAT-886 merged — satisfied (spec rev 0.5).** PR #2121 was merged into `dev` as `bfdbe3fd84`; it rewrote the
-BaseBot sites this task edits. The anchors below are verified there.
+BaseBot sites this task edits. The anchors below were re-verified on the feature branch after merging `dev` `a8f4df5cf3` (merge `6123d22199`).
 Exposure for `PandasAgent.ask` is out of scope (spec F1): its events carry no exposure manifest and earn no review.
 
 Before releasing any blocked task, record the accepted amendment in the spec, expand its
@@ -78,17 +78,17 @@ import pytest
 
 - `packages/ai-parrot/src/parrot/tools/manager.py:1737`: `    async def _observed(` (exact-line occurrence count 1).
 - `packages/ai-parrot/src/parrot/bots/base.py:130`: `class BaseBot(AbstractBot):` (exact-line occurrence count 1).
-- `packages/ai-parrot/src/parrot/memory/unified/manager.py:53`: `class UnifiedMemoryManager:` (exact-line occurrence count 1).
+- `packages/ai-parrot/src/parrot/memory/unified/manager.py:57`: `class UnifiedMemoryManager:` (exact-line occurrence count 1).
 - `packages/ai-parrot/src/parrot/tools/manager.py`: 292:class ToolManager(MCPToolManagerMixin):
 - `packages/ai-parrot/src/parrot/bots/base.py:237` — `BaseBot.conversation`: `async def conversation(self, question: str, session_id: Optional[str]=None, user_id: Optional[str]=None, search_type: str='similarity', search_kwargs: dict=None, metric_type: Optional[str]=None, use_vector_context: bool=True, use_conversation_history: bool=True, return_sources: bool=True, return_context: bool=False, memory: Optional[Callable]=None, ensemble_config: dict=None, mode: str='adaptive', ctx: Optional[RequestContext]=None, output_mode: OutputMode=OutputMode.DEFAULT, format_kwargs: dict=None, system_prompt: Optional[str]=None, use_tools: Optional[bool]=None, trace_context=None, **kwargs) -> AIMessage:`
 - `packages/ai-parrot/src/parrot/bots/base.py:726` — `BaseBot.invoke`: `async def invoke(self, question: str, session_id: Optional[str]=None, user_id: Optional[str]=None, use_conversation_history: bool=True, memory: Optional[Callable]=None, ctx: Optional[RequestContext]=None, response_model: Optional[Type[BaseModel]]=None, **kwargs) -> AIMessage:`
 - `packages/ai-parrot/src/parrot/bots/base.py:1123` — `BaseBot.ask`: `async def ask(self, question: str, session_id: Optional[str]=None, user_id: Optional[str]=None, search_type: str='similarity', search_kwargs: dict=None, metric_type: Optional[str]=None, use_vector_context: bool=True, use_conversation_history: bool=True, return_sources: bool=True, memory: Optional[Callable]=None, ensemble_config: dict=None, ctx: Optional[RequestContext]=None, permission_context: Optional[Any]=None, a2ui_surface_state: Optional[Any]=None, structured_output: Optional[Union[Type[BaseModel], StructuredOutputConfig]]=None, system_prompt: Optional[str]=None, output_mode: OutputMode=OutputMode.DEFAULT, format_kwargs: dict=None, use_tools: bool=True, trace_context=None, tenant: Optional[str]=None, **kwargs) -> AIMessage:`
 - `packages/ai-parrot/src/parrot/bots/base.py:1927` — `BaseBot.ask_stream`: `async def ask_stream(self, question: str, session_id: Optional[str]=None, user_id: Optional[str]=None, search_type: str='similarity', search_kwargs: dict=None, metric_type: Optional[str]=None, use_vector_context: bool=True, use_conversation_history: bool=True, return_sources: bool=True, memory: Optional[Callable]=None, ensemble_config: dict=None, ctx: Optional[RequestContext]=None, permission_context: Optional[Any]=None, structured_output: Optional[Union[Type[BaseModel], StructuredOutputConfig]]=None, output_mode: OutputMode=OutputMode.DEFAULT, system_prompt: Optional[str]=None, use_tools: bool=True, trace_context=None, tenant: Optional[str]=None, **kwargs) -> AsyncIterator[Union[str, AIMessage]]:`
-- `packages/ai-parrot/src/parrot/memory/unified/manager.py:83` — `UnifiedMemoryManager.__init__`: `def __init__(self, namespace: MemoryNamespace, conversation_memory: Optional[ConversationMemory]=None, episodic_store: Optional[EpisodicMemoryStore]=None, skill_registry: Optional[Any]=None, config: Optional[MemoryConfig]=None, cross_domain_router: Optional[CrossDomainRouter]=None, brain: Optional[BrainStore]=None, org_brain: Optional[BrainStore]=None) -> None:`
-- `packages/ai-parrot/src/parrot/memory/unified/manager.py:109` — `UnifiedMemoryManager.configure`: `async def configure(self, **kwargs: Any) -> None:`
-- `packages/ai-parrot/src/parrot/memory/unified/manager.py:124` — `UnifiedMemoryManager.cleanup`: `async def cleanup(self) -> None:`
-- `packages/ai-parrot/src/parrot/memory/unified/manager.py:139` — `UnifiedMemoryManager.get_context_for_query`: `async def get_context_for_query(self, query: str, user_id: str, session_id: str) -> MemoryContext:`
-- `packages/ai-parrot/src/parrot/memory/unified/manager.py:178` — `UnifiedMemoryManager.record_interaction`: `async def record_interaction(self, query: str, response: Any, tool_calls: list[Any], user_id: str, session_id: str) -> None:`
+- `packages/ai-parrot/src/parrot/memory/unified/manager.py:90` — `UnifiedMemoryManager.__init__`: `def __init__(self, namespace: MemoryNamespace, conversation_memory: Optional[ConversationMemory]=None, episodic_store: Optional[EpisodicMemoryStore]=None, skill_registry: Optional[Any]=None, config: Optional[MemoryConfig]=None, cross_domain_router: Optional[CrossDomainRouter]=None, user_memory_store: UserMemoryStore | None=None, extraction_client: Any | None=None, brain_service: Any | None=None) -> None:`
+- `packages/ai-parrot/src/parrot/memory/unified/manager.py:118` — `UnifiedMemoryManager.configure`: `async def configure(self, **kwargs: Any) -> None:`
+- `packages/ai-parrot/src/parrot/memory/unified/manager.py:133` — `UnifiedMemoryManager.cleanup`: `async def cleanup(self) -> None:`
+- `packages/ai-parrot/src/parrot/memory/unified/manager.py:148` — `UnifiedMemoryManager.get_context_for_query`: `async def get_context_for_query(self, query: str, user_id: str, session_id: str) -> MemoryContext:`
+- `packages/ai-parrot/src/parrot/memory/unified/manager.py:265` — `UnifiedMemoryManager.record_interaction`: `async def record_interaction(self, query: str, response: Any, tool_calls: list[Any], user_id: str, session_id: str) -> None:`
 - `packages/ai-parrot/src/parrot/tools/manager.py:1668` — `ToolManager.set_invocation_observer`: `def set_invocation_observer(self, observer: Optional[Any]) -> None:`
 - `packages/ai-parrot/src/parrot/tools/manager.py:1737` — `ToolManager._observed`: `async def _observed(self, observation: Optional['_Observation'], tool_name: str, call: Any, *, sync: bool=False, gated: bool=False) -> Any:`
 
@@ -217,7 +217,7 @@ async def record_tool_event(event: MemoryEvent) -> None:
 
 ```python
 # occurrences: 1 (verified: grep -F -x -c -- 'class UnifiedMemoryManager:' packages/ai-parrot/src/parrot/memory/unified/manager.py)
-# MODIFY anchor at packages/ai-parrot/src/parrot/memory/unified/manager.py:53: class UnifiedMemoryManager:
+# MODIFY anchor at packages/ai-parrot/src/parrot/memory/unified/manager.py:57: class UnifiedMemoryManager:
 # Connect delivered manifests and reviews to event routing.
 # FILL IN: AC11: bind exposure only after final packing into the model request; trimmed refs, arbitrary citations and cancelled/provider-failed responses earn no review.
 # FILL IN: AC05/AC11: publish final exposure ID through runtime.bind_memory_exposure and restore it in finally; invocation entry clears inherited IDs, and durable manifests—not the ID alone—authorize citations.
