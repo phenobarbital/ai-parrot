@@ -14,6 +14,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Literal, Mapping
 
+if __package__:
+    from .procedure_sources import skill_directories, source_paths
+else:
+    from procedure_sources import skill_directories, source_paths
+
 INDEX_SCHEMA_VERSION = 1
 ESCAPE_ENV = "PARROT_ALLOW_PROCEDURE"
 LAUNCHER_MARKERS = ("PARROT_SDD_SANDBOX_ROOTS", "PARROT_SDD_CACHE_DIR")
@@ -99,19 +104,47 @@ def load_index(root: Path) -> dict[str, Any] | None:
         return None
 
 
+def _heredoc_delimiter(command: str, start: int) -> tuple[str, bool, int]:
+    """Read a heredoc delimiter with shell quote removal, without expansion."""
+    cursor = start + 2
+    strip_tabs = command[cursor : cursor + 1] == "-"
+    cursor += int(strip_tabs)
+    while command[cursor : cursor + 1] in {" ", "\t"}:
+        cursor += 1
+    word_start = cursor
+    quote = ""
+    while cursor < len(command):
+        character = command[cursor]
+        if character == "\\" and quote != "'":
+            cursor += 2
+            continue
+        if character in {"'", '"'}:
+            if not quote:
+                quote = character
+            elif quote == character:
+                quote = ""
+        elif not quote and (character.isspace() or character in ";&|<>()"):
+            break
+        cursor += 1
+    words = shlex.split(command[word_start:cursor], comments=False)
+    if len(words) != 1:
+        raise ValueError("missing heredoc delimiter")
+    return words[0], strip_tabs, cursor
+
+
 def _replace_unquoted_newlines(command: str) -> str:
-    """Turn unquoted newlines into shell segment separators for ``shlex``."""
+    """Preserve shell line boundaries while excluding comments and heredoc data."""
     result: list[str] = []
     quote = ""
-    escaped = False
-    for character in command:
-        if escaped:
-            result.append(character)
-            escaped = False
-            continue
+    pending: list[tuple[str, bool]] = []
+    cursor = 0
+    while cursor < len(command):
+        character = command[cursor]
         if character == "\\" and quote != "'":
-            result.append(character)
-            escaped = True
+            pair = command[cursor : cursor + 2]
+            if pair != "\\\n":
+                result.append(pair)
+            cursor += len(pair)
             continue
         if character in {"'", '"'}:
             if not quote:
@@ -119,11 +152,52 @@ def _replace_unquoted_newlines(command: str) -> str:
             elif quote == character:
                 quote = ""
             result.append(character)
+            cursor += 1
+            continue
+        if not quote and character == "#" and (cursor == 0 or command[cursor - 1] in " \t\n;&|()"):
+            newline = command.find("\n", cursor)
+            cursor = len(command) if newline == -1 else newline
+            continue
+        if not quote and (command.startswith("$((", cursor) or command.startswith("((", cursor)):
+            # Arithmetic shifts are operators, not heredoc redirections. Keep the
+            # balanced arithmetic expression intact before resuming shell scanning.
+            end = cursor + (3 if character == "$" else 2)
+            depth = 2
+            while end < len(command) and depth:
+                if command[end] == "(":
+                    depth += 1
+                elif command[end] == ")":
+                    depth -= 1
+                end += 1
+            result.append(command[cursor:end])
+            cursor = end
+            continue
+        if not quote and command.startswith("<<<", cursor):
+            result.append("<<<")
+            cursor += 3
+            continue
+        if not quote and command.startswith("<<", cursor):
+            delimiter, strip_tabs, end = _heredoc_delimiter(command, cursor)
+            pending.append((delimiter, strip_tabs))
+            result.append(command[cursor:end])
+            cursor = end
             continue
         if character == "\n" and not quote:
             result.append(" ; ")
+            cursor += 1
+            for delimiter, strip_tabs in pending:
+                while cursor < len(command):
+                    end = command.find("\n", cursor)
+                    end = len(command) if end == -1 else end
+                    line = command[cursor:end]
+                    cursor = min(end + 1, len(command))
+                    if (line.lstrip("\t") if strip_tabs else line) == delimiter:
+                        break
+            pending.clear()
+            continue
         else:
             result.append(character)
+        cursor += 1
     return "".join(result)
 
 
@@ -132,6 +206,7 @@ def command_segments(command: str) -> list[list[str]]:
     try:
         line = _replace_unquoted_newlines(command)
         lexer = shlex.shlex(line, posix=True, punctuation_chars=True)
+        lexer.commenters = ""  # Shell comments were removed before newline normalization.
         lexer.whitespace_split = True
         segments: list[list[str]] = []
         current: list[str] = []
@@ -249,7 +324,6 @@ def match_guards(index: Mapping[str, Any], command: str) -> list[dict[str, Any]]
                 matched = dict(guard)
                 matched["argv"] = list(remaining)
                 matches.append(matched)
-                break
         return matches
     except (AttributeError, IndexError, OSError, TypeError, ValueError):
         return []
@@ -521,6 +595,7 @@ def _fresh_sources(root: Path, index: Mapping[str, Any]) -> bool:
     sources = index.get("sources", [])
     if not isinstance(sources, list):
         return False
+    listed: set[str] = set()
     for source in sources:
         if not isinstance(source, Mapping) or not isinstance(source.get("path"), str):
             return False
@@ -528,8 +603,14 @@ def _fresh_sources(root: Path, index: Mapping[str, Any]) -> bool:
         if not isinstance(expected, str):
             return False
         path = root / source["path"]
+        listed.add(source["path"])
         if not path.is_file() or hashlib.sha1(path.read_bytes()).hexdigest() != expected:
             return False
+    directories = index.get("skill_directories", skill_directories(root))
+    if "skill_directories" in index and directories != skill_directories(root):
+        return False
+    if any(path.relative_to(root).as_posix() not in listed for path in source_paths(root, directories)):
+        return False
     return True
 
 

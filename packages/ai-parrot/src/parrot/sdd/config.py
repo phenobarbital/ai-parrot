@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from parrot.sdd.techwiki.config import TechwikiConfig
 
@@ -32,6 +32,17 @@ class ProcedureSettings(BaseModel):
     enforce: bool = True
     brief_max_lines: int = 8
     remote_probe_timeout_seconds: int = 5
+    skill_directories: list[str] = Field(default_factory=lambda: ["skills"])
+
+    @field_validator("skill_directories")
+    @classmethod
+    def _relative_skill_directories(cls, values: list[str]) -> list[str]:
+        """Keep discovery within the repository's configured skill locations."""
+        from pathlib import Path
+
+        if any(not value or Path(value).is_absolute() or ".." in Path(value).parts for value in values):
+            raise ValueError("skill_directories must contain repository-relative paths")
+        return sorted(set(values))
 
 
 class SddConfig(BaseModel):

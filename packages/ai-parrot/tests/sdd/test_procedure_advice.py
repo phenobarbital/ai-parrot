@@ -289,3 +289,67 @@ def test_apply_check_semantics(tmp_path: Path) -> None:
         advice.apply_check({"probe": "custom", "expect": True}, tmp_path, {}, probes={"custom": lambda *_: None})
         is None
     )
+
+
+@pytest.mark.parametrize("separator", [";", "&&", "||", "\n"])
+def test_repeated_entry_checks_every_scope(tmp_path: Path, separator: str) -> None:
+    """An allowed first occurrence never masks a forbidden later occurrence."""
+    root = _repo(tmp_path)
+    for command in (
+        f"gh pr create --base dev {separator} gh pr create --base main",
+        f"parrot sdd task close TASK-1 demo verified {separator} parrot sdd task close TASK-2 demo verified",
+    ):
+        assert advice.evaluate_command(command, root, env={}).decision == "deny"
+
+
+@pytest.mark.parametrize(
+    "prefix", ["# comment\n", "echo safe # comment\n", "echo '# data'\n", "echo value#tag\n", "echo value#tag;"]
+)
+def test_comments_preserve_following_commands(tmp_path: Path, prefix: str) -> None:
+    """A comment ends at the original newline, not at the end of the command string."""
+    assert advice.evaluate_command(prefix + "gh pr create --base main", _repo(tmp_path), env={}).decision == "deny"
+
+
+@pytest.mark.parametrize(
+    "header, body, terminator",
+    [
+        ("cat <<EOF", "git mv sdd/tasks/active/TASK-1.md sdd/tasks/completed/", "EOF"),
+        ("cat <<'EOF'", "it's documentation; gh pr create --base main", "EOF"),
+        ('cat <<"EOF"', 'unbalanced " documentation', "EOF"),
+        ("cat <<\\EOF", "gh pr create --base main", "EOF"),
+        ("cat <<-'END WORD'", "\tgh pr create --base main", "\tEND WORD"),
+        ("cat <<A <<'B'", "first body\nA\nit's the second body", "B"),
+    ],
+)
+def test_heredoc_data_is_not_a_command(tmp_path: Path, header: str, body: str, terminator: str) -> None:
+    """Ignore heredoc data without losing a command after its terminator."""
+    root = _repo(tmp_path)
+    command = f"{header}\n{body}\n{terminator}\n"
+    assert advice.evaluate_command(command, root, env={}).decision == "none"
+    assert advice.evaluate_command(command + "gh pr create --base main", root, env={}).decision == "deny"
+
+
+def test_herestring_and_escaped_newline(tmp_path: Path) -> None:
+    """Here strings are not heredocs; shell continuations join command words."""
+    root = _repo(tmp_path)
+    assert advice.evaluate_command('cat <<< "data"\ngh pr create --base main', root, env={}).decision == "deny"
+    assert advice.evaluate_command("gh pr \\\ncreate --base main", root, env={}).decision == "deny"
+
+
+@pytest.mark.parametrize("expression", ["n=$((1 << 2))", "((n = 1 << 2))", "n=$(((1 + 2) << 2))"])
+def test_arithmetic_shift_is_not_heredoc(tmp_path: Path, expression: str) -> None:
+    """Arithmetic left shifts do not consume later executable lines as heredoc data."""
+    command = expression + "\ngh pr create --base main"
+    assert advice.evaluate_command(command, _repo(tmp_path), env={}).decision == "deny"
+
+
+def test_new_overlay_invalidates_hook(tmp_path: Path) -> None:
+    """New source files make the hook silent until the plane has been rebuilt."""
+    from parrot.knowledge.wiki.procedure.index import is_stale
+
+    root = _repo(tmp_path)
+    (root / "sdd/procedures/overlay.yaml").write_text("graph: sdd\nexclude: [pr-create]\n", encoding="utf-8")
+    index = advice.load_index(root)
+    assert is_stale(index, root=root)
+    assert not advice._fresh_sources(root, index)
+    assert advice.evaluate_command("gh pr create --base main", root, env={}).decision == "none"

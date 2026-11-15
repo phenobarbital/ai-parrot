@@ -124,6 +124,7 @@ An authored skill becomes `skill:<name>` only when its frontmatter contains a `p
 ---
 name: review-release
 description: Review release readiness
+triggers: ["/review-release"]
 procedure:
   mode: advisory
   scope_kind: feature
@@ -135,6 +136,14 @@ procedure:
 ```
 
 The mapping accepts node fields. The producer fixes the ID, kind, body, source, and origin from the skill; learned skills are always advisory and cannot require confirmation.
+
+Build and check discover `skills/*.md`, `skills/*/SKILL.md`, and the same layouts under
+`skills/learned/` in the primary checkout. Set `procedure.skill_directories` in
+`sdd/config.json` to use other repository-relative locations, for example
+`["skills", ".agents/skills"]`. Unqualified procedure edge targets receive the `skill:`
+prefix; qualified targets such as `sdd:task` are preserved. All discovered skill files
+are fingerprinted, including those without procedure metadata, so adding metadata,
+adding or removing files, or changing discovery directories invalidates the index.
 
 ### Escape switches
 
