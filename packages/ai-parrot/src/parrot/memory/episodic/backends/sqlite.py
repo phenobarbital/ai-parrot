@@ -15,10 +15,11 @@ import aiosqlite
 
 from parrot.memory.episodic.backends.abstract import AbstractEpisodeBackend
 from parrot.memory.episodic.models import EpisodeSearchResult, EpisodicMemory
+from parrot.memory.dynamics.models import ReviewCommand, ReviewReceipt
 
 logger = logging.getLogger(__name__)
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 _DEFAULT_VECTOR_CEILING = 5_000
 _FILTERABLE_COLUMNS = (
     "tenant_id",
@@ -50,6 +51,24 @@ CREATE INDEX IF NOT EXISTS idx_episodes_scope_created
     ON episodes (tenant_id, agent_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_episodes_expiry
     ON episodes (expires_at);
+CREATE TABLE IF NOT EXISTS reviews (
+    dedupe_key TEXT PRIMARY KEY,
+    outcome_id TEXT NOT NULL,
+    outcome_revision INTEGER NOT NULL,
+    ref_key TEXT NOT NULL,
+    payload_digest TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    apply_revision INTEGER NOT NULL,
+    recorded_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_reviews_outcome_ref
+    ON reviews (outcome_id, ref_key, outcome_revision);
+CREATE TABLE IF NOT EXISTS memory_state (
+    ref_key TEXT PRIMARY KEY,
+    apply_revision INTEGER NOT NULL,
+    state TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 """
 
 
@@ -251,6 +270,153 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
                 await self._rollback(database)
                 raise
         return episode.episode_id
+
+    async def apply_review(self, command: ReviewCommand) -> ReviewReceipt:
+        """Atomically deduplicate, check revision and commit review state.
+
+        The review row contains the complete validated command, making the local
+        transaction both the authoritative review log and the replay/archive
+        source.  A caller can therefore safely retry after losing an
+        acknowledgement or after a subordinate export fails.
+        """
+        ref_key = command.ref.canonical_key
+        payload = json.dumps(command.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+        namespace = command.ref.namespace
+        scope_filter = namespace.build_filter()
+
+        async with self._write_lock:
+            database = self._require_database()
+            await database.execute("BEGIN IMMEDIATE")
+            try:
+                if command.ref.kind != "episode":
+                    await database.execute("ROLLBACK")
+                    return ReviewReceipt(
+                        status="ignored",
+                        dedupe_key=command.dedupe_key,
+                        outcome_id=command.signal.outcome_id,
+                        ref_key=ref_key,
+                        reason="memory ref is unavailable",
+                    )
+
+                review_cursor = await database.execute(
+                    "SELECT payload_digest, apply_revision FROM reviews WHERE dedupe_key = ?",
+                    (command.dedupe_key,),
+                )
+                review_row = await review_cursor.fetchone()
+                if review_row is not None:
+                    await database.execute("ROLLBACK")
+                    if review_row[0] == command.payload_digest:
+                        return ReviewReceipt(
+                            status="duplicate",
+                            dedupe_key=command.dedupe_key,
+                            outcome_id=command.signal.outcome_id,
+                            ref_key=ref_key,
+                            apply_revision=int(review_row[1]),
+                            reason="review already committed",
+                        )
+                    return ReviewReceipt(
+                        status="conflict",
+                        dedupe_key=command.dedupe_key,
+                        outcome_id=command.signal.outcome_id,
+                        ref_key=ref_key,
+                        reason="dedupe key was committed with a different payload",
+                    )
+
+                clauses = ["episode_id = ?"]
+                parameters: list[Any] = [command.ref.memory_id]
+                for field, value in scope_filter.items():
+                    if value is None:
+                        clauses.append(f"{field} IS NULL")
+                    else:
+                        clauses.append(f"{field} = ?")
+                        parameters.append(value)
+                episode_cursor = await database.execute(
+                    f"SELECT 1 FROM episodes WHERE {' AND '.join(clauses)}", parameters
+                )
+                if await episode_cursor.fetchone() is None:
+                    await database.execute("ROLLBACK")
+                    return ReviewReceipt(
+                        status="ignored",
+                        dedupe_key=command.dedupe_key,
+                        outcome_id=command.signal.outcome_id,
+                        ref_key=ref_key,
+                        reason="memory ref is unavailable",
+                    )
+
+                state_cursor = await database.execute(
+                    "SELECT apply_revision FROM memory_state WHERE ref_key = ?", (ref_key,)
+                )
+                state_row = await state_cursor.fetchone()
+                current_revision = int(state_row[0]) if state_row is not None else 0
+
+                latest_cursor = await database.execute(
+                    "SELECT MAX(outcome_revision) FROM reviews WHERE outcome_id = ? AND ref_key = ?",
+                    (command.signal.outcome_id, ref_key),
+                )
+                latest_row = await latest_cursor.fetchone()
+                latest_revision = latest_row[0] if latest_row is not None else None
+                if latest_revision is not None and command.signal.outcome_revision < int(latest_revision):
+                    await database.execute("ROLLBACK")
+                    return ReviewReceipt(
+                        status="stale_revision",
+                        dedupe_key=command.dedupe_key,
+                        outcome_id=command.signal.outcome_id,
+                        ref_key=ref_key,
+                        apply_revision=current_revision,
+                        reason="outcome revision is older than the committed revision",
+                    )
+
+                if current_revision != command.expected_revision:
+                    await database.execute("ROLLBACK")
+                    return ReviewReceipt(
+                        status="stale_revision",
+                        dedupe_key=command.dedupe_key,
+                        outcome_id=command.signal.outcome_id,
+                        ref_key=ref_key,
+                        apply_revision=current_revision,
+                        reason=(f"expected apply_revision={command.expected_revision}, " f"found {current_revision}"),
+                    )
+
+                new_revision = current_revision + 1
+                recorded_at = datetime.now(timezone.utc).isoformat()
+                await database.execute(
+                    "INSERT INTO reviews "
+                    "(dedupe_key, outcome_id, outcome_revision, ref_key, payload_digest, payload, "
+                    "apply_revision, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        command.dedupe_key,
+                        command.signal.outcome_id,
+                        command.signal.outcome_revision,
+                        ref_key,
+                        command.payload_digest,
+                        payload,
+                        new_revision,
+                        recorded_at,
+                    ),
+                )
+                state_payload = json.dumps(
+                    {"apply_revision": new_revision, "command": command.model_dump(mode="json")},
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+                await database.execute(
+                    "INSERT INTO memory_state (ref_key, apply_revision, state, updated_at) VALUES (?, ?, ?, ?) "
+                    "ON CONFLICT(ref_key) DO UPDATE SET apply_revision = excluded.apply_revision, "
+                    "state = excluded.state, updated_at = excluded.updated_at",
+                    (ref_key, new_revision, state_payload, recorded_at),
+                )
+                await database.execute("COMMIT")
+            except BaseException:
+                await self._rollback(database)
+                raise
+
+        return ReviewReceipt(
+            status="applied",
+            dedupe_key=command.dedupe_key,
+            outcome_id=command.signal.outcome_id,
+            ref_key=ref_key,
+            apply_revision=new_revision,
+        )
 
     async def search_similar(
         self,
