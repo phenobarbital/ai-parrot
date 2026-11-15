@@ -308,7 +308,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -320,8 +320,9 @@
       "parallelism_notes": "Consumes atomic ReviewBackend.apply_review from TASK-5662; Consumes select_grade from TASK-5659; Consumes current_memory_scope from TASK-5654",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5664-agent-memory-store-reviews.md"
+      "completed_at": "2026-11-15T02:17:42+00:00",
+      "file": "sdd/tasks/completed/TASK-5664-agent-memory-store-reviews.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5665",
