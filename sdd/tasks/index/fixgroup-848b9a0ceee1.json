@@ -60,7 +60,7 @@
       "feature_id": "FEAT-899",
       "feature": "fixgroup-848b9a0ceee1",
       "spec": "sdd/specs/fixgroup-848b9a0ceee1.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -69,7 +69,7 @@
       "parallel": true,
       "parallelism_notes": "Serialized after TASK-5689: both modify packages/ai-parrot/src/parrot/sdd/scripts/procedure_advice.py and packages/ai-parrot/tests/sdd/test_procedure_advice.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-15T01:30:12+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5690-advice-truncation-probe-semantics.md",
       "discovered_from": "issue:bab5aa4a8d70"
