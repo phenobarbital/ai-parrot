@@ -331,7 +331,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -343,8 +343,9 @@
       "parallelism_notes": "Consumes review-driven invalidation and overlapping store.py from TASK-5664; Consumes rank_candidates from TASK-5659; Consumes scope-correct backend retrieval from TASK-5663",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5665-agent-memory-recall.md"
+      "completed_at": "2026-11-15T02:33:34+00:00",
+      "file": "sdd/tasks/completed/TASK-5665-agent-memory-recall.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5666",
