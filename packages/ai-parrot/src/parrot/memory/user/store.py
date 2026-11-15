@@ -329,9 +329,7 @@ class UserMemoryStore:
             await database.execute("PRAGMA busy_timeout=5000")
             await database.execute("PRAGMA synchronous=NORMAL")
             await database.executescript(_SCHEMA)
-            cursor = await database.execute(
-                "SELECT version FROM user_memory_schema WHERE component = 'user_knowledge'"
-            )
+            cursor = await database.execute("SELECT version FROM user_memory_schema WHERE component = 'user_knowledge'")
             row = await cursor.fetchone()
             if row is not None and int(row[0]) > _SCHEMA_VERSION:
                 raise ValueError(f"unsupported user memory schema version: {row[0]}")
@@ -436,8 +434,8 @@ class UserMemoryStore:
         candidate: object,
     ) -> UserKnowledge | None:
         """Return the active explicit claim with the same key and context, if any."""
-        normalized_key = getattr(candidate, "normalized_key")
-        provenance = getattr(candidate, "provenance")
+        normalized_key = candidate.normalized_key
+        provenance = candidate.provenance
         if normalized_key is None or provenance != "explicit":
             return None
         cursor = await database.execute(
@@ -446,9 +444,9 @@ class UserMemoryStore:
             "ORDER BY updated_at DESC, knowledge_id DESC LIMIT 1",
             (
                 *identity,
-                getattr(candidate, "kind"),
+                candidate.kind,
                 normalized_key,
-                self._context_key(getattr(candidate, "context")),
+                self._context_key(candidate.context),
             ),
         )
         row = await cursor.fetchone()
