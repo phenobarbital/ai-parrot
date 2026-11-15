@@ -395,7 +395,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -405,8 +405,9 @@
       "parallelism_notes": "Consumes UserMemoryStore tables/event transactions and overlapping file from TASK-5667",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5668-agent-memory-forget.md"
+      "completed_at": "2026-11-15T02:02:29+00:00",
+      "file": "sdd/tasks/completed/TASK-5668-agent-memory-forget.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5669",
