@@ -55,8 +55,8 @@ def _ts(second: int) -> str:
     return f"2026-01-01T00:00:{second:02d}+00:00"
 
 
-async def _put(b: ConversationBackend, session: str, turn: dict) -> None:
-    await b.put_turn(USER, AGENT, session, turn["turn_id"], turn)
+async def _put(b: ConversationBackend, session: str, turn: dict) -> dict:
+    return await b.put_turn(USER, AGENT, session, turn["turn_id"], turn)
 
 
 async def _window(b: ConversationBackend, session: str, limit: int = 50) -> List[dict]:
@@ -91,7 +91,10 @@ async def check_put_turn_idempotent(h: DurableHarness) -> None:
     """Same turn_id twice -> one turn, ordering fields unchanged by the second write."""
     s = "s-idem"
     await _put(h.backend, s, _turn("t1", _ts(1), 1))
-    await _put(h.backend, s, _turn("t1", _ts(30), 9))
+    stored = await _put(h.backend, s, _turn("t1", _ts(30), 9, text="updated"))
+    assert stored["sequence"] == 1
+    assert str(stored["timestamp"]).startswith("2026-01-01T00:00:01")
+    assert stored["user_message"] == "updated"
     rows = await _window(h.backend, s)
     assert len(rows) == 1
     assert rows[0]["sequence"] == 1

@@ -353,7 +353,7 @@ class ConversationMongoBackend(ConversationBackend):
         session_id: str,
         turn_id: str,
         data: dict,
-    ) -> None:
+    ) -> dict:
         """Idempotent upsert by ``turn_id`` fenced by a tombstone check before AND after the write.
 
         Guarded two-phase write (valid on standalone ``mongod`` too): check the tombstone, upsert,
@@ -380,6 +380,8 @@ class ConversationMongoBackend(ConversationBackend):
             raise
         except Exception as exc:
             raise self._translate(exc, write=True) from exc
+
+        return self._clean(doc)
 
     async def query_turns(
         self,

@@ -4,6 +4,7 @@ Real objects at every join: ``BaseBot`` round -> ``BusTurnPublisher`` -> ``Event
 ``ChatStorage.handle_turn_completed`` -> ``ConversationSQLiteBackend`` -> ``ChatStorageHydrationSource`` -> a second
 bot with empty working memory. Doubles: the offline LLM client and the Redis hot-tier stand-in.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -55,7 +56,11 @@ class RecordingClient(AbstractClient):
 
     def _msg(self, prompt: str) -> AIMessage:
         return AIMessage(
-            input=prompt, output="reply", model="stub", provider="stub", turn_id=str(uuid.uuid4()),
+            input=prompt,
+            output="reply",
+            model="stub",
+            provider="stub",
+            turn_id=str(uuid.uuid4()),
             usage=CompletionUsage(prompt_tokens=3, completion_tokens=5, total_tokens=8, estimated_cost=0.42),
             tool_calls=[ToolCall(id="t1", name="lookup", arguments={"q": "x"}, result="42", execution_time=0.5)],
         )
@@ -88,6 +93,8 @@ class _HotTier(InMemoryConversation):
         history = await self.get_history(user_id, session_id, chatbot_id)
         if history is None and not create:  # same contract as RedisConversation.upsert_turn(create=False)
             return False
+        if keep_seed_suffix and history and (history.metadata.get("cold_seed") or {}).get("validation_pending"):
+            return False
         history = history or await self.create_history(user_id, session_id, chatbot_id=chatbot_id)
         turns = list(history.turns)
         for i, old in enumerate(turns):
@@ -99,6 +106,21 @@ class _HotTier(InMemoryConversation):
         history.turns = turns
         await self.update_history(history)
         return True
+
+    async def merge_metadata(
+        self,
+        user_id: str,
+        session_id: str,
+        chatbot_id: Optional[str] = None,
+        *,
+        mutate: Callable[[Dict[str, Any]], Dict[str, Any]],
+        ttl: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Apply the production hot tier's metadata mutation contract to the in-memory stand-in."""
+        history = await self.get_history(user_id, session_id, chatbot_id)
+        history.metadata = mutate(dict(history.metadata))
+        await self.update_history(history)
+        return history.metadata
 
 
 async def _eventually(predicate: Callable[[], Awaitable[bool]], timeout: float = 5.0) -> None:
@@ -153,8 +175,9 @@ async def _build(tmp_path, gate: Optional[asyncio.Event] = None) -> Stack:
     async def _on_dlq(envelope, *, attempts, error, subscriber_id):
         dead.append((envelope, attempts, error))
 
-    bus = EventBus(transport="memory", on_dlq=_on_dlq, retry_attempts=3, retry_base_delay=0.0,
-                   outbox=str(tmp_path / "outbox.db"))
+    bus = EventBus(
+        transport="memory", on_dlq=_on_dlq, retry_attempts=3, retry_base_delay=0.0, outbox=str(tmp_path / "outbox.db")
+    )
 
     async def record(envelope):
         envelopes.append(envelope)
@@ -164,10 +187,17 @@ async def _build(tmp_path, gate: Optional[asyncio.Event] = None) -> Stack:
     allocator = LocalSequenceAllocator()
 
     async def make_bot(*, name=AGENT, chatbot_id=KEY, memory=None, client=None, source=None, **kw) -> BaseBot:
-        bot = BaseBot(name=name, chatbot_id=chatbot_id, llm=client or RecordingClient(), memory_type="memory",
-                      injection_detection=False, turn_publisher=handle.publisher,
-                      hydration_source=source or ChatStorageHydrationSource(backend),
-                      sequence_allocator=allocator, **kw)
+        bot = BaseBot(
+            name=name,
+            chatbot_id=chatbot_id,
+            llm=client or RecordingClient(),
+            memory_type="memory",
+            injection_detection=False,
+            turn_publisher=handle.publisher,
+            hydration_source=source or ChatStorageHydrationSource(backend),
+            sequence_allocator=allocator,
+            **kw,
+        )
         await bot.configure()
         bot.conversation_memory = memory or InMemoryConversation()
         return bot

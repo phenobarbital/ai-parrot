@@ -397,7 +397,9 @@ async def test_a_turn_deleted_between_the_cold_read_and_the_install_is_not_resur
     class _DeleteRaces(RedisConversation):
         async def install_history(self, *a: Any, **kw: Any) -> bool:
             nonlocal delete_landed
-            if armed and not delete_landed:  # the seed has read its window (t1, t2); now a delete of t2 runs to completion
+            if (
+                armed and not delete_landed
+            ):  # the seed has read its window (t1, t2); now a delete of t2 runs to completion
                 delete_landed = True
                 await cold.put_tombstone(USER, AGENT, SESSION, "t2")
                 assert await self.remove_turn(USER, SESSION, "t2", chatbot_id=AGENT) is False  # no hot key yet
@@ -495,3 +497,141 @@ async def test_deleting_every_seeded_turn_keeps_the_seed_boundary(storage):
 
     assert await _hot_ids(storage) != ["t1"]
     assert (await _served(storage, limit=1))[-1] == "q-t5"  # newest live cold turn; hot must not answer with t1
+
+
+@pytest.mark.parametrize("already_seeded", [False, True])
+@pytest.mark.parametrize("incoming_second", [0, 10])
+async def test_updated_old_turn_preserves_canonical_suffix(
+    storage: ChatStorage, cold: ConversationSQLiteBackend, already_seeded: bool, incoming_second: int
+) -> None:
+    """Canonical ordering wins for updates before and after seeding, in either timestamp direction."""
+    for n in range(1, 6):
+        await storage.store_turn(_turn(n))
+    storage.hot_seed_turns = 2
+    await _expire_hot(storage)
+    if already_seeded:
+        await storage.store_turn(_turn(5))
+    replay = _turn(1).model_copy(update={"timestamp": _turn(incoming_second).timestamp, "sequence": incoming_second})
+    await storage.store_turn(replay)
+    canonical = await cold.query_turn_window(USER, AGENT, SESSION, 3)
+    assert [row["turn_id"] for row in canonical] == ["t3", "t4", "t5"]
+    assert await _served(storage, limit=3) == ["q-t3", "q-t4", "q-t5"]
+
+
+@pytest.mark.parametrize("failure", ["tombstone_read", "remove_turn", "mark_validated"])
+async def test_retry_removes_deleted_seed_turn_after_transient_failure(
+    cold: ConversationSQLiteBackend, hot_factory: Any, failure: str
+) -> None:
+    """A fresh subscriber resumes the persisted validation marker after any cleanup-stage failure."""
+    state = {"armed": False, "failed": False}
+
+    class DeleteBeforeInstall(RedisConversation):
+        async def install_history(self, *args: Any, **kwargs: Any) -> bool:
+            if state["armed"]:
+                await cold.put_tombstone(USER, AGENT, SESSION, "t2")
+                await cold.delete_turn(USER, AGENT, SESSION, "t2")
+                await self.remove_turn(USER, SESSION, "t2", chatbot_id=AGENT)
+            return await super().install_history(*args, **kwargs)
+
+        async def remove_turn(self, *args: Any, **kwargs: Any) -> bool:
+            if state["armed"] and failure == "remove_turn" and not state["failed"]:
+                # The pre-install deletion finds no key; fail only when cleaning the published seed.
+                if await self.redis.exists(self._get_key(USER, SESSION, AGENT)):
+                    state["failed"] = True
+                    raise StorageWriteError("temporary seed cleanup failure")
+            return await super().remove_turn(*args, **kwargs)
+
+        async def merge_metadata(self, *args: Any, **kwargs: Any) -> dict:
+            if state["armed"] and failure == "mark_validated" and not state["failed"]:
+                state["failed"] = True
+                raise StorageWriteError("temporary seed cleanup failure")
+            return await super().merge_metadata(*args, **kwargs)
+
+    class FailCleanupOnce:
+        def __getattr__(self, name: str) -> Any:
+            return getattr(cold, name)
+
+        async def deleted_turn_ids(self, *args: Any, **kwargs: Any) -> set[str]:
+            if state["armed"] and failure == "tombstone_read" and not state["failed"]:
+                state["failed"] = True
+                raise StorageWriteError("temporary seed cleanup failure")
+            return await cold.deleted_turn_ids(*args, **kwargs)
+
+    st = ChatStorage(redis_conversation=hot_factory(DeleteBeforeInstall), dynamodb=FailCleanupOnce())
+    st._initialized = True
+    await st.store_turn(_turn(1))
+    await st.store_turn(_turn(2))
+    await _expire_hot(st)
+    state["armed"] = True
+    with pytest.raises(StorageWriteError, match="temporary seed cleanup"):
+        await st.store_turn(_turn(3))
+    history = await st._redis.get_history(USER, SESSION, chatbot_id=AGENT)
+    assert history.metadata[HOT_SEED_METADATA_KEY]["validation_pending"]
+    counting = _CountingBackend(cold)
+    restarted = ChatStorage(redis_conversation=hot_factory(), dynamodb=counting)
+    restarted._initialized = True
+    assert await _served(restarted) == ["q-t1", "q-t3"]
+    assert "query_turn_window" in counting.calls  # unvalidated seeds cannot serve reads
+    counting.calls.clear()
+    await restarted.store_turn(_turn(3))
+    assert _COLD_READS.isdisjoint(counting.calls)  # validation retry reuses the installed seed
+    history = await restarted._redis.get_history(USER, SESSION, chatbot_id=AGENT)
+    assert "validation_pending" not in history.metadata[HOT_SEED_METADATA_KEY]
+    assert [row["turn_id"] for row in await cold.query_turn_window(USER, AGENT, SESSION, 10)] == ["t1", "t3"]
+    assert await _served(st) == ["q-t1", "q-t3"]
+    assert await _hot_ids(st) == ["t1", "t3"]
+
+
+@pytest.mark.parametrize("replace", [False, True])
+async def test_validation_never_recreates_or_validates_a_replacement_seed(
+    cold: ConversationSQLiteBackend, hot_factory: Any, replace: bool
+) -> None:
+    """A validator for one snapshot cannot recreate an expired key or validate another snapshot."""
+
+    class ReplaceDuringValidation(RedisConversation):
+        async def merge_metadata(self, *args: Any, **kwargs: Any) -> dict:
+            await self.redis.delete(self._get_key(USER, SESSION, AGENT))
+            if replace:
+                await self.install_history(
+                    USER,
+                    SESSION,
+                    [ChatStorage._hot_tier_turn(_turn(4))],
+                    chatbot_id=AGENT,
+                    metadata={HOT_SEED_METADATA_KEY: {"complete": False, "validation_pending": "replacement"}},
+                )
+            return await super().merge_metadata(*args, **kwargs)
+
+    hot = hot_factory(ReplaceDuringValidation)
+    await hot.install_history(
+        USER,
+        SESSION,
+        [ChatStorage._hot_tier_turn(_turn(1))],
+        chatbot_id=AGENT,
+        metadata={HOT_SEED_METADATA_KEY: {"complete": False, "validation_pending": "original"}},
+    )
+    st = ChatStorage(redis_conversation=hot, dynamodb=cold)
+    history = await hot.get_history(USER, SESSION, chatbot_id=AGENT)
+    await st._validate_hot_seed(USER, AGENT, SESSION, history)
+    current = await hot.get_history(USER, SESSION, chatbot_id=AGENT)
+    if replace:
+        assert current.metadata[HOT_SEED_METADATA_KEY]["validation_pending"] == "replacement"
+        assert [turn.turn_id for turn in current.turns] == ["t4"]
+    else:
+        assert current is None
+
+
+async def test_a_legacy_backend_without_write_results_uses_cold_reads(
+    storage: ChatStorage, cold: ConversationSQLiteBackend
+) -> None:
+    """Legacy custom backends remain readable without trusting incoming ordering for the cache."""
+
+    class LegacyBackend(_CountingBackend):
+        async def put_turn(self, *args: Any, **kwargs: Any) -> None:
+            await cold.put_turn(*args, **kwargs)
+
+    for n in range(1, 4):
+        await storage.store_turn(_turn(n))
+    storage._dynamo = LegacyBackend(cold)
+    await storage.store_turn(_turn(1).model_copy(update={"timestamp": _turn(10).timestamp}))
+    assert await _hot_ids(storage) == []
+    assert await _served(storage) == ["q-t1", "q-t2", "q-t3"]

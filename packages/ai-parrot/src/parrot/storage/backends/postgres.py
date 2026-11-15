@@ -450,7 +450,7 @@ class ConversationPostgresBackend(ConversationBackend):
         session_id: str,
         turn_id: str,
         data: dict,
-    ) -> None:
+    ) -> dict:
         """Idempotent upsert by ``turn_id``; tombstone check + upsert in one locked transaction.
 
         Raises:
@@ -469,8 +469,8 @@ class ConversationPostgresBackend(ConversationBackend):
                         raise ConversationDeletedError(
                             f"session {session_id} or turn {turn_id} is tombstoned; write rejected"
                         )
-                    await conn.execute(
-                        self._UPSERT_TURN,
+                    stored = await conn.fetchval(
+                        self._UPSERT_TURN + " RETURNING payload",
                         user_id,
                         agent_id,
                         session_id,
@@ -485,6 +485,8 @@ class ConversationPostgresBackend(ConversationBackend):
             raise
         except Exception as exc:
             raise self._translate(exc, write=True) from exc
+
+        return stored
 
     async def query_turns(
         self,

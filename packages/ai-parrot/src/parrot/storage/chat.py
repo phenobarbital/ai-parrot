@@ -9,6 +9,7 @@ FEAT-103: Migrated from DocumentDB to DynamoDB.
 import asyncio
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple, TYPE_CHECKING
 from datetime import datetime, timezone
+from uuid import uuid4
 
 from navconfig.logging import logging
 
@@ -36,6 +37,10 @@ DEFAULT_CONTEXT_TURNS = 10
 #: Hot-tier metadata key written when a missing hot entry is seeded from the cold tier.
 HOT_SEED_METADATA_KEY = "cold_seed"
 _HOT_SEED_RETRIES = 2  # seed attempts on a hot miss (the first, plus ONE retry if the key vanishes again): bounded
+
+
+class _HotSeedChanged(Exception):
+    """Abort validation when the seed expired or another seed replaced it."""
 
 
 class ChatStorage:
@@ -169,7 +174,8 @@ class ChatStorage:
     async def store_turn(self, turn: ChatStorageTurn) -> None:
         """Upsert ``turn`` in the cold tier, update thread metadata, then upsert the hot tier.
 
-        Returns only when both configured tiers hold the turn.
+        Returns after the cold write and hot update complete. Older turns outside a truncated hot seed stay
+        cold-only. Legacy cold backends without canonical write results invalidate the hot cache instead.
 
         Raises:
             StorageError: any tier failed (retryable) — nothing is swallowed, nothing is backgrounded.
@@ -178,19 +184,24 @@ class ChatStorage:
         if self._dynamo is None and self._redis is None:
             raise StorageUnavailableError("no storage tier is configured")
         try:
+            canonical = turn
             if self._dynamo is not None:
-                await self._store_cold(turn)
+                canonical = await self._store_cold(turn)
             if self._redis is not None:
-                await self._store_hot(turn)
+                if canonical is None:
+                    # Legacy custom backends may not return the committed payload. Never guess its ordering.
+                    await self._redis.delete_history(turn.user_id, turn.session_id, chatbot_id=turn.agent_id)
+                else:
+                    await self._store_hot(canonical)
             await self._fence_after_write(turn)
         except StorageError:
             raise
         except Exception as exc:  # noqa: BLE001 — a foreign exception must still reach the bus as retryable
             raise StorageWriteError(f"store_turn failed for turn {turn.turn_id}: {exc}") from exc
 
-    async def _store_cold(self, turn: ChatStorageTurn) -> None:
-        """``put_turn`` (guarded + idempotent in the backend) then ``update_thread``."""
-        await self._dynamo.put_turn(turn.user_id, turn.agent_id, turn.session_id, turn.turn_id, turn.to_row())
+    async def _store_cold(self, turn: ChatStorageTurn) -> Optional[ChatStorageTurn]:
+        """Write durably and return the canonical turn, or ``None`` for a legacy backend without write results."""
+        stored = await self._dynamo.put_turn(turn.user_id, turn.agent_id, turn.session_id, turn.turn_id, turn.to_row())
         await self._dynamo.update_thread(
             user_id=turn.user_id,
             agent_id=turn.agent_id,
@@ -200,6 +211,11 @@ class ChatStorage:
             last_assistant_message=turn.assistant_response[:200],
             model=turn.presentation.model,
             provider=turn.presentation.provider,
+        )
+        if stored is None:
+            return None
+        return ChatStorageTurn.from_row(
+            stored, user_id=turn.user_id, agent_id=turn.agent_id, session_id=turn.session_id
         )
 
     async def _store_hot(self, turn: ChatStorageTurn) -> None:
@@ -244,22 +260,61 @@ class ChatStorage:
         Raises:
             StorageError: the cold window could not be read (the turn is retried; no partial hot entry is made).
         """
+        history = await self._redis.get_history(user_id, session_id, chatbot_id=agent)
+        if history and (history.metadata.get(HOT_SEED_METADATA_KEY) or {}).get("validation_pending"):
+            await self._validate_hot_seed(user_id, agent, session_id, history)
+            return True
         window = self.hot_seed_turns
         try:
             rows = await self._cold_window_rows(user_id, agent, session_id, window, legacy_fallback=False)
         except IndexNotReadyError:
             return False
         turns = [self._hot_tier_turn(t) for t in self._stored_turns(rows, user_id, agent, session_id)]
-        metadata = {HOT_SEED_METADATA_KEY: {"window": window, "complete": len(rows) < window}}
+        metadata = {
+            HOT_SEED_METADATA_KEY: {"window": window, "complete": len(rows) < window, "validation_pending": uuid4().hex}
+        }
         # False: another writer's entry won (NX) and that writer fences its own seed
         await self._redis.install_history(user_id, session_id, turns, chatbot_id=agent, metadata=metadata)
+        # Read the winning seed, which may belong to another writer. Its pending marker survives process death
+        # and transient failures; a later writer must finish validation before its upsert can succeed.
+        history = await self._redis.get_history(user_id, session_id, chatbot_id=agent)
+        if history is not None:
+            await self._validate_hot_seed(user_id, agent, session_id, history)
+        return True
+
+    async def _validate_hot_seed(self, user_id: str, agent: str, session_id: str, history: Any) -> None:
+        """Remove deleted seed turns, then clear only this seed's validation marker by compare-and-swap."""
+        seed = history.metadata.get(HOT_SEED_METADATA_KEY) or {}
+        token = seed.get("validation_pending")
+        if not token:
+            return
         # A turn delete may have committed its tombstone and its cold cleanup between the window read and the
         # install; its hot cleanup then found no key and the install put the deleted turn back. Re-check the
         # tombstones of the seeded ids (ONE batched read) and drop any resurrected turn from the hot entry.
         gone = await self._dynamo.deleted_turn_ids(user_id, agent, session_id)
-        for stale in [t.turn_id for t in turns if t.turn_id in gone]:
+        for stale in [t.turn_id for t in history.turns if t.turn_id in gone]:
             await self._delete_hot_turn(user_id, session_id, stale, agent)
-        return True
+
+        def validated(metadata: Dict[str, Any]) -> Dict[str, Any]:
+            """Keep concurrent metadata updates and never validate a replacement seed or recreate a missing key."""
+            current = metadata.get(HOT_SEED_METADATA_KEY) or {}
+            if current.get("validation_pending") != token:
+                raise _HotSeedChanged
+            ready = dict(current)
+            ready.pop("validation_pending")
+            return {**metadata, HOT_SEED_METADATA_KEY: ready}
+
+        try:
+            await self._redis.merge_metadata(
+                user_id,
+                session_id,
+                chatbot_id=agent,
+                mutate=validated,
+                ttl=getattr(self._redis, "history_ttl", None),
+            )
+        except _HotSeedChanged:
+            # The bounded caller retries the upsert/seed path against the current key.
+            return
 
     @staticmethod
     def _hot_tier_turn(turn: ChatStorageTurn) -> "ConversationTurn":
@@ -392,10 +447,13 @@ class ChatStorage:
     def _hot_holds_too_few(history: Any, live_turns: int, wanted: int) -> bool:
         """``True`` when ``history`` was seeded with a TRUNCATED cold window and holds fewer live turns than wanted.
 
-        Such a hot entry is a contiguous suffix of the conversation: older live turns exist only in the cold tier.
+        Pending seed validation also forces a cold read. A validated truncated entry is a contiguous suffix:
+        older live turns exist only in the cold tier.
         """
         seed = (getattr(history, "metadata", None) or {}).get(HOT_SEED_METADATA_KEY)
-        return isinstance(seed, dict) and seed.get("complete") is False and live_turns < wanted
+        return isinstance(seed, dict) and (
+            bool(seed.get("validation_pending")) or (seed.get("complete") is False and live_turns < wanted)
+        )
 
     async def _load_cold(
         self, user_id: str, session_id: str, agent_id: Optional[str], limit: int
@@ -922,8 +980,7 @@ class ChatStorage:
                     )
                     if not self._hot_holds_too_few(history, len(history.turns), max_turns):
                         return [
-                            {"role": m.role, "content": m.content}
-                            for m in render_history(history, max_turns=max_turns)
+                            {"role": m.role, "content": m.content} for m in render_history(history, max_turns=max_turns)
                         ]
             except Exception:
                 pass
