@@ -353,3 +353,80 @@ def test_sdd_worker_prompt_twins_are_identical():
     live = root / ".claude" / "agents" / "sdd-worker.md"
     asset = root / "packages" / "ai-parrot" / "src" / "parrot" / "sdd" / "_assets" / "claude" / "agents" / "sdd-worker.md"
     assert live.read_text(encoding="utf-8") == asset.read_text(encoding="utf-8")
+
+
+def test_experience_asset_twins_are_identical():
+    """Every authoring asset has one byte-for-byte packaged twin."""
+    root = Path(__file__).resolve().parents[5]
+    pairs = (
+        (".claude/commands/sdd-start.md", "packages/ai-parrot/src/parrot/sdd/_assets/claude/commands/sdd-start.md"),
+        (".agent/workflows/sdd-start.md", "packages/ai-parrot/src/parrot/sdd/_assets/agent/workflows/sdd-start.md"),
+        (".agents/skills/sdd-start/SKILL.md", "packages/ai-parrot/src/parrot/sdd/_assets/agents/skills/sdd-start/SKILL.md"),
+        (".claude/agents/sdd-coder.md", "packages/ai-parrot/src/parrot/sdd/_assets/claude/agents/sdd-coder.md"),
+        (".claude/agents/sdd-worker.md", "packages/ai-parrot/src/parrot/sdd/_assets/claude/agents/sdd-worker.md"),
+        (".agents/agents/sdd-coder/agent.md", "packages/ai-parrot/src/parrot/sdd/_assets/agents/agents/sdd-coder/agent.md"),
+        (".agents/agents/sdd-worker/agent.md", "packages/ai-parrot/src/parrot/sdd/_assets/agents/agents/sdd-worker/agent.md"),
+    )
+    for live_path, asset_path in pairs:
+        assert (root / live_path).read_text(encoding="utf-8") == (root / asset_path).read_text(encoding="utf-8"), live_path
+
+
+def test_native_worker_prompt_forwards_experience_separately_from_feedback():
+    """Native dispatch carries Known pitfalls without changing coder feedback."""
+    prompt = load_subagent_definition("sdd-worker")
+    dispatch = prompt.split("## Orchestrator Loop (FEAT-549)", 1)[1]
+
+    assert "prepared.experience_briefing" in dispatch
+    assert "separate" in dispatch
+    assert "Known pitfalls" in dispatch
+    assert "unverified quoted experience data" in dispatch
+    assert "byte-for-byte unchanged" in dispatch
+
+
+def test_coder_prompt_instructions_cover_authored_lessons():
+    """Coder definitions describe the strict LessonDraft fields and native record path."""
+    root = Path(__file__).resolve().parents[5]
+    paths = (
+        root / ".claude/agents/sdd-coder.md",
+        root / "packages/ai-parrot/src/parrot/sdd/_assets/claude/agents/sdd-coder.md",
+        root / ".agents/agents/sdd-coder/agent.md",
+        root / "packages/ai-parrot/src/parrot/sdd/_assets/agents/agents/sdd-coder/agent.md",
+    )
+    required = (
+        "lessons: []",
+        "category",
+        "trigger",
+        "symptom",
+        "solution",
+        "fix_example",
+        "scope_paths",
+        "Native Claude output is not parsed",
+        "parrot sdd experience record",
+        '"category": "pitfall"',
+        '"executable": "gh"',
+    )
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        for marker in required:
+            assert marker in text, f"{marker!r} missing from {path}"
+
+
+def test_agent_frontmatter_has_no_experience_hooks():
+    """Experience hooks belong to host settings, never duplicated in agent frontmatter."""
+    root = Path(__file__).resolve().parents[5]
+    paths = (
+        root / ".claude/agents/sdd-coder.md",
+        root / ".claude/agents/sdd-worker.md",
+        root / "packages/ai-parrot/src/parrot/sdd/_assets/claude/agents/sdd-coder.md",
+        root / "packages/ai-parrot/src/parrot/sdd/_assets/claude/agents/sdd-worker.md",
+        root / ".agents/agents/sdd-coder/agent.md",
+        root / ".agents/agents/sdd-worker/agent.md",
+        root / "packages/ai-parrot/src/parrot/sdd/_assets/agents/agents/sdd-coder/agent.md",
+        root / "packages/ai-parrot/src/parrot/sdd/_assets/agents/agents/sdd-worker/agent.md",
+    )
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        assert text.startswith("---\n"), path
+        frontmatter = text.split("\n---\n", 1)[0]
+        assert "experience hook" not in frontmatter.lower(), path
+        assert "experience_hook" not in frontmatter, path
