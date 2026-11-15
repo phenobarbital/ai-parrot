@@ -1525,7 +1525,7 @@ def _install_ledger_hooks_step(root: Path, receipt: dict[str, Any]) -> list[str]
 
 
 def _install_experience_namespace(root: Path) -> list[str]:
-    """Register the shared experience namespace without making installation fatal.
+    """Apply the planned shared-namespace registration without making installation fatal.
 
     Args:
         root: Repository root passed to the installer.
@@ -1536,7 +1536,8 @@ def _install_experience_namespace(root: Path) -> list[str]:
     from parrot.knowledge.wiki.experience.sync import register_namespace
 
     try:
-        if register_namespace(root):
+        registered = register_namespace(root)
+        if registered:
             return [".parrot/wiki.json — experience namespace registered"]
     except Exception:
         logger.debug("sdd install: experience namespace registration skipped", exc_info=True)

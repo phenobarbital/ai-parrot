@@ -13,6 +13,7 @@ from click.testing import CliRunner
 
 from parrot.cli import cli as devloop
 from parrot.flows.dev_loop import feature_launcher as launcher
+from parrot.sdd.installer import install_sdd_integration
 from parrot.sdd.scripts import worktree_sync
 
 _REAL_PREFLIGHT = launcher._preflight_sandbox
@@ -54,6 +55,33 @@ def _primary(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     return primary
+
+
+@pytest.mark.asyncio
+async def test_experience_namespace_install(tmp_path: Path) -> None:
+    """Dry-run is write-free and repeated installs preserve one absolute namespace."""
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    config_path = tmp_path / ".parrot" / "wiki.json"
+    install_options = {
+        "hosts": ("codex",),
+        "dangerous_guard": False,
+        "sdd_coder": False,
+        "agy_permissions": False,
+    }
+
+    plan = install_sdd_integration(tmp_path, dry_run=True, **install_options)
+
+    assert "plan: experience-namespace .parrot/wiki.json" in plan
+    assert not config_path.exists()
+
+    install_sdd_integration(tmp_path, **install_options)
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    expected_store = str((tmp_path / ".parrot" / "experience").resolve())
+    assert config["namespaces"]["experience"] == {"store": expected_store}
+
+    stable = config_path.read_bytes()
+    install_sdd_integration(tmp_path, **install_options)
+    assert config_path.read_bytes() == stable
 
 
 def test_native_allow_write_includes_experience(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

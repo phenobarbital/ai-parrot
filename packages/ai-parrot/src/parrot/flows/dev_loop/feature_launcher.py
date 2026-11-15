@@ -97,7 +97,7 @@ def _invocation_dir() -> Path:
 
 
 def _preflight_sandbox(worktree: Path, allowed_domains: Sequence[str]) -> None:
-    """Fail on the host, before any push or tmux session, when the sandbox cannot start."""
+    """Best-effort sync experience state, then fail closed when the sandbox cannot start."""
     try:
         # Keep these imports on the host-side preflight path: this module also runs as the
         # ``python -S`` tmux child, where importing parrot would load project configuration.
@@ -108,7 +108,7 @@ def _preflight_sandbox(worktree: Path, allowed_domains: Sequence[str]) -> None:
         if plane is not None:
             sync_global(plane)
     except Exception:
-        logger.debug("experience global sync skipped during sandbox preflight", exc_info=True)
+        logger.debug("experience global sync skipped during sandbox preflight for %s", worktree, exc_info=True)
     try:
         native_claude_sandbox.plan_native_launch(worktree, allowed_domains=allowed_domains)
     except ValueError as exc:

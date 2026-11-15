@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from parrot.flows.dev_loop.feature_launcher import _preflight_sandbox
 from parrot.launcher import script_path
 from parrot.sdd.cli import VERBS
 from parrot.sdd.installer import (
@@ -34,6 +35,74 @@ def empty_repo(tmp_path: Path) -> Path:
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     (tmp_path / "README.md").write_text("# foreign repo\n")
     return tmp_path
+
+
+@pytest.mark.asyncio
+async def test_preflight_sync_failure_is_nonfatal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failed global sync does not prevent native sandbox planning."""
+    from parrot.flows.dev_loop import feature_launcher
+    from parrot.knowledge.wiki.experience import sync
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    synced: list[Path] = []
+    planned: list[tuple[Path, tuple[str, ...]]] = []
+
+    def fail_sync(plane: Path) -> int:
+        synced.append(plane)
+        raise OSError("read-only global plane")
+
+    def plan(worktree: Path, *, allowed_domains: tuple[str, ...]) -> None:
+        planned.append((worktree, allowed_domains))
+
+    monkeypatch.setattr(sync, "sync_global", fail_sync)
+    monkeypatch.setattr(feature_launcher.native_claude_sandbox, "plan_native_launch", plan)
+
+    _preflight_sandbox(tmp_path, ("example.com",))
+
+    assert synced == [tmp_path / ".parrot" / "experience"]
+    assert planned == [(tmp_path, ("example.com",))]
+
+
+@pytest.mark.asyncio
+async def test_closeout_exports_in_worktree(tmp_path: Path) -> None:
+    """Every closeout surface exports in-worktree and stages only the returned definition."""
+    repo_root = Path(__file__).resolve().parents[4]
+    assert tmp_path != repo_root
+    pairs = (
+        (
+            ".claude/commands/sdd-done.md",
+            "packages/ai-parrot/src/parrot/sdd/_assets/claude/commands/sdd-done.md",
+        ),
+        (
+            ".agent/workflows/sdd-done.md",
+            "packages/ai-parrot/src/parrot/sdd/_assets/agent/workflows/sdd-done.md",
+        ),
+        (
+            ".agents/skills/sdd-done/SKILL.md",
+            "packages/ai-parrot/src/parrot/sdd/_assets/agents/skills/sdd-done/SKILL.md",
+        ),
+    )
+    texts: dict[str, str] = {}
+    for source, packaged in pairs:
+        source_text = (repo_root / source).read_text(encoding="utf-8")
+        assert source_text == (repo_root / packaged).read_text(encoding="utf-8")
+        texts[source] = source_text
+
+    for source in (".claude/commands/sdd-done.md", ".agent/workflows/sdd-done.md"):
+        source_text = texts[source]
+        sync_at = source_text.index('(cd "$WORKTREE_PATH" && parrot sdd experience sync)')
+        export_at = source_text.index('EXPERIENCE_EXPORT="$(cd "$WORKTREE_PATH" && parrot sdd experience export)"')
+        closeout_stage_at = source_text.index('git -C "$WORKTREE_PATH" add "$INDEX" sdd/tasks/completed/')
+        assert sync_at < export_at < closeout_stage_at
+        assert '"$WORKTREE_PATH"/sdd/experience/lessons/*.jsonl)' in source_text
+        assert 'git -C "$WORKTREE_PATH" add -- "$EXPERIENCE_EXPORT"' in source_text
+        assert 'add "$INDEX" sdd/tasks/completed/ sdd/experience/lessons/' not in source_text
+
+    skill_text = texts[".agents/skills/sdd-done/SKILL.md"]
+    assert skill_text.index("parrot sdd experience sync") < skill_text.index("parrot sdd experience export")
+    assert "inside the feature worktree" in skill_text
+    assert "sdd/experience/lessons/<digest>.jsonl" in skill_text
+    assert "never stage the whole lessons directory" in skill_text
 
 
 def _claude_targets() -> list[str]:
