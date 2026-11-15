@@ -11,11 +11,11 @@ An agent needs three kinds of knowledge: what is true, what matters now, and wha
 
 ## Public API
 
-- [`ProcedureSpec`](ref:parrot.knowledge.wiki.procedure.ProcedureSpec) — one typed procedure node.
-- [`ProcedureManifest`](ref:parrot.knowledge.wiki.procedure.ProcedureManifest) — one producer graph and its nodes.
-- [`ProcedurePlane`](ref:parrot.knowledge.wiki.procedure.ProcedurePlane) — the SQLite wiki store and compiled index under `.parrot/procedure/`.
-- [`validate_graph`](ref:parrot.knowledge.wiki.procedure.validate_graph) — deterministic graph validation.
-- [`resolve`](ref:parrot.knowledge.wiki.procedure.resolve) — deterministic next-step resolution against a probe runner.
+- [`ProcedureSpec`](ref:parrot.knowledge.wiki.procedure.models) — one typed procedure node.
+- [`ProcedureManifest`](ref:parrot.knowledge.wiki.procedure.models) — one producer graph and its nodes.
+- [`ProcedurePlane`](ref:parrot.knowledge.wiki.procedure.plane) — the SQLite wiki store and compiled index under `.parrot/procedure/`.
+- [`validate_graph`](ref:parrot.knowledge.wiki.procedure.validate) — deterministic graph validation.
+- [`resolve`](ref:parrot.knowledge.wiki.procedure.resolver) — deterministic next-step resolution against a probe runner.
 
 ## Configuration & Parameters
 
