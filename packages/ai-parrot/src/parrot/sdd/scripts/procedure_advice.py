@@ -319,15 +319,32 @@ def _relative_directory(base: str, target: str, checkout: Path | None) -> str:
     return "" if directory == "." else directory
 
 
-def _change_directory(tokens: list[str]) -> str | None:
-    """Return the target of a plain ``cd <dir>`` segment, or None for any other segment."""
+def _is_change_directory(tokens: list[str]) -> bool:
+    """Return whether the segment is a ``cd`` command (after leading assignments)."""
     index = 0
     while index < len(tokens) and _assignment(tokens[index]):
         index += 1
-    if index >= len(tokens) or os.path.basename(tokens[index]) != "cd":
+    return index < len(tokens) and os.path.basename(tokens[index]) == "cd"
+
+
+def _literal_directory(target: str) -> bool:
+    """Return whether ``target`` is a literal path, free of shell expansion the guard cannot resolve."""
+    return bool(target) and not target.startswith("~") and not any(mark in target for mark in ("$", "`", "*", "?"))
+
+
+def _change_directory(tokens: list[str]) -> str | None:
+    """Return the target of a plain ``cd <dir>`` segment, or None for any other segment.
+
+    None is also returned for a ``cd`` whose destination cannot be known statically: ``cd``, ``cd -``,
+    several arguments, or a target with shell expansion (``~``, ``$VAR``, command substitution, globs).
+    """
+    if not _is_change_directory(tokens):
         return None
+    index = next(position for position, token in enumerate(tokens) if os.path.basename(token) == "cd")
     targets = [token for token in tokens[index + 1 :] if not token.startswith("-")]
-    return targets[0] if len(targets) == 1 else None
+    if len(targets) != 1 or not _literal_directory(targets[0]):
+        return None
+    return targets[0]
 
 
 def _git_directory(argv: list[str]) -> tuple[list[str], str | None]:
@@ -341,29 +358,52 @@ def _git_directory(argv: list[str]) -> tuple[list[str], str | None]:
     return argv[index:], directory
 
 
-def _located_segments(command: str, checkout: Path | None, cwd: Path | None) -> list[tuple[str, list[str], str]]:
+def _step_directory(base: str | None, target: str | None, checkout: Path | None) -> str | None:
+    """Return the directory reached from ``base`` by ``target``; None when it cannot be known."""
+    if target is None or not _literal_directory(target):
+        return None
+    if base is None and not os.path.isabs(target):
+        return None
+    return _relative_directory(base or "", target, checkout)
+
+
+def _located_segments(command: str, checkout: Path | None, cwd: Path | None) -> list[tuple[str, list[str], str | None]]:
     """Return ``(executable, argv, effective directory)`` for every non-``cd`` segment, in order.
 
     The effective directory is relative to ``checkout``. It starts at ``cwd``, follows plain ``cd <dir>``
     segments, and for a ``git`` segment also honours leading ``-C <dir>`` options (that segment only).
+    It is ``None`` once a directory change cannot be resolved statically (``cd -``, ``cd $VAR``, …).
     """
-    base = ""
+    base: str | None = ""
     if checkout is not None and cwd is not None:
         base = _relative_directory("", str(Path(cwd).resolve()), checkout)
-    located: list[tuple[str, list[str], str]] = []
+    located: list[tuple[str, list[str], str | None]] = []
     for tokens in command_segments(command):
-        target = _change_directory(tokens)
-        if target is not None:
-            base = _relative_directory(base, target, checkout)
+        if _is_change_directory(tokens):
+            base = _step_directory(base, _change_directory(tokens), checkout)
             continue
         executable, argv = _clean(tokens)
         directory = base
         if executable == "git":
             argv, git_directory = _git_directory(argv)
             if git_directory is not None:
-                directory = _relative_directory(base, git_directory, checkout)
+                directory = _step_directory(base, git_directory, checkout)
         located.append((executable, argv, directory))
     return located
+
+
+def _guarded_path(argument: str, pattern: str, directory: str | None, checkout: Path | None) -> bool:
+    """Return whether ``argument`` hits ``pattern`` as written or after directory resolution.
+
+    The as-written test keeps a guard firing when the command first changes into another checkout
+    (a worktree) or into a directory the guard cannot resolve; the resolved test catches a path made
+    relative to a ``cd`` or ``git -C`` directory, or written as an absolute path inside the checkout.
+    """
+    if fnmatch.fnmatchcase(_normalise_path(argument), pattern):
+        return True
+    if directory is None:
+        return False
+    return fnmatch.fnmatchcase(_normalise_path(argument, base=directory, checkout=checkout), pattern)
 
 
 def match_guards(
@@ -410,7 +450,7 @@ def match_guards(
                     continue
                 remaining = argv[len(argv_prefix) :]
                 if path_globs and not any(
-                    fnmatch.fnmatchcase(_normalise_path(argument, base=directory, checkout=checkout), pattern)
+                    _guarded_path(argument, pattern, directory, checkout)
                     for argument in remaining
                     for pattern in path_globs
                 ):

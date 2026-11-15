@@ -120,3 +120,19 @@ def test_operation_reports_unexpected_error(
     assert result.is_error
     assert result.text == expected
     assert result.data is None
+
+
+def test_operation_reports_rendering_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failure while rendering the resolution is reported too, not raised."""
+    from parrot.knowledge.wiki.procedure import operations
+
+    _project(tmp_path, with_plane=True)
+
+    def failing_payload(resolution: object) -> dict[str, object]:
+        """Fail the way an unexpected resolution shape would."""
+        raise AttributeError("no spec")
+
+    monkeypatch.setattr(operations, "_resolution_payload", failing_payload)
+    result = asyncio.run(op_procedure_next(None, ProcedureNextInput(), root=tmp_path))
+    assert result.is_error
+    assert result.text == "AttributeError: no spec"

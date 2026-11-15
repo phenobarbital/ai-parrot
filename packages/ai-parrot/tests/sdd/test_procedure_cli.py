@@ -248,13 +248,15 @@ def test_render_brief_limits_lines() -> None:
 
 
 @pytest.mark.parametrize(
-    ("returncode", "stdout", "expected"),
+    ("returncode", "stdout", "stderr", "expected"),
     [
-        (128, "", None),
-        (1, "0\n", None),
-        (0, "0\n", True),
-        (0, "2\n", False),
-        (0, "not a number\n", None),
+        (128, "", "fatal: HEAD does not point to a branch\n", None),
+        (128, "", "fatal: not a git repository\n", None),
+        (128, "", "fatal: no upstream configured for branch 'feat-FEAT-1-demo'\n", False),
+        (1, "0\n", "", None),
+        (0, "0\n", "", True),
+        (0, "2\n", "", False),
+        (0, "not a number\n", "", None),
     ],
 )
 def test_branch_pushed_unknown_on_git_failure(
@@ -262,13 +264,16 @@ def test_branch_pushed_unknown_on_git_failure(
     monkeypatch: pytest.MonkeyPatch,
     returncode: int,
     stdout: str,
+    stderr: str,
     expected: bool | None,
 ) -> None:
-    """A git failure is unknown; only a successful count decides pushed or not."""
+    """A never-pushed branch is not pushed; any other git failure is unknown."""
 
     def fake_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
-        """Return a canned ``git rev-list`` result."""
-        return subprocess.CompletedProcess(args=["git"], returncode=returncode, stdout=stdout, stderr="")
+        """Return a canned ``git rev-list`` result; the probe must ask git for English messages."""
+        environment = kwargs["env"]
+        assert isinstance(environment, dict) and environment["LC_ALL"] == "C"
+        return subprocess.CompletedProcess(args=["git"], returncode=returncode, stdout=stdout, stderr=stderr)
 
     monkeypatch.setattr("parrot.sdd.scripts.procedure_probes.subprocess.run", fake_run)
     runner = SddProbeRunner(repo)

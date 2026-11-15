@@ -118,10 +118,9 @@ async def op_procedure_next(store: Any, params: ProcedureNextInput, **context: A
             return resolve(specs, scope, SddProbeRunner(checkout), allow_remote=False, stale=stale)
 
         resolution = await asyncio.to_thread(resolve_local)
+        data = _resolution_payload(resolution)
+        return OperationResult(text=_resolution_text(data), data=data)
     except (ValueError, OSError) as exc:
         return OperationResult(text=str(exc), is_error=True)
     except Exception as exc:  # noqa: BLE001 — a tool operation reports failures, it never raises
         return OperationResult(text=f"{type(exc).__name__}: {exc}", is_error=True)
-
-    data = _resolution_payload(resolution)
-    return OperationResult(text=_resolution_text(data), data=data)

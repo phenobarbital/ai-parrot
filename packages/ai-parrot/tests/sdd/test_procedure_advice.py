@@ -98,9 +98,40 @@ def test_match_guards_resolves_effective_directory(tmp_path: Path) -> None:
 
     assert not bypassed("cd docs && git mv a.md b.md")
     assert not bypassed("cd sdd/tasks/active && cd ../../.. && git mv README.md docs/")
-    assert not bypassed(f"cd {tmp_path} && git mv sdd/tasks/active/TASK-1.md sdd/tasks/completed/")
     assert not bypassed(f"git mv {tmp_path}/other/sdd/tasks/active/TASK-1.md {tmp_path}/other/done/")
     assert not bypassed("git mv ../sdd/tasks/active/TASK-1.md ../done/")
+
+
+def test_match_guards_keeps_as_written_match(tmp_path: Path) -> None:
+    """Changing into another checkout or an unresolvable directory never turns a guard off."""
+    checkout = tmp_path / "repo"
+    (checkout / "sdd" / "tasks" / "active").mkdir(parents=True)
+    index = {"schema_version": advice.INDEX_SCHEMA_VERSION, "guards": GUARDS}
+    move = "git mv sdd/tasks/active/TASK-1.md sdd/tasks/completed/"
+
+    def bypassed(command: str) -> bool:
+        matches = advice.match_guards(index, command, checkout=checkout, cwd=checkout)
+        return any(match["kind"] == "bypass" for match in matches)
+
+    for prefix in (
+        "cd .parrot/worktrees/feat-FEAT-1-demo",
+        f"cd {tmp_path}/other-checkout",
+        'cd "$WORKTREES_DIR/feat-FEAT-1-demo"',
+        "cd ~/proyectos/demo",
+        "cd $(git rev-parse --show-toplevel)",
+        "cd -",
+        "cd",
+    ):
+        assert bypassed(f"{prefix} && {move}"), prefix
+    assert bypassed("git -C .parrot/worktrees/feat-FEAT-1-demo mv sdd/tasks/active/TASK-1.md sdd/tasks/completed/")
+    assert bypassed('git -C "$WT" mv sdd/tasks/active/TASK-1.md sdd/tasks/completed/')
+
+    # An unresolvable directory change stops directory tracking instead of reusing the previous directory.
+    assert not bypassed("cd sdd/tasks/active && ls; cd - && git mv README.md docs/")
+    assert not bypassed("cd sdd/tasks/active && ls; cd && git mv README.md docs/")
+    assert not bypassed('cd sdd/tasks/active; cd "$HOME" && git mv README.md docs/')
+    # An absolute directory makes it known again.
+    assert bypassed(f"cd - && cd {checkout}/sdd/tasks/active && git mv TASK-1.md ../completed/")
 
 
 def test_match_guards_default_arguments_unchanged() -> None:
