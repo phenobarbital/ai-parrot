@@ -487,7 +487,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -499,8 +499,9 @@
       "parallelism_notes": "Consumes create_memory_manager from TASK-5671; Consumes request-local scope contract from TASK-5654; Consumes lightweight package initializer; shared-file serialization from TASK-5653",
       "assigned_to": null,
       "started_at": "2026-11-15T23:19:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5672-agent-memory-facade.md"
+      "completed_at": "2026-11-15T23:42:48+00:00",
+      "file": "sdd/tasks/completed/TASK-5672-agent-memory-facade.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5673",
@@ -728,4 +729,3 @@
     }
   ]
 }
-

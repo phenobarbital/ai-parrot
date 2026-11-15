@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-892 - Agent Memory — Unified Integration, User Knowledge and Dynamics
 **Spec**: `sdd/specs/agent-memory-mixin.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-5671, TASK-5654, TASK-5653
@@ -300,3 +300,18 @@ CancelledError. Use subprocesses for crash/multiprocess checks, never shared pro
 5. Run validation, commit scoped implementation, and finalize with `parrot sdd task finalize`
    using real TaskCompletionEvidence and the exact implementation HEAD. Let finalization own
    the completion note and active-to-completed move; do not fabricate completion evidence.
+
+## Completion Note
+
+- Task: TASK-5672
+- Feature: agent-memory-mixin
+- Implementation SHA: 21eb71dcb50f505c8c5dc7bec874f080d6d11f6d
+- Closed at (UTC): 2026-11-15T23:42:48+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 2 |
+| fix_commits | 0 |
+| note | Import cycle in memory/user/extraction.py (issue:8a5983e509cf) fixed in ce17744 after merge; revalidated. |
+| seat_summary | Seat: gpt-5.6-sol · Backend: codex · Model: gpt-5.6-sol · Attempts: 2 (attempt 1 gpt-5.6-terra EmptyDelivery) · Duration: 783s · Tokens: n/a |
