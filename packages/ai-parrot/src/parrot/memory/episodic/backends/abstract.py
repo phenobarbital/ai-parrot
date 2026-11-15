@@ -12,7 +12,11 @@ class AbstractEpisodeBackend(Protocol):
     """Protocol defining the storage backend interface for episodes.
 
     Implementations must provide methods for storing, searching,
-    retrieving, and maintaining episodic memory records.
+    retrieving, and maintaining episodic memory records. Namespace filters
+    may include every non-null ``MemoryNamespace`` dimension, including
+    ``model_id``. Transactional dynamics reviews are an optional
+    ``ReviewBackend`` capability and are not required by this baseline
+    protocol.
     """
 
     async def store(self, episode: EpisodicMemory) -> str:
@@ -73,6 +77,11 @@ class AbstractEpisodeBackend(Protocol):
         limit: int = 5,
     ) -> list[EpisodicMemory]:
         """Get recent failure episodes for an agent.
+
+        This baseline compatibility lookup remains limited to agent and tenant
+        scope. Backends that support more narrowly scoped retrieval use the
+        ``namespace_filter`` accepted by ``get_recent`` and
+        ``search_similar``.
 
         Args:
             agent_id: Agent identifier.

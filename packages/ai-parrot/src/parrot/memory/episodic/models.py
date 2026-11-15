@@ -13,8 +13,12 @@ import uuid
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
+from urllib.parse import quote
 
 from pydantic import BaseModel, ConfigDict, Field
+
+
+FEEDBACK_IMPORT_NAMESPACE = uuid.UUID("ee9fd516-8b3f-4948-8490-7e2676b58298")
 
 
 class EpisodeOutcome(str, Enum):
@@ -85,6 +89,11 @@ class EpisodicMemory(BaseModel):
     )
     agent_id: str = Field(
         ..., description="Agent that generated the episode"
+    )
+    model_id: str | None = Field(
+        default=None,
+        min_length=1,
+        description="Model that generated the episode",
     )
     user_id: str | None = Field(
         default=None, description="User the agent interacted with"
@@ -207,7 +216,32 @@ class EpisodeSearchResult(EpisodicMemory):
         ...,
         ge=0.0,
         le=1.01,
+        allow_inf_nan=False,
         description="Similarity score (0=no match, ~1=exact). Slightly above 1.0 possible due to float precision.",
+    )
+    ranking_score: float | None = Field(
+        default=None,
+        ge=0.0,
+        allow_inf_nan=False,
+        description="Dynamics ranking score, separate from raw similarity.",
+    )
+    retrievability: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        allow_inf_nan=False,
+        description="Current dynamics retrievability, when available.",
+    )
+    stability: float | None = Field(
+        default=None,
+        ge=0.001,
+        allow_inf_nan=False,
+        description="Current dynamics stability, when available.",
+    )
+    review_count: int = Field(
+        default=0,
+        ge=0,
+        description="Number of durable dynamics reviews applied to the episode.",
     )
 
 
@@ -229,6 +263,11 @@ class MemoryNamespace(BaseModel):
     )
     agent_id: str = Field(
         ..., description="Agent identifier"
+    )
+    model_id: str | None = Field(
+        default=None,
+        min_length=1,
+        description="Model scope",
     )
     user_id: str | None = Field(
         default=None, description="User scope"
@@ -264,6 +303,8 @@ class MemoryNamespace(BaseModel):
             filters["room_id"] = self.room_id
         if self.crew_id is not None:
             filters["crew_id"] = self.crew_id
+        if self.model_id is not None:
+            filters["model_id"] = self.model_id
         return filters
 
     @property
@@ -287,4 +328,6 @@ class MemoryNamespace(BaseModel):
             parts.append(f"room:{self.room_id}")
         elif self.user_id:
             parts.append(f"user:{self.user_id}")
+        if self.model_id is not None:
+            parts.append(f"model:{quote(self.model_id, safe='')}")
         return ":".join(parts)
