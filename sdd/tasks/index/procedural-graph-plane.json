@@ -127,7 +127,7 @@
     {
       "id": "TASK-5637",
       "slug": "procedure-advice-matching",
-      "title": "Hook-side advice module — roots, index loading and command matching",
+      "title": "Hook-side advice module \u2014 roots, index loading and command matching",
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
@@ -136,7 +136,7 @@
       "effort": "M",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "No dependency: stdlib-only module; the index shape it reads is fixed in spec §2.",
+      "parallelism_notes": "No dependency: stdlib-only module; the index shape it reads is fixed in spec \u00a72.",
       "assigned_to": null,
       "started_at": "2026-11-13T21:47:01+00:00",
       "completed_at": "2026-11-13T21:58:03+00:00",
@@ -146,7 +146,7 @@
     {
       "id": "TASK-5638",
       "slug": "procedure-advice-decision",
-      "title": "Hook-side advice module — local probes and the guard decision",
+      "title": "Hook-side advice module \u2014 local probes and the guard decision",
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
@@ -167,7 +167,7 @@
     {
       "id": "TASK-5639",
       "slug": "procedure-index",
-      "title": "Compiled index — build, atomic publish, staleness",
+      "title": "Compiled index \u2014 build, atomic publish, staleness",
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
@@ -189,7 +189,7 @@
     {
       "id": "TASK-5640",
       "slug": "procedure-plane",
-      "title": "`ProcedurePlane` — fold specs into the wiki store",
+      "title": "`ProcedurePlane` \u2014 fold specs into the wiki store",
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
@@ -256,7 +256,7 @@
     {
       "id": "TASK-5643",
       "slug": "procedure-cli-build",
-      "title": "`parrot sdd procedure` — build, list, show, check, and the config section",
+      "title": "`parrot sdd procedure` \u2014 build, list, show, check, and the config section",
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
@@ -280,7 +280,7 @@
     {
       "id": "TASK-5644",
       "slug": "procedure-cli-next-brief",
-      "title": "`parrot sdd procedure` — next and brief",
+      "title": "`parrot sdd procedure` \u2014 next and brief",
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
@@ -427,7 +427,7 @@
       "started_at": "2026-11-13T21:47:01+00:00",
       "completed_at": "2026-11-13T23:26:28+00:00",
       "file": "sdd/tasks/completed/TASK-5650-task-start-procedure-block.md",
-      "verification": "partial"
+      "verification": "verified"
     },
     {
       "id": "TASK-5651",
@@ -456,7 +456,7 @@
     {
       "id": "TASK-5652",
       "slug": "procedure-documentation",
-      "title": "Documentation — `wiki/sdd-tooling/sdd/procedure-graph.md`",
+      "title": "Documentation \u2014 `wiki/sdd-tooling/sdd/procedure-graph.md`",
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
