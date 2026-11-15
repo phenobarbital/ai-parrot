@@ -499,6 +499,7 @@ jq --arg now "$NOW" '
 ' "$WORKTREE_PATH/$INDEX" > tmp && mv tmp "$WORKTREE_PATH/$INDEX"
 
 # Sync is advisory. Export runs in the feature worktree and returns one newly-created shared definition path.
+# Stage only that returned path; never stage the whole lessons directory.
 (cd "$WORKTREE_PATH" && parrot sdd experience sync) || echo "warning: experience sync skipped"
 EXPERIENCE_EXPORT="$(cd "$WORKTREE_PATH" && parrot sdd experience export)"
 if [[ -n "$EXPERIENCE_EXPORT" ]]; then
