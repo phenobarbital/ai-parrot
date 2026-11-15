@@ -1,8 +1,45 @@
 """Unit tests for ContextAssembler — priority-based token budgeting."""
+import hashlib
+
 import pytest
 
+from parrot.memory.agent_memory.models import MemoryRequestScope
 from parrot.memory.unified.context import ContextAssembler
-from parrot.memory.unified.models import MemoryConfig
+from parrot.memory.unified.models import MemoryCandidate, MemoryConfig
+
+
+def _scope(*, user_id: str | None = "user-1") -> MemoryRequestScope:
+    """Build a deterministic runtime scope for context tests."""
+    return MemoryRequestScope(
+        tenant_id="tenant-1",
+        agent_id="agent-1",
+        user_id=user_id,
+        turn_id="turn-1",
+        identity_provenance="runtime_derived",
+    )
+
+
+def _candidate(
+    scope: MemoryRequestScope,
+    *,
+    memory_id: str,
+    text: str,
+    source: str = "episodic",
+    candidate_type: str = "episodic",
+    relevance: float = 0.5,
+    ranking_score: float | None = None,
+) -> MemoryCandidate:
+    """Build a candidate with explicit identity and version metadata."""
+    return MemoryCandidate(
+        scope=scope,
+        memory_id=memory_id,
+        content_version="v1",
+        source=source,
+        text=text,
+        relevance=relevance,
+        ranking_score=ranking_score,
+        candidate_type=candidate_type,
+    )
 
 
 class TestContextAssembler:
@@ -82,3 +119,101 @@ class TestContextAssembler:
         """Import path works as specified."""
         from parrot.memory.unified.context import ContextAssembler as CA  # noqa: F401
         assert CA is ContextAssembler
+
+    def test_whole_block_budget_and_digest(self):
+        """Structured packing keeps complete blocks and hashes delivered text."""
+        scope = _scope()
+        assembler = ContextAssembler(
+            MemoryConfig(
+                max_context_tokens=80,
+                episodic_weight=0.6,
+                skill_weight=0.2,
+                conversation_weight=0.2,
+            )
+        )
+        candidates = [
+            _candidate(scope, memory_id="episode-1", text="Use the authenticated endpoint.", relevance=0.9),
+            _candidate(
+                scope,
+                memory_id="skill-1",
+                text="Use the schema tool before querying.",
+                source="skill",
+                candidate_type="skill",
+                relevance=0.8,
+            ),
+        ]
+
+        context = assembler.assemble_candidates(candidates, scope=scope)
+
+        assert context.episodic_warnings == "Use the authenticated endpoint."
+        assert context.relevant_skills == "Use the schema tool before querying."
+        assert context.tokens_used <= context.tokens_budget
+        assert context.delivered_refs == (
+            "episodic:episode-1:v1",
+            "skill:skill-1:v1",
+        )
+        assert context.packed_digest == hashlib.sha256(context.to_prompt_string().encode("utf-8")).hexdigest()
+
+    def test_trimmed_candidates_are_uncitable(self):
+        """A candidate that cannot fit as a whole block has no delivered ref."""
+        scope = _scope()
+        assembler = ContextAssembler(
+            MemoryConfig(
+                max_context_tokens=20,
+                episodic_weight=1.0,
+                skill_weight=0.0,
+                conversation_weight=0.0,
+            )
+        )
+        candidates = [
+            _candidate(scope, memory_id="too-large", text="X" * 200, relevance=1.0),
+            _candidate(scope, memory_id="fits", text="A useful warning", relevance=0.5),
+        ]
+
+        context = assembler.assemble_candidates(candidates, scope=scope)
+
+        assert "X" * 200 not in context.episodic_warnings
+        assert context.delivered_refs == ("episodic:fits:v1",)
+        assert "episodic:too-large:v1" not in context.delivered_refs
+
+    def test_legacy_assemble_and_user_priority(self):
+        """Scope filtering and user-context packing do not use experiential grades."""
+        scope = _scope()
+        other_scope = _scope(user_id="other-user")
+        assembler = ContextAssembler(
+            MemoryConfig(
+                max_context_tokens=120,
+                enable_user_memory=True,
+                episodic_weight=0.3,
+                skill_weight=0.2,
+                conversation_weight=0.5,
+                user_weight=0.3,
+            )
+        )
+        context = assembler.assemble_candidates(
+            [
+                _candidate(
+                    scope,
+                    memory_id="user-fact",
+                    text="The user prefers dark mode.",
+                    source="user",
+                    candidate_type="user",
+                    relevance=0.9,
+                    ranking_score=0.0,
+                ),
+                _candidate(
+                    other_scope,
+                    memory_id="cross-scope",
+                    text="Do not deliver this.",
+                    relevance=1.0,
+                    ranking_score=1.0,
+                ),
+            ],
+            scope=scope,
+        )
+        legacy = assembler.assemble(episodic_warnings="legacy warning")
+
+        assert context.user_knowledge == "The user prefers dark mode."
+        assert context.delivered_refs == ("user:user-fact:v1",)
+        assert "cross-scope" not in context.to_prompt_string()
+        assert legacy.episodic_warnings == "legacy warning"

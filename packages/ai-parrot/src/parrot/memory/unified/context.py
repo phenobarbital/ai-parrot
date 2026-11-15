@@ -5,9 +5,12 @@ conversation) while respecting a configurable token budget.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 
-from .models import MemoryConfig, MemoryContext
+from parrot.memory.agent_memory.models import MemoryRequestScope
+
+from .models import MemoryCandidate, MemoryConfig, MemoryContext
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +132,107 @@ class ContextAssembler:
             tokens_budget=self.config.max_context_tokens,
         )
 
+    def assemble_candidates(
+        self,
+        candidates: list[MemoryCandidate],
+        *,
+        scope: MemoryRequestScope,
+    ) -> MemoryContext:
+        """Pack complete scoped candidate blocks into one bounded context.
+
+        Candidate scope is checked before any budget or ordering decision.  A
+        candidate is either included in full or omitted; references are added
+        only after its complete text has been accepted into the packed
+        section.  The digest covers the final formatted context that callers
+        deliver to the model.
+
+        Args:
+            candidates: Retrieved, typed supplementary memory candidates.
+            scope: Trusted runtime scope that candidates must match exactly.
+
+        Returns:
+            A ``MemoryContext`` containing only complete, in-scope blocks.
+        """
+        section_candidates: dict[str, list[MemoryCandidate]] = {
+            "episodic": [],
+            "skills": [],
+            "brain": [],
+            "user_knowledge": [],
+        }
+        section_for_type = {
+            "episodic": "episodic",
+            "skill": "skills",
+            "brain": "brain",
+            "user": "user_knowledge",
+        }
+        user_sources = {"user", "user_memory", "user_knowledge"}
+
+        for candidate in candidates:
+            if candidate.scope != scope or not candidate.text:
+                continue
+            section = "user_knowledge" if candidate.source in user_sources else section_for_type[candidate.candidate_type]
+            if section == "user_knowledge" and scope.user_id is None:
+                continue
+            if section not in self.config.normalized_section_weights:
+                continue
+            section_candidates[section].append(candidate)
+
+        for section, items in section_candidates.items():
+            items.sort(
+                key=lambda candidate: (
+                    -(
+                        candidate.relevance
+                        if section == "user_knowledge" or candidate.ranking_score is None
+                        else candidate.ranking_score
+                    ),
+                    candidate.memory_id,
+                    candidate.content_version,
+                    candidate.source,
+                )
+            )
+
+        weights = self.config.normalized_section_weights
+        budget = self._max_tokens
+        rollover = 0
+        packed_sections: dict[str, str] = {}
+        delivered_refs: list[str] = []
+        tokens_used = 0
+
+        for section in ("episodic", "skills", "brain", "user_knowledge"):
+            if section not in weights:
+                continue
+            section_budget = int(budget * weights[section]) + rollover
+            section_text = ""
+            delivered_in_section: list[str] = []
+            for candidate in section_candidates[section]:
+                proposed = candidate.text if not section_text else f"{section_text}\n{candidate.text}"
+                if self._estimate_tokens(proposed) > section_budget:
+                    continue
+                section_text = proposed
+                delivered_in_section.append(self._candidate_ref(candidate))
+
+            section_tokens = self._estimate_tokens(section_text)
+            packed_sections[section] = section_text
+            delivered_refs.extend(delivered_in_section)
+            tokens_used += section_tokens
+            rollover = section_budget - section_tokens
+
+        context = MemoryContext(
+            episodic_warnings=packed_sections.get("episodic", ""),
+            relevant_skills=packed_sections.get("skills", ""),
+            semantic_knowledge=packed_sections.get("brain", ""),
+            user_knowledge=packed_sections.get("user_knowledge", ""),
+            tokens_used=tokens_used,
+            tokens_budget=self.config.max_context_tokens,
+            delivered_refs=tuple(delivered_refs),
+        )
+        packed_text = context.to_prompt_string()
+        if not packed_text:
+            return context
+        return context.model_copy(
+            update={"packed_digest": hashlib.sha256(packed_text.encode("utf-8")).hexdigest()}
+        )
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
@@ -144,6 +248,11 @@ class ContextAssembler:
             Estimated token count (integer).
         """
         return len(text) // 4
+
+    @staticmethod
+    def _candidate_ref(candidate: MemoryCandidate) -> str:
+        """Return a stable source, identity and version reference."""
+        return f"{candidate.source}:{candidate.memory_id}:{candidate.content_version}"
 
     def _truncate_to_tokens(self, text: str, max_tokens: int) -> str:
         """Truncate *text* so it fits within *max_tokens*.
