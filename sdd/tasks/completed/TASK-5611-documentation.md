@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-887 — SDD Experience Memory (experience.pitfall)
 **Spec**: `sdd/specs/sdd-experience-memory.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5588, TASK-5589, TASK-5590, TASK-5591, TASK-5592, TASK-5593, TASK-5594, TASK-5595, TASK-5596, TASK-5597, TASK-5598, TASK-5599, TASK-5600, TASK-5601, TASK-5602, TASK-5603, TASK-5604, TASK-5605, TASK-5606, TASK-5607, TASK-5608, TASK-5609, TASK-5610
@@ -202,3 +202,19 @@ Run `parrot sdd techwiki check --spec sdd/specs/sdd-experience-memory.spec.md --
 2. Verify dependencies are done in `sdd/tasks/index/sdd-experience-memory.json` and recheck this contract after they land.
 3. Implement only the declared files, run validation, and commit scoped changes.
 4. Use `parrot sdd task finalize` with real TaskCompletionEvidence and the exact implementation HEAD. The finalizer owns the completion note and active-to-completed move; never edit them manually.
+
+## Completion Note
+
+- Task: TASK-5611
+- Feature: sdd-experience-memory
+- Implementation SHA: d77a3b1e41df512a49276c393a534655b8a9852a
+- Closed at (UTC): 2026-11-15T03:09:17+00:00
+- Fix commits: d77a3b1e41df512a49276c393a534655b8a9852a
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 1 |
+| feedback | coder-feedback:8200b5fd7abca675d31c4c5f (pattern documented-api-not-in-source, fixed in d77a3b1e41) |
+| note | Docs-only task: validation selected no pytest targets (all cached); correctness was verified by grepping every documented symbol, flag and default against source. |
+| seat_summary | Seat: mistral · Backend: nova · Model: mistral.devstral-2-123b · Attempts: 1 · Duration: 110s · Tokens: 412938 in / 5763 out |
