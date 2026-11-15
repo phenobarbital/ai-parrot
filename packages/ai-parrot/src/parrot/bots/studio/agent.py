@@ -148,7 +148,17 @@ class AgentStudioAgent(SkillRegistryMixin, Agent):
                 or getattr(client_class, "_default_model", None)
                 or getattr(client_class, "default_model", None)
             )
-            llm = client_class(api_key=api_key, model=resolved_model)
+            # Build through the factory so provider-specific wiring
+            # (``PROVIDER_BACKEND``: bedrock / anthropic-aws) is applied.
+            # ``api_key`` is only forwarded when set: an explicit ``None``
+            # would disable the client's own navconfig key fallback.
+            from parrot.clients.factory import LLMFactory
+
+            create_kwargs: dict[str, Any] = {}
+            if api_key is not None:
+                create_kwargs["api_key"] = api_key
+            spec = f"{provider}:{resolved_model}" if resolved_model else provider
+            llm = LLMFactory.create(spec, **create_kwargs)
         super().__init__(
             name=name,
             llm=llm,

@@ -17,6 +17,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from parrot.clients.factory import SUPPORTED_CLIENTS
 from aiohttp import web
 from aiohttp.test_utils import make_mocked_request
 from parrot.bots.studio import agent as agent_module
@@ -123,6 +124,68 @@ class TestProviderResolution:
     def test_provider_helper_normalises(self, monkeypatch):
         monkeypatch.setattr(agent_module, "STUDIO_AGENT_LLM", " Google ")
         assert agent_module.studio_agent_provider() == "google"
+
+
+class _FakeNavconfig:
+    """Stand-in for ``navconfig.config`` serving only the given key/values."""
+
+    def __init__(self, values: dict):
+        self._values = values
+
+    def get(self, key, *args, **kwargs):
+        return self._values.get(key, args[0] if args else kwargs.get("fallback"))
+
+
+class TestKeyFallbackAndBackend:
+    """No BYOK key must not shadow the client's navconfig key; backends come from ``PROVIDER_BACKEND``."""
+
+    @pytest.mark.parametrize(
+        ("provider", "module", "cfg_key", "attr"),
+        [
+            ("google", "parrot.clients.google.client", "GOOGLE_API_KEY", "api_key"),
+            ("anthropic", "parrot.clients.anthropic.client", "ANTHROPIC_API_KEY", "api_key"),
+        ],
+    )
+    def test_navconfig_key_used_when_no_override(self, monkeypatch, provider, module, cfg_key, attr):
+        import importlib
+
+        mod = importlib.import_module(module)
+        monkeypatch.setattr(mod, "config", _FakeNavconfig({cfg_key: "from-navconfig"}))
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_LLM", provider)
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_MODEL", None)
+        monkeypatch.setattr(tools_module, "build_studio_tools", list)
+
+        def _effective(bot):
+            # AnthropicClient's base __init__ resets ``self.api_key``; its backend holds the real key.
+            llm = bot.llm
+            return llm._backend.api_key if hasattr(llm, "_backend") else llm.api_key
+
+        assert _effective(AgentStudioAgent(name="t")) == "from-navconfig"
+        assert _effective(AgentStudioAgent(name="t", api_key="byok")) == "byok"
+
+    @pytest.mark.parametrize(
+        ("provider", "backend"),
+        [("anthropic", "direct"), ("bedrock", "bedrock"), ("anthropic-aws", "aws")],
+    )
+    def test_backend_mapping_goes_through_factory(self, monkeypatch, provider, backend):
+        captured: dict = {}
+
+        from parrot.clients.anthropic import AnthropicClient
+
+        class _Recorder:
+            def __new__(cls, **kwargs):
+                captured.update(kwargs)
+                return MagicMock(spec=AnthropicClient)
+
+        monkeypatch.setitem(SUPPORTED_CLIENTS, provider, _Recorder)
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_LLM", provider)
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_MODEL", "m")
+        monkeypatch.setattr(tools_module, "build_studio_tools", list)
+
+        AgentStudioAgent(name="t", api_key="k")
+
+        assert captured.get("backend", "direct") == backend
+        assert captured["api_key"] == "k"
 
 
 class TestModelResolution:
