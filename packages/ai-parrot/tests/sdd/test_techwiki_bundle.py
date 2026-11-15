@@ -380,14 +380,18 @@ def test_reference_index_page_is_never_rewritten(techwiki_repo: Path, monkeypatc
 
     monkeypatch.setattr(bundle_module, "_generated_pages", fake_generated)
     cfg = load_techwiki_config(techwiki_repo)
-    (techwiki_repo / "wiki" / "b" / "two.md").write_text("# Two\n", encoding="utf-8")  # drop the fixture's dangling link
+    (techwiki_repo / "wiki" / "b" / "two.md").write_text(
+        "# Two\n", encoding="utf-8"
+    )  # drop the fixture's dangling link
     pages, report = assemble(cfg, techwiki_repo)
     index = next(p for p in pages if p.source is None and p.module is None)
     assert "- [samplepkg.md](API-Reference-samplepkg.md)\n" in index.body
     assert report.dangling == [] and report.unlinked == []
 
 
-def test_unlinked_rows_reach_the_report_payload(techwiki_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_unlinked_rows_reach_the_report_payload(
+    techwiki_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """``unlinked`` is serialised next to ``dangling`` so operators can see dropped links; it never fails strict mode."""
     from parrot.sdd.techwiki import bundle as bundle_module
     from parrot.sdd.techwiki.bundle import report_payload
