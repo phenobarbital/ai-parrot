@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 # Key suffixes
 _RECENT_SUFFIX = ":recent"
 _FAILURES_SUFFIX = ":failures"
+_EPISODE_VERSION = "v1"
 
 
 class EpisodeRedisCache:
@@ -49,12 +50,24 @@ class EpisodeRedisCache:
         self._key_prefix = key_prefix
 
     def _key(self, namespace: MemoryNamespace, suffix: str = "") -> str:
-        """Build a Redis key from namespace prefix and suffix."""
-        return f"{self._key_prefix}:{namespace.redis_prefix}{suffix}"
+        """Build a full-scope Redis key from namespace prefix and suffix."""
+        return f"{self._key_prefix}:{self._scope_prefix(namespace)}{suffix}"
 
     def _episode_key(self, namespace: MemoryNamespace, episode_id: str) -> str:
-        """Build a Redis key for a single episode HASH."""
-        return f"{self._key_prefix}:{namespace.redis_prefix}:{episode_id}"
+        """Build a version-aware Redis key for a single episode."""
+        return f"{self._key_prefix}:{self._scope_prefix(namespace)}:{episode_id}:{_EPISODE_VERSION}"
+
+    @staticmethod
+    def _scope_prefix(namespace: MemoryNamespace) -> str:
+        """Extend the established prefix with dimensions it does not encode."""
+        parts = [namespace.redis_prefix]
+        if namespace.room_id is not None and namespace.user_id is not None:
+            parts.append(f"user:{namespace.user_id}")
+        if namespace.session_id is not None:
+            parts.append(f"session:{namespace.session_id}")
+        if namespace.crew_id is not None:
+            parts.append(f"crew:{namespace.crew_id}")
+        return ":".join(parts)
 
     async def cache_episode(
         self, namespace: MemoryNamespace, episode: EpisodicMemory

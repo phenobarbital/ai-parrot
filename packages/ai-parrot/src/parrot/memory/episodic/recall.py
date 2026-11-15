@@ -8,14 +8,94 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import datetime, timezone
 from typing import Any, Protocol, runtime_checkable
 
 from parrot._imports import lazy_import
 
 from .backends.abstract import AbstractEpisodeBackend
-from .models import EpisodicMemory, EpisodeSearchResult
+from .models import EpisodicMemory, EpisodeSearchResult, MemoryNamespace
 
 logger = logging.getLogger(__name__)
+
+
+def rank_episodes(
+    episodes: list[EpisodicMemory | EpisodeSearchResult],
+    *,
+    namespace: MemoryNamespace,
+    now: datetime | None = None,
+) -> list[EpisodicMemory | EpisodeSearchResult]:
+    """Apply the shared experiential ranking policy to episodic retrieval.
+
+    The baseline episode protocol does not expose durable dynamics state, so
+    unresolved states deliberately receive the neutral retrievability defined
+    by :func:`rank_candidates`.  This adapter keeps the existing raw
+    similarity on ``EpisodeSearchResult`` while exposing its separate
+    ``ranking_score``.
+
+    Args:
+        episodes: Retrieved episodes, optionally with raw similarity scores.
+        namespace: Exact retrieval namespace.
+        now: Optional aware UTC ranking time for deterministic callers.
+
+    Returns:
+        Episodes ordered by the shared ranking policy.
+    """
+    if not episodes:
+        return []
+
+    from parrot.memory.agent_memory.models import MemoryRequestScope
+    from parrot.memory.dynamics.models import MemoryParameters
+    from parrot.memory.dynamics.ranking import rank_candidates
+    from parrot.memory.unified.models import MemoryCandidate
+
+    scope = MemoryRequestScope(
+        tenant_id=namespace.tenant_id,
+        agent_id=namespace.agent_id,
+        user_id=namespace.user_id,
+        session_id=namespace.session_id,
+        room_id=namespace.room_id,
+        crew_id=namespace.crew_id,
+        model_id=namespace.model_id,
+        turn_id="episodic-recall",
+        identity_provenance="runtime_derived",
+    )
+    candidates = [
+        MemoryCandidate(
+            scope=scope,
+            memory_id=episode.episode_id,
+            content_version="v1",
+            source="episodic",
+            text=episode.searchable_text(),
+            relevance=min(max(episode.score, 0.0), 1.0) if isinstance(episode, EpisodeSearchResult) else 1.0,
+            similarity=min(max(episode.score, 0.0), 1.0) if isinstance(episode, EpisodeSearchResult) else None,
+            importance=episode.importance,
+        )
+        for episode in episodes
+    ]
+    ranked_candidates = rank_candidates(
+        candidates,
+        now=now or datetime.now(timezone.utc),
+        parameters=MemoryParameters(
+            algorithm="fsrs-6",
+            time_policy="days-v1",
+            parameter_id="episodic-neutral-v1",
+            provenance="episodic-recall",
+        ),
+        states={},
+        anti_pattern_ids={
+            episode.episode_id for episode in episodes if bool(episode.metadata.get("anti_pattern"))
+        },
+    )
+    by_id = {episode.episode_id: episode for episode in episodes}
+    ranked_episodes: list[EpisodicMemory | EpisodeSearchResult] = []
+    for candidate in ranked_candidates:
+        episode = by_id[candidate.memory_id]
+        if isinstance(episode, EpisodeSearchResult):
+            ranked_episodes.append(episode.model_copy(update={"ranking_score": candidate.ranking_score}))
+        else:
+            ranked_episodes.append(episode)
+    return ranked_episodes
 
 
 @runtime_checkable
