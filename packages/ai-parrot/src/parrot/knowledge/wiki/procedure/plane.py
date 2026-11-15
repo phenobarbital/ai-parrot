@@ -99,6 +99,7 @@ class ProcedurePlane:
         *,
         root: Path,
         probe_costs: Mapping[str, ProbeCost],
+        skill_dirs: list[str] | None = None,
     ) -> dict[str, int]:
         """Rebuild the store, then publish the index last.
 
@@ -126,7 +127,9 @@ class ProcedurePlane:
 
         edge_records = [(*edge, spec.id.split(":", maxsplit=1)[0]) for spec in specs for edge in spec.edges()]
         edges = await store.add_edges(edge_records)
-        publish_index(self.plane_dir, compile_index(specs, sources, root=root, probe_costs=probe_costs))
+        publish_index(
+            self.plane_dir, compile_index(specs, sources, root=root, probe_costs=probe_costs, skill_dirs=skill_dirs)
+        )
         self.logger.info("procedure plane built: %d pages, %d edges", pages, edges)
         return {"pages": pages, "edges": edges, "sources": len(sources)}
 

@@ -12,13 +12,14 @@ from pathlib import Path
 from parrot.knowledge.wiki.procedure.index import is_stale, read_index
 from parrot.knowledge.wiki.procedure.models import PLANE_DIR, ProcedureSpec, Resolution
 from parrot.knowledge.wiki.procedure.plane import ProcedurePlane
-from parrot.knowledge.wiki.procedure.producers import load_manifest, manifest_specs
+from parrot.knowledge.wiki.procedure.producers import load_manifest, manifest_specs, skill_specs
 from parrot.knowledge.wiki.procedure.resolver import resolve
 from parrot.knowledge.wiki.procedure.validate import validate_graph
 from parrot.knowledge.wiki.project import find_shared_root
 from parrot.sdd.config import ProcedureSettings, SddConfigError, load_sdd_config
 from parrot.sdd.scripts.procedure_advice import checkout_root
 from parrot.sdd.scripts.procedure_probes import PROBE_COSTS, SddProbeRunner, scope_for
+from parrot.sdd.scripts.procedure_sources import skill_directories, source_paths
 
 COMMANDS_DIR = Path(__file__).resolve().parent.parent / "_assets" / "claude" / "commands"
 
@@ -34,15 +35,32 @@ def _settings(root: Path) -> ProcedureSettings:
     return config.procedure or ProcedureSettings()
 
 
+def _specs(root: Path) -> tuple[list[ProcedureSpec], list[Path], list[str]]:
+    """Collect both producers and fingerprint all discoverable input files."""
+    specs, _ = manifest_specs(root)
+    directories = skill_directories(root)
+    locations = sorted({path for name in directories for path in (root / name, root / name / "learned")})
+    skills, _ = skill_specs(locations, root=root)
+    combined = [*specs, *skills]
+    origins: dict[str, str] = {}
+    for spec in combined:
+        if spec.id in origins:
+            raise ValueError(f"duplicate procedure id '{spec.id}' in {origins[spec.id]} and {spec.origin_path}")
+        origins[spec.id] = spec.origin_path
+    return combined, source_paths(root, directories), directories
+
+
 async def build(root: Path) -> dict[str, int]:
-    """Validate manifest specs, then rebuild the procedure plane."""
-    specs, sources = manifest_specs(root)
+    """Validate manifest and skill specs, then rebuild the procedure plane."""
+    specs, sources, directories = _specs(root)
     findings = validate_graph(specs, known_probes=PROBE_COSTS)
     errors = [finding for finding in findings if finding.severity == "error"]
     if errors:
         details = "\n".join(f"{finding.code}: {finding.message}" for finding in errors)
         raise ValueError(details)
-    return await ProcedurePlane(root / PLANE_DIR).build(specs, sources, root=root, probe_costs=PROBE_COSTS)
+    return await ProcedurePlane(root / PLANE_DIR).build(
+        specs, sources, root=root, probe_costs=PROBE_COSTS, skill_dirs=directories
+    )
 
 
 def _load_specs(root: Path) -> tuple[list[ProcedureSpec], bool]:
@@ -64,7 +82,8 @@ def _known_commands(root: Path, sources: Sequence[Path]) -> list[str]:
     """Return packaged SDD command names not exempted by a manifest."""
     uncovered_ok: set[str] = set()
     for source in sources:
-        uncovered_ok.update(load_manifest(source, root=root).uncovered_ok)
+        if source.suffix == ".yaml":
+            uncovered_ok.update(load_manifest(source, root=root).uncovered_ok)
     return sorted(path.stem for path in COMMANDS_DIR.glob("sdd-*.md") if path.stem not in uncovered_ok)
 
 
@@ -141,7 +160,7 @@ def _cmd_check(args: argparse.Namespace) -> int:
         return 2
     _settings(root)
     try:
-        specs, sources = manifest_specs(root)
+        specs, sources, _ = _specs(root)
         if not sources:
             sys.stdout.write("no procedure manifest\n")
             return 0
