@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-887 — SDD Experience Memory (experience.pitfall)
 **Spec**: `sdd/specs/sdd-experience-memory.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -267,3 +267,18 @@ Use the spec §4 payload fixtures, with deterministic temporary Git roots and PA
 2. Verify dependencies are done in `sdd/tasks/index/sdd-experience-memory.json` and recheck this contract after they land.
 3. Implement only the declared files, run validation, and commit scoped changes.
 4. Use `parrot sdd task finalize` with real TaskCompletionEvidence and the exact implementation HEAD. The finalizer owns the completion note and active-to-completed move; never edit them manually.
+
+## Completion Note
+
+- Task: TASK-5594
+- Feature: sdd-experience-memory
+- Implementation SHA: c6ae8bbf2ecfcdf0e9a3818cdf21678c905e8d91
+- Closed at (UTC): 2026-11-13T19:42:56+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-sol · Backend: codex · Model: gpt-5.6-sol · Attempts: 1 · Duration: 452.23s · Tokens: n/a |
+| validation_note | Merge-tier run reported timed_out with 5 failing tests (test_launch_worker_prints_macos_seatbelt_notice; test_bubblewrap_hook_skips_wrap_only_with_valid_prefix_token; test_bubblewrap_prefix_output_is_fixed_point; test_hook_skips_rtk_under_prefix_policy; test_wrap_bash_loads_prefix_policy_once[True]). The diff adds only experience_dirs/EXPERIENCE_PLANE_DIR and does not touch prefix/RTK logic; the failures depend on CLAUDE_CODE_SHELL_PREFIX being set in the worker session and on a test lambda lacking a path kwarg. NOT verified against a clean base baseline tree - recommend a re-run from a host shell without the prefix variable. |

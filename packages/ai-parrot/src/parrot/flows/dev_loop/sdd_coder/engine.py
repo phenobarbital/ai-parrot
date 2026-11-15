@@ -40,6 +40,7 @@ from parrot.knowledge.wiki.ledger.coder_reviews import (
     CoderReviewStore,
 )
 from parrot.knowledge.wiki.store import estimate_tokens
+from parrot.knowledge.wiki.experience.service import ExperienceService
 from parrot.flows.dev_loop.procs import git_env, run_bounded
 from parrot.flows.dev_loop.agent_builder import (
     DEFAULT_LLM_TURNS_PER_FILE,
@@ -2589,6 +2590,7 @@ class SddCoderEngine:
             self._feedback_sources[attempt_uid] = (ctx.worktree, task.task_id, "native", model)
             feedback_context = await self._feedback_for(ctx, task, "native", model)
             self._feedback_contexts[attempt_uid] = feedback_context
+            experience_briefing = await self._experience_briefing_for(ctx, task)
 
             # FEAT-584 M8/R8: register a `pending` handle for this native reservation --
             # `native_observation` (below) is the ONLY authority that later links it to
@@ -2628,6 +2630,7 @@ class SddCoderEngine:
                 model=model,
                 attempt_uid=attempt_uid,
                 coder_feedback=feedback_context,
+                experience_briefing=experience_briefing,
                 assessment_id=assessment_id,
                 execution_id=execution_id or "",
                 bg_handle=bg_handle,
@@ -3834,6 +3837,7 @@ class SddCoderEngine:
             )
             feedback_context = await self._feedback_for(ctx, task, seat.backend, seat.model)
             self._feedback_contexts[attempt_uid] = feedback_context
+            experience_briefing = await self._experience_briefing_for(ctx, task)
             capability = self._validation_capability(
                 ctx, task, path=path, attempt_uid=attempt_uid, execution_id=execution_id or ""
             )
@@ -3863,6 +3867,7 @@ class SddCoderEngine:
                             task_file=task.task_file,
                             coder_feedback=feedback_context,
                             validation_verdict=verdict or "",
+                            experience_briefing=experience_briefing,
                         ),
                         profile=profile,
                         output_model=DevelopmentOutput,
@@ -3972,7 +3977,49 @@ class SddCoderEngine:
                 self.logger.warning(
                     "telemetry attempt-row write failed for %s attempt %d", task.task_id, attempt, exc_info=True
                 )
+        if output is not None and not error:
+            await self._record_lessons(ctx, task, output, session=attempt_uid, seat=seat.label)
         return record, output, error, manager, branch, path
+
+    async def _experience_briefing_for(self, ctx: _FeatureCtx, task: PlannedTask) -> str:
+        """Return task-scoped known pitfalls, or empty text on disabled/error paths."""
+        try:
+            root = await asyncio.to_thread(Path(ctx.worktree).resolve)
+            files: List[str] = []
+            try:
+                task_path = await asyncio.to_thread((root / task.task_file).resolve)
+                if task_path.is_relative_to(root):
+                    task_md = await asyncio.to_thread(task_path.read_text, encoding="utf-8")
+                    files = list(parse_task_files(task_md))
+            except Exception:  # noqa: BLE001 - unreadable task file only narrows the query
+                self.logger.debug("experience briefing could not read %s", task.task_file, exc_info=True)
+            service = await asyncio.to_thread(ExperienceService.from_root, root)
+            await service.refresh()
+            return await service.brief(task.title or task.task_id, files)
+        except Exception:  # noqa: BLE001 - experience is advisory and must never break dispatch
+            self.logger.warning("experience briefing unavailable for %s", task.task_id, exc_info=True)
+            return ""
+
+    async def _record_lessons(
+        self, ctx: _FeatureCtx, task: PlannedTask, output: DevelopmentOutput, *, session: str, seat: str
+    ) -> int:
+        """Persist authored candidate drafts from an attempt; return stored count."""
+        try:
+            drafts = list(getattr(output, "lessons", None) or [])
+            if not drafts:
+                return 0
+            service = await asyncio.to_thread(ExperienceService.from_root, Path(ctx.worktree))
+            stored = 0
+            for draft in drafts:
+                try:
+                    if await service.record(draft, session=session, source="authored", seat=seat):
+                        stored += 1
+                except Exception:  # noqa: BLE001 - one bad draft must not drop the others
+                    self.logger.warning("experience lesson record failed for %s", task.task_id, exc_info=True)
+            return stored
+        except Exception:  # noqa: BLE001 - never mask the attempt's own result
+            self.logger.warning("experience lesson capture failed for %s", task.task_id, exc_info=True)
+            return 0
 
     async def _emit_outcome(
         self,

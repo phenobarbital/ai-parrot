@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-887 — SDD Experience Memory (experience.pitfall)
 **Spec**: `sdd/specs/sdd-experience-memory.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5600, TASK-5603
@@ -26,6 +26,7 @@ Add portable Codex PostToolUse Bash entry and named agy parrot-sdd-experience gr
 | `.codex/hooks.json` | MODIFY | Scoped deliverable |
 | `.agents/hooks.json` | MODIFY | Scoped deliverable |
 | `packages/ai-parrot/tests/sdd/test_installer.py` | MODIFY | Task-specific regression coverage |
+| `packages/ai-parrot/tests/sdd/test_installer_agy_permissions.py` | MODIFY | Orchestrator scope amendment: two existing tests asserted the exact hooks group set / byte-identical file and had to follow the new managed experience group (review fix 258751630880) |
 
 ## Codebase Contract
 
@@ -235,3 +236,18 @@ Use the spec §4 payload fixtures, with deterministic temporary Git roots and PA
 2. Verify dependencies are done in `sdd/tasks/index/sdd-experience-memory.json` and recheck this contract after they land.
 3. Implement only the declared files, run validation, and commit scoped changes.
 4. Use `parrot sdd task finalize` with real TaskCompletionEvidence and the exact implementation HEAD. The finalizer owns the completion note and active-to-completed move; never edit them manually.
+
+## Completion Note
+
+- Task: TASK-5605
+- Feature: sdd-experience-memory
+- Implementation SHA: 258751630880683c0732915e514b2255ad32faf5
+- Closed at (UTC): 2026-11-13T23:41:59+00:00
+- Fix commits: 258751630880683c0732915e514b2255ad32faf5
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 1 |
+| seat_summary | Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1 · Duration: 106s · Tokens: n/a |
+| validation_note | Engine merge-tier run timed_out (known environmental failures, group cut ~60s). Native coder could not run tests or commit; coder_merge committed declared files. Post-merge hand run found 2 existing-test regressions in test_installer_agy_permissions.py (file added to the task file list as an orchestrator scope amendment), fixed in 258751630880. Design note for the spec owner: the experience group is now added even when the legacy permissions matcher is not owned; the spec is silent. 336 installer/agy tests pass. |

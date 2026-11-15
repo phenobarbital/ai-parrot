@@ -280,6 +280,18 @@ VERBS: dict[str, dict[str, tuple[str, tuple[str, ...], str]]] = {
         "state": ("check_task_state", (), "Read-only backstop for stalled task files."),
         "review": ("review_checkpoint", (), "Review: prepare | validate | record."),
     },
+    "experience": {
+        "init": ("experience_cli", ("init",), "Initialize the experience plane."),
+        "brief": ("experience_cli", ("brief",), "Show known pitfalls."),
+        "record": ("experience_cli", ("record",), "Record a candidate lesson."),
+        "list": ("experience_cli", ("list",), "List experience lessons."),
+        "show": ("experience_cli", ("show",), "Show one lesson."),
+        "retire": ("experience_cli", ("retire",), "Retire one lesson."),
+        "sync": ("experience_cli", ("sync",), "Sync global experience events."),
+        "export": ("experience_cli", ("export",), "Export shared lesson definitions."),
+        "rebuild": ("experience_cli", ("rebuild",), "Rebuild experience indexes."),
+        "hook": ("experience_hook", (), "Handle a host hook event."),
+    },
     "ids": {
         "reserve": ("reserve_ids", (), "Reserve TASK/FEAT ids on the git-native ledger."),
         "check": ("check_id_collisions", (), "Scan for TASK/FEAT id collisions."),

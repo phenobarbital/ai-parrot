@@ -11,6 +11,18 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "parrot sdd experience hook --host codex --event post",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   }
 }

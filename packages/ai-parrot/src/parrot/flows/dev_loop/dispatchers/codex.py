@@ -13,9 +13,13 @@ import codecs
 import json
 import logging
 import os
+import shlex
 import tempfile
 import time
+from collections.abc import Mapping
+from hashlib import sha1
 from typing import Any, Callable, Dict, List, Optional, Sequence, Type
+from uuid import uuid4
 
 from pydantic import BaseModel, ValidationError
 
@@ -39,6 +43,7 @@ from parrot.flows.dev_loop.dispatchers._shared import (
     DispatchOutputValidationError,
 )
 from parrot.flows.dev_loop.dispatchers.codex_usage import CodexUsageCodec
+from parrot.flows.dev_loop.experience import ExperienceInterceptor
 from parrot.flows.dev_loop.models import (
     CodexAdversarialReviewProfile,
     CodexCodeDispatchProfile,
@@ -46,9 +51,45 @@ from parrot.flows.dev_loop.models import (
     DispatchLabels,
 )
 from parrot.flows.dev_loop.session_state import SessionHost
+from parrot.knowledge.wiki.experience.fastpath import redact
+from parrot.knowledge.wiki.experience.models import CommandOutcome
 from parrot.observability.context import usage_attribution
 
 _NULL_SCHEMA: Dict[str, Any] = {"type": "null"}
+
+
+def _normalize_codex_command(command: str) -> str:
+    """Return the command represented by Codex's shell wrapper.
+
+    Codex reports shell invocations such as ``/bin/bash -lc 'git status'``
+    while the experience hook observes the inner argv. Normalize both forms
+    to the same shell-quoted command before deriving observation identity.
+    """
+    try:
+        tokens = shlex.split(command, posix=True)
+    except ValueError:
+        return command
+    if len(tokens) >= 3 and os.path.basename(tokens[0]) in {"bash", "sh"} and tokens[1] in {"-c", "-lc"}:
+        command = tokens[2]
+        try:
+            return shlex.join(shlex.split(command, posix=True))
+        except ValueError:
+            return command
+    return shlex.join(tokens)
+
+
+def _experience_outcome(item: Mapping[str, Any], *, occurrence: int) -> CommandOutcome | None:
+    """Convert one completed Codex command item into a replay outcome."""
+    if item.get("type") != "command_execution" or not isinstance(item.get("command"), str):
+        return None
+    command = _normalize_codex_command(item["command"])
+    code = item.get("exit_code")
+    return CommandOutcome(
+        command=command,
+        ok=code == 0 if type(code) is int else None,
+        error=redact(str(item.get("aggregated_output") or ""))[:400],
+        observation_id=f"{sha1(command.encode('utf-8')).hexdigest()}#{occurrence}",  # noqa: S324 - stable identity
+    )
 
 
 def _allows_null(node: Dict[str, Any]) -> bool:
@@ -287,6 +328,13 @@ class CodexCodeDispatcher:
         codex_error = ""
         codec = CodexUsageCodec()
         process_started_at: Optional[float] = None
+        attempt_uid = uuid4().hex
+        outcomes: list[CommandOutcome] = []
+        seen_completion_ids: set[str] = set()
+        occurrence_counts: dict[str, int] = {}
+        interceptor = ExperienceInterceptor(session=attempt_uid, cwd=cwd, seat="codex")
+        experience_env = os.environ.copy()
+        experience_env["PARROT_EXPERIENCE_SESSION"] = attempt_uid
         # FEAT-322 TASK-1852: see module-level _SESSION_HOST_CTX docstring.
         # try/except covers the narrow pre-semaphore window so an early
         # raise here still resets the var (the main finally: below only
@@ -337,7 +385,14 @@ class CodexCodeDispatcher:
 
                 try:
                     async with asyncio.timeout(profile.timeout_seconds):
-                        process = await self._create_process(command)
+                        try:
+                            process = await self._create_process(command, env=experience_env)
+                        except TypeError as exc:
+                            # Keep compatibility with older test doubles and third-party subclasses
+                            # that still expose the pre-experience private helper signature.
+                            if "unexpected keyword argument 'env'" not in str(exc):
+                                raise
+                            process = await self._create_process(command)
                         process_started_at = time.monotonic()
                         stderr_reader = _BoundedStderrReader(process.stderr)
                         codex_error = await self._stream_stdout_events(
@@ -346,6 +401,9 @@ class CodexCodeDispatcher:
                             run_id=run_id,
                             node_id=node_id,
                             codec=codec,
+                            outcomes=outcomes,
+                            seen_completion_ids=seen_completion_ids,
+                            occurrence_counts=occurrence_counts,
                         )
                         return_code = await process.wait()
                         stderr = await stderr_reader.wait()
@@ -428,6 +486,10 @@ class CodexCodeDispatcher:
                 )
                 return result
             finally:
+                try:
+                    await interceptor.replay(outcomes)
+                except Exception:  # noqa: BLE001 - replay must not mask dispatch results
+                    self.logger.debug("codex experience replay failed", exc_info=True)
                 if process_started_at is not None:
                     await self._emit_usage_event(
                         codec,
@@ -597,7 +659,7 @@ class CodexCodeDispatcher:
             f"{output_prompt}"
         )
 
-    async def _create_process(self, command: Sequence[str]) -> Any:
+    async def _create_process(self, command: Sequence[str], env: Optional[Mapping[str, str]] = None) -> Any:
         """Spawn the Codex CLI subprocess.
 
         ``stdin=DEVNULL`` ensures the child can never read or wait on this
@@ -612,6 +674,7 @@ class CodexCodeDispatcher:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             limit=8 * 1024 * 1024,
+            env=dict(env) if env is not None else None,
         )
 
     async def _cleanup_process_and_reader(
@@ -667,9 +730,14 @@ class CodexCodeDispatcher:
         run_id: str,
         node_id: str,
         codec: Optional[CodexUsageCodec] = None,
+        outcomes: Optional[List[CommandOutcome]] = None,
+        seen_completion_ids: Optional[set[str]] = None,
+        occurrence_counts: Optional[dict[str, int]] = None,
     ) -> str:
         """Publish each stdout JSONL event; return the last codex-reported error ("" if none)."""
         last_error = ""
+        seen_ids = seen_completion_ids if seen_completion_ids is not None else set()
+        occurrences = occurrence_counts if occurrence_counts is not None else {}
         if stdout is None:
             return last_error
         while True:
@@ -697,6 +765,23 @@ class CodexCodeDispatcher:
                         codec.observe(event)
                     except Exception:  # noqa: BLE001 — telemetry must never break dispatch
                         self.logger.debug("codex usage codec failed on an event", exc_info=True)
+                if outcomes is not None and event.get("type") == "item.completed":
+                    item = event.get("item")
+                    if isinstance(item, Mapping) and item.get("type") == "command_execution":
+                        completion_id = item.get("id")
+                        if isinstance(completion_id, str) and completion_id:
+                            if completion_id in seen_ids:
+                                item = None
+                            else:
+                                seen_ids.add(completion_id)
+                        if item is not None and isinstance(item.get("command"), str):
+                            normalized = _normalize_codex_command(item["command"])
+                            digest = sha1(normalized.encode("utf-8")).hexdigest()  # noqa: S324 - stable identity
+                            occurrence = occurrences.get(digest, 0) + 1
+                            occurrences[digest] = occurrence
+                            outcome = _experience_outcome(item, occurrence=occurrence)
+                            if outcome is not None:
+                                outcomes.append(outcome)
             await self._publish_codex_event(stream_key, event, run_id, node_id)
 
     async def _emit_usage_event(

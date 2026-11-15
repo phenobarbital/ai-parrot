@@ -83,6 +83,28 @@ def test_native_allow_write_includes_coder_evidence_dir(linked: tuple[Path, Path
     assert str((main / "artifacts").resolve()) not in allow
 
 
+def test_protected_argv_binds_experience(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, scratch_root: Path
+) -> None:
+    """Bubblewrap grants the exact shared roots, including experience but excluding wiki and HOME."""
+    feature, main = linked
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+
+    argv = policy.protected_argv(feature, ["true"])
+    binds = [Path(argv[index + 1]) for index, token in enumerate(argv) if token == "--bind"]
+
+    assert binds == [
+        scratch_root.resolve(),
+        (main / ".parrot" / "worktrees").resolve(),
+        (main / ".git").resolve(),
+        (main / ".parrot" / "ledger").resolve(),
+        (main / "artifacts" / "logs" / "sdd-coder-usage").resolve(),
+        (main / ".parrot" / "experience").resolve(),
+    ]
+    assert (main / ".parrot" / "wiki").resolve() not in binds
+    assert Path.home().resolve() not in binds
+
+
 def test_settings_are_strict_and_explicit(linked: tuple[Path, Path]) -> None:
     """All security keys are present with strict values."""
     feature, main = linked
@@ -346,7 +368,7 @@ def test_launch_worker_prints_macos_seatbelt_notice(
 ) -> None:
     """A strict macOS launch makes the unqualified backend visible to the operator."""
     feature, _main = linked
-    monkeypatch.setattr(native.shutil, "which", lambda name: "/usr/bin/claude" if name == "claude" else None)
+    monkeypatch.setattr(native.shutil, "which", lambda name, **_kwargs: "/usr/bin/claude" if name == "claude" else None)
     monkeypatch.setattr(native, "_native_roots", lambda cwd: (feature, feature / ".git", feature))
     monkeypatch.setattr(native, "plan_native_launch", lambda *args, **kwargs: ("required", False, "", {}))
     monkeypatch.setattr(native, "native_root_env", lambda cwd: {})
@@ -975,6 +997,60 @@ def test_sibling_worktree_admin_dirs_are_denied(linked: tuple[Path, Path]) -> No
     deny = native.native_sandbox_settings(feature)["sandbox"]["filesystem"]["denyWrite"]
     assert str(sibling.resolve()) in deny
     assert str((main / ".git" / "worktrees" / "feat").resolve()) not in deny  # our own admin dir stays usable
+
+
+def test_native_settings_experience_hooks(linked: tuple[Path, Path]) -> None:
+    """Generate exact advisory hook entries with the primary shared interpreter."""
+    feature, main = linked
+    shared_python = main / ".venv" / "bin" / "python"
+    shared_python.parent.mkdir()
+    shared_python.symlink_to(sys.executable)
+    settings = native.native_sandbox_settings(feature)
+
+    assert settings["hooks"]["PostToolUse"] == [
+        {
+            "matcher": "Bash",
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": native.shlex.join(
+                        [
+                            str(shared_python.resolve()),
+                            "-I",
+                            "-m",
+                            "parrot.sdd.scripts.experience_hook",
+                            "--host",
+                            "claude",
+                            "--event",
+                            "post",
+                        ]
+                    ),
+                    "timeout": 5,
+                }
+            ],
+        }
+    ]
+    assert settings["hooks"]["PostToolUseFailure"][0]["matcher"] == "Bash"
+    failure_command = settings["hooks"]["PostToolUseFailure"][0]["hooks"][0]["command"]
+    assert "--event post-failure" in failure_command
+    assert "|| exit 2" not in failure_command
+    assert all("experience_hook" not in hook.get("command", "") for hook in settings["hooks"]["PreToolUse"][0]["hooks"])
+    assert str(feature / ".venv" / "bin" / "python") not in settings["hooks"]["PostToolUse"][0]["hooks"][0]["command"]
+
+
+def test_agent_frontmatter_has_no_experience_hooks() -> None:
+    """Shipped Claude agent frontmatter does not duplicate settings-level experience hooks."""
+    paths = (
+        Path(".claude/agents/sdd-coder.md"),
+        Path(".claude/agents/sdd-worker.md"),
+        Path("packages/ai-parrot/src/parrot/sdd/_assets/claude/agents/sdd-coder.md"),
+        Path("packages/ai-parrot/src/parrot/sdd/_assets/claude/agents/sdd-worker.md"),
+        Path("packages/ai-parrot/src/parrot/sdd/_assets/agents/agents/sdd-coder/agent.md"),
+        Path("packages/ai-parrot/src/parrot/sdd/_assets/agents/agents/sdd-worker/agent.md"),
+    )
+    for path in paths:
+        assert path.is_file()
+        assert "parrot sdd experience hook" not in path.read_text(encoding="utf-8")
 
 
 def test_frozen_roots_win_over_a_forged_git_marker(linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:

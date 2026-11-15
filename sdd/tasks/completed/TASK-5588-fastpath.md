@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-887 — SDD Experience Memory (experience.pitfall)
 **Spec**: `sdd/specs/sdd-experience-memory.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -260,3 +260,18 @@ Use the spec §4 payload fixtures, with deterministic temporary Git roots and PA
 2. Verify dependencies are done in `sdd/tasks/index/sdd-experience-memory.json` and recheck this contract after they land.
 3. Implement only the declared files, run validation, and commit scoped changes.
 4. Use `parrot sdd task finalize` with real TaskCompletionEvidence and the exact implementation HEAD. The finalizer owns the completion note and active-to-completed move; never edit them manually.
+
+## Completion Note
+
+- Task: TASK-5588
+- Feature: sdd-experience-memory
+- Implementation SHA: c6ae8bbf2ecfcdf0e9a3818cdf21678c905e8d91
+- Closed at (UTC): 2026-11-13T19:42:12+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 541.95s · Tokens: n/a |
+| validation_note | Merge-tier run reported timed_out after 5 failures in test_native_claude_sandbox/test_worktree_environment (TASK-5594 files, environment-dependent: CLAUDE_CODE_SHELL_PREFIX set in session; test lambda rejecting path kwarg). test_fastpath.py passed (reproduced by hand: 367 passed, 5 failed across the 4 touched test files). |
