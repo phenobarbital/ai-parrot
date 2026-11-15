@@ -408,11 +408,7 @@ class UserMemoryStore:
                     claim_key = self._knowledge_claim_key(current)
                     related = await self._knowledge_for_claim(database, identity, claim_key)
                     evidence_refs = tuple(
-                        dict.fromkeys(
-                            ref
-                            for knowledge in related
-                            for ref in knowledge.evidence_refs
-                        )
+                        dict.fromkeys(ref for knowledge in related for ref in knowledge.evidence_refs)
                     )
                     evidence_refs = tuple(dict.fromkeys((*evidence_refs, *command.evidence_refs)))
                     blocked_hashes = json.dumps(
