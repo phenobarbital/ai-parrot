@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-15T02:10:00Z",
-  "completed_at": null,
+  "completed_at": "2026-11-15T01:33:20+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -82,7 +82,7 @@
       "feature_id": "FEAT-899",
       "feature": "fixgroup-848b9a0ceee1",
       "spec": "sdd/specs/fixgroup-848b9a0ceee1.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -90,9 +90,10 @@
       "parallelism_notes": "No dependency: touches operations.py, installer.py, the FEAT-891 spec and two test files that no other task declares.",
       "assigned_to": null,
       "started_at": "2026-11-15T01:32:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5691-procedure-next-errors-installer-enabled.md",
-      "discovered_from": "issue:bab5aa4a8d70"
+      "completed_at": "2026-11-15T01:33:20+00:00",
+      "file": "sdd/tasks/completed/TASK-5691-procedure-next-errors-installer-enabled.md",
+      "discovered_from": "issue:bab5aa4a8d70",
+      "verification": "verified"
     }
   ]
 }

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-899 — Procedure guards and plane — FEAT-891 review follow-ups
 **Spec**: `sdd/specs/fixgroup-848b9a0ceee1.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -253,10 +253,15 @@ See the two test stubs in the blueprint; spec §4 rows 7–8 state what each ass
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Code (`/sdd-fix` session, actor `agent:sdd-fix:cb69fd31`)
+**Date**: 2026-11-15
+**Notes**: `op_procedure_next` gained a second `except Exception` clause returning
+`OperationResult(text="<ExcType>: <message>", is_error=True)`; the `ValueError`/`OSError` text is
+unchanged. `_install_procedure_index_step` loads the SDD config first and returns
+`procedure index: skipped (procedure.enabled is false)` without importing or building the plane.
+`ProcedureManifest.uncovered_ok` added to the FEAT-891 spec §2. Code commit `20343fa686`. Validation:
+`pytest packages/ai-parrot/tests/knowledge/wiki/procedure/test_mcp_tool.py packages/ai-parrot/tests/sdd/test_procedure_assets.py`
+→ 13 passed; the full Validation Contract (five files) → 79 passed; `ruff check` and `black --check`
+clean on the four Python files.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: none. The installer test also asserts the enabled path still builds.
