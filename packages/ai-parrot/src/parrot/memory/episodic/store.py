@@ -23,7 +23,7 @@ from .models import (
     EpisodicMemory,
     MemoryNamespace,
 )
-from .recall import RecallStrategy
+from .recall import HybridBM25Strategy, RecallStrategy, rank_episodes
 from .reflection import ReflectionEngine
 from .scoring import ImportanceScorer
 
@@ -196,6 +196,7 @@ class EpisodicMemoryStore:
         episode = EpisodicMemory(
             tenant_id=namespace.tenant_id,
             agent_id=namespace.agent_id,
+            model_id=namespace.model_id,
             user_id=namespace.user_id,
             session_id=namespace.session_id,
             room_id=namespace.room_id,
@@ -237,6 +238,7 @@ class EpisodicMemoryStore:
 
         # Store in backend
         await self._backend.store(episode)
+        self._invalidate_recall_index(namespace)
 
         # Cache in Redis
         if self._cache is not None:
@@ -249,6 +251,56 @@ class EpisodicMemoryStore:
             outcome.value,
         )
         return episode
+
+    def _invalidate_recall_index(self, namespace: MemoryNamespace) -> None:
+        """Discard the hybrid lexical index after a committed scope mutation."""
+        if isinstance(self._recall_strategy, HybridBM25Strategy):
+            self._recall_strategy.invalidate(namespace.build_filter())
+
+    async def _invalidate_scope_cache(self, namespace: MemoryNamespace) -> None:
+        """Invalidate derived recall state after a committed review mutation."""
+        self._invalidate_recall_index(namespace)
+        if self._cache is not None:
+            await self._cache.invalidate(namespace)
+
+    async def _get_scoped_recent(
+        self,
+        namespace: MemoryNamespace,
+        *,
+        limit: int,
+    ) -> list[EpisodicMemory]:
+        """Read recent episodes from the full-scope cache or backend."""
+        if self._cache is not None:
+            cached = await self._cache.get_recent(namespace, limit=limit)
+            if cached is not None:
+                return cached
+        return await self._backend.get_recent(namespace.build_filter(), limit=limit)
+
+    async def _fallback_lexical_search(
+        self,
+        query: str,
+        namespace: MemoryNamespace,
+        *,
+        top_k: int,
+        score_threshold: float,
+        include_failures_only: bool,
+    ) -> list[EpisodeSearchResult]:
+        """Provide bounded local recall when no embedding provider is configured."""
+        terms = tuple(term for term in query.casefold().split() if term)
+        if not terms or top_k == 0:
+            return []
+        namespace_filter = namespace.build_filter()
+        count = await self._backend.count(namespace_filter)
+        episodes = await self._backend.get_recent(namespace_filter, limit=count)
+        matches: list[EpisodeSearchResult] = []
+        for episode in episodes:
+            if include_failures_only and not episode.is_failure:
+                continue
+            searchable = episode.searchable_text().casefold()
+            score = sum(term in searchable for term in terms) / len(terms)
+            if score >= score_threshold:
+                matches.append(EpisodeSearchResult(**episode.model_dump(), embedding=episode.embedding, score=score))
+        return matches[:top_k]
 
     async def cite(
         self,
@@ -344,6 +396,7 @@ class EpisodicMemoryStore:
             ]
 
         receipts: list[ReviewReceipt] = []
+        state_changed = False
         for memory_id in unique_ids:
             ref = cited_refs[memory_id]
             episode = episodes[memory_id]
@@ -389,7 +442,11 @@ class EpisodicMemoryStore:
                     receipt.apply_revision,
                     self._review_revisions.get(ref.canonical_key, 0),
                 )
+            if receipt.status == "applied":
+                state_changed = True
             receipts.append(receipt)
+        if state_changed:
+            await self._invalidate_scope_cache(namespace)
         return receipts
 
     async def _apply_review_with_current_revision(
@@ -657,39 +714,45 @@ class EpisodicMemoryStore:
         Returns:
             List of episodes ranked by similarity score.
         """
-        if self._embedding is None:
-            logger.warning("No embedding provider; recall_similar unavailable")
-            return []
-
-        embedding = await self._embedding.embed(query)
         ns_filter = namespace.build_filter()
         effective_top_k = top_k * 2 if category else top_k  # over-fetch for post-filter
-
-        if self._recall_strategy is not None:
-            # Use pluggable recall strategy
-            results = await self._recall_strategy.search(
-                query=query,
-                query_embedding=embedding,
-                backend=self._backend,
-                namespace_filter=ns_filter,
+        if self._embedding is None:
+            logger.info("No embedding provider; using local lexical recall fallback")
+            results = await self._fallback_lexical_search(
+                query,
+                namespace,
                 top_k=effective_top_k,
                 score_threshold=score_threshold,
                 include_failures_only=include_failures_only,
             )
         else:
-            # Default: direct backend call (unchanged behavior)
-            results = await self._backend.search_similar(
-                embedding=embedding,
-                namespace_filter=ns_filter,
-                top_k=effective_top_k,
-                score_threshold=score_threshold,
-                include_failures_only=include_failures_only,
-            )
+            embedding = await self._embedding.embed(query)
+            if self._recall_strategy is not None:
+                # Use pluggable recall strategy
+                results = await self._recall_strategy.search(
+                    query=query,
+                    query_embedding=embedding,
+                    backend=self._backend,
+                    namespace_filter=ns_filter,
+                    top_k=effective_top_k,
+                    score_threshold=score_threshold,
+                    include_failures_only=include_failures_only,
+                )
+            else:
+                # Default: direct backend call (unchanged behavior)
+                results = await self._backend.search_similar(
+                    embedding=embedding,
+                    namespace_filter=ns_filter,
+                    top_k=effective_top_k,
+                    score_threshold=score_threshold,
+                    include_failures_only=include_failures_only,
+                )
 
         if category is not None:
             results = [r for r in results if r.category == category]
 
-        return results[:top_k]
+        ranked = rank_episodes(results, namespace=namespace)
+        return [result for result in ranked if isinstance(result, EpisodeSearchResult)][:top_k]
 
     async def get_failure_warnings(
         self,
@@ -727,15 +790,16 @@ class EpisodicMemoryStore:
             except Exception as e:
                 logger.warning("Failure recall failed: %s", e)
 
-        # Recent failures from backend
+        # Full-scope cached failures fall back to full-scope recent retrieval.
         try:
-            recent_failures = await self._backend.get_failures(
-                agent_id=namespace.agent_id,
-                tenant_id=namespace.tenant_id,
-                limit=max_warnings,
-            )
+            recent_failures: list[EpisodicMemory] | None = None
+            if self._cache is not None:
+                recent_failures = await self._cache.get_failures(namespace, limit=max_warnings)
+            if recent_failures is None:
+                count = await self._backend.count(namespace.build_filter())
+                recent_failures = await self._backend.get_recent(namespace.build_filter(), limit=count)
             for ep in recent_failures:
-                if ep.episode_id not in failures:
+                if ep.is_failure and ep.episode_id not in failures:
                     failures[ep.episode_id] = ep
         except Exception as e:
             logger.warning("get_failures failed: %s", e)
@@ -743,12 +807,7 @@ class EpisodicMemoryStore:
         if not failures:
             return ""
 
-        # Sort by importance DESC, then recency
-        sorted_failures = sorted(
-            failures.values(),
-            key=lambda ep: (ep.importance, ep.created_at.timestamp()),
-            reverse=True,
-        )[:max_warnings]
+        sorted_failures = rank_episodes(list(failures.values()), namespace=namespace)[:max_warnings]
 
         # Format warnings
         lines_mistakes = []
@@ -791,13 +850,10 @@ class EpisodicMemoryStore:
         Returns:
             List of USER_PREFERENCE category episodes.
         """
-        ns_filter = namespace.build_filter()
-        ns_filter["category"] = EpisodeCategory.USER_PREFERENCE.value
-
-        return await self._backend.get_recent(
-            namespace_filter=ns_filter,
-            limit=limit,
-        )
+        count = await self._backend.count(namespace.build_filter())
+        episodes = await self._get_scoped_recent(namespace, limit=count)
+        preferences = [episode for episode in episodes if episode.category == EpisodeCategory.USER_PREFERENCE]
+        return rank_episodes(preferences, namespace=namespace)[:limit]
 
     async def get_room_context(
         self,
@@ -815,12 +871,8 @@ class EpisodicMemoryStore:
         Returns:
             List of recent room-scoped episodes.
         """
-        ns_filter = namespace.build_filter()
-
-        episodes = await self._backend.get_recent(
-            namespace_filter=ns_filter,
-            limit=limit * 2 if categories else limit,
-        )
+        count = await self._backend.count(namespace.build_filter())
+        episodes = await self._get_scoped_recent(namespace, limit=count)
 
         if categories:
             cat_values = {c.value for c in categories}
@@ -828,7 +880,7 @@ class EpisodicMemoryStore:
                 ep for ep in episodes if ep.category.value in cat_values
             ]
 
-        return episodes[:limit]
+        return rank_episodes(episodes, namespace=namespace)[:limit]
 
     # ── Maintenance API ──
 
