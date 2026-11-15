@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -149,52 +148,44 @@ class FAISSBackend:
         score_threshold: float = 0.3,
         include_failures_only: bool = False,
     ) -> list[EpisodeSearchResult]:
-        """Search by vector similarity with post-search namespace filtering.
+        """Search by vector similarity after namespace pre-filtering.
 
-        Since FAISS doesn't support SQL-like filters, we search a larger
-        candidate set and filter afterwards.
+        FAISS does not support SQL-like filters, so this backend selects the
+        complete scoped candidate set before calculating similarity and
+        applying ``top_k``. This avoids losing an in-scope record when many
+        higher-scoring records belong to another scope.
         """
-        if self._index.ntotal == 0:
+        query = np.asarray(embedding, dtype=np.float32)
+        query_norm = float(np.linalg.norm(query))
+        if query_norm == 0.0:
             return []
+        query /= query_norm
 
-        # Search more candidates than needed to account for filtering
-        search_k = min(top_k * 10, self._index.ntotal)
-
-        vec = np.array([embedding], dtype=np.float32)
-        faiss.normalize_L2(vec)
-        scores, indices = self._index.search(vec, search_k)
-
-        results: list[EpisodeSearchResult] = []
-        for score, idx in zip(scores[0], indices[0]):
-            if idx < 0 or idx >= len(self._id_order):
+        scored: list[tuple[float, EpisodicMemory]] = []
+        for episode in self._episodes.values():
+            if episode.embedding is None or not _matches_filter(episode, namespace_filter):
                 continue
-
-            episode_id = self._id_order[idx]
-            episode = self._episodes.get(episode_id)
-            if episode is None:
-                continue
-
-            sim = float(score)
-            if sim < score_threshold:
-                continue
-
-            if not _matches_filter(episode, namespace_filter):
-                continue
-
             if include_failures_only and not episode.is_failure:
                 continue
 
-            results.append(
-                EpisodeSearchResult(
-                    **episode.model_dump(),
-                    embedding=episode.embedding,
-                    score=sim,
-                )
-            )
-            if len(results) >= top_k:
-                break
+            candidate = np.asarray(episode.embedding, dtype=np.float32)
+            candidate_norm = float(np.linalg.norm(candidate))
+            if candidate_norm == 0.0:
+                continue
+            similarity = float(np.dot(query, candidate / candidate_norm))
+            similarity = max(0.0, min(1.0, similarity))
+            if similarity >= score_threshold:
+                scored.append((similarity, episode))
 
-        return results
+        scored.sort(key=lambda item: item[0], reverse=True)
+        return [
+            EpisodeSearchResult(
+                **episode.model_dump(),
+                embedding=episode.embedding,
+                score=similarity,
+            )
+            for similarity, episode in scored[:top_k]
+        ]
 
     async def get_recent(
         self,

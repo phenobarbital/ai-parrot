@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import struct
 from datetime import datetime, timezone
 from typing import Any
@@ -27,6 +28,8 @@ _KEY_PREFIX = "ep:"
 
 # RediSearch index name default
 _DEFAULT_INDEX = "idx:episodes"
+
+_TAG_SPECIAL_CHARACTERS = re.compile(r"([\\,.<>{}\[\]\"':;!@#$%^&*()\-+=~|/ ])")
 
 
 def _embedding_to_bytes(embedding: list[float]) -> bytes:
@@ -54,6 +57,11 @@ def _bytes_to_embedding(data: bytes) -> list[float]:
     return list(struct.unpack(f"{n}f", data))
 
 
+def _escape_tag_value(value: Any) -> str:
+    """Escape a value for an exact RediSearch TAG query."""
+    return _TAG_SPECIAL_CHARACTERS.sub(r"\\\1", str(value))
+
+
 def _episode_to_hash(episode: EpisodicMemory) -> dict[str, Any]:
     """Convert an EpisodicMemory to a flat Redis HASH mapping.
 
@@ -70,6 +78,7 @@ def _episode_to_hash(episode: EpisodicMemory) -> dict[str, Any]:
         "expires_at": episode.expires_at.timestamp() if episode.expires_at else -1.0,
         "tenant_id": episode.tenant_id,
         "agent_id": episode.agent_id,
+        "model_id": episode.model_id or "",
         "user_id": episode.user_id or "",
         "session_id": episode.session_id or "",
         "room_id": episode.room_id or "",
@@ -119,6 +128,7 @@ def _hash_to_episode(data: dict[str, Any]) -> EpisodicMemory:
         expires_at=expires_at,
         tenant_id=str(data["tenant_id"]),
         agent_id=str(data["agent_id"]),
+        model_id=str(data.get("model_id", "")) or None,
         user_id=str(data["user_id"]) or None,
         session_id=str(data["session_id"]) or None,
         room_id=str(data["room_id"]) or None,
@@ -226,36 +236,84 @@ class RedisVectorBackend:
         # Create index (ignore if already exists)
         try:
             await self._redis.execute_command(
-                "FT.CREATE", self._index_name,
-                "ON", "HASH",
-                "PREFIX", "1", _KEY_PREFIX,
+                "FT.CREATE",
+                self._index_name,
+                "ON",
+                "HASH",
+                "PREFIX",
+                "1",
+                _KEY_PREFIX,
                 "SCHEMA",
-                "embedding", "VECTOR", "HNSW", "6",
-                "TYPE", "FLOAT32",
-                "DIM", str(self._embedding_dim),
-                "DISTANCE_METRIC", "COSINE",
-                "tenant_id", "TAG",
-                "agent_id", "TAG",
-                "user_id", "TAG",
-                "session_id", "TAG",
-                "room_id", "TAG",
-                "crew_id", "TAG",
-                "is_failure", "TAG",
-                "category", "TAG",
-                "importance", "NUMERIC", "SORTABLE",
-                "created_at", "NUMERIC", "SORTABLE",
-                "expires_at", "NUMERIC", "SORTABLE",
-                "situation", "TEXT",
-                "action_taken", "TEXT",
-                "lesson_learned", "TEXT",
+                "embedding",
+                "VECTOR",
+                "HNSW",
+                "6",
+                "TYPE",
+                "FLOAT32",
+                "DIM",
+                str(self._embedding_dim),
+                "DISTANCE_METRIC",
+                "COSINE",
+                "tenant_id",
+                "TAG",
+                "agent_id",
+                "TAG",
+                "model_id",
+                "TAG",
+                "user_id",
+                "TAG",
+                "session_id",
+                "TAG",
+                "room_id",
+                "TAG",
+                "crew_id",
+                "TAG",
+                "is_failure",
+                "TAG",
+                "category",
+                "TAG",
+                "importance",
+                "NUMERIC",
+                "SORTABLE",
+                "created_at",
+                "NUMERIC",
+                "SORTABLE",
+                "expires_at",
+                "NUMERIC",
+                "SORTABLE",
+                "situation",
+                "TEXT",
+                "action_taken",
+                "TEXT",
+                "lesson_learned",
+                "TEXT",
             )
             logger.info("RediSearch index created: %s", self._index_name)
         except Exception as e:
             error_msg = str(e).lower()
             if "index already exists" in error_msg or "already exists" in error_msg:
                 logger.debug("RediSearch index already exists: %s", self._index_name)
+                await self._ensure_model_index_field()
             else:
                 logger.warning("Failed to create RediSearch index: %s", e)
+
+    async def _ensure_model_index_field(self) -> None:
+        """Add the optional model TAG field to an existing index."""
+        try:
+            await self._redis.execute_command(
+                "FT.ALTER",
+                self._index_name,
+                "SCHEMA",
+                "ADD",
+                "model_id",
+                "TAG",
+            )
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "already exists" in error_msg or "duplicate" in error_msg:
+                logger.debug("RediSearch model_id field already exists: %s", self._index_name)
+            else:
+                raise
 
     async def cleanup(self) -> None:
         """Close the Redis connection pool.
@@ -286,7 +344,13 @@ class RedisVectorBackend:
         try:
             key = f"{_KEY_PREFIX}{episode.episode_id}"
             hash_data = _episode_to_hash(episode)
-            await self._redis.hset(key, mapping=hash_data)
+            reserved = await self._redis.hsetnx(key, "episode_id", episode.episode_id)
+            if not reserved:
+                return episode.episode_id
+            await self._redis.hset(
+                key,
+                mapping={field: value for field, value in hash_data.items() if field != "episode_id"},
+            )
             logger.debug("Stored episode %s", episode.episode_id)
             return episode.episode_id
         except Exception as e:
@@ -324,9 +388,8 @@ class RedisVectorBackend:
             # Build pre-filter string for TAG fields
             filter_parts = []
             for field, value in namespace_filter.items():
-                if value:
-                    # Escape special chars in tag values
-                    safe_val = str(value).replace("-", r"\-")
+                if value is not None:
+                    safe_val = _escape_tag_value(value)
                     filter_parts.append(f"@{field}:{{{safe_val}}}")
 
             if include_failures_only:
@@ -426,8 +489,8 @@ class RedisVectorBackend:
         try:
             filter_parts = []
             for field, value in namespace_filter.items():
-                if value:
-                    safe_val = str(value).replace("-", r"\-")
+                if value is not None:
+                    safe_val = _escape_tag_value(value)
                     filter_parts.append(f"@{field}:{{{safe_val}}}")
 
             if since is not None:
@@ -611,8 +674,8 @@ class RedisVectorBackend:
         try:
             filter_parts = []
             for field, value in namespace_filter.items():
-                if value:
-                    safe_val = str(value).replace("-", r"\-")
+                if value is not None:
+                    safe_val = _escape_tag_value(value)
                     filter_parts.append(f"@{field}:{{{safe_val}}}")
 
             query_filter = " ".join(filter_parts) if filter_parts else "*"
