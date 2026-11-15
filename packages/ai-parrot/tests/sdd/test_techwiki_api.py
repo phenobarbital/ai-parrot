@@ -11,7 +11,16 @@ from pathlib import Path
 import pytest
 
 from parrot.sdd.scripts.techwiki_api import main
-from parrot.sdd.techwiki.api import GriffeUnavailable, RenderedPage, _unlink_pageless_refs, generate
+from parrot.sdd.techwiki.api import (
+    NATIVE_SKIP_KIND,
+    NATIVE_SKIP_REASON,
+    GriffeUnavailable,
+    RenderedPage,
+    _unlink_pageless_refs,
+    generate,
+    load_packages,
+    strict_failures,
+)
 from parrot.sdd.techwiki.config import TechwikiConfig, TechwikiPackage
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -365,3 +374,123 @@ def test_generated_page_link_to_a_page_named_like_a_markdown_file_is_not_danglin
     assert any(page.name == "API-Reference-pkgy.md" for page in pages), [p.name for p in pages]
     assert report.dangling == [], report.dangling
     assert report.ok(), (report.collisions, report.dangling)
+
+
+_NATIVE_PLACEHOLDER = b"\x7fELF placeholder: never opened, inspection is disabled"
+
+
+@pytest.fixture
+def native_repo(tmp_path: Path) -> Path:
+    """A repository whose package mixes pure, stubbed, native, private and non-package modules."""
+    package = tmp_path / "src" / "nativepkg"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text('"""Native package."""\n', encoding="utf-8")
+    (package / "pure.py").write_text('def ok() -> None:\n    """Fine."""\n', encoding="utf-8")
+    for name in (
+        "fast.cpython-311-x86_64-linux-gnu.so",
+        "fast.cpython-312-x86_64-linux-gnu.so",
+        "stubbed.so",
+        "_hidden.so",
+    ):
+        (package / name).write_bytes(_NATIVE_PLACEHOLDER)
+    (package / "speed.pyx").write_text("def go():\n    return 1\n", encoding="utf-8")
+    (package / "stubbed.pyi").write_text('def value() -> int:\n    """Stubbed value."""\n', encoding="utf-8")
+    scripts = package / "scripts"  # no __init__.py: not a package, so griffe never looks inside
+    scripts.mkdir()
+    (scripts / "tool.so").write_bytes(_NATIVE_PLACEHOLDER)
+    (tmp_path / "sdd").mkdir()
+    (tmp_path / "sdd" / "config.json").write_text(
+        json.dumps({"techwiki": {"packages": [{"dist": "native", "src": "src", "roots": ["nativepkg"]}]}}),
+        encoding="utf-8",
+    )
+    return tmp_path
+
+
+def _native_cfg() -> TechwikiConfig:
+    """Configuration matching the ``native_repo`` fixture."""
+    return TechwikiConfig(packages=[TechwikiPackage(dist="native", src="src", roots=["nativepkg"])])
+
+
+def test_load_packages_disables_inspection(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """``griffe.load`` is always called with inspection disabled, so no configured module is imported."""
+    (tmp_path / "src" / "pkg").mkdir(parents=True)
+    (tmp_path / "src" / "pkg" / "__init__.py").write_text("", encoding="utf-8")
+    calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    class FakeGriffe:
+        """Stand-in for the griffe module that records every ``load`` call."""
+
+        @staticmethod
+        def load(*args: object, **kwargs: object) -> str:
+            calls.append((args, kwargs))
+            return "module"
+
+    monkeypatch.setattr("parrot.sdd.techwiki.api._import_griffe", lambda: FakeGriffe)
+    cfg = TechwikiConfig(packages=[TechwikiPackage(dist="d", src="src", roots=["pkg"])])
+    assert load_packages(cfg, tmp_path) == ["module"]
+    assert len(calls) == 1
+    args, kwargs = calls[0]
+    assert args == ("pkg",)
+    assert kwargs["allow_inspection"] is False
+    assert "force_inspection" not in kwargs
+    assert kwargs["search_paths"] == [tmp_path / "src"]
+
+
+def test_generate_reports_native_modules(native_repo: Path) -> None:
+    """Native modules without source or stub are listed; a stubbed one renders; nothing is imported."""
+    _require_griffe()
+    before = set(sys.modules)
+    pages, skipped = generate(_native_cfg(), native_repo)
+    assert skipped == [
+        {"module": "nativepkg.fast", "reason": NATIVE_SKIP_REASON, "kind": NATIVE_SKIP_KIND},
+        {"module": "nativepkg.speed", "reason": NATIVE_SKIP_REASON, "kind": NATIVE_SKIP_KIND},
+    ]
+    modules = {page.module for page in pages}
+    assert {"nativepkg.pure", "nativepkg.stubbed"} <= modules
+    assert not modules & {"nativepkg.fast", "nativepkg.speed", "nativepkg._hidden", "nativepkg.scripts.tool"}
+    assert not ({name for name in sys.modules if name.startswith("nativepkg")} - before)
+
+
+def test_native_report_is_build_state_independent(tmp_path: Path) -> None:
+    """A ``.pyx`` alone and the same ``.pyx`` next to a built extension give the same pages and report."""
+    _require_griffe()
+    results = []
+    for label, built in (("clean", False), ("built", True)):
+        root = tmp_path / label
+        package = root / "src" / "cypkg"
+        package.mkdir(parents=True)
+        (package / "__init__.py").write_text('"""Cython package."""\n', encoding="utf-8")
+        (package / "pure.py").write_text('def ok() -> None:\n    """Fine."""\n', encoding="utf-8")
+        (package / "mod.pyx").write_text("def go():\n    return 1\n", encoding="utf-8")
+        if built:
+            (package / "mod.cpython-312-x86_64-linux-gnu.so").write_bytes(_NATIVE_PLACEHOLDER)
+        cfg = TechwikiConfig(packages=[TechwikiPackage(dist="cy", src="src", roots=["cypkg"])])
+        pages, skipped = generate(cfg, root)
+        results.append(([(page.module, page.body) for page in pages], skipped))
+    assert results[0] == results[1]
+    assert [item["module"] for item in results[0][1]] == ["cypkg.mod"]
+
+
+def test_strict_failures_excludes_native_entries() -> None:
+    """Only parse and load failures fail strict mode; a native-module entry never does."""
+    syntax = {"module": "pkg.broken", "reason": "SyntaxError: invalid syntax (line 1)"}
+    render = {"module": "pkg.odd", "reason": "boom"}
+    native = {"module": "pkg.fast", "reason": NATIVE_SKIP_REASON, "kind": NATIVE_SKIP_KIND}
+    assert strict_failures([native, syntax, render]) == [syntax, render]
+    assert strict_failures([native]) == []
+    assert strict_failures([]) == []
+
+
+def test_strict_ignores_native_modules(native_repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """``--strict`` exits 0 when every skipped module is native, and 4 once a syntax error joins them."""
+    _require_griffe()
+    out = native_repo / "out"
+    assert main(["--out", str(out), "--root", str(native_repo), "--strict", "--json"]) == 0
+    captured = capsys.readouterr()
+    report = json.loads(captured.out)
+    assert [item["module"] for item in report["skipped_modules"]] == ["nativepkg.fast", "nativepkg.speed"]
+    assert {item["kind"] for item in report["skipped_modules"]} == {NATIVE_SKIP_KIND}
+    assert "Skipped nativepkg.fast" in captured.err and "Skipped nativepkg.speed" in captured.err
+    (native_repo / "src" / "nativepkg" / "broken.py").write_text("def broken(:\n    pass\n", encoding="utf-8")
+    assert main(["--out", str(out), "--root", str(native_repo), "--strict", "--json"]) == 4
+    assert main(["--out", str(out), "--root", str(native_repo)]) == 0
