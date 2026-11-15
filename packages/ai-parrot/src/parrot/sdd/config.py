@@ -22,6 +22,18 @@ class SddConfigError(ValueError):
     """Raised when ``sdd/config.json`` exists but cannot be used."""
 
 
+class ProcedureSettings(BaseModel):
+    """Procedure-graph settings (``sdd/config.json`` key ``procedure`` -- FEAT-891)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    #: False: the guards never deny a mandatory violation, they advise instead.
+    enforce: bool = True
+    brief_max_lines: int = 8
+    remote_probe_timeout_seconds: int = 5
+
+
 class SddConfig(BaseModel):
     """Team-owned SDD settings. Secrets never belong here."""
 
@@ -41,6 +53,8 @@ class SddConfig(BaseModel):
     projects: list[str] | None = None
     #: FEAT-801 — technical-wiki pipeline settings; ``None`` means defaults.
     techwiki: TechwikiConfig | None = None
+    #: FEAT-891 — procedure-graph settings; ``None`` means defaults.
+    procedure: ProcedureSettings | None = None
 
     @field_validator("test_command")
     @classmethod

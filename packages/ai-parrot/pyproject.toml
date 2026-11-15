@@ -1041,6 +1041,7 @@ parrot = ["py.typed", "templates/*.tpl", "**/*.pyx", "**/*.pxd"]
     "_assets/codex/agents/*.toml",
     "_assets/sdd/sdd_templates/*",
     "_assets/sdd/WORKFLOW.md",
+    "_assets/sdd/procedures/*.yaml",
     "_assets/sdd/CONVENTIONS.md",
     "_assets/sdd/CODEX.md",
     "_assets/sdd/AGY.md",

@@ -1,0 +1,85 @@
+# SDD workflow as a procedure graph (FEAT-891). Packaged asset: edit this file, then regenerate the assets.
+schema_version: 1
+graph: sdd
+uncovered_ok: [sdd-brainstorm, sdd-brief, sdd-explain, sdd-fix, sdd-fromjira, sdd-next, sdd-proposal, sdd-status, sdd-tojira]
+procedures:
+  - id: spec
+    title: Write the feature specification
+    kind: command
+    command: "/sdd-spec <slug>"
+    done_when: [{probe: spec.exists}]
+    next: [task]
+  - id: task
+    title: Decompose the spec into tasks
+    kind: command
+    command: "/sdd-task sdd/specs/<slug>.spec.md"
+    requires_procedures: [spec]
+    done_when: [{probe: index.exists}]
+    next: [start]
+  - id: worktree-ensure
+    title: Create or reuse the feature worktree
+    kind: command
+    command: "parrot sdd worktree ensure --slug <slug> --feature-id <FEAT-ID>"
+    requires_procedures: [task]
+    preconditions: [{probe: spec.exists}, {probe: index.exists}]
+    guards:
+      - {kind: entry, executable: parrot, argv_prefix: [sdd, worktree, ensure], scope: {feature: {flag: "--slug"}}}
+    advice: "Commit and push the spec and the task index to the base branch first; the worktree starts from the remote."
+  - id: start
+    title: Start a task
+    kind: command
+    scope_kind: task
+    command: "/sdd-start <TASK>"
+    requires_procedures: [task]
+    done_when: [{probe: task.status, expect: "in-progress|done|done-with-issues"}]
+    next: [task-close]
+  - id: task-close
+    title: Close a task with the script
+    kind: command
+    mode: mandatory
+    scope_kind: task
+    command: "parrot sdd task close <TASK> <slug> verified"
+    use_instead: "parrot sdd task close <TASK> <slug> verified"
+    requires_procedures: [start]
+    preconditions:
+      - {probe: task.status, expect: in-progress}
+      - {probe: task.depends_done}
+    done_when: [{probe: task.status, expect: "done|done-with-issues"}]
+    next: [codereview]
+    guards:
+      - {kind: entry, executable: parrot, argv_prefix: [sdd, task, close], scope: {task: {argv: 0}, feature: {argv: 1}}}
+      - {kind: bypass, executable: mv, path_globs: ["sdd/tasks/active/*"]}
+      - {kind: bypass, executable: git, argv_prefix: [mv], path_globs: ["sdd/tasks/active/*"]}
+    advice: "The script moves the task file and stamps the per-spec index; a hand move leaves an orphan."
+  - id: codereview
+    title: Review a completed task
+    kind: command
+    scope_kind: task
+    command: "/sdd-codereview <TASK>"
+    requires_procedures: [task-close]
+    next: [start, done]
+  - id: push
+    title: Push the feature branch
+    kind: command
+    command: "git push -u origin <branch>"
+    preconditions: [{probe: env.not_worker_sandbox}]
+    done_when: [{probe: branch.pushed}]
+    guards:
+      - {kind: entry, executable: git, argv_prefix: [push]}
+    advice: "A worker sandbox cannot reach the remote; commit and let the host run /sdd-done."
+  - id: pr-create
+    title: Open the pull request against the flow base branch
+    kind: command
+    mode: mandatory
+    command: "gh pr create --base <base_branch> --head <branch>"
+    preconditions: [{probe: flow.base_allowed}]
+    done_when: [{probe: pr.open}]
+    guards:
+      - {kind: entry, executable: gh, argv_prefix: [pr, create], scope: {base: {flag: "--base|-B"}}}
+    advice: "Feature and fix branches never target the hotfix base. Pass --base explicitly."
+  - id: done
+    title: Finish the feature
+    kind: command
+    command: "/sdd-done <FEAT-ID>"
+    requires_procedures: [task]
+    preconditions: [{probe: feature.tasks_done}]

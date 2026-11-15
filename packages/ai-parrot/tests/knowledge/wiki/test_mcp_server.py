@@ -24,6 +24,7 @@ from ._tool_surface import LEDGER, LOCAL_NO_LEDGER
 _SRC_ROOTS = [
     str(Path(__file__).resolve().parents[4] / "ai-parrot" / "src"),
     str(Path(__file__).resolve().parents[4] / "ai-parrot-server" / "src"),
+    str(Path(__file__).resolve().parents[4] / "ai-parrot-tools" / "src"),
 ]
 
 
