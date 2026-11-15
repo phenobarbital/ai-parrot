@@ -69,7 +69,7 @@ one is a spec omission, and three are not defects (see Non-Goals).
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:c23c9e6c2976ac3cc1a57c33d91293a8efbcaa46e42a0f8dbeff6baa95a6acca evaluation_digest=sha256:4bd34d5c79ad3ed6c3a7100e282767ad81b31d93e4f8ccb58db1f4183186ac87 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:446d68b7fc30be0a91e40233a28865b20251180af95d953e2abf6e56de7bdec9 evaluation_digest=sha256:f50f65b66341c42944306f6f1677f926d3d9b01d88e70f4eba5a7bf9a0da5b42 rules_version=1 status=pass -->
 
 ## 2. Architectural Design
 
@@ -91,7 +91,9 @@ expressed relative to the checkout root:
 Each remaining argument is then normalised before the glob test: an absolute path inside the checkout
 becomes checkout-relative; a relative path is joined to the segment's effective directory and
 `normpath`-ed. A path that resolves outside the checkout keeps its `..` prefix or absolute form and so
-matches no repository glob. With both keyword arguments omitted the function behaves exactly as today.
+matches no repository glob. With both keyword arguments omitted the effective directory starts empty and
+absolute paths are left as they are, so a command with no `cd` segment and no `git -C` option matches
+exactly as today; `cd` and `git -C` are tracked in every case.
 `evaluate_command` passes `checkout=checkout, cwd=Path(cwd)`.
 
 **M2 — bounded message.** A helper builds the message from a fixed prefix, a variable middle and a fixed
@@ -258,7 +260,8 @@ markers: none
 ## 5. Acceptance Criteria
 
 - [ ] AC1: every test in the Validation Contract passes, including the eight new tests above.
-- [ ] AC2: `match_guards(index, command)` with no keyword arguments returns what it returns today.
+- [ ] AC2: for a command with no `cd` segment and no `git -C` option, `match_guards(index, command)` with no
+  keyword arguments returns what it returns today.
 - [ ] AC3: `procedure_advice.py` still imports only the standard library (`test_advice_stdlib_only` passes).
 - [ ] AC4: no deny or advise text exceeds `MAX_ADVICE_CHARS`; a deny text always ends with the escape hint.
 - [ ] AC5: `ruff check` is clean on every changed file.
@@ -370,7 +373,7 @@ None.
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:c23c9e6c2976ac3cc1a57c33d91293a8efbcaa46e42a0f8dbeff6baa95a6acca evaluation_digest=sha256:4bd34d5c79ad3ed6c3a7100e282767ad81b31d93e4f8ccb58db1f4183186ac87 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:446d68b7fc30be0a91e40233a28865b20251180af95d953e2abf6e56de7bdec9 evaluation_digest=sha256:f50f65b66341c42944306f6f1677f926d3d9b01d88e70f4eba5a7bf9a0da5b42 rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -423,10 +426,10 @@ Coverage:
       "path": "/home/jesuslara/proyectos/ai-parrot/sdd/specs/fixgroup-848b9a0ceee1.spec.md"
     }
   ],
-  "evaluation_digest": "sha256:4bd34d5c79ad3ed6c3a7100e282767ad81b31d93e4f8ccb58db1f4183186ac87",
+  "evaluation_digest": "sha256:f50f65b66341c42944306f6f1677f926d3d9b01d88e70f4eba5a7bf9a0da5b42",
   "exit_code": 0,
   "findings": [],
-  "input_digest": "sha256:c23c9e6c2976ac3cc1a57c33d91293a8efbcaa46e42a0f8dbeff6baa95a6acca",
+  "input_digest": "sha256:446d68b7fc30be0a91e40233a28865b20251180af95d953e2abf6e56de7bdec9",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
