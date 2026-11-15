@@ -265,7 +265,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -276,8 +276,9 @@
       "parallelism_notes": "Consumes SQLiteEpisodeBackend connection/schema and overlapping file from TASK-5661; Consumes ReviewCommand/ReviewReceipt/ReviewBackend from TASK-5656",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5662-agent-memory-transactions.md"
+      "completed_at": "2026-11-15T01:45:39+00:00",
+      "file": "sdd/tasks/completed/TASK-5662-agent-memory-transactions.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5663",
@@ -372,7 +373,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -383,8 +384,9 @@
       "parallelism_notes": "Consumes UserKnowledge/Candidate/Command/Receipt from TASK-5666; Consumes accepted shared database schema/connection ownership contract, without constructing SQLiteEpisodeBackend in user-only mode from TASK-5661",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5667-agent-memory-user-store.md"
+      "completed_at": "2026-11-15T01:45:40+00:00",
+      "file": "sdd/tasks/completed/TASK-5667-agent-memory-user-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5668",
