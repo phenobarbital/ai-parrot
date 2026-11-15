@@ -1284,11 +1284,18 @@ def _install_gitattributes(root: Path, receipt: dict[str, Any]) -> str:
 def _install_procedure_index_step(root: Path, receipt: dict[str, Any]) -> list[str]:
     """FEAT-891: build the procedure plane from deployed manifests; return a one-line action.
 
+    Skipped when ``sdd/config.json`` sets ``procedure.enabled`` to false (FEAT-899).
     Never fails the install: an error becomes the action text ``procedure index: skipped (<reason>)``.
     ``receipt`` is unused — the plane is derived state under the git-ignored ``.parrot/``.
     """
     try:
         import asyncio
+
+        from parrot.sdd.config import load_sdd_config
+
+        settings = load_sdd_config(root).procedure
+        if settings is not None and not settings.enabled:
+            return ["procedure index: skipped (procedure.enabled is false)"]
 
         from parrot.sdd.scripts import procedure
 
