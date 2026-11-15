@@ -214,6 +214,19 @@ class TestKeyFallbackAndBackend:
         assert "model" not in captured, f"non-string model leaked: {captured.get('model')!r}"
 
 
+    def test_model_enum_is_forwarded_as_its_value(self, monkeypatch):
+        """``AgentStudioAgent(model=ClaudeModel.X)`` keeps the requested model (the enum is reduced to its id)."""
+        from parrot.clients.anthropic import ClaudeModel
+
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_LLM", "anthropic")
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_MODEL", None)
+        monkeypatch.setattr(tools_module, "build_studio_tools", list)
+        requested = next(iter(ClaudeModel))
+
+        bot = AgentStudioAgent(name="t", model=requested, api_key="k")
+
+        assert str(getattr(bot.llm.model, "value", bot.llm.model)) == requested.value
+
 class TestModelResolution:
     def test_default_model(self, monkeypatch):
         monkeypatch.setattr(agent_module, "STUDIO_AGENT_MODEL", "claude-opus-5")

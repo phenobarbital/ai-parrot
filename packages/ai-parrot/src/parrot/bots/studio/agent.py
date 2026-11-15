@@ -10,6 +10,7 @@ HITL-gated tools.
 
 from __future__ import annotations
 
+from enum import Enum
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -101,7 +102,8 @@ def build_studio_client(
 
     Args:
         provider: Registered provider key (validated; unknown → ``ValueError``).
-        model: Model id. Only a real, non-empty string is used; anything else is
+        model: Model id; a provider model enum is reduced to its value. Only a real,
+            non-empty string is then used; anything else is
             ignored and the client's own constructor default applies.
         api_key: Credential to use; forwarded only when not ``None`` (an explicit
             ``None`` would disable the client's own navconfig key fallback).
@@ -121,6 +123,8 @@ def build_studio_client(
         create_kwargs["api_key"] = api_key
     if tool_manager is not None:
         create_kwargs["tool_manager"] = tool_manager
+    if isinstance(model, Enum):  # provider model enums (ClaudeModel, GoogleModel, ...) carry the id in .value
+        model = model.value
     spec = f"{provider}:{model}" if isinstance(model, str) and model else provider
     return LLMFactory.create(spec, **create_kwargs)
 
