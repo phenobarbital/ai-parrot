@@ -595,7 +595,7 @@ class EpisodicMemoryStore:
         crew_ep = await self.record_episode(
             namespace=namespace,
             situation=f"Crew execution: {flow_description}",
-            action_taken=f"Ran crew workflow with agents",
+            action_taken="Ran crew workflow with agents",
             outcome=outcome,
             error_message=str(error)[:500] if error else None,
             category=EpisodeCategory.WORKFLOW_PATTERN,
@@ -620,7 +620,7 @@ class EpisodicMemoryStore:
                 agent_ep = await self.record_episode(
                     namespace=agent_ns,
                     situation=f"Agent participation in crew: {flow_description}",
-                    action_taken=f"Executed assigned task in crew workflow",
+                    action_taken="Executed assigned task in crew workflow",
                     outcome=agent_outcome,
                     error_message=str(agent_error)[:500] if agent_error else None,
                     category=EpisodeCategory.WORKFLOW_PATTERN,
