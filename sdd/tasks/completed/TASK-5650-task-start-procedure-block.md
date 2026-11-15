@@ -257,17 +257,18 @@ async def test_engine_procedure_briefing(repo: Path) -> None:
 
 ## Completion Note
 
-**Status: done-with-issues — NOT IMPLEMENTED (gate failed).**
 
-The task's Step 0 GATE requires FEAT-887 (`sdd-experience-memory`) briefing code to exist. Verified on this branch
-(base includes all other FEAT-891 tasks):
+- Task: TASK-5650
+- Feature: procedural-graph-plane
+- Implementation SHA: ac826c47358cdc6e3043126d7cdc025c0494a90c
+- Closed at (UTC): 2026-11-15T00:50:10+00:00
+- Fix commits: none
 
-- `_experience_briefing_for` has 0 matches in `packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/engine.py`.
-- `experience brief` has 0 matches in `.claude/commands/sdd-start.md`.
-
-Per the task instructions, nothing was implemented and no alternative briefing channel was created. Two coder
-attempts (gpt-5.6-sol, gpt-5.6-terra) returned `empty_delivery`, consistent with the gate. No files were changed.
-
-Follow-up once FEAT-887 lands: implement `_procedure_briefing_for` in `sdd_coder/engine.py`, add the
-`parrot sdd procedure brief --task-file <task file>` step to the `sdd-start` command twins, regenerate packaged
-assets (`check_asset_sync.py --write`), and add the engine test. Filed in the ledger as a feature_gap.
+| Metric | Value |
+|---|---|
+| validation_refs | 3 |
+| fix_commits | 0 |
+| baseline | ArangoDB credential test failure independently reproduced on dev; no new failures. |
+| behavior | Native and MCP dispatch share experience_briefing; local probes use task checkout state and shared definitions; absent/disabled/stale/error yields empty text; cancellation propagates. |
+| prerequisite | FEAT-887 integrated and TASK-5608 completed on this branch. |
+| tests | 16 procedure CLI tests passed; 53 authoring/asset tests passed; 361 focused tests passed, 1 known baseline deselected |

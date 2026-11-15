@@ -414,7 +414,7 @@
       "feature_id": "FEAT-891",
       "feature": "procedural-graph-plane",
       "spec": "sdd/specs/procedural-graph-plane.spec.md",
-      "status": "done-with-issues",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
