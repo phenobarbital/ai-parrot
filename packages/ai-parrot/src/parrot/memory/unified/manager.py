@@ -211,9 +211,7 @@ class UnifiedMemoryManager:
         # exposed as reviewable evidence.
         brain_prefix = "brain_text:"
         return context.model_copy(
-            update={
-                "delivered_refs": tuple(ref for ref in context.delivered_refs if not ref.startswith(brain_prefix))
-            }
+            update={"delivered_refs": tuple(ref for ref in context.delivered_refs if not ref.startswith(brain_prefix))}
         )
 
     async def record_event(self, event: MemoryEvent) -> MemoryWriteReceipt:
