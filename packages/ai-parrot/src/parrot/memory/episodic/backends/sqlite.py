@@ -1,4 +1,5 @@
 """SQLite episode persistence under the accepted local-store contract."""
+
 from __future__ import annotations
 
 import asyncio
@@ -14,7 +15,6 @@ import aiosqlite
 
 from parrot.memory.episodic.backends.abstract import AbstractEpisodeBackend
 from parrot.memory.episodic.models import EpisodeSearchResult, EpisodicMemory
-
 
 logger = logging.getLogger(__name__)
 
@@ -174,8 +174,7 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
                     await database.execute(f"PRAGMA user_version={_SCHEMA_VERSION}")
                 try:
                     await database.execute(
-                        "CREATE VIRTUAL TABLE IF NOT EXISTS episodes_fts "
-                        "USING fts5(episode_id UNINDEXED, text)"
+                        "CREATE VIRTUAL TABLE IF NOT EXISTS episodes_fts " "USING fts5(episode_id UNINDEXED, text)"
                     )
                     self._fts_enabled = True
                 except aiosqlite.OperationalError:
@@ -283,10 +282,7 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
             if score >= score_threshold:
                 scored.append((score, json.loads(payload)))
         scored.sort(key=lambda item: item[0], reverse=True)
-        return [
-            EpisodeSearchResult(**data, score=min(max(score, 0.0), 1.01))
-            for score, data in scored[:top_k]
-        ]
+        return [EpisodeSearchResult(**data, score=min(max(score, 0.0), 1.01)) for score, data in scored[:top_k]]
 
     async def vector_status(self, namespace_filter: dict[str, Any]) -> dict[str, int | str]:
         """Report whether a scope exceeded the measured exact-vector ceiling.
@@ -460,9 +456,7 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
         return updated
 
     @staticmethod
-    def _build_where(
-        namespace_filter: dict[str, Any], include_failures_only: bool = False
-    ) -> tuple[str, list[Any]]:
+    def _build_where(namespace_filter: dict[str, Any], include_failures_only: bool = False) -> tuple[str, list[Any]]:
         """Build a validated parameterized scope predicate.
 
         Args:

@@ -1,4 +1,5 @@
 """Behavioral acceptance tests for SQLite episodic persistence and measured vector ceiling."""
+
 import sqlite3
 from datetime import datetime, timedelta, timezone
 
@@ -88,9 +89,7 @@ async def test_measured_ceiling_reports_degradation(tmp_path) -> None:
             await backend.store(_episode(index))
 
         status = await backend.vector_status({"tenant_id": "tenant-a", "agent_id": "agent-a"})
-        results = await backend.search_similar(
-            [1.0, 0.0], {"tenant_id": "tenant-a", "agent_id": "agent-a"}, top_k=5
-        )
+        results = await backend.search_similar([1.0, 0.0], {"tenant_id": "tenant-a", "agent_id": "agent-a"}, top_k=5)
 
         assert status == {"status": "degraded", "candidate_count": 3, "vector_ceiling": 2}
         assert [result.episode_id for result in results] == ["episode-2", "episode-1"]
