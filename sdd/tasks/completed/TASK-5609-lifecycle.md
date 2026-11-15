@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-887 — SDD Experience Memory (experience.pitfall)
 **Spec**: `sdd/specs/sdd-experience-memory.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5598, TASK-5599, TASK-5605
@@ -372,3 +372,9 @@ Use the spec §4 payload fixtures, with deterministic temporary Git roots and PA
 2. Verify dependencies are done in `sdd/tasks/index/sdd-experience-memory.json` and recheck this contract after they land.
 3. Implement only the declared files, run validation, and commit scoped changes.
 4. Use `parrot sdd task finalize` with real TaskCompletionEvidence and the exact implementation HEAD. The finalizer owns the completion note and active-to-completed move; never edit them manually.
+
+## Completion Note
+
+- All 10 declared files changed. Engine deliveries merged at `373123717a` (6 files); the a1 delivery for the `.agents/skills/sdd-done` pair and the missing tests was adopted in `db70ef2e0e`, with the `.claude` closeout comment resynced in `66f9cdeafa`. `test_installer.py` (+204) and `test_sdd_launch.py` (+70) gained the required cases; the three sdd-done pairs are byte-identical to their packaged twins.
+- Validation: engine merge-tier validation `completed` (exit 0) covering `test_installer.py`, `test_sdd_launch.py` and `test_check_asset_sync.py`.
+- Closed with `scripts/sdd/close_task.sh`: attempts ran in earlier executions and were partly hand-adopted, so no `coder_record_review` ref could be produced for this execution. Review/feedback metrics NOT recorded for this task.
