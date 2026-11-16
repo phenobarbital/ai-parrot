@@ -44,10 +44,7 @@ async def import_feedback(
     backend = store._backend
     scope = namespace.build_filter()
     existing_count = await backend.count(scope)
-    existing = {
-        episode.episode_id: episode
-        for episode in await backend.get_recent(scope, limit=existing_count)
-    }
+    existing = {episode.episode_id: episode for episode in await backend.get_recent(scope, limit=existing_count)}
     result = {"imported": 0, "skipped": 0, "retracted": 0}
     changed = False
 
