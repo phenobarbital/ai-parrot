@@ -213,3 +213,24 @@ CancelledError. Use subprocesses for crash/multiprocess checks, never shared pro
 5. Run validation, commit scoped implementation, and finalize with `parrot sdd task finalize`
    using real TaskCompletionEvidence and the exact implementation HEAD. Let finalization own
    the completion note and active-to-completed move; do not fabricate completion evidence.
+
+## Completion Note
+
+- Task: TASK-5679
+- Feature: agent-memory-mixin
+- Status: **done-with-issues** (closed by hand; `parrot sdd task finalize` only records `done`)
+- Delivery: merged as 438c492521 (seat minimax, nova/minimax.minimax-m2.5, attempt 1, 209s); merge-tier validation green (12 passed).
+- Closed at (UTC): 2026-11-16T01:20:13+00:00
+
+### Issues (why this is not `done`)
+
+1. **The CLI export is a placeholder.** `parrot.memory.dynamics.cli` `export_reviews_command` builds empty `reviews`/`parameters` and exports those (comments: "For now, export with empty data"). It exports nothing real, so AC18 ("export suitable for the deferred fitting feature") and AC12 (replayable evidence) are NOT met end to end.
+2. **Signature deviates from the blueprint.** The blueprint is `export_reviews(*, namespace, destination)` resolving the configured store; the delivery takes caller-supplied `reviews` and `parameters` and never reads a store. `test_export.py` passes only on hand-built inputs.
+3. **Missing dependency, outside this task's files.** The episodic store/backend has a write path for reviews (`apply_review`, `reviews` table in `episodic/backends/sqlite.py`) but no read API for committed reviews. A real exporter needs one (store/backend files are not in this task's list). Needs an owner decision: add a read method (which task/files?) or amend this task's scope.
+4. Smaller: `retry_export` docstring promises exponential backoff but has none; `reviews` are keyed by (namespace, memory_id, content_version), so two reviews of the same memory version overwrite each other while `record_count` still counts both; `exported_at` is a hard-coded constant; the export write is synchronous inside an async function and uses a shared `.tmp` name.
+
+### Evidence
+
+- Review: artifact 3956da36565a38c6786b4f4c6b76af66dcacb3d48d097b5b34dcc3753e1c9a7b (execution 6ec1554d-4529-4e5b-8593-e382e84c40d1)
+- Validation log: artifact 5b4c37714498e0b5b4312b757fb46aefcf084aa19c43437a097a234745c531dc
+- Model feedback recorded: coder-feedback:c8a070acc23bf6bd00971522 (pattern placeholder-delivered-as-complete, minimax, attempt d425a8f41a274a129fff44c88edce9a7)
