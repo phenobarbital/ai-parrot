@@ -19,18 +19,18 @@ Key responsibilities:
 
 ### Core Classes
 
-- [`AgentMemoryMixin`](ref:parrot.memory.agent_memory.mixin.AgentMemoryMixin) — Main integration point for agent memory
-- [`AgentMemoryConfig`](ref:parrot.memory.agent_memory.models.AgentMemoryConfig) — Configuration for memory capabilities
-- [`MemoryRequestScope`](ref:parrot.memory.agent_memory.models.MemoryRequestScope) — Immutable runtime-derived identity
-- [`UnifiedMemoryManager`](ref:parrot.memory.unified.manager.UnifiedMemoryManager) — Memory operation orchestrator
+- [`AgentMemoryMixin`](ref:parrot.memory.agent_memory.mixin) — Main integration point for agent memory
+- [`AgentMemoryConfig`](ref:parrot.memory.agent_memory.models) — Configuration for memory capabilities
+- [`MemoryRequestScope`](ref:parrot.memory.agent_memory.models) — Immutable runtime-derived identity
+- [`UnifiedMemoryManager`](ref:parrot.memory.unified.manager) — Memory operation orchestrator
 
 ### Configuration
 
-- [`AgentMemoryConfig`](ref:parrot.memory.agent_memory.models.AgentMemoryConfig) — Main configuration class
+- [`AgentMemoryConfig`](ref:parrot.memory.agent_memory.models) — Main configuration class
 
 ### Toolkit
 
-- [`AgentMemoryToolkit`](ref:parrot.memory.agent_memory.toolkit.AgentMemoryToolkit) — Exposes scoped memory operations
+- [`AgentMemoryToolkit`](ref:parrot.memory.agent_memory.toolkit) — Exposes scoped memory operations
 
 ## Configuration & Parameters
 
@@ -216,9 +216,9 @@ class MyAgent(BasicAgent):
 
 ### External References
 
-- [FEAT-892 Specification](../../sdd/specs/agent-memory-mixin.spec.md) — Full feature specification
-- [FEAT-889 Agent Brain](../../sdd/specs/agent-brain.spec.md) — Brain service and administrative interfaces (phase 2)
-- [FEAT-571 Memory Dynamics](../../sdd/specs/memory-dynamics.spec.md) — Historical dynamics specification
+- [FEAT-892 Specification](https://github.com/phenobarbital/ai-parrot/blob/main/sdd/specs/agent-memory-mixin.spec.md) — Full feature specification
+- [FEAT-889 Agent Brain](https://github.com/phenobarbital/ai-parrot/blob/main/sdd/specs/agent-brain.spec.md) — Brain service and administrative interfaces (phase 2)
+- [FEAT-571 Memory Dynamics](https://github.com/phenobarbital/ai-parrot/blob/main/sdd/specs/memory-dynamics.spec.md) — Historical dynamics specification
 
 ### Ownership
 

@@ -20,28 +20,28 @@ Key components:
 
 ### Core Modules
 
-- [`parrot.memory.dynamics.models`](ref:parrot.memory.dynamics.models) — Versioned state and evidence models
-- [`parrot.memory.dynamics.fsrs`](ref:parrot.memory.dynamics.fsrs) — FSRS algorithm implementation
-- [`parrot.memory.dynamics.grade`](ref:parrot.memory.dynamics.grade) — Grade selection logic
-- [`parrot.memory.dynamics.ranking`](ref:parrot.memory.dynamics.ranking) — Candidate ranking
-- [`parrot.memory.dynamics.review_log`](ref:parrot.memory.dynamics.review_log) — Review protocol
-- [`parrot.memory.dynamics.export`](ref:parrot.memory.dynamics.export) — Export functionality
-- [`parrot.memory.dynamics.cli`](ref:parrot.memory.dynamics.cli) — CLI commands
+- [`parrot.memory.dynamics.models`](ref:parrot.memory.dynamics) — Versioned state and evidence models
+- [`parrot.memory.dynamics.fsrs`](ref:parrot.memory.dynamics) — FSRS algorithm implementation
+- [`parrot.memory.dynamics.grade`](ref:parrot.memory.dynamics) — Grade selection logic
+- [`parrot.memory.dynamics.ranking`](ref:parrot.memory.dynamics) — Candidate ranking
+- [`parrot.memory.dynamics.review_log`](ref:parrot.memory.dynamics) — Review protocol
+- [`parrot.memory.dynamics.export`](ref:parrot.memory.dynamics) — Export functionality
+- [`parrot.memory.dynamics.cli`](ref:parrot.memory.dynamics) — CLI commands
 
 ### Key Classes
 
-- [`MemoryParameters`](ref:parrot.memory.dynamics.models.MemoryParameters) — Algorithm parameters
-- [`MemoryState`](ref:parrot.memory.dynamics.models.MemoryState) — Persisted memory state
-- [`Grade`](ref:parrot.memory.dynamics.models.Grade) — Review grades
-- [`ReviewSignal`](ref:parrot.memory.dynamics.models.ReviewSignal) — Observed outcome signal
-- [`ReviewCommand`](ref:parrot.memory.dynamics.models.ReviewCommand) — Review operation
-- [`ReviewReceipt`](ref:parrot.memory.dynamics.models.ReviewReceipt) — Review result
-- [`SQLiteEpisodeBackend`](ref:parrot.memory.episodic.backends.sqlite.SQLiteEpisodeBackend) — Durable review log (`apply_review`, `list_reviews`)
-- [`EpisodicMemoryStore`](ref:parrot.memory.episodic.store.EpisodicMemoryStore) — `review`, `list_reviews`
+- [`MemoryParameters`](ref:parrot.memory.dynamics.models) — Algorithm parameters
+- [`MemoryState`](ref:parrot.memory.dynamics.models) — Persisted memory state
+- [`Grade`](ref:parrot.memory.dynamics.models) — Review grades
+- [`ReviewSignal`](ref:parrot.memory.dynamics.models) — Observed outcome signal
+- [`ReviewCommand`](ref:parrot.memory.dynamics.models) — Review operation
+- [`ReviewReceipt`](ref:parrot.memory.dynamics.models) — Review result
+- [`SQLiteEpisodeBackend`](ref:parrot.memory.episodic.backends.sqlite) — Durable review log (`apply_review`, `list_reviews`)
+- [`EpisodicMemoryStore`](ref:parrot.memory.episodic.store) — `review`, `list_reviews`
 
 ### CLI Commands
 
-- [`wikitoolkit memory`](ref:parrot.memory.dynamics.cli.register_memory_commands) — Memory operations group (`parrot wiki memory` is the same group); attached lazily, so other `wikitoolkit` commands never import `parrot.memory`. A failing command exits 1 with one `Error: <Type>: <message>` line, never a traceback
+- [`wikitoolkit memory`](ref:parrot.memory.dynamics.cli) — Memory operations group (`parrot wiki memory` is the same group); attached lazily, so other `wikitoolkit` commands never import `parrot.memory`. A failing command exits 1 with one `Error: <Type>: <message>` line, never a traceback
 
 ## Configuration & Parameters
 
@@ -357,9 +357,9 @@ memory version both survive) with `dedupe_key`, `outcome_id`, `outcome_revision`
 
 ### External References
 
-- [FEAT-892 Specification](../../sdd/specs/agent-memory-mixin.spec.md) — Full feature specification
-- [FEAT-889 Agent Brain](../../sdd/specs/agent-brain.spec.md) — Brain service and versioned exposure
-- [FEAT-571 Memory Dynamics](../../sdd/specs/memory-dynamics.spec.md) — Historical dynamics specification
+- [FEAT-892 Specification](https://github.com/phenobarbital/ai-parrot/blob/main/sdd/specs/agent-memory-mixin.spec.md) — Full feature specification
+- [FEAT-889 Agent Brain](https://github.com/phenobarbital/ai-parrot/blob/main/sdd/specs/agent-brain.spec.md) — Brain service and versioned exposure
+- [FEAT-571 Memory Dynamics](https://github.com/phenobarbital/ai-parrot/blob/main/sdd/specs/memory-dynamics.spec.md) — Historical dynamics specification
 - [FSRS Reference](https://github.com/open-spaced-repetition/fsrs4anki) — Original FSRS algorithm
 
 ### Ownership
