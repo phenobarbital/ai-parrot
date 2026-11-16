@@ -44,13 +44,13 @@ SELECT
            OR attribute.attnotnull <> required.not_null
     )
     AND EXISTS (
-        SELECT 1 FROM pg_catalog.pg_constraint constraint
-        WHERE constraint.conrelid = 'navigator.ui_surfaces'::regclass AND constraint.contype = 'p'
+        SELECT 1 FROM pg_catalog.pg_constraint constraint_definition
+        WHERE constraint_definition.conrelid = 'navigator.ui_surfaces'::regclass AND constraint_definition.contype = 'p'
     )
     AND EXISTS (
-        SELECT 1 FROM pg_catalog.pg_constraint constraint
-        WHERE constraint.conrelid = 'navigator.ui_surface_shares'::regclass
-          AND constraint.contype = 'f' AND constraint.confdeltype = 'c'
+        SELECT 1 FROM pg_catalog.pg_constraint constraint_definition
+        WHERE constraint_definition.conrelid = 'navigator.ui_surface_shares'::regclass
+          AND constraint_definition.contype = 'f' AND constraint_definition.confdeltype = 'c'
     )
     AND (
         SELECT pg_catalog.pg_get_expr(default_value.adbin, default_value.adrelid)
