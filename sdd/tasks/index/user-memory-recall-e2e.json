@@ -90,7 +90,7 @@
       "feature_id": "FEAT-904",
       "feature": "user-memory-recall-e2e",
       "spec": "sdd/specs/user-memory-recall-e2e.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -100,8 +100,9 @@
       "parallelism_notes": "Imports query_terms created by TASK-5723 in memory/lexical.py.",
       "assigned_to": null,
       "started_at": "2026-11-16T21:33:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5725-user-memory-profile-store.md"
+      "completed_at": "2026-11-16T21:57:53+00:00",
+      "file": "sdd/tasks/completed/TASK-5725-user-memory-profile-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5726",
@@ -110,7 +111,7 @@
       "feature_id": "FEAT-904",
       "feature": "user-memory-recall-e2e",
       "spec": "sdd/specs/user-memory-recall-e2e.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -120,8 +121,9 @@
       "parallelism_notes": "Consumes query_terms and serializes episodic/store.py after its TASK-5723 writer.",
       "assigned_to": null,
       "started_at": "2026-11-16T21:33:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5726-episodic-interaction-recall.md"
+      "completed_at": "2026-11-16T21:57:53+00:00",
+      "file": "sdd/tasks/completed/TASK-5726-episodic-interaction-recall.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5727",
@@ -130,7 +132,7 @@
       "feature_id": "FEAT-904",
       "feature": "user-memory-recall-e2e",
       "spec": "sdd/specs/user-memory-recall-e2e.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -140,8 +142,9 @@
       "parallelism_notes": "Consumes MemoryCandidate.lane, MemoryContext.episodic_recall and MemoryConfig cap/priority fields from TASK-5724.",
       "assigned_to": null,
       "started_at": "2026-11-16T21:33:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5727-memory-context-lanes-priority.md"
+      "completed_at": "2026-11-16T21:57:54+00:00",
+      "file": "sdd/tasks/completed/TASK-5727-memory-context-lanes-priority.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5728",
