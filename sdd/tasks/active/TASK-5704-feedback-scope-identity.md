@@ -26,6 +26,7 @@ This is the accepted issue-specific amendment to D4, documented with this task.
 - Derive deterministic versioned IDs from the feedback ID and all seven namespace fields.
 - Reuse the deployed legacy UUID5 form and the prefixed D4 form only in the exact scope.
 - Retraction and restoration update only records belonging to the requested exact scope.
+- Treat count as a hint; require an untruncated compatibility scan or fail before writes after three growing-window attempts.
 - Prove separate imports, replay, persistence, compatibility, and tombstone isolation with SQLite.
 
 Out of scope: backend/schema changes, rewriting old IDs, other ledger issues, ranking and review fixes.
@@ -74,6 +75,7 @@ Standard-library json/uuid are available; pytest/Pydantic/aiosqlite are existing
 - There is no importer-level scope-aware ID helper yet.
 - `build_filter()` is not exact namespace equality; omitted optional fields are wildcards.
 - Backend store return values do not prove a new row was inserted after an ID collision.
+- count/get_recent are separate awaits; concurrent insertion can fill the old count limit and hide a legacy row.
 
 ## Complexity Contract
 

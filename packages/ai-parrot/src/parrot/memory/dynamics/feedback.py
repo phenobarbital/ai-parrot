@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -17,6 +18,27 @@ from parrot.memory.episodic.models import (
 )
 from parrot.memory.episodic.store import EpisodicMemoryStore
 
+_IMPORT_SCOPE_FIELDS = ("tenant_id", "agent_id", "model_id", "user_id", "session_id", "room_id", "crew_id")
+
+
+def _scoped_feedback_id(feedback_id: str, namespace: MemoryNamespace) -> str:
+    """Build a deterministic ID from the complete import namespace, including nulls."""
+    name = json.dumps(
+        ["coder-feedback:v2", [getattr(namespace, field) for field in _IMPORT_SCOPE_FIELDS], feedback_id],
+        separators=(",", ":"),
+        ensure_ascii=True,
+    )
+    return str(uuid.uuid5(FEEDBACK_IMPORT_NAMESPACE, name))
+
+
+def _feedback_episode_id(feedback_id: str, namespace: MemoryNamespace, existing: dict[str, EpisodicMemory]) -> str:
+    """Reuse an exact-scope historic ID before assigning a new scoped ID."""
+    for legacy_name in (feedback_id, f"coder-feedback:{feedback_id}"):
+        legacy_id = str(uuid.uuid5(FEEDBACK_IMPORT_NAMESPACE, legacy_name))
+        if legacy_id in existing:
+            return legacy_id
+    return _scoped_feedback_id(feedback_id, namespace)
+
 
 async def import_feedback(
     root: Path,
@@ -25,6 +47,9 @@ async def import_feedback(
     namespace: MemoryNamespace,
 ) -> dict[str, int]:
     """Idempotently import legacy lessons and retractions with stable IDs and provenance.
+
+    Existing import IDs are preserved in their exact namespace. New IDs include
+    all namespace dimensions so separate scopes cannot collide in write-once stores.
 
     Args:
         root: A checkout path used to resolve the shared SDD ledger.
@@ -37,20 +62,34 @@ async def import_feedback(
     Raises:
         OSError: If the shared feedback ledger cannot be read. An outage is
             deliberately not represented as an empty import.
+        RuntimeError: If concurrent writes prevent a complete compatibility scan.
+            Retry the import after the writer load subsides.
     """
     feedback_store = CoderFeedbackStore.from_root(root)
     records = await asyncio.to_thread(feedback_store._read)
     retracted_ids = await asyncio.to_thread(feedback_store.retracted_feedback_ids)
     backend = store._backend
     scope = namespace.build_filter()
-    existing_count = await backend.count(scope)
-    existing = {episode.episode_id: episode for episode in await backend.get_recent(scope, limit=existing_count)}
+    limit = await backend.count(scope) + 1
+    for _ in range(3):
+        candidates = await backend.get_recent(scope, limit=limit)
+        if len(candidates) < limit:
+            break
+        limit *= 2
+    else:
+        raise RuntimeError("Feedback import scope changed during the compatibility scan; retry the import")
+    # build_filter omits null dimensions; a broad query is not exact ownership.
+    existing = {
+        episode.episode_id: episode
+        for episode in candidates
+        if all(getattr(episode, field) == getattr(namespace, field) for field in _IMPORT_SCOPE_FIELDS)
+    }
     result = {"imported": 0, "skipped": 0, "retracted": 0}
     changed = False
 
     for recorded_at, feedback in records:
         feedback_id = feedback.feedback_id()
-        episode_id = str(uuid.uuid5(FEEDBACK_IMPORT_NAMESPACE, feedback_id))
+        episode_id = _feedback_episode_id(feedback_id, namespace, existing)
         previous = existing.get(episode_id)
         if previous is not None:
             result["skipped"] += 1
@@ -93,7 +132,7 @@ async def import_feedback(
         changed = True
 
     for feedback_id in retracted_ids:
-        episode_id = str(uuid.uuid5(FEEDBACK_IMPORT_NAMESPACE, feedback_id))
+        episode_id = _feedback_episode_id(feedback_id, namespace, existing)
         previous = existing.get(episode_id)
         if previous is None or previous.metadata.get("coder_feedback_retracted") is True:
             continue
