@@ -15,7 +15,6 @@ from parrot.memory.unified.models import MemoryConfig
 from parrot.memory.user.models import UserKnowledgeCandidate, UserKnowledgeCommand
 from parrot.memory.user.store import _MAX_QUERY_CHARS, UserMemoryStore
 
-
 @pytest.fixture
 def namespace() -> MemoryNamespace:
     return MemoryNamespace(tenant_id="test", agent_id="test-agent", user_id="user1")

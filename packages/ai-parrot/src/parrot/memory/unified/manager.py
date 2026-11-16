@@ -703,9 +703,9 @@ class UnifiedMemoryManager:
                     continue
                 visible_recall.setdefault(episode.episode_id, episode)
 
-        recall_episodes = sorted(
-            visible_recall.values(), key=lambda episode: (-_score(episode), episode.episode_id)
-        )[:recall_top_k]
+        recall_episodes = sorted(visible_recall.values(), key=lambda episode: (-_score(episode), episode.episode_id))[
+            :recall_top_k
+        ]
         for episode in recall_episodes:
             text = episode.searchable_text()
             if not text:
@@ -937,9 +937,7 @@ class UnifiedMemoryManager:
         return "ignored"
 
     @staticmethod
-    def _user_candidate(
-        knowledge: UserKnowledge, scope: MemoryRequestScope, relevance: float
-    ) -> MemoryCandidate:
+    def _user_candidate(knowledge: UserKnowledge, scope: MemoryRequestScope, relevance: float) -> MemoryCandidate:
         """Translate one ranked profile record without experiential dynamics."""
         value = json.dumps(knowledge.value, ensure_ascii=False, sort_keys=True)
         return MemoryCandidate(
