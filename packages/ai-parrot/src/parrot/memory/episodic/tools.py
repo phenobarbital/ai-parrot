@@ -181,7 +181,8 @@ class EpisodicMemoryToolkit(AbstractToolkit):
 
         Inside a request the bound memory scope decides: the requester's own episodes plus the
         agent-level ones, never another user's, whatever the configured namespace is. Each scope is
-        filtered by the backend before its top-k and every returned episode is checked again.
+        filtered by the backend before its top-k and every returned episode is checked again. A
+        request outside the configured namespace gets nothing.
         Outside a request the configured namespace is the caller's own choice and is used as is.
         """
         scope = current_memory_scope()
@@ -193,10 +194,10 @@ class EpisodicMemoryToolkit(AbstractToolkit):
                 include_failures_only=failures_only,
             )
 
+        if not self._request_allowed(scope):
+            return []
         visible: dict[str, EpisodeSearchResult] = {}
         for namespace, null_dimensions in recall_scopes(scope):
-            if not self._namespace_allows(namespace):
-                continue
             rows = await self._store.recall_similar(
                 query=query,
                 namespace=namespace,
@@ -207,7 +208,11 @@ class EpisodicMemoryToolkit(AbstractToolkit):
             for row in rows:
                 if visible_to_scope(row, scope):
                     visible.setdefault(row.episode_id, row)
-        return sorted(visible.values(), key=lambda row: (-row.score, row.episode_id))[:top_k]
+
+        def _rank(row: EpisodeSearchResult) -> float:
+            return row.ranking_score if row.ranking_score is not None else row.score
+
+        return sorted(visible.values(), key=lambda row: (-_rank(row), row.episode_id))[:top_k]
 
     def _warnings_namespace(self) -> MemoryNamespace | None:
         """Pick the namespace whose failures the caller may read as warnings.
@@ -220,10 +225,27 @@ class EpisodicMemoryToolkit(AbstractToolkit):
         scope = current_memory_scope()
         if scope is None:
             return self._namespace
-        if scope.user_id is None:
+        if scope.user_id is None or not self._request_allowed(scope):
             return None
-        namespace = recall_scopes(scope)[0][0]
-        return namespace if self._namespace_allows(namespace) else None
+        return recall_scopes(scope)[0][0]
+
+    def _request_allowed(self, scope: object) -> bool:
+        """Tell whether the bound request falls inside the toolkit's configured namespace.
+
+        The check is made once, on the request's own identity, the way ``cite_memory`` does. A
+        request that passes gets its whole recall visibility; one that fails gets nothing.
+        """
+        return self._namespace_allows(
+            MemoryNamespace(
+                tenant_id=scope.tenant_id,
+                agent_id=scope.agent_id,
+                user_id=scope.user_id,
+                session_id=scope.session_id,
+                room_id=scope.room_id,
+                crew_id=scope.crew_id,
+                model_id=scope.model_id,
+            )
+        )
 
     def _namespace_allows(self, runtime_namespace: MemoryNamespace) -> bool:
         """Require configured scope dimensions to agree with the runtime-derived scope."""

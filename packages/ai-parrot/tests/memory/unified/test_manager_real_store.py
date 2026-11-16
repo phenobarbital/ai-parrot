@@ -341,17 +341,49 @@ async def test_tools_keep_the_configured_namespace_outside_a_request(toolkit, st
     assert "bravo" in await toolkit.search_episodic_memory(_QUERY, top_k=10)
 
 
-async def test_user_bound_toolkit_does_not_widen_to_the_agent_level(store) -> None:
-    """A toolkit configured for one user keeps that restriction inside a request."""
+async def test_configured_namespace_gates_the_request_not_its_visibility(store) -> None:
+    """A request inside the configured namespace gets its whole visibility; one outside gets nothing."""
     await _private_failure(store, "alpha", user_id="u1", session_id="s1")
     await _private_failure(store, "charlie")
     bound = EpisodicMemoryToolkit(
-        store=store, namespace=MemoryNamespace(tenant_id="acme", agent_id="planner", user_id="u1")
+        store=store, namespace=MemoryNamespace(tenant_id="acme", agent_id="planner", user_id="u1", session_id="s2")
     )
 
     token = bind_memory_scope(_scope("u1", "s2"))
     try:
         found = await bound.search_episodic_memory(_QUERY, top_k=10)
+        warnings = await bound.get_warnings(_QUERY)
+    finally:
+        reset_memory_scope(token)
+    assert "alpha" in found and "charlie" in found
+    assert "alpha" in warnings
+
+    token = bind_memory_scope(_scope("u2", "s2"))
+    try:
+        outside = await bound.search_episodic_memory(_QUERY, top_k=10)
+        outside_warnings = await bound.get_warnings(_QUERY)
+    finally:
+        reset_memory_scope(token)
+    assert outside == "No relevant past experiences found."
+    assert outside_warnings == "No relevant warnings from past experiences."
+
+
+async def test_search_tool_keeps_the_store_ranking_across_scopes(toolkit, store, monkeypatch) -> None:
+    """The merged result is ordered by the store's ranking score, not by raw similarity."""
+    recall_similar = store.recall_similar
+
+    async def reranked(*args, null_dimensions=(), **kwargs):
+        rows = await recall_similar(*args, null_dimensions=null_dimensions, **kwargs)
+        boost = 0.5 if null_dimensions else 2.0
+        return [row.model_copy(update={"ranking_score": boost}) for row in rows]
+
+    monkeypatch.setattr(store, "recall_similar", reranked)
+    await _private_failure(store, "charlie")
+    await _private_failure(store, "alpha", user_id="u1", session_id="s1")
+
+    token = bind_memory_scope(_scope("u1", "s2"))
+    try:
+        found = await toolkit.search_episodic_memory(_QUERY, top_k=1)
     finally:
         reset_memory_scope(token)
     assert "alpha" in found and "charlie" not in found
