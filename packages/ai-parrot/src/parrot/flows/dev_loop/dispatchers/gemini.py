@@ -125,7 +125,11 @@ class GeminiCodeDispatcher:
         outcomes: list[CommandOutcome] = []
         tool_commands: dict[str, str] = {}
         experience_session = f"{run_id}/{node_id}"
-        interceptor = ExperienceInterceptor(session=experience_session, cwd=cwd, seat="gemini")
+        interceptor: ExperienceInterceptor | None = None
+        try:
+            interceptor = ExperienceInterceptor(session=experience_session, cwd=cwd, seat="gemini")
+        except Exception:  # noqa: BLE001 - experience must never abort a dispatch
+            self.logger.debug("gemini experience interceptor initialization failed", exc_info=True)
         # FEAT-322 TASK-1852: see module-level _SESSION_HOST_CTX docstring.
         # try/except covers the narrow pre-semaphore window so an early
         # raise here still resets the var (the main finally: below only
@@ -273,11 +277,13 @@ class GeminiCodeDispatcher:
                 )
                 return result
             finally:
-                try:
-                    await interceptor.replay(outcomes)
-                finally:
-                    _SESSION_HOST_CTX.reset(_host_token)
-                    _DISPATCH_LABELS_CTX.reset(_labels_token)
+                if interceptor is not None:
+                    try:
+                        await interceptor.replay(outcomes)
+                    except Exception:  # noqa: BLE001 - replay must not mask dispatch results
+                        self.logger.debug("gemini experience replay failed", exc_info=True)
+                _SESSION_HOST_CTX.reset(_host_token)
+                _DISPATCH_LABELS_CTX.reset(_labels_token)
 
     def _build_command(
         self,

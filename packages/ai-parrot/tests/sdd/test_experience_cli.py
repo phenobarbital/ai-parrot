@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -76,6 +77,71 @@ def test_cli_export_order(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
 
     assert main(["export"]) == 0
     assert calls == ["refresh", "graduate", "export"]
+
+
+def test_cli_mutating_verb_warns_when_plane_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Keep absent-plane mutations successful but make their no-op visible on stderr."""
+    _checkout(tmp_path, monkeypatch)
+
+    with caplog.at_level(logging.WARNING, logger=experience_cli.logger.name):
+        assert main(["record", "--executable", "gh", "--solution", "use api"]) == 0
+
+    assert capsys.readouterr().out == ""
+    assert "experience plane unavailable; record skipped" in caplog.text
+
+
+def test_cli_export_writes_under_checkout_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pass the service checkout root to export even when invoked from a subdirectory."""
+    root = _checkout(tmp_path, monkeypatch)
+    plane = root / ".parrot" / "experience"
+    plane.mkdir(parents=True)
+    nested = root / "nested"
+    nested.mkdir()
+    monkeypatch.chdir(nested)
+
+    class Service:
+        """Minimal export service rooted at the checkout rather than the current directory."""
+
+        def __init__(self) -> None:
+            self.config = SimpleNamespace(enabled=True)
+            self.index = object()
+            self.plane_dir = plane
+            self.root = root
+
+        async def refresh(self) -> None:
+            return None
+
+    monkeypatch.setattr(experience_cli.ExperienceService, "from_root", lambda: Service())
+    monkeypatch.setattr(experience_cli.LedgerService, "from_root", lambda path: object())
+
+    async def graduate(*args: object, **kwargs: object) -> list[str]:
+        return []
+
+    def export_shared(repo_plane: Path, checkout: Path) -> None:
+        assert repo_plane == plane
+        assert checkout == root
+
+    monkeypatch.setattr(experience_cli, "graduate", graduate)
+    monkeypatch.setattr(experience_cli, "export_shared", export_shared)
+
+    assert main(["export"]) == 0
+
+
+def test_cli_brief_missing_task_file_is_usage_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Return argparse's usage status when a requested briefing file does not exist."""
+    root = _checkout(tmp_path, monkeypatch)
+
+    with caplog.at_level(logging.ERROR, logger=experience_cli.logger.name):
+        assert main(["brief", "--task-file", str(root / "missing.md")]) == 2
+
+    assert "task file does not exist" in caplog.text
 
 
 def test_cli_record_list_show_and_retire(

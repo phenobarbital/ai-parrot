@@ -372,6 +372,45 @@ class TestGeminiExperienceReplay:
     """Experience-memory replay from Gemini's stream-json events."""
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("failure", ("construction", "replay"))
+    async def test_gemini_dispatch_survives_interceptor_failures(
+        self, dispatcher, brief, _patch_worktree_base, monkeypatch, failure: str
+    ) -> None:
+        """Keep a successful Gemini result when optional experience handling fails."""
+
+        class FailingInterceptor:
+            """Minimal interceptor double that fails at the selected fail-open boundary."""
+
+            def __init__(self, **_: object) -> None:
+                if failure == "construction":
+                    raise RuntimeError("interceptor unavailable")
+
+            async def replay(self, outcomes: object) -> None:
+                if failure == "replay":
+                    raise RuntimeError("replay unavailable")
+
+        async def _fake_create(command, cwd, *, env=None):
+            return _FakeGeminiProcess(
+                stdout_lines=[
+                    json.dumps({"type": "message", "role": "assistant", "content": _development_payload()}) + "\n"
+                ]
+            )
+
+        monkeypatch.setattr("parrot.flows.dev_loop.dispatchers.gemini.ExperienceInterceptor", FailingInterceptor)
+        monkeypatch.setattr(dispatcher, "_create_process", _fake_create)
+
+        result = await dispatcher.dispatch(
+            brief=brief,
+            profile=GeminiCodeDispatchProfile(),
+            output_model=DevelopmentOutput,
+            run_id="fail-open",
+            node_id="development",
+            cwd=str(_patch_worktree_base),
+        )
+
+        assert result.summary == "implemented the spec"
+
+    @pytest.mark.asyncio
     async def test_gemini_outcomes_collected(self, dispatcher, brief, _patch_worktree_base, monkeypatch):
         plane = _experience_plane(_patch_worktree_base)
         assistant_event = {

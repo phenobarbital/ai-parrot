@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from parrot.knowledge.wiki.experience import index as experience_index
 from parrot.knowledge.wiki.experience.index import ExperienceIndex
 from parrot.knowledge.wiki.experience.models import validate_event
 from parrot.knowledge.wiki.project import WikiProjectConfig
@@ -159,3 +160,42 @@ async def test_index_source_removal_staleness(plane: Path) -> None:
 
     repo_log.unlink()
     assert index.is_stale()
+
+
+@pytest.mark.asyncio
+async def test_rebuild_fails_closed_on_oversize_source(plane: Path) -> None:
+    """Keep the published generation when one configured source exceeds its cap."""
+    events = plane / "events.jsonl"
+    _append(events, _record())
+    index = ExperienceIndex(plane)
+    assert await index.rebuild() == 1
+    marker = (plane / "index.json").read_bytes()
+    triggers = (plane / "triggers.json").read_bytes()
+
+    events.write_bytes(b"x" * (experience_index._MAX_SOURCE_BYTES + 1))
+
+    assert await index.rebuild() == -1
+    assert (plane / "index.json").read_bytes() == marker
+    assert (plane / "triggers.json").read_bytes() == triggers
+
+
+@pytest.mark.asyncio
+async def test_rebuild_prunes_superseded_generations(plane: Path) -> None:
+    """Retain only the current and immediately preceding published generations."""
+    events = plane / "events.jsonl"
+    _append(events, _record())
+    index = ExperienceIndex(plane)
+    assert await index.rebuild() == 1
+    first = json.loads((plane / "index.json").read_text(encoding="utf-8"))["generation"]
+
+    events.write_bytes(events.read_bytes() + b"\n")
+    assert await index.rebuild() == 1
+    second = json.loads((plane / "index.json").read_text(encoding="utf-8"))["generation"]
+
+    events.write_bytes(events.read_bytes() + b"\n")
+    assert await index.rebuild() == 1
+    third = json.loads((plane / "index.json").read_text(encoding="utf-8"))["generation"]
+
+    generations = {path.name for path in (plane / "generations").iterdir() if path.name.startswith("generation-")}
+    assert generations == {second, third}
+    assert first not in generations
