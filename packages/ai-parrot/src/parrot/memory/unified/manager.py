@@ -374,9 +374,7 @@ class UnifiedMemoryManager:
             event_id=event.event_id,
             scope=event.scope,
             status=status,
-            review_ids=tuple(
-                receipt.dedupe_key for receipt in receipts if receipt.status in {"applied", "duplicate"}
-            ),
+            review_ids=tuple(receipt.dedupe_key for receipt in receipts if receipt.status in {"applied", "duplicate"}),
             failures=tuple(
                 receipt.reason or "review storage is unavailable"
                 for receipt in receipts

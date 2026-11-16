@@ -10,7 +10,6 @@ from parrot.memory.dynamics.fsrs import retrievability, transition
 from parrot.memory.dynamics.grade import select_grade
 from parrot.memory.dynamics.models import Grade, MemoryParameters, MemoryState, ReviewSignal
 
-
 def _parameters(*, time_policy: str = "days-v1", parameter_id: str = "fsrs-6-default") -> MemoryParameters:
     """Return the accepted immutable parameter set."""
     return MemoryParameters(
