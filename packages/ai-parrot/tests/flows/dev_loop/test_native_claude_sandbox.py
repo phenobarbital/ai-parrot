@@ -990,6 +990,71 @@ def test_hook_command_uses_the_launching_interpreter(linked: tuple[Path, Path]) 
     assert command.startswith((native.shlex.quote(sys.executable), sys.executable))
 
 
+def test_hook_import_closure_is_write_protected(linked: tuple[Path, Path]) -> None:
+    """Every module the host-side experience hook imports is a control file (issue:7993840a23a1).
+
+    ``experience_hook`` imports ``transitions`` at module top, and importing either executes each
+    parent package's ``__init__``; a worktree-writable copy of any of them would run host-side.
+    """
+    feature, _main = linked
+    running = Path(native.__file__).resolve().parents[2]
+    worktree = feature / "packages" / "ai-parrot" / "src" / "parrot"
+    deny = native.native_sandbox_settings(feature)["sandbox"]["filesystem"]["denyWrite"]
+    for package_root in (running, worktree):
+        targets = [
+            package_root / "knowledge" / "wiki" / "experience" / "transitions.py",
+            package_root / "knowledge" / "wiki" / "experience" / "fastpath.py",
+            package_root / "__init__.py",
+            package_root / "sdd" / "__init__.py",
+            package_root / "sdd" / "scripts" / "__init__.py",
+            package_root / "knowledge" / "__init__.py",
+            package_root / "knowledge" / "wiki" / "__init__.py",
+            package_root / "knowledge" / "wiki" / "experience" / "__init__.py",
+        ]
+        for target in targets:
+            assert str(target.resolve()) in deny, target
+    with pytest.raises(ValueError):
+        native.validate_native_write_path(feature, worktree / "knowledge" / "wiki" / "experience" / "transitions.py")
+    with pytest.raises(ValueError):
+        native.validate_native_write_path(feature, worktree / "knowledge" / "wiki" / "__init__.py")
+
+
+def test_hook_import_closure_matches_the_hook_source() -> None:
+    """The protected list covers every ``parrot`` module ``experience_hook`` imports at module top."""
+    import ast
+
+    package_root = Path(native.__file__).resolve().parents[2]
+    protected = set(native._control_files(package_root.parents[3]))
+    pending = [package_root / "sdd" / "scripts" / "experience_hook.py"]
+    seen: set[Path] = set()
+    while pending:
+        source = pending.pop()
+        if source in seen:
+            continue
+        seen.add(source)
+        assert source in protected, source
+        for node in ast.parse(source.read_text(encoding="utf-8")).body:
+            if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("parrot."):
+                parts = node.module.split(".")[1:]
+                pending.append(package_root.joinpath(*parts).with_suffix(".py"))
+                for depth in range(len(parts)):
+                    assert package_root.joinpath(*parts[:depth], "__init__.py") in protected
+
+
+def test_launch_worker_marks_experience_hooks_isolated(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The worker environment tells a project-settings experience hook to stand down."""
+    from parrot.sdd.scripts import experience_hook
+
+    feature, seen = _launch_harness(linked, monkeypatch, primary_toml=None)
+    monkeypatch.delenv(native.EXPERIENCE_ISOLATED_ENV, raising=False)
+    native.launch_worker([], cwd=feature)
+    _path, _command, env = seen["exec"]  # type: ignore[misc]
+    assert native.EXPERIENCE_ISOLATED_ENV == experience_hook.ISOLATED_ENV
+    assert env[native.EXPERIENCE_ISOLATED_ENV] == "1"
+
+
 def test_sibling_worktree_admin_dirs_are_denied(linked: tuple[Path, Path]) -> None:
     feature, main = linked
     sibling = main / ".git" / "worktrees" / "other"
@@ -1023,6 +1088,7 @@ def test_native_settings_experience_hooks(linked: tuple[Path, Path]) -> None:
                             "claude",
                             "--event",
                             "post",
+                            "--isolated",
                         ]
                     ),
                     "timeout": 5,

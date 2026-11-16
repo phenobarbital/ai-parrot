@@ -200,3 +200,31 @@ def test_hook_post_failure_redacts_token_and_truncates_large_error(tmp_path: Pat
     pending = json.loads(stored)["pending"][0]
     assert len(pending["command"]) <= 300
     assert len(pending["error"]) <= 400
+
+
+@pytest.mark.parametrize(
+    ("argv", "marker", "runs"),
+    [
+        (["--host", "claude", "--event", "post"], "1", False),  # portable settings.json hook stands down
+        (["--host", "claude", "--event", "post", "--isolated"], "1", True),  # injected isolated hook runs
+        (["--host", "claude", "--event", "post"], None, True),  # ordinary session: portable hook runs
+        (["--host", "codex", "--event", "post"], "1", True),  # codex/agy hooks are portable-only
+    ],
+)
+def test_portable_claude_hook_stands_down_in_isolated_session(
+    monkeypatch: pytest.MonkeyPatch, argv: list[str], marker: str | None, runs: bool
+) -> None:
+    """Only the injected ``--isolated`` Claude hook handles events in a sandboxed session."""
+    reads: list[int] = []
+
+    def read_payload() -> None:
+        reads.append(1)
+
+    monkeypatch.setattr(experience_hook, "_read_payload", read_payload)
+    if marker is None:
+        monkeypatch.delenv(experience_hook.ISOLATED_ENV, raising=False)
+    else:
+        monkeypatch.setenv(experience_hook.ISOLATED_ENV, marker)
+
+    assert experience_hook.main(argv) == 0
+    assert bool(reads) is runs

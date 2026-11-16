@@ -24,6 +24,11 @@ _MAX_HOOK_INPUT_BYTES = 262_144
 _MAX_TRANSCRIPT_TAIL_BYTES = 262_144
 _MAX_SESSION_PENDING = 32
 _KNOWN_HOSTS = frozenset({"claude", "codex", "agy"})
+# A sandboxed launch injects its own isolated-interpreter Claude hooks (``--isolated``) and sets this
+# marker; any other Claude registration of this hook (the portable one in a project's settings.json)
+# then stands down. Codex/agy hooks are portable-only and are not affected.
+ISOLATED_ENV = "PARROT_SDD_EXPERIENCE_ISOLATED"
+_ISOLATED_FLAG = "--isolated"
 
 
 @dataclass(frozen=True)
@@ -46,7 +51,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         Always zero so an advisory hook never blocks its host.
     """
     try:
-        host, event = _hook_args(argv if argv is not None else sys.argv[1:])
+        arguments = list(argv if argv is not None else sys.argv[1:])
+        host, event = _hook_args(arguments)
+        if host == "claude" and os.environ.get(ISOLATED_ENV) == "1" and _ISOLATED_FLAG not in arguments:
+            return 0  # the session's injected isolated Claude hook handles this event
         if host not in _KNOWN_HOSTS or event not in {"post", "post-failure", "post-invocation"}:
             return 0
         payload = _read_payload()

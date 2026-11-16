@@ -45,6 +45,10 @@ CACHE_DIR_ENV = "PARROT_SDD_CACHE_DIR"
 ROOTS_ENV = "PARROT_SDD_SANDBOX_ROOTS"  # root, common git dir, primary checkout — frozen at launch
 MODE_ENV = "PARROT_SDD_SANDBOX_MODE"
 DEGRADED_ENV = "PARROT_SDD_SANDBOX_DEGRADED"
+# Set for every session whose injected settings carry the isolated experience hooks. The portable
+# ``parrot sdd experience hook`` a project's settings.json may register reads it and stands down, so
+# only the isolated copy runs (mirrors ``experience_hook.ISOLATED_ENV``; kept literal: no import here).
+EXPERIENCE_ISOLATED_ENV = "PARROT_SDD_EXPERIENCE_ISOLATED"
 SANDBOX_MODES = ("required", "preferred", "off", "legacy")
 _HOSTNAME_LABEL = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)$")
 _NUMERIC_LABEL = re.compile(r"^(0x[0-9a-f]+|[0-9]+)$")
@@ -201,9 +205,32 @@ def native_root_env(cwd: Path) -> dict[str, str]:
     return {ROOTS_ENV: os.pathsep.join((str(root), str(git_dir), str(primary)))}
 
 
+def experience_isolation_env() -> dict[str, str]:
+    """Return the marker that silences a project-settings experience hook in a sandboxed session.
+
+    Every launch that injects :func:`native_sandbox_settings` must merge this into the child
+    environment: those settings already run the experience hook through the isolated shared
+    interpreter, and a ``--setting-sources project`` session would otherwise fire the portable,
+    unisolated hook from ``.claude/settings.json`` as well.
+    """
+    return {EXPERIENCE_ISOLATED_ENV: "1"}
+
+
 def _rtk_data_dir() -> Path:
     """Return RTK's data directory without importing RTK."""
     return Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share") / "rtk"
+
+
+# Packages whose ``__init__.py`` runs when the host-side hooks import their modules
+# (``parrot.sdd.scripts.*`` and ``parrot.knowledge.wiki.experience.*``).
+_HOOK_PACKAGE_PARTS: tuple[tuple[str, ...], ...] = (
+    (),
+    ("sdd",),
+    ("sdd", "scripts"),
+    ("knowledge",),
+    ("knowledge", "wiki"),
+    ("knowledge", "wiki", "experience"),
+)
 
 
 def _control_files(root: Path) -> list[Path]:
@@ -227,12 +254,17 @@ def _control_files(root: Path) -> list[Path]:
     for directory in (here, parrot_dir / "sdd" / "scripts", parrot_dir / "flows" / "dev_loop", shim_dir):
         found.extend(directory / name for name in names)
     for package_root in (here.parent.parent, parrot_dir):
+        experience_dir = package_root / "knowledge" / "wiki" / "experience"
         found.extend(
             (
-                package_root / "knowledge" / "wiki" / "experience" / "fastpath.py",
+                experience_dir / "fastpath.py",
+                # experience_hook imports transitions at module top, so it runs host-side too.
+                experience_dir / "transitions.py",
                 package_root / "launcher.py",
             )
         )
+        # Importing the hook modules executes every parent package's __init__ first.
+        found.extend(package_root.joinpath(*parts, "__init__.py") for parts in _HOOK_PACKAGE_PARTS)
     return list(dict.fromkeys(found))
 
 
@@ -456,6 +488,7 @@ def _experience_hook_entries(python: Path) -> dict[str, list[dict[str, Any]]]:
                                 "claude",
                                 "--event",
                                 event,
+                                "--isolated",
                             ]
                         ),
                         "timeout": 5,
@@ -1331,6 +1364,7 @@ def launch_worker(
     env = dict(os.environ if base_env is None else base_env)
     env[BACKEND_ENV] = launch_backend(mode)
     env.update(native_root_env(cwd))
+    env.update(experience_isolation_env())
     if mode == "legacy":
         ignored_domains = "; --sandbox-allow-domain ignored" if domains else ""
         print(
