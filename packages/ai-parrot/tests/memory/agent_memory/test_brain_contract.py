@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import sys
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
 
 from parrot.memory.agent_memory.mixin import AgentMemoryMixin
+from parrot.memory.agent_memory.models import MemoryEvent, MemoryRequestScope
+from parrot.memory.unified.models import MemoryContext
 
 
 class _Host:
@@ -199,3 +202,46 @@ async def test_stop_drain_before_host_cleanup(monkeypatch: pytest.MonkeyPatch) -
     assert events[-4:] == ["brain.stop", "manager.cleanup", "host.cleanup", "host.cleanup"]
     assert brain.stop_count == 1
     assert not hasattr(subject, "brain_admin_toolkit")
+
+
+@pytest.mark.asyncio
+async def test_facade_keeps_scope_and_response_event_at_the_public_boundary() -> None:
+    """Verify the facade relays one immutable tenant scope and response event unchanged."""
+    subject = _BrainFacade()
+    manager = _Manager([])
+    scopes: list[MemoryRequestScope] = []
+    events: list[MemoryEvent] = []
+
+    async def prepare_context(query: str, *, scope: MemoryRequestScope) -> MemoryContext:
+        """Observe the scope supplied by the public facade."""
+        scopes.append(scope)
+        return MemoryContext(semantic_knowledge=f"{scope.tenant_id}:{query}")
+
+    async def record_event(event: MemoryEvent) -> None:
+        """Observe the event supplied by the public facade."""
+        events.append(event)
+
+    manager.prepare_context = prepare_context
+    manager.record_event = record_event
+    subject._memory_manager = manager
+    scope = MemoryRequestScope(
+        tenant_id="tenant-1",
+        agent_id="brain-agent",
+        user_id="user-1",
+        session_id="session-1",
+        turn_id="turn-1",
+        identity_provenance="server_resolved",
+    )
+    context = await subject.prepare_memory("question", scope=scope)
+    event = MemoryEvent(
+        event_id=scope.response_event_id(),
+        kind="response",
+        scope=scope,
+        observed_at=datetime.now(UTC),
+        payload={"query": "question", "response": "answer"},
+    )
+    await subject.complete_memory(event)
+
+    assert context.semantic_knowledge == "tenant-1:question"
+    assert scopes == [scope]
+    assert events == [event]
