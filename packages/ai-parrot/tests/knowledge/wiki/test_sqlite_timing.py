@@ -41,7 +41,9 @@ async def test_phase_records_and_counts(tmp_path: Path, caplog: pytest.LogCaptur
     store = SQLiteWikiStore(tmp_path / "wiki.db", sqlite_policy=policy)
     service = LedgerService.from_dir(tmp_path / "ledger", sqlite_policy=policy)
 
-    assert await store.upsert_pages([WikiPageRecord(concept_id="file:timing.md", title="Timing", body="phase test")]) == 1
+    assert (
+        await store.upsert_pages([WikiPageRecord(concept_id="file:timing.md", title="Timing", body="phase test")]) == 1
+    )
     await asyncio.to_thread(service.log.append, _opened_event(1))
     assert await service.index.sync() == 1
     assert await service.index.sync() == 0
@@ -126,7 +128,10 @@ async def test_telemetry_failure_does_not_change_storage(tmp_path: Path) -> None
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
-        assert await store.upsert_pages([WikiPageRecord(concept_id="file:after-cancel.md", title="After", body="saved")]) == 1
+        assert (
+            await store.upsert_pages([WikiPageRecord(concept_id="file:after-cancel.md", title="After", body="saved")])
+            == 1
+        )
     finally:
         timing_logger.removeHandler(handler)
         timing_logger.setLevel(previous_level)
