@@ -195,7 +195,7 @@
       "feature_id": "FEAT-904",
       "feature": "user-memory-recall-e2e",
       "spec": "sdd/specs/user-memory-recall-e2e.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -206,8 +206,9 @@
       "parallelism_notes": "Tests TASK-5728's automatic profile/recall output and consumes TASK-5729's extraction prompt through recorded fake-client calls.",
       "assigned_to": null,
       "started_at": "2026-11-16T21:33:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5730-memory-cross-session-integration.md"
+      "completed_at": "2026-11-16T22:15:06+00:00",
+      "file": "sdd/tasks/completed/TASK-5730-memory-cross-session-integration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5731",

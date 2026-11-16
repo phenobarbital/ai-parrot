@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-904 - Working automatic recall for user and episodic memory, proven end to end
 **Spec**: `sdd/specs/user-memory-recall-e2e.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-5728, TASK-5729
@@ -202,3 +202,8 @@ Use named blueprint cases as the acceptance matrix. Cover the adversarial bounda
 ## Completion Note
 
 Pending; the task finalizer generates this after implementation and validation.
+
+
+## Completion Note
+
+Implemented by seat gpt-5.6-terra (codex), 1 attempt, 0 review fixes. Merge-tier validation: 4 passed. Closed via close_task.sh.
