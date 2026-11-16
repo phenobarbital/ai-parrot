@@ -559,7 +559,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -571,8 +571,9 @@
       "parallelism_notes": "Consumes scope-correct ranked episodic retrieval from TASK-5665; Consumes durable dedupe/archive replay from TASK-5662; Consumes verified evidence admission contract from TASK-5674",
       "assigned_to": null,
       "started_at": "2026-11-16T00:41:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5675-agent-memory-feedback.md"
+      "completed_at": "2026-11-16T00:55:55+00:00",
+      "file": "sdd/tasks/completed/TASK-5675-agent-memory-feedback.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5676",
@@ -731,4 +732,3 @@
     }
   ]
 }
-
