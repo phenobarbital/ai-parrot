@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from collections.abc import Collection, Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
@@ -222,7 +223,19 @@ class LedgerService:
         try:
             await self.index.sync()
         except WikiStoreBusy:
-            logger.warning("Ledger index sync skipped: writer lock busy; reads may be stale.")
+            try:
+                logger.warning(
+                    "Ledger index sync skipped: writer lock busy; reads may be stale.",
+                    extra={
+                        "event": "wiki.ledger.stale_read",
+                        "operation": "ledger.sync",
+                        "outcome": "busy",
+                        "pid": os.getpid(),
+                        "db_name": self.store.db_path.name,
+                    },
+                )
+            except BaseException:
+                pass
 
     async def _all_issues(self) -> list[tuple[str, dict[str, Any]]]:
         """Return ``(issue_id, state)`` for every decodable issue page."""
