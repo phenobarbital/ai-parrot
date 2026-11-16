@@ -13,11 +13,13 @@ from pathlib import Path
 import aiosqlite
 
 from parrot.memory.agent_memory.models import ChatStorageEvidenceRef, MemoryRequestScope
+from parrot.memory.lexical import query_terms
 
 from .models import UserKnowledge, UserKnowledgeCandidate, UserKnowledgeCommand, UserMemoryReceipt
 
 _MAX_QUERY_CHARS = 2_048
 _MAX_RESULT_LIMIT = 100
+_PROFILE_KIND_ORDER = {"constraint": 0, "preference": 0, "goal": 1, "fact": 1}
 _SCHEMA_VERSION = 2
 _EPISODE_REF_PREFIXES = ("episode:", "episode/v1/")
 EvidenceTenantResolver = Callable[[ChatStorageEvidenceRef], Awaitable[str | None]]
@@ -121,22 +123,22 @@ class UserMemoryStore:
         """Close the store after an asynchronous context manager exits."""
         await self.close()
 
-    async def recall(
+    async def profile(
         self,
-        query: str,
         *,
         scope: MemoryRequestScope,
-        limit: int = 5,
+        query: str = "",
+        limit: int = 20,
     ) -> list[UserKnowledge]:
-        """Return relevant active valid facts in the permitted user/context.
+        """Return active, valid scoped knowledge in globally ranked delivery order.
 
         Args:
-            query: Literal text matched against normalized keys and values.
             scope: Trusted identity used before any database access.
+            query: Optional question used only to rank profile entries.
             limit: Maximum number of facts to return.
 
         Returns:
-            Active facts ordered from most recently updated to oldest.
+            Active valid facts ordered by kind group, overlap, recency, and identifier.
 
         Raises:
             ValueError: If identity or query arguments are invalid.
@@ -146,6 +148,88 @@ class UserMemoryStore:
         self._validate_limit(limit)
         if limit == 0:
             return []
+
+        terms = query_terms(normalized_query)
+        async with self._lock:
+            database = await self._configure_locked()
+            now = datetime.now(timezone.utc).isoformat()
+            cursor = await database.execute(
+                "SELECT payload, searchable_text FROM user_knowledge "
+                "WHERE tenant_id = ? AND agent_id = ? AND user_id = ? AND status = 'active' "
+                "AND (valid_from IS NULL OR valid_from <= ?) AND (expires_at IS NULL OR expires_at > ?)",
+                (*identity, now, now),
+            )
+            winners: list[tuple[UserKnowledge, int]] = []
+            try:
+                while rows := await cursor.fetchmany(100):
+                    for row in rows:
+                        knowledge = UserKnowledge.model_validate_json(row[0])
+                        searchable_text = str(row[1]).casefold()
+                        overlap = sum(term in searchable_text for term in terms)
+                        self._insert_profile_winner(winners, knowledge, overlap, limit)
+            finally:
+                await self._close_cursor(cursor)
+        return [knowledge for knowledge, _ in winners]
+
+    async def recall(
+        self,
+        query: str,
+        *,
+        scope: MemoryRequestScope,
+        limit: int = 5,
+    ) -> list[UserKnowledge]:
+        """Return any-term matches ranked across all active, valid records of the trusted user.
+
+        Args:
+            query: Literal text matched against normalized keys and values.
+            scope: Trusted identity used before any database access.
+            limit: Maximum number of facts to return.
+
+        Returns:
+            Active facts ordered by matched terms, recency, and stable identifier.
+
+        Raises:
+            ValueError: If identity or query arguments are invalid.
+        """
+        identity = self._require_identity(scope)
+        normalized_query = self._validate_query(query)
+        self._validate_limit(limit)
+        if limit == 0:
+            return []
+
+        terms = query_terms(normalized_query)
+        if not terms:
+            return await self._recall_literal(normalized_query, identity, limit)
+
+        async with self._lock:
+            database = await self._configure_locked()
+            now = datetime.now(timezone.utc).isoformat()
+            cursor = await database.execute(
+                "SELECT payload, searchable_text FROM user_knowledge "
+                "WHERE tenant_id = ? AND agent_id = ? AND user_id = ? AND status = 'active' "
+                "AND (valid_from IS NULL OR valid_from <= ?) AND (expires_at IS NULL OR expires_at > ?)"
+                " ORDER BY updated_at DESC, knowledge_id DESC",
+                (*identity, now, now),
+            )
+            winners: list[tuple[UserKnowledge, int]] = []
+            try:
+                while rows := await cursor.fetchmany(100):
+                    for row in rows:
+                        knowledge = UserKnowledge.model_validate_json(row[0])
+                        searchable_text = str(row[1]).casefold()
+                        overlap = sum(term in searchable_text for term in terms)
+                        self._insert_recall_winner(winners, knowledge, overlap, limit)
+            finally:
+                await self._close_cursor(cursor)
+        return [knowledge for knowledge, _ in winners]
+
+    async def _recall_literal(
+        self,
+        normalized_query: str,
+        identity: tuple[str, str, str],
+        limit: int,
+    ) -> list[UserKnowledge]:
+        """Preserve blank and short-query literal matching semantics."""
         async with self._lock:
             database = await self._configure_locked()
             now = datetime.now(timezone.utc).isoformat()
@@ -163,8 +247,87 @@ class UserMemoryStore:
                 f"{predicate} ORDER BY updated_at DESC, knowledge_id DESC LIMIT ?",
                 parameters,
             )
-            rows = await cursor.fetchall()
+            try:
+                rows: list[tuple[str]] = []
+                while batch := await cursor.fetchmany(100):
+                    rows.extend(batch)
+            finally:
+                await self._close_cursor(cursor)
         return [UserKnowledge.model_validate_json(row[0]) for row in rows]
+
+    @staticmethod
+    async def _close_cursor(cursor: aiosqlite.Cursor) -> None:
+        """Close a cursor even when its caller is cancelled during cleanup."""
+        close_task = asyncio.create_task(cursor.close())
+        try:
+            await asyncio.shield(close_task)
+        except asyncio.CancelledError:
+            await asyncio.shield(close_task)
+            raise
+
+    @classmethod
+    def _insert_profile_winner(
+        cls,
+        winners: list[tuple[UserKnowledge, int]],
+        knowledge: UserKnowledge,
+        overlap: int,
+        limit: int,
+    ) -> None:
+        """Keep a bounded profile winner list in final delivery order."""
+        cls._insert_ranked_winner(winners, knowledge, overlap, limit, profile=True)
+
+    @classmethod
+    def _insert_recall_winner(
+        cls,
+        winners: list[tuple[UserKnowledge, int]],
+        knowledge: UserKnowledge,
+        overlap: int,
+        limit: int,
+    ) -> None:
+        """Keep matching recall winners in final delivery order."""
+        if overlap:
+            cls._insert_ranked_winner(winners, knowledge, overlap, limit, profile=False)
+
+    @classmethod
+    def _insert_ranked_winner(
+        cls,
+        winners: list[tuple[UserKnowledge, int]],
+        knowledge: UserKnowledge,
+        overlap: int,
+        limit: int,
+        *,
+        profile: bool,
+    ) -> None:
+        """Insert one candidate without retaining more than the requested winner count."""
+        for index, (current, current_overlap) in enumerate(winners):
+            if cls._ranks_before(knowledge, overlap, current, current_overlap, profile=profile):
+                if len(winners) == limit:
+                    winners.pop()
+                winners.insert(index, (knowledge, overlap))
+                return
+        if len(winners) < limit:
+            winners.append((knowledge, overlap))
+
+    @staticmethod
+    def _ranks_before(
+        candidate: UserKnowledge,
+        candidate_overlap: int,
+        current: UserKnowledge,
+        current_overlap: int,
+        *,
+        profile: bool,
+    ) -> bool:
+        """Return whether one record precedes another under the applicable stable order."""
+        if profile:
+            candidate_group = _PROFILE_KIND_ORDER[candidate.kind]
+            current_group = _PROFILE_KIND_ORDER[current.kind]
+            if candidate_group != current_group:
+                return candidate_group < current_group
+        if candidate_overlap != current_overlap:
+            return candidate_overlap > current_overlap
+        if candidate.updated_at != current.updated_at:
+            return candidate.updated_at > current.updated_at
+        return candidate.knowledge_id > current.knowledge_id
 
     async def list(
         self,
