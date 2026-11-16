@@ -2865,9 +2865,7 @@ class SddCoderEngine:
         if not review.checked_patterns:
             return ()
         if execution_id is None or review.execution_id != execution_id:
-            raise CoderFailure(
-                "invalid_arguments", "checked patterns require the calling execution identity"
-            )
+            raise CoderFailure("invalid_arguments", "checked patterns require the calling execution identity")
         verified = self._review_checks.get(review.attempt_uid)
         if verified is None:
             raise CoderFailure(
@@ -2875,18 +2873,12 @@ class SddCoderEngine:
             )
         verified_execution_id, passed_check_ids = verified
         if verified_execution_id != execution_id:
-            raise CoderFailure(
-                "invalid_arguments", "checked patterns do not belong to the calling execution"
-            )
+            raise CoderFailure("invalid_arguments", "checked patterns do not belong to the calling execution")
         for claim in review.checked_patterns:
             if claim.exposure_id != review.attempt_uid:
-                raise CoderFailure(
-                    "invalid_arguments", "checked pattern exposure must match the engine-issued attempt"
-                )
+                raise CoderFailure("invalid_arguments", "checked pattern exposure must match the engine-issued attempt")
             if not set(claim.evidence_refs).intersection(passed_check_ids):
-                raise CoderFailure(
-                    "invalid_arguments", "checked pattern must cite an engine-owned passed check"
-                )
+                raise CoderFailure("invalid_arguments", "checked pattern must cite an engine-owned passed check")
         return passed_check_ids
 
     async def feedback_report(self, feature: str, worktree: str) -> CoderReviewReport:
