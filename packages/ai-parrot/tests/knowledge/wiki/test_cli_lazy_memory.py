@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -33,10 +34,14 @@ print(json.dumps({{
     \"has_storage_path\": \"--storage-path\" in result.output,
 }}))
 """
+    # The child must import the same ``parrot`` tree as this process: in a git
+    # worktree the shared venv's editable install points at the main checkout.
+    environment = {**os.environ, "PYTHONPATH": os.pathsep.join(entry for entry in sys.path if entry)}
     completed = subprocess.run(
         [sys.executable, "-c", code],
         capture_output=True,
         cwd=REPOSITORY_ROOT,
+        env=environment,
         text=True,
         timeout=15,
     )
