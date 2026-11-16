@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-892 — Agent Memory — Unified Integration, User Knowledge and Dynamics
 **Spec**: `sdd/specs/agent-memory-mixin.spec.md`
-**Status**: in-progress
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5703
@@ -155,4 +155,17 @@ from parrot.memory.episodic.tools import EpisodicMemoryToolkit
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: claude (`/sdd-fix`, actor `agent:sdd-fix:0826208f`)
+**Date**: 2026-11-16
+**Notes**: Implemented as scoped, in an isolated baseline tree (another session was editing this worktree), then
+replayed onto the branch (code commit `5ae9049bb9`). The feature's validation contract passes on the branch head:
+321 passed, 2 skipped; `ruff` and `black` clean. Reverting `tools.py` fails the two leak tests
+(`test_search_tool_never_returns_another_users_episode`, `test_warnings_tool_never_returns_another_users_failure`).
+
+The external review (codex) was started but had not returned when the owner asked to commit and integrate, so
+this task carries no external review verdict.
+
+Left open, see "NOT in scope": `record_lesson` still writes at the agent level, so a user-specific lesson the
+model records is visible to every user of the agent.
+
+**Deviations from spec**: none.
