@@ -9,7 +9,7 @@ e2e:
 docs:
   policy: required
   pages: [wiki/memory/user-memory.md, wiki/memory/agent-memory.md]
-  api_modules: [parrot.memory.user.store, parrot.memory.unified.manager, parrot.memory.lexical]
+  api_modules: [parrot.memory.user.store, parrot.memory.unified.manager, parrot.memory.lexical, parrot.memory.episodic.store]
 ---
 
 # Feature Specification: Working automatic recall for user and episodic memory, proven end to end
@@ -17,7 +17,7 @@ docs:
 **Feature ID**: FEAT-904
 **Date**: 2026-11-16
 **Author**: Jesus Lara / Claude
-**Status**: draft
+**Status**: approved
 **Target version**: 2.1.4
 
 ---
@@ -75,13 +75,15 @@ Spanish statements into English values.
   FEAT-903, or the dynamics model.
 - Changing how conversation history is stored, rendered or compacted (FEAT-524/525/886).
 - New storage backends; the SQLite backend stays the only one wired by `create_memory_manager`.
-- Making a `live` scenario a required gate. It stays opt-in (`PARROT_TEST_REAL_LLM=1`).
+- Making live execution a mandatory automatic gate. The plan stays `optional` and execution stays
+  opt-in (`PARROT_TEST_REAL_LLM=1`). Within an explicitly invoked proof run, its live scenario is
+  `required: true`: failure or skipping cannot count as successful proof.
 
 ---
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:d5a4a1df4bdb1b7b5a167e3a1eb8bdfcb252a851e91e8f62d6d12275a5dec21d evaluation_digest=sha256:58f08eca1c1c1709fbb265d515bc41106319f3c9dcf9cc929eb0551a53d8c86f rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:27155200f9e7750c5d1638e733f6121dc2767e0f618c9b2232abfe4841ecd6bb evaluation_digest=sha256:953d2bc71e824d55686b419357d4c0ce00d39693ea8952eda1aea0d6e74a34b8 rules_version=1 status=pass -->
 
 ## 2. Architectural Design
 
@@ -91,21 +93,28 @@ Spanish statements into English values.
 calls a new `UserMemoryStore.profile()`. It returns the user's active, currently valid records in a
 fixed order: `constraint` and `preference` first (they govern *how* to answer, so they apply to every
 question), then `goal` and `fact`. Inside each group records are ordered by how many normalized query
-terms they contain, then by recency. The manager turns that order into descending candidate relevance,
-and the existing assembler packs whole records until `user_context_tokens` is spent. A record that
-does not fit is skipped, never truncated (existing assembler rule).
+terms they contain, then by recency. Ranking considers all active, valid rows before applying the
+result limit; a bounded-memory cursor scan retains only the best `limit` rows. The manager turns that
+order into descending candidate relevance. The assembler gains an explicit user-section ceiling,
+mapped from `AgentMemoryConfig.user_context_tokens`; weights and rollover may reduce the available
+budget but never raise that ceiling. A record that does not fit is skipped, never truncated.
+The ceiling uses the existing `len(text) // 4` estimate on packed section content, including newlines;
+it is not a provider-token guarantee or a new accounting rule for section wrappers.
 
 `recall()` keeps its signature for explicit lookups (`AgentMemoryToolkit.memory_recall`, tests) but
 matches on normalized terms: a record matches when it contains at least one query term, ranked by
-matched-term count then recency. An empty query still lists the most recent active records.
+matched-term count then recency. Matching and ranking precede the result limit, including when the
+only match is older than 100 other records. An empty query still lists the most recent active records.
 
-**Episodic recall has two lanes.** Failure warnings stay exactly as they are
+**Episodic recall has two lanes.** Failure warnings keep their existing eligibility and packing policy
 (`include_failures_only=True`, `episodic_max_warnings`, rendered under `<past_failures_to_avoid>`). A
-second lane recalls up to `episodic_max_recall` non-failure episodes that match the question, drops
-any episode recorded in the requesting session (the conversation history already carries those turns)
-and renders the rest under a new `<relevant_past_interactions>` section, introduced as contextual
-data, not instructions. Both lanes share the episodic token budget; warnings are packed first.
-`episodic_max_recall = 0` restores today's behaviour.
+second lane excludes failures and episodes recorded in the requesting session **before** the store
+applies `top_k` (conversation history already carries those turns). It recalls up to
+`episodic_max_recall` eligible matches through a new lexical-only `recall_interactions()` method and
+renders them under a new `<relevant_past_interactions>` section, introduced as contextual data,
+not instructions. Both lanes share the episodic token budget; warnings are packed first.
+`episodic_max_recall = 0` disables this lane. It does not undo profile delivery, token caps or tokenizer
+changes, which apply independently; byte-for-byte equivalence to the pre-feature prompt is not promised.
 
 Recalled non-failure episodes travel with their original `MemoryRef`, exactly like warnings, so they
 enter the delivered exposure and can be cited and reviewed under FEAT-903's rules. Nothing in the
@@ -149,10 +158,11 @@ parrot.memory.lexical.query_terms ──→ UserMemoryStore.{profile, recall}
 | `UserMemoryStore` | extends | new `profile()`; `recall()` matches by terms |
 | `UnifiedMemoryManager._get_user_candidates` | modifies | calls `profile()`, relevance encodes order |
 | `UnifiedMemoryManager._get_episodic_candidates` | modifies | adds the non-failure lane |
-| `MemoryCandidate`, `MemoryContext`, `MemoryConfig` | extends | `lane`, `episodic_recall`, two limits |
-| `ContextAssembler.assemble_candidates` | modifies | splits the episodic section by lane |
-| `AgentMemoryConfig`, `_manager_config` | extends | `max_episodic_recall`, `max_user_records` |
+| `MemoryCandidate`, `MemoryContext`, `MemoryConfig` | extends | `lane`, `episodic_recall`, two result limits and an optional user token ceiling |
+| `ContextAssembler.assemble_candidates` | modifies | splits episodic lanes; clamps user allocation after rollover |
+| `AgentMemoryConfig`, `_manager_config` | extends | `max_episodic_recall`, `max_user_records`; maps existing `user_context_tokens` as a ceiling |
 | `EpisodicMemoryStore._fallback_lexical_search` | modifies | uses `query_terms()` |
+| `EpisodicMemoryStore.recall_interactions` | creates | lexical-only non-failure/session exclusions before result limits; independent of vector/strategy candidate caps |
 | `extract_user_knowledge` | modifies | prompt text only |
 | `AbstractBot` (`bots/base.py`) | none | already appends `context.to_prompt_string()` to the system prompt |
 
@@ -168,6 +178,7 @@ class MemoryContext(BaseModel):
 class MemoryConfig(BaseModel):
     episodic_max_recall: int = Field(default=3, ge=0)   # 0 disables the non-failure lane
     user_max_records: int = Field(default=20, ge=0, le=100)
+    user_context_tokens: int | None = Field(default=None, ge=0)  # None preserves legacy direct callers
 
 # parrot/memory/agent_memory/models.py
 class AgentMemoryConfig(BaseModel):
@@ -183,6 +194,14 @@ def query_terms(text: str) -> tuple[str, ...]: ...
 # parrot/memory/user/store.py
 class UserMemoryStore:
     async def profile(self, *, scope: MemoryRequestScope, query: str = "", limit: int = 20) -> list[UserKnowledge]: ...
+
+# parrot/memory/episodic/store.py — recall_similar signature and retrieval behavior remain unchanged
+class EpisodicMemoryStore:
+    async def recall_interactions(
+        self, query: str, namespace: MemoryNamespace, *, top_k: int = 3,
+        score_threshold: float = 0.3, exclude_session_id: str | None = None,
+        null_dimensions: tuple[str, ...] = (),
+    ) -> list[EpisodeSearchResult]: ...
 ```
 
 ---
@@ -236,11 +255,15 @@ class UserMemoryStore:
       ) -> list[UserKnowledge]:
           """Return the user's active, currently valid knowledge in delivery order.
 
-          Reads at most ``_MAX_RESULT_LIMIT`` active rows of the scope's (tenant, agent, user) whose
-          validity window contains now, then orders them by: kind group (constraint/preference before
+          Considers every active row of the scope's (tenant, agent, user) whose validity window
+          contains one captured ``now``, then orders by: kind group (constraint/preference before
           goal/fact), number of ``query_terms(query)`` found in ``searchable_text`` (descending),
           ``updated_at`` (descending), ``knowledge_id`` (descending). Returns the first ``limit``.
-          A blank query ranks by kind group and recency only.
+          A blank query ranks by kind group and recency only. ``_MAX_RESULT_LIMIT`` bounds the
+          returned result count, never the population searched or ranked. Use one scoped SELECT
+          cursor under ``_lock``, ``fetchmany(100)`` batches, and a bounded best-``limit`` accumulator
+          with the same total ordering. Close the cursor in ``finally``. No raw-row LIMIT 100 or
+          full-result ``fetchall()``; limit=0 returns without opening the cursor.
 
           Raises:
               ValueError: ``missing_user_identity`` when the scope has no user; ``invalid_parameters``
@@ -252,8 +275,10 @@ class UserMemoryStore:
 
           New contract: a blank query lists the newest active valid records (unchanged). A non-blank
           query returns the active valid records containing at least one ``query_terms(query)`` term,
-          ordered by matched-term count (descending) then ``updated_at`` (descending). A query whose
-          terms are all shorter than ``MIN_TERM_LENGTH`` falls back to the previous whole-query
+          ordered by matched-term count (descending), ``updated_at`` (descending), then
+          ``knowledge_id`` (descending). Match and rank across all eligible rows using the same
+          bounded-memory scan as profile(), case-folding searchable_text before term comparison.
+          A query whose terms are all shorter than ``MIN_TERM_LENGTH`` falls back to the previous whole-query
           substring match, so short literal lookups keep working.
           """
 
@@ -272,7 +297,8 @@ class UserMemoryStore:
 
 ### Module 3: Episodic recall lane
 - **Path**: `packages/ai-parrot/src/parrot/memory/unified/models.py`, `.../unified/context.py`,
-  `.../unified/manager.py`, `.../agent_memory/models.py`, `.../agent_memory/factory.py`
+  `.../unified/manager.py`, `.../agent_memory/models.py`, `.../agent_memory/factory.py`,
+  `.../episodic/store.py`
 - **Responsibility**: Recall relevant non-failure episodes of earlier sessions and render them apart
   from failure warnings.
 - **Depends on**: Module 1 (better lexical terms make the lane useful); shares `manager.py` and
@@ -296,21 +322,29 @@ class UserMemoryStore:
   class MemoryConfig(BaseModel):                 # verified: models.py:164
       episodic_max_recall: int = Field(default=3, ge=0)
       user_max_records: int = Field(default=20, ge=0, le=100)
+      user_context_tokens: int | None = Field(default=None, ge=0)
 
   # unified/context.py  (modifies assemble_candidates, verified: context.py:125)
   #   The "episodic" section keeps ONE budget. Candidates are ordered warnings first, then recall,
   #   each by the existing key. Accepted warning text goes to `episodic_warnings`, accepted recall
   #   text to `episodic_recall`. The fit test and `tokens_used` count both texts together.
   #   delivered_refs / memory_refs are appended for both lanes, as today.
+  #   For user_knowledge, compute the normal weighted allocation plus rollover, then clamp it
+  #   to config.user_context_tokens when non-None. Zero means no user content or references,
+  #   even if the token estimator rounds a short record to zero. None keeps legacy packing.
+  #   Use the same packed-text estimate for the fit test and tokens_used; do not truncate records.
+  #   Neither disabled sections nor empty earlier sections may raise the user ceiling.
 
   # unified/manager.py  (modifies _get_episodic_candidates, verified: manager.py:594)
   class UnifiedMemoryManager:
       async def _get_episodic_candidates(self, query: str, scope: MemoryRequestScope) -> list[MemoryCandidate]:
-          """Lane "warning": unchanged (failures only, top ``episodic_max_warnings``).
+          """Lane "warning": existing policy (failures only, top ``episodic_max_warnings``).
 
           Lane "recall", only when ``config.episodic_max_recall > 0``: for every
-          ``_recall_scopes(scope)`` entry call ``recall_similar(..., include_failures_only=False,
-          top_k=episodic_max_recall + episodic_max_warnings)``; keep episodes that pass
+          ``_recall_scopes(scope)`` entry call ``recall_interactions(...,
+          exclude_session_id=scope.session_id,
+          top_k=episodic_max_recall)``. The store applies exclusions before top-k; the manager
+          defensively re-checks them. Keep episodes that pass
           ``_visible_to_scope``, are not failures, are not already in the warning lane, and whose
           ``session_id`` differs from ``scope.session_id`` when the scope has a session. Sort with the
           existing score key and keep ``episodic_max_recall``. Build candidates exactly like warnings
@@ -323,8 +357,39 @@ class UserMemoryStore:
 
   # agent_memory/factory.py  (modifies _manager_config, verified: factory.py:86-103)
   #   MemoryConfig(..., episodic_max_recall=config.max_episodic_recall,
-  #                user_max_records=config.max_user_records)
+  #                user_max_records=config.max_user_records,
+  #                user_context_tokens=config.user_context_tokens)
   ```
+- **Store eligibility contract** (`recall_interactions` in §2):
+  - This new method always retrieves lexically, even when the store has an embedding provider or
+    recall strategy. The feature's interaction lane promises normalized term overlap, not semantic
+    recall. Do not route it through vector search or hybrid indexes: their internal candidate caps
+    can hide eligible rows regardless of requested top-k. Existing `recall_similar` callers retain
+    their lexical/vector/strategy selection and current filtering behavior.
+  - Reject negative `top_k` or score thresholds outside 0..1 with `ValueError`; zero top-k and an
+    empty normalized term set return `[]`. Always reject `is_failure` episodes; `exclude_session_id`
+    rejects that exact non-null session. `None` excludes no session, so agent-level episodes remain
+    visible under the existing policy.
+  - Add a private opt-in interaction mode to `_fallback_lexical_search` (default off) and pass the
+    excluded session only from `recall_interactions`. In this mode apply namespace, retraction,
+    failure and session eligibility before counting a match
+    toward `top_k`. Continue `get_recent_matching` keyset pages until enough eligible matches or
+    page exhaustion; rejected rows still advance `before_id`. The backend-without-paging fallback
+    applies the same eligibility before slicing. Never use a fixed overfetch multiple as proof
+    that no eligible episode exists.
+  - With interaction mode off, retain the current failure/category/retraction filtering order and
+    limits used by `recall_similar`; moving retraction filtering ahead of a limit globally would
+    change warning selection. Only the shared tokenizer change from M1 affects both paths.
+  - `recall_interactions` preserves the score threshold, namespace/null-dimension filters and
+    existing dynamics ranking key (`rank_episodes` with resolved states) over the eligible lexical
+    matches, without widening visibility to fill a quota. Return original episode identities.
+  - Gather the scope results as today, deduplicate by episode ID, sort using the existing score
+    key, then apply the final lane limit. Cancellation propagates; ordinary per-scope errors are
+    logged and skipped. The warning lane uses the existing arguments.
+- **User ceiling compatibility**: the new `MemoryConfig.user_context_tokens` defaults to `None`
+  for direct manager callers. The agent factory always supplies the existing agent setting
+  (600 by default); it remains a relative weight as well as becoming a hard ceiling. The final
+  user allocation is the smaller of that ceiling and the normal allocation after rollover.
 
 ### Module 4: Extraction prompt
 - **Path**: `packages/ai-parrot/src/parrot/memory/user/extraction.py`
@@ -351,7 +416,10 @@ class UserMemoryStore:
 ### Module 6: Live E2E, example and wiki (host only)
 - **Path**: `packages/ai-parrot/tests/e2e/test_agent_memory_live.py` (new directory, auto-marked
   `e2e`), `examples/memory/agent_memory_e2e.py`, `wiki/memory/user-memory.md`,
-  `wiki/memory/agent-memory.md`, `sdd/state/FEAT-904/e2e-plan.md`
+  `wiki/memory/agent-memory.md`, `sdd/state/FEAT-904/e2e-plan.md`,
+  `packages/ai-parrot-server/tests/unit/e2e/test_live_gate.py`,
+  `packages/ai-parrot-server/tests/unit/e2e/test_runner.py`,
+  `packages/ai-parrot-server/tests/unit/e2e/test_evidence.py`
 - **Responsibility**: Run the real loop and record the evidence; update the example and the docs.
 - **Depends on**: Modules 1–5
 - **Interface Skeleton**:
@@ -370,6 +438,17 @@ class UserMemoryStore:
       "what do you know about me" mentions the short-answer preference.
       """
   ```
+- The generated plan keeps `policy: optional` but sets this live scenario's `required: true`.
+  This distinction is supported by `E2EPlan`/`ScenarioSpec`: invoking the live plan is optional;
+  passing its declared proof is mandatory for that run to count as success. Add offline contract
+  coverage using synthetic evidence for failed, skipped, missing and passed node outcomes, including
+  setup/call/teardown failures. Both runner and evidence verification must refuse unsuccessful proof.
+  These tests do not call Redis or a provider and do not change the generic harness policy.
+- Resolve the forwarded plan budget with `resolve_plan_budget`, validate opt-in with
+  `require_live_opt_in`, construct one `GenerationBudget` via `build_live_generation_budget`, and
+  supply that same object to every `build_live_client` used by both agent instances and their
+  extraction clients. Client factories must not reset the budget between sessions or background
+  extraction calls. No real client is constructed before the opt-in and prerequisite checks.
 
 ---
 
@@ -383,17 +462,27 @@ class UserMemoryStore:
 | `test_fallback_lexical_search_ignores_punctuation` | M1 | an episode with "Australia" matches the query `"australia?"` |
 | `test_profile_returns_all_active_for_unrelated_question` | M2 | a natural-language question with no shared words returns every active record |
 | `test_profile_orders_kind_group_then_overlap_then_recency` | M2 | constraint/preference first; overlap breaks ties inside a group |
+| `test_profile_ranks_older_preference_beyond_first_page` | M2 | one older preference survives 200 newer facts and precedes them with limit=20 |
+| `test_recall_finds_unique_match_beyond_first_page` | M2 | explicit term and short literal lookups find the sole older match beyond 200 newer rows |
+| `test_profile_and_recall_scan_with_bounded_memory` | M2 | cursor batches are bounded; no raw-row cutoff; global ordering agrees with a full-sort oracle |
 | `test_profile_excludes_pending_superseded_and_expired` | M2 | only active, currently valid records |
 | `test_profile_requires_user_identity_and_bounded_limit` | M2 | `missing_user_identity`, `invalid_parameters` |
 | `test_recall_matches_any_term_of_a_question` | M2 | `"what short answers do I like"` finds the "short answers" record |
 | `test_recall_blank_and_short_literal_queries_unchanged` | M2 | `""` lists newest; `"x"` uses the substring match |
 | `test_user_candidates_keep_profile_order_through_assembler` | M2 | packed `user_knowledge` lines follow the profile order |
 | `test_episodic_recall_lane_excludes_current_session_and_failures` | M3 | only other-session, non-failure episodes |
+| `test_recall_lane_survives_excluded_matches_across_pages` | M3 | more than one lexical page of current-session matches/failures cannot hide an older eligible episode; mixed exclusions and retractions included |
+| `test_interaction_recall_bypasses_vector_and_strategy_caps` | M3 | SQLite with a small vector_ceiling plus an injected embedding/strategy still recalls an eligible old lexical match; vector/embed/strategy search must not run |
+| `test_recall_exclusions_exhaust_without_widening_scope` | M3 | all candidates excluded yields empty results and terminates; other users stay hidden; negative top_k and invalid thresholds raise ValueError |
+| `test_warning_retraction_order_is_unchanged` | M3 | newest retracted failure plus older valid failure at top_k=1 retains existing warning result; interaction mode alone filters retractions before limits |
 | `test_episodic_recall_lane_disabled_at_zero` | M3 | `episodic_max_recall=0` → `episodic_recall == ""`, warnings unchanged |
 | `test_assembler_splits_episodic_lanes_within_one_budget` | M3 | warnings first; recall dropped whole when it does not fit |
 | `test_prompt_string_renders_relevant_past_interactions` | M3 | tag, preface line and escaping |
 | `test_recall_lane_refs_enter_delivered_exposure` | M3 | `delivered_refs` and `memory_refs` include recalled episodes |
 | `test_agent_config_maps_new_limits` | M3 | `max_episodic_recall` / `max_user_records` reach `MemoryConfig` |
+| `test_user_section_cap_applies_after_normalization_and_rollover` | M3 | only-user config and empty earlier sections cannot exceed 600 estimated tokens; an 800-token record is omitted whole |
+| `test_user_section_cap_zero_and_legacy_none` | M3 | zero emits no user content/refs, including sub-four-character records; None preserves direct-manager packing; factory maps the ceiling |
+| `test_optional_live_plan_requires_successful_proof` | M6 | optional plan with required live node validates; runner and verifier reject failed/skipped/missing and bad-phase evidence, accepting only successful execution |
 | `test_extraction_prompt_rejects_task_instructions_and_keeps_language` | M4 | prompt text contains both rules |
 
 ### Integration Tests
@@ -419,6 +508,11 @@ tests:
 - packages/ai-parrot/tests/memory/agent_memory/test_config.py
 - packages/ai-parrot/tests/memory/agent_memory/test_factory.py
 - packages/ai-parrot/tests/memory/episodic/test_store_integration.py
+- packages/ai-parrot/tests/memory/dynamics/test_reviews.py
+- packages/ai-parrot/tests/memory/dynamics/test_store_reviews.py
+- packages/ai-parrot-server/tests/unit/e2e/test_live_gate.py
+- packages/ai-parrot-server/tests/unit/e2e/test_runner.py
+- packages/ai-parrot-server/tests/unit/e2e/test_evidence.py
 markers: none
 
 ### Test Data / Fixtures
@@ -435,18 +529,19 @@ async def memory_manager(tmp_path):
 
 ### E2E Scenarios
 
-- **Policy**: `optional` — matches frontmatter `e2e.policy`.
+- **Policy**: `optional` — matches frontmatter `e2e.policy`; no automatic live execution is required.
 - **Required deterministic scenarios**: none. The deterministic proof is the Validation Contract above.
 - **Live / exploratory scenarios**: one live scenario, listed below. It calls a real provider under
   `PARROT_TEST_REAL_LLM=1`, needs Redis and writes a SQLite file, so it runs **on the host**, never in
   a sandboxed worker or coder seat.
 - **Generated plan**: `sdd/state/FEAT-904/e2e-plan.md`, produced at task decomposition with the frozen
-  node ID. No `targets` (the agent runs in-process). Budget: a Google model, `max_calls` sized for
-  about 6 agent turns plus one extraction call per turn, with retries.
+  node ID and `required: true` on the live scenario. No `targets` (the agent runs in-process).
+  Budget: a Google model, `max_calls` sized for about 6 agent turns plus one extraction call per
+  turn, with retries. All clients share the same generation budget as specified in M6.
 
 | Scenario ID | Tier | Required | Target(s) | Notes |
 |---|---|---|---|---|
-| `agent-memory-cross-session-live` | live | no | none (in-process agent) | explicit opt-in only; host run; evidence attached to the task |
+| `agent-memory-cross-session-live` | live | yes, within the invoked optional plan | none (in-process agent) | explicit opt-in only; host run; a failing/skipped/missing node cannot satisfy proof |
 
 Validation commands (exact node ID supplied by the generated plan):
 ```bash
@@ -459,24 +554,34 @@ python examples/memory/agent_memory_e2e.py
 
 ## 5. Acceptance Criteria
 
-- [ ] `UserMemoryStore.profile()` returns every active, valid record of a user for a question that
-      shares no words with them, ordered as specified.
+- [ ] `UserMemoryStore.profile()` considers all active, valid records for an unrelated question and
+      returns the first `limit` in the specified global order, including older preferences beyond
+      100 rows. Result limits bound returned records, not the eligible population.
 - [ ] `prepare_context()` for an identified user with stored knowledge returns a non-empty
-      `user_knowledge` section for any non-blank question, within `user_context_tokens`.
+      `user_knowledge` section for any non-blank question when user memory and result limits are
+      enabled and at least one selected whole record fits. Packed user content never exceeds the
+      `user_context_tokens` estimate ceiling after normalization/rollover. Zero suppresses it;
+      `MemoryConfig.user_context_tokens=None` preserves legacy direct-manager allocation.
 - [ ] `recall()` finds a record from a multi-word natural-language query that contains one of its
-      terms; blank and short literal queries behave as before.
+      terms even beyond the first 100 eligible rows; blank and short literal queries behave as before.
 - [ ] A non-failure episode recorded in an earlier session of the same user is delivered under
-      `<relevant_past_interactions>` when the new question shares terms with it.
+      `<relevant_past_interactions>` when it meets the lexical score threshold and fits the budget,
+      even behind more than one page of current-session or failure matches. The lane remains lexical
+      with an injected embedding provider/strategy and is not subject to their candidate windows.
 - [ ] Episodes of the requesting session, failure episodes and other users' episodes never appear in
-      `episodic_recall`. Failure warnings are unchanged.
-- [ ] `episodic_max_recall=0` (and `max_episodic_recall=0` on the agent config) reproduces today's
-      prompt block byte for byte.
+      `episodic_recall`. Failure-warning eligibility, filtering order and packing policy remain
+      unchanged; only M1's shared tokenizer change can alter their lexical matches.
+- [ ] `episodic_max_recall=0` (and `max_episodic_recall=0` on the agent config) emits no recall
+      section or recall references. For identical candidates with no eligible recall, enabled and
+      disabled lanes produce identical prompts; profile/tokenizer/cap changes remain active.
 - [ ] Recalled episodes appear in `delivered_refs` and `memory_refs`; FEAT-903 citation and review
       tests still pass unchanged.
 - [ ] Every Validation Contract file passes.
 - [ ] The live scenario `agent-memory-cross-session-live` was run from the host with a real LLM and
-      Redis and passed; `parrot e2e verify` accepts its evidence, and the run output is quoted in the
-      task's Completion Note.
+      Redis and passed under `policy: optional`, scenario `required: true`; `parrot e2e verify`
+      accepts its successful setup/call/teardown evidence. A failed, skipped or missing live node
+      cannot pass the invoked proof plan. The Completion Note quotes the node outcome and run/verify
+      output, not just an aggregate PASS. One shared generation budget covers both sessions and extraction.
 - [ ] `python examples/memory/agent_memory_e2e.py` shows a non-empty memory block in session B and an
       answer that reflects the stored preferences; the "nothing was recalled" note is gone.
 - [ ] `wiki/memory/user-memory.md` and `wiki/memory/agent-memory.md` describe profile recall, the
@@ -576,9 +681,12 @@ class AgentMemoryMixin:                                                        #
 |---|---|---|---|
 | `UserMemoryStore.profile()` | `UnifiedMemoryManager._get_user_candidates` | replaces the `recall()` call | `memory/unified/manager.py:694` |
 | `query_terms()` | `EpisodicMemoryStore._fallback_lexical_search` | replaces the whitespace split | `memory/episodic/store.py:368` |
-| recall lane | `EpisodicMemoryStore.recall_similar(include_failures_only=False)` | method call per `_recall_scopes` entry | `memory/unified/manager.py:611-623` |
+| recall lane | new `EpisodicMemoryStore.recall_interactions` | method call per `_recall_scopes` entry | existing warning loop: `memory/unified/manager.py:611-623` |
+| pre-limit exclusions | `_fallback_lexical_search` interaction mode | private opt-in mode used only by the new lexical interaction method | existing lexical paging: `memory/episodic/store.py:357-399` |
 | `MemoryContext.episodic_recall` | `MemoryContext.to_prompt_string()` | new section | `memory/unified/models.py:143-144` |
 | `AgentMemoryConfig.max_*` | `_manager_config()` | constructor kwargs | `memory/agent_memory/factory.py:95-103` |
+| user token ceiling | `_manager_config()` → `ContextAssembler.assemble_candidates` | explicit cap after weight normalization and rollover | `memory/agent_memory/factory.py:104-116`, `memory/unified/context.py:194-212` |
+| required live proof | `ScenarioSpec.required` under `E2EPlan.policy=optional` | existing runner/verifier required-node evaluation | `packages/ai-parrot-server/src/parrot/e2e/models.py:171-222`, `runner.py:363-369`, `evidence.py:649-667` |
 
 ### Does NOT Exist (Anti-Hallucination)
 - ~~`parrot.memory.lexical`~~ — created by Module 1; no tokenizer helper exists in `parrot/memory/` today
@@ -587,6 +695,10 @@ class AgentMemoryMixin:                                                        #
 - ~~`MemoryContext.episodic_recall`~~, ~~`MemoryCandidate.lane`~~, ~~`MemoryConfig.episodic_max_recall`~~,
   ~~`MemoryConfig.user_max_records`~~, ~~`AgentMemoryConfig.max_episodic_recall`~~,
   ~~`AgentMemoryConfig.max_user_records`~~ — all created here.
+- ~~`MemoryConfig.user_context_tokens`~~ — new optional ceiling here; the existing agent-level
+  setting currently feeds relative weights only, so the present assembler does not enforce a hard cap.
+- ~~`EpisodicMemoryStore.recall_interactions`~~ — new lexical-only method here; no backend schema
+  change or public `recall_similar` signature change is required.
 - ~~An embedding provider on the default episodic store~~ — `create_memory_manager` builds
   `EpisodicMemoryStore(backend)` with none; recall always takes the lexical fallback.
 - ~~FTS5 table for `user_knowledge`~~ — the store uses plain `LIKE`; this feature adds no virtual table.
@@ -603,6 +715,7 @@ Verified against: `9f42c6960a`
 |---|---|---|---|---|
 | `packages/ai-parrot/src/parrot/memory/lexical.py` | CREATE | — | — | — |
 | `packages/ai-parrot/src/parrot/memory/episodic/store.py` | MODIFY | `terms = tuple(term for term in query.casefold().split() if term)` | `store.py:368` | 1 |
+| `packages/ai-parrot/src/parrot/memory/episodic/store.py` | MODIFY | `    async def recall_similar(` | `store.py:975`; insert new recall_interactions method adjacent, preserve existing method | 1 |
 | `packages/ai-parrot/src/parrot/memory/user/store.py` | MODIFY | `    async def recall(` | `store.py:124` | 1 |
 | `packages/ai-parrot/src/parrot/memory/user/store.py` | MODIFY | `_MAX_RESULT_LIMIT = 100` | `store.py:20` | 1 |
 | `packages/ai-parrot/src/parrot/memory/unified/manager.py` | MODIFY | `knowledge = await self.user_memory_store.recall(query, scope=scope)` | `manager.py:694` | 1 |
@@ -613,6 +726,7 @@ Verified against: `9f42c6960a`
 | `packages/ai-parrot/src/parrot/memory/unified/models.py` | MODIFY | `sections.append(block("past_failures_to_avoid", self.episodic_warnings))` | `models.py:144` | 1 |
 | `packages/ai-parrot/src/parrot/memory/unified/models.py` | MODIFY | `episodic_max_warnings: int = Field(` | `models.py:201` | 1 |
 | `packages/ai-parrot/src/parrot/memory/unified/context.py` | MODIFY | `episodic_warnings=packed_sections.get("episodic", ""),` | `context.py:216` | 1 |
+| `packages/ai-parrot/src/parrot/memory/unified/context.py` | MODIFY | `            section_budget = int(budget * weights[section]) + rollover` | `context.py:196` | 1 |
 | `packages/ai-parrot/src/parrot/memory/agent_memory/models.py` | MODIFY | `max_episodic_warnings: int = Field(default=3, ge=0)` | `models.py:34` | 1 |
 | `packages/ai-parrot/src/parrot/memory/agent_memory/factory.py` | MODIFY | `episodic_max_warnings=config.max_episodic_warnings,` | `factory.py:102` | 1 |
 | `packages/ai-parrot/src/parrot/memory/user/extraction.py` | MODIFY | `_SYSTEM_PROMPT = (` | `extraction.py:25` | 1 |
@@ -620,6 +734,9 @@ Verified against: `9f42c6960a`
 | `packages/ai-parrot/tests/memory/user/test_profile.py` | CREATE | — | — | — |
 | `packages/ai-parrot/tests/memory/unified/test_cross_session_recall.py` | CREATE | — | — | — |
 | `packages/ai-parrot/tests/e2e/test_agent_memory_live.py` | CREATE | — | — | — |
+| `packages/ai-parrot-server/tests/unit/e2e/test_live_gate.py` | MODIFY | `class TestRequireLiveOptIn:` | `test_live_gate.py:63`; extend shared-budget coverage | 1 |
+| `packages/ai-parrot-server/tests/unit/e2e/test_runner.py` | MODIFY | `def test_required_missing_or_blocked_coverage_is_blocked() -> None:` | `test_runner.py:44` | 1 |
+| `packages/ai-parrot-server/tests/unit/e2e/test_evidence.py` | MODIFY | `async def test_verify_evidence_policy_none_returns_pass_without_touching_evidence(git_worktree: Path) -> None:` | `test_evidence.py:221`; extend optional-plan/required-live cases | 1 |
 | `examples/memory/agent_memory_e2e.py` | CREATE | — (untracked draft exists in the main checkout; `examples/**/*.py` is git-ignored, add with `git add -f`) | — | — |
 | `wiki/memory/user-memory.md` | MODIFY | `## Gotchas` | `user-memory.md:191` | 1 |
 | `wiki/memory/agent-memory.md` | MODIFY | `### AgentMemoryConfig` | `agent-memory.md:37` | 1 |
@@ -630,8 +747,12 @@ Verified against: `9f42c6960a`
 
 ### Patterns to Follow
 - Async-first; the user store keeps its single `aiosqlite` connection and its `_lock`.
-- Ranking for `profile()` and `recall()` happens in Python over at most `_MAX_RESULT_LIMIT` rows read
-  by the existing scope + status + validity predicate. Do not add a virtual table or a migration.
+- Ranking for `profile()` and term-based `recall()` considers the complete eligible population under
+  the existing scope + status + validity predicate. Use one cursor, bounded batches and a bounded
+  best-`limit` accumulator (at most 100 retained winners); never cap raw input at `_MAX_RESULT_LIMIT`.
+  Preserve the SQL predicate-before-limit behavior for blank and short literal recall. Capture one
+  validity timestamp per call and close the cursor on success, failure and cancellation. No virtual
+  table or migration is needed. Case-fold both query terms and record text for term comparison.
 - Pydantic v2 models; `MemoryCandidate` and `AgentMemoryConfig` use `extra="forbid"`, so every new
   field must be declared.
 - Tests that open an `aiosqlite` store close it in `try/finally` (or `async with`).
@@ -640,8 +761,16 @@ Verified against: `9f42c6960a`
 ### Known Risks / Gotchas
 - **Prompt growth.** Every request of an identified user now carries the profile. It is bounded by
   `user_context_tokens` (600 by default) and `max_user_records`.
-- **Byte-for-byte compatibility.** With `episodic_max_recall=0` and no stored user knowledge the
-  block must not change; one acceptance test pins this.
+- **Compatibility.** Zero disables only the new episodic lane; it does not roll back the tokenizer
+  or profile changes. With identical candidates and no eligible recall, enabled/disabled lane
+  prompts are equal. Direct `MemoryConfig` callers retain prior packing through a `None` user cap.
+- **Recall starvation.** The new lane uses eligibility-aware lexical paging regardless of injected
+  embeddings or strategies, so internal vector/index candidate ceilings cannot hide older eligible
+  rows. Fixed overfetch and a short post-filter list cannot establish exhaustion; test excluded
+  matches across multiple pages and a fully excluded population.
+- **Profile growth.** The store has no 100-record storage ceiling. Global ranking uses bounded
+  application memory but scans all eligible records; retrieval cost grows with profile size. Do not
+  silently trade correctness for an input cutoff. Future indexing is outside this feature.
 - **Review surface.** Non-failure episodes now enter delivered exposures, so they can be cited and
   reviewed. FEAT-903's admission rules are reused unchanged; its tests are in the Validation Contract.
 - **Lexical recall is shallow.** Term overlap finds "Australia" again but not a paraphrase. That is
@@ -666,7 +795,7 @@ None. `re` from the standard library only.
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:d5a4a1df4bdb1b7b5a167e3a1eb8bdfcb252a851e91e8f62d6d12275a5dec21d evaluation_digest=sha256:58f08eca1c1c1709fbb265d515bc41106319f3c9dcf9cc929eb0551a53d8c86f rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:27155200f9e7750c5d1638e733f6121dc2767e0f618c9b2232abfe4841ecd6bb evaluation_digest=sha256:953d2bc71e824d55686b419357d4c0ce00d39693ea8952eda1aea0d6e74a34b8 rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -719,10 +848,10 @@ Coverage:
       "path": "/home/jesuslara/proyectos/ai-parrot/sdd/specs/user-memory-recall-e2e.spec.md"
     }
   ],
-  "evaluation_digest": "sha256:58f08eca1c1c1709fbb265d515bc41106319f3c9dcf9cc929eb0551a53d8c86f",
+  "evaluation_digest": "sha256:953d2bc71e824d55686b419357d4c0ce00d39693ea8952eda1aea0d6e74a34b8",
   "exit_code": 0,
   "findings": [],
-  "input_digest": "sha256:d5a4a1df4bdb1b7b5a167e3a1eb8bdfcb252a851e91e8f62d6d12275a5dec21d",
+  "input_digest": "sha256:27155200f9e7750c5d1638e733f6121dc2767e0f618c9b2232abfe4841ecd6bb",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
@@ -755,10 +884,10 @@ Coverage:
       warnings.
 - [x] How is the unsandboxed E2E declared? — *Resolved by Jesus Lara, 2026-11-16*: as a `live`
       scenario of the `parrot e2e` gate, run from the host.
-- [ ] Does the live budget of `parrot e2e` (`LiveBudget`, Google models, `max_calls`) apply to an
-      in-process `BasicAgent` and to the extraction clients it builds, or only to clients built with
-      `parrot.e2e.live.build_live_client`? Decide in the M6 task whether the test builds its agent
-      through that helper. — *Owner: implementer of M6*
+- [x] How is the in-process live budget enforced? — *Resolved by contract review, 2026-11-16*:
+      `build_live_client` passes an explicit `GenerationBudget` to the client factory; the plan alone
+      does not instrument arbitrary clients. M6 must share one budget across both agent instances
+      and every extraction client, using the helpers in `parrot.e2e.live` (§3, M6).
 - [ ] Should `user_memory_priority` (declared, unused) be removed or wired now that the profile is
       always delivered? Left untouched here. — *Owner: Jesus Lara*
 
@@ -766,13 +895,25 @@ Coverage:
 
 ## 9. Design Research Cross-Check
 
-Status: skipped (no accepted exploration document; the spec was written from inline notes and a
-measured reproduction, so the codex design seat had no neutral input to review).
+Initial design research was skipped. A subsequent independent read-only Codex review checked the
+draft against source contracts; all four initial findings and two follow-up findings were confirmed
+and incorporated in revision 0.2.
+The existing storage/context/review-admission baseline passed 53 tests. Local contract probes
+reproduced episodic starvation (six excluded matches hide one eligible episode) and the prior
+budget mismatch (800 estimated tokens admitted with a 600-token user setting). These are baseline
+observations, not evidence that the proposed feature has been implemented or passed its new tests.
 
 | # | Suggestion (kind) | Disposition | Reason | Landed in |
 |---|---|---|---|---|
+| 1 | Apply episodic eligibility before result limits (`issue:8edfe225d06a`) | CONFIRM | Fixed top-k can contain only excluded episodes | §2 interface, M3 retrieval contract, saturation tests |
+| 2 | Rank the complete user population (`issue:6d364336f3ad`) | CONFIRM | 100 bounds output, not stored active rows | M2 bounded-memory scan, >100-row tests |
+| 3 | Enforce an explicit user token ceiling (`issue:4d15f879cc63`) | CONFIRM | Existing weights and rollover do not enforce a cap | MemoryConfig, M3 factory/assembler, zero/None/rollover tests |
+| 4 | Require passing evidence inside the opt-in live plan (`issue:eac9b85d9122`) | CONFIRM | Optional-node failures do not fail aggregate run/verify | M6 required scenario, offline evidence cases, §5 acceptance |
+| 5 | Increasing vector top-k cannot bypass backend/index candidate ceilings | CONFIRM; fixed in revision | SQLite vector_ceiling and hybrid max_episodes_for_index precede retrieval limits | Dedicated lexical-only recall_interactions path, capped-provider regression case |
+| 6 | Global pre-limit retraction filtering would change warning selection | CONFIRM; fixed in revision | Existing warning path filters retractions after slicing | Private interaction mode only; warning retraction-order regression case |
 
-Summary: **0** confirmed · **0** rejected · **0** escalated.
+Summary: **6** confirmed · **0** rejected · **0** escalated. The user approved the revised spec;
+implementation and live evidence are still required before feature acceptance.
 
 ---
 
@@ -781,13 +922,16 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 - **Policy**: `required`
 - **Pages**:
   - `wiki/memory/user-memory.md` — update: profile delivery, term-based `recall()`, `max_user_records`,
-    extraction rules; replace the literal-match description.
+    bounded-memory full-population ranking, hard `user_context_tokens` ceiling, extraction rules;
+    replace the literal-match description.
   - `wiki/memory/agent-memory.md` — update: the recall lane, `<relevant_past_interactions>`,
-    `max_episodic_recall`, session exclusion, and a pointer to `examples/memory/agent_memory_e2e.py`.
+    `max_episodic_recall`, exclusions before result limits, optional-plan/required-proof semantics,
+    and a pointer to `examples/memory/agent_memory_e2e.py`.
 - **API modules**:
   - `parrot.memory.user.store`
   - `parrot.memory.unified.manager`
   - `parrot.memory.lexical`
+  - `parrot.memory.episodic.store`
 
 ---
 
@@ -801,7 +945,7 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
   - M6 → M5 (the live run only makes sense once the deterministic gate is green).
   - M4 has no edge to M1–M3 and can run concurrently with them.
 - **Shared files**: `memory/unified/manager.py` and `memory/unified/models.py` are modified by M2 and
-  M3 — their tasks are serialized.
+  M3 — their tasks are serialized. M1 and M3 also share `memory/episodic/store.py`; M3 follows M1.
 - **Exclusive resources**: M6 uses Redis, a provider API key and the `parrot e2e` state directory; its
   task is `parallel: false` and host only.
 - **Cross-feature dependencies**: none pending. FEAT-892 and FEAT-903 are already on `dev`.
@@ -813,3 +957,5 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-11-16 | Jesus Lara / Claude | Initial draft |
+| 0.2 | 2026-11-16 | Codex | Resolve all four review findings: pre-limit episodic eligibility, full-population user ranking, hard user token ceiling and required proof within an optional live plan; align regression tests and acceptance |
+| 0.3 | 2026-11-16 | Jesus Lara / Codex | User approved the reviewed specification for task decomposition and implementation |
