@@ -13,9 +13,11 @@ from typing import Any
 
 import pytest
 
+from parrot.memory.dynamics.export import ExportError, export_reviews
 from parrot.memory.dynamics.models import ReviewCommand, ReviewReceipt
 from parrot.memory.episodic.backends.sqlite import SQLiteEpisodeBackend
-from parrot.memory.episodic.models import EpisodicMemory
+from parrot.memory.episodic.models import EpisodicMemory, MemoryNamespace
+from parrot.memory.episodic.store import EpisodicMemoryStore
 
 
 def _episode(episode_id: str, *, expires_at: datetime | None = None) -> EpisodicMemory:
@@ -256,14 +258,25 @@ async def test_archive_replay_after_export_failure(tmp_path: Path) -> None:
     await backend.configure()
     try:
         assert (await backend.apply_review(command)).status == "applied"
-        with pytest.raises(OSError, match="export unavailable"):
-            raise OSError("export unavailable")
+        # A real failed export (the destination directory does not exist) is reported and loses nothing.
+        namespace = MemoryNamespace(tenant_id="tenant-a", agent_id="agent-a", user_id="user-a", session_id="session-a")
+        store = EpisodicMemoryStore(backend, default_ttl_days=0)
+        destination = path.parent / "missing-directory" / "reviews.json"
+        with pytest.raises(ExportError):
+            await export_reviews(namespace=namespace, destination=destination, store=store)
+        assert not destination.exists()
         assert await backend.delete_expired() == 1
         cursor = await backend._db.execute("SELECT payload FROM reviews WHERE dedupe_key = ?", (command.dedupe_key,))
         row = await cursor.fetchone()
         assert row is not None
         archive = json.loads(row[0])
         assert archive["signal"]["evidence_ref"] == "coder-review/v1/execution/task/attempt"
+        # Once the destination is usable, the same committed review is exported after the TTL cleanup.
+        exported = destination.parent
+        exported.mkdir()
+        result = await export_reviews(namespace=namespace, destination=destination, store=store)
+        assert result["record_count"] == 1
+        assert json.loads(destination.read_text(encoding="utf-8"))["reviews"][0]["dedupe_key"] == command.dedupe_key
     finally:
         await backend.close()
 

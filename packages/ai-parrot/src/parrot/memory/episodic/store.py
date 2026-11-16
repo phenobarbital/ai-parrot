@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, TypeVar
 
 from parrot.memory.dynamics.grade import select_grade
 from parrot.memory.dynamics.models import (
@@ -71,6 +71,15 @@ def _auto_importance(
         base = min(base + 2, 10)
 
     return base
+
+
+_RETRACTED_FEEDBACK_KEY = "coder_feedback_retracted"
+_Recalled = TypeVar("_Recalled", bound=EpisodicMemory)
+
+
+def _exclude_retracted(episodes: list[_Recalled]) -> list[_Recalled]:
+    """Drop imported coder-feedback lessons whose ledger entry was retracted (spec C12, AC16)."""
+    return [episode for episode in episodes if episode.metadata.get(_RETRACTED_FEEDBACK_KEY) is not True]
 
 
 class EpisodicMemoryStore:
@@ -289,7 +298,8 @@ class EpisodicMemoryStore:
         """Read recent episodes from the full-scope cache or backend."""
         if self._cache is not None:
             cached = await self._cache.get_recent(namespace, limit=limit)
-            if cached is not None:
+            # The cache keeps only a bounded recent window: a shorter answer than requested is partial, not complete.
+            if cached is not None and len(cached) >= limit:
                 return cached
         return await self._backend.get_recent(namespace.build_filter(), limit=limit)
 
@@ -476,7 +486,8 @@ class EpisodicMemoryStore:
         """List committed reviews for one namespace; fails visibly when the backend cannot.
 
         Args:
-            namespace: Exact scope of committed review commands to return.
+            namespace: Scope of committed review commands to return. Every set dimension must match;
+                unset dimensions are unconstrained, exactly as in ``build_filter``.
             limit: Optional maximum row count after scope filtering and ordering.
 
         Returns:
@@ -792,6 +803,7 @@ class EpisodicMemoryStore:
 
         if category is not None:
             results = [r for r in results if r.category == category]
+        results = _exclude_retracted(results)
 
         ranked = rank_episodes(results, namespace=namespace)
         return [result for result in ranked if isinstance(result, EpisodeSearchResult)][:top_k]
@@ -840,7 +852,7 @@ class EpisodicMemoryStore:
             if recent_failures is None:
                 count = await self._backend.count(namespace.build_filter())
                 recent_failures = await self._backend.get_recent(namespace.build_filter(), limit=count)
-            for ep in recent_failures:
+            for ep in _exclude_retracted(recent_failures):
                 if ep.is_failure and ep.episode_id not in failures:
                     failures[ep.episode_id] = ep
         except Exception as e:
@@ -893,7 +905,7 @@ class EpisodicMemoryStore:
             List of USER_PREFERENCE category episodes.
         """
         count = await self._backend.count(namespace.build_filter())
-        episodes = await self._get_scoped_recent(namespace, limit=count)
+        episodes = _exclude_retracted(await self._get_scoped_recent(namespace, limit=count))
         preferences = [episode for episode in episodes if episode.category == EpisodeCategory.USER_PREFERENCE]
         return rank_episodes(preferences, namespace=namespace)[:limit]
 
@@ -914,7 +926,7 @@ class EpisodicMemoryStore:
             List of recent room-scoped episodes.
         """
         count = await self._backend.count(namespace.build_filter())
-        episodes = await self._get_scoped_recent(namespace, limit=count)
+        episodes = _exclude_retracted(await self._get_scoped_recent(namespace, limit=count))
 
         if categories:
             cat_values = {c.value for c in categories}

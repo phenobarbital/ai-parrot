@@ -476,7 +476,8 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
         """Return committed reviews for one namespace in a deterministic total order.
 
         Args:
-            namespace: Exact scope of committed review commands to return.
+            namespace: Scope of committed review commands to return. Every set dimension must match;
+                unset dimensions are unconstrained, exactly as in ``build_filter``.
             limit: Optional maximum row count after scope filtering and ordering.
 
         Returns:

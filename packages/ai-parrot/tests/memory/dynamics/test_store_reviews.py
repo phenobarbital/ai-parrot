@@ -15,7 +15,7 @@ from parrot.memory.agent_memory.runtime import (
 )
 from parrot.memory.dynamics.models import ReviewSignal
 from parrot.memory.episodic.backends.sqlite import SQLiteEpisodeBackend
-from parrot.memory.episodic.models import EpisodicMemory, MemoryNamespace
+from parrot.memory.episodic.models import EpisodeCategory, EpisodeOutcome, EpisodicMemory, MemoryNamespace
 from parrot.memory.episodic.store import EpisodicMemoryStore
 from parrot.memory.episodic.tools import EpisodicMemoryToolkit
 
@@ -242,3 +242,40 @@ async def test_store_list_reviews_delegates_and_fails_visibly(tmp_path: Path) ->
 
     with pytest.raises(RuntimeError, match="has no list_reviews capability"):
         await EpisodicMemoryStore(object()).list_reviews(namespace)
+
+
+class _PartialCache:
+    """Cache double whose recent window is shorter than the requested scope."""
+
+    def __init__(self, episodes: list[EpisodicMemory]) -> None:
+        self._episodes = episodes
+
+    async def get_recent(self, namespace: MemoryNamespace, limit: int = 10) -> list[EpisodicMemory]:
+        return self._episodes[:limit]
+
+
+@pytest.mark.asyncio
+async def test_partial_recent_cache_is_not_treated_as_complete(tmp_path: Path) -> None:
+    """A warm cache that holds fewer episodes than the scope must not hide the rest from category filters."""
+    namespace = MemoryNamespace(tenant_id="tenant-a", agent_id="agent-a", user_id="user-a")
+    backend = SQLiteEpisodeBackend(tmp_path / "episodes.sqlite")
+    await backend.configure()
+    try:
+        store = EpisodicMemoryStore(backend, default_ttl_days=0)
+        for index in range(4):
+            await store.record_episode(
+                namespace=namespace,
+                situation=f"preference {index}",
+                action_taken="noted",
+                outcome=EpisodeOutcome.SUCCESS,
+                category=EpisodeCategory.USER_PREFERENCE,
+                generate_reflection=False,
+            )
+        newest = (await backend.get_recent(namespace.build_filter(), limit=1))[0]
+        store._cache = _PartialCache([newest])  # type: ignore[assignment]
+
+        preferences = await store.get_user_preferences(namespace, limit=10)
+
+        assert len(preferences) == 4
+    finally:
+        await backend.close()

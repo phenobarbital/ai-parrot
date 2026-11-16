@@ -114,3 +114,31 @@ async def test_age_warning_preserves_current_effect(tmp_path: Path) -> None:
 
     assert "missing-stable-import-id" in context
     assert config.max_age_days == 30
+
+
+@pytest.mark.asyncio
+async def test_retracted_feedback_is_not_recalled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A retraction recorded in the ledger removes the imported lesson from every recall path (spec C12)."""
+    feedback_store = CoderFeedbackStore(LedgerLog(str(tmp_path / "feedback.jsonl")))
+    receipt = await feedback_store.record(_feedback())
+    monkeypatch.setattr(CoderFeedbackStore, "from_root", lambda _root: feedback_store)
+    backend = SQLiteEpisodeBackend(tmp_path / "episodes.sqlite")
+    await backend.configure()
+    namespace = MemoryNamespace(tenant_id="tenant-a", agent_id="agent-a", model_id="test-model")
+    memory_store = EpisodicMemoryStore(backend)
+    try:
+        await import_feedback(tmp_path, store=memory_store, namespace=namespace)
+        before = await memory_store.recall_similar("stable import identifiers", namespace, score_threshold=0.1)
+        assert [item.metadata["feedback_id"] for item in before] == [receipt.feedback_id]
+        assert len(await memory_store.get_room_context(namespace)) == 1
+
+        await feedback_store.retract(receipt.feedback_id, "wrong attribution", "human:test")
+        await import_feedback(tmp_path, store=memory_store, namespace=namespace)
+
+        assert await memory_store.recall_similar("stable import identifiers", namespace, score_threshold=0.1) == []
+        assert await memory_store.get_room_context(namespace) == []
+        assert await memory_store.get_user_preferences(namespace) == []
+        # The record is retained (replayable); it is only withheld from recall.
+        assert len(await _episodes(backend, namespace)) == 1
+    finally:
+        await backend.close()
