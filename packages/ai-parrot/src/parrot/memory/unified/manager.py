@@ -280,14 +280,14 @@ class UnifiedMemoryManager:
         self._active_memory_exposures.discard(exposure_id)
         self._memory_exposures.pop(exposure_id, None)
         if self.episodic is not None:
-            self.episodic._citations.pop(exposure_id, None)
+            self.episodic.release_citation(exposure_id)
 
     def discard_memory_exposure(self, exposure_id: str) -> None:
         """Invalidate a provider-failed or cancelled manifest without revealing its refs."""
         self._active_memory_exposures.discard(exposure_id)
         self._memory_exposures.pop(exposure_id, None)
         if self.episodic is not None:
-            self.episodic._citations.pop(exposure_id, None)
+            self.episodic.release_citation(exposure_id)
 
     async def record_event(self, event: MemoryEvent) -> MemoryWriteReceipt:
         """Route an observed event to its owning stores without replaying tool attempts.
@@ -349,7 +349,7 @@ class UnifiedMemoryManager:
         if exposure_id not in self._active_memory_exposures:
             return ignored
         exposure = self._memory_exposures.get(exposure_id)
-        citation = self.episodic._citations.get(exposure_id)
+        citation = await self.episodic.get_citation(exposure_id)
         if exposure is None or citation is None:
             return ignored
         try:

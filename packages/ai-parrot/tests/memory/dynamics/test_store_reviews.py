@@ -426,3 +426,32 @@ async def test_process_local_citations_are_bounded_without_durable_backend(
         assert [receipt.status for receipt in receipts] == ["applied"]
     finally:
         await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_released_citation_is_rejected_and_deleted_durably(tmp_path: Path) -> None:
+    """Verify a released exposure stops admitting reviews at once and its durable row is deleted."""
+    path = tmp_path / "release.sqlite"
+    namespace = _namespace()
+    backend = SQLiteEpisodeBackend(path)
+    other_backend = SQLiteEpisodeBackend(path)
+    await backend.configure()
+    await other_backend.configure()
+    store = EpisodicMemoryStore(backend, default_ttl_days=0)
+    try:
+        await backend.store(_episode("episode-a", namespace=namespace))
+        await store.cite(["episode-a"], namespace=namespace, exposure_id="exposure-a")
+        await store.cite(["episode-a"], namespace=namespace, exposure_id="exposure-kept")
+        assert await store.get_citation("exposure-a") is not None
+
+        store.release_citation("exposure-a")
+        assert await store.get_citation("exposure-a") is None
+        with pytest.raises(ValueError, match="scope or delivered exposure is unavailable"):
+            await store.review(["episode-a"], _signal(), namespace=namespace, exposure_id="exposure-a")
+
+        assert await other_backend.get_citation("exposure-a") is None
+        assert await other_backend.get_citation("exposure-kept") is not None
+        assert not store._released_citations
+    finally:
+        await backend.close()
+        await other_backend.close()

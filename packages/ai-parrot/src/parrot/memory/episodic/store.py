@@ -179,6 +179,7 @@ class EpisodicMemoryStore:
         self._importance_scorer = importance_scorer
         self._recall_strategy = recall_strategy
         self._citations: OrderedDict[str, MemoryCitation] = OrderedDict()
+        self._released_citations: OrderedDict[str, None] = OrderedDict()
         self._review_revisions: dict[str, int] = {}
         self._review_expected_revisions: dict[str, int] = {}
 
@@ -414,6 +415,7 @@ class EpisodicMemoryStore:
         if callable(merge_citation):
             # The backend is the authority: a separate process, or this one after
             # a restart, reviews against exactly what was committed here.
+            await self._flush_released_citations()
             await merge_citation(citation)
             return citation
 
@@ -424,7 +426,7 @@ class EpisodicMemoryStore:
             self._citations.popitem(last=False)
         return citation
 
-    async def _cited(self, exposure_id: str) -> MemoryCitation | None:
+    async def get_citation(self, exposure_id: str) -> MemoryCitation | None:
         """Return the references cited for an exposure from the authoritative source.
 
         Args:
@@ -432,12 +434,47 @@ class EpisodicMemoryStore:
 
         Returns:
             The durable citation when the backend persists citations, otherwise
-            the process-local one; ``None`` when the exposure is unknown.
+            the process-local one; ``None`` when the exposure is unknown or released.
         """
+        if exposure_id in self._released_citations:
+            return None
         get_citation = getattr(self._backend, "get_citation", None)
         if callable(get_citation):
             return await get_citation(exposure_id)
         return self._citations.get(exposure_id)
+
+    def release_citation(self, exposure_id: str) -> None:
+        """Stop admitting reviews for an exposure whose invocation has ended.
+
+        The release takes effect in this process immediately. It is callable
+        from synchronous lifecycle code, so a durable citation is deleted by
+        the next citation or review; one never reached that way is removed by
+        the backend's retention pruning.
+
+        Args:
+            exposure_id: Final-delivery exposure identifier to release.
+        """
+        self._citations.pop(exposure_id, None)
+        if not callable(getattr(self._backend, "delete_citations", None)):
+            return
+        self._released_citations[exposure_id] = None
+        self._released_citations.move_to_end(exposure_id)
+        while len(self._released_citations) > _MAX_LOCAL_CITATIONS:
+            self._released_citations.popitem(last=False)
+
+    async def _flush_released_citations(self) -> None:
+        """Delete durably the citations released since the last flush; a failure is retried later."""
+        delete_citations = getattr(self._backend, "delete_citations", None)
+        if not self._released_citations or not callable(delete_citations):
+            return
+        released = list(self._released_citations)
+        try:
+            await delete_citations(released)
+        except Exception as exc:
+            logger.warning("Released citation cleanup failed; it will be retried: %s", exc)
+            return
+        for exposure_id in released:
+            self._released_citations.pop(exposure_id, None)
 
     async def _committed_expected_revision(self, dedupe_key: str) -> int | None:
         """Read the ``expected_revision`` a review was committed with, when the backend can.
@@ -482,7 +519,8 @@ class EpisodicMemoryStore:
         if not self._signal_matches_namespace(signal, namespace):
             raise ValueError("review scope or delivered exposure is unavailable")
 
-        citation = await self._cited(exposure_id)
+        await self._flush_released_citations()
+        citation = await self.get_citation(exposure_id)
         if citation is None or citation.exposure_id != exposure_id:
             raise ValueError("review scope or delivered exposure is unavailable")
         cited_refs = {ref.memory_id: ref for ref in citation.refs if ref.namespace == namespace}

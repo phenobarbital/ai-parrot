@@ -585,6 +585,36 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
             return None
         return MemoryCitation.model_validate_json(row[0])
 
+    async def delete_citations(self, exposure_ids: list[str]) -> int:
+        """Delete the durable citations of released exposures.
+
+        Args:
+            exposure_ids: Final-delivery exposure identifiers to forget.
+
+        Returns:
+            The number of citations deleted.
+
+        Raises:
+            RuntimeError: If the backend has not been configured.
+        """
+        unique_ids = list(dict.fromkeys(exposure_ids))
+        if not unique_ids:
+            return 0
+        async with self._write_lock:
+            database = self._require_database()
+            await database.execute("BEGIN IMMEDIATE")
+            try:
+                cursor = await database.execute(
+                    f"DELETE FROM citations WHERE exposure_id IN ({', '.join('?' * len(unique_ids))})",
+                    unique_ids,
+                )
+                deleted = cursor.rowcount
+                await database.execute("COMMIT")
+            except BaseException:
+                await self._rollback(database)
+                raise
+        return deleted
+
     async def get_memory_states(self, ref_keys: Sequence[str]) -> dict[str, MemoryState]:
         """Read the earned dynamics state committed for the given memory references.
 
