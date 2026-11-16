@@ -18,6 +18,7 @@ from parrot.memory.agent_memory.runtime import bind_memory_scope, reset_memory_s
 from parrot.memory.episodic.store import EpisodicMemoryStore
 from parrot.memory.episodic.tools import EpisodicMemoryToolkit
 from parrot.memory.unified.manager import UnifiedMemoryManager
+from parrot.memory.unified.models import MemoryConfig
 
 pytest.importorskip("faiss")
 
@@ -103,7 +104,11 @@ _QUERY = "deploy rollout"
 
 @pytest.fixture
 def recall_manager(store: EpisodicMemoryStore) -> UnifiedMemoryManager:
-    return UnifiedMemoryManager(namespace=MemoryNamespace(tenant_id="acme", agent_id="planner"), episodic_store=store)
+    return UnifiedMemoryManager(
+        namespace=MemoryNamespace(tenant_id="acme", agent_id="planner"),
+        episodic_store=store,
+        config=MemoryConfig(episodic_max_recall=0),
+    )
 
 
 def _scope(user_id: str | None = None, session_id: str | None = None) -> MemoryRequestScope:
@@ -196,6 +201,33 @@ async def test_visible_episodes_enter_the_review_manifest_with_original_identity
     later_committed = recall_manager.commit_memory_exposure(later_context, scope=later)
     later_refs = {ref.memory_id: ref for ref in recall_manager._memory_exposures[later_committed.exposure_id].refs}
     assert refs == later_refs
+
+
+async def test_recall_lane_refs_keep_original_namespace_and_identity(store) -> None:
+    """A packed interaction recall keeps the source session in reviewable exposure refs."""
+    episode = await store.record_episode(
+        namespace=MemoryNamespace(tenant_id="acme", agent_id="planner", user_id="u1", session_id="s0"),
+        situation="deploy rollout completed",
+        action_taken="deployed in a staged rollout",
+        outcome=EpisodeOutcome.SUCCESS,
+        generate_reflection=False,
+    )
+    manager = UnifiedMemoryManager(
+        namespace=MemoryNamespace(tenant_id="acme", agent_id="planner"),
+        episodic_store=store,
+        config=MemoryConfig(episodic_max_warnings=0, episodic_max_recall=3),
+    )
+    scope = _scope("u1", "s1")
+
+    context = await manager.prepare_context(_QUERY, scope=scope)
+    committed = manager.commit_memory_exposure(context, scope=scope)
+
+    assert "deploy rollout completed" in context.episodic_recall
+    assert context.delivered_refs == (f"episodic:{episode.episode_id}:v1",)
+    assert context.memory_refs[0].namespace.session_id == "s0"
+    exposure = manager._memory_exposures[committed.exposure_id]
+    assert exposure.refs[0].memory_id == episode.episode_id
+    assert exposure.refs[0].namespace.session_id == "s0"
 
 
 async def test_backend_ignoring_unset_filters_cannot_widen_recall(recall_manager, store, backend) -> None:

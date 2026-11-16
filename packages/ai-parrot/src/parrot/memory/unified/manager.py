@@ -26,7 +26,7 @@ from parrot.memory.episodic.visibility import recall_scopes, visible_to_scope
 from parrot.memory.unified.models import MemoryCandidate
 from parrot.memory.user.extraction import extract_user_knowledge
 from parrot.memory.user.models import UserKnowledge, UserKnowledgeCommand, UserMemoryReceipt
-from parrot.memory.user.store import UserMemoryStore
+from parrot.memory.user.store import _MAX_QUERY_CHARS, UserMemoryStore
 
 from .context import ContextAssembler
 from .models import MemoryConfig, MemoryContext
@@ -607,13 +607,13 @@ class UnifiedMemoryManager:
         """
         if not self.config.enable_episodic or self.episodic is None:
             return []
-        top_k = self.config.episodic_max_warnings
-        groups = await asyncio.gather(
+        warning_top_k = self.config.episodic_max_warnings
+        warning_groups = await asyncio.gather(
             *(
                 self.episodic.recall_similar(
                     query=query,
                     namespace=namespace,
-                    top_k=top_k,
+                    top_k=warning_top_k,
                     include_failures_only=True,
                     null_dimensions=null_dimensions,
                 )
@@ -621,8 +621,8 @@ class UnifiedMemoryManager:
             ),
             return_exceptions=True,
         )
-        visible: dict[str, Any] = {}
-        for group in groups:
+        visible_warnings: dict[str, Any] = {}
+        for group in warning_groups:
             if isinstance(group, BaseException):
                 if not isinstance(group, Exception):
                     raise group
@@ -630,15 +630,17 @@ class UnifiedMemoryManager:
                 continue
             for episode in group:
                 if self._visible_to_scope(episode, scope):
-                    visible.setdefault(episode.episode_id, episode)
+                    visible_warnings.setdefault(episode.episode_id, episode)
 
         def _score(episode: Any) -> float:
             return episode.ranking_score if episode.ranking_score is not None else episode.score
 
-        episodes = sorted(visible.values(), key=lambda episode: (-_score(episode), episode.episode_id))[:top_k]
+        warning_episodes = sorted(
+            visible_warnings.values(), key=lambda episode: (-_score(episode), episode.episode_id)
+        )[:warning_top_k]
 
         candidates: list[MemoryCandidate] = []
-        for episode in episodes:
+        for episode in warning_episodes:
             text = episode.searchable_text()
             if not text:
                 continue
@@ -663,6 +665,73 @@ class UnifiedMemoryManager:
                     ranking_score=score,
                     candidate_type="episodic",
                     importance=episode.importance,
+                )
+            )
+
+        recall_top_k = self.config.episodic_max_recall
+        if recall_top_k == 0:
+            return candidates
+
+        recall_groups = await asyncio.gather(
+            *(
+                self.episodic.recall_interactions(
+                    query=query,
+                    namespace=namespace,
+                    top_k=recall_top_k,
+                    exclude_session_id=scope.session_id,
+                    null_dimensions=null_dimensions,
+                )
+                for namespace, null_dimensions in self._recall_scopes(scope)
+            ),
+            return_exceptions=True,
+        )
+        warning_ids = {episode.episode_id for episode in warning_episodes}
+        visible_recall: dict[str, Any] = {}
+        for group in recall_groups:
+            if isinstance(group, BaseException):
+                if not isinstance(group, Exception):
+                    raise group
+                self.logger.warning("Episodic interaction recall failed: %s", type(group).__name__)
+                continue
+            for episode in group:
+                if (
+                    episode.is_failure
+                    or (scope.session_id is not None and episode.session_id == scope.session_id)
+                    or episode.episode_id in warning_ids
+                    or not self._visible_to_scope(episode, scope)
+                ):
+                    continue
+                visible_recall.setdefault(episode.episode_id, episode)
+
+        recall_episodes = sorted(
+            visible_recall.values(), key=lambda episode: (-_score(episode), episode.episode_id)
+        )[:recall_top_k]
+        for episode in recall_episodes:
+            text = episode.searchable_text()
+            if not text:
+                continue
+            score = _score(episode)
+            candidates.append(
+                MemoryCandidate(
+                    scope=scope,
+                    memory_id=episode.episode_id,
+                    content_version="v1",
+                    source="episodic",
+                    memory_ref=MemoryRef(
+                        namespace=MemoryNamespace(
+                            **{field: getattr(episode, field) for field in MemoryNamespace.model_fields}
+                        ),
+                        kind="episode",
+                        memory_id=episode.episode_id,
+                        content_version="v1",
+                    ),
+                    text=text,
+                    relevance=min(max(score, 0.0), 1.0),
+                    similarity=min(max(episode.score, 0.0), 1.0),
+                    ranking_score=score,
+                    candidate_type="episodic",
+                    importance=episode.importance,
+                    lane="recall",
                 )
             )
         return candidates
@@ -691,11 +760,18 @@ class UnifiedMemoryManager:
         if not self.config.enable_user_memory or self.user_memory_store is None or scope.user_id is None:
             return []
         try:
-            knowledge = await self.user_memory_store.recall(query, scope=scope)
+            knowledge = await self.user_memory_store.profile(
+                scope=scope,
+                query=query[:_MAX_QUERY_CHARS],
+                limit=self.config.user_max_records,
+            )
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("User knowledge retrieval failed: %s", type(exc).__name__)
             return []
-        return [self._user_candidate(item, scope) for item in knowledge]
+        return [
+            self._user_candidate(item, scope, relevance=1.0 - index / len(knowledge))
+            for index, item in enumerate(knowledge)
+        ]
 
     async def _get_brain_candidates(self, query: str, scope: MemoryRequestScope) -> list[MemoryCandidate]:
         """Retrieve tenant-bound plain-text brain context without a page reference."""
@@ -861,8 +937,10 @@ class UnifiedMemoryManager:
         return "ignored"
 
     @staticmethod
-    def _user_candidate(knowledge: UserKnowledge, scope: MemoryRequestScope) -> MemoryCandidate:
-        """Translate a durable user fact into a contextual candidate."""
+    def _user_candidate(
+        knowledge: UserKnowledge, scope: MemoryRequestScope, relevance: float
+    ) -> MemoryCandidate:
+        """Translate one ranked profile record without experiential dynamics."""
         value = json.dumps(knowledge.value, ensure_ascii=False, sort_keys=True)
         return MemoryCandidate(
             scope=scope,
@@ -870,7 +948,7 @@ class UnifiedMemoryManager:
             content_version=str(knowledge.revision),
             source="user_memory",
             text=f"{knowledge.kind}: {value}",
-            relevance=1.0,
+            relevance=relevance,
             candidate_type="user",
         )
 
