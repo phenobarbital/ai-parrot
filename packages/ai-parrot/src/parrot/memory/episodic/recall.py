@@ -250,6 +250,8 @@ class _BM25IndexEntry:
         self.texts = texts
         self.episodes = episodes
         self.built_at = built_at
+        # Filter the index was built for; set by the strategy when it caches the entry.
+        self.namespace_filter: dict[str, Any] | None = None
 
 
 class HybridBM25Strategy:
@@ -296,7 +298,7 @@ class HybridBM25Strategy:
         Returns:
             A stable string key.
         """
-        return "|".join(f"{k}={v}" for k, v in sorted(namespace_filter.items()))
+        return "|".join(f"{k}={v!r}" for k, v in sorted(namespace_filter.items()))
 
     def _is_stale(self, entry: _BM25IndexEntry) -> bool:
         """Return True if the index entry is older than max_index_age_seconds.
@@ -310,15 +312,22 @@ class HybridBM25Strategy:
         return (time.monotonic() - entry.built_at) > self.max_index_age_seconds
 
     def invalidate(self, namespace_filter: dict[str, Any]) -> None:
-        """Invalidate the BM25 index for a given namespace.
+        """Invalidate every BM25 index that a mutation in this namespace can affect.
 
-        Should be called after new episodes are stored in this namespace.
+        Should be called after new episodes are stored in this namespace. An index built for a
+        wider filter of the same tenant and agent (one user across sessions, or the agent level)
+        also holds the namespace's episodes, so every index of that tenant and agent is dropped,
+        not only the one built for this exact filter.
 
         Args:
-            namespace_filter: The namespace whose index to invalidate.
+            namespace_filter: The namespace that was mutated.
         """
-        key = self._namespace_key(namespace_filter)
-        self._cache.pop(key, None)
+        owner = (namespace_filter.get("tenant_id"), namespace_filter.get("agent_id"))
+        for key, entry in list(self._cache.items()):
+            cached_filter = entry.namespace_filter
+            if cached_filter is not None and (cached_filter.get("tenant_id"), cached_filter.get("agent_id")) == owner:
+                del self._cache[key]
+        self._cache.pop(self._namespace_key(namespace_filter), None)
 
     async def _build_index(
         self,
@@ -453,6 +462,7 @@ class HybridBM25Strategy:
         if entry is None or self._is_stale(entry):
             try:
                 entry = await self._build_index(backend, namespace_filter)
+                entry.namespace_filter = dict(namespace_filter)
                 self._cache[key] = entry
             except ImportError:
                 logger.warning(

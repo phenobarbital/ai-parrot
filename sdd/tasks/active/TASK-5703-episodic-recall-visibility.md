@@ -172,7 +172,8 @@ from parrot.memory.unified.manager import UnifiedMemoryManager        # unified/
    `search_similar`, `get_recent` and `count`, return `[]` / `[]` / `0` right after the `_redis is None` guard —
    because skipping the value (today's `if value is not None`) would widen the scope to every value.
 5. `backends/abstract.py`: state the `None` contract in the protocol docstring.
-6. `recall.py`: `f"{k}={v!r}"` in `_namespace_key`.
+6. `recall.py`: `f"{k}={v!r}"` in `_namespace_key`; `invalidate` drops every cached index of the same tenant and
+   agent — because recall now reads through wider filters than the one an episode is written under.
 7. `manager.py`: `_recall_scopes(scope)` (classmethod), `_visible_to_scope(episode, scope)`,
    `_recorded_under(episode, namespace)`, module constant `_CONTEXT_ONLY_EPISODIC_SOURCE = "episodic_context"`;
    rewrite the retrieval half of `_get_episodic_candidates` (gather → re-check → merge by `episode_id` → sort by
@@ -220,6 +221,7 @@ from parrot.memory.unified.manager import UnifiedMemoryManager        # unified/
 - `test_build_filter_emits_unset_only_dimensions`
 - `test_unset_only_filter_is_applied_before_limits` (FAISS and SQLite end to end; pgvector SQL; Redis fail-closed)
 - `test_hybrid_index_key_separates_unset_from_the_text_none`
+- `test_hybrid_invalidation_reaches_wider_indexes_of_the_same_agent`
 
 ## Agent Instructions
 

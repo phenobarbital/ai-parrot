@@ -63,6 +63,25 @@ def _escape_tag_value(value: Any) -> str:
     return _TAG_SPECIAL_CHARACTERS.sub(r"\\\1", str(value))
 
 
+def _matches_unset_dimension(namespace_filter: dict[str, Any]) -> bool:
+    """Report a filter this backend cannot apply: one that matches only unset dimensions.
+
+    An unset dimension is stored as an empty TAG value, which the index does not hold, so the
+    filter cannot be applied before the limit. Callers return no rows instead of ignoring it,
+    because ignoring it would widen the scope to every value of that dimension.
+
+    Args:
+        namespace_filter: Dict of field_name -> value; ``None`` asks for unset values only.
+
+    Returns:
+        True when the filter names at least one unset-only dimension.
+    """
+    if any(value is None for value in namespace_filter.values()):
+        logger.debug("RedisVectorBackend cannot match unset namespace dimensions; returning no rows")
+        return True
+    return False
+
+
 def _episode_to_hash(episode: EpisodicMemory) -> dict[str, Any]:
     """Convert an EpisodicMemory to a flat Redis HASH mapping.
 
@@ -376,6 +395,8 @@ class RedisVectorBackend:
         if self._redis is None:
             logger.warning("RedisVectorBackend not configured; search_similar() returns []")
             return []
+        if _matches_unset_dimension(namespace_filter):
+            return []
 
         try:
             # Build pre-filter string for TAG fields
@@ -485,6 +506,8 @@ class RedisVectorBackend:
         """
         if self._redis is None:
             logger.warning("RedisVectorBackend not configured; get_recent() returns []")
+            return []
+        if _matches_unset_dimension(namespace_filter):
             return []
 
         try:
@@ -676,6 +699,8 @@ class RedisVectorBackend:
         """
         if self._redis is None:
             logger.warning("RedisVectorBackend not configured; count() returns 0")
+            return 0
+        if _matches_unset_dimension(namespace_filter):
             return 0
 
         try:

@@ -7,10 +7,12 @@ surfaces as a failure instead of being swallowed by ``record_interaction``.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
 
+from parrot.memory.agent_memory.models import MemoryEvent, MemoryRequestScope
 from parrot.memory.episodic.models import EpisodeCategory, EpisodeOutcome, MemoryNamespace
 from parrot.memory.episodic.store import EpisodicMemoryStore
 from parrot.memory.unified.manager import UnifiedMemoryManager
@@ -90,3 +92,163 @@ async def test_tool_calls_are_not_recorded_as_tool_episodes(manager, backend, na
     episodes = await backend.get_recent(_expected_filter(namespace, "u4", "s4"), limit=10)
     assert len(episodes) == 1
     assert episodes[0].category == EpisodeCategory.QUERY_RESOLUTION
+
+
+# ── Episodic recall visibility (TASK-5703, issue:2a40a9f62877) ──
+
+_QUERY = "deploy rollout"
+
+
+@pytest.fixture
+def recall_manager(store: EpisodicMemoryStore) -> UnifiedMemoryManager:
+    return UnifiedMemoryManager(namespace=MemoryNamespace(tenant_id="acme", agent_id="planner"), episodic_store=store)
+
+
+def _scope(user_id: str | None = None, session_id: str | None = None) -> MemoryRequestScope:
+    return MemoryRequestScope(
+        tenant_id="acme",
+        agent_id="planner",
+        user_id=user_id,
+        session_id=session_id,
+        turn_id="turn-1",
+        identity_provenance="runtime_derived",
+    )
+
+
+async def _failure(store: EpisodicMemoryStore, **dimensions: str) -> str:
+    """Record one failure the query matches, under the given namespace dimensions."""
+    episode = await store.record_episode(
+        namespace=MemoryNamespace(tenant_id="acme", agent_id="planner", **dimensions),
+        situation="deploy rollout failed",
+        action_taken="ran the rollout",
+        outcome=EpisodeOutcome.FAILURE,
+        error_message="rollout timed out",
+        generate_reflection=False,
+    )
+    return episode.episode_id
+
+
+async def _recalled(manager: UnifiedMemoryManager, scope: MemoryRequestScope) -> dict[str, str]:
+    """Return ``episode_id -> candidate source`` for one request scope."""
+    candidates = await manager._get_episodic_candidates(_QUERY, scope)
+    return {candidate.memory_id: candidate.source for candidate in candidates}
+
+
+async def test_recall_crosses_sessions_of_the_same_user(recall_manager, store) -> None:
+    """A lesson recorded in one session reaches the same user's next session, and nobody else."""
+    earlier = await _failure(store, user_id="u1", session_id="s1")
+    await _failure(store, user_id="u2", session_id="s9")
+
+    assert await _recalled(recall_manager, _scope("u1", "s2")) == {earlier: "episodic_context"}
+    assert await _recalled(recall_manager, _scope("u3", "s3")) == {}
+
+
+async def test_recall_includes_agent_level_episodes(recall_manager, store) -> None:
+    """Episodes with neither a user nor a session are visible to every request of the agent."""
+    agent_level = await _failure(store)
+    anonymous = await _failure(store, session_id="anon-1")
+    await _failure(store, user_id="u2", session_id="s9")
+
+    assert set(await _recalled(recall_manager, _scope("u1", "s2"))) == {agent_level}
+    assert set(await _recalled(recall_manager, _scope(None, "anon-1"))) == {agent_level, anonymous}
+    assert set(await _recalled(recall_manager, _scope(None, "anon-2"))) == {agent_level}
+    # A request without a user never reads an identified user's episode, even inside the same session.
+    assert set(await _recalled(recall_manager, _scope(None, "s9"))) == {agent_level}
+    assert set(await _recalled(recall_manager, _scope())) == {agent_level}
+
+
+async def test_set_room_keeps_narrowing_every_recall_scope(recall_manager, store) -> None:
+    """A room on the request narrows the own and the agent-level filters alike."""
+    in_room = await _failure(store, user_id="u1", session_id="s1", room_id="room-7")
+    await _failure(store, user_id="u1", session_id="s1")
+    await _failure(store)
+    scope = _scope("u1", "s2").model_copy(update={"room_id": "room-7"})
+
+    assert set(await _recalled(recall_manager, scope)) == {in_room}
+
+
+async def test_only_exact_scope_episodes_enter_the_review_manifest(recall_manager, store) -> None:
+    """Cross-scope episodes are delivered as context; review identity stays the exact namespace."""
+    same_session = await _failure(store, user_id="u1", session_id="s1")
+    other_session = await _failure(store, user_id="u1", session_id="s0")
+    agent_level = await _failure(store)
+    scope = _scope("u1", "s1")
+
+    context = await recall_manager.prepare_context(_QUERY, scope=scope)
+    assert set(context.delivered_refs) == {
+        f"episodic:{same_session}:v1",
+        f"episodic_context:{other_session}:v1",
+        f"episodic_context:{agent_level}:v1",
+    }
+
+    committed = recall_manager.commit_memory_exposure(context, scope=scope)
+    exposure = recall_manager._memory_exposures[committed.exposure_id]
+    assert [ref.memory_id for ref in exposure.refs] == [same_session]
+    assert exposure.refs[0].namespace == recall_manager._namespace_for_scope(scope)
+
+
+async def test_backend_ignoring_unset_filters_cannot_widen_recall(recall_manager, store, backend) -> None:
+    """A backend that treats an unset-only dimension as unconstrained must not leak another user's episode."""
+    mine = await _failure(store, user_id="u1", session_id="s1")
+    await _failure(store, user_id="u2", session_id="s9")
+    count, get_recent = backend.count, backend.get_recent
+
+    def _lenient(namespace_filter: dict) -> dict:
+        return {field: value for field, value in namespace_filter.items() if value is not None}
+
+    async def lenient_count(namespace_filter: dict) -> int:
+        return await count(_lenient(namespace_filter))
+
+    async def lenient_get_recent(namespace_filter: dict, limit: int = 10, since=None) -> list:
+        return await get_recent(_lenient(namespace_filter), limit=limit, since=since)
+
+    backend.count = lenient_count
+    backend.get_recent = lenient_get_recent
+
+    assert set(await _recalled(recall_manager, _scope("u1", "s2"))) == {mine}
+
+
+async def test_one_failing_recall_scope_does_not_hide_the_other(recall_manager, store, monkeypatch) -> None:
+    """The own-scope recall is still delivered when the agent-level one fails."""
+    mine = await _failure(store, user_id="u1", session_id="s1")
+    recall_similar = store.recall_similar
+
+    async def flaky(*args, null_dimensions=(), **kwargs):
+        if null_dimensions:
+            raise RuntimeError("agent-level recall is unavailable")
+        return await recall_similar(*args, null_dimensions=null_dimensions, **kwargs)
+
+    monkeypatch.setattr(store, "recall_similar", flaky)
+
+    assert set(await _recalled(recall_manager, _scope("u1", "s2"))) == {mine}
+
+
+async def test_response_episode_is_still_recorded_under_the_full_request_namespace(recall_manager, backend) -> None:
+    """Writes are unchanged: a response is persisted with the request's user and session."""
+    scope = _scope("u1", "s1")
+    receipt = await recall_manager.record_event(
+        MemoryEvent(
+            event_id="response-1",
+            kind="response",
+            scope=scope,
+            observed_at=datetime(2026, 11, 16, tzinfo=timezone.utc),
+            payload={"query": "What is the rollout plan?", "response": "Ship on Tuesday."},
+        )
+    )
+    stored = await backend.get_recent({"tenant_id": "acme", "agent_id": "planner"}, limit=10)
+    assert [episode.episode_id for episode in stored] == list(receipt.episode_ids)
+    assert (stored[0].user_id, stored[0].session_id, stored[0].room_id) == ("u1", "s1", None)
+
+
+def test_recall_scopes_follow_the_request_identity(recall_manager) -> None:
+    """The recall filters are derived from the request, never from the manager's static namespace."""
+    scope = _scope("u1", "s1")
+    namespace = recall_manager._namespace_for_scope(scope)
+    own, agent_level = recall_manager._recall_scopes(scope)
+    assert own == (namespace.model_copy(update={"session_id": None}), ())
+    assert agent_level == (
+        namespace.model_copy(update={"user_id": None, "session_id": None}),
+        ("user_id", "session_id"),
+    )
+    anonymous = _scope(None, "anon-1")
+    assert recall_manager._recall_scopes(anonymous)[0] == (recall_manager._namespace_for_scope(anonymous), ("user_id",))

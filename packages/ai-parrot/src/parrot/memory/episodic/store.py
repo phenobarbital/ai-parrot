@@ -360,12 +360,13 @@ class EpisodicMemoryStore:
         top_k: int,
         score_threshold: float,
         include_failures_only: bool,
+        null_dimensions: tuple[str, ...] = (),
     ) -> list[EpisodeSearchResult]:
         """Provide bounded local recall when no embedding provider is configured."""
         terms = tuple(term for term in query.casefold().split() if term)
         if not terms or top_k == 0:
             return []
-        namespace_filter = namespace.build_filter()
+        namespace_filter = namespace.build_filter(null_dimensions=null_dimensions)
         count = await self._backend.count(namespace_filter)
         episodes = await self._backend.get_recent(namespace_filter, limit=count)
         matches: list[EpisodeSearchResult] = []
@@ -885,6 +886,7 @@ class EpisodicMemoryStore:
         score_threshold: float = 0.3,
         category: EpisodeCategory | None = None,
         include_failures_only: bool = False,
+        null_dimensions: tuple[str, ...] = (),
     ) -> list[EpisodeSearchResult]:
         """Recall episodes similar to a query.
 
@@ -898,11 +900,13 @@ class EpisodicMemoryStore:
             score_threshold: Minimum similarity score (0-1).
             category: Optional category filter (applied post-search).
             include_failures_only: If True, only return failure episodes.
+            null_dimensions: Unset namespace dimensions that must match only episodes leaving them
+                unset, instead of every value (see ``MemoryNamespace.build_filter``).
 
         Returns:
             List of episodes ranked by similarity score.
         """
-        ns_filter = namespace.build_filter()
+        ns_filter = namespace.build_filter(null_dimensions=null_dimensions)
         effective_top_k = top_k * 2 if category else top_k  # over-fetch for post-filter
         if self._embedding is None:
             logger.info("No embedding provider; using local lexical recall fallback")
@@ -912,6 +916,7 @@ class EpisodicMemoryStore:
                 top_k=effective_top_k,
                 score_threshold=score_threshold,
                 include_failures_only=include_failures_only,
+                null_dimensions=null_dimensions,
             )
         else:
             embedding = await self._embedding.embed(query)

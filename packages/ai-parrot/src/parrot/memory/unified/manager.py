@@ -31,6 +31,10 @@ from .routing import CrossDomainRouter
 
 logger = logging.getLogger(__name__)
 
+# Source of an episode that a request may see but that was recorded under another namespace. It is
+# delivered as context and never enters the review manifest, whose identity is the exact namespace.
+_CONTEXT_ONLY_EPISODIC_SOURCE = "episodic_context"
+
 
 @runtime_checkable
 class SkillRegistry(Protocol):
@@ -594,32 +598,63 @@ class UnifiedMemoryManager:
         query: str,
         scope: MemoryRequestScope,
     ) -> list[MemoryCandidate]:
-        """Retrieve scoped experiential candidates without mutating manager state."""
+        """Retrieve the experiential candidates visible to one request without mutating manager state.
+
+        Visibility is the requester's own episodes across sessions plus the agent-level ones (see
+        :meth:`_recall_scopes`). Each scope is filtered by the backend before its own top-k, and every
+        returned episode is checked again here, so a backend that ignores a filter cannot widen it.
+
+        Review identity stays the exact request namespace: only an episode recorded under it is
+        tagged ``episodic`` and can enter the review manifest. Any other visible episode is delivered
+        as context only.
+        """
         if not self.config.enable_episodic or self.episodic is None:
             return []
-        try:
-            episodes = await self.episodic.recall_similar(
-                query=query,
-                namespace=self._namespace_for_scope(scope),
-                top_k=self.config.episodic_max_warnings,
-                include_failures_only=True,
-            )
-        except Exception as exc:  # noqa: BLE001
-            self.logger.warning("Episodic candidate retrieval failed: %s", type(exc).__name__)
-            return []
+        top_k = self.config.episodic_max_warnings
+        groups = await asyncio.gather(
+            *(
+                self.episodic.recall_similar(
+                    query=query,
+                    namespace=namespace,
+                    top_k=top_k,
+                    include_failures_only=True,
+                    null_dimensions=null_dimensions,
+                )
+                for namespace, null_dimensions in self._recall_scopes(scope)
+            ),
+            return_exceptions=True,
+        )
+        visible: dict[str, Any] = {}
+        for group in groups:
+            if isinstance(group, BaseException):
+                if not isinstance(group, Exception):
+                    raise group
+                self.logger.warning("Episodic candidate retrieval failed: %s", type(group).__name__)
+                continue
+            for episode in group:
+                if self._visible_to_scope(episode, scope):
+                    visible.setdefault(episode.episode_id, episode)
+
+        def _score(episode: Any) -> float:
+            return episode.ranking_score if episode.ranking_score is not None else episode.score
+
+        episodes = sorted(visible.values(), key=lambda episode: (-_score(episode), episode.episode_id))[:top_k]
+        exact_namespace = self._namespace_for_scope(scope)
 
         candidates: list[MemoryCandidate] = []
         for episode in episodes:
             text = episode.searchable_text()
             if not text:
                 continue
-            score = episode.ranking_score if episode.ranking_score is not None else episode.score
+            score = _score(episode)
             candidates.append(
                 MemoryCandidate(
                     scope=scope,
                     memory_id=episode.episode_id,
                     content_version="v1",
-                    source="episodic",
+                    source=(
+                        "episodic" if self._recorded_under(episode, exact_namespace) else _CONTEXT_ONLY_EPISODIC_SOURCE
+                    ),
                     text=text,
                     relevance=min(max(score, 0.0), 1.0),
                     similarity=min(max(episode.score, 0.0), 1.0),
@@ -745,6 +780,57 @@ class UnifiedMemoryManager:
             room_id=scope.room_id,
             crew_id=scope.crew_id,
         )
+
+    @classmethod
+    def _recall_scopes(cls, scope: MemoryRequestScope) -> list[tuple[MemoryNamespace, tuple[str, ...]]]:
+        """Return the namespace filters that make up one request's episodic recall visibility.
+
+        A request recalls its own episodes plus the agent-level ones, never another user's:
+
+        - an identified user: that user's episodes in every session;
+        - an anonymous request with a session: that session's episodes that carry no user;
+        - always: agent-level episodes, recorded with neither a user nor a session (explicit
+          lessons and episodes written before request scoping existed).
+
+        Set room, crew and model dimensions keep narrowing every filter. Writes are not affected:
+        an episode is still recorded under the full request namespace.
+
+        Args:
+            scope: Immutable identity of the request.
+
+        Returns:
+            ``(namespace, null_dimensions)`` pairs for ``EpisodicMemoryStore.recall_similar``.
+        """
+        exact = cls._namespace_for_scope(scope)
+        scopes: list[tuple[MemoryNamespace, tuple[str, ...]]] = []
+        if scope.user_id is not None:
+            scopes.append((exact.model_copy(update={"session_id": None}), ()))
+        elif scope.session_id is not None:
+            scopes.append((exact, ("user_id",)))
+        agent_level = exact.model_copy(update={"user_id": None, "session_id": None})
+        scopes.append((agent_level, ("user_id", "session_id")))
+        return scopes
+
+    @staticmethod
+    def _visible_to_scope(episode: Any, scope: MemoryRequestScope) -> bool:
+        """Apply the recall visibility of :meth:`_recall_scopes` to one returned episode."""
+        if (episode.tenant_id, episode.agent_id) != (scope.tenant_id, scope.agent_id):
+            return False
+        for dimension in ("room_id", "crew_id", "model_id"):
+            wanted = getattr(scope, dimension)
+            if wanted is not None and getattr(episode, dimension) != wanted:
+                return False
+        if episode.user_id is None and episode.session_id is None:
+            return True
+        if scope.user_id is not None:
+            return episode.user_id == scope.user_id
+        return episode.user_id is None and scope.session_id is not None and episode.session_id == scope.session_id
+
+    @staticmethod
+    def _recorded_under(episode: Any, namespace: MemoryNamespace) -> bool:
+        """Tell whether an episode was recorded under exactly this namespace, unset dimensions included."""
+        dimensions = ("tenant_id", "agent_id", "user_id", "session_id", "room_id", "crew_id", "model_id")
+        return all(getattr(episode, dimension) == getattr(namespace, dimension) for dimension in dimensions)
 
     @staticmethod
     def _response_episode_id(event_id: str) -> str:

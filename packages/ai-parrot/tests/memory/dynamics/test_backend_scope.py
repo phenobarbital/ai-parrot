@@ -18,7 +18,9 @@ from parrot.memory.episodic.backends.redis_vector import (
     _episode_to_hash,
     _hash_to_episode,
 )
+from parrot.memory.episodic.backends.sqlite import SQLiteEpisodeBackend
 from parrot.memory.episodic.models import EpisodicMemory, MemoryNamespace
+from parrot.memory.episodic.recall import HybridBM25Strategy, _BM25IndexEntry
 
 
 def _episode(**overrides: Any) -> EpisodicMemory:
@@ -74,6 +76,10 @@ class _PgConnection:
     async def fetch(self, query: str, *args: Any) -> list[Any]:
         self.last_fetch = (query, args)
         return []
+
+    async def fetchrow(self, query: str, *args: Any) -> Any:
+        self.last_fetch = (query, args)
+        return None
 
 
 class _PgPool:
@@ -183,6 +189,119 @@ async def test_backend_filters_before_limits() -> None:
     for field in namespace_filter:
         assert f"@{field}:" in redis_query
     assert r"provider\:model\-a" in redis_query
+
+
+def test_build_filter_emits_unset_only_dimensions() -> None:
+    """Verify a named unset dimension is matched as unset instead of being left unconstrained."""
+    namespace = MemoryNamespace(tenant_id="tenant-a", agent_id="agent-a", room_id="room-a")
+
+    assert namespace.build_filter() == {"tenant_id": "tenant-a", "agent_id": "agent-a", "room_id": "room-a"}
+    assert namespace.build_filter(null_dimensions=("user_id", "session_id")) == {
+        "tenant_id": "tenant-a",
+        "agent_id": "agent-a",
+        "room_id": "room-a",
+        "user_id": None,
+        "session_id": None,
+    }
+    with pytest.raises(ValueError, match="room_id"):
+        namespace.build_filter(null_dimensions=("room_id",))
+    with pytest.raises(ValueError, match="tenant_id"):
+        namespace.build_filter(null_dimensions=("tenant_id",))
+
+
+@pytest.mark.asyncio
+async def test_unset_only_filter_is_applied_before_limits(tmp_path: Path) -> None:
+    """Verify every backend matches an unset-only dimension before its limit, or returns no rows."""
+    namespace_filter = MemoryNamespace(tenant_id="tenant-a", agent_id="agent-a").build_filter(
+        null_dimensions=("user_id", "session_id")
+    )
+    shared = {"model_id": None, "room_id": None, "crew_id": None, "embedding": [1.0, 0.0]}
+    agent_level = _episode(user_id=None, session_id=None, **shared)
+    others = [
+        _episode(
+            episode_id=f"00000000-0000-0000-0000-{index + 2:012d}",
+            created_at=datetime(2026, 1, 2, tzinfo=timezone.utc) + timedelta(seconds=index),
+            **dimensions,
+            **shared,
+        )
+        for index, dimensions in enumerate(
+            (
+                {"user_id": "user-a", "session_id": "session-a"},
+                {"user_id": None, "session_id": "session-anonymous"},
+                {"user_id": "user-b", "session_id": None},
+            )
+        )
+    ]
+
+    faiss_backend = FAISSBackend(dimension=2)
+    sqlite_backend = SQLiteEpisodeBackend(tmp_path / "episodes.sqlite")
+    await sqlite_backend.configure()
+    try:
+        for backend in (faiss_backend, sqlite_backend):
+            for episode in (*others, agent_level):
+                await backend.store(episode)
+            similar = await backend.search_similar([1.0, 0.0], namespace_filter, top_k=1, score_threshold=0.0)
+            recent = await backend.get_recent(namespace_filter, limit=1)
+            assert [episode.episode_id for episode in similar] == [agent_level.episode_id]
+            assert [episode.episode_id for episode in recent] == [agent_level.episode_id]
+            assert await backend.count(namespace_filter) == 1
+    finally:
+        await sqlite_backend.close()
+
+    pg_pool = _PgPool()
+    pg_backend = PgVectorBackend("postgresql://unused")
+    pg_backend._pool = pg_pool
+    pg_calls = (
+        pg_backend.search_similar([1.0, 0.0], namespace_filter, top_k=1, score_threshold=0.0),
+        pg_backend.get_recent(namespace_filter, limit=1),
+        pg_backend.count(namespace_filter),
+        pg_backend.search_hybrid([1.0, 0.0], "rollout", namespace_filter, top_k=1, score_threshold=0.0),
+    )
+    for call in pg_calls:
+        await call
+        assert pg_pool.connection.last_fetch is not None
+        pg_query, pg_args = pg_pool.connection.last_fetch
+        assert "user_id IS NULL" in pg_query
+        assert "session_id IS NULL" in pg_query
+        assert "user_id =" not in pg_query
+        assert None not in pg_args
+        if "LIMIT" in pg_query:
+            assert pg_query.index("session_id IS NULL") < pg_query.index("LIMIT")
+
+    search_redis = _SearchRedis(response=[1, b"ep:other", []], hash_data=_episode_to_hash(others[0]))
+    redis_backend = RedisVectorBackend(embedding_dim=2)
+    redis_backend._redis = search_redis
+    assert await redis_backend.search_similar([1.0, 0.0], namespace_filter, top_k=1, score_threshold=0.0) == []
+    assert await redis_backend.get_recent(namespace_filter, limit=1) == []
+    assert await redis_backend.count(namespace_filter) == 0
+    assert search_redis.commands == []
+
+
+def test_hybrid_index_key_separates_unset_from_the_text_none() -> None:
+    """Verify an unset-only filter never shares a lexical index with a value spelled ``None``."""
+    strategy = HybridBM25Strategy()
+    base = {"tenant_id": "tenant-a", "agent_id": "agent-a"}
+
+    assert strategy._namespace_key({**base, "user_id": None}) != strategy._namespace_key({**base, "user_id": "None"})
+
+
+def test_hybrid_invalidation_reaches_wider_indexes_of_the_same_agent() -> None:
+    """Verify a write under (user, session) drops the user-wide and agent-level indexes, not other agents'."""
+    strategy = HybridBM25Strategy()
+    base = {"tenant_id": "tenant-a", "agent_id": "agent-a"}
+    filters = {
+        "user_wide": {**base, "user_id": "user-a"},
+        "agent_level": {**base, "user_id": None, "session_id": None},
+        "other_agent": {"tenant_id": "tenant-a", "agent_id": "agent-b"},
+    }
+    for namespace_filter in filters.values():
+        entry = _BM25IndexEntry(index=None, texts=[], episodes=[], built_at=0.0)
+        entry.namespace_filter = dict(namespace_filter)
+        strategy._cache[strategy._namespace_key(namespace_filter)] = entry
+
+    strategy.invalidate({**base, "user_id": "user-a", "session_id": "session-a"})
+
+    assert list(strategy._cache) == [strategy._namespace_key(filters["other_agent"])]
 
 
 @pytest.mark.asyncio

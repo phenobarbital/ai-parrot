@@ -166,12 +166,19 @@ class MyAgent(BasicAgent):
 - Missing or anonymous identity prevents user profile operations
 - Tenant and agent IDs are required; user/session/room/crew/model IDs are optional
 - Scope is applied before top-k selection in all retrieval operations
+- An episode is recorded under the full request scope (user and session included), but automatic episodic recall is wider than one session. A request recalls:
+  - an identified user: that user's episodes from every session;
+  - an anonymous request with a session: that session's episodes that carry no user;
+  - always: agent-level episodes, recorded with neither a user nor a session (explicit lessons and episodes that predate request scoping).
+- Another user's episodes are never recalled. Set room, crew and model dimensions keep narrowing every recall.
+- Agent-level recall needs a backend that can match an unset dimension: SQLite, pgvector and FAISS can; the Redis backend returns no agent-level episodes.
 
 ### Dynamics and Reviews
 
 - Memory dynamics (reviews, state tracking) is disabled by default
 - Reviews require delivered version, attribution, and verified outcome
 - Recall/citation alone doesn't reinforce memory
+- Review identity is the exact request namespace: an episode recalled from another session, or from the agent level, is delivered as context only (`episodic_context:` in `delivered_refs`) and cannot be cited or reviewed
 - Synthetic evidence is rejected; only verified outcomes produce reviews
 
 ## Related

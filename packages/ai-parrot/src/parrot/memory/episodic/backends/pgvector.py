@@ -357,6 +357,9 @@ class PgVectorBackend:
         param_idx = 2
 
         for field, value in namespace_filter.items():
+            if value is None:
+                conditions.append(f"{field} IS NULL")
+                continue
             conditions.append(f"{field} = ${param_idx}")
             params.append(value)
             param_idx += 1
@@ -408,6 +411,9 @@ class PgVectorBackend:
         param_idx = 1
 
         for field, value in namespace_filter.items():
+            if value is None:
+                conditions.append(f"{field} IS NULL")
+                continue
             conditions.append(f"{field} = ${param_idx}")
             params.append(value)
             param_idx += 1
@@ -484,6 +490,9 @@ class PgVectorBackend:
         param_idx = 1
 
         for field, value in namespace_filter.items():
+            if value is None:
+                conditions.append(f"{field} IS NULL")
+                continue
             conditions.append(f"{field} = ${param_idx}")
             params.append(value)
             param_idx += 1
@@ -575,6 +584,9 @@ class PgVectorBackend:
         param_idx = 3
 
         for field, value in namespace_filter.items():
+            if value is None:
+                conditions.append(f"{field} IS NULL")
+                continue
             conditions.append(f"{field} = ${param_idx}")
             params.append(value)
             param_idx += 1

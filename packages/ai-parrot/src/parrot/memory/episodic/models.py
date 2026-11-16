@@ -11,6 +11,7 @@ This module defines the foundational types for the episodic memory system:
 from __future__ import annotations
 
 import uuid
+from collections.abc import Collection
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
@@ -207,6 +208,9 @@ class EpisodeSearchResult(EpisodicMemory):
     )
 
 
+_OPTIONAL_DIMENSIONS = ("user_id", "session_id", "room_id", "crew_id", "model_id")
+
+
 class MemoryNamespace(BaseModel):
     """Hierarchical namespace for isolating episodes.
 
@@ -232,14 +236,22 @@ class MemoryNamespace(BaseModel):
     room_id: str | None = Field(default=None, description="Room/channel scope")
     crew_id: str | None = Field(default=None, description="Crew scope")
 
-    def build_filter(self) -> dict[str, Any]:
+    def build_filter(self, *, null_dimensions: Collection[str] = ()) -> dict[str, Any]:
         """Generate a filter dict for backend queries.
 
-        Only includes non-None dimension fields. Backends use this
-        to build SQL WHERE clauses or post-search filters.
+        A set dimension is matched exactly and an unset one is left unconstrained, unless it is
+        named in ``null_dimensions``: then it is emitted as ``None`` and matches only episodes
+        that leave that dimension unset. Backends use this to build SQL WHERE clauses or
+        post-search filters.
+
+        Args:
+            null_dimensions: Unset optional dimensions that must match only unset values.
 
         Returns:
             Dict of field_name → value for filtering.
+
+        Raises:
+            ValueError: If a named dimension is not an optional dimension, or is set on this namespace.
         """
         filters: dict[str, Any] = {
             "tenant_id": self.tenant_id,
@@ -255,6 +267,12 @@ class MemoryNamespace(BaseModel):
             filters["crew_id"] = self.crew_id
         if self.model_id is not None:
             filters["model_id"] = self.model_id
+        for dimension in null_dimensions:
+            if dimension not in _OPTIONAL_DIMENSIONS:
+                raise ValueError(f"unsupported null dimension: {dimension}")
+            if getattr(self, dimension) is not None:
+                raise ValueError(f"null dimension is set on this namespace: {dimension}")
+            filters[dimension] = None
         return filters
 
     @property

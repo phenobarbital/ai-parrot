@@ -15,7 +15,9 @@ class AbstractEpisodeBackend(Protocol):
     Implementations must provide methods for storing, searching,
     retrieving, and maintaining episodic memory records. Namespace filters
     may include every non-null ``MemoryNamespace`` dimension, including
-    ``model_id``. Transactional dynamics reviews are an optional
+    ``model_id``. A dimension whose filter value is ``None`` matches only
+    episodes that leave it unset; a backend that cannot apply that before its
+    limit returns no rows rather than ignoring it. Transactional dynamics reviews are an optional
     ``ReviewBackend`` capability and are not required by this baseline
     protocol.
     """
