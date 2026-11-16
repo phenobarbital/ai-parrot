@@ -951,7 +951,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -961,8 +961,9 @@
       "parallelism_notes": "TASK-5710 modifies packages/ai-parrot/src/parrot/memory/episodic/backends/sqlite.py; serialize writes to that file.",
       "assigned_to": null,
       "started_at": "2026-11-16T11:03:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5711-sqlite-corrupt-vector-isolation.md"
+      "completed_at": "2026-11-16T11:10:20+00:00",
+      "file": "sdd/tasks/completed/TASK-5711-sqlite-corrupt-vector-isolation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5712",
