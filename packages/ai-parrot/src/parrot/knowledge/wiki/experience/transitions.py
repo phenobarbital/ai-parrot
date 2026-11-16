@@ -349,9 +349,9 @@ def _bound_state(state: dict) -> None:
                     "subcommand": subcommand,
                     "command": _bounded(command, _COMMAND_LIMIT),
                     "error": _bounded(error, _EXCERPT_LIMIT),
-                    "error_signature": normalize_error(error_signature)
-                    if isinstance(error_signature, str)
-                    else normalize_error(error),
+                    "error_signature": (
+                        normalize_error(error_signature) if isinstance(error_signature, str) else normalize_error(error)
+                    ),
                     "observation_id": observation_id[:_COMMAND_LIMIT],
                 }
             )
