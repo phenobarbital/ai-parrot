@@ -121,13 +121,9 @@ async def test_cursor_errors_are_explicit(store: LedgerStore) -> None:
         async with store.ledger_transaction("test.invalid_cursor") as conn:
             await conn.execute("DELETE FROM ledger_state")
             if offset is not None:
-                await conn.execute(
-                    "INSERT INTO ledger_state (key, value) VALUES ('cursor_offset', ?)", (offset,)
-                )
+                await conn.execute("INSERT INTO ledger_state (key, value) VALUES ('cursor_offset', ?)", (offset,))
             if event_id is not None:
-                await conn.execute(
-                    "INSERT INTO ledger_state (key, value) VALUES ('last_event_id', ?)", (event_id,)
-                )
+                await conn.execute("INSERT INTO ledger_state (key, value) VALUES ('last_event_id', ?)", (event_id,))
         with pytest.raises(LedgerCursorInvalid):
             await store.read_cursor()
 

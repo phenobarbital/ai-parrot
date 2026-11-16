@@ -99,9 +99,7 @@ class LedgerStore(SQLiteWikiStore):
             LedgerCursorInvalid: The persisted cursor is partial or has invalid values.
             sqlite3.Error: The schema or storage could not be read.
         """
-        async with conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'ledger_state'"
-        ) as cursor:
+        async with conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'ledger_state'") as cursor:
             if await cursor.fetchone() is None:
                 return 0, None
 
