@@ -1,0 +1,31 @@
+{
+  "feature": "sandbox-extra-write-paths",
+  "feature_id": "BRIEF-sandbox-extra-write-paths",
+  "spec": "sdd/briefs/sandbox-extra-write-paths.brief.md",
+  "type": "brief",
+  "base_branch": "dev",
+  "created_at": "2026-11-16",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "HOTFIX-sandbox-extra-write-paths-1",
+      "slug": "extra-write-paths",
+      "title": "Operator-declared extra writable paths for the SDD sandbox",
+      "feature_id": "BRIEF-sandbox-extra-write-paths",
+      "feature": "sandbox-extra-write-paths",
+      "spec": "sdd/briefs/sandbox-extra-write-paths.brief.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Single task.",
+      "assigned_to": null,
+      "started_at": "2026-11-16T09:27:37+00:00",
+      "completed_at": "2026-11-16T09:27:37+00:00",
+      "file": "sdd/briefs/sandbox-extra-write-paths/tasks/HOTFIX-sandbox-extra-write-paths-1-extra-write-paths.md"
+    }
+  ]
+}
