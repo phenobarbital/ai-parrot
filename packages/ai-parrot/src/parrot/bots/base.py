@@ -34,7 +34,6 @@ from parrot.memory.agent_memory.runtime import (
     reset_memory_scope,
 )
 
-
 def _get_interactive_result_class() -> Optional[type]:
     """Lazy import of ``InteractiveRenderResult`` (avoids circular deps)."""
     try:
@@ -976,10 +975,16 @@ class BaseBot(AbstractBot):
                     )
                 _stored_text = await self._stored_turn_text(final, _plain_answer)
                 await self._persist_finalized_turn(
-                    final, question=question, user_id=user_id, session_id=session_id, turn_id=turn_id,
+                    final,
+                    question=question,
+                    user_id=user_id,
+                    session_id=session_id,
+                    turn_id=turn_id,
                     use_history=bool(use_conversation_history and memory),
                     context_used=None,  # invoke does not use vector context
-                    compaction=_commit, output_mode=None, started=_invoke_started,
+                    compaction=_commit,
+                    output_mode=None,
+                    started=_invoke_started,
                     assistant_text=_stored_text,
                 )
                 await self._complete_agent_memory(
@@ -1875,10 +1880,16 @@ class BaseBot(AbstractBot):
                     )
                 _stored_text = await self._stored_turn_text(response, _plain_answer)
                 await self._persist_finalized_turn(
-                    response, question=question, user_id=user_id, session_id=session_id, turn_id=turn_id,
+                    response,
+                    question=question,
+                    user_id=user_id,
+                    session_id=session_id,
+                    turn_id=turn_id,
                     use_history=bool(use_conversation_history and memory),
                     context_used=vector_context if use_vector_context else None,
-                    compaction=_commit, output_mode=output_mode, started=_ask_started_ms,
+                    compaction=_commit,
+                    output_mode=output_mode,
+                    started=_ask_started_ms,
                     assistant_text=_stored_text,
                 )
                 await self._complete_agent_memory(
@@ -2430,12 +2441,7 @@ class BaseBot(AbstractBot):
                                 self.estimate_prompt_tokens(rendered_history, system_prompt, question),
                             )
                         await _save_stream_turn(str(stream_error) if stream_error else None, commit)
-                    if (
-                        full_response
-                        and stream_error is None
-                        and not _stream_blocked
-                        and not _budget_exhausted_stream
-                    ):
+                    if full_response and stream_error is None and not _stream_blocked and not _budget_exhausted_stream:
                         await self._complete_agent_memory(
                             scope=_memory_scope,
                             question=question,
