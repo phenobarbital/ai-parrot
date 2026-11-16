@@ -26,6 +26,7 @@ class FakeDispatcher:
       - "extra": also writes an unlisted file (for fidelity-violation coverage elsewhere).
       - "banned": writes a banned import (`import httpx`) into the task's listed file (FEAT-553).
       - "empty": returns a DevelopmentOutput claiming the file but writes/commits nothing (FEAT-597).
+      - "blocked": reports a task-contract blocker without changing any files.
     """
 
     def __init__(self, behaviour: str = "ok", *, gate: asyncio.Event | None = None) -> None:
@@ -48,6 +49,13 @@ class FakeDispatcher:
             await self.gate.wait()
         if self.behaviour == "fail":
             raise RuntimeError("boom")
+        if self.behaviour == "blocked":
+            return DevelopmentOutput(
+                files_changed=[],
+                commit_shas=[],
+                summary=f"Blocked in {Path(cwd).name}: requires an out-of-scope store contract change.",
+                incomplete_tasks=[brief.task_id],
+            )
         if self.behaviour == "empty":
             # Claims the file in its output but writes and commits nothing (FEAT-597 / issue:ee4d4879fc89).
             n_empty = brief.task_id.rsplit("-", 1)[-1].lstrip("0") or "0"
@@ -1415,6 +1423,80 @@ async def test_run_task_empty_delivery_twice_is_failed(git_sandbox_feature, noop
     assert "empty_delivery:" in task.diagnostics
     _rc, after, _err = await _git("rev-parse", feature_branch, cwd=str(worktree))
     assert before == after
+
+
+@pytest.mark.parametrize("retry_behaviour", ["ok", "blocked", "fail"])
+async def test_blocked_delivery_preserves_response_across_retry(
+    git_sandbox_feature: tuple, noop_probe: object, retry_behaviour: str
+) -> None:
+    """A valid no-change response retains its reason even if the next seat replaces or lacks output."""
+    from parrot.flows.dev_loop.sdd_coder.models import CoderJob
+    from parrot.flows.dev_loop.sdd_coder.telemetry import build_attempt_row
+
+    worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+    engine = SddCoderEngine(
+        roster=_roster(("a", "codex"), ("b", "nova")),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+        dispatcher_builder=fake_builder_factory({"codex": "blocked", "nova": retry_behaviour}),
+    )
+    job = await engine.run_chunk("demo", str(worktree), ["TASK-0001"])
+    result = await engine.wait(job.job_id, 5)
+    # Exercise the public JSON contract, including recovery of nested outputs.
+    task = CoderJob.model_validate_json(result.model_dump_json()).tasks[0]
+    assert task.outcome == ("merged" if retry_behaviour == "ok" else "failed")
+    assert len(task.attempts) == 2
+    first, second = task.attempts
+    output = first.development_output
+    assert output is not None
+    journal = CoderJob.model_validate_json((worktree / ".sdd-coder" / "jobs" / f"{job.job_id}.json").read_text())
+    assert journal.tasks[0].attempts[0].development_output == output
+    assert output.files_changed == output.commit_shas == []
+    assert output.incomplete_tasks == ["TASK-0001"]
+    assert "out-of-scope store contract change" in output.summary
+    assert first.error.startswith("empty_delivery:")
+    assert f"Coder-reported summary: {output.summary}" in first.error
+    assert "Coder-reported incomplete_tasks: ['TASK-0001']" in first.error
+    assert first.terminal == "failed"
+    assert first.error_class == "EmptyDelivery"
+    assert task.development_output == second.development_output
+    if retry_behaviour == "fail":
+        assert second.development_output is None
+    else:
+        assert second.development_output is not None
+        assert second.development_output != output
+    if task.outcome == "failed":
+        assert output.summary in task.diagnostics
+    # Responses are operator evidence, never calibration dataset content.
+    row = build_attempt_row(first, feature_id="FEAT-549", job_id=job.job_id, task_id=task.task_id, declared_files=1)
+    assert "development_output" not in row.model_dump()
+    assert output.summary not in row.model_dump_json()
+
+
+async def test_empty_delivery_bounds_diagnostic_but_preserves_full_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Long summaries remain recoverable without making the error excerpt unbounded."""
+    from unittest.mock import AsyncMock
+
+    from parrot.flows.dev_loop.sdd_coder.models import AttemptRecord, PlannedTask
+
+    engine = SddCoderEngine(roster=_roster(("a", "codex")))
+    monkeypatch.setattr(engine, "_delivered_paths", AsyncMock(return_value=[]))
+    legacy = AttemptRecord(attempt=1, seat_label="a", started_at="")
+    assert legacy.development_output is None
+    output = DevelopmentOutput(files_changed=[], commit_shas=[], summary="reason " * 2000)
+    rec, error = await engine._check_delivery(
+        None,
+        PlannedTask(task_id="TASK-0001", task_file="task.md", seat_label="a"),
+        engine.roster.seats[0],
+        legacy.model_copy(update={"development_output": output}),
+        branch="branch",
+        path="path",
+    )
+    assert len(error) < 4500
+    assert output.summary not in error
+    assert rec.development_output == output
 
 
 async def test_classify_failure_reason_empty_delivery_not_suspendable(git_sandbox_feature, noop_probe):

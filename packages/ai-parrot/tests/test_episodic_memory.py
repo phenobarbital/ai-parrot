@@ -4,6 +4,7 @@ Covers all modules: models, FAISS backend, embedding, reflection,
 Redis cache, store orchestrator, tools, and mixin.
 All tests use mocked/in-memory components — no real PostgreSQL or Redis required.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -17,7 +18,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import numpy as np
 import pytest
 
-from parrot.bots.data import PandasAgentResponse
+from parrot.memory.agent_memory import AgentMemoryMixin
+from parrot.memory.agent_memory.models import AgentMemoryConfig, MemoryEvent, MemoryRequestScope
 from parrot.memory.episodic.models import (
     EpisodeCategory,
     EpisodeOutcome,
@@ -32,10 +34,11 @@ from parrot.memory.episodic.reflection import ReflectionEngine
 from parrot.memory.episodic.cache import EpisodeRedisCache
 from parrot.memory.episodic.store import EpisodicMemoryStore, _auto_importance
 from parrot.memory.episodic.tools import EpisodicMemoryToolkit
-from parrot.memory.episodic.mixin import EpisodicMemoryMixin
-
+from parrot.memory.unified.models import MemoryContext
+from parrot.tools.abstract import ToolResult
 
 # ── Helpers ──
+
 
 def _random_embedding(dim: int = 384) -> list[float]:
     """Generate a random L2-normalized embedding vector."""
@@ -130,7 +133,7 @@ class MockRedis:
             stop = len(sorted_items) + stop
         if stop < 0:
             return 0
-        to_remove = sorted_items[start:stop + 1]
+        to_remove = sorted_items[start : stop + 1]
         for name, _ in to_remove:
             zs.pop(name, None)
         return len(to_remove)
@@ -143,7 +146,7 @@ class MockRedis:
 
     async def ltrim(self, key: str, start: int, stop: int) -> None:
         if key in self._lists:
-            self._lists[key] = self._lists[key][start:stop + 1]
+            self._lists[key] = self._lists[key][start : stop + 1]
 
     async def lrange(self, key: str, start: int, stop: int) -> list[str]:
         lst = self._lists.get(key, [])
@@ -242,6 +245,7 @@ class MockReflectionEngine:
 
 # ── Fixtures ──
 
+
 @pytest.fixture
 def sample_namespace() -> MemoryNamespace:
     """MemoryNamespace for testing."""
@@ -335,8 +339,13 @@ class TestModels:
     def test_episode_category_enum(self) -> None:
         """All EpisodeCategory values are valid strings."""
         expected = {
-            "tool_execution", "query_resolution", "error_recovery",
-            "user_preference", "workflow_pattern", "decision", "handoff",
+            "tool_execution",
+            "query_resolution",
+            "error_recovery",
+            "user_preference",
+            "workflow_pattern",
+            "decision",
+            "handoff",
         }
         actual = {c.value for c in EpisodeCategory}
         assert actual == expected
@@ -368,33 +377,17 @@ class TestModels:
 
     def test_namespace_scope_label(self) -> None:
         """Correct label at each scope level."""
-        assert MemoryNamespace(
-            tenant_id="t", agent_id="a"
-        ).scope_label == "agent:a"
-        assert MemoryNamespace(
-            tenant_id="t", agent_id="a", user_id="u"
-        ).scope_label == "user:u"
-        assert MemoryNamespace(
-            tenant_id="t", agent_id="a", room_id="r"
-        ).scope_label == "room:r"
-        assert MemoryNamespace(
-            tenant_id="t", agent_id="a", session_id="s", user_id="u"
-        ).scope_label == "session:s"
-        assert MemoryNamespace(
-            tenant_id="t", agent_id="a", crew_id="c"
-        ).scope_label == "crew:c"
+        assert MemoryNamespace(tenant_id="t", agent_id="a").scope_label == "agent:a"
+        assert MemoryNamespace(tenant_id="t", agent_id="a", user_id="u").scope_label == "user:u"
+        assert MemoryNamespace(tenant_id="t", agent_id="a", room_id="r").scope_label == "room:r"
+        assert MemoryNamespace(tenant_id="t", agent_id="a", session_id="s", user_id="u").scope_label == "session:s"
+        assert MemoryNamespace(tenant_id="t", agent_id="a", crew_id="c").scope_label == "crew:c"
 
     def test_namespace_redis_prefix(self) -> None:
         """Correct Redis prefix at each scope level."""
-        assert MemoryNamespace(
-            tenant_id="t", agent_id="a"
-        ).redis_prefix == "t:a"
-        assert MemoryNamespace(
-            tenant_id="t", agent_id="a", user_id="u"
-        ).redis_prefix == "t:a:user:u"
-        assert MemoryNamespace(
-            tenant_id="t", agent_id="a", room_id="r"
-        ).redis_prefix == "t:a:room:r"
+        assert MemoryNamespace(tenant_id="t", agent_id="a").redis_prefix == "t:a"
+        assert MemoryNamespace(tenant_id="t", agent_id="a", user_id="u").redis_prefix == "t:a:user:u"
+        assert MemoryNamespace(tenant_id="t", agent_id="a", room_id="r").redis_prefix == "t:a:room:r"
 
     def test_episode_searchable_text(self) -> None:
         """Concatenates situation + action + lesson."""
@@ -484,9 +477,7 @@ class TestFAISSBackend:
             backend2 = FAISSBackend(dimension=384, persistence_path=tmpdir)
             await backend2.load()
 
-            count = await backend2.count(
-                {"tenant_id": "test", "agent_id": "test-agent"}
-            )
+            count = await backend2.count({"tenant_id": "test", "agent_id": "test-agent"})
             assert count == 1
 
             results = await backend2.search_similar(
@@ -514,9 +505,7 @@ class TestFAISSBackend:
             await backend.store(ep)
             episodes.append(ep)
 
-        total = await backend.count(
-            {"tenant_id": "test", "agent_id": "test-agent"}
-        )
+        total = await backend.count({"tenant_id": "test", "agent_id": "test-agent"})
         assert total <= 3
 
     @pytest.mark.asyncio
@@ -538,9 +527,7 @@ class TestFAISSBackend:
         await faiss_backend.store(success_ep)
         await faiss_backend.store(failure_ep)
 
-        failures = await faiss_backend.get_failures(
-            agent_id="test-agent", tenant_id="test"
-        )
+        failures = await faiss_backend.get_failures(agent_id="test-agent", tenant_id="test")
         assert len(failures) == 1
         assert failures[0].is_failure is True
         assert failures[0].episode_id == failure_ep.episode_id
@@ -609,25 +596,25 @@ class TestReflection:
     async def test_reflection_llm_success(self) -> None:
         """Mock LLM returns structured ReflectionResult."""
         mock_client = AsyncMock()
-        mock_client.ask = AsyncMock(return_value={
-            "content": [
-                {
-                    "type": "text",
-                    "text": json.dumps({
-                        "reflection": "The action succeeded well",
-                        "lesson_learned": "Keep doing this",
-                        "suggested_action": "Continue this approach",
-                    }),
-                }
-            ]
-        })
+        mock_client.ask = AsyncMock(
+            return_value={
+                "content": [
+                    {
+                        "type": "text",
+                        "text": json.dumps(
+                            {
+                                "reflection": "The action succeeded well",
+                                "lesson_learned": "Keep doing this",
+                                "suggested_action": "Continue this approach",
+                            }
+                        ),
+                    }
+                ]
+            }
+        )
 
-        engine = ReflectionEngine(
-            llm_client=mock_client, fallback_to_heuristic=True
-        )
-        result = await engine.reflect(
-            "Test situation", "Test action", EpisodeOutcome.SUCCESS
-        )
+        engine = ReflectionEngine(llm_client=mock_client, fallback_to_heuristic=True)
+        result = await engine.reflect("Test situation", "Test action", EpisodeOutcome.SUCCESS)
         assert isinstance(result, ReflectionResult)
         assert result.lesson_learned == "Keep doing this"
 
@@ -659,12 +646,8 @@ class TestReflection:
         mock_client = AsyncMock()
         mock_client.ask = AsyncMock(return_value=_FakeAIMessage(parsed))
 
-        engine = ReflectionEngine(
-            llm_client=mock_client, fallback_to_heuristic=True
-        )
-        result = await engine.reflect(
-            "Test situation", "Test action", EpisodeOutcome.SUCCESS
-        )
+        engine = ReflectionEngine(llm_client=mock_client, fallback_to_heuristic=True)
+        result = await engine.reflect("Test situation", "Test action", EpisodeOutcome.SUCCESS)
         assert isinstance(result, ReflectionResult)
         assert result.lesson_learned == "Keep doing this"
 
@@ -674,9 +657,7 @@ class TestReflection:
         mock_client = AsyncMock()
         mock_client.ask = AsyncMock(side_effect=RuntimeError("LLM unavailable"))
 
-        engine = ReflectionEngine(
-            llm_client=mock_client, fallback_to_heuristic=True
-        )
+        engine = ReflectionEngine(llm_client=mock_client, fallback_to_heuristic=True)
         result = await engine.reflect(
             "Test situation",
             "Test action",
@@ -757,9 +738,7 @@ class TestRedisCache:
         assert recent[0].episode_id == ep.episode_id
 
     @pytest.mark.asyncio
-    async def test_cache_failures(
-        self, redis_cache: EpisodeRedisCache, sample_namespace: MemoryNamespace
-    ) -> None:
+    async def test_cache_failures(self, redis_cache: EpisodeRedisCache, sample_namespace: MemoryNamespace) -> None:
         """Cache failure episode, retrieve via get_failures."""
         ep = _make_episode(
             outcome=EpisodeOutcome.FAILURE,
@@ -774,9 +753,7 @@ class TestRedisCache:
         assert failures[0].is_failure is True
 
     @pytest.mark.asyncio
-    async def test_cache_invalidation(
-        self, redis_cache: EpisodeRedisCache, sample_namespace: MemoryNamespace
-    ) -> None:
+    async def test_cache_invalidation(self, redis_cache: EpisodeRedisCache, sample_namespace: MemoryNamespace) -> None:
         """Invalidate namespace, verify cache miss."""
         ep = _make_episode()
         await redis_cache.cache_episode(sample_namespace, ep)
@@ -793,13 +770,9 @@ class TestRedisCache:
         assert recent_after is None
 
     @pytest.mark.asyncio
-    async def test_cache_max_recent(
-        self, mock_redis: MockRedis, sample_namespace: MemoryNamespace
-    ) -> None:
+    async def test_cache_max_recent(self, mock_redis: MockRedis, sample_namespace: MemoryNamespace) -> None:
         """Exceed max_recent, verify oldest evicted."""
-        cache = EpisodeRedisCache(
-            redis_client=mock_redis, default_ttl=3600, max_recent=3
-        )
+        cache = EpisodeRedisCache(redis_client=mock_redis, default_ttl=3600, max_recent=3)
 
         for i in range(5):
             ep = _make_episode(situation=f"Episode {i}")
@@ -811,9 +784,7 @@ class TestRedisCache:
         assert len(recent) <= 3
 
     @pytest.mark.asyncio
-    async def test_cache_graceful_degradation(
-        self, sample_namespace: MemoryNamespace
-    ) -> None:
+    async def test_cache_graceful_degradation(self, sample_namespace: MemoryNamespace) -> None:
         """Redis unavailable returns None, no exception."""
 
         class BrokenRedis:
@@ -873,9 +844,7 @@ class TestTools:
             outcome=EpisodeOutcome.SUCCESS,
         )
 
-        toolkit = EpisodicMemoryToolkit(
-            store=episodic_store, namespace=sample_namespace
-        )
+        toolkit = EpisodicMemoryToolkit(store=episodic_store, namespace=sample_namespace)
 
         result = await toolkit.search_episodic_memory(query="weather", top_k=5)
         assert isinstance(result, str)
@@ -889,9 +858,7 @@ class TestTools:
         sample_namespace: MemoryNamespace,
     ) -> None:
         """record_lesson stores episode with correct fields."""
-        toolkit = EpisodicMemoryToolkit(
-            store=episodic_store, namespace=sample_namespace
-        )
+        toolkit = EpisodicMemoryToolkit(store=episodic_store, namespace=sample_namespace)
 
         result = await toolkit.record_lesson(
             situation="User prefers markdown tables",
@@ -918,9 +885,7 @@ class TestTools:
             error_message="403 Forbidden",
         )
 
-        toolkit = EpisodicMemoryToolkit(
-            store=episodic_store, namespace=sample_namespace
-        )
+        toolkit = EpisodicMemoryToolkit(store=episodic_store, namespace=sample_namespace)
 
         result = await toolkit.get_warnings(context="accessing API endpoints")
         assert isinstance(result, str)
@@ -1031,27 +996,99 @@ class TestStoreIntegration:
         episodic_store: EpisodicMemoryStore,
         sample_namespace: MemoryNamespace,
     ) -> None:
-        """record_tool_episode extracts fields correctly from ToolResult mock."""
-
-        class MockToolResult:
-            success = False
-            error = "File not found: /tmp/data.csv"
-            status = "error"
-            result = None
-
+        """record_tool_episode extracts fields correctly from a failing ToolResult."""
         ep = await episodic_store.record_tool_episode(
             namespace=sample_namespace,
             tool_name="read_file",
             tool_args={"path": "/tmp/data.csv"},
-            tool_result=MockToolResult(),
+            tool_result=ToolResult(
+                success=False,
+                status="error",
+                error="File not found: /tmp/data.csv",
+                result=None,
+            ),
             user_query="Read the data file",
         )
 
         assert ep.outcome == EpisodeOutcome.FAILURE
         assert ep.is_failure is True
+        assert ep.metadata["outcome_verified"] is True
         assert "read_file" in ep.related_tools
         assert ep.error_message is not None
         assert "not found" in ep.error_message.lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("tool_result", "expected_outcome", "expected_verified"),
+        [
+            pytest.param(ToolResult(result="rows"), EpisodeOutcome.PARTIAL, False, id="defaults-only"),
+            pytest.param(ToolResult(success=True, result="rows"), EpisodeOutcome.SUCCESS, True, id="explicit-success"),
+            pytest.param(
+                ToolResult(status="success", result="rows"), EpisodeOutcome.SUCCESS, True, id="status-success"
+            ),
+            pytest.param(ToolResult(success=False, result=None), EpisodeOutcome.FAILURE, True, id="explicit-failure"),
+            pytest.param(ToolResult(status="failed", result=None), EpisodeOutcome.FAILURE, True, id="status-failed"),
+            pytest.param(
+                ToolResult(success=True, status="error", result=None),
+                EpisodeOutcome.FAILURE,
+                True,
+                id="error-status-wins",
+            ),
+            pytest.param(ToolResult(status="timeout", result=None), EpisodeOutcome.TIMEOUT, True, id="status-timeout"),
+            pytest.param(
+                ToolResult(status="partial", result="rows"), EpisodeOutcome.PARTIAL, True, id="status-partial"
+            ),
+            pytest.param(
+                ToolResult(status="completed", result="rows"), EpisodeOutcome.PARTIAL, False, id="status-other"
+            ),
+            pytest.param({"success": False, "status": "error"}, EpisodeOutcome.PARTIAL, False, id="dict-not-evidence"),
+            pytest.param("plain string output", EpisodeOutcome.PARTIAL, False, id="raw-value"),
+        ],
+    )
+    async def test_store_tool_episode_outcome_needs_explicit_evidence(
+        self,
+        episodic_store: EpisodicMemoryStore,
+        sample_namespace: MemoryNamespace,
+        tool_result: Any,
+        expected_outcome: EpisodeOutcome,
+        expected_verified: bool,
+    ) -> None:
+        """Only success/status fields the tool set itself decide the outcome (FEAT-892 E4)."""
+        ep = await episodic_store.record_tool_episode(
+            namespace=sample_namespace,
+            tool_name="query_db",
+            tool_args={"sql": "select 1"},
+            tool_result=tool_result,
+        )
+
+        assert ep.outcome == expected_outcome
+        assert ep.metadata["outcome_verified"] is expected_verified
+
+    @pytest.mark.asyncio
+    async def test_store_tool_episode_duck_typed_failure_is_not_evidence(
+        self,
+        episodic_store: EpisodicMemoryStore,
+        sample_namespace: MemoryNamespace,
+    ) -> None:
+        """A plain object exposing success=False is unverified, but its error text is kept."""
+
+        class DuckResult:
+            success = False
+            status = "error"
+            error = "connection refused"
+            result = None
+
+        ep = await episodic_store.record_tool_episode(
+            namespace=sample_namespace,
+            tool_name="query_db",
+            tool_args={},
+            tool_result=DuckResult(),
+        )
+
+        assert ep.outcome == EpisodeOutcome.PARTIAL
+        assert ep.metadata["outcome_verified"] is False
+        assert ep.error_message == "connection refused"
+        assert ep.error_type == "connection"
 
     @pytest.mark.asyncio
     async def test_store_namespace_isolation(
@@ -1081,128 +1118,106 @@ class TestStoreIntegration:
             assert r.user_id != "alice"
 
 
-class TestMixinIntegration:
-    """Integration tests for the EpisodicMemoryMixin."""
+class TestAgentMemoryIntegration:
+    """Integration tests for the replacement AgentMemoryMixin contracts."""
+
+    @staticmethod
+    def _scope() -> MemoryRequestScope:
+        """Build a trusted user-and-room scope."""
+        return MemoryRequestScope(
+            tenant_id="test",
+            agent_id="test-bot",
+            user_id="user-1",
+            session_id="session-1",
+            room_id="room-1",
+            turn_id="turn-1",
+            identity_provenance="server_resolved",
+        )
 
     @pytest.mark.asyncio
-    async def test_mixin_build_context(self, sample_namespace: MemoryNamespace) -> None:
-        """Mock store -> _build_episodic_context returns formatted string."""
+    async def test_mixin_forwards_room_scope(self) -> None:
+        """Pass the immutable room identity to the unified manager unchanged."""
 
-        class TestBot(EpisodicMemoryMixin):
-            name = "test-bot"
-            enable_episodic_memory = True
+        class TestBot(AgentMemoryMixin):
+            """Minimal facade host for scoped read delegation."""
 
         bot = TestBot()
-        # Create a mock store
-        mock_store = AsyncMock()
-        mock_store.get_failure_warnings = AsyncMock(
-            return_value="MISTAKES TO AVOID:\n- Don't do X"
-        )
-        mock_store.get_user_preferences = AsyncMock(return_value=[
-            _make_episode(lesson_learned="User prefers JSON"),
-        ])
-        mock_store.get_room_context = AsyncMock(return_value=[])
-        bot._episodic_store = mock_store
+        manager = AsyncMock()
+        expected = MemoryContext(episodic_warnings="MISTAKES TO AVOID:\n- Don't do X")
+        manager.prepare_context.return_value = expected
+        bot._memory_manager = manager
+        scope = self._scope()
 
-        context = await bot._build_episodic_context(
-            query="test query",
+        context = await bot.prepare_memory("test query", scope=scope)
+
+        assert context is expected
+        manager.prepare_context.assert_awaited_once_with("test query", scope=scope)
+
+    def test_trivial_tool_policy_uses_new_config(self) -> None:
+        """Expose trivial-tool suppression through AgentMemoryConfig after the hard cut."""
+        assert AgentMemoryConfig().suppress_trivial_tools is True
+        assert AgentMemoryConfig(suppress_trivial_tools=False).suppress_trivial_tools is False
+
+    @pytest.mark.asyncio
+    async def test_preferences_and_room_context_remain_available(
+        self,
+        episodic_store: EpisodicMemoryStore,
+    ) -> None:
+        """Preserve preference and room store APIs under the new facade flags."""
+        namespace = MemoryNamespace(
+            tenant_id="test",
+            agent_id="test-bot",
             user_id="user-1",
             room_id="room-1",
         )
-        assert isinstance(context, str)
-        assert "MISTAKES TO AVOID" in context
-        assert "USER PREFERENCES" in context
-
-    @pytest.mark.asyncio
-    async def test_mixin_skip_trivial_tools(self) -> None:
-        """_record_post_tool skips tools in trivial set."""
-
-        class TestBot(EpisodicMemoryMixin):
-            name = "test-bot"
-            enable_episodic_memory = True
-
-        bot = TestBot()
-        mock_store = AsyncMock()
-        mock_store.record_tool_episode = AsyncMock()
-        bot._episodic_store = mock_store
-
-        # Trivial tool — should be skipped
-        await bot._record_post_tool(
-            tool_name="get_time",
-            tool_args={},
-            tool_result="12:00",
-        )
-        # Give any tasks a chance to run
-        await asyncio.sleep(0.05)
-        mock_store.record_tool_episode.assert_not_called()
-
-        # Non-trivial tool — should record
-        await bot._record_post_tool(
-            tool_name="execute_query",
-            tool_args={"sql": "SELECT 1"},
-            tool_result="OK",
-        )
-        await asyncio.sleep(0.05)
-        mock_store.record_tool_episode.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_mixin_record_ask_serializes_pydantic_response(self) -> None:
-        """_safe_record_ask records Pydantic responses without subscripting them."""
-
-        class TestBot(EpisodicMemoryMixin):
-            name = "test-bot"
-            enable_episodic_memory = True
-
-        bot = TestBot()
-        mock_store = AsyncMock()
-        mock_store.record_episode = AsyncMock()
-        bot._episodic_store = mock_store
-        response = PandasAgentResponse(
-            explanation="Ventas agrupadas por tienda.",
-            data_variable="sales_by_store",
-        )
-        namespace = MemoryNamespace(
-            tenant_id="default",
-            agent_id="test-bot",
-        )
-
-        await bot._safe_record_ask(
+        preference = await episodic_store.record_episode(
             namespace=namespace,
-            query="Resume las ventas por tienda",
-            response=response,
+            situation="User requested JSON output",
+            action_taken="Remember the output preference",
+            outcome=EpisodeOutcome.SUCCESS,
+            category=EpisodeCategory.USER_PREFERENCE,
+            generate_reflection=False,
+        )
+        room_episode = await episodic_store.record_episode(
+            namespace=namespace,
+            situation="Room selected the compact report",
+            action_taken="Use the compact report",
+            outcome=EpisodeOutcome.SUCCESS,
+            category=EpisodeCategory.DECISION,
+            generate_reflection=False,
         )
 
-        mock_store.record_episode.assert_awaited_once()
-        kwargs = mock_store.record_episode.await_args.kwargs
-        assert kwargs["action_taken"] == "Responded: Ventas agrupadas por tienda."
+        preferences = await episodic_store.get_user_preferences(namespace, limit=5)
+        room_context = await episodic_store.get_room_context(namespace, limit=5)
+
+        assert [episode.episode_id for episode in preferences] == [preference.episode_id]
+        assert {episode.episode_id for episode in room_context} == {
+            preference.episode_id,
+            room_episode.episode_id,
+        }
 
     @pytest.mark.asyncio
-    async def test_mixin_configure(self) -> None:
-        """_configure_episodic_memory creates store with correct backend."""
+    async def test_tool_event_uses_single_manager_owner(self) -> None:
+        """Route tool observations through the unified manager without a second mixin hook."""
 
-        class TestBot(EpisodicMemoryMixin):
-            name = "test-bot"
-            enable_episodic_memory = True
-            episodic_backend = "faiss"
-            episodic_faiss_path = None
-            episodic_reflection_enabled = False  # Skip reflection to simplify
+        class TestBot(AgentMemoryMixin):
+            """Minimal facade host for completed-event delegation."""
 
         bot = TestBot()
+        manager = AsyncMock()
+        bot._memory_manager = manager
+        scope = self._scope()
+        event = MemoryEvent(
+            event_id="tool-1",
+            kind="tool",
+            scope=scope,
+            observed_at=datetime(2026, 11, 16, tzinfo=timezone.utc),
+            payload={},
+        )
 
-        # Patch at the module level where imports happen inside the method
-        with patch(
-            "parrot.memory.episodic.embedding.EpisodeEmbeddingProvider"
-        ) as mock_emb_cls, patch(
-            "parrot.memory.episodic.store.EpisodicMemoryStore.create_faiss",
-            new_callable=AsyncMock,
-        ) as mock_create_faiss:
-            mock_store_instance = AsyncMock()
-            mock_create_faiss.return_value = mock_store_instance
+        await bot.complete_memory(event)
 
-            await bot._configure_episodic_memory()
-
-            assert bot._episodic_store == mock_store_instance
-            mock_create_faiss.assert_called_once()
+        manager.record_event.assert_awaited_once_with(event)
 
 
 # ═══════════════════════════════════════════════════

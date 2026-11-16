@@ -6,7 +6,34 @@ on:
   pull_request:
     branches: [main, dev]
 
+# A new revision replaces older work for this PR/branch. PR merge refs and
+# branch refs stay separate so a merge does not cancel its running PR tests.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  select-checks:
+    name: Select CI checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      full_suite: ${{ steps.policy.outputs.full_suite }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Select full suite or post-merge checks
+        id: policy
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci_run_policy.py
+
+  # Always validate the final branch contents. Builds and test matrices below
+  # run on PRs and direct pushes; a confirmed PR merge keeps these checks only.
   lint-and-registry:
     name: Lint & Registry Check
     runs-on: ubuntu-latest
@@ -168,6 +195,8 @@ jobs:
   # sdist first and the wheel from it, so this also proves MANIFEST.in. g++ is preinstalled on
   # ubuntu-latest for the two Cython extensions; no uv sync / test deps needed.
   sdd-assets-wheel:
+    needs: select-checks
+    if: ${{ !cancelled() && needs.select-checks.outputs.full_suite != 'false' }}
     name: SDD assets ship in the ai-parrot wheel
     runs-on: ubuntu-latest
     steps:
@@ -194,6 +223,8 @@ jobs:
   # Single OS (ubuntu-latest) only — no OS matrix (spec AC13). --system-deps
   # is never exercised here (spec §7 risk); only a --dry-run install runs.
   install-guide:
+    needs: select-checks
+    if: ${{ !cancelled() && needs.select-checks.outputs.full_suite != 'false' }}
     name: Install guide & scripts
     runs-on: ubuntu-latest
     steps:
@@ -262,6 +293,8 @@ jobs:
         run: sha256sum -c SHA256SUMS
 
   test-core:
+    needs: select-checks
+    if: ${{ !cancelled() && needs.select-checks.outputs.full_suite != 'false' }}
     name: "Test ai-parrot (Python ${{ matrix.python-version }})"
     runs-on: ubuntu-latest
     strategy:
@@ -318,6 +351,8 @@ jobs:
         run: uv run pytest tests/ -q --tb=short --ignore=tests/tools --continue-on-collection-errors
 
   test-ontology-pg:
+    needs: select-checks
+    if: ${{ !cancelled() && needs.select-checks.outputs.full_suite != 'false' }}
     name: "Test ontology vocabulary (PostgreSQL)"
     runs-on: ubuntu-latest
     services:
@@ -365,6 +400,8 @@ jobs:
         run: uv run pytest packages/ai-parrot/tests/knowledge/ontology/vocabulary/ -q --tb=short -k "pg or postgres or publisher or conformance or temporal or schema"
 
   test-wiki-extras:
+    needs: select-checks
+    if: ${{ !cancelled() && needs.select-checks.outputs.full_suite != 'false' }}
     name: "Test wikitoolkit with wiki-languages + wiki-structural extras"
     runs-on: ubuntu-latest
     steps:
@@ -485,6 +522,8 @@ jobs:
   # `wiki-structural`/ast-grep) ARE installed, so a partial-extras
   # environment degrades on Luau specifically, not everywhere at once.
   test-wiki-luau-fallback:
+    needs: select-checks
+    if: ${{ !cancelled() && needs.select-checks.outputs.full_suite != 'false' }}
     name: "Test Luau bounded heuristic fallback (wiki-languages absent)"
     runs-on: ubuntu-latest
     steps:
@@ -524,6 +563,8 @@ jobs:
             -q --tb=short --continue-on-collection-errors
 
   test-navrules:
+    needs: select-checks
+    if: ${{ !cancelled() && needs.select-checks.outputs.full_suite != 'false' }}
     name: "Test navrules (rust=${{ matrix.rust }})"
     runs-on: ubuntu-latest
     strategy:
@@ -569,6 +610,8 @@ jobs:
             --with-editable . python -m pytest tests -q
 
   test-tools:
+    needs: select-checks
+    if: ${{ !cancelled() && needs.select-checks.outputs.full_suite != 'false' }}
     name: "Test ai-parrot-tools (Python ${{ matrix.python-version }})"
     runs-on: ubuntu-latest
     strategy:
@@ -610,6 +653,8 @@ jobs:
         run: uv run pytest tests/tools/ -q --tb=short --continue-on-collection-errors
 
   test-tool-optimizations:
+    needs: select-checks
+    if: ${{ !cancelled() && needs.select-checks.outputs.full_suite != 'false' }}
     name: "Test tool-optimizations FEAT-543 (Python ${{ matrix.python-version }})"
     runs-on: ubuntu-latest
     strategy:
@@ -671,6 +716,8 @@ jobs:
           uv run pytest packages/ai-parrot-semantic/tests -q --tb=short
 
   test-loaders:
+    needs: select-checks
+    if: ${{ !cancelled() && needs.select-checks.outputs.full_suite != 'false' }}
     name: "Test ai-parrot-loaders (Python ${{ matrix.python-version }})"
     runs-on: ubuntu-latest
     strategy:

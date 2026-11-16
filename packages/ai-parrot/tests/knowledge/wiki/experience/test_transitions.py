@@ -244,7 +244,8 @@ def test_codex_occurrence_aliases(tmp_path: Path) -> None:
     plane = tmp_path / "plane"
     command = "gh pr edit 1"
     digest = hashlib.sha1(command.encode("utf-8")).hexdigest()
-    matcher = lambda *_: None
+    def matcher(*_: object) -> None:
+        return None
     on_outcome(
         plane,
         session="aliases",

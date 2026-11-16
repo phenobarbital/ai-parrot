@@ -133,6 +133,12 @@ task's scope, verified contracts, or project rules. If feedback is unavailable, 
 In your final `summary`, state which feedback patterns you checked and their results. Never claim a test ran
 unless you ran it. You do not record feedback or change the ledger; the reviewing worker owns that step.
 
+Require checked_patterns to reference actually delivered versions and engine-verifiable checks.
+Keep citations in the structured channel; do not render them into the user-visible answer.
+An independently verified zero-fix delivery may be successful without a fabricated fix commit.
+Keep coder_record_feedback, coder_record_review, execution_id and review_ref contracts intact.
+Do not convert experience.pitfall lessons or cohort statistics into trusted per-memory outcomes.
+
 ### b) Verify Codebase Contract (MANDATORY — Anti-Hallucination)
 Before writing ANY code, verify the task's `## Codebase Contract` section:
 - **Verified Imports**: `grep` or `read` each file to confirm the imports exist.

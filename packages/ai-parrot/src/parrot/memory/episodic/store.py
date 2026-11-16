@@ -3,12 +3,28 @@
 Coordinates backend storage, embedding, reflection, and caching to provide
 a unified API for recording, recalling, and maintaining agent episodes.
 """
+
 from __future__ import annotations
 
 import json
 import logging
+from collections import OrderedDict
+from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, TypeVar
+
+from pydantic import BaseModel
+
+from parrot.memory.dynamics.grade import select_grade
+from parrot.memory.dynamics.models import (
+    MemoryCitation,
+    MemoryParameters,
+    MemoryRef,
+    MemoryState,
+    ReviewCommand,
+    ReviewReceipt,
+    ReviewSignal,
+)
 
 from .backends.abstract import AbstractEpisodeBackend
 from .cache import EpisodeRedisCache
@@ -20,11 +36,24 @@ from .models import (
     EpisodicMemory,
     MemoryNamespace,
 )
-from .recall import RecallStrategy
+from .recall import HybridBM25Strategy, RecallStrategy, episode_state_ref, rank_episodes
 from .reflection import ReflectionEngine
 from .scoring import ImportanceScorer
+from .visibility import recall_scopes, visible_to_scope
 
 logger = logging.getLogger(__name__)
+
+# Citations kept in process only for backends that cannot persist them; least recently cited go first.
+_MAX_LOCAL_CITATIONS = 1024
+_LEXICAL_PAGE_SIZE = 256
+_EXPLICIT_LESSON_KEY = "_parrot_explicit_lesson"
+_EXPLICIT_REFLECTION_KEY = "_parrot_explicit_reflection"
+_EPISODIC_REVIEW_PARAMETERS = MemoryParameters(
+    algorithm="fsrs-6",
+    time_policy="days-v1",
+    parameter_id="episodic-neutral-v1",
+    provenance="episodic-review",
+)
 
 # Known error types that boost importance
 _KNOWN_ERROR_TYPES = {
@@ -52,6 +81,57 @@ def _auto_importance(
         base = min(base + 2, 10)
 
     return base
+
+
+_RETRACTED_FEEDBACK_KEY = "coder_feedback_retracted"
+_Recalled = TypeVar("_Recalled", bound=EpisodicMemory)
+
+
+def _exclude_retracted(episodes: list[_Recalled]) -> list[_Recalled]:
+    """Drop imported coder-feedback lessons whose ledger entry was retracted (spec C12, AC16)."""
+    return [episode for episode in episodes if episode.metadata.get(_RETRACTED_FEEDBACK_KEY) is not True]
+
+
+# Statuses that report failure when the tool set ``status`` itself (FEAT-892 E4).
+_EXPLICIT_FAILURE_STATUSES = frozenset({"error", "failed"})
+
+
+def _tool_outcome(tool_result: Any) -> tuple[EpisodeOutcome, bool]:
+    """Map a tool result to an episode outcome using explicit evidence only.
+
+    Only fields the tool set itself count as evidence (FEAT-892 E4): the
+    ``success`` / ``status`` fields of a Pydantic result (such as
+    ``ToolResult``) listed in its ``model_fields_set``. Field defaults,
+    ``getattr`` fallbacks, dicts and plain objects carrying a ``success``
+    attribute are never read as evidence.
+
+    Args:
+        tool_result: The value the tool execution returned.
+
+    Returns:
+        A ``(outcome, verified)`` pair. ``verified`` is ``False`` when the
+        tool set neither field (or did not return a Pydantic result); the
+        outcome is then ``PARTIAL``, the unverified-outcome marker, never
+        ``SUCCESS``.
+    """
+    if not isinstance(tool_result, BaseModel):
+        return EpisodeOutcome.PARTIAL, False
+    # model_fields_set names only fields the caller passed, so no default is ever read.
+    explicit = {
+        name: getattr(tool_result, name) for name in ("success", "status") if name in tool_result.model_fields_set
+    }
+    success = explicit.get("success")
+    status = explicit.get("status")
+
+    if success is False or status in _EXPLICIT_FAILURE_STATUSES:
+        return EpisodeOutcome.FAILURE, True
+    if status == "timeout":
+        return EpisodeOutcome.TIMEOUT, True
+    if status == "partial":
+        return EpisodeOutcome.PARTIAL, True
+    if success is True or status == "success":
+        return EpisodeOutcome.SUCCESS, True
+    return EpisodeOutcome.PARTIAL, False
 
 
 class EpisodicMemoryStore:
@@ -100,6 +180,10 @@ class EpisodicMemoryStore:
         self._default_ttl_days = default_ttl_days
         self._importance_scorer = importance_scorer
         self._recall_strategy = recall_strategy
+        self._citations: OrderedDict[str, MemoryCitation] = OrderedDict()
+        self._released_citations: OrderedDict[str, None] = OrderedDict()
+        self._review_revisions: dict[str, int] = {}
+        self._review_expected_revisions: dict[str, int] = {}
 
     # ── Recording API ──
 
@@ -119,6 +203,7 @@ class EpisodicMemoryStore:
         metadata: dict[str, Any] | None = None,
         generate_reflection: bool = True,
         ttl_days: int | None = None,
+        episode_id: str | None = None,
     ) -> EpisodicMemory:
         """Record a new episode with auto-enrichment.
 
@@ -140,6 +225,8 @@ class EpisodicMemoryStore:
             metadata: Additional key-value metadata.
             generate_reflection: Whether to generate reflection via engine.
             ttl_days: Override default TTL. 0 = no expiry.
+            episode_id: Caller-supplied stable ID. Backends store an episode write-once by ID, so recording the same
+                ID again (a retried event) does not create a second episode.
 
         Returns:
             The stored EpisodicMemory with all enrichments.
@@ -159,25 +246,34 @@ class EpisodicMemoryStore:
         if effective_ttl > 0:
             expires_at = datetime.now(timezone.utc) + timedelta(days=effective_ttl)
 
+        episode_metadata = dict(metadata or {})
+        explicit_lesson = episode_metadata.pop(_EXPLICIT_LESSON_KEY, None)
+        explicit_reflection = episode_metadata.pop(_EXPLICIT_REFLECTION_KEY, None)
+
         # Generate reflection
         reflection = None
         lesson_learned = None
         suggested_action = None
         if generate_reflection and self._reflection is not None:
             try:
-                result = await self._reflection.reflect(
-                    situation, action_taken, outcome, error_message
-                )
+                result = await self._reflection.reflect(situation, action_taken, outcome, error_message)
                 reflection = result.reflection
                 lesson_learned = result.lesson_learned
                 suggested_action = result.suggested_action
             except Exception as e:
                 logger.warning("Reflection generation failed: %s", e)
 
+        if explicit_lesson is not None:
+            lesson_learned = str(explicit_lesson)
+        if explicit_reflection is not None:
+            reflection = str(explicit_reflection)
+
         # Build episode
         episode = EpisodicMemory(
+            **({"episode_id": episode_id} if episode_id else {}),
             tenant_id=namespace.tenant_id,
             agent_id=namespace.agent_id,
+            model_id=namespace.model_id,
             user_id=namespace.user_id,
             session_id=namespace.session_id,
             room_id=namespace.room_id,
@@ -197,7 +293,7 @@ class EpisodicMemoryStore:
             related_tools=related_tools or [],
             related_entities=related_entities or [],
             expires_at=expires_at,
-            metadata=metadata or {},
+            metadata=episode_metadata,
         )
 
         # Apply importance scorer if provided (overrides inline heuristic)
@@ -219,6 +315,7 @@ class EpisodicMemoryStore:
 
         # Store in backend
         await self._backend.store(episode)
+        self._invalidate_recall_index(namespace)
 
         # Cache in Redis
         if self._cache is not None:
@@ -232,6 +329,517 @@ class EpisodicMemoryStore:
         )
         return episode
 
+    def _invalidate_recall_index(self, namespace: MemoryNamespace) -> None:
+        """Discard the hybrid lexical index after a committed scope mutation."""
+        if isinstance(self._recall_strategy, HybridBM25Strategy):
+            self._recall_strategy.invalidate(namespace.build_filter())
+
+    async def _invalidate_scope_cache(self, namespace: MemoryNamespace) -> None:
+        """Invalidate derived recall state after a committed review mutation."""
+        self._invalidate_recall_index(namespace)
+        if self._cache is not None:
+            await self._cache.invalidate(namespace)
+
+    async def _get_scoped_recent(
+        self,
+        namespace: MemoryNamespace,
+        *,
+        limit: int,
+    ) -> list[EpisodicMemory]:
+        """Read recent episodes from the full-scope cache or backend."""
+        if self._cache is not None:
+            cached = await self._cache.get_recent(namespace, limit=limit)
+            # The cache keeps only a bounded recent window: a shorter answer than requested is partial, not complete.
+            if cached is not None and len(cached) >= limit:
+                return cached
+        return await self._backend.get_recent(namespace.build_filter(), limit=limit)
+
+    async def _fallback_lexical_search(
+        self,
+        query: str,
+        namespace: MemoryNamespace,
+        *,
+        top_k: int,
+        score_threshold: float,
+        include_failures_only: bool,
+        null_dimensions: tuple[str, ...] = (),
+    ) -> list[EpisodeSearchResult]:
+        """Provide bounded local recall when no embedding provider is configured."""
+        terms = tuple(term for term in query.casefold().split() if term)
+        if not terms or top_k == 0:
+            return []
+        namespace_filter = namespace.build_filter(null_dimensions=null_dimensions)
+        get_recent_matching = getattr(self._backend, "get_recent_matching", None)
+        if not callable(get_recent_matching):
+            count = await self._backend.count(namespace_filter)
+            episodes = await self._backend.get_recent(namespace_filter, limit=count)
+            return self._lexical_matches(
+                episodes, terms, score_threshold=score_threshold, include_failures_only=include_failures_only
+            )[:top_k]
+
+        # Matches are returned newest first, so paging can stop as soon as top_k are found.
+        matches: list[EpisodeSearchResult] = []
+        before_id: str | None = None
+        while len(matches) < top_k:
+            page = await get_recent_matching(
+                namespace_filter,
+                limit=_LEXICAL_PAGE_SIZE,
+                failures_only=include_failures_only,
+                before_id=before_id,
+            )
+            matches.extend(
+                self._lexical_matches(
+                    page, terms, score_threshold=score_threshold, include_failures_only=include_failures_only
+                )
+            )
+            if len(page) < _LEXICAL_PAGE_SIZE:
+                break
+            before_id = page[-1].episode_id
+        return matches[:top_k]
+
+    @staticmethod
+    def _lexical_matches(
+        episodes: Sequence[EpisodicMemory],
+        terms: tuple[str, ...],
+        *,
+        score_threshold: float,
+        include_failures_only: bool,
+    ) -> list[EpisodeSearchResult]:
+        """Score episodes by the share of query terms found in their searchable text.
+
+        Args:
+            episodes: Candidate episodes, in the order the results must keep.
+            terms: Case-folded query terms; never empty.
+            score_threshold: Minimum share of matched terms to keep.
+            include_failures_only: Whether to drop episodes that are not failures.
+
+        Returns:
+            Matching episodes with their lexical score, in candidate order.
+        """
+        matches: list[EpisodeSearchResult] = []
+        for episode in episodes:
+            if include_failures_only and not episode.is_failure:
+                continue
+            searchable = episode.searchable_text().casefold()
+            score = sum(term in searchable for term in terms) / len(terms)
+            if score >= score_threshold:
+                matches.append(EpisodeSearchResult(**episode.model_dump(), embedding=episode.embedding, score=score))
+        return matches
+
+    async def _read_matching(
+        self,
+        namespace: MemoryNamespace,
+        *,
+        categories: Sequence[EpisodeCategory] | None = None,
+        failures_only: bool = False,
+    ) -> list[EpisodicMemory] | None:
+        """Read only the scoped episodes a route needs, when the backend can select them.
+
+        Selecting in the backend is an optional capability. Without it the
+        caller keeps its own full-scope read and filters in Python, so both
+        paths yield the same episodes.
+
+        Args:
+            namespace: Scope of the read.
+            categories: Categories to keep; ``None`` keeps every category.
+            failures_only: Whether to keep only failure episodes.
+
+        Returns:
+            The matching episodes newest first, or ``None`` when the backend cannot select them.
+        """
+        get_recent_matching = getattr(self._backend, "get_recent_matching", None)
+        if not callable(get_recent_matching):
+            return None
+        return await get_recent_matching(
+            namespace.build_filter(),
+            categories=[category.value for category in categories] if categories is not None else None,
+            failures_only=failures_only,
+        )
+
+    async def cite(
+        self,
+        memory_ids: list[str],
+        *,
+        namespace: MemoryNamespace,
+        exposure_id: str,
+    ) -> MemoryCitation:
+        """Bind visible episode versions, under their recording identities, to a runtime exposure.
+
+        Citation is intentionally bookkeeping-only: it does not call the
+        review backend and therefore cannot change earned dynamics state.
+
+        Args:
+            memory_ids: Episode identifiers cited from the delivered context.
+            namespace: Trusted runtime namespace for the delivery.
+            exposure_id: Runtime-minted final-delivery identifier.
+
+        Returns:
+            The validated citation for the requested episode versions.
+
+        Raises:
+            ValueError: If the exposure, cardinality, or any reference is unavailable.
+        """
+        if not exposure_id.strip():
+            raise ValueError("exposure_id must be non-blank")
+        unique_ids = list(dict.fromkeys(memory_ids))
+        if not unique_ids or len(unique_ids) > 64:
+            raise ValueError("citation must contain between 1 and 64 memory references")
+
+        episodes = await self._resolve_episodes(unique_ids, namespace=namespace)
+        refs = tuple(self._episode_ref(episodes[memory_id]) for memory_id in unique_ids)
+        citation = MemoryCitation(exposure_id=exposure_id, refs=refs)
+
+        merge_citation = getattr(self._backend, "merge_citation", None)
+        if callable(merge_citation):
+            # The backend is the authority: a separate process, or this one after
+            # a restart, reviews against exactly what was committed here.
+            await self._flush_released_citations()
+            await merge_citation(citation)
+            return citation
+
+        previous = self._citations.get(exposure_id)
+        self._citations[exposure_id] = citation if previous is None else previous.merged_with(citation)
+        self._citations.move_to_end(exposure_id)
+        while len(self._citations) > _MAX_LOCAL_CITATIONS:
+            self._citations.popitem(last=False)
+        return citation
+
+    async def get_citation(self, exposure_id: str) -> MemoryCitation | None:
+        """Return the references cited for an exposure from the authoritative source.
+
+        Args:
+            exposure_id: Final-delivery exposure identifier.
+
+        Returns:
+            The durable citation when the backend persists citations, otherwise
+            the process-local one; ``None`` when the exposure is unknown or released.
+        """
+        if exposure_id in self._released_citations:
+            return None
+        get_citation = getattr(self._backend, "get_citation", None)
+        if callable(get_citation):
+            return await get_citation(exposure_id)
+        return self._citations.get(exposure_id)
+
+    def release_citation(self, exposure_id: str) -> None:
+        """Stop admitting reviews for an exposure whose invocation has ended.
+
+        The release takes effect in this process immediately. It is callable
+        from synchronous lifecycle code, so a durable citation is deleted by
+        the next citation or review; one never reached that way is removed by
+        the backend's retention pruning.
+
+        Args:
+            exposure_id: Final-delivery exposure identifier to release.
+        """
+        self._citations.pop(exposure_id, None)
+        if not callable(getattr(self._backend, "delete_citations", None)):
+            return
+        self._released_citations[exposure_id] = None
+        self._released_citations.move_to_end(exposure_id)
+        while len(self._released_citations) > _MAX_LOCAL_CITATIONS:
+            self._released_citations.popitem(last=False)
+
+    async def _flush_released_citations(self) -> None:
+        """Delete durably the citations released since the last flush; a failure is retried later."""
+        delete_citations = getattr(self._backend, "delete_citations", None)
+        if not self._released_citations or not callable(delete_citations):
+            return
+        released = list(self._released_citations)
+        try:
+            await delete_citations(released)
+        except Exception as exc:
+            logger.warning("Released citation cleanup failed; it will be retried: %s", exc)
+            return
+        for exposure_id in released:
+            self._released_citations.pop(exposure_id, None)
+
+    async def _committed_expected_revision(self, dedupe_key: str) -> int | None:
+        """Read the ``expected_revision`` a review was committed with, when the backend can.
+
+        Args:
+            dedupe_key: Idempotency identity of the review about to be applied.
+
+        Returns:
+            The committed command's ``expected_revision``; ``None`` when nothing
+            is committed for the key or the backend cannot tell.
+        """
+        get_expected_revision = getattr(self._backend, "get_review_expected_revision", None)
+        if not callable(get_expected_revision):
+            return None
+        return await get_expected_revision(dedupe_key)
+
+    async def review(
+        self,
+        memory_ids: list[str],
+        signal: ReviewSignal,
+        *,
+        namespace: MemoryNamespace,
+        exposure_id: str,
+    ) -> list[ReviewReceipt]:
+        """Admit cited evidence and apply each review durably at most once.
+
+        Args:
+            memory_ids: Episode identifiers attributed to the verified outcome.
+            signal: Trusted runtime or coder outcome evidence.
+            namespace: Trusted requesting namespace, checked against the signal.
+            exposure_id: Final-delivery exposure previously bound by :meth:`cite`.
+
+        Returns:
+            One durable or explicitly ignored receipt per distinct episode.
+
+        Raises:
+            ValueError: If scope, exposure, or delivered-version admission fails.
+        """
+        unique_ids = list(dict.fromkeys(memory_ids))
+        if not unique_ids:
+            return []
+        if not self._signal_matches_namespace(signal, namespace):
+            raise ValueError("review scope or delivered exposure is unavailable")
+
+        await self._flush_released_citations()
+        citation = await self.get_citation(exposure_id)
+        if citation is None or citation.exposure_id != exposure_id:
+            raise ValueError("review scope or delivered exposure is unavailable")
+        cited_refs = {
+            ref.memory_id: ref
+            for ref in citation.refs
+            if ref.kind == "episode" and visible_to_scope(ref.namespace, namespace)
+        }
+        if any(memory_id not in cited_refs for memory_id in unique_ids):
+            raise ValueError("review scope or delivered exposure is unavailable")
+        if not signal.can_review:
+            return []
+
+        episodes = await self._resolve_episodes(unique_ids, namespace=namespace)
+        if any(self._episode_ref(episodes[memory_id]) != cited_refs[memory_id] for memory_id in unique_ids):
+            raise ValueError("review scope or delivered exposure is unavailable")
+        apply_review = getattr(self._backend, "apply_review", None)
+        if not callable(apply_review):
+            return [
+                self._unavailable_receipt(cited_refs[memory_id], signal, reason="backend has no review capability")
+                for memory_id in unique_ids
+            ]
+
+        receipts: list[ReviewReceipt] = []
+        state_changed = False
+        changed_namespaces: list[MemoryNamespace] = []
+        for memory_id in unique_ids:
+            ref = cited_refs[memory_id]
+            episode = episodes[memory_id]
+            grade = select_grade(
+                signal,
+                attribution="cited",
+                memory_error_signature=episode.error_message or episode.error_type,
+                verified_recovery=bool(signal.recovery_refs),
+            )
+            provisional = ReviewCommand(
+                ref=ref,
+                signal=signal,
+                exposure_id=exposure_id,
+                expected_revision=0,
+            )
+            if grade is None:
+                receipts.append(
+                    ReviewReceipt(
+                        status="ignored",
+                        dedupe_key=provisional.dedupe_key,
+                        outcome_id=signal.outcome_id,
+                        ref_key=ref.canonical_key,
+                        reason="verified evidence selected no review grade",
+                    )
+                )
+                continue
+
+            try:
+                # A committed review is replayed with the revision it was committed at,
+                # read from the backend so a retry through a new store instance (a
+                # restart, another process) is a duplicate and never a false conflict.
+                # The in-process maps only serve backends that cannot answer that.
+                expected_revision = await self._committed_expected_revision(provisional.dedupe_key)
+                if expected_revision is None:
+                    expected_revision = self._review_expected_revisions.get(
+                        provisional.dedupe_key,
+                        self._review_revisions.get(ref.canonical_key, 0),
+                    )
+                command = provisional.model_copy(update={"expected_revision": expected_revision})
+                receipt, command = await self._apply_review_with_current_revision(
+                    apply_review,
+                    command,
+                    grade=grade,
+                    memory_error_signature=episode.error_message or episode.error_type,
+                    parameters=_EPISODIC_REVIEW_PARAMETERS,
+                )
+            except Exception as exc:
+                logger.warning("Review application failed for %s: %s", ref.canonical_key, exc)
+                receipts.append(self._unavailable_receipt(ref, signal, reason="review storage is unavailable"))
+                continue
+
+            self._review_expected_revisions[command.dedupe_key] = command.expected_revision
+            if receipt.apply_revision is not None:
+                self._review_revisions[ref.canonical_key] = max(
+                    receipt.apply_revision,
+                    self._review_revisions.get(ref.canonical_key, 0),
+                )
+            if receipt.status == "applied":
+                state_changed = True
+                if ref.namespace not in changed_namespaces:
+                    changed_namespaces.append(ref.namespace)
+            receipts.append(receipt)
+        if state_changed:
+            if namespace not in changed_namespaces:
+                changed_namespaces.append(namespace)
+            for changed_namespace in changed_namespaces:
+                await self._invalidate_scope_cache(changed_namespace)
+        return receipts
+
+    async def list_reviews(self, namespace: MemoryNamespace, *, limit: int | None = None) -> list[dict[str, Any]]:
+        """List committed reviews for one namespace; fails visibly when the backend cannot.
+
+        Args:
+            namespace: Scope of committed review commands to return. Every set dimension must match;
+                unset dimensions are unconstrained, exactly as in ``build_filter``.
+            limit: Optional maximum row count after scope filtering and ordering.
+
+        Returns:
+            Committed review rows supplied by the configured backend.
+
+        Raises:
+            RuntimeError: If the configured backend cannot list committed reviews.
+        """
+        list_reviews = getattr(self._backend, "list_reviews", None)
+        if not callable(list_reviews):
+            raise RuntimeError("review listing is unavailable: backend has no list_reviews capability")
+        return await list_reviews(namespace, limit=limit)
+
+    async def _apply_review_with_current_revision(
+        self,
+        apply_review: Any,
+        command: ReviewCommand,
+        **record: Any,
+    ) -> tuple[ReviewReceipt, ReviewCommand]:
+        """Retry only a compare-and-swap miss using the backend's committed revision."""
+        current_command = command
+        for _ in range(3):
+            receipt = await apply_review(current_command, **record)
+            expected_miss = (
+                receipt.status == "stale_revision"
+                and receipt.apply_revision is not None
+                and receipt.reason is not None
+                and receipt.reason.startswith("expected apply_revision=")
+            )
+            if not expected_miss:
+                return receipt, current_command
+            current_command = current_command.model_copy(update={"expected_revision": receipt.apply_revision})
+        return receipt, current_command
+
+    async def _resolve_dynamics_states(
+        self,
+        episodes: Sequence[EpisodicMemory],
+    ) -> dict[str, MemoryState]:
+        """Read the earned dynamics state of retrieved episodes, when the backend can.
+
+        Reading state is an optional backend capability and never a reason to
+        fail recall: a backend without it, or a failed read, ranks neutrally.
+
+        Args:
+            episodes: Episodes about to be ranked.
+
+        Returns:
+            Earned states keyed by :func:`episode_state_ref`; empty when none are available.
+        """
+        get_memory_states = getattr(self._backend, "get_memory_states", None)
+        if not episodes or not callable(get_memory_states):
+            return {}
+        try:
+            return await get_memory_states([episode_state_ref(episode) for episode in episodes])
+        except Exception as exc:
+            logger.warning("Dynamics state read failed; ranking neutrally: %s", exc)
+            return {}
+
+    async def _resolve_episodes(
+        self,
+        memory_ids: list[str],
+        *,
+        namespace: MemoryNamespace,
+    ) -> dict[str, EpisodicMemory]:
+        """Resolve visible episodes without distinguishing missing from inaccessible IDs."""
+        get_by_ids = getattr(self._backend, "get_by_ids", None)
+        resolved: dict[str, EpisodicMemory] = {}
+        for recall_namespace, null_dimensions in recall_scopes(namespace):
+            namespace_filter = recall_namespace.build_filter(null_dimensions=null_dimensions)
+            if callable(get_by_ids):
+                episodes = await get_by_ids(memory_ids, namespace_filter)
+            else:
+                count = await self._backend.count(namespace_filter)
+                episodes = await self._backend.get_recent(namespace_filter=namespace_filter, limit=max(1, count))
+            for episode in episodes:
+                if episode.episode_id in memory_ids and visible_to_scope(episode, namespace):
+                    resolved[episode.episode_id] = episode
+        if any(memory_id not in resolved for memory_id in memory_ids):
+            raise ValueError("one or more memory references are unavailable")
+        return resolved
+
+    @staticmethod
+    def _episode_ref(episode: EpisodicMemory) -> MemoryRef:
+        """Create the immutable write-once version reference for one episode."""
+        namespace = MemoryNamespace(**{field: getattr(episode, field) for field in MemoryNamespace.model_fields})
+        return MemoryRef(namespace=namespace, kind="episode", memory_id=episode.episode_id, content_version="v1")
+
+    @staticmethod
+    def _episode_matches_namespace(episode: EpisodicMemory, namespace: MemoryNamespace) -> bool:
+        """Require every namespace dimension, including absent values, to match."""
+        return (
+            episode.tenant_id,
+            episode.agent_id,
+            episode.user_id,
+            episode.session_id,
+            episode.room_id,
+            episode.crew_id,
+            episode.model_id,
+        ) == (
+            namespace.tenant_id,
+            namespace.agent_id,
+            namespace.user_id,
+            namespace.session_id,
+            namespace.room_id,
+            namespace.crew_id,
+            namespace.model_id,
+        )
+
+    @staticmethod
+    def _signal_matches_namespace(signal: ReviewSignal, namespace: MemoryNamespace) -> bool:
+        """Compare the outcome's trusted scope with every episodic namespace dimension."""
+        return (
+            signal.scope.tenant_id,
+            signal.scope.agent_id,
+            signal.scope.user_id,
+            signal.scope.session_id,
+            signal.scope.room_id,
+            signal.scope.crew_id,
+            signal.scope.model_id,
+        ) == (
+            namespace.tenant_id,
+            namespace.agent_id,
+            namespace.user_id,
+            namespace.session_id,
+            namespace.room_id,
+            namespace.crew_id,
+            namespace.model_id,
+        )
+
+    @staticmethod
+    def _unavailable_receipt(ref: MemoryRef, signal: ReviewSignal, *, reason: str) -> ReviewReceipt:
+        """Return a failure receipt without claiming an applied or durable pending write."""
+        command = ReviewCommand(ref=ref, signal=signal, exposure_id="unavailable", expected_revision=0)
+        return ReviewReceipt(
+            status="storage_unavailable",
+            dedupe_key=command.dedupe_key,
+            outcome_id=signal.outcome_id,
+            ref_key=ref.canonical_key,
+            reason=reason,
+        )
+
     async def record_tool_episode(
         self,
         namespace: MemoryNamespace,
@@ -243,7 +851,10 @@ class EpisodicMemoryStore:
         """Record an episode from a tool execution.
 
         Extracts episode fields from a ToolResult and delegates to
-        record_episode().
+        record_episode(). The outcome comes only from ``success`` /
+        ``status`` fields the tool set explicitly (FEAT-892 E4); a result
+        that sets neither is recorded as ``PARTIAL`` with
+        ``metadata["outcome_verified"] = False`` rather than as a success.
 
         Args:
             namespace: Scoping dimensions.
@@ -259,24 +870,12 @@ class EpisodicMemoryStore:
         situation = user_query or f"Tool execution: {tool_name}"
 
         # Summarize args (truncate long values)
-        summarized = {
-            k: str(v)[:100] for k, v in (tool_args or {}).items()
-        }
+        summarized = {k: str(v)[:100] for k, v in (tool_args or {}).items()}
         action_taken = f"Called {tool_name}({json.dumps(summarized)})"
 
-        # Map outcome
-        success = getattr(tool_result, "success", True)
+        # Map outcome from explicit evidence only (FEAT-892 E4)
+        outcome, outcome_verified = _tool_outcome(tool_result)
         error = getattr(tool_result, "error", None)
-        status = getattr(tool_result, "status", "success")
-
-        if not success:
-            outcome = EpisodeOutcome.FAILURE
-        elif status == "timeout":
-            outcome = EpisodeOutcome.TIMEOUT
-        elif status == "partial":
-            outcome = EpisodeOutcome.PARTIAL
-        else:
-            outcome = EpisodeOutcome.SUCCESS
 
         # Extract error details
         error_type = None
@@ -305,6 +904,7 @@ class EpisodicMemoryStore:
             error_message=error_message,
             category=EpisodeCategory.TOOL_EXECUTION,
             related_tools=[tool_name],
+            metadata={"outcome_verified": outcome_verified},
         )
 
     async def record_crew_episode(
@@ -337,7 +937,7 @@ class EpisodicMemoryStore:
         crew_ep = await self.record_episode(
             namespace=namespace,
             situation=f"Crew execution: {flow_description}",
-            action_taken=f"Ran crew workflow with agents",
+            action_taken="Ran crew workflow with agents",
             outcome=outcome,
             error_message=str(error)[:500] if error else None,
             category=EpisodeCategory.WORKFLOW_PATTERN,
@@ -350,9 +950,7 @@ class EpisodicMemoryStore:
             agent_results = getattr(crew_result, "agent_results", None) or {}
             for agent_id, agent_result in agent_results.items():
                 agent_success = getattr(agent_result, "success", True)
-                agent_outcome = (
-                    EpisodeOutcome.SUCCESS if agent_success else EpisodeOutcome.FAILURE
-                )
+                agent_outcome = EpisodeOutcome.SUCCESS if agent_success else EpisodeOutcome.FAILURE
                 agent_ns = MemoryNamespace(
                     tenant_id=namespace.tenant_id,
                     agent_id=agent_id,
@@ -362,7 +960,7 @@ class EpisodicMemoryStore:
                 agent_ep = await self.record_episode(
                     namespace=agent_ns,
                     situation=f"Agent participation in crew: {flow_description}",
-                    action_taken=f"Executed assigned task in crew workflow",
+                    action_taken="Executed assigned task in crew workflow",
                     outcome=agent_outcome,
                     error_message=str(agent_error)[:500] if agent_error else None,
                     category=EpisodeCategory.WORKFLOW_PATTERN,
@@ -382,6 +980,7 @@ class EpisodicMemoryStore:
         score_threshold: float = 0.3,
         category: EpisodeCategory | None = None,
         include_failures_only: bool = False,
+        null_dimensions: tuple[str, ...] = (),
     ) -> list[EpisodeSearchResult]:
         """Recall episodes similar to a query.
 
@@ -395,43 +994,53 @@ class EpisodicMemoryStore:
             score_threshold: Minimum similarity score (0-1).
             category: Optional category filter (applied post-search).
             include_failures_only: If True, only return failure episodes.
+            null_dimensions: Unset namespace dimensions that must match only episodes leaving them
+                unset, instead of every value (see ``MemoryNamespace.build_filter``).
 
         Returns:
             List of episodes ranked by similarity score.
         """
-        if self._embedding is None:
-            logger.warning("No embedding provider; recall_similar unavailable")
-            return []
-
-        embedding = await self._embedding.embed(query)
-        ns_filter = namespace.build_filter()
+        ns_filter = namespace.build_filter(null_dimensions=null_dimensions)
         effective_top_k = top_k * 2 if category else top_k  # over-fetch for post-filter
-
-        if self._recall_strategy is not None:
-            # Use pluggable recall strategy
-            results = await self._recall_strategy.search(
-                query=query,
-                query_embedding=embedding,
-                backend=self._backend,
-                namespace_filter=ns_filter,
+        if self._embedding is None:
+            logger.info("No embedding provider; using local lexical recall fallback")
+            results = await self._fallback_lexical_search(
+                query,
+                namespace,
                 top_k=effective_top_k,
                 score_threshold=score_threshold,
                 include_failures_only=include_failures_only,
+                null_dimensions=null_dimensions,
             )
         else:
-            # Default: direct backend call (unchanged behavior)
-            results = await self._backend.search_similar(
-                embedding=embedding,
-                namespace_filter=ns_filter,
-                top_k=effective_top_k,
-                score_threshold=score_threshold,
-                include_failures_only=include_failures_only,
-            )
+            embedding = await self._embedding.embed(query)
+            if self._recall_strategy is not None:
+                # Use pluggable recall strategy
+                results = await self._recall_strategy.search(
+                    query=query,
+                    query_embedding=embedding,
+                    backend=self._backend,
+                    namespace_filter=ns_filter,
+                    top_k=effective_top_k,
+                    score_threshold=score_threshold,
+                    include_failures_only=include_failures_only,
+                )
+            else:
+                # Default: direct backend call (unchanged behavior)
+                results = await self._backend.search_similar(
+                    embedding=embedding,
+                    namespace_filter=ns_filter,
+                    top_k=effective_top_k,
+                    score_threshold=score_threshold,
+                    include_failures_only=include_failures_only,
+                )
 
         if category is not None:
             results = [r for r in results if r.category == category]
+        results = _exclude_retracted(results)
 
-        return results[:top_k]
+        ranked = rank_episodes(results, namespace=namespace, states=await self._resolve_dynamics_states(results))
+        return [result for result in ranked if isinstance(result, EpisodeSearchResult)][:top_k]
 
     async def get_failure_warnings(
         self,
@@ -469,15 +1078,18 @@ class EpisodicMemoryStore:
             except Exception as e:
                 logger.warning("Failure recall failed: %s", e)
 
-        # Recent failures from backend
+        # Full-scope cached failures fall back to full-scope recent retrieval.
         try:
-            recent_failures = await self._backend.get_failures(
-                agent_id=namespace.agent_id,
-                tenant_id=namespace.tenant_id,
-                limit=max_warnings,
-            )
-            for ep in recent_failures:
-                if ep.episode_id not in failures:
+            recent_failures: list[EpisodicMemory] | None = None
+            if self._cache is not None:
+                recent_failures = await self._cache.get_failures(namespace, limit=max_warnings)
+            if recent_failures is None:
+                recent_failures = await self._read_matching(namespace, failures_only=True)
+            if recent_failures is None:
+                count = await self._backend.count(namespace.build_filter())
+                recent_failures = await self._backend.get_recent(namespace.build_filter(), limit=count)
+            for ep in _exclude_retracted(recent_failures):
+                if ep.is_failure and ep.episode_id not in failures:
                     failures[ep.episode_id] = ep
         except Exception as e:
             logger.warning("get_failures failed: %s", e)
@@ -485,12 +1097,9 @@ class EpisodicMemoryStore:
         if not failures:
             return ""
 
-        # Sort by importance DESC, then recency
-        sorted_failures = sorted(
-            failures.values(),
-            key=lambda ep: (ep.importance, ep.created_at.timestamp()),
-            reverse=True,
-        )[:max_warnings]
+        candidates = list(failures.values())
+        states = await self._resolve_dynamics_states(candidates)
+        sorted_failures = rank_episodes(candidates, namespace=namespace, states=states)[:max_warnings]
 
         # Format warnings
         lines_mistakes = []
@@ -499,13 +1108,9 @@ class EpisodicMemoryStore:
         for ep in sorted_failures:
             tool_info = f" (tool: {', '.join(ep.related_tools)})" if ep.related_tools else ""
             if ep.lesson_learned:
-                lines_mistakes.append(
-                    f"- {ep.situation[:100]}{tool_info} — {ep.lesson_learned}"
-                )
+                lines_mistakes.append(f"- {ep.situation[:100]}{tool_info} — {ep.lesson_learned}")
             elif ep.error_message:
-                lines_mistakes.append(
-                    f"- {ep.situation[:100]}{tool_info} — {ep.error_message[:100]}"
-                )
+                lines_mistakes.append(f"- {ep.situation[:100]}{tool_info} — {ep.error_message[:100]}")
             if ep.suggested_action:
                 lines_success.append(f"- {ep.suggested_action}")
 
@@ -533,13 +1138,14 @@ class EpisodicMemoryStore:
         Returns:
             List of USER_PREFERENCE category episodes.
         """
-        ns_filter = namespace.build_filter()
-        ns_filter["category"] = EpisodeCategory.USER_PREFERENCE.value
-
-        return await self._backend.get_recent(
-            namespace_filter=ns_filter,
-            limit=limit,
-        )
+        episodes = await self._read_matching(namespace, categories=[EpisodeCategory.USER_PREFERENCE])
+        if episodes is None:
+            count = await self._backend.count(namespace.build_filter())
+            episodes = await self._get_scoped_recent(namespace, limit=count)
+        episodes = _exclude_retracted(episodes)
+        preferences = [episode for episode in episodes if episode.category == EpisodeCategory.USER_PREFERENCE]
+        states = await self._resolve_dynamics_states(preferences)
+        return rank_episodes(preferences, namespace=namespace, states=states)[:limit]
 
     async def get_room_context(
         self,
@@ -557,20 +1163,19 @@ class EpisodicMemoryStore:
         Returns:
             List of recent room-scoped episodes.
         """
-        ns_filter = namespace.build_filter()
-
-        episodes = await self._backend.get_recent(
-            namespace_filter=ns_filter,
-            limit=limit * 2 if categories else limit,
-        )
+        # Without categories there is nothing to select in the backend: keep the cache-aware full-scope read.
+        episodes = await self._read_matching(namespace, categories=categories) if categories else None
+        if episodes is None:
+            count = await self._backend.count(namespace.build_filter())
+            episodes = await self._get_scoped_recent(namespace, limit=count)
+        episodes = _exclude_retracted(episodes)
 
         if categories:
             cat_values = {c.value for c in categories}
-            episodes = [
-                ep for ep in episodes if ep.category.value in cat_values
-            ]
+            episodes = [ep for ep in episodes if ep.category.value in cat_values]
 
-        return episodes[:limit]
+        states = await self._resolve_dynamics_states(episodes)
+        return rank_episodes(episodes, namespace=namespace, states=states)[:limit]
 
     # ── Maintenance API ──
 
@@ -595,15 +1200,12 @@ class EpisodicMemoryStore:
         """
         if not hasattr(self._backend, "update_metadata"):
             logger.warning(
-                "Backend %s has no update_metadata(); mark_consolidated() "
-                "is a no-op (watermark-only mode)",
+                "Backend %s has no update_metadata(); mark_consolidated() " "is a no-op (watermark-only mode)",
                 type(self._backend).__name__,
             )
             return 0
 
-        return await self._backend.update_metadata(
-            episode_ids, {"consolidated_into": page_id}
-        )
+        return await self._backend.update_metadata(episode_ids, {"consolidated_into": page_id})
 
     async def cleanup_expired(self) -> int:
         """Delete expired episodes from the backend.

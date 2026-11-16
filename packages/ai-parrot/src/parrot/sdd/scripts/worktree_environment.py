@@ -15,6 +15,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tomllib
 from typing import Any, Literal, Sequence
 
 POLICY_MESSAGE = (
@@ -153,6 +154,11 @@ EXPERIENCE_PLANE_DIR = Path(".parrot") / "experience"
 # stdlib-only by contract, so the path is duplicated here rather than imported;
 # ``test_coder_evidence_dir_matches_resolve_durable_root`` guards the drift.
 CODER_EVIDENCE_DIR = Path("artifacts") / "logs" / "sdd-coder-usage"
+# Operator-declared extra writable directories (``[tool.parrot.sdd]`` in the
+# PRIMARY checkout's ``pyproject.toml``), for tools that write outside the
+# checkout — e.g. navconfig's log directory ``/tmp/navigator``. The primary
+# checkout is read-only to a worktree session, so a session cannot widen it.
+EXTRA_WRITE_PATHS_KEY = "sandbox_extra_write_paths"
 # Claude Code keeps every session's scratchpad under this root
 # (``/tmp/claude-<uid>/<project-slug>/<session-id>/scratchpad``) and tells the
 # seat to use it for temporary files. The sandbox replaces ``/tmp`` with a
@@ -314,6 +320,102 @@ def experience_dirs(root: Path, git_dir: Path | None) -> tuple[Path, ...]:
         return ()
     return (experience_dir,)
 
+def load_extra_write_paths(primary: Path) -> tuple[Path, ...]:
+    """Read and validate ``[tool.parrot.sdd].sandbox_extra_write_paths`` from the primary checkout.
+
+    Each entry must be an absolute, already-normalized path. It is symlink-resolved, and the resolved
+    directory is what the sandbox grants. An entry is refused when it resolves to the filesystem root or a
+    top-level directory (``/tmp``, ``/home``, ``/var``: never a whole shared tree), or when it is equal to,
+    inside, or an ancestor of the primary checkout, the user's home directory, or a shared environment.
+
+    Args:
+        primary: The primary checkout root. Never pass a worktree: its ``pyproject.toml`` is session-writable.
+
+    Returns:
+        The resolved, de-duplicated directories, or an empty tuple when the file, table or key is absent.
+
+    Raises:
+        ValueError: If the file is malformed or an entry is not an acceptable path.
+    """
+    config_path = primary / "pyproject.toml"
+    if not config_path.is_file():
+        return ()
+    try:
+        with config_path.open("rb") as handle:
+            table: Any = tomllib.load(handle)
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"unreadable or malformed TOML ({exc})") from exc
+    for name in ("tool", "parrot", "sdd"):
+        table = table.get(name) if isinstance(table, dict) else None
+        if table is None:
+            return ()
+    if not isinstance(table, dict):
+        raise ValueError("[tool.parrot.sdd] must be a table")
+    raw = table.get(EXTRA_WRITE_PATHS_KEY, [])
+    if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
+        raise ValueError(f"{EXTRA_WRITE_PATHS_KEY} must be a list of strings")
+    if not raw:
+        return ()
+    try:
+        guards = [primary.resolve(), Path.home().resolve(), *shared_environments(primary)]
+    except (OSError, RuntimeError) as exc:
+        raise ValueError(f"{EXTRA_WRITE_PATHS_KEY}: cannot resolve the protected roots ({exc})") from exc
+    found: list[Path] = []
+    for item in raw:
+        if not os.path.isabs(item) or os.path.normpath(item) != item:
+            raise ValueError(f"{EXTRA_WRITE_PATHS_KEY} entry {item!r} must be an absolute, normalized path")
+        try:
+            path = Path(item).resolve()
+        except (OSError, RuntimeError) as exc:
+            raise ValueError(f"{EXTRA_WRITE_PATHS_KEY} entry {item!r} cannot be resolved ({exc})") from exc
+        if len(path.parts) < 3:
+            raise ValueError(
+                f"{EXTRA_WRITE_PATHS_KEY} entry {item!r} resolves to {path}, a root or top-level directory; "
+                "name a dedicated subdirectory instead"
+            )
+        for guard in guards:
+            if path == guard or path.is_relative_to(guard) or guard.is_relative_to(path):
+                raise ValueError(f"{EXTRA_WRITE_PATHS_KEY} entry {item!r} overlaps the protected path {guard}")
+        if path not in found:
+            found.append(path)
+    return tuple(found)
+
+def sandbox_extra_write_dirs(root: Path, git_dir: Path | None) -> tuple[Path, ...]:
+    """Return the operator-declared extra writable directories for a linked worktree.
+
+    The declaration is read from the primary checkout only. A session running in the primary checkout
+    itself gets none: it can edit that ``pyproject.toml``, so the value is not trusted there.
+
+    This never raises — ``protected_argv`` wraps every Bash call, so one raise would deny the whole
+    session. An invalid declaration grants nothing (the launcher reports it through
+    ``load_launch_config``), and a directory that cannot be created is skipped: Bubblewrap cannot bind a
+    path that is not there.
+
+    Args:
+        root: The checkout root resolved for the command's working directory.
+        git_dir: The common Git directory, or ``None`` outside a repository.
+
+    Returns:
+        The existing directories to make writable.
+    """
+    if git_dir is None:
+        return ()
+    primary = git_dir.parent
+    if primary == root:
+        return ()
+    try:
+        paths = load_extra_write_paths(primary)
+    except ValueError:
+        return ()
+    directories: list[Path] = []
+    for path in paths:
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            continue
+        directories.append(path)
+    return tuple(directories)
+
 
 def claude_scratch_root() -> Path:
     """Return Claude Code's per-user scratchpad root, creating it when absent.
@@ -341,7 +443,8 @@ def protected_argv(cwd: Path, argv: Sequence[str], *, derive_pythonpath: bool = 
     shared SDD ledger (``.parrot/ledger``, so a worktree agent can file and
     claim ledger issues), the sdd-coder evidence store
     (``artifacts/logs/sdd-coder-usage``, so review checkpoints and task journals can be
-    written), private temporary storage,
+    written), the operator-declared ``sandbox_extra_write_paths`` of the primary
+    checkout's ``pyproject.toml``, private temporary storage,
     the shared experience plane (``.parrot/experience``), and Claude Code's
     scratchpad root (``/tmp/claude-<uid>``, bound back over the
     private ``/tmp`` so a seat's scratchpad survives between commands) are
@@ -382,6 +485,9 @@ def protected_argv(cwd: Path, argv: Sequence[str], *, derive_pythonpath: bool = 
     # root through it while the rest of /tmp stays private.
     scratch_root = claude_scratch_root()
     command.extend(["--bind", str(scratch_root), str(scratch_root)])
+    # Operator-declared directories (e.g. a log directory under /tmp) reach the host the same way.
+    for extra_dir in sandbox_extra_write_dirs(root, git_dir):
+        command.extend(["--bind", str(extra_dir), str(extra_dir)])
     admin_dirs = worktree_admin_dirs(root, git_dir)
     for admin_dir in admin_dirs:
         command.extend(["--bind", str(admin_dir), str(admin_dir)])

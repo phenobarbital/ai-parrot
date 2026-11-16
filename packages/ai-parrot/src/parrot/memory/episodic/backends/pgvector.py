@@ -3,6 +3,7 @@
 Uses asyncpg directly for maximum control over pgvector queries.
 Auto-creates schema, table, and indexes on configure().
 """
+
 from __future__ import annotations
 
 import json
@@ -24,7 +25,7 @@ logger = logging.getLogger(__name__)
 # SQL column list (excluding embedding and searchable_text) for SELECT queries
 _COLUMNS = (
     "episode_id, created_at, updated_at, expires_at, "
-    "tenant_id, agent_id, user_id, session_id, room_id, crew_id, "
+    "tenant_id, agent_id, model_id, user_id, session_id, room_id, crew_id, "
     "situation, action_taken, outcome, outcome_details, error_type, error_message, "
     "reflection, lesson_learned, suggested_action, "
     "category, importance, is_failure, related_tools, related_entities, "
@@ -41,6 +42,7 @@ def _row_to_episode(row: asyncpg.Record) -> EpisodicMemory:
         expires_at=row["expires_at"],
         tenant_id=row["tenant_id"],
         agent_id=row["agent_id"],
+        model_id=row.get("model_id"),
         user_id=row["user_id"],
         session_id=row["session_id"],
         room_id=row["room_id"],
@@ -110,9 +112,7 @@ class PgVectorBackend:
             await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
 
             # Create schema
-            await conn.execute(
-                f"CREATE SCHEMA IF NOT EXISTS {self._schema}"
-            )
+            await conn.execute(f"CREATE SCHEMA IF NOT EXISTS {self._schema}")
 
             # Create table
             await conn.execute(f"""
@@ -124,6 +124,7 @@ class PgVectorBackend:
 
                     tenant_id       VARCHAR(64) NOT NULL DEFAULT 'default',
                     agent_id        VARCHAR(128) NOT NULL,
+                    model_id        TEXT,
                     user_id         VARCHAR(128),
                     session_id      VARCHAR(128),
                     room_id         VARCHAR(256),
@@ -152,10 +153,22 @@ class PgVectorBackend:
                 )
             """)
 
+            # Additive migration for tables created before model scoping.
+            # Existing rows intentionally retain NULL and continue to match
+            # namespaces that do not request a model filter.
+            await conn.execute(f"""
+                ALTER TABLE {self._fqtn}
+                ADD COLUMN IF NOT EXISTS model_id TEXT
+            """)
+
             # Create indexes
             await conn.execute(f"""
                 CREATE INDEX IF NOT EXISTS idx_episodes_agent_user
                 ON {self._fqtn} (tenant_id, agent_id, user_id)
+            """)
+            await conn.execute(f"""
+                CREATE INDEX IF NOT EXISTS idx_episodes_agent_model
+                ON {self._fqtn} (tenant_id, agent_id, model_id)
             """)
             await conn.execute(f"""
                 CREATE INDEX IF NOT EXISTS idx_episodes_agent_room
@@ -199,9 +212,7 @@ class PgVectorBackend:
         # Add tsvector column and GIN index for hybrid search (idempotent)
         await self._add_tsvector_column()
 
-        logger.info(
-            "PgVectorBackend configured: %s.%s", self._schema, self._table
-        )
+        logger.info("PgVectorBackend configured: %s.%s", self._schema, self._table)
 
     async def _add_tsvector_column(self) -> None:
         """Add tsvector column for full-text search (idempotent migration helper).
@@ -259,9 +270,7 @@ class PgVectorBackend:
     def _ensure_pool(self) -> asyncpg.Pool:
         """Raise if pool is not initialized."""
         if self._pool is None:
-            raise RuntimeError(
-                "PgVectorBackend not configured. Call configure() first."
-            )
+            raise RuntimeError("PgVectorBackend not configured. Call configure() first.")
         return self._pool
 
     async def store(self, episode: EpisodicMemory) -> str:
@@ -275,7 +284,7 @@ class PgVectorBackend:
                 f"""
                 INSERT INTO {self._fqtn} (
                     episode_id, created_at, updated_at, expires_at,
-                    tenant_id, agent_id, user_id, session_id, room_id, crew_id,
+                    tenant_id, agent_id, model_id, user_id, session_id, room_id, crew_id,
                     situation, action_taken, outcome, outcome_details,
                     error_type, error_message,
                     reflection, lesson_learned, suggested_action,
@@ -285,15 +294,15 @@ class PgVectorBackend:
                     searchable_text
                 ) VALUES (
                     $1::uuid, $2, $3, $4,
-                    $5, $6, $7, $8, $9, $10,
-                    $11, $12, $13, $14,
-                    $15, $16,
-                    $17, $18, $19,
-                    $20, $21, $22,
-                    $23, $24,
-                    $25, $26::jsonb,
+                    $5, $6, $7, $8, $9, $10, $11,
+                    $12, $13, $14, $15,
+                    $16, $17,
+                    $18, $19, $20,
+                    $21, $22, $23,
+                    $24, $25,
+                    $26, $27::jsonb,
                     to_tsvector('english',
-                        $11 || ' ' || $12 || ' ' || COALESCE($18, '')
+                        $12 || ' ' || $13 || ' ' || COALESCE($19, '')
                     )
                 )
                 ON CONFLICT (episode_id) DO NOTHING
@@ -304,6 +313,7 @@ class PgVectorBackend:
                 episode.expires_at,
                 episode.tenant_id,
                 episode.agent_id,
+                episode.model_id,
                 episode.user_id,
                 episode.session_id,
                 episode.room_id,
@@ -347,6 +357,9 @@ class PgVectorBackend:
         param_idx = 2
 
         for field, value in namespace_filter.items():
+            if value is None:
+                conditions.append(f"{field} IS NULL")
+                continue
             conditions.append(f"{field} = ${param_idx}")
             params.append(value)
             param_idx += 1
@@ -398,6 +411,9 @@ class PgVectorBackend:
         param_idx = 1
 
         for field, value in namespace_filter.items():
+            if value is None:
+                conditions.append(f"{field} IS NULL")
+                continue
             conditions.append(f"{field} = ${param_idx}")
             params.append(value)
             param_idx += 1
@@ -474,6 +490,9 @@ class PgVectorBackend:
         param_idx = 1
 
         for field, value in namespace_filter.items():
+            if value is None:
+                conditions.append(f"{field} IS NULL")
+                continue
             conditions.append(f"{field} = ${param_idx}")
             params.append(value)
             param_idx += 1
@@ -516,9 +535,7 @@ class PgVectorBackend:
             WHERE episode_id = ANY($2::uuid[])
         """
         async with pool.acquire() as conn:
-            result = await conn.execute(
-                query, json.dumps(patch), episode_ids
-            )
+            result = await conn.execute(query, json.dumps(patch), episode_ids)
 
         # asyncpg returns "UPDATE N"
         return int(result.split()[-1])
@@ -561,12 +578,15 @@ class PgVectorBackend:
 
         conditions = []
         params: list[Any] = [
-            str(embedding),   # $1 = embedding vector
-            query_text,       # $2 = query text for tsquery
+            str(embedding),  # $1 = embedding vector
+            query_text,  # $2 = query text for tsquery
         ]
         param_idx = 3
 
         for field, value in namespace_filter.items():
+            if value is None:
+                conditions.append(f"{field} IS NULL")
+                continue
             conditions.append(f"{field} = ${param_idx}")
             params.append(value)
             param_idx += 1

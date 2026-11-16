@@ -1417,3 +1417,71 @@ def test_agent_hooks_header_requires_yaml_comment_separator(tmp_path: Path) -> N
     agent = tmp_path / "agent.md"
     agent.write_text("---\nhooks:#not-a-comment\n  command: do-not-allow\n---\n")
     assert native._agent_hook_commands(agent) == []
+
+
+@pytest.fixture
+def fake_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Pin the home directory, so the home guard does not depend on where pytest keeps tmp_path."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr(policy.Path, "home", classmethod(lambda cls: home))
+    return home
+
+
+def _extra_write_config(*paths: str | Path) -> str:
+    return f"[tool.parrot.sdd]\nsandbox_extra_write_paths = {json.dumps([str(path) for path in paths])}\n"
+
+
+def test_native_allow_write_includes_declared_extra_dir(
+    linked: tuple[Path, Path], tmp_path: Path, fake_home: Path
+) -> None:
+    """The native backend allows the operator-declared directory, exactly as Bubblewrap binds it."""
+    feature, main = linked
+    extra = tmp_path / "navigator"
+    (main / "pyproject.toml").write_text(_extra_write_config(extra))
+    allow = native.native_sandbox_settings(feature)["sandbox"]["filesystem"]["allowWrite"]
+    assert str(extra.resolve()) in allow
+    assert extra.is_dir()
+    assert "/tmp" not in allow and "/" not in allow
+    native.validate_native_write_path(feature, extra / "log" / "navigator.log")
+    assert extra.resolve() in native._prefix_writable_roots(feature)
+
+
+@pytest.mark.parametrize("paths", [["/tmp"], ["/tmp/navigator", "/tmp"], ["/"]])
+def test_native_allow_write_never_contains_tmp_itself(
+    linked: tuple[Path, Path], fake_home: Path, paths: list[str]
+) -> None:
+    """A whole shared tree cannot be granted: the declaration is refused and nothing from it is allowed."""
+    feature, main = linked
+    (main / "pyproject.toml").write_text(_extra_write_config(*paths))
+    allow = native.native_sandbox_settings(feature)["sandbox"]["filesystem"]["allowWrite"]
+    assert "/tmp" not in allow and "/" not in allow
+    assert "/tmp/navigator" not in allow
+    with pytest.raises(ValueError, match="Invalid sandbox launch config"):
+        native.load_launch_config(main)
+
+
+def test_worktree_pyproject_cannot_declare_native_extra_write_paths(
+    linked: tuple[Path, Path], tmp_path: Path, fake_home: Path
+) -> None:
+    """The worktree's own pyproject is session-writable and never widens the policy."""
+    feature, _main = linked
+    extra = tmp_path / "navigator"
+    (feature / "pyproject.toml").write_text(_extra_write_config(extra))
+    allow = native.native_sandbox_settings(feature)["sandbox"]["filesystem"]["allowWrite"]
+    assert str(extra.resolve()) not in allow
+
+
+@pytest.mark.parametrize(
+    "body",
+    ['sandbox_extra_write_paths = ["/tmp"]', 'sandbox_extra_write_paths = "/tmp/navigator"',
+     'sandbox_extra_write_paths = ["relative/dir"]'],
+)  # fmt: skip
+def test_malformed_extra_write_paths_exit_2(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], body: str
+) -> None:
+    """A bad extra-path declaration refuses to launch claude and names the file."""
+    feature, seen = _launch_harness(linked, monkeypatch, primary_toml=f"[tool.parrot.sdd]\n{body}\n")
+    assert native.launch_worker([], cwd=feature) == 2
+    assert seen["exec"] is None
+    assert "Invalid sandbox launch config" in capsys.readouterr().err

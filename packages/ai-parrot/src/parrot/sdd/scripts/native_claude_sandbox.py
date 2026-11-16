@@ -520,6 +520,7 @@ def native_sandbox_settings(
     allow_paths.extend(_we.shared_ledger_dirs(root, git_dir))
     allow_paths.extend(_we.coder_evidence_dirs(root, git_dir))
     allow_paths.extend(_we.experience_dirs(root, git_dir))
+    allow_paths.extend(_we.sandbox_extra_write_dirs(root, git_dir))
     allow_write: list[str] = []
     for path in allow_paths:
         canonical = str(_canonical(path))
@@ -829,7 +830,8 @@ def load_launch_config(primary: Path) -> tuple[list[str], bool]:
         Validated ``sandbox_allowed_domains`` (default ``[]``) and ``gh_token`` (default ``False``).
 
     Raises:
-        ValueError: If the file is malformed or a value has the wrong type or is not an exact hostname.
+        ValueError: If the file is malformed, a value has the wrong type or is not an exact hostname, or
+            ``sandbox_extra_write_paths`` names an unacceptable path.
     """
     config_path = primary / "pyproject.toml"
     if not config_path.is_file():
@@ -855,6 +857,8 @@ def load_launch_config(primary: Path) -> tuple[list[str], bool]:
         raise ValueError(f"{prefix}: gh_token must be a boolean")
     try:
         domains = validate_allowed_domains(raw_domains)
+        # Validated here so a bad value refuses to launch; the hook reads it again per command.
+        _we.load_extra_write_paths(primary)
     except ValueError as exc:
         raise ValueError(f"{prefix}: {exc}") from exc
     return domains, gh_token
@@ -1017,7 +1021,7 @@ def shell_prefix_state_root() -> Path:
 
 def _prefix_writable_roots(cwd: Path) -> tuple[Path, ...]:
     """Return every path that the legacy Bubblewrap session can write."""
-    worktree, _git_dir, primary = _native_roots(cwd)
+    worktree, git_dir, primary = _native_roots(cwd)
     return (
         _canonical(worktree),
         _canonical(_worktree_admin_dir(worktree)),
@@ -1026,6 +1030,7 @@ def _prefix_writable_roots(cwd: Path) -> tuple[Path, ...]:
         _canonical(primary / "artifacts" / "logs" / "sdd-coder-usage"),
         _canonical(primary / ".parrot" / "experience"),
         _canonical(_we.claude_scratch_root()),
+        *(_canonical(path) for path in _we.sandbox_extra_write_dirs(worktree, git_dir)),
     )
 
 

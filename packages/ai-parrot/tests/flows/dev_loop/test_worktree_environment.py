@@ -2040,3 +2040,133 @@ def test_wrap_bash_loads_prefix_policy_once(
     assert (command == "git status") is valid
     if not valid:
         assert "bwrap" in command
+
+
+def _declare_extra_write_paths(checkout_root: Path, *paths: str | Path) -> None:
+    """Write a ``pyproject.toml`` that declares ``sandbox_extra_write_paths`` in ``checkout_root``."""
+    body = json.dumps([str(path) for path in paths])
+    (checkout_root / "pyproject.toml").write_text(f"[tool.parrot.sdd]\nsandbox_extra_write_paths = {body}\n")
+
+
+@pytest.fixture
+def fake_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Pin the home directory, so the home guard does not depend on where pytest keeps tmp_path."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr(policy.Path, "home", classmethod(lambda cls: home))
+    return home
+
+
+def test_feature_worktree_binds_declared_extra_write_dir_after_private_tmp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake_home: Path
+) -> None:
+    """An operator-declared directory is created and bound back through the private tmpfs."""
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+    main, worktree = _registered_feature_worktree(tmp_path)
+    extra = tmp_path / "navigator"
+    _declare_extra_write_paths(main, extra, extra)
+    argv = policy.protected_argv(worktree, ["true"])
+    assert extra.is_dir(), "Bubblewrap cannot bind a missing path, so the helper creates it"
+    assert _writable_binds(argv).count(extra.resolve()) == 1
+    assert argv.index(str(extra.resolve())) > argv.index("--tmpfs")
+    assert Path("/tmp") not in _writable_binds(argv)
+
+
+@pytest.mark.parametrize(
+    "entry",
+    ["/", "/tmp", "/home", "relative/dir", "/tmp/../etc/x", "/tmp/navigator/", "{main}", "{main}/sub", "{home}",
+     "{home}/.cache/x", "{env}", "{env}/lib", "{parent}"],
+)  # fmt: skip
+def test_extra_write_paths_reject_unsafe_entries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake_home: Path, entry: str
+) -> None:
+    """Roots, top-level directories, non-normalized paths and anything overlapping a protected root are refused."""
+    main, _worktree = _registered_feature_worktree(tmp_path)
+    environment = tmp_path / "shared" / "env"
+    environment.mkdir(parents=True)
+    monkeypatch.setattr(policy, "shared_environments", lambda cwd: (environment.resolve(),))
+    value = entry.format(main=main, home=fake_home, env=environment, parent=tmp_path)
+    _declare_extra_write_paths(main, value)
+    with pytest.raises(ValueError, match="sandbox_extra_write_paths"):
+        policy.load_extra_write_paths(main)
+
+
+def test_extra_write_path_symlink_is_validated_by_its_target(tmp_path: Path, fake_home: Path) -> None:
+    """A symlink cannot smuggle a protected directory in: the resolved target is what is checked and granted."""
+    main, _worktree = _registered_feature_worktree(tmp_path)
+    (tmp_path / "into-main").symlink_to(main / ".git", target_is_directory=True)
+    _declare_extra_write_paths(main, tmp_path / "into-main")
+    with pytest.raises(ValueError, match="overlaps the protected path"):
+        policy.load_extra_write_paths(main)
+    target = tmp_path / "real-logs"
+    target.mkdir()
+    (tmp_path / "logs").symlink_to(target, target_is_directory=True)
+    _declare_extra_write_paths(main, tmp_path / "logs")
+    assert policy.load_extra_write_paths(main) == (target.resolve(),)
+
+
+@pytest.mark.parametrize("body", ['"/tmp/navigator"', '["/tmp"]', "[1]", "["])
+def test_invalid_extra_write_paths_never_raise_and_bind_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scratch_root: Path, body: str
+) -> None:
+    """``protected_argv`` wraps every Bash call: a bad declaration grants nothing instead of raising."""
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+    main, worktree = _registered_feature_worktree(tmp_path)
+    (main / "pyproject.toml").write_text(f"[tool.parrot.sdd]\nsandbox_extra_write_paths = {body}\n")
+    git_dir = (main / ".git").resolve()
+    assert policy.sandbox_extra_write_dirs(worktree.resolve(), git_dir) == ()
+    binds = _writable_binds(policy.protected_argv(worktree, ["true"]))
+    assert Path("/tmp") not in binds
+    assert Path("/tmp/navigator") not in binds
+
+
+def test_primary_checkout_and_worktree_pyproject_cannot_declare_extra_write_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scratch_root: Path, fake_home: Path
+) -> None:
+    """Only a primary checkout the session cannot write is a trusted source."""
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+    main, worktree = _registered_feature_worktree(tmp_path)
+    extra = tmp_path / "navigator"
+    _declare_extra_write_paths(worktree, extra)
+    assert extra.resolve() not in _writable_binds(policy.protected_argv(worktree, ["true"]))
+    _declare_extra_write_paths(main, extra)
+    assert extra.resolve() not in _writable_binds(policy.protected_argv(main, ["true"]))
+    assert not extra.exists()
+
+
+def test_extra_write_dir_that_cannot_be_created_is_skipped(tmp_path: Path, fake_home: Path) -> None:
+    """A path that is not a directory is not bound, and the other declared directories still are."""
+    main, worktree = _registered_feature_worktree(tmp_path)
+    (tmp_path / "a-file").write_text("not a directory")
+    _declare_extra_write_paths(main, tmp_path / "a-file", tmp_path / "logs")
+    git_dir = (main / ".git").resolve()
+    assert policy.sandbox_extra_write_dirs(worktree.resolve(), git_dir) == ((tmp_path / "logs").resolve(),)
+
+
+def test_real_extra_write_dir_reaches_the_host_and_the_rest_of_tmp_stays_private(
+    tmp_path: Path, fake_home: Path
+) -> None:
+    """The navconfig case: a log written under the declared directory survives the command."""
+    _require_bubblewrap()
+    main = tmp_path / "main"
+    main.mkdir()
+    subprocess.run(["git", "init"], cwd=main, capture_output=True, check=True)
+    worktree = main / ".parrot" / "worktrees" / "feat-x"
+    subprocess.run(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--allow-empty", "-m", "init"],
+        cwd=main,
+        capture_output=True,
+        check=True,
+    )
+    subprocess.run(["git", "worktree", "add", str(worktree)], cwd=main, capture_output=True, check=True)
+    extra = tmp_path / "navigator"
+    _declare_extra_write_paths(main, extra)
+    log_file = extra / "log" / "navigator.log"
+    stray = tmp_path / "stray-tmp-file"
+    command = f"mkdir -p {shlex.quote(str(log_file.parent))} && echo line > {shlex.quote(str(log_file))}"
+    command += f"; touch {shlex.quote(str(stray))}"
+    argv = policy.protected_argv(worktree, ["/bin/bash", "-c", command])
+    result = subprocess.run(argv, capture_output=True, text=True, timeout=20)
+    assert result.returncode == 0, result.stderr
+    assert log_file.read_text().strip() == "line"
+    assert not stray.exists()
