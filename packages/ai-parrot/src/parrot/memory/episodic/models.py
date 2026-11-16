@@ -7,14 +7,19 @@ This module defines the foundational types for the episodic memory system:
 - EpisodeSearchResult for ranked search returns
 - ReflectionResult for LLM-generated reflections
 """
+
 from __future__ import annotations
 
 import uuid
+from collections.abc import Collection
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
+from urllib.parse import quote
 
 from pydantic import BaseModel, ConfigDict, Field
+
+FEEDBACK_IMPORT_NAMESPACE = uuid.UUID("ee9fd516-8b3f-4948-8490-7e2676b58298")
 
 
 class EpisodeOutcome(str, Enum):
@@ -41,15 +46,9 @@ class EpisodeCategory(str, Enum):
 class ReflectionResult(BaseModel):
     """Result of LLM or heuristic reflection on an episode."""
 
-    reflection: str = Field(
-        ..., description="Brief analysis of what happened"
-    )
-    lesson_learned: str = Field(
-        ..., description="Concise actionable lesson (max ~100 chars)"
-    )
-    suggested_action: str = Field(
-        ..., description="What to do differently next time"
-    )
+    reflection: str = Field(..., description="Brief analysis of what happened")
+    lesson_learned: str = Field(..., description="Concise actionable lesson (max ~100 chars)")
+    suggested_action: str = Field(..., description="What to do differently next time")
 
 
 class EpisodicMemory(BaseModel):
@@ -80,55 +79,30 @@ class EpisodicMemory(BaseModel):
     )
 
     # Namespace dimensions
-    tenant_id: str = Field(
-        default="default", description="Multi-tenant isolation"
+    tenant_id: str = Field(default="default", description="Multi-tenant isolation")
+    agent_id: str = Field(..., description="Agent that generated the episode")
+    model_id: str | None = Field(
+        default=None,
+        min_length=1,
+        description="Model that generated the episode",
     )
-    agent_id: str = Field(
-        ..., description="Agent that generated the episode"
-    )
-    user_id: str | None = Field(
-        default=None, description="User the agent interacted with"
-    )
-    session_id: str | None = Field(
-        default=None, description="Conversation session"
-    )
-    room_id: str | None = Field(
-        default=None, description="Matrix/Telegram/Slack room or channel"
-    )
-    crew_id: str | None = Field(
-        default=None, description="Crew this episode belongs to"
-    )
+    user_id: str | None = Field(default=None, description="User the agent interacted with")
+    session_id: str | None = Field(default=None, description="Conversation session")
+    room_id: str | None = Field(default=None, description="Matrix/Telegram/Slack room or channel")
+    crew_id: str | None = Field(default=None, description="Crew this episode belongs to")
 
     # Episode content
-    situation: str = Field(
-        ..., description="What was happening (context)"
-    )
-    action_taken: str = Field(
-        ..., description="What the agent did"
-    )
-    outcome: EpisodeOutcome = Field(
-        ..., description="Result classification"
-    )
-    outcome_details: str | None = Field(
-        default=None, description="Detailed result description"
-    )
-    error_type: str | None = Field(
-        default=None, description="Error type if outcome is failure"
-    )
-    error_message: str | None = Field(
-        default=None, description="Error message if outcome is failure"
-    )
+    situation: str = Field(..., description="What was happening (context)")
+    action_taken: str = Field(..., description="What the agent did")
+    outcome: EpisodeOutcome = Field(..., description="Result classification")
+    outcome_details: str | None = Field(default=None, description="Detailed result description")
+    error_type: str | None = Field(default=None, description="Error type if outcome is failure")
+    error_message: str | None = Field(default=None, description="Error message if outcome is failure")
 
     # Reflection (LLM-generated or heuristic)
-    reflection: str | None = Field(
-        default=None, description="Analysis of what happened"
-    )
-    lesson_learned: str | None = Field(
-        default=None, description="Concise actionable lesson"
-    )
-    suggested_action: str | None = Field(
-        default=None, description="What to do differently next time"
-    )
+    reflection: str | None = Field(default=None, description="Analysis of what happened")
+    lesson_learned: str | None = Field(default=None, description="Concise actionable lesson")
+    suggested_action: str | None = Field(default=None, description="What to do differently next time")
 
     # Classification
     category: EpisodeCategory = Field(
@@ -141,9 +115,7 @@ class EpisodicMemory(BaseModel):
         le=10,
         description="Importance score (1=trivial, 10=critical)",
     )
-    is_failure: bool = Field(
-        default=False, description="Whether this episode is a failure"
-    )
+    is_failure: bool = Field(default=False, description="Whether this episode is a failure")
     related_tools: list[str] = Field(
         default_factory=list,
         description="Tool names involved in this episode",
@@ -207,8 +179,36 @@ class EpisodeSearchResult(EpisodicMemory):
         ...,
         ge=0.0,
         le=1.01,
+        allow_inf_nan=False,
         description="Similarity score (0=no match, ~1=exact). Slightly above 1.0 possible due to float precision.",
     )
+    ranking_score: float | None = Field(
+        default=None,
+        ge=0.0,
+        allow_inf_nan=False,
+        description="Dynamics ranking score, separate from raw similarity.",
+    )
+    retrievability: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        allow_inf_nan=False,
+        description="Current dynamics retrievability, when available.",
+    )
+    stability: float | None = Field(
+        default=None,
+        ge=0.001,
+        allow_inf_nan=False,
+        description="Current dynamics stability, when available.",
+    )
+    review_count: int = Field(
+        default=0,
+        ge=0,
+        description="Number of durable dynamics reviews applied to the episode.",
+    )
+
+
+_OPTIONAL_DIMENSIONS = ("user_id", "session_id", "room_id", "crew_id", "model_id")
 
 
 class MemoryNamespace(BaseModel):
@@ -224,33 +224,34 @@ class MemoryNamespace(BaseModel):
 
     model_config = ConfigDict(coerce_numbers_to_str=True)
 
-    tenant_id: str = Field(
-        default="default", description="Multi-tenant isolation"
+    tenant_id: str = Field(default="default", description="Multi-tenant isolation")
+    agent_id: str = Field(..., description="Agent identifier")
+    model_id: str | None = Field(
+        default=None,
+        min_length=1,
+        description="Model scope",
     )
-    agent_id: str = Field(
-        ..., description="Agent identifier"
-    )
-    user_id: str | None = Field(
-        default=None, description="User scope"
-    )
-    session_id: str | None = Field(
-        default=None, description="Session scope"
-    )
-    room_id: str | None = Field(
-        default=None, description="Room/channel scope"
-    )
-    crew_id: str | None = Field(
-        default=None, description="Crew scope"
-    )
+    user_id: str | None = Field(default=None, description="User scope")
+    session_id: str | None = Field(default=None, description="Session scope")
+    room_id: str | None = Field(default=None, description="Room/channel scope")
+    crew_id: str | None = Field(default=None, description="Crew scope")
 
-    def build_filter(self) -> dict[str, Any]:
+    def build_filter(self, *, null_dimensions: Collection[str] = ()) -> dict[str, Any]:
         """Generate a filter dict for backend queries.
 
-        Only includes non-None dimension fields. Backends use this
-        to build SQL WHERE clauses or post-search filters.
+        A set dimension is matched exactly and an unset one is left unconstrained, unless it is
+        named in ``null_dimensions``: then it is emitted as ``None`` and matches only episodes
+        that leave that dimension unset. Backends use this to build SQL WHERE clauses or
+        post-search filters.
+
+        Args:
+            null_dimensions: Unset optional dimensions that must match only unset values.
 
         Returns:
             Dict of field_name → value for filtering.
+
+        Raises:
+            ValueError: If a named dimension is not an optional dimension, or is set on this namespace.
         """
         filters: dict[str, Any] = {
             "tenant_id": self.tenant_id,
@@ -264,6 +265,14 @@ class MemoryNamespace(BaseModel):
             filters["room_id"] = self.room_id
         if self.crew_id is not None:
             filters["crew_id"] = self.crew_id
+        if self.model_id is not None:
+            filters["model_id"] = self.model_id
+        for dimension in null_dimensions:
+            if dimension not in _OPTIONAL_DIMENSIONS:
+                raise ValueError(f"unsupported null dimension: {dimension}")
+            if getattr(self, dimension) is not None:
+                raise ValueError(f"null dimension is set on this namespace: {dimension}")
+            filters[dimension] = None
         return filters
 
     @property
@@ -287,4 +296,6 @@ class MemoryNamespace(BaseModel):
             parts.append(f"room:{self.room_id}")
         elif self.user_id:
             parts.append(f"user:{self.user_id}")
+        if self.model_id is not None:
+            parts.append(f"model:{quote(self.model_id, safe='')}")
         return ":".join(parts)

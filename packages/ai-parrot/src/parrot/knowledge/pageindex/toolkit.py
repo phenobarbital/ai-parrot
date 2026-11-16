@@ -30,7 +30,7 @@ from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, AsyncIterator, Awaitable, Callable, Optional, TypeVar
+from typing import Any, AsyncIterator, Awaitable, Callable, Optional, Sequence, TypeVar
 
 from parrot.clients.base import AbstractClient
 from parrot.tools.toolkit import AbstractToolkit, ToolkitTool
@@ -109,20 +109,79 @@ def _subtract_children(start: int, end: int, children: list[dict]) -> list[list[
     return [residual for residual in residuals if residual[0] < residual[1]]
 
 
-def _restore_merged_ownership(node: dict, original_spans: dict[Any, list[int]]) -> None:
-    """Restore the ranges a node absorbed during normalization, recovered from its stable aliases."""
+def _spans_intersect(a: Sequence[int], b: Sequence[int]) -> bool:
+    """Return whether two half-open ``[start, end)`` spans share at least one segment."""
+    return int(a[0]) < int(b[1]) and int(b[0]) < int(a[1])
+
+
+def _original_spans(nodes: list[dict]) -> dict[Any, list[int]]:
+    """Map each unambiguous ``concept_id`` to its span; ids shared by several nodes are dropped.
+
+    A duplicated concept id (e.g. an LLM-generated TOC with repeated titles over the same pages) cannot tell
+    which span an alias refers to, so restoring it would hand one node's range to another.
+    """
+    spans: dict[Any, list[int]] = {}
+    ambiguous: set[Any] = set()
+    for node in structure_to_list(nodes):
+        concept_id = node.get("concept_id")
+        if not concept_id or not node.get("span"):
+            continue
+        if concept_id in spans:
+            ambiguous.add(concept_id)
+        spans[concept_id] = list(node["span"])
+    for concept_id in ambiguous:
+        spans.pop(concept_id, None)
+    return spans
+
+
+def _restore_merged_ownership(
+    node: dict,
+    original_spans: dict[Any, list[int]],
+    blocked: Sequence[Sequence[int]] = (),
+) -> None:
+    """Restore the ranges a node absorbed during normalization, recovered from its stable aliases.
+
+    Args:
+        node: Node whose subtree is restored in place.
+        original_spans: Pre-optimization span of each unambiguous concept id.
+        blocked: Spans owned by nodes outside ``node`` (siblings and ancestors' siblings). An alias range is
+            restored only when the resulting span stays clear of them, so a restore never overlaps a sibling.
+    """
     children = node.get("nodes") or []
-    for child in children:
-        _restore_merged_ownership(child, original_spans)
+    for index, child in enumerate(children):
+        others = [list(other["span"]) for pos, other in enumerate(children) if pos != index and other.get("span")]
+        _restore_merged_ownership(child, original_spans, [*blocked, *others])
     spans = [list(node["span"])] if node.get("span") else []
-    spans.extend(original_spans[alias] for alias in node.get("aliases") or [] if alias in original_spans)
     spans.extend(list(child["span"]) for child in children if child.get("span"))
+    for alias in node.get("aliases") or []:
+        alias_span = original_spans.get(alias)
+        if not alias_span:
+            continue
+        hull = [min(int(s[0]) for s in [*spans, alias_span]), max(int(s[1]) for s in [*spans, alias_span])]
+        if any(_spans_intersect(hull, other) for other in blocked):
+            continue
+        spans.append(list(alias_span))
     if not spans:
         return
     start = min(int(span[0]) for span in spans)
     end = max(int(span[1]) for span in spans)
     node["span"] = [start, end]
     node["owned"] = _subtract_children(start, end, children)
+
+
+def _restore_roots(roots: list[dict], original_spans: dict[Any, list[int]], only: Optional[set[int]] = None) -> None:
+    """Restore merged ownership for each root, keeping sibling roots' spans off limits.
+
+    Args:
+        roots: Top-level nodes of one candidate.
+        original_spans: Output of :func:`_original_spans`.
+        only: ``id()`` of the roots to restore; ``None`` restores all of them.
+    """
+    for index, root in enumerate(roots):
+        if only is not None and id(root) not in only:
+            continue
+        others = [list(other["span"]) for pos, other in enumerate(roots) if pos != index and other.get("span")]
+        _restore_merged_ownership(root, original_spans, others)
 
 
 def _assign_concept_ids(nodes: list[dict], parent_path: str = "", frozen: Optional[set[int]] = None) -> None:
@@ -156,6 +215,10 @@ T = TypeVar("T")
 _OPEN_TXNS: ContextVar[Optional[dict[tuple[int, str], WriteTransaction]]] = ContextVar(
     "pageindex_open_txns", default=None
 )
+
+
+class PageIndexWriteDenied(PermissionError):
+    """A write tool was refused for ``tree_name`` by the active write policy."""
 
 
 class PageIndexToolkit(AbstractToolkit):
@@ -198,10 +261,34 @@ class PageIndexToolkit(AbstractToolkit):
             model=model)``. Mutually exclusive with ``adapter``.
         max_result_chars: Upper bound on the text :meth:`retrieve` returns;
             ``None`` = unbounded.
+        read_only: Hide every tool in :attr:`write_tools` from :meth:`get_tools`
+            and refuse direct write calls with :class:`PageIndexWriteDenied`.
     """
 
     name = "pageindex"
     tool_prefix = "pageindex"
+    #: Prefixed names of every tool that mutates a tree. ``read_only`` hides them; ``_authorize_write`` guards them.
+    write_tools: frozenset[str] = frozenset(
+        {
+            "pageindex_create_tree",
+            "pageindex_delete_tree",
+            "pageindex_rename_tree",
+            "pageindex_vacuum_tree",
+            "pageindex_optimize",
+            "pageindex_index_segments",
+            "pageindex_insert_markdown",
+            "pageindex_insert_ebook",
+            "pageindex_insert_content",
+            "pageindex_import_file",
+            "pageindex_import_pdf",
+            "pageindex_import_folder",
+            "pageindex_tag_node",
+            "pageindex_add_node",
+            "pageindex_update_node",
+            "pageindex_update_node_content",
+            "pageindex_delete_node",
+        }
+    )
     #: Tools the local MCP factory hides when the section has no ``llm`` (names carry the prefix).
     llm_dependent_tools: frozenset[str] = frozenset(
         {
@@ -243,9 +330,11 @@ class PageIndexToolkit(AbstractToolkit):
         *,
         llm_client: Optional[AbstractClient] = None,
         max_result_chars: Optional[int] = None,
+        read_only: bool = False,
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
+        self._read_only = read_only
         if adapter is not None and llm_client is not None:
             raise ValueError("pass either adapter or llm_client, not both")
         if storage_dir is None:
@@ -397,6 +486,19 @@ class PageIndexToolkit(AbstractToolkit):
         self._content_store._cache_evict_tree(tree_name)
         self._okf_toolkits.pop(tree_name, None)
 
+    def _authorize_write(self, tree_name: str, op: str) -> None:
+        """Write-policy hook, called before any tree lock is taken.
+
+        Args:
+            tree_name: Target tree (each endpoint for ``rename_tree``).
+            op: Unprefixed tool name, or ``"_mutate"`` for the internal backstop.
+
+        Raises:
+            PageIndexWriteDenied: When the toolkit is ``read_only``.
+        """
+        if self._read_only:
+            raise PageIndexWriteDenied(f"PageIndex toolkit is read-only: {op} on {tree_name!r} refused")
+
     async def _mutate(
         self,
         tree_name: str,
@@ -405,6 +507,7 @@ class PageIndexToolkit(AbstractToolkit):
         attempts: int = 3,
     ) -> T:
         """Run ``apply`` in a transaction; retry on StaleGenerationError when not joined."""
+        self._authorize_write(tree_name, "_mutate")
         key = (id(self), tree_name)
         if key in (_OPEN_TXNS.get() or {}):
             async with self._write(tree_name) as txn:
@@ -675,7 +778,10 @@ class PageIndexToolkit(AbstractToolkit):
                 okf_tools.extend(okf_tk.get_tools())
             except Exception:
                 logger.debug("Failed to collect OKF tools from toolkit %r", okf_tk)
-        return base_tools + okf_tools
+        tools = base_tools + okf_tools
+        if self._read_only:
+            tools = [tool for tool in tools if getattr(tool, "name", None) not in self.write_tools]
+        return tools
 
     # ---- tool methods --------------------------------------------------
 
@@ -694,6 +800,7 @@ class PageIndexToolkit(AbstractToolkit):
             tree_name: Unique name for the tree (filesystem-safe).
             doc_name: Optional display name for the tree's root document.
         """
+        self._authorize_write(tree_name, "create_tree")
         tree = {"doc_name": doc_name or tree_name, "structure": []}
         txn = WriteTransaction(
             tree_name=tree_name,
@@ -721,6 +828,7 @@ class PageIndexToolkit(AbstractToolkit):
 
     async def delete_tree(self, tree_name: str) -> dict[str, Any]:
         """Delete a tree JSON and every sidecar markdown file for it."""
+        self._authorize_write(tree_name, "delete_tree")
         async with tree_lock(self._storage_dir, tree_name, timeout=self._lock_timeout_s):
             tree_removed = self._store.delete(tree_name)
             self._segment_store.delete_tree(tree_name)
@@ -760,6 +868,8 @@ class PageIndexToolkit(AbstractToolkit):
             ValueError: Invalid names, identical names, an open write, or a
                 destination collision without overwrite.
         """
+        self._authorize_write(src, "rename_tree")
+        self._authorize_write(dst, "rename_tree")
         self._store._validate_name(src)
         self._store._validate_name(dst)
         if src == dst:
@@ -1404,6 +1514,7 @@ class PageIndexToolkit(AbstractToolkit):
 
         Returns ``{tree_name, documents: [{doc_id, revision, segments, nodes}], generation}``.
         """
+        self._authorize_write(tree_name, "index_segments")
         tree = self._load_tree(tree_name)
         structure = tree.get("structure", [])
         if node_id:
@@ -1496,6 +1607,8 @@ class PageIndexToolkit(AbstractToolkit):
         Raises:
             KeyError: For an unknown tree or node.
         """
+        if apply:
+            self._authorize_write(tree_name, "optimize")
         overrides: dict[str, Any] = {"llm_passes": llm_passes}
         if target_leaf_tokens is not None:
             overrides["target_leaf_tokens"] = target_leaf_tokens
@@ -1515,14 +1628,17 @@ class PageIndexToolkit(AbstractToolkit):
             optimized = plan_deterministic(base_tree, revisions, settings, tree_name=tree_name, node_id=node_id)
             optimized.llm_cache = llm_cache
 
-            original_spans = {
-                node.get("concept_id"): list(node["span"])
-                for node in structure_to_list(base_tree["nodes"])
-                if node.get("concept_id") and node.get("span")
-            }
-            for root in optimized.candidate.get("nodes") or []:
-                if any(id(node) in optimized.mutable for node in structure_to_list([root])):
-                    _restore_merged_ownership(root, original_spans)
+            original_spans = _original_spans(base_tree["nodes"])
+            candidate_roots = optimized.candidate.get("nodes") or []
+            _restore_roots(
+                candidate_roots,
+                original_spans,
+                only={
+                    id(root)
+                    for root in candidate_roots
+                    if any(id(node) in optimized.mutable for node in structure_to_list([root]))
+                },
+            )
             await run_llm_passes(optimized, revisions, self._adapter, settings)
 
             base_by_node_id = {
@@ -1659,6 +1775,7 @@ class PageIndexToolkit(AbstractToolkit):
         never lower than the configured generation grace: a smaller ``max_age_s`` is raised to it,
         so readers of the previous generation keep their bodies. Returns the effective ``max_age_s``.
         """
+        self._authorize_write(tree_name, "vacuum_tree")
         effective = self._generation_grace_s if max_age_s is None else max(int(max_age_s), self._generation_grace_s)
         async with tree_lock(self._storage_dir, tree_name, timeout=self._lock_timeout_s):
             tree = self._store.load(tree_name)
@@ -1919,6 +2036,7 @@ class PageIndexToolkit(AbstractToolkit):
             ``{tree_name, node_id, categories, metadata}`` with the
             post-merge values.
         """
+        self._authorize_write(tree_name, "tag_node")
 
         async def apply(txn: WriteTransaction) -> tuple[list[str], dict[str, Any]]:
             node = find_node_by_id(txn.tree.get("structure", []), node_id)
@@ -1971,6 +2089,7 @@ class PageIndexToolkit(AbstractToolkit):
         ``ConceptType.SECTION`` when no LLM adapter is available, so it
         never blocks ingest.
         """
+        self._authorize_write(tree_name, "insert_markdown")
         subtree = await md_to_tree(
             md_text=markdown,
             adapter=self._adapter,
@@ -2040,6 +2159,7 @@ class PageIndexToolkit(AbstractToolkit):
         Unlike Markdown ingestion this does not infer parents from headings,
         thin small nodes, or rewrite source content through an LLM.
         """
+        self._authorize_write(tree_name, "insert_ebook")
         from parrot.loaders.ebook import EbookSection
         from .ebook import ebook_tree
 
@@ -2117,6 +2237,7 @@ class PageIndexToolkit(AbstractToolkit):
         generates clean markdown which is then parsed via
         :func:`md_to_tree` and spliced under ``parent_node_id``.
         """
+        self._authorize_write(tree_name, "insert_content")
         ingested: IngestedMarkdown = await self._ingester().ingest(content, hint=hint)
         result = await self.insert_markdown(
             tree_name=tree_name,
@@ -2135,6 +2256,7 @@ class PageIndexToolkit(AbstractToolkit):
         parent_node_id: Optional[str] = None,
     ) -> dict[str, Any]:
         """Read a text file and ingest it via :meth:`insert_content`."""
+        self._authorize_write(tree_name, "import_file")
         path = Path(file_path)
         try:
             content = await asyncio.to_thread(path.read_text, encoding="utf-8")
@@ -2176,6 +2298,7 @@ class PageIndexToolkit(AbstractToolkit):
         Returns: {tree_name, new_node_ids, doc_name, doc_description, doc_id, revision,
                   structure_source, structure_confidence, structure_report}
         """
+        self._authorize_write(tree_name, "import_pdf")
         if not await asyncio.to_thread(Path(pdf_path).is_file):
             raise FileNotFoundError(f"PDF not found: {pdf_path}")
         subtree = await build_page_index(
@@ -2383,11 +2506,7 @@ class PageIndexToolkit(AbstractToolkit):
         revisions = self._revisions_for(txn.tree_name, roots)
         revisions[(revision.doc_id, revision.revision)] = revision
         base_tree = {"nodes": roots}
-        original_spans = {
-            node.get("concept_id"): list(node["span"])
-            for node in structure_to_list(roots)
-            if node.get("concept_id") and node.get("span")
-        }
+        original_spans = _original_spans(roots)
         plan = plan_deterministic(
             base_tree,
             revisions,
@@ -2395,8 +2514,7 @@ class PageIndexToolkit(AbstractToolkit):
             tree_name=txn.tree_name,
         )
 
-        for root in plan.candidate.get("nodes") or []:
-            _restore_merged_ownership(root, original_spans)
+        _restore_roots(plan.candidate.get("nodes") or [], original_spans)
         await run_llm_passes(
             plan,
             revisions,
@@ -2507,6 +2625,7 @@ class PageIndexToolkit(AbstractToolkit):
         ``folder_concurrency``). Binary files that are not UTF-8 decodable
         are skipped with a WARNING log line.
         """
+        self._authorize_write(tree_name, "import_folder")
         root = Path(folder_path)
         if not await asyncio.to_thread(root.is_dir):
             raise NotADirectoryError(f"{folder_path!r} is not a directory")
@@ -2596,6 +2715,7 @@ class PageIndexToolkit(AbstractToolkit):
         so those of the removed subtree are deleted here, right after the
         publication, under the tree lock.
         """
+        self._authorize_write(tree_name, "delete_node")
 
         async def apply(txn: WriteTransaction) -> tuple[bool, list[str]]:
             node = find_node_by_id(txn.tree.get("structure", []), node_id)
@@ -2651,6 +2771,7 @@ class PageIndexToolkit(AbstractToolkit):
             ``{tree_name, node_id, parent_node_id}`` with the post-splice
             ``node_id`` of the new node.
         """
+        self._authorize_write(tree_name, "add_node")
         if not isinstance(title, str) or not title.strip():
             raise ValueError("add_node requires a non-empty title")
 
@@ -2693,6 +2814,7 @@ class PageIndexToolkit(AbstractToolkit):
         Raises:
             KeyError: If ``node_id`` does not exist in the tree.
         """
+        self._authorize_write(tree_name, "update_node_content")
 
         async def apply(txn: WriteTransaction) -> None:
             node = find_node_by_id(txn.tree.get("structure", []), node_id)
@@ -2736,6 +2858,7 @@ class PageIndexToolkit(AbstractToolkit):
             KeyError: If ``node_id`` does not exist.
             ValueError: If no update field is set.
         """
+        self._authorize_write(tree_name, "update_node")
         if title is None and summary is None and locked is None:
             raise ValueError("update_node needs at least one of title / summary")
 

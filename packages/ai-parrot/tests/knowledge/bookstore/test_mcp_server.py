@@ -51,11 +51,18 @@ def test_server_description_with_llm(seeded_locations, fake_adapter, capsys):
     assert capsys.readouterr().out == ""
 
 
+def test_server_description_funnel_starts_with_find_books(seeded_locations):
+    description = create_bookstore_mcp_server(seeded_locations).config.description
+    funnel = description.split("Research funnel:", 1)[1]
+    assert funnel.lstrip().startswith("bookstore_find_books")
+    assert funnel.index("bookstore_find_books") < funnel.index("bookstore_catalog_search")
+
+
 @pytest.mark.parametrize("with_model", [False, True])
-def test_mcp_tools_list_has_fourteen_tools(seeded_locations, fake_adapter, with_model):
+def test_mcp_tools_list_has_fifteen_tools(seeded_locations, fake_adapter, with_model):
     adapter = fake_adapter if with_model else None
     server = create_bookstore_mcp_server(seeded_locations, adapter=adapter)
-    assert len(server.tools) == 14
+    assert len(server.tools) == 15
     assert set(server.tools) == EXPECTED_TOOLS
     assert all(name.startswith("bookstore_") for name in server.tools)
 

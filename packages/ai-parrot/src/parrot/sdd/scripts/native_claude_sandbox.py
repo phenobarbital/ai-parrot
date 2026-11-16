@@ -16,6 +16,7 @@ from pathlib import Path
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -214,7 +215,12 @@ def _control_files(root: Path) -> list[Path]:
     """
     here = Path(__file__).resolve().parent
     parrot_dir = root / "packages" / "ai-parrot" / "src" / "parrot"
-    names = ("native_claude_sandbox.py", "worktree_environment.py")
+    names = (
+        "native_claude_sandbox.py",
+        "worktree_environment.py",
+        "procedure_advice.py",
+        "procedure_sources.py",
+    )
     found: list[Path] = []
     shim_dir = here.parent.parent / "flows" / "dev_loop"
     for directory in (here, parrot_dir / "sdd" / "scripts", parrot_dir / "flows" / "dev_loop", shim_dir):
@@ -423,6 +429,7 @@ def native_sandbox_settings(
     allow_paths = [root, git_dir, _we.claude_scratch_root(), *_we.worktree_admin_dirs(root, git_dir)]
     allow_paths.extend(_we.shared_ledger_dirs(root, git_dir))
     allow_paths.extend(_we.coder_evidence_dirs(root, git_dir))
+    allow_paths.extend(_we.sandbox_extra_write_dirs(root, git_dir))
     allow_write: list[str] = []
     for path in allow_paths:
         canonical = str(_canonical(path))
@@ -694,6 +701,7 @@ _REJECTED_OPTIONS = (
     "--dangerously-skip-permissions",
     "--plugin-dir",
     "--mcp-config",
+    "--strict-mcp-config",
     "--agents",
 )
 _DEFAULT_MODEL = "sonnet"
@@ -731,7 +739,8 @@ def load_launch_config(primary: Path) -> tuple[list[str], bool]:
         Validated ``sandbox_allowed_domains`` (default ``[]``) and ``gh_token`` (default ``False``).
 
     Raises:
-        ValueError: If the file is malformed or a value has the wrong type or is not an exact hostname.
+        ValueError: If the file is malformed, a value has the wrong type or is not an exact hostname, or
+            ``sandbox_extra_write_paths`` names an unacceptable path.
     """
     config_path = primary / "pyproject.toml"
     if not config_path.is_file():
@@ -757,6 +766,8 @@ def load_launch_config(primary: Path) -> tuple[list[str], bool]:
         raise ValueError(f"{prefix}: gh_token must be a boolean")
     try:
         domains = validate_allowed_domains(raw_domains)
+        # Validated here so a bad value refuses to launch; the hook reads it again per command.
+        _we.load_extra_write_paths(primary)
     except ValueError as exc:
         raise ValueError(f"{prefix}: {exc}") from exc
     return domains, gh_token
@@ -919,7 +930,7 @@ def shell_prefix_state_root() -> Path:
 
 def _prefix_writable_roots(cwd: Path) -> tuple[Path, ...]:
     """Return every path that the legacy Bubblewrap session can write."""
-    worktree, _git_dir, primary = _native_roots(cwd)
+    worktree, git_dir, primary = _native_roots(cwd)
     return (
         _canonical(worktree),
         _canonical(_worktree_admin_dir(worktree)),
@@ -927,6 +938,7 @@ def _prefix_writable_roots(cwd: Path) -> tuple[Path, ...]:
         _canonical(primary / ".parrot" / "ledger"),
         _canonical(primary / "artifacts" / "logs" / "sdd-coder-usage"),
         _canonical(_we.claude_scratch_root()),
+        *(_canonical(path) for path in _we.sandbox_extra_write_dirs(worktree, git_dir)),
     )
 
 
@@ -955,13 +967,30 @@ def _load_json(path: Path) -> dict[str, Any]:
 
 
 def _agent_hook_commands(path: Path) -> list[str]:
-    """Extract literal command values from the agent's YAML frontmatter without a YAML dependency."""
+    """Extract literal hook command values from the agent's YAML frontmatter without a YAML dependency.
+
+    Only ``command:`` lines inside the top-level ``hooks:`` block count: every collected string is
+    allowed to run outside the sandbox, so a ``command:`` key anywhere else must not be picked up.
+
+    Args:
+        path: The agent definition file.
+
+    Returns:
+        The hook command strings, unquoted, in file order.
+    """
     try:
         frontmatter = path.read_text(encoding="utf-8").split("---", 2)[1]
     except (OSError, IndexError):
         return []
     commands: list[str] = []
-    for match in re.finditer(r"^\s*command:\s*(.*?)\s*$", frontmatter, re.MULTILINE):
+    in_hooks = False
+    for line in frontmatter.splitlines():
+        if line and not line[0].isspace() and not line.startswith("#"):
+            in_hooks = re.fullmatch(r"hooks:(?:[ \t]+#.*|[ \t]*)", line) is not None
+            continue
+        match = re.match(r"^\s+(?:-\s+)?command:\s*(.*?)\s*$", line) if in_hooks else None
+        if match is None:
+            continue
         raw = match.group(1)
         if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in {"'", '"'}:
             raw = raw[1:-1]
@@ -970,9 +999,40 @@ def _agent_hook_commands(path: Path) -> list[str]:
     return commands
 
 
-def _prefix_mcp_argv(path: Path) -> list[list[str]]:
-    """Collect command argv values from an optional worktree MCP configuration."""
-    servers = _load_json(path).get("mcpServers")
+_MCP_VARIABLE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
+
+
+def _expand_mcp_argument(value: str, environ: Mapping[str, str]) -> str:
+    """Expand Claude's ``${VAR}`` / ``${VAR:-default}`` variable syntax once.
+
+    Follows bash ``:-`` semantics: the default is used when the variable is
+    **unset or empty**.  Unset variables without a default are preserved
+    verbatim.  Expansion is single-pass (non-recursive).
+
+    Args:
+        value: A command or argument from the MCP configuration.
+        environ: The environment passed to Claude, not the importing process's environment.
+
+    Returns:
+        Expanded text, preserving unset variables without defaults verbatim.
+    """
+
+    def substitute(match: re.Match[str]) -> str:
+        raw = environ.get(match[1])
+        if raw is None:
+            # Unset: use the default if one was given, otherwise keep the literal.
+            return match[2] if match[2] is not None else match[0]
+        if raw == "" and match[2] is not None:
+            # Empty with a ``:-`` default: use the default (bash ``:-`` semantics).
+            return match[2]
+        return raw
+
+    return _MCP_VARIABLE.sub(substitute, value)
+
+
+def _prefix_mcp_argv(document: Mapping[str, Any], environ: Mapping[str, str]) -> list[list[str]]:
+    """Collect stdio argv from the snapshot, expanded in Claude's launch environment."""
+    servers = document.get("mcpServers")
     if not isinstance(servers, dict):
         return []
     result: list[list[str]] = []
@@ -981,12 +1041,48 @@ def _prefix_mcp_argv(path: Path) -> list[list[str]]:
             continue
         arguments = server.get("args", [])
         if isinstance(arguments, list) and all(isinstance(argument, str) for argument in arguments):
-            result.append([command, *arguments])
+            result.append([_expand_mcp_argument(value, environ) for value in (command, *arguments)])
     return result
 
 
+#: Oldest Claude Code on which the prefix was verified live to receive every Bash call
+#: (HOTFIX-legacy-sandbox-shell-prefix-3). An older CLI could run hooks through the prefix but not Bash.
+MIN_PREFIX_CLAUDE_VERSION = (2, 1, 321)
+
+
+def _claude_version(claude: str) -> tuple[int, int, int] | None:
+    """Return the Claude Code version reported by ``claude --version``.
+
+    Args:
+        claude: Path of the ``claude`` executable.
+
+    Returns:
+        ``(major, minor, patch)``, or ``None`` when the command fails or prints no version.
+    """
+    try:
+        result = subprocess.run([claude, "--version"], capture_output=True, text=True, timeout=10, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    match = re.search(r"(\d+)\.(\d+)\.(\d+)", result.stdout) if result.returncode == 0 else None
+    if match is None:
+        return None
+    return int(match.group(1)), int(match.group(2)), int(match.group(3))
+
+
+def _prefix_session_owner_alive(session_dir: Path) -> bool:
+    """Return whether the launcher process recorded in ``owner.pid`` still exists.
+
+    ``launch_worker`` replaces itself with Claude Code, so the recorded pid is the session's own.
+    """
+    try:
+        owner_pid = int((session_dir / "owner.pid").read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return False
+    return owner_pid > 0 and _process_is_alive(owner_pid)
+
+
 def _remove_expired_prefix_sessions(state_root: Path) -> None:
-    """Remove old session directories without following links outside the state root."""
+    """Remove old session directories of dead sessions without following links outside the state root."""
     cutoff = time.time() - 7 * 24 * 60 * 60
     try:
         candidates = tuple(state_root.iterdir())
@@ -1000,25 +1096,75 @@ def _remove_expired_prefix_sessions(state_root: Path) -> None:
             continue
         if session.version != 4 or str(session) != candidate.name or metadata.st_mtime >= cutoff:
             continue
-        if candidate.is_dir() and not candidate.is_symlink():
-            shutil.rmtree(candidate)
+        if candidate.is_dir() and not candidate.is_symlink() and not _prefix_session_owner_alive(candidate):
+            try:
+                shutil.rmtree(candidate)
+            except OSError:
+                pass
 
 
-def prepare_shell_prefix(cwd: Path, settings: dict, mode: str, *, rtk: bool) -> dict[str, str]:
-    """Write an immutable legacy shell-prefix policy and executable launcher.
+#: The prefix entry point and the one sibling module it imports; copied into every session directory.
+_PREFIX_RUNTIME_FILES = ("shell_prefix.py", "worktree_environment.py")
+
+
+def load_prefix_mcp_config(cwd: Path) -> dict[str, Any]:
+    """Read the primary MCP configuration once without following a symlink.
+
+    Args:
+        cwd: A path inside the linked worker worktree.
+
+    Returns:
+        The parsed configuration, or an empty server configuration if absent or malformed.
+
+    Raises:
+        RuntimeError: The primary configuration is a symlink or not a regular file.
+    """
+    path = _native_roots(cwd)[2] / ".mcp.json"
+    empty = {"mcpServers": {}}
+    # O_NOFOLLOW closes the lstat/open race; O_NONBLOCK prevents a FIFO from hanging the launcher.
+    try:
+        if path.is_symlink():
+            raise RuntimeError("primary MCP configuration must not be a symlink")
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return empty
+    except OSError as exc:
+        raise RuntimeError("cannot safely open primary MCP configuration") from exc
+    if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+        os.close(descriptor)
+        raise RuntimeError("primary MCP configuration must be a regular file")
+    with os.fdopen(descriptor, "r", encoding="utf-8") as source:
+        try:
+            document = json.load(source)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            sys.stderr.write(
+                f"launch_worker: WARNING {path} is malformed ({exc.__class__.__name__}); " "treating as absent\n"
+            )
+            return empty
+    if not isinstance(document, dict) or not isinstance(document.get("mcpServers"), dict):
+        return empty
+    return document
+
+
+def prepare_shell_prefix(
+    cwd: Path, settings: dict, mode: str, *, rtk: bool, environ: Mapping[str, str] | None = None
+) -> dict[str, str]:
+    """Write an immutable legacy shell-prefix policy, runtime copy and executable launcher.
 
     Args:
         cwd: The linked worker worktree.
         settings: Final launcher settings, including notification hooks.
         mode: Prefix sandbox mode.
         rtk: Whether the prefix applies RTK rewrites.
+        environ: The child environment used for MCP expansion; defaults to os.environ.
 
     Returns:
         Environment variables that select this prefix and its policy.
 
     Raises:
-        RuntimeError: If the configured state root is writable by the session.
+        RuntimeError: If the state root is writable by the session or the MCP source is unsafe.
     """
+    mcp_config = load_prefix_mcp_config(cwd)
     state_root = _canonical(shell_prefix_state_root())
     writable = _prefix_writable_roots(cwd)
     if any(_is_within(state_root, root) for root in writable):
@@ -1030,17 +1176,28 @@ def prepare_shell_prefix(cwd: Path, settings: dict, mode: str, *, rtk: bool) -> 
     _remove_expired_prefix_sessions(state_root)
     session_dir = state_root / str(uuid.uuid4())
     session_dir.mkdir(mode=0o700)
+    (session_dir / "owner.pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
 
     hook_commands = _hook_commands(settings.get("hooks", {}))
     for path in (cwd / ".claude" / "settings.json", cwd / ".claude" / "settings.local.json"):
         hook_commands.extend(_hook_commands(_load_json(path).get("hooks", {})))
     hook_commands.extend(_agent_hook_commands(cwd / ".claude" / "agents" / "sdd-worker.md"))
+    mcp_path = session_dir / "mcp.json"
+    mcp_path.write_text(json.dumps(mcp_config), encoding="utf-8")
+    mcp_path.chmod(0o400)
+    if not mcp_config["mcpServers"]:
+        sys.stderr.write(
+            "launch_worker: WARNING no MCP servers: the primary checkout has no usable .mcp.json; "
+            "the session starts without MCP tools\n"
+        )
     policy = PrefixPolicy(
         schema_version=1,
         mode=mode,
-        worktree=str(_canonical(cwd)),
+        worktree=str(_native_roots(cwd)[0]),
         hook_commands=tuple(hook_commands),
-        mcp_argv=tuple(tuple(argv) for argv in _prefix_mcp_argv(cwd / ".mcp.json")),
+        mcp_argv=tuple(
+            tuple(argv) for argv in _prefix_mcp_argv(mcp_config, os.environ if environ is None else environ)
+        ),
         rtk=rtk,
     )
     policy_path = session_dir / "policy.json"
@@ -1060,7 +1217,14 @@ def prepare_shell_prefix(cwd: Path, settings: dict, mode: str, *, rtk: bool) -> 
     )
     policy_path.chmod(0o400)
     prefix_path = session_dir / "prefix"
-    shell_prefix = Path(__file__).resolve().with_name("shell_prefix.py")
+    # The prefix runs outside Bubblewrap on every shell call, so it must not execute from a source tree
+    # the session can write (a launcher started from a feature worktree). Run a private read-only copy.
+    scripts = Path(__file__).resolve().parent
+    for name in _PREFIX_RUNTIME_FILES:
+        runtime = session_dir / name
+        shutil.copyfile(scripts / name, runtime)
+        runtime.chmod(0o400)
+    shell_prefix = session_dir / _PREFIX_RUNTIME_FILES[0]
     prefix_path.write_text(
         f'#!/bin/sh\nexec {shlex.quote(str(Path(sys.executable).resolve()))} -E -s {shlex.quote(str(shell_prefix))} "$@"\n',
         encoding="utf-8",
@@ -1180,13 +1344,35 @@ def launch_worker(
                 )
                 env["PARROT_SDD_NOTIFY_PYTHON"] = str(Path(sys.executable).absolute())
                 env["PARROT_SDD_NOTIFY_HELPER"] = str(helper_path)
-    if mode == "legacy" or (not degraded and _NATIVE_PREFIX_RTK_QUALIFIED):
+    uses_prefix = mode == "legacy" or (not degraded and _NATIVE_PREFIX_RTK_QUALIFIED)
+    # A token is only ever minted by the prefix for one hook invocation; never inherit one.
+    env.pop("PARROT_SDD_SHELL_PREFIX_TOKEN", None)
+    if uses_prefix:
+        version = _claude_version(claude)
+        if version is None or version < MIN_PREFIX_CLAUDE_VERSION:
+            found = ".".join(map(str, version)) if version else "unknown"
+            required = ".".join(map(str, MIN_PREFIX_CLAUDE_VERSION))
+            print(
+                f"launch_worker: shell prefix unavailable (Claude Code {found}; the prefix boundary needs "
+                f">= {required})",
+                file=sys.stderr,
+            )
+            return 1
         try:
-            env.update(prepare_shell_prefix(cwd, settings, mode, rtk=True))
+            env.update(prepare_shell_prefix(cwd, settings, mode, rtk=True, environ=env))
         except RuntimeError as exc:
             print(f"launch_worker: shell prefix unavailable ({exc})", file=sys.stderr)
             return 1
+    else:
+        # A prefix inherited from a parent session belongs to that session's policy, not this one.
+        env.pop("CLAUDE_CODE_SHELL_PREFIX", None)
+        env.pop("PARROT_SDD_SHELL_PREFIX_POLICY", None)
     command = [claude, "--agent", "sdd-worker"]
+    if uses_prefix:
+        # Both consumers use the one session snapshot; Claude expands its variable references using
+        # the same child environment used to compile the allowlist. Never reopen the primary config.
+        mcp_config = Path(env["PARROT_SDD_SHELL_PREFIX_POLICY"]).with_name("mcp.json")
+        command += ["--mcp-config", str(mcp_config), "--strict-mcp-config"]
     if not has_sources:
         command += ["--setting-sources", "project,local"]
     if not has_model:

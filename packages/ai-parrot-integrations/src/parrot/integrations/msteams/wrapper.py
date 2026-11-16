@@ -66,6 +66,7 @@ from parrot.interfaces.file.session import SessionFileStore
 from parrot.forms import FormCache
 from parrot.outputs.cards import (
     AutoCollapsePolicy,
+    CardRenderError,
     CardSpec,
     CodeSection,
     ImageEntry,
@@ -74,6 +75,7 @@ from parrot.outputs.cards import (
     TextSection,
     markdown_to_sections,
     render,
+    render_text,
 )
 from .voice import VoiceTranscriber, VoiceTranscriberConfig
 
@@ -86,6 +88,11 @@ if TYPE_CHECKING:
 logging.getLogger("msrest").setLevel(logging.WARNING)
 
 FORMDESIGNER_API_BASE_PATH: str = "/api/v1"  # fallback only; prefer config.formdesigner_api_base_path
+
+# Teams rejects bot messages over ~28 KB. Cards are shrunk to fit this budget;
+# the plain-text fallback stays well under it to leave room for the envelope.
+TEAMS_MAX_CARD_BYTES: int = 28_000
+TEAMS_MAX_TEXT_BYTES: int = 20_000
 
 _debug_storage_logger = logging.getLogger(__name__)
 
@@ -1715,16 +1722,39 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
 
         Delegates to the shared card builder via ``_parsed_to_card_spec``
         and ``render()``. Produces AC 1.5 JSON with native Table elements
-        and auto-collapse for oversized content.
+        and auto-collapse for oversized content. A card over the Teams
+        size limit is shrunk (fewer table rows, embedded images dropped,
+        long text cut) until it fits.
 
         Args:
             parsed: The parsed response content.
 
         Returns:
             Adaptive Card JSON structure.
+
+        Raises:
+            CardRenderError: If even the smallest version of the card is
+                over the Teams size limit.
         """
         spec = self._parsed_to_card_spec(parsed)
-        return render(spec)
+        return render(spec, max_card_bytes=TEAMS_MAX_CARD_BYTES, fit=True)
+
+    def _build_fallback_text(self, parsed: ParsedResponse) -> str:
+        """Build a plain-text reply for a response whose card cannot fit.
+
+        Args:
+            parsed: The parsed response content.
+
+        Returns:
+            The response as plain text, cut to ``TEAMS_MAX_TEXT_BYTES``.
+        """
+        text = render_text(self._parsed_to_card_spec(parsed)) or parsed.text or ""
+        encoded = text.encode("utf-8")
+        if len(encoded) <= TEAMS_MAX_TEXT_BYTES:
+            return text
+        marker = "\n\n… (response truncated to fit the message size limit)"
+        keep = TEAMS_MAX_TEXT_BYTES - len(marker.encode("utf-8"))
+        return encoded[:keep].decode("utf-8", errors="ignore").rstrip() + marker
 
     async def _send_parsed_response(
         self, parsed: Union[ParsedResponse, Dict[str, Any]], turn_context: TurnContext
@@ -1751,8 +1781,16 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         # Standard ParsedResponse handling
         # Build and send Adaptive Card for main content
         if parsed.text or parsed.has_code or parsed.has_table:
-            card = self._build_adaptive_card(parsed)
-            await self.send_card(card, turn_context)
+            try:
+                card = self._build_adaptive_card(parsed)
+            except CardRenderError as exc:
+                self.logger.warning(
+                    "Adaptive Card does not fit even after shrinking (%s); sending plain text instead",
+                    exc,
+                )
+                await self.send_text(self._build_fallback_text(parsed), turn_context)
+            else:
+                await self.send_card(card, turn_context)
 
         # Send document attachments
         for doc_path in parsed.documents:

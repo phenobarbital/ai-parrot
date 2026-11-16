@@ -1,7 +1,7 @@
 from datetime import date, time
 from decimal import Decimal
 from typing import Optional, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class TimeRequest(BaseModel):
@@ -36,5 +36,6 @@ class TimeRequest(BaseModel):
     # Raw payload
     raw_data: Dict[str, Any] = Field(..., exclude=True)
     
-    class Config:
-        extra = "ignore" 
+    model_config = ConfigDict(
+        extra="ignore",
+    )

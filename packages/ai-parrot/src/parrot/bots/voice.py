@@ -399,7 +399,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
             await super().configure(app)
             return
         # Default to Redis memory for VoiceBot if not specified
-        if not self.memory_type or self.memory_type == "memory":
+        if not self.memory_type or self.memory_type in ("memory", "auto"):
             self.memory_type = "redis"
         url = getattr(self, "url", None)
         if url and app:
@@ -566,6 +566,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         _user_token = current_user_id.set(user_id)
         _session_token = current_session_id.set(session_id)
         _memkey_token = current_memory_key_id.set(self.memory_key_id)
+        _identity = self._bind_call_identity(kwargs.get("tenant"))
 
         try:
             # Handle different input types
@@ -682,6 +683,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
                                     metadata={"timestamp": str(datetime.now())},
                                     chatbot_id=self.memory_key_id,
                                 )
+                                await self._guard_session(user_id, session_id)  # a deleted session is not revived
                                 await self.save_conversation_turn(user_id, session_id, turn)
                                 self.logger.debug(f"Saved turn {current_turn_id} to memory")
 
@@ -721,6 +723,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
                         metadata={"timestamp": str(datetime.now())},
                         chatbot_id=self.memory_key_id,
                     )
+                    await self._guard_session(user_id, session_id)  # a deleted session is not revived
                     await self.save_conversation_turn(user_id, session_id, turn)
                     self.logger.debug(f"Saved final turn {current_turn_id} to memory")
 
@@ -730,6 +733,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
                 text=f"I'm sorry, I encountered an error: {str(e)}", is_complete=True, metadata={"error": str(e)}
             )
         finally:
+            self._reset_call_identity(_identity)
             current_memory_key_id.reset(_memkey_token)
             current_session_id.reset(_session_token)
             current_user_id.reset(_user_token)
@@ -805,6 +809,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         _user_token = current_user_id.set(user_id)
         _session_token = current_session_id.set(session_id)
         _memkey_token = current_memory_key_id.set(self.memory_key_id)
+        _identity = self._bind_call_identity(kwargs.get("tenant"))
 
         try:
             # Build context for system prompt
@@ -867,6 +872,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
                 ):
                     yield response
         finally:
+            self._reset_call_identity(_identity)
             current_memory_key_id.reset(_memkey_token)
             current_session_id.reset(_session_token)
             current_user_id.reset(_user_token)

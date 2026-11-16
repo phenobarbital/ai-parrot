@@ -280,6 +280,35 @@ def eligible_seats(
     return out
 
 
+def eligible_seats_for_tier(
+    tier: str, seats: List[RosterSeat], policy: ComplexityPolicy, config: RosterConfig
+) -> List[RosterSeat]:
+    """Seat hint for an expert tier (FEAT-890 AC11); unknown tier -> standard.
+
+    The tier is mapped through ``config.expert_tier_seats``:
+
+    * ``complex``: reuse :func:`eligible_seats` with a synthetic complex assessment
+      (only strong-model seats).
+    * ``standard``: seats unchanged, in order.
+    * ``cheap``: seats ordered cheapest-first. Seats carry no cost data, so cost is
+      approximated by the strong-model allowlist: non-strong seats come first and
+      strong seats last, each group keeping roster order (stable).
+    """
+    hint = config.expert_tier_seats.get(tier, "standard")
+    if hint == "complex":
+        synthetic = ComplexityAssessment.model_construct(classification="complex")
+        return eligible_seats(synthetic, seats, policy)
+    if hint == "cheap":
+        strong_keys = {(sm.backend, sm.model) for sm in policy.strong_models}
+
+        def _is_strong(seat: RosterSeat) -> bool:
+            backend = "native" if seat.kind == "native" else (seat.backend or "")
+            return (backend, seat.model or "") in strong_keys
+
+        return sorted(seats, key=_is_strong)
+    return list(seats)
+
+
 def available_seats(roster: RosterConfig, results: List[SeatProbeResult]) -> List[RosterSeat]:
     """Seats with available=True, roster order, `model` replaced by `model_used`."""
     by_label = {r.label: r for r in results}

@@ -1,6 +1,9 @@
 """Unit tests for parrot.storage (ChatStorage + models).
 
 All Redis and DocumentDB interactions are mocked.
+
+``save_turn`` was replaced by ``store_turn`` (FEAT-886); that path is covered by
+``unit/storage/test_chat_storage_subscriber.py``.
 """
 
 import asyncio
@@ -20,10 +23,10 @@ from parrot.storage.models import (
 )
 from parrot.storage.chat import ChatStorage
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest_asyncio.fixture
 async def mock_redis():
@@ -48,10 +51,14 @@ async def mock_dynamo():
     dynamo.update_thread = AsyncMock()
     dynamo.put_turn = AsyncMock()
     dynamo.query_turns = AsyncMock(return_value=[])
+    dynamo.query_turn_window = AsyncMock(return_value=[])
     dynamo.query_threads = AsyncMock(return_value=[])
     dynamo.delete_thread_cascade = AsyncMock(return_value=1)
     dynamo.delete_session_artifacts = AsyncMock(return_value=0)
     dynamo.delete_turn = AsyncMock(return_value=True)
+    dynamo.put_tombstone = AsyncMock()
+    dynamo.is_deleted = AsyncMock(return_value=False)
+    dynamo.deleted_session_ids = AsyncMock(return_value=set())
     return dynamo
 
 
@@ -66,6 +73,7 @@ async def storage(mock_redis, mock_dynamo):
 # ---------------------------------------------------------------------------
 # Model tests
 # ---------------------------------------------------------------------------
+
 
 class TestChatMessage:
     """Verify ChatMessage serialization round-trip."""
@@ -149,95 +157,6 @@ class TestToolCall:
 # ChatStorage tests
 # ---------------------------------------------------------------------------
 
-class TestChatStorageSaveTurn:
-    """Verify save_turn writes to Redis and schedules DocumentDB write."""
-
-    @pytest.mark.asyncio
-    async def test_save_turn_creates_history_when_missing(self, storage, mock_redis):
-        mock_redis.get_history.return_value = None  # no existing history
-
-        turn_id = await storage.save_turn(
-            user_id="u1",
-            session_id="s1",
-            agent_id="agent_a",
-            user_message="Hello",
-            assistant_response="Hi there",
-        )
-
-        assert turn_id  # non-empty string
-        mock_redis.create_history.assert_awaited_once()
-        mock_redis.add_turn.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    async def test_save_turn_appends_to_existing_history(self, storage, mock_redis):
-        mock_redis.get_history.return_value = MagicMock(turns=[])  # existing
-
-        turn_id = await storage.save_turn(
-            user_id="u1",
-            session_id="s1",
-            agent_id="agent_a",
-            user_message="Hello",
-            assistant_response="Hi there",
-        )
-
-        assert turn_id
-        mock_redis.create_history.assert_not_awaited()
-        mock_redis.add_turn.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    async def test_save_turn_with_tool_calls_and_sources(self, storage, mock_redis):
-        await storage.save_turn(
-            user_id="u1",
-            session_id="s1",
-            agent_id="agent_a",
-            user_message="Lookup data",
-            assistant_response="Found it",
-            tool_calls=[{"name": "sql_query", "status": "completed"}],
-            sources=[{"content": "table_a", "metadata": {}}],
-            model="claude-3.5",
-            provider="anthropic",
-        )
-
-        # Verify the ConversationTurn passed to add_turn
-        call_args = mock_redis.add_turn.call_args
-        turn = call_args.args[2] if len(call_args.args) > 2 else call_args.kwargs.get('turn')
-        assert turn.tools_used == ["sql_query"]
-        assert turn.metadata["model"] == "claude-3.5"
-
-
-    @pytest.mark.asyncio
-    async def test_save_turn_honors_client_turn_id(self, storage, mock_redis):
-        """When a client-provided turn_id is passed, it must be used instead of generating a new one."""
-        client_id = "frontend-uuid-abc123"
-        turn_id = await storage.save_turn(
-            turn_id=client_id,
-            user_id="u1",
-            session_id="s1",
-            agent_id="agent_a",
-            user_message="Hello",
-            assistant_response="Hi there",
-        )
-
-        assert turn_id == client_id
-        # Verify the ConversationTurn written to Redis uses the client ID
-        call_args = mock_redis.add_turn.call_args
-        turn = call_args.args[2] if len(call_args.args) > 2 else call_args.kwargs.get('turn')
-        assert turn.turn_id == client_id
-
-    @pytest.mark.asyncio
-    async def test_save_turn_generates_id_when_none(self, storage, mock_redis):
-        """When no turn_id is provided, a server-generated UUID is used."""
-        turn_id = await storage.save_turn(
-            user_id="u1",
-            session_id="s1",
-            agent_id="agent_a",
-            user_message="Hello",
-            assistant_response="Hi there",
-        )
-
-        assert turn_id  # non-empty
-        assert len(turn_id) == 32  # uuid4().hex length
-
 
 class TestChatStorageLoadConversation:
     """Verify load_conversation reads Redis-first, then DocumentDB."""
@@ -271,7 +190,7 @@ class TestChatStorageLoadConversation:
 
         messages = await storage.load_conversation("u1", "s1")
         assert messages == []
-        mock_dynamo.query_turns.assert_awaited_once()
+        mock_dynamo.query_turn_window.assert_awaited_once()
 
 
 class TestChatStorageDeleteConversation:
@@ -281,6 +200,7 @@ class TestChatStorageDeleteConversation:
     async def test_delete_conversation(self, storage, mock_redis, mock_dynamo):
         deleted = await storage.delete_conversation("u1", "s1")
         assert deleted is True
+        mock_dynamo.put_tombstone.assert_awaited_once()
         mock_redis.delete_history.assert_awaited_once()
 
 
@@ -371,7 +291,10 @@ class TestChatStorageUpdateTitle:
     @pytest.mark.asyncio
     async def test_update_title_calls_update_thread(self, storage, mock_dynamo):
         updated = await storage.update_conversation_title(
-            "s1", "New Title", user_id="u1", agent_id="agent_a",
+            "s1",
+            "New Title",
+            user_id="u1",
+            agent_id="agent_a",
         )
         assert updated is True
         mock_dynamo.update_thread.assert_awaited_once()
@@ -395,7 +318,9 @@ class TestChatStorageUpdateTitle:
     async def test_update_title_handles_dynamo_error(self, storage, mock_dynamo):
         mock_dynamo.update_thread.side_effect = RuntimeError("timeout")
         result = await storage.update_conversation_title(
-            "s1", "Title", user_id="u1", agent_id="agent_a",
+            "s1",
+            "Title",
+            user_id="u1",
+            agent_id="agent_a",
         )
         assert result is False
-

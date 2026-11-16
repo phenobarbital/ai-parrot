@@ -4,18 +4,160 @@ Defines the RecallStrategy protocol and provides two implementations:
 - SemanticOnlyStrategy: delegates directly to backend.search_similar() (default behavior)
 - HybridBM25Strategy: fuses BM25 lexical scores with semantic similarity
 """
+
 from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Protocol, runtime_checkable
+from datetime import datetime, timezone
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from parrot._imports import lazy_import
 
 from .backends.abstract import AbstractEpisodeBackend
-from .models import EpisodicMemory, EpisodeSearchResult
+from .models import EpisodicMemory, EpisodeSearchResult, MemoryNamespace
+
+if TYPE_CHECKING:
+    from parrot.memory.dynamics.models import MemoryState
 
 logger = logging.getLogger(__name__)
+
+_EPISODIC_PARAMETER_ID = "episodic-neutral-v1"
+
+
+def episode_state_ref(episode: EpisodicMemory) -> str:
+    """Return the durable dynamics-state key of one write-once episode.
+
+    A review is admitted only for an episode whose own namespace equals the
+    reviewing namespace, so the key a review commits its state under is the
+    canonical key of the episode's own scope and ``v1`` content version.
+
+    Args:
+        episode: Stored episode.
+
+    Returns:
+        The ``MemoryRef.canonical_key`` under which the episode's earned state is persisted.
+    """
+    from parrot.memory.dynamics.models import MemoryRef
+
+    return MemoryRef(
+        namespace=MemoryNamespace(
+            tenant_id=episode.tenant_id,
+            agent_id=episode.agent_id,
+            user_id=episode.user_id,
+            session_id=episode.session_id,
+            room_id=episode.room_id,
+            crew_id=episode.crew_id,
+            model_id=episode.model_id,
+        ),
+        kind="episode",
+        memory_id=episode.episode_id,
+        content_version="v1",
+    ).canonical_key
+
+
+def rank_episodes(
+    episodes: list[EpisodicMemory | EpisodeSearchResult],
+    *,
+    namespace: MemoryNamespace,
+    now: datetime | None = None,
+    states: Mapping[str, MemoryState] | None = None,
+) -> list[EpisodicMemory | EpisodeSearchResult]:
+    """Apply the shared experiential ranking policy to episodic retrieval.
+
+    The caller resolves earned dynamics state from a backend that can read it
+    and passes it keyed by :func:`episode_state_ref`.  An episode without a
+    resolved state, or whose state was earned under other parameters, receives
+    the neutral retrievability defined by :func:`rank_candidates`.  Equal
+    scores order newest first.  This adapter keeps the existing raw similarity
+    on ``EpisodeSearchResult`` while exposing its separate ``ranking_score``
+    and, for a reviewed episode, its retrievability, stability and review count.
+
+    Args:
+        episodes: Retrieved episodes, optionally with raw similarity scores.
+        namespace: Exact retrieval namespace.
+        now: Optional aware UTC ranking time for deterministic callers.
+        states: Earned dynamics states keyed by :func:`episode_state_ref`; ``None`` ranks every episode neutrally.
+
+    Returns:
+        Episodes ordered by the shared ranking policy.
+    """
+    if not episodes:
+        return []
+
+    from parrot.memory.agent_memory.models import MemoryRequestScope
+    from parrot.memory.dynamics.fsrs import retrievability
+    from parrot.memory.dynamics.models import MemoryParameters
+    from parrot.memory.dynamics.ranking import rank_candidates
+    from parrot.memory.unified.models import MemoryCandidate
+
+    ranking_time = now or datetime.now(timezone.utc)
+    parameters = MemoryParameters(
+        algorithm="fsrs-6",
+        time_policy="days-v1",
+        parameter_id=_EPISODIC_PARAMETER_ID,
+        provenance="episodic-recall",
+    )
+    state_refs = {episode.episode_id: episode_state_ref(episode) for episode in episodes} if states else {}
+    earned: dict[str, MemoryState] = {}
+    for state_ref in state_refs.values():
+        state = (states or {}).get(state_ref)
+        if state is None or state.reviewed_at is None or state.stability is None:
+            continue
+        if state.parameter_id is not None and state.parameter_id != parameters.parameter_id:
+            logger.debug("Ignoring dynamics state %s earned under parameters %s", state_ref, state.parameter_id)
+            continue
+        earned[state_ref] = state
+
+    scope = MemoryRequestScope(
+        tenant_id=namespace.tenant_id,
+        agent_id=namespace.agent_id,
+        user_id=namespace.user_id,
+        session_id=namespace.session_id,
+        room_id=namespace.room_id,
+        crew_id=namespace.crew_id,
+        model_id=namespace.model_id,
+        turn_id="episodic-recall",
+        identity_provenance="runtime_derived",
+    )
+    candidates = [
+        MemoryCandidate(
+            scope=scope,
+            memory_id=episode.episode_id,
+            content_version="v1",
+            source="episodic",
+            text=episode.searchable_text(),
+            relevance=min(max(episode.score, 0.0), 1.0) if isinstance(episode, EpisodeSearchResult) else 1.0,
+            similarity=min(max(episode.score, 0.0), 1.0) if isinstance(episode, EpisodeSearchResult) else None,
+            importance=episode.importance,
+            dynamics_state_ref=state_refs.get(episode.episode_id),
+        )
+        for episode in episodes
+    ]
+    ranked_candidates = rank_candidates(
+        candidates,
+        now=ranking_time,
+        parameters=parameters,
+        states=earned,
+        anti_pattern_ids={episode.episode_id for episode in episodes if bool(episode.metadata.get("anti_pattern"))},
+        recency={episode.episode_id: episode.created_at for episode in episodes},
+    )
+    by_id = {episode.episode_id: episode for episode in episodes}
+    ranked_episodes: list[EpisodicMemory | EpisodeSearchResult] = []
+    for candidate in ranked_candidates:
+        episode = by_id[candidate.memory_id]
+        if not isinstance(episode, EpisodeSearchResult):
+            ranked_episodes.append(episode)
+            continue
+        update: dict[str, Any] = {"ranking_score": candidate.ranking_score}
+        state = earned.get(candidate.dynamics_state_ref) if candidate.dynamics_state_ref is not None else None
+        if state is not None:
+            update["retrievability"] = retrievability(state, now=ranking_time, parameters=parameters)
+            update["stability"] = state.stability
+            update["review_count"] = state.review_count
+        ranked_episodes.append(episode.model_copy(update=update))
+    return ranked_episodes
 
 
 @runtime_checkable
@@ -108,6 +250,8 @@ class _BM25IndexEntry:
         self.texts = texts
         self.episodes = episodes
         self.built_at = built_at
+        # Filter the index was built for; set by the strategy when it caches the entry.
+        self.namespace_filter: dict[str, Any] | None = None
 
 
 class HybridBM25Strategy:
@@ -154,7 +298,7 @@ class HybridBM25Strategy:
         Returns:
             A stable string key.
         """
-        return "|".join(f"{k}={v}" for k, v in sorted(namespace_filter.items()))
+        return "|".join(f"{k}={v!r}" for k, v in sorted(namespace_filter.items()))
 
     def _is_stale(self, entry: _BM25IndexEntry) -> bool:
         """Return True if the index entry is older than max_index_age_seconds.
@@ -168,15 +312,22 @@ class HybridBM25Strategy:
         return (time.monotonic() - entry.built_at) > self.max_index_age_seconds
 
     def invalidate(self, namespace_filter: dict[str, Any]) -> None:
-        """Invalidate the BM25 index for a given namespace.
+        """Invalidate every BM25 index that a mutation in this namespace can affect.
 
-        Should be called after new episodes are stored in this namespace.
+        Should be called after new episodes are stored in this namespace. An index built for a
+        wider filter of the same tenant and agent (one user across sessions, or the agent level)
+        also holds the namespace's episodes, so every index of that tenant and agent is dropped,
+        not only the one built for this exact filter.
 
         Args:
-            namespace_filter: The namespace whose index to invalidate.
+            namespace_filter: The namespace that was mutated.
         """
-        key = self._namespace_key(namespace_filter)
-        self._cache.pop(key, None)
+        owner = (namespace_filter.get("tenant_id"), namespace_filter.get("agent_id"))
+        for key, entry in list(self._cache.items()):
+            cached_filter = entry.namespace_filter
+            if cached_filter is not None and (cached_filter.get("tenant_id"), cached_filter.get("agent_id")) == owner:
+                del self._cache[key]
+        self._cache.pop(self._namespace_key(namespace_filter), None)
 
     async def _build_index(
         self,
@@ -267,7 +418,7 @@ class HybridBM25Strategy:
         Returns:
             Cosine similarity in [-1.0, 1.0].
         """
-        dot = sum(x * y for x, y in zip(a, b))
+        dot = sum(x * y for x, y in zip(a, b, strict=False))
         norm_a = sum(x * x for x in a) ** 0.5
         norm_b = sum(x * x for x in b) ** 0.5
         if norm_a == 0 or norm_b == 0:
@@ -311,11 +462,11 @@ class HybridBM25Strategy:
         if entry is None or self._is_stale(entry):
             try:
                 entry = await self._build_index(backend, namespace_filter)
+                entry.namespace_filter = dict(namespace_filter)
                 self._cache[key] = entry
             except ImportError:
                 logger.warning(
-                    "bm25s not installed; falling back to semantic-only search. "
-                    "Install with: pip install bm25s"
+                    "bm25s not installed; falling back to semantic-only search. " "Install with: pip install bm25s"
                 )
                 return await backend.search_similar(
                     embedding=query_embedding,

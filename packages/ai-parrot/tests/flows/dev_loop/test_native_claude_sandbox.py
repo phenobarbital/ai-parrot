@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import time
+import uuid
 
 import pytest
 
@@ -30,6 +32,15 @@ _REAL_WARM_TIKTOKEN_CACHE = native.warm_tiktoken_cache
 def no_tiktoken_warmup(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep launcher tests off the network; the warm-up has its own tests below."""
     monkeypatch.setattr(native, "warm_tiktoken_cache", lambda target, environ: None)
+
+
+_REAL_CLAUDE_VERSION = native._claude_version
+
+
+@pytest.fixture(autouse=True)
+def qualified_claude_version(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Report a prefix-qualified Claude Code without running the CLI; the gate has its own tests."""
+    monkeypatch.setattr(native, "_claude_version", lambda claude: native.MIN_PREFIX_CLAUDE_VERSION)
 
 
 @pytest.fixture
@@ -371,7 +382,7 @@ def test_prepare_shell_prefix_writes_policy_and_launcher(
     linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """The launcher records every hook and MCP command in an immutable session policy."""
-    feature, _main = linked
+    feature, main = linked
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     settings = {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "launch-stop"}]}]}}
     claude = feature / ".claude"
@@ -379,7 +390,9 @@ def test_prepare_shell_prefix_writes_policy_and_launcher(
     (claude / "settings.json").write_text(json.dumps({"hooks": {"PreToolUse": [{"command": "project"}]}}))
     (claude / "settings.local.json").write_text(json.dumps({"hooks": {"Stop": [{"command": "local"}]}}))
     (claude / "agents" / "sdd-worker.md").write_text("---\nhooks:\n  Stop:\n    command: 'agent-stop'\n---\n")
-    (feature / ".mcp.json").write_text(json.dumps({"mcpServers": {"tool": {"command": "mcp", "args": ["x"]}}}))
+    (main / ".mcp.json").write_text(json.dumps({"mcpServers": {"tool": {"command": "mcp", "args": ["x"]}}}))
+    # A worktree copy is worker-writable: it must never reach the pass-through allowlist.
+    (feature / ".mcp.json").write_text(json.dumps({"mcpServers": {"planted": {"command": "evil", "args": []}}}))
 
     environment = native.prepare_shell_prefix(feature, settings, "legacy", rtk=False)
 
@@ -392,6 +405,158 @@ def test_prepare_shell_prefix_writes_policy_and_launcher(
     assert policy_path.stat().st_mode & 0o777 == 0o400
     assert prefix_path.stat().st_mode & 0o777 == 0o500
     assert prefix_path.parent.stat().st_mode & 0o777 == 0o700
+
+
+def test_prepare_shell_prefix_copies_runtime_into_session(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The stub execs a read-only copy of the prefix, never the (possibly writable) source tree."""
+    feature, _main = linked
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+
+    environment = native.prepare_shell_prefix(feature, {}, "legacy", rtk=False)
+
+    prefix_path = Path(environment["CLAUDE_CODE_SHELL_PREFIX"])
+    scripts = Path(native.__file__).resolve().parent
+    for name in ("shell_prefix.py", "worktree_environment.py"):
+        copy = prefix_path.parent / name
+        assert copy.read_bytes() == (scripts / name).read_bytes()
+        assert copy.stat().st_mode & 0o777 == 0o400
+    stub = prefix_path.read_text()
+    assert str(prefix_path.parent / "shell_prefix.py") in stub
+    assert str(scripts) not in stub
+
+
+def test_prefix_stub_runs_passthrough_from_session_copy(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The session copy is self-sufficient: it runs a recorded hook command with no source tree on the path."""
+    feature, _main = linked
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    settings = {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "printf hook-ran"}]}]}}
+    environment = native.prepare_shell_prefix(feature, settings, "legacy", rtk=False)
+
+    result = subprocess.run(
+        [environment["CLAUDE_CODE_SHELL_PREFIX"], "printf hook-ran"],
+        env={
+            "PATH": os.environ["PATH"],
+            "PARROT_SDD_SHELL_PREFIX_POLICY": environment["PARROT_SDD_SHELL_PREFIX_POLICY"],
+        },
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert (result.returncode, result.stdout, result.stderr) == (0, "hook-ran", "")
+
+
+@pytest.mark.parametrize(
+    ("script", "expected"),
+    [
+        ("echo '2.1.322 (Claude Code)'", (2, 1, 322)),
+        ("echo 'no version here'", None),
+        ("echo 2.1.322; exit 3", None),
+    ],
+)
+def test_claude_version_parses_the_cli_output(
+    tmp_path: Path, script: str, expected: tuple[int, int, int] | None
+) -> None:
+    """Only a successful ``--version`` run that prints X.Y.Z yields a version."""
+    claude = tmp_path / "claude"
+    claude.write_text(f"#!/bin/sh\n{script}\n")
+    claude.chmod(0o700)
+
+    assert _REAL_CLAUDE_VERSION(str(claude)) == expected
+    assert _REAL_CLAUDE_VERSION(str(tmp_path / "absent")) is None
+
+
+def test_expired_prefix_session_survives_while_its_owner_is_alive(tmp_path: Path) -> None:
+    """Age alone never removes the policy of a session whose launcher process still exists."""
+    old = time.time() - 8 * 24 * 60 * 60
+    sessions = {}
+    for label, pid in (("alive", os.getpid()), ("dead", 2**22 + 12345), ("legacy", None)):
+        session = tmp_path / str(uuid.uuid4())
+        session.mkdir()
+        if pid is not None:
+            (session / "owner.pid").write_text(f"{pid}\n")
+        os.utime(session, (old, old))
+        sessions[label] = session
+
+    native._remove_expired_prefix_sessions(tmp_path)
+
+    assert sessions["alive"].is_dir()
+    assert not sessions["dead"].exists()
+    assert not sessions["legacy"].exists()
+
+
+def test_prepare_shell_prefix_records_its_owner(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The session directory names the launcher process that owns it."""
+    feature, _main = linked
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+
+    environment = native.prepare_shell_prefix(feature, {}, "legacy", rtk=False)
+
+    owner = Path(environment["PARROT_SDD_SHELL_PREFIX_POLICY"]).with_name("owner.pid")
+    assert owner.read_text().strip() == str(os.getpid())
+
+
+@pytest.mark.parametrize("header", ["hooks:", "hooks: # lifecycle hooks", "hooks:\t# comment"])
+def test_agent_hook_commands_only_inside_hooks_block(tmp_path: Path, header: str) -> None:
+    """A ``command:`` key outside the frontmatter's ``hooks:`` block is never allowlisted."""
+    agent = tmp_path / "sdd-worker.md"
+    agent.write_text(
+        "---\n"
+        "name: sdd-worker\n"
+        "command: 'top-level'\n"
+        "mcpServers:\n"
+        "  tool:\n"
+        "    command: other-block\n"
+        f"{header}\n"
+        "  PreToolUse:\n"
+        "    - matcher: Bash\n"
+        "      hooks:\n"
+        "        - type: command\n"
+        "          command: 'guard --hook || exit 2'\n"
+        '        - command: "second"\n'
+        "color: blue\n"
+        "---\n"
+        "command: body\n"
+    )
+
+    assert native._agent_hook_commands(agent) == ["guard --hook || exit 2", "second"]
+    assert native._agent_hook_commands(tmp_path / "absent.md") == []
+
+
+def test_prefix_mcp_config_requires_servers_in_the_primary_checkout(linked: tuple[Path, Path]) -> None:
+    """Only a primary ``.mcp.json`` that declares a server is a usable MCP configuration."""
+    feature, main = linked
+    (feature / ".mcp.json").write_text(json.dumps({"mcpServers": {"planted": {"command": "evil"}}}))
+    assert native.load_prefix_mcp_config(feature) == {"mcpServers": {}}
+
+    (main / ".mcp.json").write_text(json.dumps({"mcpServers": {}}))
+    assert native.load_prefix_mcp_config(feature) == {"mcpServers": {}}
+
+    (main / ".mcp.json").write_text("{not json")
+    assert native.load_prefix_mcp_config(feature) == {"mcpServers": {}}
+
+    (main / ".mcp.json").write_text(json.dumps({"mcpServers": {"tool": {"command": "mcp"}}}))
+    assert native.load_prefix_mcp_config(feature) == {"mcpServers": {"tool": {"command": "mcp"}}}
+
+
+def test_prepare_shell_prefix_without_primary_mcp_config_records_no_server(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A worktree-only ``.mcp.json`` leaves the pass-through allowlist empty."""
+    feature, _main = linked
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    (feature / ".mcp.json").write_text(json.dumps({"mcpServers": {"planted": {"command": "evil", "args": []}}}))
+
+    environment = native.prepare_shell_prefix(feature, {}, "legacy", rtk=False)
+
+    assert json.loads(Path(environment["PARROT_SDD_SHELL_PREFIX_POLICY"]).read_text())["mcp_argv"] == []
 
 
 def test_prepare_shell_prefix_refuses_writable_root(linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
@@ -937,3 +1102,180 @@ def test_warm_tiktoken_cache_never_raises(tmp_path: Path, monkeypatch: pytest.Mo
     monkeypatch.setattr(native.importlib.util, "find_spec", lambda name: object())
     monkeypatch.setattr(native.subprocess, "run", timeout)
     _REAL_WARM_TIKTOKEN_CACHE(tmp_path / "sandbox-cache", {"TMPDIR": str(tmp_path / "empty-tmp")})
+
+
+@pytest.mark.parametrize("kind", ["symlink", "dangling-symlink", "fifo", "directory"])
+def test_prefix_mcp_config_rejects_nonregular_sources(linked: tuple[Path, Path], kind: str) -> None:
+    """A primary pathname cannot grant trust to a writable target or block on a FIFO."""
+    feature, primary = linked
+    config = primary / ".mcp.json"
+    if kind in {"symlink", "dangling-symlink"}:
+        target = feature / "editable.json"
+        if kind == "symlink":
+            target.write_text(json.dumps({"mcpServers": {"tool": {"command": "untrusted"}}}))
+        config.symlink_to(target)
+    elif kind == "fifo":
+        os.mkfifo(config)
+    else:
+        config.mkdir()
+
+    with pytest.raises(RuntimeError, match="symlink|regular file"):
+        native.prepare_shell_prefix(feature, {}, "legacy", rtk=False)
+
+
+@pytest.mark.parametrize(
+    ("value", "environ", "expected"),
+    [
+        ("${BIN}", {"BIN": "/opt/bin/server"}, "/opt/bin/server"),
+        ("${BIN:-server}", {}, "server"),
+        ("${BIN:-server}", {"BIN": ""}, "server"),
+        ("${BIN}", {}, "${BIN}"),
+        ("${BIN:-}", {}, ""),
+        ("${BIN}/${ARG}", {"BIN": "/opt/bin", "ARG": "two words"}, "/opt/bin/two words"),
+        ("${BIN}", {"BIN": "${OTHER}", "OTHER": "expanded-twice"}, "${OTHER}"),
+        ("$BIN $(echo untouched)", {"BIN": "server"}, "$BIN $(echo untouched)"),
+    ],
+)
+def test_mcp_expansion_matches_claude_semantics(value: str, environ: dict[str, str], expected: str) -> None:
+    """Expansion preserves empty/unset semantics, argv boundaries and nonrecursive substitutions."""
+    assert native._expand_mcp_argument(value, environ) == expected
+
+
+def test_prefix_snapshot_and_policy_share_one_config_read(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A source replacement after parsing cannot change the snapshot or its expanded allowlist."""
+    from parrot.sdd.scripts import shell_prefix
+
+    feature, primary = linked
+    source = primary / ".mcp.json"
+    original = {
+        "mcpServers": {
+            "tool": {"command": "${MCP_BIN}", "args": ["${ARG:-fallback}", "${EMPTY:-fallback}"]},
+            "remote": {"type": "http", "url": "https://example.invalid/mcp", "headers": {"X-Key": "${KEY}"}},
+        }
+    }
+    source.write_text(json.dumps(original))
+    real_load = native.load_prefix_mcp_config
+    reads = []
+
+    def load_then_replace(cwd: Path) -> dict[str, object]:
+        reads.append(cwd)
+        document = real_load(cwd)
+        source.write_text(json.dumps({"mcpServers": {"replacement": {"command": "different"}}}))
+        return document
+
+    monkeypatch.setattr(native, "load_prefix_mcp_config", load_then_replace)
+    monkeypatch.setenv("MCP_BIN", "parent-must-not-win")
+    environment = native.prepare_shell_prefix(
+        feature,
+        {},
+        "legacy",
+        rtk=False,
+        environ={"MCP_BIN": "/opt/tools/server", "ARG": "two words", "EMPTY": "", "KEY": "test-secret"},
+    )
+    policy_path = Path(environment["PARROT_SDD_SHELL_PREFIX_POLICY"])
+    snapshot = policy_path.with_name("mcp.json")
+    loaded, _digest = shell_prefix.load_policy(policy_path)
+
+    assert reads == [feature]
+    assert json.loads(snapshot.read_text()) == original
+    assert snapshot.stat().st_mode & 0o777 == 0o400
+    assert "test-secret" not in snapshot.read_text()
+    assert loaded.mcp_argv == (("/opt/tools/server", "two words", "fallback"),)
+    command = "/opt/tools/server 'two words' fallback"
+    assert shell_prefix.decide(command, loaded, feature).kind == "passthrough"
+
+
+def test_prefix_mcp_open_rejects_symlink_swap(linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    """Replacing a regular config after inspection cannot make open follow a writable target."""
+    feature, primary = linked
+    config = primary / ".mcp.json"
+    config.write_text('{"mcpServers": {}}')
+    target = feature / "editable.json"
+    target.write_text('{"mcpServers": {"bad": {"command": "untrusted"}}}')
+    real_open = os.open
+
+    def swap_before_open(path: Path, flags: int) -> int:
+        config.rename(primary / "original.json")
+        config.symlink_to(target)
+        return real_open(path, flags)
+
+    monkeypatch.setattr(native.os, "open", swap_before_open)
+    with pytest.raises(RuntimeError, match="safely open"):
+        native.load_prefix_mcp_config(feature)
+
+
+def test_agent_hooks_header_requires_yaml_comment_separator(tmp_path: Path) -> None:
+    """A malformed header cannot allowlist commands from a different YAML key."""
+    agent = tmp_path / "agent.md"
+    agent.write_text("---\nhooks:#not-a-comment\n  command: do-not-allow\n---\n")
+    assert native._agent_hook_commands(agent) == []
+
+
+@pytest.fixture
+def fake_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Pin the home directory, so the home guard does not depend on where pytest keeps tmp_path."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr(policy.Path, "home", classmethod(lambda cls: home))
+    return home
+
+
+def _extra_write_config(*paths: str | Path) -> str:
+    return f"[tool.parrot.sdd]\nsandbox_extra_write_paths = {json.dumps([str(path) for path in paths])}\n"
+
+
+def test_native_allow_write_includes_declared_extra_dir(
+    linked: tuple[Path, Path], tmp_path: Path, fake_home: Path
+) -> None:
+    """The native backend allows the operator-declared directory, exactly as Bubblewrap binds it."""
+    feature, main = linked
+    extra = tmp_path / "navigator"
+    (main / "pyproject.toml").write_text(_extra_write_config(extra))
+    allow = native.native_sandbox_settings(feature)["sandbox"]["filesystem"]["allowWrite"]
+    assert str(extra.resolve()) in allow
+    assert extra.is_dir()
+    assert "/tmp" not in allow and "/" not in allow
+    native.validate_native_write_path(feature, extra / "log" / "navigator.log")
+    assert extra.resolve() in native._prefix_writable_roots(feature)
+
+
+@pytest.mark.parametrize("paths", [["/tmp"], ["/tmp/navigator", "/tmp"], ["/"]])
+def test_native_allow_write_never_contains_tmp_itself(
+    linked: tuple[Path, Path], fake_home: Path, paths: list[str]
+) -> None:
+    """A whole shared tree cannot be granted: the declaration is refused and nothing from it is allowed."""
+    feature, main = linked
+    (main / "pyproject.toml").write_text(_extra_write_config(*paths))
+    allow = native.native_sandbox_settings(feature)["sandbox"]["filesystem"]["allowWrite"]
+    assert "/tmp" not in allow and "/" not in allow
+    assert "/tmp/navigator" not in allow
+    with pytest.raises(ValueError, match="Invalid sandbox launch config"):
+        native.load_launch_config(main)
+
+
+def test_worktree_pyproject_cannot_declare_native_extra_write_paths(
+    linked: tuple[Path, Path], tmp_path: Path, fake_home: Path
+) -> None:
+    """The worktree's own pyproject is session-writable and never widens the policy."""
+    feature, _main = linked
+    extra = tmp_path / "navigator"
+    (feature / "pyproject.toml").write_text(_extra_write_config(extra))
+    allow = native.native_sandbox_settings(feature)["sandbox"]["filesystem"]["allowWrite"]
+    assert str(extra.resolve()) not in allow
+
+
+@pytest.mark.parametrize(
+    "body",
+    ['sandbox_extra_write_paths = ["/tmp"]', 'sandbox_extra_write_paths = "/tmp/navigator"',
+     'sandbox_extra_write_paths = ["relative/dir"]'],
+)  # fmt: skip
+def test_malformed_extra_write_paths_exit_2(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], body: str
+) -> None:
+    """A bad extra-path declaration refuses to launch claude and names the file."""
+    feature, seen = _launch_harness(linked, monkeypatch, primary_toml=f"[tool.parrot.sdd]\n{body}\n")
+    assert native.launch_worker([], cwd=feature) == 2
+    assert seen["exec"] is None
+    assert "Invalid sandbox launch config" in capsys.readouterr().err

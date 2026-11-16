@@ -24,27 +24,16 @@ def test_client_tenant_ignored_and_resolved_tenant_passed() -> None:
     assert source.count("tenant=tenant,") == 4  # ask, ask_stream, stream handler, _format_response
 
 
-def test_save_turn_metadata_both_paths() -> None:
-    """Both persisted AgentTalk turn paths include the telemetry metadata."""
+def test_handler_builds_no_turn_metadata_and_never_saves() -> None:
+    """The persisted-turn metadata moved into the bot's TurnPresentation (FEAT-886)."""
     source = _AGENT_SRC.read_text(encoding="utf-8")
-
-    assert source.count("chat_storage.save_turn(") == 2
-    stream_save, sync_save = source.split("chat_storage.save_turn(")[1:]
-
-    for save_call, message_name in ((stream_save, "ai_message"), (sync_save, "response")):
-        assert "metadata={" in save_call
-        assert f'"usage": {message_name}.usage.model_dump() if {message_name}.usage is not None else None,' in save_call
-        assert (
-            f'"cost_usd": {message_name}.usage.estimated_cost if {message_name}.usage is not None else None,'
-            in save_call
-        )
-        assert '"tenant": tenant,' in save_call
-        assert '"agent": agent_name,' in save_call
+    assert "save_turn" not in source
+    assert "turn_id=client_message_id," in source
 
 
 @pytest.mark.asyncio
-async def test_stream_save_turn_receives_resolved_tenant_metadata(monkeypatch) -> None:
-    """The streaming persistence task retains the explicitly supplied tenant."""
+async def test_stream_handler_forwards_tenant_and_turn_id_and_persists_nothing(monkeypatch) -> None:
+    """FEAT-886: the handler hands tenant + client turn id to the bot; the bot owns persistence."""
     agent_module = pytest.importorskip("parrot.handlers.agent")
     from parrot.models.basic import CompletionUsage
     from parrot.models.responses import AIMessage
@@ -68,13 +57,10 @@ async def test_stream_save_turn_receives_resolved_tenant_metadata(monkeypatch) -
             return None
 
     class _ChatStorage:
-        """Recording asynchronous chat storage."""
+        """Any attribute access means the handler touched storage: the test then fails."""
 
-        def __init__(self) -> None:
-            self.calls: list[dict] = []
-
-        async def save_turn(self, **kwargs) -> None:
-            self.calls.append(kwargs)
+        def __getattr__(self, name):
+            raise AssertionError(f"AgentTalk must not use ChatStorage.{name}")
 
     class _Bot:
         """Streaming bot that records arguments and yields one final message."""
@@ -120,17 +106,12 @@ async def test_stream_save_turn_receives_resolved_tenant_metadata(monkeypatch) -
         use_conversation_history=True,
         output_mode=agent_module.OutputMode.DEFAULT,
         format_kwargs={},
-        memory=None,
         llm=None,
         agent_name="agent-1",
         tenant="acme",
+        client_message_id="client-msg-1",
     )
     await asyncio.sleep(0)
 
     assert bot.calls[0]["tenant"] == "acme"
-    assert storage.calls[0]["metadata"] == {
-        "usage": message.usage.model_dump(),
-        "cost_usd": 0.42,
-        "tenant": "acme",
-        "agent": "agent-1",
-    }
+    assert bot.calls[0]["turn_id"] == "client-msg-1"

@@ -72,6 +72,13 @@ def doctor(sdd_scope: bool, runtime_only: bool) -> None:
     pin = explicit_project_pin(sys.argv[1:], os.environ, Path.cwd())
     resolved = install_root(Path.cwd(), explicit=pin)
     checks = run_doctor(resolved.root, scope=scope, install_root=resolved)
+    if not runtime_only:
+        import asyncio
+
+        from parrot.conf import default_dsn
+        from parrot.migrations.startup import migration_doctor_check
+
+        checks.append(asyncio.run(migration_doctor_check(default_dsn)))
     for check in checks:
         if check.informational:
             mark, colour = "·", "yellow" if not check.ok else None
@@ -126,6 +133,25 @@ def uninstall(yes: bool) -> None:
     if not yes and not click.confirm("Remove the managed runtime (user data is kept)?"):
         return
     _echo_log(uninstall_runtime(yes=True))
+
+
+class _MigrationGroup(click.Group):
+    """Defer migration implementation imports until subgroup dispatch."""
+
+    def list_commands(self, ctx: click.Context) -> list[str]:
+        """List commands without importing the database driver or server."""
+        return ["baseline", "new", "status", "upgrade"]
+
+    def get_command(self, ctx: click.Context, cmd_name: str) -> click.Command | None:
+        """Resolve a lightweight command adapter when requested."""
+        from parrot.migrations.cli import migration_group
+
+        return migration_group.get_command(ctx, cmd_name)
+
+
+@self_group.group(name="migration", cls=_MigrationGroup)
+def migration() -> None:
+    """Manage packaged PostgreSQL schemas in this Python environment."""
 
 
 #: LazyGroup lookup name (cli/__init__.py:99-100: getattr(mod, "self")).

@@ -61,6 +61,7 @@ if not OUTPUT_DIR.exists():
 
 
 # Main Database:
+PARROT_ADMIN_DSN = config.get("PARROT_ADMIN_DSN")
 # DB Default (database used for interaction (rw))
 DBHOST = config.get("DBHOST", fallback="localhost")
 DBUSER = config.get("DBUSER")
@@ -171,11 +172,17 @@ ONTOLOGY_REVIEW_DIR = config.get("ONTOLOGY_REVIEW_DIR", fallback=None)
 if ONTOLOGY_REVIEW_DIR is not None:
     ONTOLOGY_REVIEW_DIR = Path(ONTOLOGY_REVIEW_DIR).resolve()
 
-# AgentStudio meta-agent (FEAT-467 TASK-2521): default LLM model for
-# AgentStudioAgent, overridable per-deployment. Per-user BYOK override
-# (when a stored Anthropic key exists) takes precedence at instance
-# build time — see parrot/bots/studio/agent.py.
-STUDIO_AGENT_MODEL = config.get("STUDIO_AGENT_MODEL", fallback="claude-opus-5")
+# AgentStudio meta-agent (FEAT-467 TASK-2521): which LLM provider drives
+# AgentStudioAgent (``STUDIO_AGENT_LLM``: ``anthropic`` (default), ``google``,
+# or any key registered in ``parrot.clients.factory.SUPPORTED_CLIENTS``) and
+# which model it uses (``STUDIO_AGENT_MODEL``). When the model is unset the
+# provider's own default applies (``anthropic`` -> ``claude-opus-5``,
+# ``google`` -> ``gemini-flash-latest``) — a Claude model is never sent to
+# another provider. Per-user BYOK override (when a stored key for the
+# configured provider exists) takes precedence at instance build time — see
+# parrot/bots/studio/agent.py.
+STUDIO_AGENT_LLM = config.get("STUDIO_AGENT_LLM", fallback="anthropic")
+STUDIO_AGENT_MODEL = config.get("STUDIO_AGENT_MODEL", fallback=None)
 
 # Agents Directory
 AGENTS_DIR = config.get("AGENTS_DIR", fallback=BASE_DIR.joinpath("agents"))
@@ -310,7 +317,7 @@ REDIS_DB = config.get("REDIS_DB", fallback=1)
 REDIS_URL = config.get("REDIS_URL", fallback=f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}")
 
 # Crew/flow execution result storage (FEAT-147)
-CREW_RESULT_STORAGE = config.get("CREW_RESULT_STORAGE", fallback="documentdb")
+CREW_RESULT_STORAGE = config.get("CREW_RESULT_STORAGE", fallback=None)  # FEAT-878: None → follows PARROT_USER_STORE
 CREW_RESULT_STORAGE_PG_DSN = config.get("CREW_RESULT_STORAGE_PG_DSN", fallback=default_dsn)
 CREW_RESULT_STORAGE_REDIS_URL = config.get("CREW_RESULT_STORAGE_REDIS_URL", fallback=REDIS_URL)
 CREW_RESULT_STORAGE_REDIS_TTL = int(config.get("CREW_RESULT_STORAGE_REDIS_TTL", fallback=604800))
@@ -328,11 +335,18 @@ FLOW_CHECKPOINT_HISTORY = int(config.get("FLOW_CHECKPOINT_HISTORY", fallback=10)
 FLOW_CHECKPOINT_SHUTDOWN_DEADLINE = int(config.get("FLOW_CHECKPOINT_SHUTDOWN_DEADLINE", fallback=15))
 FLOW_CHECKPOINT_LEASE_TTL = int(config.get("FLOW_CHECKPOINT_LEASE_TTL", fallback=60))
 
+# FEAT-886: True only when the operator set REDIS_HISTORY_URL themselves. Captured BEFORE the host/port default
+# below is synthesized; REDIS_HISTORY_URL is the operator value when explicit, else the synthesized URL.
+_explicit_history_url = str(config.get("REDIS_HISTORY_URL", fallback="") or "").strip()
+REDIS_HISTORY_EXPLICIT: bool = bool(_explicit_history_url)
 REDIS_HISTORY_DB = config.get("REDIS_HISTORY_DB", fallback=3)
-REDIS_HISTORY_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_HISTORY_DB}"
+REDIS_HISTORY_URL = _explicit_history_url or f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_HISTORY_DB}"
 REDIS_SERVICES_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/4"
 REDIS_DATASET_DB = config.get("REDIS_DATASET_DB", fallback=3)
 REDIS_DATASET_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DATASET_DB}"
+
+# FEAT-886: hot-tier (ChatStorage Redis) history TTL in hours. 0 disables the TTL.
+CHAT_HOT_TTL_HOURS = int(config.get("CHAT_HOT_TTL_HOURS", fallback=48))
 
 
 def resolve_cert(crt):
@@ -601,6 +615,17 @@ PARROT_OVERFLOW_LOCAL_PATH = config.get(
     fallback=str(Path(_parrot_home_default) / "artifacts"),
 )
 PARROT_STORAGE_METRICS = config.get("PARROT_STORAGE_METRICS", fallback=None)
+
+# --- Durable conversation memory: turn bus (FEAT-886 M10) ---
+# Redis Streams bus that carries conversation.turn.completed to ChatStorage. Separate from the
+# observability fan-out bus. The outbox directory is REQUIRED (writable; one SQLite file per pod/pid).
+# PARROT_TURN_BUS_CHANNEL_PREFIX is the Redis STREAM prefix (a Streams EventBus ignores channel_prefix).
+# PARROT_TURN_BUS_DLQ_DSN is optional: without it, exhausted envelopes are retained as dead letters in a
+# local SQLite store next to the outbox (never dropped).
+PARROT_TURN_BUS_REDIS_URL = config.get("PARROT_TURN_BUS_REDIS_URL", fallback=None)
+PARROT_TURN_BUS_OUTBOX_DIR = config.get("PARROT_TURN_BUS_OUTBOX_DIR", fallback=None)
+PARROT_TURN_BUS_CHANNEL_PREFIX = config.get("PARROT_TURN_BUS_CHANNEL_PREFIX", fallback="parrot:turns:")
+PARROT_TURN_BUS_DLQ_DSN = config.get("PARROT_TURN_BUS_DLQ_DSN", fallback=None)
 
 ## Tools:
 OPENWEATHER_APPID = config.get("OPENWEATHER_APPID")

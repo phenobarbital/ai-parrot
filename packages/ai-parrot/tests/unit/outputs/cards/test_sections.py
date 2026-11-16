@@ -21,7 +21,7 @@ class TestTableSection:
         )
         assert s.section_type == "table"
         assert len(s.rows) == 2
-        assert s.max_display_rows == 20
+        assert s.max_display_rows == 50
 
 
 class TestMetricsSection:
@@ -97,9 +97,9 @@ class TestRawElementsSection:
 
 class TestCardSpec:
     def test_minimal(self):
-        from parrot.outputs.cards.spec import CardSpec
+        from parrot.outputs.cards.spec import DEFAULT_ADAPTIVE_CARD_VERSION, CardSpec
         spec = CardSpec()
-        assert spec.version == "1.5"
+        assert spec.version == DEFAULT_ADAPTIVE_CARD_VERSION
         assert spec.sections == []
         assert spec.actions == []
         assert spec.auto_collapse is None

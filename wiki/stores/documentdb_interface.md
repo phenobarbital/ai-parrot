@@ -2,6 +2,8 @@
 
 This guide describes how to use the `DocumentDb` interface to interact with AWS DocumentDB (or MongoDB-compatible databases).
 
+**Note:** FEAT-878 made Redis the default for user stores. DocumentDB remains available by setting `PARROT_USER_STORE=documentdb` or per-store switches. See [User stores](user-stores.md) for details.
+
 ## Initialization
 
 The interface automatically loads credentials from `navconfig` (environment variables).

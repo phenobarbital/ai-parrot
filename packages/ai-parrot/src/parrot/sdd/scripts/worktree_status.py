@@ -13,9 +13,9 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Literal, Sequence
+from typing import Literal, Sequence, get_args
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 from parrot.sdd.config import LEGACY_WORKTREE_ROOT, worktree_root
 
@@ -36,11 +36,35 @@ _POOL_SUB_WORKTREE_RE = re.compile(r"--TASK-\d+-a\d+-[0-9a-f]+$")
 # ---------------------------------------------------------------------------
 
 
-class WorktreeTaskStatus(BaseModel):
-    """Per-task status as seen from a worktree's index."""
+#: The four task states the per-spec index schema allows (sdd/WORKFLOW.md).
+TaskStatus = Literal["pending", "in-progress", "done", "done-with-issues"]
+_KNOWN_STATUSES: frozenset[str] = frozenset(get_args(TaskStatus))
+
+
+class _IndexTask(BaseModel):
+    """A task entry read from a per-spec index, schema-valid status or not.
+
+    ``status`` is normally one of :data:`TaskStatus`, but an index can carry a
+    value outside it (FEAT-892's ``/sdd-task`` run wrote ``"blocked"``). Such a
+    value is kept verbatim and flagged by ``unknown_status`` instead of being
+    guessed into a known state or raising: one off-schema entry used to crash
+    the whole ``--reconcile`` board, and dropping it made a worktree look
+    finished (``ready_for_done``) while a task was still open.
+    """
 
     id: str
-    status: Literal["pending", "in-progress", "done", "done-with-issues"]
+    status: str
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def unknown_status(self) -> bool:
+        """Whether ``status`` is outside the four-value index schema."""
+        return self.status not in _KNOWN_STATUSES
+
+
+class WorktreeTaskStatus(_IndexTask):
+    """Per-task status as seen from a worktree's index."""
+
     completed_at: str | None = None
 
 
@@ -162,8 +186,10 @@ def _read_worktree_index(
                 )
             )
         except (KeyError, TypeError, ValueError):
-            # Skip malformed task entries (ValueError also covers pydantic's
-            # ValidationError, e.g. a status outside the Literal enum).
+            # Skip malformed task entries: a missing id/status, or a non-string
+            # value (ValueError also covers pydantic's ValidationError). An
+            # off-schema status *string* such as "blocked" is NOT malformed —
+            # it is kept and flagged via WorktreeTaskStatus.unknown_status.
             continue
     return tasks, base_branch
 
@@ -448,6 +474,10 @@ def discover_worktree_reports(repo_root: Path) -> list[WorktreeReport]:
 #
 # "done" and "done-with-issues" share a rank so neither side can silently flip
 # a finished task between the two terminal states; on a tie the dev value wins.
+#
+# An off-schema status (e.g. "blocked") ranks as not started (0): a worktree
+# that really advanced the task still wins, and on a tie dev's raw value is
+# shown as-is rather than rewritten to "pending".
 _STATUS_RANK: dict[str, int] = {
     "pending": 0,
     "in-progress": 1,
@@ -458,11 +488,9 @@ _STATUS_RANK: dict[str, int] = {
 _TERMINAL_STATUSES = ("done", "done-with-issues")
 
 
-class ReconciledTask(BaseModel):
+class ReconciledTask(_IndexTask):
     """One task after merging the dev-branch index with a worktree index."""
 
-    id: str
-    status: Literal["pending", "in-progress", "done", "done-with-issues"]
     source: Literal["dev", "worktree"] = "dev"
 
 
@@ -524,7 +552,9 @@ def reconcile_feature(
     behind = False
 
     for task in dev_tasks:
-        dev_status = task.get("status", "pending")
+        # str(): a non-string status (null, a number) must surface as an
+        # unknown_status task on the board, never raise and kill the run.
+        dev_status = str(task.get("status", "pending"))
         wt_task = wt_by_id.get(task["id"])
         if wt_task is None:
             merged.append(ReconciledTask(id=task["id"], status=dev_status, source="dev"))
@@ -677,6 +707,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                     flags.append(f"stale worktree: {feature.worktree_branch}")
                 if feature.worktree_only:
                     flags.append("worktree only")
+                unknown = sorted({t.status for t in feature.tasks if t.unknown_status})
+                if unknown:
+                    flags.append(f"off-schema status: {', '.join(unknown)}")
                 source = ", ".join(flags) if flags else "dev"
                 tasks_str = f"{done}/{len(feature.tasks)}"
                 print(f"{feature.feature_slug:<45} {feature.feature_id or '-':<12} {tasks_str:<20} {source}")

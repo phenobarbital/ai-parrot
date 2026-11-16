@@ -421,3 +421,116 @@ def test_find_by_path_roundtrip(store):
     store.upsert(card)
     assert store.find_by_path(card.source_path).book_id == "clean-code"
     assert store.find_by_path("/nope.md") is None
+
+
+# ---------------------------------------------------------------------------
+# FEAT-876 — notebook rows (kind / notes_for), manual relations
+# ---------------------------------------------------------------------------
+
+
+def _notes_card(book_id: str, notes_for, **overrides) -> BookCard:
+    data = {
+        "title": f"Notes {book_id}",
+        "authors": [],
+        "topics": ["refactoring"],
+        "summary": "refactoring notes",
+        "toc_digest": "",
+        "toc": [],
+        "source_path": f"/notes/{book_id}",
+        "source_sha256": f"{book_id:0<64}"[:64],
+        "source_format": "tree",
+        "page_count": None,
+        "chapter_count": 0,
+        "kind": "notes",
+        "notes_for": notes_for,
+    }
+    data.update(overrides)
+    return _card(book_id, **data)
+
+
+def test_catalog_kind_migration_keeps_existing_rows(legacy_library_db):
+    store = CatalogStore(legacy_library_db)
+    cards = store.list_cards(kind=None)
+    assert cards
+    for card in cards:
+        assert card.kind == "book"
+        assert card.notes_for is None
+    assert [c.book_id for c in store.list_cards()] == [c.book_id for c in cards]
+
+
+def test_list_cards_default_excludes_notes(store):
+    store.upsert(_card())
+    store.upsert(_notes_card("clean-code--notes", "clean-code"))
+    assert [c.book_id for c in store.list_cards()] == ["clean-code"]
+    assert {c.book_id for c in store.list_cards(kind=None)} == {"clean-code", "clean-code--notes"}
+    assert [c.book_id for c in store.list_cards(kind="notes")] == ["clean-code--notes"]
+    assert store.taken_slugs() == {"clean-code", "clean-code--notes"}
+    # merged_cards (built on list_cards) stays books-only too.
+    assert [c.book_id for c in merged_cards([("project", store)])] == ["clean-code"]
+
+
+def test_search_excludes_notes(store):
+    store.upsert(_card())
+    store.upsert(_notes_card("clean-code--notes", "clean-code"))
+    results = store.search("refactoring")
+    assert [card.book_id for card, _ in results] == ["clean-code"]
+
+
+def test_search_excludes_notes_like_fallback(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "parrot.knowledge.bookstore.catalog._FTS_DDL",
+        "CREATE VIRTUAL TABLE IF NOT EXISTS books_fts " "USING no_such_module_fts5(a)",
+    )
+    store = CatalogStore(tmp_path / "library.db")
+    assert store.supports_fts is False
+    store.upsert(_card())
+    store.upsert(_notes_card("clean-code--notes", "clean-code"))
+    results = store.search("refactoring")
+    assert [card.book_id for card, _ in results] == ["clean-code"]
+
+
+def test_notebook_accessors(store):
+    assert store.notebook_for("clean-code") is None
+    assert store.library_notebook() is None
+    store.upsert(_card())
+    store.upsert(_notes_card("clean-code--notes", "clean-code"))
+    store.upsert(_notes_card("_library_notes", None))
+    notebook = store.notebook_for("clean-code")
+    assert notebook is not None
+    assert notebook.book_id == "clean-code--notes"
+    assert notebook.kind == "notes"
+    assert notebook.source_format == "tree"
+    assert store.notebook_for("sicp") is None
+    library = store.library_notebook()
+    assert library is not None
+    assert library.tree_name == "_library_notes"
+    assert library.notes_for is None
+    # A book row is never mistaken for a notebook.
+    assert store.notebook_for("clean-code--notes") is None
+
+
+def test_upsert_relations_keeps_manual_rows(store):
+    manual = BookRelation(
+        src_book_id="a",
+        dst_book_id="b",
+        rel="same_author",
+        origin="manual",
+        rationale="sheet",
+        computed_at="2026-11-11T00:00:00+00:00",
+    )
+    computed = manual.model_copy(update={"origin": "deterministic", "rationale": "computed", "weight": 0.3})
+    store.upsert_relations([manual])
+    store.upsert_relations([computed])
+    rows = store.list_relations("a")
+    assert len(rows) == 1
+    assert rows[0].origin == "manual"
+    assert rows[0].rationale == "sheet"
+    assert rows[0].weight == 1.0
+
+    # A manual edge does replace a computed one.
+    other = computed.model_copy(update={"dst_book_id": "c"})
+    store.upsert_relations([other])
+    store.upsert_relations([other.model_copy(update={"origin": "manual", "rationale": "hand"})])
+    by_dst = {r.dst_book_id: r for r in store.list_relations("a")}
+    assert by_dst["c"].origin == "manual"
+    assert by_dst["c"].rationale == "hand"

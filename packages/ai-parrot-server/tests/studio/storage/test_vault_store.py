@@ -98,8 +98,9 @@ async def test_vault_pg_aad_rejects_swapped_row(pool):
         await store.retrieve("u2", "n")
 
 
-async def test_default_stays_documentdb():
-    """Without a registered store the DocumentDB path is used (switch default ``documentdb``)."""
+async def test_default_stays_documentdb(monkeypatch):
+    """With ``VAULT_STORE=documentdb`` and no registered store the DocumentDB path is used."""
+    monkeypatch.setenv("VAULT_STORE", "documentdb")
     with pytest.raises(AssertionError, match="DocumentDB was contacted"):
         await vault_utils.retrieve_vault_credential("u1", "n")
 

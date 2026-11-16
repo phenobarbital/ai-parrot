@@ -51,8 +51,25 @@ def set_user_llm_key_store(store: Any) -> None:
 
 
 def byok_store_setting() -> str:
-    """The ``BYOK_STORE`` switch: ``documentdb`` (default) or ``postgres``."""
-    from navconfig import config
+    """Resolve the BYOK backend: Redis by default, or DocumentDB/Postgres explicitly."""
+    from parrot.userstore import resolve_store_backend
 
-    value = str(config.get("BYOK_STORE", fallback="documentdb") or "documentdb").strip().lower()
-    return value if value in ("documentdb", "postgres") else "documentdb"
+    return resolve_store_backend("BYOK_STORE")
+
+
+_REDIS_STORE: Any = None
+
+
+def get_user_llm_key_store() -> Any | None:
+    """Return the registered Postgres or lazily-created Redis BYOK store."""
+    global _REDIS_STORE
+    setting = byok_store_setting()
+    if setting == "postgres":
+        return _PG_STORE
+    if setting == "redis":
+        if _REDIS_STORE is None:
+            from .byok_redis import RedisUserLLMKeyStore
+
+            _REDIS_STORE = RedisUserLLMKeyStore()
+        return _REDIS_STORE
+    return None

@@ -25,7 +25,10 @@ from ..tools.dataset_manager import DatasetManager
 from ..tools.pythonpandas import PythonPandasTool
 from ..tools.json_tool import ToJsonTool
 from .agent import BasicAgent
+from .base import with_call_identity
 from .mixins.intent_router import IntentRouterMixin
+from .abstract import _OUTPUT_BLOCKED_TEXT
+from .guardrails.base import GuardrailContext, GuardrailStage
 from ..registry.capabilities.models import IntentRouterConfig
 from ..registry.routing.route_bank import resolve_route_banks
 from ..registry.routing.route_labels import OutputShape, get_component_hint, is_inline_component, set_output_shape
@@ -36,11 +39,17 @@ from ..outputs.a2ui.artifacts import attach_structured_artifact
 from ..outputs.a2ui.catalog._model import component_model
 from ..outputs.a2ui.inline.emitter import emit_inline_component
 from ..outputs.a2ui.inline.prompt import build_component_prompt
-from ..memory.abstract import ConversationTurn
 from ..observability.context import (
     current_memory_key_id,
     current_session_id,
     current_user_id,
+)
+from ..memory.agent_memory.runtime import (
+    bind_memory_exposure,
+    bind_memory_scope,
+    current_memory_exposure,
+    reset_memory_exposure,
+    reset_memory_scope,
 )
 from ..conf import AGENTS_DIR, STATIC_DIR
 from ..utils.paths import secure_path
@@ -457,6 +466,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         output_routing: bool = False,
         output_routing_config: Optional[IntentRouterConfig] = None,
         python_repl_execution_mode: Optional[str] = None,
+        python_repl_executor_max_workers: Optional[int] = None,
         **kwargs,
     ):
         """
@@ -492,11 +502,17 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 (fallback ``"worker"``) — so a subclass or caller can pin a
                 mode per-agent, per-instance, without touching the deployment
                 environment.
+            python_repl_executor_max_workers: Forwarded to the internal
+                ``PythonPandasTool`` as ``executor_max_workers``. ``None`` (the
+                default) auto-sizes the REPL thread pool to the ``WorkerPool``
+                capacity (max workers + prewarm), avoiding the "shared executor
+                undersized" warning.
             **kwargs: Additional configuration
         """
         self._output_routing_enabled = output_routing
         self._output_routing_config = output_routing_config
         self._python_repl_execution_mode = python_repl_execution_mode
+        self._python_repl_executor_max_workers = python_repl_executor_max_workers
         self._queries = query or self.queries
         self._capabilities = capabilities
         self._generate_eda = generate_eda
@@ -630,6 +646,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             # before. Only a caller passing `python_repl_execution_mode=` to
             # PandasAgent.__init__ changes behaviour.
             execution_mode=self._python_repl_execution_mode,
+            executor_max_workers=self._python_repl_executor_max_workers,
         )
 
         # Prophet forecasting tool
@@ -1350,6 +1367,116 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             return True
         return bool(self._CONVERSATIONAL_PATTERNS.search(q))
 
+    async def _guard_answer(
+        self,
+        response: AIMessage,
+        data_response: Optional[PandasAgentResponse] = None,
+        method: str = "ask",
+    ) -> AIMessage:
+        """Give the answer ``ask()`` returns an OUTPUT guardrail verdict (FEAT-893).
+
+        ``PandasAgent.ask`` is a full override that never reaches ``BaseBot.ask``, so it runs the OUTPUT
+        stage itself, on every return path, before the answer is remembered or persisted:
+
+        1. ``_run_output_pipeline`` judges a plain-text ``output`` exactly as ``BaseBot.ask`` does
+           (TRANSFORM, BLOCK and FLAG; a rewrite also reaches an aliased or wrapped ``response.response``).
+        2. Every other copy of the answer text that step 1 did not judge gets its own verdict:
+           ``response.response`` (the explanation beside a structured ``PandasAgentResponse``, chart config,
+           HTML or A2UI ``output``, or a wrapper left alone because ``output`` passed), the ``explanation`` of
+           each structured ``PandasAgentResponse`` (``data_response`` / ``structured_output``) and the
+           ``metadata["explanation"]`` an infographic or interactive artifact records. No unjudged copy of the
+           answer survives in the returned message.
+
+        Each distinct text is judged at most once: a text step 1 already judged (the original ``output``, a
+        wrapper ``_propagate_output_verdict`` scanned) reuses that verdict. A BLOCK on any of them replaces every
+        answer text with the canned notice ``BaseBot`` uses and sets ``metadata["error"] = "security_block"``;
+        data, code and artifacts stay in place, as in ``_run_output_pipeline``. Without OUTPUT guardrails
+        nothing runs.
+
+        Args:
+            response: The message ``ask()`` is about to return.
+            data_response: The LLM's structured ``PandasAgentResponse`` for this turn, if any.
+            method: The entry-point name carried on the guardrail context.
+
+        Returns:
+            The same ``response`` instance, mutated in place.
+        """
+        pipeline = self._guardrail_pipelines[GuardrailStage.OUTPUT]
+        if not pipeline.has_guardrails:
+            return response
+
+        before_output = response.output if isinstance(response.output, str) else None
+        before = response.response
+        response = await self._run_output_pipeline(response, method=method)
+
+        # Every place the answer text lives, as (container, field): attributes, or a key of the metadata dict.
+        slots: List[Tuple[Any, str]] = [(response, "response")]
+        models: List[PandasAgentResponse] = []
+        for model in (data_response, response.structured_output):
+            if isinstance(model, PandasAgentResponse) and not any(model is seen for seen in models):
+                models.append(model)
+                slots.append((model, "explanation"))
+        if isinstance(response.metadata, dict):
+            slots.append((response.metadata, "explanation"))
+
+        def _get(container: Any, field: str) -> Any:
+            return container.get(field) if isinstance(container, dict) else getattr(container, field, None)
+
+        def _set(container: Any, field: str, value: str) -> None:
+            if isinstance(container, dict):
+                container[field] = value
+            else:
+                setattr(container, field, value)
+
+        def _block(reason: Optional[str]) -> AIMessage:
+            if isinstance(response.output, str):
+                response.output = _OUTPUT_BLOCKED_TEXT
+            for container, field in slots:
+                if container is response or isinstance(_get(container, field), str):
+                    _set(container, field, _OUTPUT_BLOCKED_TEXT)
+            response.metadata["error"] = "security_block"
+            if reason:
+                response.metadata["block_reason"] = reason
+            return response
+
+        if response.metadata.get("error") == "security_block":
+            return _block(response.metadata.get("block_reason"))
+
+        # Verdicts step 1 already reached, keyed by the text it judged (and by its result, itself judged).
+        judged: Dict[str, str] = {}
+        if before_output is not None and isinstance(response.output, str):
+            judged[before_output] = response.output
+            judged[response.output] = response.output
+            if response.output != before_output and isinstance(before, str) and before:
+                # A rewritten output is propagated to a distinct response text, which that step judged.
+                result = response.response if isinstance(response.response, str) else before
+                judged[before] = result
+                judged[result] = result
+
+        ctx: Optional[GuardrailContext] = None
+        for container, field in slots:
+            text = _get(container, field)
+            if not isinstance(text, str) or not text:
+                continue
+            if text not in judged:
+                if ctx is None:
+                    ctx = GuardrailContext(
+                        stage=GuardrailStage.OUTPUT,
+                        agent_name=self.name,
+                        user_id=str(response.user_id) if response.user_id is not None else None,
+                        session_id=response.session_id,
+                        method=method,
+                        extras=self._output_extras(response, pipeline),
+                    )
+                outcome = await pipeline.run(text, ctx)
+                self._merge_guardrail_reports(response, outcome.flag_reports)
+                if outcome.blocked:
+                    return _block(outcome.reason)
+                judged[text] = outcome.content if outcome.content is not None else text
+            _set(container, field, judged[text])
+        return response
+
+    @with_call_identity
     async def ask(
         self,
         question: str,
@@ -1395,15 +1522,24 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             AIMessage with the analysis result
         """
         # Generate IDs if not provided
+        _memory_user_id = user_id
         session_id = session_id or str(uuid.uuid4())
         user_id = user_id or "anonymous"
-        turn_id = str(uuid.uuid4())
+        turn_id = kwargs.pop("turn_id", None) or str(uuid.uuid4())
 
         # FEAT-525: bind AFTER defaulting (binding-order hazard, spec §7) so
         # read_omitted_content never observes a partially-scoped session.
         _user_token = current_user_id.set(user_id)
         _session_token = current_session_id.set(session_id)
         _memkey_token = current_memory_key_id.set(self.memory_key_id)
+        _memory_scope = self._memory_request_scope(
+            user_id=_memory_user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+        )
+        _memory_scope_token = bind_memory_scope(_memory_scope)
+        _memory_exposure_token = bind_memory_exposure(None)
+        _memory_context_exposure_token = None
 
         # Use default temperature of 0 if not specified
         if "temperature" not in kwargs:
@@ -1418,10 +1554,11 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             compaction_result = None
             memory = memory or self.conversation_memory
 
+            if not (use_conversation_history and memory):
+                await self._guard_session(user_id, session_id)
             if use_conversation_history and memory:
-                conversation_history = await self.get_conversation_history(
-                    user_id, session_id
-                ) or await self.create_conversation_history(user_id, session_id)
+                # deletion guard + hydration, same as BaseBot (FEAT-886)
+                conversation_history = await self._load_or_hydrate_history(memory, user_id, session_id)
                 # FEAT-524: history goes to the provider as alternating messages.
                 # FEAT-525: budgeted when a context_budget is active; byte
                 # identical to the FEAT-524 plain render otherwise.
@@ -1495,6 +1632,12 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             )
             if kb_meta.get("activated_kbs"):
                 vector_metadata["activated_kbs"] = kb_meta["activated_kbs"]
+
+            memory_context, memory_exposure_id = await self._prepare_agent_memory(question, _memory_scope)
+            if memory_exposure_id is not None:
+                _memory_context_exposure_token = bind_memory_exposure(memory_exposure_id)
+            if memory_context:
+                user_context = f"{user_context}\n\n{memory_context}" if user_context else memory_context
 
             # Pre-LLM: episodic / mixin-provided context
             episodic_context = ""
@@ -2020,7 +2163,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                                 "InfographicRenderResult detected (A2UI) — bypassing formatter: " "artifact_id=%s",
                                 infographic_envelope.artifact_id,
                             )
-                            return response
+                            return await self._guard_answer(response, data_response)
                         self.logger.warning(
                             "InfographicRenderResult requested output_mode=A2UI but no "
                             "A2UI envelope was produced; falling back to the HTML lane. "
@@ -2043,7 +2186,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                         infographic_envelope.enhanced,
                         len(explanation or ""),
                     )
-                    return response  # skip formatter + structured reformat
+                    return await self._guard_answer(response, data_response)  # skip formatter + reformat
 
                 # Interactive artifact: same early-return pattern, no data_variables.
                 interactive_envelope = self._extract_last_interactive_result(response.tool_calls)
@@ -2056,7 +2199,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                             "InteractiveRenderResult detected (A2UI) — bypassing formatter: " "artifact_id=%s",
                             interactive_envelope.artifact_id,
                         )
-                        return response
+                        return await self._guard_answer(response, data_response)
                     explanation = self._finalize_interactive_response(
                         response,
                         interactive_envelope,
@@ -2068,7 +2211,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                         interactive_envelope.enhanced,
                         len(explanation or ""),
                     )
-                    return response  # skip formatter + structured reformat
+                    return await self._guard_answer(response, data_response)  # skip formatter + reformat
 
                 if (
                     output_mode == OutputMode.A2UI
@@ -2083,7 +2226,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                     if outcome.status == "degraded":
                         self.logger.info("Inline A2UI emit degraded (%s): %s", component_hint, outcome.reason)
                     else:
-                        return response
+                        return await self._guard_answer(response, data_response)
 
                 # A2UI was requested but nothing rendered a surface this turn
                 # (toolkit not registered, or the LLM answered in prose). There
@@ -2226,6 +2369,11 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                         if response.content == getattr(response, "response", None) or not response.content:
                             response.content = answer_text
 
+                # FEAT-893: the answer this turn returns, remembers and persists carries ONE OUTPUT verdict.
+                # After the repair above, `response.response` is the str answer whenever there is one.
+                response = await self._guard_answer(response, data_response)
+                answer_text = getattr(response, "response", None) or response.content
+
                 await self.answer_memory.store_interaction(
                     response.turn_id,
                     question,
@@ -2237,30 +2385,43 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 # this, render_history() always sees an empty history because
                 # PandasAgent reads from conversation_memory but ChatStorage
                 # writes to a separate Redis namespace.
-                if use_conversation_history and memory:
-                    try:
-                        turn = ConversationTurn.from_ai_message(
-                            user_message=question,
-                            response=response,
-                            user_id=user_id,
-                            chatbot_id=self.memory_key_id,
-                            turn_id=response.turn_id or turn_id,
-                            # PandasAgent's answer text is post-processed, so it
-                            # stays authoritative over response.to_text.
-                            assistant_text=answer_text or "",
-                        )
-                        commit = None
-                        if compaction_result is not None:
-                            commit = self.build_compaction_commit(
-                                compaction_result,
-                                self.estimate_prompt_tokens(rendered_history, system_prompt, question),
-                            )
-                        await self.save_conversation_turn(user_id, session_id, turn, compaction=commit)
-                    except Exception as _save_exc:
-                        self.logger.debug(
-                            "Failed to persist conversation turn: %s",
-                            _save_exc,
-                        )
+                # The post-processed `answer_text` stays authoritative over `response.to_text` (which would dump
+                # a whole DataFrame for an empty answer). The answer is already computed: a failed save does not
+                # fail the request, as before FEAT-886, but it is logged at ERROR (ids only), never hidden at
+                # debug. The persisted text is the one `_guard_answer` already judged (FEAT-893), so the OUTPUT
+                # guardrails do not run a second time on it.
+                _commit = None
+                if compaction_result is not None:
+                    _commit = self.build_compaction_commit(
+                        compaction_result,
+                        self.estimate_prompt_tokens(rendered_history, system_prompt, question),
+                    )
+                try:
+                    _stored_text = await self._stored_turn_text(
+                        response,
+                        str(answer_text) if answer_text else None,
+                    )
+                    await self._persist_finalized_turn(
+                        response,
+                        question=question,
+                        user_id=user_id,
+                        session_id=session_id,
+                        turn_id=response.turn_id or turn_id,
+                        use_history=bool(use_conversation_history and memory),
+                        compaction=_commit,
+                        assistant_text=_stored_text or "",
+                    )
+                    await self._complete_agent_memory(
+                        scope=_memory_scope,
+                        question=question,
+                        response_text=_stored_text,
+                    )
+                except Exception as _save_exc:  # noqa: BLE001 - the answer is returned regardless
+                    self.logger.error(
+                        "persisting turn_id=%s failed (%s); the answer is still returned",
+                        response.turn_id or turn_id,
+                        type(_save_exc).__name__,
+                    )
 
                 # Post-response: episodic / mixin-provided hook
                 _post_q, _post_resp = question, response
@@ -2286,6 +2447,17 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             # Return error response
             raise
         finally:
+            if _memory_context_exposure_token is not None:
+                # PandasAgent never binds a tool-event capture, so nothing else would release the exposure committed
+                # by _prepare_agent_memory; discard it so the manager registry does not grow per invocation.
+                _exposure_manager = getattr(self, "_memory_manager", None)
+                _discard_exposure = getattr(_exposure_manager, "discard_memory_exposure", None)
+                _exposure_id = current_memory_exposure()
+                if _exposure_id is not None and callable(_discard_exposure):
+                    _discard_exposure(_exposure_id)
+                reset_memory_exposure(_memory_context_exposure_token)
+            reset_memory_exposure(_memory_exposure_token)
+            reset_memory_scope(_memory_scope_token)
             current_memory_key_id.reset(_memkey_token)
             current_session_id.reset(_session_token)
             current_user_id.reset(_user_token)

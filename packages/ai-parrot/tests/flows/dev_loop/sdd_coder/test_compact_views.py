@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from parrot.flows.dev_loop.sdd_coder.evidence import ExecutionEvidenceStore
+from parrot.flows.dev_loop.models import DevelopmentOutput
 from parrot.flows.dev_loop.sdd_coder.models import (
     AttemptRecord,
     CoderJob,
@@ -159,6 +160,29 @@ async def test_mandatory_pages_and_roundtrip(tmp_path: Path) -> None:
     full_text = await _read_full(store, EXECUTION_ID, full_ref["artifact_id"])
     recovered_plan = json.loads(full_text)
     assert recovered_plan["blocked"] == full_blocked
+
+
+async def test_compact_preserves_coder_blocker_in_durable_attempt_evidence(tmp_path: Path) -> None:
+    """A retry's earlier coder response is recoverable after recreating the evidence store."""
+    store = ExecutionEvidenceStore(tmp_path)
+    job = _job_view_with_heavy_attempts(n_tasks=1, turns_per_task=1)
+    output = DevelopmentOutput(
+        files_changed=[],
+        commit_shas=[],
+        summary="Blocked by the read-only store contract. " * 200,
+        incomplete_tasks=[job.tasks[0].task_id],
+    )
+    job.tasks[0].attempts[0].development_output = output
+    job.tasks[0].attempts[0].error = "empty_delivery: coder reported a contract blocker"
+    job.tasks[0].attempts[0].terminal = "failed"
+    job.tasks[0].outcome = "failed"
+
+    compact = await project_response(job, mode="compact", execution_id=EXECUTION_ID, store=store)
+
+    assert "development_output" not in compact["tasks"][0]["attempts"][0]
+    recovered = await _read_full(ExecutionEvidenceStore(tmp_path), EXECUTION_ID, compact["evidence_ref"]["artifact_id"])
+    restored = CoderJobView.model_validate_json(recovered)
+    assert restored.tasks[0].attempts[0].development_output == output
 
 
 async def test_byte_reduction_and_foreign_artifact(tmp_path: Path) -> None:

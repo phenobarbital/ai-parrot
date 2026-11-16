@@ -92,9 +92,10 @@ def create_bookstore_mcp_server(
 
     description = (
         f"Personal indexed book library — {book_count} book(s). "
-        "Research funnel: bookstore_catalog_search (which book covers X) → "
+        "Research funnel: bookstore_find_books (which books treat X, and where) → "
         "bookstore_agentic_retrieve (validated citations), with bookstore_get_toc → "
-        "bookstore_search_book → bookstore_read_section for targeted reading."
+        "bookstore_search_book → bookstore_read_section for targeted reading; "
+        "bookstore_catalog_search is the lexical fallback."
     )
     if adapter is None:
         description += " (no LLM configured: agentic retrieval remains visible but returns a configuration error)"

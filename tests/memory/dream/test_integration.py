@@ -1,18 +1,15 @@
-"""End-to-end and mixin-lifecycle integration tests for FEAT-390 (TASK-1989).
+"""Offline dream-cycle and FEAT-892 service-boundary integration tests.
 
 Runs fully offline: FAISS episodic backend (no embedding provider, so
 clustering uses the category+tools fallback — no model downloads) + SQLite
 brain wiki in tmpdir, heuristic distill (no LLM client, no API keys).
 """
-import sys
-from unittest.mock import MagicMock
 
-# Worktree environment gotcha (see TASK-1985/1986/1987 completion notes):
-# force a fresh re-import of the FAISS backend so a stale
-# `_FAISS_AVAILABLE=False` cached during an earlier conftest.py import race
-# doesn't poison this test module.
-sys.modules.pop("parrot.memory.episodic.backends.faiss", None)
+from pathlib import Path
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 
+from parrot.memory.agent_memory import AgentMemoryMixin
 from parrot.knowledge.wiki import SQLiteWikiStore
 from parrot.memory.dream import BrainStore, DreamCycleRunner, DreamScheduler, DreamState
 from parrot.memory.episodic.backends.faiss import FAISSBackend
@@ -22,11 +19,11 @@ from parrot.memory.episodic.models import (
     MemoryNamespace,
 )
 from parrot.memory.episodic.store import EpisodicMemoryStore
-from parrot.memory.unified import UnifiedMemoryManager
-from parrot.memory.unified.mixin import LongTermMemoryMixin
+from parrot.memory.unified import MemoryConfig, UnifiedMemoryManager
 
 
-def _make_episode(**overrides) -> EpisodicMemory:
+def _make_episode(**overrides: Any) -> EpisodicMemory:
+    """Build a successful episode suitable for offline consolidation."""
     defaults = {
         "agent_id": "test-agent",
         "situation": "user asked about pgvector JSONB merges",
@@ -40,7 +37,10 @@ def _make_episode(**overrides) -> EpisodicMemory:
 
 
 class TestEndToEnd:
-    async def test_dream_end_to_end(self, tmp_path):
+    """Keep real consolidation, recovery, and SQLite interoperability coverage."""
+
+    async def test_dream_end_to_end(self, tmp_path: Path) -> None:
+        """Surface a real consolidated page through an injected search boundary."""
         backend = FAISSBackend(dimension=4)
         store = EpisodicMemoryStore(backend=backend)
         ep = _make_episode()
@@ -64,13 +64,25 @@ class TestEndToEnd:
         assert page is not None
         assert "JSONB" in page["body"]
 
-        # Retrieval half: UnifiedMemoryManager surfaces it in semantic_knowledge.
-        manager = UnifiedMemoryManager(namespace=namespace, brain=brain)
+        # The concrete BrainService belongs to FEAT-889. Adapt the real store
+        # only in this test to exercise the FEAT-892 manager boundary offline.
+        async def search(query: str, tenant_id: str, max_tokens: int) -> str:
+            """Bind the test service to this dream cycle's namespace."""
+            assert tenant_id == namespace.tenant_id
+            return await brain.search(query, max_tokens=max_tokens)
+
+        service = MagicMock()
+        service.search = AsyncMock(side_effect=search)
+        manager = UnifiedMemoryManager(
+            namespace=namespace, brain_service=service, config=MemoryConfig(enable_brain=True)
+        )
         ctx = await manager.get_context_for_query("JSONB merges", "u1", "s1")
         assert "JSONB" in ctx.semantic_knowledge
         assert "brain_knowledge" in ctx.to_prompt_string()
+        service.search.assert_awaited_once_with("JSONB merges", namespace.tenant_id, manager.config.max_context_tokens)
 
-    async def test_dream_crash_recovery(self, tmp_path):
+    async def test_dream_crash_recovery(self, tmp_path: Path) -> None:
+        """Avoid duplicate consolidation after losing scheduler state."""
         backend = FAISSBackend(dimension=4)
         store = EpisodicMemoryStore(backend=backend)
         ep = _make_episode(agent_id="crash-agent")
@@ -96,7 +108,8 @@ class TestEndToEnd:
         assert report2.episodes_collected == 0
         assert report2.pages_written == []
 
-    async def test_brain_db_interop(self, tmp_path):
+    async def test_brain_db_interop(self, tmp_path: Path) -> None:
+        """Read BrainStore writes through the standard SQLite wiki store."""
         brain = BrainStore(tmp_path / "brain", wiki_name="brain-interop")
         result = await brain.remember("interop check", title="Interop", category="note")
 
@@ -106,39 +119,67 @@ class TestEndToEnd:
         assert page["body"] == "interop check"
 
 
-class MockBrainAgent(LongTermMemoryMixin):
-    """Minimal test agent exercising the brain/dream wiring (TASK-1989)."""
+class MemoryHost:
+    """Provide the cooperative host lifecycle required by AgentMemoryMixin."""
+
+    async def configure(self, app: Any = None) -> None:
+        """Allow memory configuration without acquiring external host resources."""
+        self.configure_skipped = False
+
+    async def cleanup(self) -> None:
+        """Observe completion of cooperative resource cleanup."""
+        self.host_cleaned = True
+
+
+class MockBrainAgent(AgentMemoryMixin, MemoryHost):
+    """Minimal host using real memory storage and an injected brain service."""
 
     name = "mixin-agent"
-    enable_long_term_memory = True
-    episodic_backend = "faiss"
-    episodic_faiss_path = None
-    skill_inject_context = False
-    skill_expose_tools = False
+    tenant_id = "test-tenant"
+    enable_episodic_memory = True
 
-    def __init__(self, brain_storage_dir: str | None = None, enable_brain: bool = False):
-        self._llm = None
-        self.conversation_memory = None
+    def __init__(self, storage_path: Path, enable_brain: bool = False) -> None:
+        """Isolate persistence and keep brain capability independently configurable."""
         self.logger = MagicMock()
         self.enable_brain = enable_brain
-        self.brain_storage_dir = brain_storage_dir
+        self.agent_memory_config = {"storage_path": str(storage_path)}
 
 
 class TestMixinLifecycle:
-    async def test_brain_disabled_noop(self):
-        agent = MockBrainAgent(enable_brain=False)
-        await agent._configure_long_term_memory()
-        assert agent._dream_scheduler is None
-        assert agent._memory_manager is not None
-        await agent._cleanup_long_term_memory()
+    """Check service lifecycle ownership with the replacement memory facade."""
 
-    async def test_brain_lifecycle_start_stop(self, tmp_path):
-        agent = MockBrainAgent(
-            brain_storage_dir=str(tmp_path / "brain"), enable_brain=True
-        )
-        await agent._configure_long_term_memory()
-        assert agent._dream_scheduler is not None
-        assert agent._memory_manager is not None
+    async def test_brain_disabled_noop(self, tmp_path: Path) -> None:
+        """Keep episodic memory usable without constructing a brain service."""
+        agent = MockBrainAgent(tmp_path / "memory.sqlite3", enable_brain=False)
+        try:
+            await agent.configure()
+            assert agent.brain_service is None
+            assert agent._memory_manager is not None
+            assert agent._memory_manager.brain_service is None
+        finally:
+            await agent.cleanup()
+        assert agent._memory_manager is None
+        assert agent.host_cleaned is True
 
-        await agent._cleanup_long_term_memory()
-        assert agent._dream_scheduler is None
+    async def test_brain_lifecycle_start_stop(self, tmp_path: Path) -> None:
+        """Start the injected service once and stop it before closing memory."""
+        agent = MockBrainAgent(tmp_path / "memory.sqlite3", enable_brain=True)
+        service = MagicMock(spec=["start", "stop", "search", "forget_derived"])
+        service.start = AsyncMock()
+        service.stop = AsyncMock()
+        service.search = AsyncMock(return_value="distilled insight")
+        service.forget_derived = AsyncMock(return_value=[])
+        agent.brain_service = service
+        try:
+            await agent.configure()
+            await agent.configure()
+            service.start.assert_awaited_once_with()
+            assert agent._memory_manager is not None
+            assert agent._memory_manager.brain_service is service
+            assert agent._memory_manager.episodic is not None
+        finally:
+            await agent.cleanup()
+        await agent.cleanup()
+        service.stop.assert_awaited_once_with()
+        assert agent._memory_manager is None
+        assert agent.host_cleaned is True

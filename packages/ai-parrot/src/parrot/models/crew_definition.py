@@ -16,7 +16,14 @@ from datetime import datetime, timezone
 from enum import Enum
 import uuid
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 
 
 class ExecutionMode(str, Enum):
@@ -303,10 +310,16 @@ class CrewDefinition(BaseModel):
         description="Last update timestamp"
     )
 
-    model_config = ConfigDict(
-        extra="forbid",
-        json_encoders={datetime: lambda v: v.isoformat()},
-    )
+    model_config = ConfigDict(extra="forbid")
+
+    @field_serializer("created_at", "updated_at", when_used="json")
+    def _serialize_timestamps(self, value: datetime) -> str:
+        """Serialize timestamps with ``datetime.isoformat()`` in JSON mode.
+
+        Replaces the deprecated ``json_encoders`` config entry while keeping
+        its exact output (``+00:00`` offsets rather than pydantic's ``Z``).
+        """
+        return value.isoformat()
 
     @field_validator("infographic_theme", mode="before")
     @classmethod

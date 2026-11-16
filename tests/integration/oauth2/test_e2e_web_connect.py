@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -51,6 +52,7 @@ async def test_e2e_web_connect_principal_keyed(
 
     with (
         patch("parrot.auth.oauth2_routes.WEB_OAUTH_ALLOWED_ORIGINS", ["https://app.example.com"]),
+        patch.dict(os.environ, {"INTEGRATIONS_STORE": "documentdb"}),
         patch("parrot.auth.oauth2.persistence.DocumentDb", mock_db_cls),
     ):
         response = await make_oauth2_callback("jira")(request)

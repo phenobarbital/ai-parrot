@@ -135,6 +135,46 @@ def _published_events(dispatcher: CodexCodeDispatcher) -> list[dict[str, Any]]:
     return events
 
 
+@pytest.mark.asyncio
+async def test_codex_explicit_blocker_is_valid_structured_output(
+    dispatcher: CodexCodeDispatcher,
+    brief: ResearchOutput,
+    _patch_worktree_base: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A no-change blocker is a real CLI response; the engine must retain its explanation."""
+    output = DevelopmentOutput(
+        files_changed=[],
+        commit_shas=[],
+        summary="Stopped before edits: durable exposure admission requires an out-of-scope store change.",
+        incomplete_tasks=["TASK-5674"],
+    )
+
+    async def fake_create(command: Sequence[str]) -> _FakeCodexProcess:
+        """Replay the successful CLI output shape from the reported blocked attempt."""
+        _write_output(command, output.model_dump_json())
+        return _FakeCodexProcess(
+            stdout_lines=[
+                json.dumps(
+                    {"type": "item.completed", "item": {"type": "agent_message", "text": output.model_dump_json()}}
+                )
+                + "\n",
+                '{"type":"turn.completed","usage":{"input_tokens":10,"output_tokens":20}}\n',
+            ]
+        )
+
+    monkeypatch.setattr(dispatcher, "_create_process", fake_create)
+    result = await dispatcher.dispatch(
+        brief=brief,
+        profile=CodexCodeDispatchProfile(),
+        output_model=DevelopmentOutput,
+        run_id="blocked-run",
+        node_id="development.sdd-coder-codex",
+        cwd=str(_patch_worktree_base),
+    )
+    assert result == output
+
+
 class TestCodexCommandAndEvents:
     @pytest.mark.asyncio
     async def test_dispatch_builds_command_and_maps_jsonl_events(

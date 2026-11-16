@@ -9,6 +9,31 @@ from parrot.knowledge.lint.context import LintContext
 from parrot.knowledge.lint.models import Finding, FixResult, Severity
 from parrot.knowledge.lint.rule import make_fingerprint
 from parrot.knowledge.pageindex.okf.concept_id import _slugify
+from parrot.knowledge.wiki.symbols import parse_sym_id, sym_concept_id
+
+
+def _symbol_identity(concept_id: str) -> str:
+    """Return *concept_id* without its ``sym:`` repeat-ordinal suffix.
+
+    ``sym:<path>#<qualname>~<n>`` marks a repeated definition of one qualname
+    in one file (a property setter, an ``@overload`` stub, a conditional
+    redefinition). Every repeat shares the first occurrence's title by
+    construction, so it is the same symbol, not a slug collision.
+
+    Args:
+        concept_id: Any page concept id.
+
+    Returns:
+        The ordinal-free ``sym:`` id, or *concept_id* unchanged when it is
+        not a well-formed ``sym:`` id.
+    """
+    if not concept_id.startswith("sym:"):
+        return concept_id
+    try:
+        rel_path, qualname, _ordinal = parse_sym_id(concept_id)
+    except ValueError:
+        return concept_id
+    return sym_concept_id(rel_path, qualname)
 
 
 def _finding(rule_id: str, severity: Severity, subjects: list[str], message: str, **data: object) -> Finding:
@@ -65,7 +90,12 @@ class DuplicateSlugRule(_ReportOnly):
     rule_id, default_severity = "duplicate-slug", "warning"
 
     async def check(self, ctx: LintContext) -> list[Finding]:
-        """Report every slug shared by two or more page identifiers."""
+        """Report every slug shared by pages of two or more distinct symbols.
+
+        Repeat-ordinal variants of one ``sym:`` id (``X`` and ``X~2``, e.g. a
+        property and its setter) count as one symbol. A reported finding still
+        lists every page id, so its fingerprint is unchanged.
+        """
         groups: dict[str, list[str]] = defaultdict(list)
         for page in await ctx.pages():
             groups[_slugify(str(page.get("title") or page["concept_id"]))].append(str(page["concept_id"]))
@@ -78,7 +108,7 @@ class DuplicateSlugRule(_ReportOnly):
                 slug=slug,
             )
             for slug, ids in sorted(groups.items())
-            if len(ids) > 1
+            if len({_symbol_identity(concept_id) for concept_id in ids}) > 1
         ]
 
 

@@ -11,6 +11,12 @@ from parrot.auth.oauth2.persistence import list_users_integrations
 CONNECTED_AT = datetime(2026, 10, 30, tzinfo=timezone.utc)
 
 
+@pytest.fixture(autouse=True)
+def _pin_documentdb(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep tests that mock DocumentDB on the DocumentDB backend."""
+    monkeypatch.setenv("INTEGRATIONS_STORE", "documentdb")
+
+
 def _integration_document(provider: str, **overrides: object) -> dict[str, object]:
     """Build a valid stored integration document for a provider."""
     document: dict[str, object] = {

@@ -13,6 +13,7 @@ from parrot.knowledge.bookstore.toolkit import BookstoreToolkit
 from .conftest import SAMPLE_MARKDOWN
 
 EXPECTED_TOOLS = {
+    "bookstore_find_books",
     "bookstore_catalog_search",
     "bookstore_list_books",
     "bookstore_get_card",
@@ -272,3 +273,41 @@ async def test_search_expand_related_respects_max_books(toolkit, bookstore, monk
     monkeypatch.setattr(bookstore, "search", _spy)
     await toolkit.search("anything", max_books=2, expand_related=True)
     assert captured == {"expand_related": True, "max_books": 2}
+
+
+# ---------------------------------------------------------------------------
+# FEAT-876 TASK-5480 — find_books
+# ---------------------------------------------------------------------------
+
+
+def test_find_books_is_a_read_tool():
+    assert "find_books" in BookstoreToolkit.read_tools
+    assert len(BookstoreToolkit.read_tools) == 15
+
+
+@pytest.mark.asyncio
+async def test_toolkit_find_books_clamps_and_delegates(toolkit, bookstore, monkeypatch):
+    captured: dict = {}
+    expected = {"source": "catalog_fts", "books": [], "hint": "x"}
+
+    async def _spy(query, top_k=5):
+        captured["query"] = query
+        captured["top_k"] = top_k
+        return expected
+
+    monkeypatch.setattr(bookstore, "find_books", _spy)
+    assert await toolkit.find_books("stoic ethics", top_k=999) is expected
+    assert captured == {"query": "stoic ethics", "top_k": 50}
+    await toolkit.find_books("stoic ethics", top_k=0)
+    assert captured["top_k"] == 1
+
+
+@pytest.mark.asyncio
+async def test_toolkit_find_books_payload(toolkit, bookstore, book_md):
+    card, _ = await bookstore.add_book(book_md)
+    result = await toolkit.find_books("vector search")
+    assert result["source"] == "catalog_fts"
+    assert result["hint"]
+    assert result["books"][0]["book_id"] == card.book_id
+    tools = {tool.name: tool for tool in toolkit.get_tools_sync()}
+    assert "START HERE" in tools["bookstore_find_books"].description

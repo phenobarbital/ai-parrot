@@ -191,29 +191,47 @@ class TestRestoreUserMCPServers:
 
     @pytest.mark.asyncio
     async def test_logs_warning_when_vault_credential_missing(self) -> None:
-        """Logs WARNING and skips server when Vault credential is not found in DB."""
+        """Logs WARNING and skips server when Vault credential is missing."""
         self_ = _make_self()
         tool_manager = _make_tool_manager()
         session = _make_session()
 
         config = _make_sample_config(server_name="perplexity", vault_name="mcp_perplexity_a")
 
-        mock_db = AsyncMock()
-        mock_db.read_one = AsyncMock(return_value=None)  # Vault cred missing
-        mock_db_cm = AsyncMock()
-        mock_db_cm.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_db_cm.__aexit__ = AsyncMock(return_value=False)
-
         with (
             patch("parrot.handlers.agent._MCPPersistenceService") as mock_svc,
             patch("navigator_session.vault.config.load_master_keys", return_value={1: b"k" * 32}),
-            patch("parrot.interfaces.documentdb.DocumentDb", return_value=mock_db_cm),
+            patch("parrot.handlers.agent.retrieve_vault_credential", side_effect=KeyError("missing")),
         ):
             mock_svc.return_value.load_user_mcp_configs = AsyncMock(return_value=[config])
             await _restore_fn(self_, tool_manager=tool_manager, request_session=session, agent_name="a")
 
         self_.logger.warning.assert_called()
         tool_manager.add_mcp_server.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_restore_merges_vault_secret(self) -> None:
+        """Merges the retrieved Vault secret into the MCP factory arguments."""
+        self_ = _make_self()
+        tool_manager = _make_tool_manager()
+        session = _make_session()
+        config = _make_sample_config(server_name="perplexity", params={"transport": "stdio"})
+        factory = MagicMock(return_value=MagicMock())
+
+        with (
+            patch("parrot.handlers.agent._MCPPersistenceService") as mock_svc,
+            patch("navigator_session.vault.config.load_master_keys", return_value={1: b"k" * 32}),
+            patch(
+                "parrot.handlers.agent.retrieve_vault_credential",
+                new=AsyncMock(return_value={"api_key": "k"}),
+            ),
+            patch("parrot.handlers.agent._get_factory_map", return_value={"perplexity": factory}),
+        ):
+            mock_svc.return_value.load_user_mcp_configs = AsyncMock(return_value=[config])
+            await _restore_fn(self_, tool_manager=tool_manager, request_session=session, agent_name="a")
+
+        factory.assert_called_once_with(transport="stdio", api_key="k")
+        tool_manager.add_mcp_server.assert_called_once_with(factory.return_value)
 
     @pytest.mark.asyncio
     async def test_continues_after_individual_server_failure(self) -> None:

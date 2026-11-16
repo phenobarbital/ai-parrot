@@ -14,10 +14,7 @@ from pydantic import BaseModel, Field
 
 from parrot.knowledge.pageindex.segments import normalize_title
 
-try:
-    import pymupdf
-except ImportError:  # pragma: no cover — pyproject pins pymupdf.
-    pymupdf = None  # type: ignore[assignment]
+from parrot.knowledge.pageindex._pymupdf import pymupdf
 
 
 logger = logging.getLogger(__name__)

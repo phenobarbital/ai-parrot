@@ -21,18 +21,13 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from aiohttp import web
 from navconfig.logging import logging
 from navigator.views import BaseView
 
-from ..interfaces.documentdb import DocumentDb
-
-# Collection names
-DASHBOARDS_COLLECTION = "dashboards"
-TABS_COLLECTION = "dashboard_tabs"
-
+from .dashboard_store import get_dashboard_store
 
 async def _ensure_dashboard_indexes(app: web.Application) -> None:
     """Create indexes on dashboards and dashboard_tabs collections.
@@ -42,31 +37,7 @@ async def _ensure_dashboard_indexes(app: web.Application) -> None:
     """
     logger = logging.getLogger("Parrot.DashboardHandler")
     try:
-        async with DocumentDb() as db:
-            await db.create_indexes(
-                DASHBOARDS_COLLECTION,
-                [
-                    {"keys": [("dashboard_id", 1)], "unique": True},
-                    "module_id",
-                    "user_id",
-                    {"keys": [("module_id", 1), ("user_id", 1)]},
-                ],
-            )
-            await db.create_indexes(
-                TABS_COLLECTION,
-                [
-                    {"keys": [("tab_id", 1)], "unique": True},
-                    "dashboard_id",
-                    "module_id",
-                    "user_id",
-                    {"keys": [("dashboard_id", 1), ("tab_id", 1)], "unique": True},
-                ],
-            )
-            logger.info(
-                "Dashboard indexes created on '%s' and '%s'",
-                DASHBOARDS_COLLECTION,
-                TABS_COLLECTION,
-            )
+        await get_dashboard_store().ensure_indexes()
     except Exception as exc:
         logger.warning("Failed to create dashboard indexes: %s", exc)
 
@@ -110,49 +81,23 @@ class DashboardHandler(BaseView):
 
     async def _get_one(self, dashboard_id: str) -> web.Response:
         """Return a single dashboard with its tabs."""
-        async with DocumentDb() as db:
-            dashboard = await db.read_one(
-                DASHBOARDS_COLLECTION,
-                {"dashboard_id": dashboard_id},
+        store = get_dashboard_store()
+        dashboard = await store.get_dashboard(dashboard_id)
+        if not dashboard:
+            return self.error(
+                response={"message": f"Dashboard '{dashboard_id}' not found"},
+                status=404,
             )
-            if not dashboard:
-                return self.error(
-                    response={"message": f"Dashboard '{dashboard_id}' not found"},
-                    status=404,
-                )
-            # Strip MongoDB internal _id
-            dashboard.pop("_id", None)
-
-            # Fetch associated tabs
-            tabs = await db.read(
-                TABS_COLLECTION,
-                {"dashboard_id": dashboard_id},
-                sort=[("index", 1)],
-            )
-            for tab in tabs:
-                tab.pop("_id", None)
-
-            dashboard["tabs"] = tabs
-            return self.json_response(dashboard)
+        dashboard["tabs"] = await store.list_tabs(dashboard_id)
+        return self.json_response(dashboard)
 
     async def _get_list(self) -> web.Response:
         """Return list of dashboards, optionally filtered by module_id or user_id."""
         qs = self.query_parameters(self.request)
-        query: Dict[str, Any] = {}
-
-        if module_id := qs.get("module_id"):
-            query["module_id"] = module_id
-        if user_id := qs.get("user_id"):
-            query["user_id"] = user_id
-
-        async with DocumentDb() as db:
-            dashboards = await db.read(
-                DASHBOARDS_COLLECTION,
-                query or None,
-                sort=[("created_at", -1)],
-            )
-            for d in dashboards:
-                d.pop("_id", None)
+        dashboards = await get_dashboard_store().list_dashboards(
+            module_id=qs.get("module_id"),
+            user_id=qs.get("user_id"),
+        )
 
         return self.json_response({
             "dashboards": dashboards,
@@ -195,8 +140,11 @@ class DashboardHandler(BaseView):
             "updated_at": now,
         }
 
-        async with DocumentDb() as db:
-            await db.write(DASHBOARDS_COLLECTION, doc)
+        if not await get_dashboard_store().create_dashboard(doc):
+            return self.json_response(
+                {"message": f"Dashboard '{dashboard_id}' already exists"},
+                status=409,
+            )
 
         return self.json_response(
             {"message": "Dashboard created", "dashboard_id": dashboard_id},
@@ -234,20 +182,10 @@ class DashboardHandler(BaseView):
             "updated_at": now,
         }
 
-        async with DocumentDb() as db:
-            exists = await db.exists(
-                DASHBOARDS_COLLECTION,
-                {"dashboard_id": dashboard_id},
-            )
-            if not exists:
-                return self.error(
-                    response={"message": f"Dashboard '{dashboard_id}' not found"},
-                    status=404,
-                )
-            await db.update(
-                DASHBOARDS_COLLECTION,
-                {"dashboard_id": dashboard_id},
-                {"$set": update_fields},
+        if not await get_dashboard_store().update_dashboard(dashboard_id, update_fields):
+            return self.error(
+                response={"message": f"Dashboard '{dashboard_id}' not found"},
+                status=404,
             )
 
         return self.json_response(
@@ -286,20 +224,10 @@ class DashboardHandler(BaseView):
         patch_data.pop("dashboard_id", None)
         patch_data["updated_at"] = self._now()
 
-        async with DocumentDb() as db:
-            exists = await db.exists(
-                DASHBOARDS_COLLECTION,
-                {"dashboard_id": dashboard_id},
-            )
-            if not exists:
-                return self.error(
-                    response={"message": f"Dashboard '{dashboard_id}' not found"},
-                    status=404,
-                )
-            await db.update(
-                DASHBOARDS_COLLECTION,
-                {"dashboard_id": dashboard_id},
-                {"$set": patch_data},
+        if not await get_dashboard_store().update_dashboard(dashboard_id, patch_data):
+            return self.error(
+                response={"message": f"Dashboard '{dashboard_id}' not found"},
+                status=404,
             )
 
         return self.json_response({
@@ -318,20 +246,11 @@ class DashboardHandler(BaseView):
                 status=400,
             )
 
-        async with DocumentDb() as db:
-            exists = await db.exists(
-                DASHBOARDS_COLLECTION,
-                {"dashboard_id": dashboard_id},
+        if not await get_dashboard_store().delete_dashboard(dashboard_id):
+            return self.error(
+                response={"message": f"Dashboard '{dashboard_id}' not found"},
+                status=404,
             )
-            if not exists:
-                return self.error(
-                    response={"message": f"Dashboard '{dashboard_id}' not found"},
-                    status=404,
-                )
-            # Remove all tabs first
-            await db.delete(TABS_COLLECTION, {"dashboard_id": dashboard_id})
-            # Remove the dashboard
-            await db.delete(DASHBOARDS_COLLECTION, {"dashboard_id": dashboard_id})
 
         return self.json_response(
             {"message": f"Dashboard '{dashboard_id}' and its tabs deleted"}
@@ -384,29 +303,17 @@ class DashboardTabHandler(BaseView):
 
     async def _get_one_tab(self, dashboard_id: str, tab_id: str) -> web.Response:
         """Return a single tab."""
-        async with DocumentDb() as db:
-            tab = await db.read_one(
-                TABS_COLLECTION,
-                {"dashboard_id": dashboard_id, "tab_id": tab_id},
+        tab = await get_dashboard_store().get_tab(dashboard_id, tab_id)
+        if not tab:
+            return self.error(
+                response={"message": f"Tab '{tab_id}' not found"},
+                status=404,
             )
-            if not tab:
-                return self.error(
-                    response={"message": f"Tab '{tab_id}' not found"},
-                    status=404,
-                )
-            tab.pop("_id", None)
-            return self.json_response(tab)
+        return self.json_response(tab)
 
     async def _get_tabs(self, dashboard_id: str) -> web.Response:
         """Return all tabs for a dashboard, ordered by index."""
-        async with DocumentDb() as db:
-            tabs = await db.read(
-                TABS_COLLECTION,
-                {"dashboard_id": dashboard_id},
-                sort=[("index", 1)],
-            )
-            for tab in tabs:
-                tab.pop("_id", None)
+        tabs = await get_dashboard_store().list_tabs(dashboard_id)
 
         return self.json_response({
             "tabs": tabs,
@@ -445,45 +352,37 @@ class DashboardTabHandler(BaseView):
         tab_id = data.get("tab_id") or uuid.uuid4().hex
         now = self._now()
 
-        # Determine next index
-        async with DocumentDb() as db:
-            # Verify parent dashboard exists
-            parent_exists = await db.exists(
-                DASHBOARDS_COLLECTION,
-                {"dashboard_id": dashboard_id},
+        store = get_dashboard_store()
+        if not await store.dashboard_exists(dashboard_id):
+            return self.error(
+                response={"message": f"Dashboard '{dashboard_id}' not found"},
+                status=404,
             )
-            if not parent_exists:
-                return self.error(
-                    response={"message": f"Dashboard '{dashboard_id}' not found"},
-                    status=404,
-                )
 
-            existing_tabs = await db.read(
-                TABS_COLLECTION,
-                {"dashboard_id": dashboard_id},
+        next_index = data.get("index", len(await store.list_tabs(dashboard_id)))
+        doc: Dict[str, Any] = {
+            "tab_id": tab_id,
+            "dashboard_id": dashboard_id,
+            "title": title,
+            "icon": data.get("icon", "📊"),
+            "index": next_index,
+            "layout_mode": data.get("layout_mode", "grid"),
+            "grid_mode": data.get("grid_mode", "flexible"),
+            "template": data.get("template", "default"),
+            "pane_size": data.get("pane_size", 300),
+            "closable": data.get("closable", True),
+            "component": data.get("component"),
+            "widgets": data.get("widgets", []),
+            "module_id": data.get("module_id", ""),
+            "user_id": data.get("user_id") or self._user_id(),
+            "created_at": now,
+            "updated_at": now,
+        }
+        if not await store.create_tab(doc):
+            return self.json_response(
+                {"message": f"Tab '{tab_id}' already exists"},
+                status=409,
             )
-            next_index = data.get("index", len(existing_tabs))
-
-            doc: Dict[str, Any] = {
-                "tab_id": tab_id,
-                "dashboard_id": dashboard_id,
-                "title": title,
-                "icon": data.get("icon", "📊"),
-                "index": next_index,
-                "layout_mode": data.get("layout_mode", "grid"),
-                "grid_mode": data.get("grid_mode", "flexible"),
-                "template": data.get("template", "default"),
-                "pane_size": data.get("pane_size", 300),
-                "closable": data.get("closable", True),
-                "component": data.get("component"),
-                "widgets": data.get("widgets", []),
-                "module_id": data.get("module_id", ""),
-                "user_id": data.get("user_id") or self._user_id(),
-                "created_at": now,
-                "updated_at": now,
-            }
-
-            await db.write(TABS_COLLECTION, doc)
 
         return self.json_response(
             {"message": "Tab created", "tab_id": tab_id},
@@ -527,20 +426,10 @@ class DashboardTabHandler(BaseView):
             "updated_at": now,
         }
 
-        async with DocumentDb() as db:
-            exists = await db.exists(
-                TABS_COLLECTION,
-                {"dashboard_id": dashboard_id, "tab_id": tab_id},
-            )
-            if not exists:
-                return self.error(
-                    response={"message": f"Tab '{tab_id}' not found"},
-                    status=404,
-                )
-            await db.update(
-                TABS_COLLECTION,
-                {"dashboard_id": dashboard_id, "tab_id": tab_id},
-                {"$set": update_fields},
+        if not await get_dashboard_store().update_tab(dashboard_id, tab_id, update_fields):
+            return self.error(
+                response={"message": f"Tab '{tab_id}' not found"},
+                status=404,
             )
 
         return self.json_response(
@@ -581,20 +470,10 @@ class DashboardTabHandler(BaseView):
         patch_data.pop("dashboard_id", None)
         patch_data["updated_at"] = self._now()
 
-        async with DocumentDb() as db:
-            exists = await db.exists(
-                TABS_COLLECTION,
-                {"dashboard_id": dashboard_id, "tab_id": tab_id},
-            )
-            if not exists:
-                return self.error(
-                    response={"message": f"Tab '{tab_id}' not found"},
-                    status=404,
-                )
-            await db.update(
-                TABS_COLLECTION,
-                {"dashboard_id": dashboard_id, "tab_id": tab_id},
-                {"$set": patch_data},
+        if not await get_dashboard_store().update_tab(dashboard_id, tab_id, patch_data):
+            return self.error(
+                response={"message": f"Tab '{tab_id}' not found"},
+                status=404,
             )
 
         return self.json_response({
@@ -614,19 +493,10 @@ class DashboardTabHandler(BaseView):
                 status=400,
             )
 
-        async with DocumentDb() as db:
-            exists = await db.exists(
-                TABS_COLLECTION,
-                {"dashboard_id": dashboard_id, "tab_id": tab_id},
-            )
-            if not exists:
-                return self.error(
-                    response={"message": f"Tab '{tab_id}' not found"},
-                    status=404,
-                )
-            await db.delete(
-                TABS_COLLECTION,
-                {"dashboard_id": dashboard_id, "tab_id": tab_id},
+        if not await get_dashboard_store().delete_tab(dashboard_id, tab_id):
+            return self.error(
+                response={"message": f"Tab '{tab_id}' not found"},
+                status=404,
             )
 
         return self.json_response(

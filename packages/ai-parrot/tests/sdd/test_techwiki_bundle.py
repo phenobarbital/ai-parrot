@@ -380,14 +380,18 @@ def test_reference_index_page_is_never_rewritten(techwiki_repo: Path, monkeypatc
 
     monkeypatch.setattr(bundle_module, "_generated_pages", fake_generated)
     cfg = load_techwiki_config(techwiki_repo)
-    (techwiki_repo / "wiki" / "b" / "two.md").write_text("# Two\n", encoding="utf-8")  # drop the fixture's dangling link
+    (techwiki_repo / "wiki" / "b" / "two.md").write_text(
+        "# Two\n", encoding="utf-8"
+    )  # drop the fixture's dangling link
     pages, report = assemble(cfg, techwiki_repo)
     index = next(p for p in pages if p.source is None and p.module is None)
     assert "- [samplepkg.md](API-Reference-samplepkg.md)\n" in index.body
     assert report.dangling == [] and report.unlinked == []
 
 
-def test_unlinked_rows_reach_the_report_payload(techwiki_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_unlinked_rows_reach_the_report_payload(
+    techwiki_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """``unlinked`` is serialised next to ``dangling`` so operators can see dropped links; it never fails strict mode."""
     from parrot.sdd.techwiki import bundle as bundle_module
     from parrot.sdd.techwiki.bundle import report_payload
@@ -406,3 +410,19 @@ def test_unlinked_rows_reach_the_report_payload(techwiki_repo: Path, tmp_path: P
     write_bundle(pages, report, cfg, out)
     written = json.loads((out / "techwiki-report.json").read_text(encoding="utf-8"))
     assert written["unlinked"] == report.unlinked and written["dangling"] == []
+
+
+def test_bundle_strict_ignores_native_modules(api_repo: Path, tmp_path: Path) -> None:
+    """A native module is listed in the bundle report but never turns ``--strict`` into exit 4."""
+    package = api_repo / "packages" / "sample" / "src" / "samplepkg"
+    (package / "speed.pyx").write_text("def go():\n    return 1\n", encoding="utf-8")
+    plain_out, strict_out = tmp_path / "plain", tmp_path / "strict"
+    plain = main(["--root", str(api_repo), "--out", str(plain_out)])
+    strict = main(["--root", str(api_repo), "--out", str(strict_out), "--strict"])
+    assert strict == plain == 0
+    report = json.loads((strict_out / "techwiki-report.json").read_text(encoding="utf-8"))
+    assert report["skipped_modules"] == [
+        {"module": "samplepkg.speed", "reason": report["skipped_modules"][0]["reason"], "kind": "native"}
+    ]
+    (package / "broken.py").write_text("def broken(:\n    pass\n", encoding="utf-8")
+    assert main(["--root", str(api_repo), "--out", str(tmp_path / "broken"), "--strict"]) == 4

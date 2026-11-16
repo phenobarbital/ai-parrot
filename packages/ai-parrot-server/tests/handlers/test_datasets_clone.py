@@ -106,3 +106,34 @@ def test_clone_agent_dm_skips_uncopyable_source(
     # The entry is absent rather than present-and-shared.
     assert user_dm is None or "bad" not in user_dm._datasets
     assert "Failed to clone dataset" in caplog.text
+
+
+class _GovernedSource(TableSource):
+    """Self-governed test double with a fixed owner."""
+
+    @property
+    def self_governed(self) -> bool:
+        return True
+
+    def current_owner(self) -> str | None:
+        return "owner-a"
+
+
+def test_clone_agent_dm_drops_self_governed_df(logger: logging.Logger) -> None:
+    """A governed entry's frame and column types never reach the clone; others still do."""
+    gov = DatasetEntry(name="gov", source=_GovernedSource(table="s.t", driver="pg"))
+    gov._df = pd.DataFrame({"id": [1]})
+    gov._column_types = {"id": "integer"}
+    plain = DatasetEntry(name="rows", df=pd.DataFrame({"id": [1, 2]}))
+    dm = DatasetManager()
+    dm._datasets["gov"] = gov
+    dm._datasets["rows"] = plain
+
+    user_dm = _clone_agent_dm(_Agent(dm), logger)
+
+    assert user_dm is not None
+    cloned = user_dm._datasets["gov"]
+    assert cloned._df is None
+    assert not cloned.column_types
+    assert cloned.source is not gov.source
+    assert user_dm._datasets["rows"].df is not None

@@ -12,6 +12,11 @@ import pytest
 
 from parrot.mcp.toolkit_server import create_toolkit_mcp_server
 
+# The tests patch "parrot.mcp.toolkit_server.importlib.import_module", which is the
+# global importlib.import_module. Capture the real one first so the mocks' fallback
+# imports cannot recurse into the patch itself (issue:203c75e0c1ac).
+_REAL_IMPORT_MODULE = importlib.import_module
+
 
 @pytest.fixture
 def stub_config(tmp_path):
@@ -37,7 +42,7 @@ def mock_import_module(name):
         mock = MockModule()
         mock.StubToolkit = StubToolkit
         return mock
-    return importlib.import_module(name)
+    return _REAL_IMPORT_MODULE(name)
 
 
 def test_serves_stub_toolkit(stub_config, monkeypatch):

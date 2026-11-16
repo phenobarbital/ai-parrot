@@ -802,8 +802,11 @@ four reuse existing sources of truth — no new registries.
 
 ## AgentStudio Meta-Agent (Assistant)
 
-A conversational agent (`AgentStudioAgent`, `AnthropicClient` +
-`STUDIO_AGENT_MODEL`, default `claude-opus-5`) that builds agents,
+A conversational agent (`AgentStudioAgent`; provider chosen by
+`STUDIO_AGENT_LLM`, default `anthropic`, also `google` or any registered client
+key; model by `STUDIO_AGENT_MODEL`, which when unset falls back to the
+provider's own default — `anthropic` → `claude-opus-5`, `google` →
+`gemini-flash-latest`; an unknown provider fails at construction) that builds agents,
 skills, and KB files through natural language — internally, its tools
 call the SAME underlying service functions the endpoints above use (no
 duplicated logic), and every mutating tool requires HITL confirmation.

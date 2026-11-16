@@ -35,18 +35,16 @@ except ImportError:
     ResourceType = None
 from navigator.views import BaseView
 from ..bots.abstract import AbstractBot
+from ..memory.hydration import HydrationUnavailableError, SessionDeletedError
 from ..bots.search import WebSearchAgent
 from ..models.responses import AIMessage, AgentResponse
 from ..outputs import OutputMode, OutputFormatter
 from ..mcp.integration import MCPServerConfig
-from ..memory import RedisConversation
-from ..interfaces.documentdb import DocumentDb
 from ..tools.manager import ToolManager, get_toolkit_owner
 from .user_objects import UserObjectsHandler
 from .scope import resolve_request_tenant
 from ..mcp.registry import get_factory_map as _get_factory_map
 from .mcp_persistence import MCPPersistenceService as _MCPPersistenceService
-from .credentials_utils import decrypt_credential as _decrypt_credential
 from .toolkit_persistence import ToolkitConfigService
 from parrot.auth.credentials import AuthRequiredPayload, CredentialRequired
 from ..auth.exceptions import AuthorizationRequired
@@ -1135,7 +1133,7 @@ class AgentTalk(BaseView):
         Runs during :meth:`_setup_agent_tools` for agents that opt in by setting
         ``enable_mcp_restore = True``.  For each saved :class:`UserMCPServerConfig`:
 
-        1. Retrieves the Vault credential (if any) from DocumentDB.
+        1. Retrieves the Vault credential (if any) through the configured Vault store.
         2. Calls the appropriate ``create_*`` factory function.
         3. Registers the resulting config on the session ToolManager.
 
@@ -1192,10 +1190,9 @@ class AgentTalk(BaseView):
 
         # Load the vault key ring once for all secrets retrieval
         try:
-            from parrot.security.credentials_utils import credential_context
             from parrot.security.vault_utils import get_vault_keyring
 
-            keyring = get_vault_keyring()
+            get_vault_keyring()
         except Exception as exc:
             self.logger.warning("MCP restore: vault unavailable, skipping restore: %s", exc)
             return
@@ -1214,26 +1211,14 @@ class AgentTalk(BaseView):
                 secret_params: Dict[str, Any] = {}
                 if config.vault_credential_name:
                     try:
-                        async with DocumentDb() as db:
-                            doc = await db.read_one(
-                                "user_credentials",
-                                {
-                                    "user_id": user_id,
-                                    "name": config.vault_credential_name,
-                                },
-                            )
-                        if doc is None:
-                            self.logger.warning(
-                                "MCP restore: Vault credential '%s' missing " "for server '%s', skipping",
-                                config.vault_credential_name,
-                                config.server_name,
-                            )
-                            continue
-                        secret_params = _decrypt_credential(
-                            doc["credential"],
-                            credential_context(user_id, config.vault_credential_name),
-                            keyring,
+                        secret_params = await retrieve_vault_credential(user_id, config.vault_credential_name)
+                    except KeyError:
+                        self.logger.warning(
+                            "MCP restore: Vault credential '%s' missing " "for server '%s', skipping",
+                            config.vault_credential_name,
+                            config.server_name,
                         )
+                        continue
                     except Exception as exc:
                         self.logger.warning(
                             "MCP restore: failed to decrypt Vault credential " "'%s' for server '%s': %s",
@@ -1744,14 +1729,6 @@ class AgentTalk(BaseView):
                     list(_ws_originals.keys()),
                 )
 
-        # Use RedisConversation for history management if session_id is present
-        memory = None
-        if user_id and session_id:
-            try:
-                memory = RedisConversation()
-            except Exception as ex:
-                self.logger.warning(f"Failed to initialize RedisConversation: {ex}")
-
         # Temporarily swap in user's ToolManager if configured via PATCH
         original_tool_manager = agent.tool_manager
         original_enable_tools = agent.enable_tools
@@ -1852,7 +1829,6 @@ class AgentTalk(BaseView):
                         use_conversation_history=use_conversation_history,
                         output_mode=output_mode,
                         format_kwargs=format_kwargs,
-                        memory=memory,
                         llm=llm,
                         agent_name=agent_name,
                         client_message_id=client_message_id,
@@ -1873,7 +1849,6 @@ class AgentTalk(BaseView):
                         use_conversation_history=use_conversation_history,
                         output_mode=output_mode,
                         format_kwargs=format_kwargs,
-                        memory=memory,
                         **data,
                     )
                 else:
@@ -1891,13 +1866,18 @@ class AgentTalk(BaseView):
                         use_vector_context=use_vector_context,
                         use_conversation_history=use_conversation_history,
                         output_mode=output_mode,
+                        turn_id=client_message_id,
                         format_kwargs=format_kwargs,
-                        memory=memory,
                         llm=llm,
                         tenant=tenant,
                         **data,
                     )
                 turn_auth = self._turn_auth_requirement(response)
+        except SessionDeletedError:
+            return self.error(response={"message": "This conversation was deleted"}, status=410)
+        except HydrationUnavailableError as exc:
+            self.logger.error("AgentTalk: conversation history unavailable (fail closed): %s", exc)
+            return self.error(response={"message": "Conversation history is temporarily unavailable"}, status=503)
         except (AuthorizationRequired, CredentialRequired) as exc:
             # Translate the exception into a structured envelope so the web
             # frontend can render a "Connect" pill.  HTTP 200 — the chat call
@@ -2696,7 +2676,6 @@ class AgentTalk(BaseView):
         use_conversation_history: bool,
         output_mode: OutputMode,
         format_kwargs: Dict[str, Any],
-        memory: Optional[Any],
         llm: Optional[Any],
         agent_name: str = "",
         client_message_id: Optional[str] = None,
@@ -2750,7 +2729,7 @@ class AgentTalk(BaseView):
                 use_vector_context=use_vector_context,
                 use_conversation_history=use_conversation_history,
                 output_mode=output_mode,
-                memory=memory,
+                turn_id=client_message_id,
                 llm=llm,
                 tenant=tenant,
                 defer_suggestions=suggestions_trailer,
@@ -2818,63 +2797,6 @@ class AgentTalk(BaseView):
                 await self._write_auth_required_trailer(stream_resp, ai_message)
                 if suggestions_trailer:
                     await self._write_suggestions_trailer(stream_resp, bot, ai_message)
-
-            # Persist chat turn via ChatStorage
-            try:
-                chat_storage = self.request.app.get("chat_storage")
-                if chat_storage and user_id and session_id and ai_message:
-                    loop = asyncio.get_running_loop()
-                    _task = loop.create_task(
-                        chat_storage.save_turn(
-                            turn_id=client_message_id,
-                            user_id=user_id,
-                            session_id=session_id,
-                            agent_id=agent_name,
-                            user_message=ai_message.input or "",
-                            assistant_response=ai_message.response or "",
-                            output=ai_message.response or str(ai_message.output),
-                            output_mode=str(output_mode),
-                            data=ai_message.data,
-                            code=str(ai_message.code) if ai_message.code else None,
-                            model=getattr(ai_message, "model", None),
-                            provider=getattr(ai_message, "provider", None),
-                            response_time_ms=response_time_ms,
-                            tool_calls=[
-                                {
-                                    "name": getattr(t, "name", "unknown"),
-                                    "status": getattr(t, "status", "completed"),
-                                    "output": getattr(t, "output", None),
-                                    "arguments": getattr(t, "arguments", None),
-                                }
-                                for t in getattr(ai_message, "tool_calls", [])
-                            ],
-                            sources=[
-                                s if isinstance(s, dict) else s.to_dict()
-                                for s in getattr(ai_message, "source_documents", [])
-                            ],
-                            metadata={
-                                "usage": ai_message.usage.model_dump() if ai_message.usage is not None else None,
-                                "cost_usd": ai_message.usage.estimated_cost if ai_message.usage is not None else None,
-                                "tenant": tenant,
-                                "agent": agent_name,
-                            },
-                        )
-                    )
-                    # Log any exception raised inside the background save so it is
-                    # not silently swallowed when the task is garbage-collected.
-                    _task.add_done_callback(
-                        lambda t: (
-                            self.logger.warning(
-                                "Streamed chat-turn save failed for agent '%s': %s",
-                                agent_name,
-                                t.exception(),
-                            )
-                            if not t.cancelled() and t.exception()
-                            else None
-                        )
-                    )
-            except Exception as ex:
-                self.logger.warning("Error scheduling streamed chat turn save: %s", ex)
 
             # FEAT-249 Mode B: publish structured outputs via the Redis transport
             # when avatar_bifurcate is enabled and a FULL session is active.
@@ -3071,50 +2993,6 @@ class AgentTalk(BaseView):
             if _suggestions is not None:
                 obj_response["suggestions"] = _suggestions
             # self.logger.debug('Agent response: %s', obj_response)
-
-            # Persist chat turn via ChatStorage (hot + cold)
-            try:
-                chat_storage = self.request.app.get("chat_storage")
-                if chat_storage and user_id and session_id:
-                    loop = asyncio.get_running_loop()
-                    loop.create_task(
-                        chat_storage.save_turn(
-                            turn_id=client_message_id,
-                            user_id=user_id,
-                            session_id=session_id,
-                            agent_id=agent_name or "",
-                            user_message=response.input or "",
-                            assistant_response=response.response or "",
-                            output=output,
-                            output_mode=output_mode,
-                            data=response.data,
-                            code=str(response.code) if response.code else None,
-                            model=getattr(response, "model", None),
-                            provider=getattr(response, "provider", None),
-                            response_time_ms=response_time_ms,
-                            tool_calls=[
-                                {
-                                    "name": getattr(t, "name", "unknown"),
-                                    "status": getattr(t, "status", "completed"),
-                                    "output": getattr(t, "output", None),
-                                    "arguments": getattr(t, "arguments", None),
-                                }
-                                for t in getattr(response, "tool_calls", [])
-                            ],
-                            sources=[
-                                s if isinstance(s, dict) else s.to_dict()
-                                for s in getattr(response, "source_documents", [])
-                            ],
-                            metadata={
-                                "usage": response.usage.model_dump() if response.usage is not None else None,
-                                "cost_usd": response.usage.estimated_cost if response.usage is not None else None,
-                                "tenant": tenant,
-                                "agent": agent_name,
-                            },
-                        )
-                    )
-            except Exception as ex:
-                self.logger.warning("Error scheduling chat turn save: %s", ex)
 
             # FEAT-103: Auto-save data artifact if response includes structured data.
             # FEAT-224 (G5): Extended to recognise structured_* modes and persist the

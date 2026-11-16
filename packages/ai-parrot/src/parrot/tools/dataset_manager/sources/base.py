@@ -113,6 +113,30 @@ class DataSource(ABC):
         return False
 
     @property
+    def self_governed(self) -> bool:
+        """Whether this source enforces its own authorization and returns subject-scoped rows.
+
+        When True, DatasetManager does not wrap the source in AuthorizingDataSource, always
+        re-fetches, never uses its Redis cache, keeps its DataFrame per calling subject
+        (see ``current_owner``) and never copies it to another manager.
+
+        Returns:
+            False by default.
+        """
+        return False
+
+    def current_owner(self) -> str | None:
+        """Opaque, stable identifier of the subject calling right now, or None.
+
+        Only consulted for ``self_governed`` sources: DatasetEntry keys the loaded
+        DataFrame by it.
+
+        Returns:
+            None by default, and None whenever no subject can be resolved.
+        """
+        return None
+
+    @property
     @abstractmethod
     def cache_key(self) -> str:
         """Stable, unique string for Redis keying.

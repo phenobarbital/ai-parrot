@@ -5,9 +5,7 @@ from __future__ import annotations
 import json
 import threading
 from collections import OrderedDict
-
-from .models import CompiledQuery
-
+from typing import Protocol
 
 def _model_digest_of(cache_key: str) -> str:
     """Extract the model digest from a canonical JSON cache key.
@@ -29,12 +27,19 @@ def _model_digest_of(cache_key: str) -> str:
     raise ValueError("cache_key lacks a model digest component")
 
 
+class CacheableCompiled(Protocol):
+    """A compiled artefact with a canonical-JSON cache key whose first element is the model digest."""
+
+    @property
+    def cache_key(self) -> str: ...
+
+
 class CompileCache:
     """Bounded LRU keyed by ``CompiledQuery.cache_key`` with a model-digest index."""
 
     def __init__(self, max_entries: int = 512) -> None:
         self.max_entries = max_entries
-        self._data: OrderedDict[str, CompiledQuery] = OrderedDict()
+        self._data: OrderedDict[str, CacheableCompiled] = OrderedDict()
         self._by_model: dict[str, set[str]] = {}
         self._key_model: dict[str, str] = {}
         self._lock = threading.Lock()  # compile runs under asyncio.to_thread
@@ -49,14 +54,14 @@ class CompileCache:
                 if not keys:
                     del self._by_model[digest]
 
-    def get(self, key: str) -> CompiledQuery | None:
+    def get(self, key: str) -> CacheableCompiled | None:
         with self._lock:
             hit = self._data.get(key)
             if hit is not None:
                 self._data.move_to_end(key)
             return hit
 
-    def put(self, compiled: CompiledQuery) -> None:
+    def put(self, compiled: CacheableCompiled) -> None:
         """Insert by ``compiled.cache_key``; evict least-recently-used beyond the bound."""
         key = compiled.cache_key
         digest = _model_digest_of(key)  # validate before any mutation

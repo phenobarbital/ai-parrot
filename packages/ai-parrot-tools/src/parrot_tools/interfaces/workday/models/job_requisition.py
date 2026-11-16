@@ -1,5 +1,5 @@
 from typing import List, Optional, Union
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 
 class JobRequisition(BaseModel):
@@ -167,15 +167,17 @@ class JobRequisition(BaseModel):
     # Additional Hiring Data
     scheduled_weekly_hours: Optional[Union[int, float, str]] = None
 
-    @validator('is_posted', pre=True)
+    @field_validator('is_posted', mode="before")
+    @classmethod
     def parse_boolean_fields(cls, v):
         """Convert boolean-like values to proper booleans."""
         if isinstance(v, str):
             return v.lower() in ('true', '1', 'yes')
         return v
 
-    @validator('competencies', 'certifications', 'education_requirements', 'language_skills',
-               'work_experience', 'training_requirements', 'integration_ids', 'recruiters', pre=True)
+    @field_validator('competencies', 'certifications', 'education_requirements', 'language_skills',
+                     'work_experience', 'training_requirements', 'integration_ids', 'recruiters', mode="before")
+    @classmethod
     def parse_list_fields(cls, v):
         """Ensure list fields are properly parsed."""
         if v is None:
@@ -186,8 +188,9 @@ class JobRequisition(BaseModel):
             return v
         return []
 
-    @validator('number_of_openings', 'positions_allocated', 'positions_filled', 'positions_available',
-               'primary_compensation_basis', pre=True)
+    @field_validator('number_of_openings', 'positions_allocated', 'positions_filled', 'positions_available',
+                     'primary_compensation_basis', mode="before")
+    @classmethod
     def parse_integer_fields(cls, v):
         """Convert integer-like values to proper integers."""
         if v is None:
@@ -201,7 +204,8 @@ class JobRequisition(BaseModel):
                 return None
         return None
 
-    @validator('pay_rate_amount', 'scheduled_weekly_hours', pre=True)
+    @field_validator('pay_rate_amount', 'scheduled_weekly_hours', mode="before")
+    @classmethod
     def parse_numeric_fields(cls, v):
         """Convert numeric-like values to proper numbers (int or float)."""
         if v is None:
@@ -218,8 +222,9 @@ class JobRequisition(BaseModel):
                 return None
         return None
 
-    @validator('recruiting_start_date', 'target_hire_date', 'earliest_hire_date',
-               'created_date', 'last_updated_date', 'effective_date', 'posting_date', 'removal_date', pre=True)
+    @field_validator('recruiting_start_date', 'target_hire_date', 'earliest_hire_date',
+                     'created_date', 'last_updated_date', 'effective_date', 'posting_date', 'removal_date', mode="before")
+    @classmethod
     def parse_date_fields(cls, v):
         """Convert date objects to string format."""
         if v is None:
@@ -230,8 +235,9 @@ class JobRequisition(BaseModel):
             return v
         return str(v)
 
-    class Config:
+    model_config = ConfigDict(
         # Allow extra fields that might come from the API
-        extra = "allow"
+        extra="allow",
         # Use enum values for validation
-        use_enum_values = True
+        use_enum_values=True,
+    )

@@ -1,132 +1,116 @@
-"""Integration tests for long-term memory hooks in bot base classes."""
-import asyncio
+"""Integration tests for BasicAgent's built-in persistent-memory facade."""
+
+from pathlib import Path
+from typing import Any, AsyncIterator
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
-from parrot.memory.unified.mixin import LongTermMemoryMixin
-
-
-# ---------------------------------------------------------------------------
-# Minimal stubs to test create_system_prompt in isolation
-# ---------------------------------------------------------------------------
-
-class StubBot:
-    """Minimal bot stub that exercises create_system_prompt without heavy deps."""
-
-    system_prompt_template = "You are a helpful assistant. $context $chat_history $user_context"
-    _prompt_builder = None
-
-    def __init__(self):
-        self.logger = MagicMock()
-        self._dynamic_values = None
-
-    async def create_system_prompt(
-        self,
-        user_context: str = "",
-        vector_context: str = "",
-        conversation_context: str = "",
-        kb_context: str = "",
-        pageindex_context: str = "",
-        metadata=None,
-        memory_context=None,
-        **kwargs,
-    ) -> str:
-        """Simplified version mirroring the real implementation's contract."""
-        result = self.system_prompt_template
-        if memory_context:
-            result += f"\n\n{memory_context}"
-        return result
+from parrot.bots.agent import BasicAgent
+from parrot.clients.base import AbstractClient
+from parrot.memory.agent_memory import AgentMemoryMixin
+from parrot.memory.agent_memory.models import MemoryRequestScope
+from parrot.models import AIMessage, CompletionUsage
 
 
-class MixinBot(LongTermMemoryMixin, StubBot):
-    """Bot that uses the mixin."""
+class _Client(AbstractClient):
+    """Offline client double used to configure a real BasicAgent."""
 
-    name = "mixin-bot"
-    enable_long_term_memory = True
+    client_type = "agent-memory-migration"
+    supported_models = ["stub"]
 
-    def __init__(self):
-        super().__init__()
-        self.conversation_memory = None
+    def __init__(self) -> None:
+        """Initialize the deterministic client."""
+        super().__init__(model="stub")
+
+    async def get_client(self) -> "_Client":
+        """Return the configured client."""
+        return self
+
+    async def _ensure_client(self) -> "_Client":
+        """Satisfy the abstract client lifecycle."""
+        return self
+
+    async def ask(self, prompt: str, **kwargs: Any) -> AIMessage:
+        """Return a deterministic response."""
+        return AIMessage(
+            input=prompt,
+            output="reply",
+            response="reply",
+            model="stub",
+            provider=self.client_type,
+            usage=CompletionUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+        )
+
+    async def ask_stream(self, prompt: str, **kwargs: Any) -> AsyncIterator[str | AIMessage]:
+        """Yield one deterministic response."""
+        yield await self.ask(prompt, **kwargs)
+
+    async def invoke(self, *args: Any, **kwargs: Any) -> AIMessage:
+        """Satisfy the abstract client contract."""
+        raise NotImplementedError
+
+    async def resume(self, *args: Any, **kwargs: Any) -> AIMessage:
+        """Satisfy the abstract client contract."""
+        raise NotImplementedError
 
 
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
+def _scope() -> MemoryRequestScope:
+    """Build a deterministic request scope for the unconfigured path."""
+    return MemoryRequestScope(
+        tenant_id="default",
+        agent_id="memory-agent",
+        turn_id="turn-1",
+        identity_provenance="runtime_derived",
+    )
+
 
 class TestBotIntegrationHooks:
-    @pytest.mark.asyncio
-    async def test_system_prompt_without_memory_context(self):
-        """create_system_prompt works with memory_context=None (unchanged behaviour)."""
-        bot = StubBot()
-        prompt = await bot.create_system_prompt(memory_context=None)
-        assert "helpful assistant" in prompt
-        assert "\n\n" not in prompt  # no memory injected
+    """Verify BasicAgent owns exactly one cooperative memory facade."""
+
+    def test_basic_agent_has_single_memory_facade(self) -> None:
+        """Include AgentMemoryMixin once without requiring subclasses to repeat it."""
+        assert issubclass(BasicAgent, AgentMemoryMixin)
+        assert BasicAgent.__mro__.count(AgentMemoryMixin) == 1
+
+        class ConsumerAgent(BasicAgent):
+            """Representative live consumer that inherits only BasicAgent."""
+
+        assert ConsumerAgent.__mro__.count(AgentMemoryMixin) == 1
 
     @pytest.mark.asyncio
-    async def test_system_prompt_with_memory_context(self):
-        """Memory context is appended to the system prompt when provided."""
-        bot = StubBot()
-        prompt = await bot.create_system_prompt(memory_context="MEMORY: avoid X")
-        assert "MEMORY: avoid X" in prompt
-
-    @pytest.mark.asyncio
-    async def test_agent_without_mixin_unchanged(self):
-        """Bot without LongTermMemoryMixin works as before (no _memory_manager attr)."""
-        bot = StubBot()
-        assert not hasattr(bot, '_memory_manager')
-        # create_system_prompt with no memory_context is fine
-        prompt = await bot.create_system_prompt()
-        assert "helpful assistant" in prompt
-
-    @pytest.mark.asyncio
-    async def test_get_memory_context_called_when_manager_active(self):
-        """get_memory_context is called when _memory_manager is set."""
-        bot = MixinBot()
-        bot._memory_manager = AsyncMock()
-        mock_ctx = MagicMock()
-        mock_ctx.to_prompt_string.return_value = "MEMORY SECTION"
-        bot._memory_manager.get_context_for_query = AsyncMock(return_value=mock_ctx)
-
-        result = await bot.get_memory_context("query", "user1", "sess1")
-        assert result == "MEMORY SECTION"
-        bot._memory_manager.get_context_for_query.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_get_memory_context_no_manager(self):
-        """get_memory_context returns empty string when manager is None."""
-        bot = MixinBot()
-        bot._memory_manager = None
-        result = await bot.get_memory_context("query", "user1", "sess1")
-        assert result == ""
-
-    @pytest.mark.asyncio
-    async def test_post_response_hook_exception_safe(self):
-        """_post_response_memory_hook never raises even when record_interaction fails."""
-        bot = MixinBot()
-        bot._memory_manager = AsyncMock()
-        bot._memory_manager.record_interaction = AsyncMock(
-            side_effect=Exception("storage unavailable")
+    async def test_basic_agent_configures_real_memory_store(self, tmp_path: Path) -> None:
+        """Run the cooperative BaseBot/AgentMemoryMixin lifecycle with SQLite persistence."""
+        agent = BasicAgent(
+            name="memory-agent",
+            llm=_Client(),
+            memory_type="memory",
+            injection_detection=False,
+            enable_episodic_memory=True,
+            agent_memory_config={"storage_path": str(tmp_path / "agent-memory.sqlite3")},
         )
-        # Must not raise
-        await bot._post_response_memory_hook("query", MagicMock(), "user1", "sess1")
+
+        try:
+            await agent.configure()
+            manager = agent._memory_manager
+
+            assert manager is not None
+            assert manager.episodic is not None
+            assert manager.namespace.agent_id == agent.name
+            assert manager.config.enable_episodic is True
+        finally:
+            await agent.cleanup()
+
+        assert agent._memory_manager is None
 
     @pytest.mark.asyncio
-    async def test_post_response_hook_noop_without_manager(self):
-        """_post_response_memory_hook is a no-op when manager is None."""
-        bot = MixinBot()
-        bot._memory_manager = None
-        # Should return immediately without errors
-        await bot._post_response_memory_hook("query", "response", "user1", "sess1")
+    async def test_basic_agent_defaults_keep_memory_disabled(self) -> None:
+        """Keep the unchanged no-capability path empty until flags are enabled."""
+        agent = BasicAgent(name="memory-agent", llm=_Client(), injection_detection=False)
 
-    @pytest.mark.asyncio
-    async def test_memory_context_injected_into_system_prompt(self):
-        """When mixin provides memory context it appears in the assembled prompt."""
-        bot = MixinBot()
-        bot._memory_manager = AsyncMock()
-        mock_ctx = MagicMock()
-        mock_ctx.to_prompt_string.return_value = "<past_failures>\nDon't call X\n</past_failures>"
-        bot._memory_manager.get_context_for_query = AsyncMock(return_value=mock_ctx)
+        config = agent._resolve_agent_memory_config()
+        context = await agent.prepare_memory("query", scope=_scope())
 
-        mem_ctx = await bot.get_memory_context("test query", "user1", "s1")
-        prompt = await bot.create_system_prompt(memory_context=mem_ctx)
-        assert "Don't call X" in prompt
+        assert config.enable_episodic_memory is False
+        assert config.enable_user_memory is False
+        assert config.enable_brain is False
+        assert context.to_prompt_string() == ""

@@ -278,3 +278,37 @@ async def test_catalog_failure_keeps_successfully_published_tree(
 
     assert (tmp_path / "trees" / "handbook.json").is_file()
     assert not list((tmp_path / "trees").glob("*--staging-*.json"))
+
+
+@pytest.mark.asyncio
+async def test_reindex_keeps_manual_relations(tmp_path: Path) -> None:
+    """An ``updated`` re-index drops computed edges but never ``origin="manual"`` ones (S10)."""
+    bookstore = _bookstore(tmp_path)
+    source = tmp_path / "handbook.md"
+    other = tmp_path / "other.md"
+    source.write_text(_MARKDOWN, encoding="utf-8")
+    other.write_text(_MARKDOWN + "\nAdditional distinct material for the manual-edge book.\n", encoding="utf-8")
+    card, _ = await bookstore.add_book(source)
+    other_card, _ = await bookstore.add_book(other)
+    catalog = bookstore._catalog("project")
+    catalog.upsert_relations(
+        [
+            BookRelation(
+                src_book_id=card.book_id,
+                dst_book_id=other_card.book_id,
+                rel=rel,
+                origin=origin,
+                confidence=1.0,
+                weight=REL_WEIGHTS[rel],
+                computed_at="2026-11-11T00:00:00+00:00",
+            )
+            for rel, origin in (("parallels", "manual"), ("shares_topic", "deterministic"), ("contrasts_with", "llm"))
+        ]
+    )
+    source.write_text(_MARKDOWN.replace("serialized publication", "atomic publication"), encoding="utf-8")
+
+    _updated, status = await bookstore.add_book(source)
+
+    assert status == "updated"
+    origins = sorted(relation.origin for relation in catalog.list_relations(card.book_id))
+    assert origins == ["manual"]

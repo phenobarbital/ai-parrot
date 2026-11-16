@@ -16,6 +16,9 @@ from string import Template
 import asyncio
 from contextvars import ContextVar
 import warnings
+import copy
+import time
+from datetime import timezone
 from aiohttp import web
 from pydantic import BaseModel
 from navconfig.logging import logging
@@ -23,7 +26,7 @@ from navigator_auth.conf import AUTH_SESSION_OBJECT
 from parrot.interfaces.database import DBInterface
 from ..exceptions import ConfigError
 from ..core.exceptions import BudgetExhausted
-from ..conf import EMBEDDING_DEFAULT_MODEL, KB_DEFAULT_MODEL
+from ..conf import EMBEDDING_DEFAULT_MODEL, KB_DEFAULT_MODEL, REDIS_HISTORY_EXPLICIT
 from ..embeddings import get_model_recommendations
 from .prompts import (
     BASIC_SYSTEM_PROMPT,
@@ -48,6 +51,18 @@ from ..memory import (
     HistoryMessage,
     render_history,
 )
+from ..memory.hydration import (
+    HydrationError,
+    HydrationNotReadyError,
+    HydrationSource,
+    HydrationUnavailableError,
+    LocalSequenceAllocator,
+    SequenceAllocator,
+    SessionDeletedError,
+)
+from ..memory.persistence import TurnPresentation, TurnPublisher
+from parrot.core.events.lifecycle.events.memory import TurnCompletedEvent
+from parrot.observability.context import current_tenant
 from ..memory.compaction.models import (
     ContextBudget,
     CompactionCommit,
@@ -212,6 +227,54 @@ _RENDERED_SYSTEM_PROMPT: ContextVar[Optional[Dict[int, Optional[str]]]] = Contex
     "parrot_rendered_system_prompt", default=None
 )
 
+#: The last OUTPUT verdict of this task: ``(id(response), scanned_text, resulting_text, ctx)``. Set by
+#: `_run_output_pipeline` whenever the guardrails ran; read by `_stored_turn_text` so text the pipeline has
+#: already judged is not scanned again, while any OTHER text that is persisted still gets its own verdict.
+_OUTPUT_VERDICT: ContextVar[Optional[Tuple[int, str, str, Any]]] = ContextVar("parrot_output_verdict", default=None)
+
+_OUTPUT_BLOCKED_TEXT = "This response could not be delivered due to a content policy violation."
+
+#: `_fallback_sequence`: seconds before a FAILED read of the durable sequence floor is tried again, and the
+#: number of sessions whose floor state one bot remembers (cleared when exceeded).
+_FALLBACK_FLOOR_RETRY_S = 30.0
+_FALLBACK_FLOOR_CACHE_MAX = 10_000
+
+
+class _TurnSaveLocks:
+    """Per-session turn-save locks shared by every bot of this process (FEAT-895).
+
+    An entry exists only while a save of its session holds or awaits the lock, so the registry never grows with the
+    number of sessions served and a lock never outlives the event loop its saves ran on.
+    """
+
+    def __init__(self) -> None:
+        self._entries: Dict[Tuple[str, str, str], List[Any]] = {}  # key -> [asyncio.Lock, holders]
+
+    @asynccontextmanager
+    async def hold(self, key: Tuple[str, str, str]) -> AsyncIterator[None]:
+        """Hold ``key``'s lock for the body. Saves of one key run one at a time; other keys never wait.
+
+        Args:
+            key: ``(memory_key_id, user_id, session_id)`` of the session being saved.
+
+        Yields:
+            Nothing; the lock is held for the duration of the ``async with`` body.
+        """
+        entry = self._entries.get(key)
+        if entry is None:
+            entry = self._entries[key] = [asyncio.Lock(), 0]
+        entry[1] += 1  # no await between lookup and increment: atomic on one event loop
+        try:
+            async with entry[0]:
+                yield
+        finally:  # also runs for a waiter cancelled while queued, so the count stays exact
+            entry[1] -= 1
+            if entry[1] == 0 and self._entries.get(key) is entry:
+                del self._entries[key]
+
+
+_TURN_SAVE_LOCKS = _TurnSaveLocks()
+
 
 class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin, ToolInterface, VectorInterface, ABC):
     """AbstractBot.
@@ -285,6 +348,11 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
             self.context_search_limit = int(recs.get("recommended_search_limit", self.context_search_limit))
         if not self._user_set_score_threshold:
             self.context_score_threshold = float(recs.get("recommended_score_threshold", self.context_score_threshold))
+
+    turn_publisher: Optional[TurnPublisher] = None
+    hydration_source: Optional[HydrationSource] = None
+    sequence_allocator: Optional[SequenceAllocator] = None
+    """All three default to None and are also accepted as constructor kwargs (FEAT-886)."""
 
     def __init__(
         self,
@@ -613,8 +681,12 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
 
         # NEW: Unified Conversation Memory System
         self.conversation_memory: Optional[ConversationMemory] = None
-        self.memory_type: str = kwargs.get("memory_type", "memory")  # 'memory', 'file', 'redis'
+        self.memory_type: str = kwargs.get("memory_type", "auto")  # 'auto', 'memory', 'file', 'redis'
         self.memory_config: dict = kwargs.get("memory_config", {})
+        # FEAT-886: optional durable-memory collaborators, injected by the host.
+        self.turn_publisher = kwargs.get("turn_publisher", self.turn_publisher)
+        self.hydration_source = kwargs.get("hydration_source", self.hydration_source)
+        self.sequence_allocator = kwargs.get("sequence_allocator", self.sequence_allocator)
 
         # Conversation settings
         # FEAT-525: default changed from 50 to None. `None` means "use
@@ -847,6 +919,83 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
     def _parse_llm_string(self, llm: str) -> Tuple[str, Optional[str]]:
         """Parse 'provider:model' or plain provider string."""
         return match.groups() if (match := _LLM_PATTERN.match(llm)) else (llm, None)
+
+    def _apply_agent_env_overrides(self) -> tuple[Any, Optional[str], dict[str, Any]]:
+        """Return LLM configuration inputs with applicable per-agent environment overrides.
+
+        A live client instance is returned unchanged. ``<AGENT>_MODEL`` replaces the
+        declared provider/model and becomes ``self._llm_model``. An agent-specific
+        API key fills a copy of ``llm_kwargs`` unless an explicit credential is
+        already supplied.
+
+        Raises:
+            ValueError: If the configured ``<AGENT>_MODEL`` is malformed.
+        """
+        from ..llm_defaults import (  # noqa: PLC0415 -- keep llm_defaults out of bots' import time
+            COMPONENTS,
+            agent_env_token,
+            is_component_default_key,
+            resolve_agent_api_key,
+            resolve_agent_llm,
+        )
+
+        llm: Any = self._llm_raw
+        model: Optional[str] = self._llm_model if self._llm_model_explicit else None
+        llm_kwargs: dict[str, Any] = dict(self._llm_kwargs or {})
+        if isinstance(llm, AbstractClient):
+            return llm, model, llm_kwargs
+
+        token = agent_env_token(self.name or "")
+        if not token:
+            return llm, model, llm_kwargs
+        if token in COMPONENTS or token == "DEFAULT":
+            self.logger.warning(
+                "Agent name %r maps to reserved env prefix %s_; per-agent LLM env variables are ignored",
+                self.name,
+                token,
+            )
+            return llm, model, llm_kwargs
+
+        if isinstance(llm, str):
+            current_provider = self._parse_llm_string(llm)[0].lower()
+        elif llm is None:
+            current_provider = self._default_llm
+        elif isinstance(llm, type):
+            client_name = getattr(llm, "client_name", None)
+            current_provider = client_name.lower() if isinstance(client_name, str) else None
+        else:
+            current_provider = None
+
+        override = resolve_agent_llm(self.name, default_provider=current_provider or self._default_llm)
+        provider = current_provider
+        provider_switched = False
+        if override is not None:
+            provider = override.provider
+            provider_switched = provider != current_provider
+            llm = f"{override.provider}:{override.model}"
+            model = override.model
+            self._llm_model = override.model
+
+        api_key = llm_kwargs.get("api_key")
+        has_explicit_credential = any(
+            llm_kwargs.get(name) for name in ("credentials_file", "credentials", "vertexai")
+        ) or bool(api_key and not is_component_default_key(api_key, current_provider or self._default_llm))
+
+        if has_explicit_credential:
+            if provider_switched:
+                self.logger.warning(
+                    "Explicit LLM credential retained while per-agent model variable %s_MODEL changes provider",
+                    token,
+                )
+            return llm, model, llm_kwargs
+
+        if provider:
+            agent_api_key = resolve_agent_api_key(self.name, provider)
+            if agent_api_key:
+                llm_kwargs["api_key"] = agent_api_key
+            elif provider_switched and is_component_default_key(api_key, current_provider or self._default_llm):
+                llm_kwargs.pop("api_key", None)
+        return llm, model, llm_kwargs
 
     def _resolve_llm_config(
         self,
@@ -1359,7 +1508,12 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
             self.logger.info(f"Configured conversation memory: {self.memory_type}")
         except Exception as e:
             self.logger.error(f"Error configuring conversation memory: {e}")
-            # Fallback to in-memory
+            if self.memory_type == "redis" or (
+                self.memory_type == "auto" and self._auto_selects_redis(self.memory_config)
+            ):
+                # Redis was selected: a silent in-memory fallback would split history across processes.
+                raise
+            # Fallback to in-memory (explicit 'memory' / 'file', or 'auto' without Redis)
             self.conversation_memory = self.get_conversation_memory("memory")
             self.logger.warning("Fallback to in-memory conversation storage")
         # FEAT-525: register the recovery tool once memory (and therefore a
@@ -1677,9 +1831,9 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
             # Configure LLM:
             if not self._configured:
                 try:
-                    model_arg = self._llm_model if self._llm_model_explicit else None
+                    llm_arg, model_arg, llm_kwargs = self._apply_agent_env_overrides()
                     config = self._resolve_llm_config(
-                        llm=self._llm_raw, model=model_arg, preset=self._llm_preset, **self._llm_kwargs
+                        llm=llm_arg, model=model_arg, preset=self._llm_preset, **llm_kwargs
                     )
                     self._llm_config = config
                     # Mirror the resolved model onto _llm_model so ask()/
@@ -2001,8 +2155,26 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         self._configure_count = 0
         await self.configure(app if app is not None else getattr(self, "app", None))
 
-    def get_conversation_memory(self, storage_type: str = "memory", **kwargs) -> ConversationMemory:
-        """Factory function to create conversation memory instances."""
+    _REDIS_ONLY_KWARGS = ("redis_url", "key_prefix", "history_ttl", "omission_ttl", "use_hash_storage")
+
+    def get_conversation_memory(self, storage_type: str = "auto", **kwargs) -> ConversationMemory:
+        """Factory function to create conversation memory instances.
+
+        ``'memory'`` | ``'file'`` | ``'redis'`` behave as before. ``'auto'`` selects
+        :class:`RedisConversation` when ``kwargs`` carries a host-injected ``redis_url`` or
+        ``REDIS_HISTORY_EXPLICIT`` is true, otherwise :class:`InMemoryConversation`. The factory
+        performs no I/O and never probes a connection.
+
+        Raises:
+            ValueError: For an unknown storage type.
+        """
+        if storage_type == "auto":
+            if self._auto_selects_redis(kwargs):
+                storage_type = "redis"
+            else:
+                storage_type = "memory"
+                # Redis-only keys must not crash the in-memory constructor.
+                kwargs = {k: v for k, v in kwargs.items() if k not in self._REDIS_ONLY_KWARGS}
         if storage_type == "memory":
             return InMemoryConversation(**kwargs)
         elif storage_type == "file":
@@ -2011,6 +2183,14 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
             return RedisConversation(**kwargs)
         else:
             raise ValueError(f"Unknown storage type: {storage_type}")
+
+    @staticmethod
+    def _auto_selects_redis(kwargs: dict) -> bool:
+        """Whether ``memory_type='auto'`` resolves to Redis (no I/O).
+
+        True for a non-empty host-injected ``redis_url`` kwarg, or when ``REDIS_HISTORY_EXPLICIT`` is set.
+        """
+        return bool(kwargs.get("redis_url")) or bool(REDIS_HISTORY_EXPLICIT)
 
     @property
     def context_budget(self) -> Optional[ContextBudget]:
@@ -2605,6 +2785,159 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         chatbot_key = str(chatbot_id) if chatbot_id else self.memory_key_id
         return await self.conversation_memory.create_history(user_id, session_id, metadata, chatbot_id=chatbot_key)
 
+    def _publishes_turns(self, user_id: Optional[str], session_id: Optional[str]) -> bool:
+        """Whether a turn of this round is published to the turn bus (a publisher is attached and the ids exist).
+
+        ``use_conversation_history`` only controls what is sent to the LLM / hydrated; durable publication does
+        not depend on it.
+        """
+        return self.turn_publisher is not None and bool(user_id) and bool(session_id)
+
+    async def _snapshot_turn(self, user_id: str, session_id: str, turn: ConversationTurn) -> Optional[Dict[str, Any]]:
+        """Stamp ordering and take the raw snapshot WITHOUT writing working memory (history disabled)."""
+        if not self._publishes_turns(user_id, session_id):
+            return None
+        await self._stamp_turn_ordering(user_id, session_id, turn)
+        return copy.deepcopy(turn.to_dict())
+
+    def _turn_save_key(self, user_id: Optional[str], session_id: Optional[str]) -> Tuple[str, str, str]:
+        """Key of this session's turn-save lock: ``(memory_key_id, user_id, session_id)`` (FEAT-895)."""
+        return (self.memory_key_id, str(user_id), str(session_id))
+
+    async def _invalidate_working_memory(self, user_id: str, session_id: str) -> None:
+        """Drop the session's working memory after a failed write so the next request rehydrates it (FEAT-895).
+
+        Only with a ``hydration_source``: without one nothing could restore the dropped history. Best effort: a
+        failure is logged and swallowed, and the caller re-raises the original error.
+        """
+        if self.hydration_source is None or not self.conversation_memory:
+            return
+        try:
+            await self.conversation_memory.delete_history(user_id, session_id, chatbot_id=self.memory_key_id)
+        except Exception:  # noqa: BLE001 - best effort; the caller re-raises the working-memory error
+            self.logger.warning("working-memory invalidation failed for %s/%s", user_id, session_id, exc_info=True)
+
+    async def _save_or_snapshot_turn(
+        self,
+        user_id: str,
+        session_id: str,
+        turn: ConversationTurn,
+        *,
+        use_history: bool,
+        compaction: Optional[CompactionCommit] = None,
+        presentation: Optional[TurnPresentation] = None,
+        publish: bool = True,
+    ) -> Optional[Dict[str, Any]]:
+        """Save the turn to working memory when history is on, and publish it whenever a publisher is attached.
+
+        Returns the raw snapshot (``None`` when nothing is published); with ``publish=False`` the caller
+        publishes it later through :meth:`_publish_turn_completed` once the response is final. With history
+        disabled the order stamp and the outbox append run under the session's save lock, like
+        :meth:`save_conversation_turn` (which takes the lock itself, so it is not taken here for that branch).
+
+        Raises:
+            Exception: Whatever the outbox append raises (see :meth:`_publish_turn_completed`).
+        """
+        if use_history:
+            return await self.save_conversation_turn(
+                user_id, session_id, turn, compaction=compaction, presentation=presentation, publish=publish
+            )
+        async with _TURN_SAVE_LOCKS.hold(self._turn_save_key(user_id, session_id)):
+            snapshot = await self._snapshot_turn(user_id, session_id, turn)
+            if publish:
+                await self._publish_turn_completed(user_id, session_id, snapshot, presentation)
+        return snapshot
+
+    async def _persist_finalized_turn(
+        self,
+        response: AIMessage,
+        *,
+        question: str,
+        user_id: Optional[str],
+        session_id: Optional[str],
+        turn_id: Optional[str],
+        use_history: bool,
+        context_used: Optional[str] = None,
+        compaction: Optional[CompactionCommit] = None,
+        output_mode: Any = None,
+        started: Optional[float] = None,
+        assistant_text: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """The ONE "finalize then persist" step shared by every entry point (FEAT-886).
+
+        Contract: call it AFTER the entry point's output pipeline has run (``_run_output_pipeline`` /
+        ``get_response``). The turn is built here, from the response as the caller will receive it, so the
+        text that is stored, published and later hydrated is never a pre-pipeline copy. Entry points pass
+        ``assistant_text=await self._stored_turn_text(response, plain)`` — the plain answer with the OUTPUT
+        verdict applied — so a presentation wrapper written to ``response.response`` is not what the
+        conversation keeps; without it the text is ``response.to_text``. The streaming path passes the
+        streamed text, which is authoritative there.
+
+        Save + publish run as one unit shielded from cancellation: a cancelled request cannot leave working
+        memory and the bus disagreeing. A failure inside the detached unit is logged (ids only, no payload)
+        and re-raised to the awaiting caller; it never surfaces as "Task exception was never retrieved".
+        Inside the unit the outbox append comes first and a rejected append fails the save before working
+        memory is written; saves of one session run one at a time (FEAT-895, :meth:`save_conversation_turn`).
+        """
+        use_history = bool(use_history and self.conversation_memory)
+        if not (use_history or self._publishes_turns(user_id, session_id)):
+            return None
+        turn = ConversationTurn.from_ai_message(
+            user_message=question,
+            response=response,
+            user_id=user_id,
+            chatbot_id=self.memory_key_id,
+            turn_id=turn_id,
+            context_used=context_used,
+            assistant_text=assistant_text,
+            # FEAT-538: observed invocations REPLACE the tool_calls conversion (None keeps the legacy derivation).
+            tool_invocations=self.observed_tool_invocations(),
+        )
+        return await self._persist_turn_unit(
+            user_id,
+            session_id,
+            turn,
+            use_history=use_history,
+            compaction=compaction,
+            presentation=self._turn_presentation(response, output_mode=output_mode, started=started),
+        )
+
+    async def _persist_turn_unit(
+        self,
+        user_id: Optional[str],
+        session_id: Optional[str],
+        turn: ConversationTurn,
+        *,
+        use_history: bool,
+        compaction: Optional[CompactionCommit] = None,
+        presentation: Optional[TurnPresentation] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Save + publish ``turn`` as one cancellation-shielded unit (see :meth:`_persist_finalized_turn`).
+
+        The session's save lock (FEAT-895) is taken INSIDE the shielded task, so a caller cancelled while its save
+        waits for the lock does not cancel the save.
+        """
+        unit = asyncio.ensure_future(
+            self._save_or_snapshot_turn(
+                user_id,
+                session_id,
+                turn,
+                use_history=use_history,
+                compaction=compaction,
+                presentation=presentation,
+            )
+        )
+
+        def _log_failure(task: "asyncio.Future[Any]") -> None:
+            if task.cancelled():
+                return
+            exc = task.exception()  # retrieving it also silences "exception was never retrieved"
+            if exc is not None:
+                self.logger.error("persisting turn_id=%s failed: %s", turn.turn_id, type(exc).__name__, exc_info=exc)
+
+        unit.add_done_callback(_log_failure)
+        return await asyncio.shield(unit)
+
     async def save_conversation_turn(
         self,
         user_id: str,
@@ -2612,7 +2945,9 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         turn: ConversationTurn,
         *,
         compaction: Optional[CompactionCommit] = None,
-    ) -> None:
+        presentation: Optional[TurnPresentation] = None,
+        publish: bool = True,
+    ) -> Optional[Dict[str, Any]]:
         """Persist one conversation turn — the single writer (FEAT-524, FEAT-525).
 
         Every bot entry point routes its turn through here. The turn is always
@@ -2621,6 +2956,8 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         into a different agent's history by accident.
 
         Args:
+            presentation: Presentation/usage fields built by the entry point from its AIMessage; only used
+                when a turn_publisher is set (FEAT-886).
             user_id: Owner of the conversation.
             session_id: Conversation session.
             turn: The turn to persist. Its ``chatbot_id`` MUST equal
@@ -2633,10 +2970,21 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
                 turn. ``None`` for writers that do not participate in the
                 budget round-trip (e.g. an ``ask_stream`` partial save on
                 error).
+            publish: Append the raw turn to the outbox (when a ``turn_publisher`` is set).
+
+        Order and serialization (FEAT-895): the outbox append comes BEFORE the
+        working-memory write, and saves of one ``(memory_key_id, user_id,
+        session_id)`` run one at a time in this process (shared by every bot
+        instance with that ``memory_key_id``). ``MessageAddedEvent`` and
+        ``Stage2CompactionNeededEvent`` are emitted after the lock is released.
 
         Raises:
             ValueError: If ``turn.chatbot_id`` does not match
                 ``self.memory_key_id``.
+            Exception: Whatever the outbox append raises — working memory is
+                then untouched. Whatever the working-memory write raises after
+                a successful append — the session's working memory is then
+                dropped when a ``hydration_source`` can restore it.
         """
         if not self.conversation_memory:
             return
@@ -2648,17 +2996,35 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
                 "the agent whose history it is stored in."
             )
 
-        # FEAT-525: read the PERSISTED stage2_needed flag before the write,
-        # so the event fires exactly once, on the first False -> True flip.
-        was_stage2_needed = False
-        if compaction is not None and compaction.stage2_needed:
-            prev_history = await self.conversation_memory.get_history(user_id, session_id, chatbot_id=chatbot_key)
-            if prev_history is not None:
-                was_stage2_needed = bool((prev_history.metadata.get("compaction") or {}).get("stage2_needed"))
+        # FEAT-895: one save at a time per session — the order stamp, the stage-2 read, the outbox append and the
+        # working-memory write of this session do not interleave with another save of it in this process.
+        async with _TURN_SAVE_LOCKS.hold(self._turn_save_key(user_id, session_id)):
+            await self._stamp_turn_ordering(user_id, session_id, turn)
+            # Raw, pre-normalization snapshot: MUST precede add_turn (spec §7 "Raw turn snapshot").
+            snapshot = copy.deepcopy(turn.to_dict()) if self.turn_publisher is not None else None
 
-        await self.conversation_memory.add_turn(
-            user_id, session_id, turn, chatbot_id=chatbot_key, compaction=compaction
-        )
+            # FEAT-525: read the PERSISTED stage2_needed flag before the write,
+            # so the event fires exactly once, on the first False -> True flip.
+            was_stage2_needed = False
+            if compaction is not None and compaction.stage2_needed:
+                prev_history = await self.conversation_memory.get_history(user_id, session_id, chatbot_id=chatbot_key)
+                if prev_history is not None:
+                    was_stage2_needed = bool((prev_history.metadata.get("compaction") or {}).get("stage2_needed"))
+
+            # FEAT-895 outbox first: the durable tier is the source of truth. A rejected append raises here, before
+            # working memory is touched, so neither tier keeps the turn.
+            if publish:
+                await self._publish_turn_completed(user_id, session_id, snapshot, presentation)
+            try:
+                await self.conversation_memory.add_turn(
+                    user_id, session_id, turn, chatbot_id=chatbot_key, compaction=compaction
+                )
+            except Exception:
+                if publish and snapshot is not None:
+                    # The durable tier already has the turn and nothing on the bus writes this working memory:
+                    # drop it (only with a hydration source) so the next request rehydrates the session.
+                    await self._invalidate_working_memory(user_id, session_id)
+                raise
         # FEAT-176: emit MessageAddedEvent after persisting to memory.
         # Use the active invocation's trace context when available.
         # ConversationTurn stores both user_message and assistant_response;
@@ -2667,17 +3033,20 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         _user_len = len(getattr(turn, "user_message", "") or "")
         _asst_len = len(getattr(turn, "assistant_response", "") or "")
         _has_tools = bool(getattr(turn, "tools_used", None))
-        await self.events.emit(
-            MessageAddedEvent(
-                trace_context=trace_ctx,
-                agent_name=self.name,
-                role="turn",
-                content_length=_user_len + _asst_len,
-                has_tool_calls=_has_tools,
-                source_type="agent",
-                source_name=self.name,
+        try:  # the turn is already saved (and published): a failing listener must not fail the request
+            await self.events.emit(
+                MessageAddedEvent(
+                    trace_context=trace_ctx,
+                    agent_name=self.name,
+                    role="turn",
+                    content_length=_user_len + _asst_len,
+                    has_tool_calls=_has_tools,
+                    source_type="agent",
+                    source_name=self.name,
+                )
             )
-        )
+        except Exception:  # pylint: disable=broad-except
+            self.logger.error("MessageAddedEvent emit failed turn_id=%s", turn.turn_id, exc_info=True)
 
         # FEAT-525: Stage-2 trigger surface — fires exactly once per session,
         # on the first False -> True flip of the persisted stage2_needed flag.
@@ -2695,6 +3064,213 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
                     source_name=self.name,
                 )
             )
+        return snapshot
+
+    @staticmethod
+    def _hydration_pending(history: Optional[ConversationHistory]) -> bool:
+        """Whether ``history`` was created while the hydration source was unavailable (Q14)."""
+        if history is None:
+            return False
+        return (history.metadata.get("hydration") or {}).get("state") == "pending"
+
+    def _hydration_window(self) -> int:
+        """Budget-sized window: ``budget.max_turns`` or ``max_context_turns`` or 30."""
+        budget = self.context_budget
+        return (budget.max_turns if budget is not None else None) or self.max_context_turns or 30
+
+    async def _assert_session_active(self, source: HydrationSource, user_id: str, session_id: str) -> None:
+        """Fail closed: raise unless the guard positively says the session is not deleted."""
+        try:
+            deleted = await source.is_deleted(self.name, user_id, session_id)
+        except HydrationError:
+            raise
+        except Exception as exc:  # any unknown guard failure must not serve stale history
+            raise HydrationUnavailableError(f"deletion guard unavailable: {exc}") from exc
+        if deleted:
+            raise SessionDeletedError(f"{self.name}/{user_id}/{session_id} is deleted")
+
+    async def _guard_session(self, user_id: Optional[str], session_id: Optional[str]) -> None:
+        """Run the deletion guard when history is disabled for the round (``use_conversation_history=False``).
+
+        A deleted session must not keep answering (and its turn must not be published later) just because the
+        caller turned the history off. No source / no ids: nothing to check.
+        """
+        source = self.hydration_source
+        if source is not None and user_id and session_id:
+            await self._assert_session_active(source, user_id, session_id)
+
+    async def _load_or_hydrate_history(
+        self, memory: ConversationMemory, user_id: str, session_id: str
+    ) -> ConversationHistory:
+        """Replace ``get_history(...) or create_history(...)`` (FEAT-886 M15).
+
+        Without a ``hydration_source`` this is today's expression, verbatim. With one: the deletion
+        guard is checked first, a hit is returned untouched, and a miss (or a ``pending`` history) is
+        hydrated from the source and installed under ``self.memory_key_id`` (NX).
+
+        Raises:
+            SessionDeletedError: the identity is tombstoned.
+            HydrationUnavailableError: the guard could not be checked (fail closed).
+        """
+        key = self.memory_key_id
+        source = self.hydration_source
+        if source is None:
+            return await memory.get_history(user_id, session_id, chatbot_id=key) or await memory.create_history(
+                user_id, session_id, chatbot_id=key
+            )
+        await self._assert_session_active(source, user_id, session_id)
+        existing = await memory.get_history(user_id, session_id, chatbot_id=key)
+        if existing is not None and not self._hydration_pending(existing):
+            return existing
+        return await self._hydrate_history(memory, source, user_id, session_id, existing)
+
+    async def _hydrate_history(
+        self,
+        memory: ConversationMemory,
+        source: HydrationSource,
+        user_id: str,
+        session_id: str,
+        existing: Optional[ConversationHistory],
+    ) -> ConversationHistory:
+        """Load the newest window, install it atomically, recheck the guard, return the history."""
+        key = self.memory_key_id
+        try:
+            turns = await source.load_turns(self.name, user_id, session_id, self._hydration_window())
+        except (HydrationNotReadyError, HydrationUnavailableError) as exc:
+            self.logger.warning("hydration pending for %s/%s: %s", user_id, session_id, exc)
+            if existing is not None:
+                return existing
+            # NX: never overwrite a history another worker installed while we waited on the source.
+            await memory.install_history(
+                user_id, session_id, [], chatbot_id=key, metadata={"hydration": {"state": "pending"}}
+            )
+            return await memory.get_history(user_id, session_id, chatbot_id=key) or await memory.create_history(
+                user_id, session_id, chatbot_id=key
+            )
+        # SessionDeletedError from load_turns propagates untouched.
+        installed = await memory.install_history(user_id, session_id, turns or [], chatbot_id=key)
+        self.logger.debug(
+            "hydration install for %s/%s: installed=%s turns=%d", user_id, session_id, installed, len(turns or [])
+        )
+        try:
+            await self._assert_session_active(source, user_id, session_id)  # the delete may have landed mid-install
+        except SessionDeletedError:
+            await memory.delete_history(user_id, session_id, chatbot_id=key)
+            raise
+        history = await memory.get_history(user_id, session_id, chatbot_id=key)
+        return history or await memory.create_history(user_id, session_id, chatbot_id=key)
+
+    def _turn_presentation(
+        self,
+        response: Optional[AIMessage],
+        *,
+        output_mode: Any = None,
+        started: Optional[float] = None,
+        fallback_output: Optional[str] = None,
+    ) -> Optional[TurnPresentation]:
+        """Build the per-turn presentation, or ``None`` when no publisher is set (no work, no event)."""
+        if self.turn_publisher is None:
+            return None
+        elapsed = None if started is None else int((time.perf_counter() - started) * 1000)
+        mode = None if output_mode is None else str(getattr(output_mode, "value", output_mode))
+        tenant = current_tenant.get()
+        if response is None:  # ask_stream partial save: the AIMessage does not exist yet
+            return TurnPresentation(output=fallback_output, output_mode=mode, response_time_ms=elapsed, tenant=tenant)
+        return TurnPresentation.from_ai_message(response, output_mode=mode, response_time_ms=elapsed, tenant=tenant)
+
+    def _local_sequence_allocator(self) -> SequenceAllocator:
+        """Lazily create (and cache) the per-process allocator used when none is injected."""
+        allocator = getattr(self, "_fallback_sequence_allocator", None)
+        if allocator is None:
+            allocator = self._fallback_sequence_allocator = LocalSequenceAllocator()
+        return allocator
+
+    async def _fallback_sequence(self, user_id: str, session_id: str) -> int:
+        """Sequence from the local allocator, starting ABOVE the durable maximum when that can be read.
+
+        If the durable maximum cannot be read either, the local allocator still keeps the sequence monotonic
+        per session within this process; across processes the ordering then relies on the emitter timestamp
+        (``(timestamp, sequence, turn_id)``), and a sequence may repeat one issued by another worker.
+        """
+        durable: Optional[int] = None
+        source = self.hydration_source
+        # The durable maximum is read ONCE per session: the local allocator keeps its own counter above the
+        # floor afterwards. A failed read is not repeated for ``_FALLBACK_FLOOR_RETRY_S`` seconds, so a turn
+        # served while the store is degraded does not hit the same failing dependency again on every turn.
+        floors: Dict[Tuple[str, str], float] = self.__dict__.setdefault("_fallback_floor_state", {})
+        key = (user_id, session_id)
+        retry_at = floors.get(key)
+        if source is not None and (retry_at is None or (retry_at != float("inf") and time.monotonic() >= retry_at)):
+            if len(floors) >= _FALLBACK_FLOOR_CACHE_MAX:
+                floors.clear()  # bounded: a cleared entry only costs one more durable read
+            try:
+                durable = max(0, int(await source.max_sequence(self.name, user_id, session_id)))
+                floors[key] = float("inf")  # known: never read again for this session in this process
+            except Exception:  # noqa: BLE001 - best effort; ordering falls back to the timestamp
+                durable = None
+                floors[key] = time.monotonic() + _FALLBACK_FLOOR_RETRY_S
+
+        async def floor() -> int:
+            return durable or 0
+
+        return await self._local_sequence_allocator().next(
+            self.name, user_id, session_id, floor=floor if durable is not None else None
+        )
+
+    async def _stamp_turn_ordering(self, user_id: str, session_id: str, turn: ConversationTurn) -> None:
+        """Stamp a UTC-aware timestamp and a monotonic sequence on ``turn`` (spec §2 "Sequence allocation").
+
+        No-op (and no suspension) for a conversation-less bot: neither publisher nor allocator set.
+        """
+        allocator = self.sequence_allocator
+        if self.turn_publisher is None and allocator is None:
+            return
+        if turn.timestamp.tzinfo is None:
+            # A naive timestamp produced by this process (``datetime.now()``) is LOCAL time: ``astimezone`` keeps
+            # the instant. (Stored rows are different: the readers treat a naive stored value as UTC, spec §7.)
+            turn.timestamp = turn.timestamp.astimezone(timezone.utc)
+        if turn.sequence is not None:
+            return
+        if allocator is None:
+            allocator = self._local_sequence_allocator()
+        source = self.hydration_source
+        floor = None if source is None else (lambda: source.max_sequence(self.name, user_id, session_id))
+        try:
+            turn.sequence = await allocator.next(self.name, user_id, session_id, floor=floor)
+        except Exception as exc:  # noqa: BLE001 - a counter/floor outage must not lose the user's answer
+            self.logger.warning(
+                "sequence allocation failed for %s/%s (%s); using the local allocator", user_id, session_id, exc
+            )
+            turn.sequence = await self._fallback_sequence(user_id, session_id)
+
+    async def _publish_turn_completed(
+        self,
+        user_id: str,
+        session_id: str,
+        snapshot: Optional[Dict[str, Any]],
+        presentation: Optional[TurnPresentation],
+    ) -> None:
+        """Publish ``TurnCompletedEvent`` for the raw ``snapshot`` — the outbox append of the save (FEAT-895).
+
+        No-op without a publisher or a snapshot. Whatever building the event or ``publisher.publish`` raises (the
+        outbox rejected the append) propagates, so the save fails before working memory is written. The caller
+        logs it (``_persist_turn_unit``'s done callback, or the voice stream's handler).
+        """
+        publisher = self.turn_publisher
+        if publisher is None or snapshot is None:
+            return
+        event = TurnCompletedEvent(
+            trace_context=getattr(self, "_current_trace_context", None) or TraceContext.new_root(),
+            agent_name=self.name,
+            chatbot_id=self.memory_key_id,
+            user_id=user_id,
+            session_id=session_id,
+            turn=snapshot,
+            presentation=presentation.model_dump() if presentation is not None else {},
+            source_type="agent",
+            source_name=self.name,
+        )
+        await publisher.publish(event)
 
     async def clear_conversation_history(self, user_id: str, session_id: str, chatbot_id: Optional[str] = None) -> bool:
         """Clear conversation history using unified memory system."""
@@ -2818,10 +3394,18 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         OUTPUT guardrail blocks today — `SecretsGuardrail` only TRANSFORMs/
         PASSes — but future guardrails, e.g. moderation, may).
 
-        Mirrors the pre-migration channel-egress guard
-        (`isinstance(response.output, str)`, `bots/base.py`): structured/
-        DataFrame outputs are left untouched — only plain-text responses are
-        scanned, matching today's behavior exactly.
+        On every non-blocked run the verdict also reaches a distinct
+        presentation wrapper in ``response.response`` (a formatter's wrapped
+        string, ``get_response``'s markdown block) through
+        ``_propagate_output_verdict``, whether ``output`` passed or was
+        transformed (FEAT-894).
+
+        A structured/DataFrame ``output`` is never rewritten. The text answer
+        kept beside it in ``response.response`` (what ``to_text`` prefers: a
+        client's explanation, a formatter's wrapped string, ``get_response``'s
+        markdown block) is scanned instead, and the verdict is applied to that
+        text only (issue:062128ff0d48). A structured output with no text answer
+        runs no guardrail.
 
         Args:
             response: The `AIMessage` to run OUTPUT guardrails against.
@@ -2831,8 +3415,12 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         Returns:
             The same ``response`` instance, mutated in place.
         """
+        _OUTPUT_VERDICT.set(None)
         pipeline = self._guardrail_pipelines[GuardrailStage.OUTPUT]
-        if not pipeline.has_guardrails or not isinstance(response.output, str):
+        # A structured `output` is scanned through the text answer beside it; with none, there is nothing to scan.
+        structured = not isinstance(response.output, str)
+        text = response.response if structured else response.output
+        if not pipeline.has_guardrails or (structured and (not isinstance(text, str) or not text)):
             return response
 
         ctx = GuardrailContext(
@@ -2850,22 +3438,139 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
             # `ai_message` here is read-only context.
             extras=self._output_extras(response, pipeline),
         )
-        outcome = await pipeline.run(response.output, ctx)
+        outcome = await pipeline.run(text, ctx)
+        if structured:
+            return self._apply_verdict_beside_structured_output(response, text, outcome, ctx)
 
+        original = response.output
         if outcome.blocked:
-            response.output = "This response could not be delivered due to a content policy violation."
+            response.output = _OUTPUT_BLOCKED_TEXT
+            _OUTPUT_VERDICT.set((id(response), original, response.output, ctx))
+            await self._propagate_output_verdict(response, original, pipeline, ctx, blocked_text=response.output)
             response.metadata["error"] = "security_block"
             if outcome.reason:
                 response.metadata["block_reason"] = outcome.reason
             return response
 
-        if outcome.content is not None:
+        # `pipeline.run` returns the working content on every non-blocked pass. A TRANSFORM rewrites `output`; on
+        # PASS and TRANSFORM alike the verdict then reaches a distinct presentation wrapper in `response.response`
+        # (issue:a20713dc67a6). `_propagate_output_verdict` skips an alias or an empty wrapper, so a plain PASS still
+        # runs the guardrails once.
+        _OUTPUT_VERDICT.set((id(response), original, outcome.content if outcome.content is not None else original, ctx))
+        if outcome.content is not None and outcome.content != original:
             response.output = outcome.content
+        await self._propagate_output_verdict(response, original, pipeline, ctx)
 
         if outcome.flag_reports:
             response.metadata.setdefault("guardrails", {}).update(outcome.flag_reports)
 
         return response
+
+    def _apply_verdict_beside_structured_output(
+        self, response: AIMessage, text: str, outcome: PipelineOutcome, ctx: GuardrailContext
+    ) -> AIMessage:
+        """Apply an OUTPUT verdict on the text answer kept beside a structured output (issue:062128ff0d48).
+
+        Only ``response.response`` changes: the verdict judged that text, not the structured payload, so ``output``
+        keeps its type for callers that index into it. A BLOCK replaces the text with the blocked notice and marks
+        ``metadata["error"]``, as the plain-text BLOCK does; a TRANSFORM rewrites it; FLAG reports are merged.
+        ``_OUTPUT_VERDICT`` records the verdict so ``_stored_turn_text`` reuses it for the same text.
+
+        Args:
+            response: The response whose ``output`` is not a ``str``.
+            text: The non-empty ``response.response`` the pipeline ran on.
+            outcome: The pipeline's verdict on ``text``.
+            ctx: The OUTPUT ``GuardrailContext`` of that run.
+
+        Returns:
+            The same ``response`` instance, mutated in place.
+        """
+        if outcome.blocked:
+            response.response = _OUTPUT_BLOCKED_TEXT
+            _OUTPUT_VERDICT.set((id(response), text, _OUTPUT_BLOCKED_TEXT, ctx))
+            response.metadata["error"] = "security_block"
+            if outcome.reason:
+                response.metadata["block_reason"] = outcome.reason
+            return response
+        verdict = outcome.content if outcome.content is not None else text
+        _OUTPUT_VERDICT.set((id(response), text, verdict, ctx))
+        response.response = verdict
+        if outcome.flag_reports:
+            response.metadata.setdefault("guardrails", {}).update(outcome.flag_reports)
+        return response
+
+    async def _propagate_output_verdict(
+        self,
+        response: AIMessage,
+        original: str,
+        pipeline: Any,
+        ctx: GuardrailContext,
+        blocked_text: Optional[str] = None,
+    ) -> None:
+        """Make the OUTPUT verdict reach ``response.response`` too (FEAT-886, FEAT-894).
+
+        ``response.response`` is what ``to_text`` (the caller-visible and stored text) prefers. It is either an
+        alias of the pre-pipeline ``output`` or a formatter-wrapped string that embeds it: either way an
+        unredacted copy must not survive there. An alias is replaced; a wrapped string goes through the same
+        pipeline (its report is discarded, only the rewritten text is used). That holds when ``output`` passed
+        too: a wrapper can carry text ``output`` does not, such as ``get_response``'s echoed question and source
+        titles. A missing, empty or non-string ``response.response``, or one equal to ``output``, costs no second
+        run.
+        """
+        alias = getattr(response, "response", None)
+        if not isinstance(alias, str) or not alias or alias == response.output:
+            return
+        if blocked_text is not None:
+            response.response = blocked_text
+        elif alias == original:
+            response.response = response.output
+        else:
+            wrapped = await pipeline.run(alias, ctx)
+            if wrapped.blocked:
+                response.response = response.output
+            else:
+                response.response = wrapped.content if wrapped.content is not None else alias
+
+    async def _stored_turn_text(
+        self, response: AIMessage, plain: Optional[str], method: str = "persist"
+    ) -> Optional[str]:
+        """The assistant text persisted for a turn: the plain answer with an OUTPUT verdict applied (FEAT-886).
+
+        ``plain`` is the answer text captured BEFORE any presentation wrapper is written to
+        ``response.response`` (``get_response``'s markdown "Question/Answer/Sources" block, a formatter's
+        wrapped string). The wrapper is what the caller renders; the conversation keeps the answer itself, so
+        the next LLM call and the stored history do not carry the question echoed inside the assistant turn.
+
+        Whatever is persisted carries a verdict of the OUTPUT guardrails: text the pipeline already judged for
+        this response reuses that verdict (no second run); any other text — an explanation kept apart from an
+        HTML/structured ``output``, a plain answer different from the formatted ``output`` — is scanned here,
+        even when ``output`` itself passed or was never scanned. ``None`` (no text answer) keeps
+        ``response.to_text``.
+        """
+        if not isinstance(plain, str) or not plain:
+            return None
+        verdict = _OUTPUT_VERDICT.get()
+        ctx = None
+        if verdict is not None and verdict[0] == id(response):
+            if plain == verdict[1]:
+                return verdict[2]
+            ctx = verdict[3]
+        pipeline = self._guardrail_pipelines[GuardrailStage.OUTPUT]
+        if not pipeline.has_guardrails:
+            return plain
+        if ctx is None:
+            ctx = GuardrailContext(
+                stage=GuardrailStage.OUTPUT,
+                agent_name=self.name,
+                user_id=str(response.user_id) if response.user_id is not None else None,
+                session_id=response.session_id,
+                method=method,
+                extras=self._output_extras(response, pipeline),
+            )
+        outcome = await pipeline.run(plain, ctx)
+        if outcome.blocked:
+            return _OUTPUT_BLOCKED_TEXT
+        return outcome.content if outcome.content is not None else plain
 
     def _merge_guardrail_reports(self, response: AIMessage, flag_reports: Dict[str, Dict[str, Any]]) -> None:
         """Merge FLAG-stage guardrail reports onto ``response.metadata['guardrails']``.

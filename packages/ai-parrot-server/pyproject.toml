@@ -115,6 +115,13 @@ parrot_users_bots = "parrot.handlers.models.vault_target:factory"
 parrot_studio_user_credentials = "parrot.handlers.studio.storage.vault_targets:user_credentials_factory"
 parrot_studio_user_llm_keys = "parrot.handlers.studio.storage.vault_targets:user_llm_keys_factory"
 
+[project.entry-points."parrot.migrations"]
+ui_surfaces = "parrot.server.migrations.providers:ui_surfaces_set"
+crew_definitions = "parrot.server.migrations.providers:crew_definitions_set"
+metric_definitions = "parrot.server.migrations.providers:metric_definitions_set"
+recipes = "parrot.server.migrations.providers:recipes_set"
+scheduler = "parrot.server.migrations.providers:scheduler_set"
+
 [project.urls]
 Homepage = "https://github.com/phenobarbital/ai-parrot"
 Source = "https://github.com/phenobarbital/ai-parrot"
@@ -134,6 +141,7 @@ namespaces = true
 "parrot.handlers.models" = ["*.sql"]
 "parrot.handlers.studio.storage.migrations" = ["*.sql", "MANIFEST.json"]
 "parrot.mcp.transports" = ["*.proto"]
+"parrot.server.migrations" = ["sql/*/*.sql"]
 # Embedded Admin UI (FEAT-468): built by release CI (Node 24 LTS + pnpm 9)
 # into src/parrot/server/ui/dist/ before `uv build`; never committed to git.
 # Globs are non-recursive per key — list every Vite output dir explicitly

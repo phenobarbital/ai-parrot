@@ -1,6 +1,7 @@
 """Data models for per-turn conversation compaction (FEAT-525).
 
-This module is a **leaf module**: it imports stdlib and ``orjson`` only. It
+This module is a **leaf module**: it imports stdlib, ``orjson`` and the stdlib-only
+:mod:`parrot.memory.parts`. It
 must NEVER import :mod:`parrot.memory.abstract` — the dependency runs the
 other way (``abstract.py`` imports these models). All models except
 :class:`ToolInvocation` are frozen dataclasses; ``ToolInvocation`` is mutated
@@ -19,6 +20,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, Optional, Tuple
+
+from ..parts import MessagePart
 
 
 class ToolStatus(str, Enum):
@@ -294,6 +297,9 @@ class TurnView:
     assistant_suffix: str
     state: TurnState
     estimated_tokens: int
+    #: Already-budgeted parts for the assistant message; ``None`` when compaction is disabled or the turn has no
+    #: tool activity. ``assistant_suffix == render_parts_text(parts)`` whenever it is set (FEAT-886).
+    parts: Optional[Tuple[MessagePart, ...]] = None
 
 
 @dataclass(frozen=True)

@@ -22,12 +22,17 @@ def _write_executable(path: Path, content: str = "#!/bin/sh\nexit 0\n") -> None:
 
 @pytest.fixture
 def fake_claude_path(tmp_path: Path) -> str:
-    """Return a PATH with Claude and native-sandbox prerequisite stubs."""
+    """Return a PATH with Claude and native-sandbox prerequisite stubs.
+
+    The Claude stub answers ``--version`` like the real CLI, reporting the minimum version the
+    legacy shell-prefix gate accepts; every other invocation echoes its environment and argv.
+    """
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     _write_executable(
         bin_dir / "claude",
         "#!/bin/sh\n"
+        'if [ "$1" = "--version" ]; then echo "2.1.321 (Claude Code)"; exit 0; fi\n'
         "printf 'BACKEND=%s\\n' \"$PARROT_SDD_SANDBOX_BACKEND\"\n"
         "printf 'DEGRADED=%s\\n' \"$PARROT_SDD_SANDBOX_DEGRADED\"\n"
         "printf 'CACHE=%s\\n' \"$PARROT_SDD_CACHE_DIR\"\n"

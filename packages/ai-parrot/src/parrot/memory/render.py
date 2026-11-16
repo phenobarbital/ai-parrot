@@ -37,6 +37,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Iterable, List, Literal, Optional, Sequence, Tuple, Union
 
 from .abstract import ConversationHistory
+from .parts import MessagePart
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     # Never imported at runtime — keeps this module a leaf that does not
@@ -63,12 +64,15 @@ class HistoryMessage:
             ``chatbot_id`` of the first of them.
         turn_id: The originating :class:`~parrot.memory.ConversationTurn` id,
             under the same "first of a merged run" rule as ``chatbot_id``.
+        parts: Structured view of ``content``. Informational in Phase 1 — clients send ``content`` only.
+            Merged messages concatenate their parts in order. ``None`` when compaction is disabled.
     """
 
     role: Literal["user", "assistant"]
     content: str
     chatbot_id: Optional[str] = None
     turn_id: Optional[str] = None
+    parts: Optional[Tuple[MessagePart, ...]] = None
 
 
 def _append(out: List[HistoryMessage], message: HistoryMessage) -> None:
@@ -84,6 +88,13 @@ def _append(out: List[HistoryMessage], message: HistoryMessage) -> None:
     """
     if out and out[-1].role == message.role:
         previous = out[-1]
+        merged_parts: Optional[Tuple[MessagePart, ...]] = None
+        if previous.parts is not None or message.parts is not None:
+            merged_parts = (
+                (previous.parts or (MessagePart("text", previous.content),))
+                + (MessagePart("text", _MERGE_SEPARATOR),)
+                + (message.parts or (MessagePart("text", message.content),))
+            )
         out[-1] = HistoryMessage(
             role=previous.role,
             content=f"{previous.content}{_MERGE_SEPARATOR}{message.content}",
@@ -91,6 +102,7 @@ def _append(out: List[HistoryMessage], message: HistoryMessage) -> None:
             # one that anchors the message's position in the conversation.
             chatbot_id=previous.chatbot_id,
             turn_id=previous.turn_id,
+            parts=merged_parts,
         )
         return
     out.append(message)
@@ -99,8 +111,8 @@ def _append(out: List[HistoryMessage], message: HistoryMessage) -> None:
 def _iter_rows(
     source: Union[Optional[ConversationHistory], Sequence["TurnView"]],
     max_turns: Optional[int],
-) -> Iterable[Tuple[str, Optional[str], str, str]]:
-    """Yield ``(turn_id, chatbot_id, user_text, assistant_text)`` rows.
+) -> Iterable[Tuple[str, Optional[str], str, str, Optional[Tuple[MessagePart, ...]]]]:
+    """Yield ``(turn_id, chatbot_id, user_text, assistant_text, parts)`` rows.
 
     Dispatches by duck-typing: an object with a ``.turns`` attribute is
     treated as a :class:`ConversationHistory` (``max_turns`` applies as
@@ -131,13 +143,19 @@ def _iter_rows(
                 return
             turns = turns[-max_turns:]
         for turn in turns:
-            yield turn.turn_id, turn.chatbot_id, turn.user_message or "", turn.assistant_response or ""
+            yield turn.turn_id, turn.chatbot_id, turn.user_message or "", turn.assistant_response or "", None
         return
 
     for view in source:
         assistant_text = view.assistant_text or ""
         row_assistant = f"{assistant_text}{view.assistant_suffix}" if assistant_text.strip() else ""
-        yield view.turn_id, view.chatbot_id, view.user_text or "", row_assistant
+        view_parts = getattr(view, "parts", None)
+        row_parts = (
+            (MessagePart("text", assistant_text),) + tuple(view_parts)
+            if view_parts and assistant_text.strip()
+            else None
+        )
+        yield view.turn_id, view.chatbot_id, view.user_text or "", row_assistant, row_parts
 
 
 def render_history(
@@ -188,7 +206,7 @@ def render_history(
     """
     rendered: List[HistoryMessage] = []
 
-    for turn_id, chatbot_id, user_text, assistant_text in _iter_rows(history, max_turns):
+    for turn_id, chatbot_id, user_text, assistant_text, parts in _iter_rows(history, max_turns):
         if not assistant_text.strip():
             # An assistant message with no text is not a usable turn: it would
             # either be rejected by the provider or teach the model to answer
@@ -201,6 +219,8 @@ def render_history(
         if is_foreign:
             label = other_agent_label.format(chatbot_id=chatbot_id)
             assistant_text = f"{label} {assistant_text}"
+            if parts:
+                parts = (MessagePart("text", f"{label} {parts[0].content}"),) + parts[1:]
 
         _append(
             rendered,
@@ -208,7 +228,9 @@ def render_history(
         )
         _append(
             rendered,
-            HistoryMessage(role="assistant", content=assistant_text, chatbot_id=chatbot_id, turn_id=turn_id),
+            HistoryMessage(
+                role="assistant", content=assistant_text, chatbot_id=chatbot_id, turn_id=turn_id, parts=parts
+            ),
         )
 
     return rendered

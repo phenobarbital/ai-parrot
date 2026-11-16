@@ -7,7 +7,6 @@ a Claude hook, even when importing the rest of Parrot is unavailable.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import math
 import os
@@ -16,6 +15,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tomllib
 from typing import Any, Literal, Sequence
 
 POLICY_MESSAGE = (
@@ -150,6 +150,11 @@ SHARED_LEDGER_DIR = Path(".parrot") / "ledger"
 # stdlib-only by contract, so the path is duplicated here rather than imported;
 # ``test_coder_evidence_dir_matches_resolve_durable_root`` guards the drift.
 CODER_EVIDENCE_DIR = Path("artifacts") / "logs" / "sdd-coder-usage"
+# Operator-declared extra writable directories (``[tool.parrot.sdd]`` in the
+# PRIMARY checkout's ``pyproject.toml``), for tools that write outside the
+# checkout — e.g. navconfig's log directory ``/tmp/navigator``. The primary
+# checkout is read-only to a worktree session, so a session cannot widen it.
+EXTRA_WRITE_PATHS_KEY = "sandbox_extra_write_paths"
 # Claude Code keeps every session's scratchpad under this root
 # (``/tmp/claude-<uid>/<project-slug>/<session-id>/scratchpad``) and tells the
 # seat to use it for temporary files. The sandbox replaces ``/tmp`` with a
@@ -280,6 +285,104 @@ def coder_evidence_dirs(root: Path, git_dir: Path | None) -> tuple[Path, ...]:
     return (evidence_dir,)
 
 
+def load_extra_write_paths(primary: Path) -> tuple[Path, ...]:
+    """Read and validate ``[tool.parrot.sdd].sandbox_extra_write_paths`` from the primary checkout.
+
+    Each entry must be an absolute, already-normalized path. It is symlink-resolved, and the resolved
+    directory is what the sandbox grants. An entry is refused when it resolves to the filesystem root or a
+    top-level directory (``/tmp``, ``/home``, ``/var``: never a whole shared tree), or when it is equal to,
+    inside, or an ancestor of the primary checkout, the user's home directory, or a shared environment.
+
+    Args:
+        primary: The primary checkout root. Never pass a worktree: its ``pyproject.toml`` is session-writable.
+
+    Returns:
+        The resolved, de-duplicated directories, or an empty tuple when the file, table or key is absent.
+
+    Raises:
+        ValueError: If the file is malformed or an entry is not an acceptable path.
+    """
+    config_path = primary / "pyproject.toml"
+    if not config_path.is_file():
+        return ()
+    try:
+        with config_path.open("rb") as handle:
+            table: Any = tomllib.load(handle)
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"unreadable or malformed TOML ({exc})") from exc
+    for name in ("tool", "parrot", "sdd"):
+        table = table.get(name) if isinstance(table, dict) else None
+        if table is None:
+            return ()
+    if not isinstance(table, dict):
+        raise ValueError("[tool.parrot.sdd] must be a table")
+    raw = table.get(EXTRA_WRITE_PATHS_KEY, [])
+    if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
+        raise ValueError(f"{EXTRA_WRITE_PATHS_KEY} must be a list of strings")
+    if not raw:
+        return ()
+    try:
+        guards = [primary.resolve(), Path.home().resolve(), *shared_environments(primary)]
+    except (OSError, RuntimeError) as exc:
+        raise ValueError(f"{EXTRA_WRITE_PATHS_KEY}: cannot resolve the protected roots ({exc})") from exc
+    found: list[Path] = []
+    for item in raw:
+        if not os.path.isabs(item) or os.path.normpath(item) != item:
+            raise ValueError(f"{EXTRA_WRITE_PATHS_KEY} entry {item!r} must be an absolute, normalized path")
+        try:
+            path = Path(item).resolve()
+        except (OSError, RuntimeError) as exc:
+            raise ValueError(f"{EXTRA_WRITE_PATHS_KEY} entry {item!r} cannot be resolved ({exc})") from exc
+        if len(path.parts) < 3:
+            raise ValueError(
+                f"{EXTRA_WRITE_PATHS_KEY} entry {item!r} resolves to {path}, a root or top-level directory; "
+                "name a dedicated subdirectory instead"
+            )
+        for guard in guards:
+            if path == guard or path.is_relative_to(guard) or guard.is_relative_to(path):
+                raise ValueError(f"{EXTRA_WRITE_PATHS_KEY} entry {item!r} overlaps the protected path {guard}")
+        if path not in found:
+            found.append(path)
+    return tuple(found)
+
+
+def sandbox_extra_write_dirs(root: Path, git_dir: Path | None) -> tuple[Path, ...]:
+    """Return the operator-declared extra writable directories for a linked worktree.
+
+    The declaration is read from the primary checkout only. A session running in the primary checkout
+    itself gets none: it can edit that ``pyproject.toml``, so the value is not trusted there.
+
+    This never raises — ``protected_argv`` wraps every Bash call, so one raise would deny the whole
+    session. An invalid declaration grants nothing (the launcher reports it through
+    ``load_launch_config``), and a directory that cannot be created is skipped: Bubblewrap cannot bind a
+    path that is not there.
+
+    Args:
+        root: The checkout root resolved for the command's working directory.
+        git_dir: The common Git directory, or ``None`` outside a repository.
+
+    Returns:
+        The existing directories to make writable.
+    """
+    if git_dir is None:
+        return ()
+    primary = git_dir.parent
+    if primary == root:
+        return ()
+    try:
+        paths = load_extra_write_paths(primary)
+    except ValueError:
+        return ()
+    directories: list[Path] = []
+    for path in paths:
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            continue
+        directories.append(path)
+    return tuple(directories)
+
+
 def claude_scratch_root() -> Path:
     """Return Claude Code's per-user scratchpad root, creating it when absent.
 
@@ -306,7 +409,8 @@ def protected_argv(cwd: Path, argv: Sequence[str], *, derive_pythonpath: bool = 
     shared SDD ledger (``.parrot/ledger``, so a worktree agent can file and
     claim ledger issues), the sdd-coder evidence store
     (``artifacts/logs/sdd-coder-usage``, so review checkpoints and task journals can be
-    written), private temporary storage,
+    written), the operator-declared ``sandbox_extra_write_paths`` of the primary
+    checkout's ``pyproject.toml``, private temporary storage,
     and Claude Code's scratchpad root (``/tmp/claude-<uid>``, bound back over the
     private ``/tmp`` so a seat's scratchpad survives between commands) are
     writable. The rest of the primary checkout and existing shared
@@ -346,6 +450,9 @@ def protected_argv(cwd: Path, argv: Sequence[str], *, derive_pythonpath: bool = 
     # root through it while the rest of /tmp stays private.
     scratch_root = claude_scratch_root()
     command.extend(["--bind", str(scratch_root), str(scratch_root)])
+    # Operator-declared directories (e.g. a log directory under /tmp) reach the host the same way.
+    for extra_dir in sandbox_extra_write_dirs(root, git_dir):
+        command.extend(["--bind", str(extra_dir), str(extra_dir)])
     admin_dirs = worktree_admin_dirs(root, git_dir)
     for admin_dir in admin_dirs:
         command.extend(["--bind", str(admin_dir), str(admin_dir)])
@@ -616,6 +723,31 @@ def _load_native_sandbox() -> Any:
     return native_claude_sandbox
 
 
+def _load_procedure_advice() -> Any:
+    """Return the sibling ``procedure_advice`` module (FEAT-891), package or script mode."""
+    if __package__:
+        from . import procedure_advice
+    else:  # run as a script: this file's directory is sys.path[0]
+        import procedure_advice
+    return procedure_advice
+
+
+def _apply_procedure_advice(output: dict[str, Any], payload: dict[str, Any]) -> None:
+    """Add the procedure advice for a Bash payload to ``output`` in place; never raises."""
+    if "permissionDecision" in output or payload.get("tool_name") != "Bash":
+        return
+    try:
+        command = payload["tool_input"]["command"]
+        advice = _load_procedure_advice().evaluate_command(command, Path(payload["cwd"]))
+    except Exception:  # noqa: BLE001 — the procedure check never breaks the guard
+        return
+    if advice.decision == "deny":
+        output.pop("updatedInput", None)
+        output.update(permissionDecision="deny", permissionDecisionReason=advice.text)
+    elif advice.decision == "advise":
+        output["additionalContext"] = advice.text
+
+
 DEGRADED_BANNER = "echo '[sdd] degraded sandbox: no OS write boundary' >&2; "
 
 #: Hook backends. ``auto`` (the ``main()`` default) picks native or Bubblewrap when the command runs;
@@ -649,18 +781,42 @@ def _branch(then: str, otherwise: str) -> str:
     return f"if {_native_check()}; then {then}{_ELSE}{otherwise}{_FI}"
 
 
-def _shell_prefix_policy() -> dict[str, Any] | None:
-    """Return a token-authenticated shell-prefix policy, or ``None`` without proof."""
+def _load_shell_prefix() -> Any:
+    """Return the sibling ``shell_prefix`` module without importing Parrot in script mode.
+
+    ``shell_prefix`` imports this module back, so the import is lazy and, in script mode, the running
+    module is pre-seeded under its sibling name to keep one copy of the policy helpers.
+    """
+    if __package__:
+        from . import shell_prefix
+    else:  # run as a script: this file's directory is sys.path[0]
+        sys.modules.setdefault("worktree_environment", sys.modules[__name__])
+        import shell_prefix
+    return shell_prefix
+
+
+def _shell_prefix_policy() -> Any | None:
+    """Return the validated, token-authenticated shell-prefix policy, or ``None`` without proof.
+
+    The token only proves that this hook ran through the prefix. The policy it names must also pass the
+    prefix's own validation (regular file, not group/world-writable, complete schema) and describe this
+    session's worktree; anything else leaves the hook on its own Bubblewrap wrapper.
+
+    Returns:
+        The ``shell_prefix.PrefixPolicy``, or ``None`` when any proof is missing or invalid.
+    """
     policy_path = os.environ.get("PARROT_SDD_SHELL_PREFIX_POLICY")
     token = os.environ.get("PARROT_SDD_SHELL_PREFIX_TOKEN")
     if not policy_path or not token:
         return None
     try:
-        contents = Path(policy_path).read_bytes()
-        policy = json.loads(contents)
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        policy, digest = _load_shell_prefix().load_policy(policy_path)
+    except (OSError, ValueError):
         return None
-    if not isinstance(policy, dict) or hashlib.sha256(contents).hexdigest() != token:
+    if digest != token:
+        return None
+    frozen_root = os.environ.get(LAUNCHER_MARKERS[0], "").split(os.pathsep)[0]
+    if frozen_root and frozen_root != policy.worktree:
         return None
     return policy
 
@@ -693,7 +849,7 @@ def _wrap_bash(command: str, cwd: Path, tool_input: dict[str, Any], native: Any,
     # After the guard, which must see the raw runner (`pytest`, not `rtk pytest`).
     # A token-authenticated RTK prefix already handles the exact command payload.
     prefix_policy = _shell_prefix_policy()
-    if not (prefix_policy and prefix_policy.get("rtk") is True):
+    if not (prefix_policy and prefix_policy.rtk):
         if optimized := rtk_rewrite(command):
             command = optimized
     degraded = bool(native) and os.environ.get(native.DEGRADED_ENV) == "1"
@@ -711,7 +867,7 @@ def _wrap_bash(command: str, cwd: Path, tool_input: dict[str, Any], native: Any,
             return command
         shell = bounded_shell_argv(command, tool_input) if explicit else ["/bin/bash", "-c", command]
         return shlex.join(["env", *(f"{key}={value}" for key, value in diff.items()), *shell])
-    if backend == "bubblewrap" and (policy := _shell_prefix_policy()) and policy.get("mode") == "legacy":
+    if backend == "bubblewrap" and prefix_policy and prefix_policy.mode == "legacy":
         if tool_input.get("timeout") or tool_input.get("run_in_background"):
             return shlex.join(bounded_shell_argv(command, tool_input))
         return command
@@ -1049,6 +1205,7 @@ def hook_response(payload: dict[str, Any], *, backend: str = "bubblewrap") -> di
                 validate_write_path(cwd, cwd / path)
     except (OSError, ValueError, RuntimeError, KeyError) as exc:
         output.update(permissionDecision="deny", permissionDecisionReason=str(exc))
+    _apply_procedure_advice(output, payload)
     return {"hookSpecificOutput": output}
 
 

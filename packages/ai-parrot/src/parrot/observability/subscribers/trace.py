@@ -7,6 +7,11 @@ full GenAI Semantic Conventions attributes. Coexists with FEAT-176's stub
 Design points:
 - Each span is keyed by ``event.trace_context.span_id`` in ``_active_spans``.
 - ``asyncio.Lock`` guards concurrent access to ``_active_spans``.
+- An end event that arrives before its start event is buffered in
+  ``_pending_ends`` (FIFO-capped) and applied when the start arrives. The
+  client forwards ``BeforeClientCallEvent`` to the global registry
+  fire-and-forget but awaits the after/failed forward, so a call that never
+  yields to the event loop delivers its end first.
 - ``MessageAddedEvent`` and ``AgentStatusChangedEvent`` attach *span events*
   (not spans) to the currently-active span.
 - ``ClientStreamChunkEvent`` is a no-op unless ``capture_completions=True``.
@@ -18,7 +23,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from collections import OrderedDict
+from datetime import datetime
+from typing import TYPE_CHECKING, Any, Dict, NamedTuple, Optional
 
 from parrot.core.events.lifecycle import LifecycleEvent
 from parrot.core.events.lifecycle.events import (
@@ -54,6 +61,24 @@ if TYPE_CHECKING:
     from parrot.observability.cost.calculator import CostCalculator
 
 logger = logging.getLogger(__name__)
+
+_MAX_PENDING_ENDS = 1024
+"""Cap on buffered span ends whose start event has not been processed yet."""
+
+
+class _PendingEnd(NamedTuple):
+    """A span end that arrived before its span start.
+
+    Attributes:
+        ok: ``True`` for an OK close, ``False`` for an ERROR close.
+        attrs: Final attributes to set on the span before closing it.
+        end_time_ns: Creation time of the end event in epoch nanoseconds, or
+            ``None`` when the event carries no timezone-aware timestamp.
+    """
+
+    ok: bool
+    attrs: Dict[str, Any]
+    end_time_ns: Optional[int]
 
 
 class GenAIOpenTelemetrySubscriber:
@@ -98,6 +123,8 @@ class GenAIOpenTelemetrySubscriber:
         self._cost = cost_calculator
         self._capture_completions = capture_completions
         self._active_spans: Dict[str, Any] = {}
+        self._pending_ends: OrderedDict[str, _PendingEnd] = OrderedDict()
+        self._max_pending_ends = _MAX_PENDING_ENDS
         self._lock = asyncio.Lock()
 
     # ------------------------------------------------------------------
@@ -163,21 +190,40 @@ class GenAIOpenTelemetrySubscriber:
     ) -> None:
         """Open an OTel span and store it keyed by ``event.trace_context.span_id``.
 
+        When the matching end event was processed first (see
+        :meth:`_buffer_pending_end`), the span is not stored: it is opened at
+        the start event's creation time and closed at once at the end event's
+        creation time, with the buffered status and attributes.
+
         Args:
             name: Span name.
             event: The triggering lifecycle event (provides trace context).
             attrs: Attribute dict to set on the span immediately.
         """
         ctx = self._otel_parent_context(event.trace_context)
-        span = self._tracer.start_span(name, context=ctx)
-        if attrs:
-            for k, v in attrs.items():
-                if v is not None:
-                    span.set_attribute(k, v)
         span_key = event.trace_context.span_id if event.trace_context else None
-        if span_key:
-            async with self._lock:
+        start_time_ns: Optional[int] = None
+        end_time_ns: Optional[int] = None
+        async with self._lock:
+            pending = self._pending_ends.pop(span_key, None) if span_key else None
+            if pending is None:
+                span = self._tracer.start_span(name, context=ctx)
+            else:
+                start_time_ns = self._event_time_ns(event)
+                end_time_ns = pending.end_time_ns
+                if start_time_ns is None or end_time_ns is None:
+                    start_time_ns = end_time_ns = None
+                else:
+                    end_time_ns = max(end_time_ns, start_time_ns)
+                span = self._tracer.start_span(name, context=ctx, start_time=start_time_ns)
+            if attrs:
+                for k, v in attrs.items():
+                    if v is not None:
+                        span.set_attribute(k, v)
+            if pending is None and span_key:
                 self._active_spans[span_key] = span
+        if pending is not None:
+            self._close_span(span, ok=pending.ok, attrs=pending.attrs, end_time_ns=end_time_ns)
 
     async def _end_span_ok(
         self,
@@ -186,24 +232,25 @@ class GenAIOpenTelemetrySubscriber:
     ) -> None:
         """Close the matching span with OK status, optionally setting final attrs.
 
+        If the span has not started yet, the end is buffered for
+        :meth:`_start_span` instead of being dropped.
+
         Args:
             event: Lifecycle event whose ``span_id`` identifies the span.
             extra_attrs: Additional attributes to set before closing.
         """
-        from opentelemetry.trace import Status, StatusCode  # lazy import
         span_key = event.trace_context.span_id if event.trace_context else None
         if not span_key:
             return
         async with self._lock:
             span = self._active_spans.pop(span_key, None)
-        if span is None:
-            return
-        if extra_attrs:
-            for k, v in extra_attrs.items():
-                if v is not None:
-                    span.set_attribute(k, v)
-        span.set_status(Status(StatusCode.OK))
-        span.end()
+            if span is None:
+                self._buffer_pending_end(
+                    span_key,
+                    _PendingEnd(ok=True, attrs=dict(extra_attrs or {}), end_time_ns=self._event_time_ns(event)),
+                )
+        if span is not None:
+            self._close_span(span, ok=True, attrs=extra_attrs)
 
     async def _end_span_error(
         self,
@@ -212,24 +259,93 @@ class GenAIOpenTelemetrySubscriber:
     ) -> None:
         """Close the matching span with ERROR status.
 
+        If the span has not started yet, the end is buffered for
+        :meth:`_start_span` instead of being dropped.
+
         Args:
             event: Lifecycle event whose ``span_id`` identifies the span.
             error_attrs: Attribute dict including ``error.type`` / ``error.message``.
         """
-        from opentelemetry.trace import Status, StatusCode  # lazy import
         span_key = event.trace_context.span_id if event.trace_context else None
         if not span_key:
             return
         async with self._lock:
             span = self._active_spans.pop(span_key, None)
-        if span is None:
-            return
-        for k, v in error_attrs.items():
+            if span is None:
+                self._buffer_pending_end(
+                    span_key,
+                    _PendingEnd(ok=False, attrs=dict(error_attrs), end_time_ns=self._event_time_ns(event)),
+                )
+        if span is not None:
+            self._close_span(span, ok=False, attrs=error_attrs)
+
+    def _close_span(
+        self,
+        span: Any,
+        *,
+        ok: bool,
+        attrs: Optional[Dict[str, Any]],
+        end_time_ns: Optional[int] = None,
+    ) -> None:
+        """Set final attributes and status on *span*, then end it.
+
+        Args:
+            span: The OTel span to close.
+            ok: ``True`` for OK status; ``False`` for ERROR status described by
+                ``attrs["error.message"]``.
+            attrs: Final attributes; ``None`` values are skipped.
+            end_time_ns: End time in epoch nanoseconds, or ``None`` to end now.
+        """
+        from opentelemetry.trace import Status, StatusCode  # lazy import
+
+        attrs = attrs or {}
+        for k, v in attrs.items():
             if v is not None:
                 span.set_attribute(k, v)
-        error_msg = error_attrs.get("error.message", "")
-        span.set_status(Status(StatusCode.ERROR, str(error_msg)))
-        span.end()
+        if ok:
+            span.set_status(Status(StatusCode.OK))
+        else:
+            span.set_status(Status(StatusCode.ERROR, str(attrs.get("error.message", ""))))
+        if end_time_ns is None:
+            span.end()
+        else:
+            span.end(end_time=end_time_ns)
+
+    def _buffer_pending_end(self, span_key: str, pending: _PendingEnd) -> None:
+        """Remember an end whose span has not started yet. Caller holds ``_lock``.
+
+        ``AbstractClient`` forwards ``BeforeClientCallEvent`` to the global
+        registry fire-and-forget but awaits the after/failed forward, so a call
+        that completes without yielding to the event loop (a stub, a cache hit)
+        reaches this subscriber end-first. :meth:`_start_span` consumes the
+        entry. The buffer is FIFO-capped at ``_max_pending_ends`` so ends whose
+        start never arrives cannot grow it without bound.
+
+        Args:
+            span_key: The ``span_id`` of the span being closed.
+            pending: Status, attributes and end time to apply on start.
+        """
+        self._pending_ends[span_key] = pending
+        self._pending_ends.move_to_end(span_key)
+        while len(self._pending_ends) > self._max_pending_ends:
+            dropped, _ = self._pending_ends.popitem(last=False)
+            logger.debug("Dropped unmatched span end %s: pending-end buffer is full", dropped)
+
+    @staticmethod
+    def _event_time_ns(event: LifecycleEvent) -> Optional[int]:
+        """Return the event's creation time in epoch nanoseconds.
+
+        Args:
+            event: Lifecycle event carrying a ``timestamp`` datetime.
+
+        Returns:
+            Epoch nanoseconds, or ``None`` when the event has no timezone-aware
+            ``timestamp``.
+        """
+        ts = getattr(event, "timestamp", None)
+        if not isinstance(ts, datetime) or ts.tzinfo is None:
+            return None
+        return round(ts.timestamp() * 1_000_000) * 1_000
 
     async def _get_active_span(self, span_key: Optional[str]) -> Optional[Any]:
         """Return the active span for *span_key* without removing it.

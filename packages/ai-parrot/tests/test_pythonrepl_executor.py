@@ -10,15 +10,22 @@ byte-identical: str on success, `{status, result, error}` dict on error.
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 
 import pytest
 
 from parrot.tools.pythonrepl import PythonREPLTool
+from parrot.tools.repl_worker import WorkerPool
+from parrot.tools.repl_worker.protocol import WorkerConfig
 
 
 @pytest.fixture
-async def tool(tmp_path):
+async def tool(tmp_path, monkeypatch):
+    monkeypatch.setenv("STATIC_DIR", str(tmp_path))
+    monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setattr("parrot.tools.abstract.STATIC_DIR", str(tmp_path))
+    monkeypatch.setattr("parrot.tools.abstract.OUTPUT_DIR", str(tmp_path))
     instance = PythonREPLTool(report_dir=tmp_path, sanitize_input_enabled=True)
     yield instance
     if instance._worker_pool is not None:
@@ -46,12 +53,49 @@ class TestDedicatedExecutor:
         )
         assert name.startswith("python-repl")
 
-    async def test_pool_is_bounded(self, tool):
-        """Executor max_workers honours the configured bound (default 4)."""
-        assert tool._repl_executor._max_workers == 4
+    async def test_pool_is_bounded(self):
+        """Default executor auto-sizes to the WorkerPool capacity."""
+        tool = PythonREPLTool()
+        cfg = WorkerConfig()
+        expected = WorkerPool._effective_ceiling(cfg) + cfg.prewarm_pool_size
+        assert tool._repl_executor._max_workers == expected
 
-    async def test_pool_size_configurable(self, tmp_path):
+    async def test_pool_sized_from_worker_config(self, tmp_path):
+        cfg = WorkerConfig(max_workers=2, prewarm_pool_size=1)
+        t = PythonREPLTool(worker_config=cfg)
+        assert t._repl_executor._max_workers == 3
+
+    async def test_default_pool_emits_no_undersized_warning(self, caplog):
+        tool = PythonREPLTool()
+        try:
+            with caplog.at_level(logging.WARNING):
+                await tool._acquire_worker_pool()
+        finally:
+            if tool._worker_pool is not None:
+                await tool._worker_pool.shutdown()
+        assert "shared executor has" not in caplog.text
+
+    async def test_pandas_agent_forwards_executor_size(self, monkeypatch, tmp_path):
+        import parrot.bots.data as data_mod
+
+        captured = {}
+
+        class _Stop(Exception):
+            pass
+
+        def fake_tool(*args, **kwargs):
+            captured.update(kwargs)
+            raise _Stop
+
+        monkeypatch.setattr(data_mod, "PythonPandasTool", fake_tool)
+        with pytest.raises(_Stop):
+            data_mod.PandasAgent(name="t", python_repl_executor_max_workers=7)
+        assert captured["executor_max_workers"] == 7
+
+    async def test_pool_size_configurable(self, tmp_path, monkeypatch):
         """executor_max_workers kwarg overrides the default bound."""
+        monkeypatch.setattr("parrot.tools.abstract.STATIC_DIR", str(tmp_path))
+        monkeypatch.setattr("parrot.tools.abstract.OUTPUT_DIR", str(tmp_path))
         custom_tool = PythonREPLTool(report_dir=tmp_path, executor_max_workers=2)
         assert custom_tool._repl_executor._max_workers == 2
 

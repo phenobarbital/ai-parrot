@@ -27,6 +27,9 @@ from .vault_utils import (
     delete_vault_credential,
     oauth2_vault_name,
     VAULT_CRED_COLLECTION,
+    create_vault_credential,
+    list_vault_credentials,
+    vault_credential_exists,
 )
 from .credentials_utils import (
     encrypt_credential,
@@ -75,6 +78,9 @@ __all__ = [
     'delete_vault_credential',
     'oauth2_vault_name',
     'VAULT_CRED_COLLECTION',
+    'create_vault_credential',
+    'list_vault_credentials',
+    'vault_credential_exists',
     'encrypt_credential',
     'decrypt_credential',
     # Command sanitizer engine (FEAT-252 / TASK-1611)

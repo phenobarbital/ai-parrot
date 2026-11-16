@@ -500,6 +500,12 @@ The call returns `review_ref` for `finalize`. The engine attaches whether feedba
 exposure yourself. Record each review before that task's `finalize`. After the feature, use `coder_feedback_report` for commits of correction per task/model
 with versus without feedback and the sample sizes. Missing history is not a zero baseline or proof of improvement.
 
+Require checked_patterns to reference actually delivered versions and engine-verifiable checks.
+Keep citations in the structured channel; do not render them into the user-visible answer.
+An independently verified zero-fix delivery may be successful without a fabricated fix commit.
+Keep coder_record_feedback, coder_record_review, execution_id and review_ref contracts intact.
+Do not convert experience.pitfall lessons or cohort statistics into trusted per-memory outcomes.
+
 Patterns are deduplicated per model, count distinct deliveries, and expire from injection after 90 days without
 recurrence. Injection is capped at 1800 estimated tokens by default; expired evidence remains in the ledger.
 

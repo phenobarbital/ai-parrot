@@ -7,23 +7,47 @@ FEAT-103: Migrated from DocumentDB to DynamoDB.
 """
 
 import asyncio
-import uuid
-from typing import List, Dict, Any, Optional
-from datetime import datetime, timedelta, timezone
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple, TYPE_CHECKING
+from datetime import datetime, timezone
+from uuid import uuid4
 
 from navconfig.logging import logging
 
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from navigator_eventbus import EventEnvelope
+    from ..memory.abstract import ConversationTurn
+
 from ..memory.render import render_history
-from .models import ChatMessage, MessageRole, ToolCall, Source
+from ..conf import CHAT_HOT_TTL_HOURS
+from ..memory.persistence import CONVERSATION_DELETED_TOPIC
+from .errors import (
+    ConversationDeletedError,
+    IndexNotReadyError,
+    InvalidTurnPayloadError,
+    StorageError,
+    StorageUnavailableError,
+    StorageWriteError,
+)
+from .models import ChatStorageTurn, MessageRole
 
 # Default limits
-HOT_TTL_HOURS = 48
 DEFAULT_LIST_LIMIT = 50
 DEFAULT_CONTEXT_TURNS = 10
+
+#: Hot-tier metadata key written when a missing hot entry is seeded from the cold tier.
+HOT_SEED_METADATA_KEY = "cold_seed"
+_HOT_SEED_RETRIES = 2  # seed attempts on a hot miss (the first, plus ONE retry if the key vanishes again): bounded
+
+
+class _HotSeedChanged(Exception):
+    """Abort validation when the seed expired or another seed replaced it."""
 
 
 class ChatStorage:
     """Unified chat persistence with Redis hot cache and DynamoDB cold storage."""
+
+    #: Attempts of the in-process post-delete cleanup retry.
+    CLEANUP_RETRY_ATTEMPTS = 12
 
     def __init__(
         self,
@@ -37,6 +61,14 @@ class ChatStorage:
         # Legacy: if document_db is provided but not dynamodb, store it
         self._docdb = document_db
         self._initialized = False
+        self._memory_cleaners: List[Callable[[str, str, str], Awaitable[None]]] = []
+        self._turn_memory_cleaners: List[Callable[[str, str, str, str], Awaitable[None]]] = []
+        self._deletion_publisher: Optional[Callable[[str, Dict[str, Any]], Awaitable[None]]] = None
+        self._cleanup_retries: Dict[Tuple[str, str, str, Optional[str]], "asyncio.Task[None]"] = {}
+        #: Base delay (seconds) of the in-process cleanup retry; doubles per attempt, capped at 60 s.
+        self.cleanup_retry_base_delay: float = 1.0
+        #: Newest live cold turns copied into a MISSING hot entry before a turn is appended to it.
+        self.hot_seed_turns: int = DEFAULT_LIST_LIMIT
         self.logger = logging.getLogger("parrot.storage.ChatStorage")
 
     # ------------------------------------------------------------------
@@ -52,7 +84,10 @@ class ChatStorage:
             try:
                 from parrot.memory import RedisConversation  # noqa: E501 pylint: disable=import-outside-toplevel
 
-                self._redis = RedisConversation(key_prefix="chat")
+                self._redis = RedisConversation(
+                    key_prefix="chat",
+                    history_ttl=CHAT_HOT_TTL_HOURS * 3600 if CHAT_HOT_TTL_HOURS > 0 else None,
+                )
             except Exception as exc:
                 self.logger.warning("RedisConversation unavailable, hot cache disabled: %s", exc)
 
@@ -86,8 +121,41 @@ class ChatStorage:
                 return label
         return cls_name
 
+    @property
+    def cold_backend(self) -> Optional[Any]:
+        """The cold-tier ``ConversationBackend`` (read-only), or ``None`` when no backend is configured."""
+        return self._dynamo
+
+    @property
+    def hot_redis_client(self) -> Optional[Any]:
+        """The Redis client behind the hot tier (read-only), or ``None`` when there is no Redis hot tier."""
+        return getattr(self._redis, "redis", None)
+
+    def register_memory_cleaner(self, cleaner: Callable[[str, str, str], Awaitable[None]]) -> None:
+        """Register a ``(user_id, agent_name, session_id)`` cleaner for one working-memory backend.
+
+        Called after the tombstone is committed, once per delete and again on every cleanup retry,
+        so it MUST be idempotent.
+        """
+        self._memory_cleaners.append(cleaner)
+
+    def register_turn_memory_cleaner(self, cleaner: Callable[[str, str, str, str], Awaitable[None]]) -> None:
+        """Register a ``(user_id, agent_name, session_id, turn_id)`` cleaner for one working-memory backend.
+
+        Run after a TURN tombstone is committed (and on every cleanup retry), so a deleted turn is not fed to
+        the LLM from a bot's working memory until its TTL. MUST be idempotent.
+        """
+        self._turn_memory_cleaners.append(cleaner)
+
+    def attach_deletion_publisher(self, publisher: Optional[Callable[[str, Dict[str, Any]], Awaitable[None]]]) -> None:
+        """Set (or clear with ``None``) the callable that publishes deletion events: ``await publisher(topic, payload)``."""
+        self._deletion_publisher = publisher
+
     async def close(self) -> None:
         """Release connections."""
+        for task in list(self._cleanup_retries.values()):
+            task.cancel()
+        self._cleanup_retries.clear()
         if self._redis:
             try:
                 await self._redis.close()
@@ -100,179 +168,208 @@ class ChatStorage:
                 pass
 
     # ------------------------------------------------------------------
-    # Save operations
+    # Write operations (bus subscriber)
     # ------------------------------------------------------------------
 
-    async def save_turn(
-        self,
-        *,
-        turn_id: Optional[str] = None,
-        user_id: str,
-        session_id: str,
-        agent_id: str,
-        user_message: str,
-        assistant_response: str,
-        output: Any = None,
-        output_mode: Optional[str] = None,
-        data: Any = None,
-        code: Optional[str] = None,
-        model: Optional[str] = None,
-        provider: Optional[str] = None,
-        response_time_ms: Optional[int] = None,
-        tool_calls: Optional[List[Dict[str, Any]]] = None,
-        sources: Optional[List[Dict[str, Any]]] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> str:
-        """Save a complete user->assistant turn.
+    async def store_turn(self, turn: ChatStorageTurn) -> None:
+        """Upsert ``turn`` in the cold tier, update thread metadata, then upsert the hot tier.
 
-        Writes to Redis (hot) synchronously and to DynamoDB (cold)
-        as a fire-and-forget background task.
+        Returns after the cold write and hot update complete. Older turns outside a truncated hot seed stay
+        cold-only. Legacy cold backends without canonical write results invalidate the hot cache instead.
 
-        Args:
-            turn_id: Optional client-provided turn identifier. When the
-                frontend sends a ``message_id`` the handler can forward it
-                here so both sides share the same ID, preventing duplicates
-                on sync.  Falls back to a server-generated UUID when *None*.
+        Raises:
+            StorageError: any tier failed (retryable) — nothing is swallowed, nothing is backgrounded.
+            ConversationDeletedError: the session or the turn is tombstoned (terminal).
+        """
+        if self._dynamo is None and self._redis is None:
+            raise StorageUnavailableError("no storage tier is configured")
+        try:
+            canonical = turn
+            if self._dynamo is not None:
+                canonical = await self._store_cold(turn)
+            if self._redis is not None:
+                if canonical is None:
+                    # Legacy custom backends may not return the committed payload. Never guess its ordering.
+                    await self._redis.delete_history(turn.user_id, turn.session_id, chatbot_id=turn.agent_id)
+                else:
+                    await self._store_hot(canonical)
+            await self._fence_after_write(turn)
+        except StorageError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — a foreign exception must still reach the bus as retryable
+            raise StorageWriteError(f"store_turn failed for turn {turn.turn_id}: {exc}") from exc
+
+    async def _store_cold(self, turn: ChatStorageTurn) -> Optional[ChatStorageTurn]:
+        """Write durably and return the canonical turn, or ``None`` for a legacy backend without write results."""
+        stored = await self._dynamo.put_turn(turn.user_id, turn.agent_id, turn.session_id, turn.turn_id, turn.to_row())
+        await self._dynamo.update_thread(
+            user_id=turn.user_id,
+            agent_id=turn.agent_id,
+            session_id=turn.session_id,
+            updated_at=turn.timestamp,
+            last_user_message=turn.user_message[:200],
+            last_assistant_message=turn.assistant_response[:200],
+            model=turn.presentation.model,
+            provider=turn.presentation.provider,
+        )
+        if stored is None:
+            return None
+        return ChatStorageTurn.from_row(
+            stored, user_id=turn.user_id, agent_id=turn.agent_id, session_id=turn.session_id
+        )
+
+    async def _store_hot(self, turn: ChatStorageTurn) -> None:
+        """Upsert ``turn`` in the hot tier; a MISSING hot entry is first seeded from the cold tier.
+
+        A hot entry that expired (``CHAT_HOT_TTL_HOURS``) must not be recreated holding only the new turn: every
+        hot-first read would then serve a partial conversation. The existence check runs inside the upsert's
+        compare-and-swap (``create=False``), so the steady state (hot entry present) costs no cold read; a miss
+        costs ONE cold window read, installed with the atomic NX install (a concurrent seed loses cleanly).
+        """
+        hot = self._hot_tier_turn(turn)
+        key = {"chatbot_id": turn.agent_id}
+        if self._dynamo is None:  # no cold tier: nothing to seed from
+            await self._redis.upsert_turn(turn.user_id, turn.session_id, hot, **key)
+            return
+        # keep_seed_suffix: the hot entry stays a contiguous newest suffix of the live conversation. A delayed or
+        # replayed turn that predates a truncated seed is left to the cold tier instead of landing before the
+        # suffix with a gap in between (the read-side coverage check cannot see a gap).
+        for seeds_left in range(_HOT_SEED_RETRIES, -1, -1):
+            if await self._redis.upsert_turn(
+                turn.user_id, turn.session_id, hot, create=False, keep_seed_suffix=True, **key
+            ):
+                return
+            if seeds_left:
+                if not await self._seed_hot_tier(turn.user_id, turn.agent_id, turn.session_id):
+                    return  # no trustworthy window to seed: no hot entry, reads go to the cold tier
+        # The entry vanished again between the seed and the upsert (TTL expiry, a delete). Never recreate it
+        # holding only this turn: raise so the bus retries the whole turn.
+        raise StorageWriteError(f"hot entry for turn {turn.turn_id} vanished again while it was being seeded")
+
+    async def _seed_hot_tier(self, user_id: str, agent: str, session_id: str) -> bool:
+        """Install the cold tier's newest ``hot_seed_turns`` live turns as the hot entry (NX: never overwrites).
+
+        The window excludes tombstoned turns. ``metadata['cold_seed']['complete']`` records whether the window
+        holds every live turn, so a read asking for more turns than a truncated seed holds goes to the cold tier.
 
         Returns:
-            The turn_id used (client-provided or generated).
+            ``False`` when the chronological window is unavailable (legacy session whose index is not ready):
+            nothing is installed, because the legacy fallback returns the OLDEST rows, not the newest suffix,
+            and a seeded prefix would be served as coverage while newer cold turns are missing.
+
+        Raises:
+            StorageError: the cold window could not be read (the turn is retried; no partial hot entry is made).
         """
-        turn_id = turn_id or uuid.uuid4().hex
-        # Fix #3: always use timezone-aware UTC datetime to avoid comparison
-        # errors with backend timestamps (Postgres TIMESTAMPTZ, SQLite ISO strings).
-        now = datetime.now(timezone.utc)
-
-        # Build ChatMessage objects
-        user_msg = ChatMessage(
-            message_id=f"{turn_id}_user",
-            session_id=session_id,
-            user_id=user_id,
-            agent_id=agent_id,
-            role=MessageRole.USER.value,
-            content=user_message,
-            timestamp=now,
-        )
-
-        tool_call_objs = [ToolCall.from_dict(tc) for tc in (tool_calls or [])]
-        source_objs = [Source.from_dict(s) for s in (sources or [])]
-
-        assistant_msg = ChatMessage(
-            message_id=f"{turn_id}_assistant",
-            session_id=session_id,
-            user_id=user_id,
-            agent_id=agent_id,
-            role=MessageRole.ASSISTANT.value,
-            content=assistant_response or "",
-            timestamp=now + timedelta(milliseconds=1),
-            output=output,
-            output_mode=output_mode,
-            data=data,
-            code=code,
-            model=model,
-            provider=provider,
-            response_time_ms=response_time_ms,
-            tool_calls=tool_call_objs,
-            sources=source_objs,
-            metadata=metadata or {},
-        )
-
-        # --- Hot tier: Redis ---
-        if self._redis:
-            try:
-                from parrot.memory.abstract import (
-                    ConversationTurn,
-                )  # noqa: E501 pylint: disable=import-outside-toplevel
-
-                turn = ConversationTurn(
-                    turn_id=turn_id,
-                    user_id=user_id,
-                    user_message=user_message,
-                    assistant_response=assistant_response or "",
-                    tools_used=[tc.name for tc in tool_call_objs],
-                    timestamp=now,
-                    metadata={
-                        **(metadata or {}),
-                        "output_mode": output_mode,
-                        "model": model,
-                        "provider": provider,
-                        "response_time_ms": response_time_ms,
-                    },
-                )
-                # Ensure conversation history exists, then add turn
-                history = await self._redis.get_history(user_id, session_id, chatbot_id=agent_id)
-                if not history:
-                    await self._redis.create_history(user_id, session_id, chatbot_id=agent_id)
-                await self._redis.add_turn(user_id, session_id, turn, chatbot_id=agent_id)
-            except Exception as exc:
-                self.logger.warning("Redis save_turn failed: %s", exc)
-
-        # --- Cold tier: DynamoDB (fire-and-forget) ---
-        if self._dynamo:
-            asyncio.get_running_loop().create_task(self._save_to_dynamodb(user_msg, assistant_msg, agent_id, now))
-
-        return turn_id
-
-    async def _save_to_dynamodb(
-        self,
-        user_msg: ChatMessage,
-        assistant_msg: ChatMessage,
-        agent_id: str,
-        now: datetime,
-    ) -> None:
-        """Background task: persist turn + upsert thread metadata in DynamoDB."""
+        history = await self._redis.get_history(user_id, session_id, chatbot_id=agent)
+        if history and (history.metadata.get(HOT_SEED_METADATA_KEY) or {}).get("validation_pending"):
+            await self._validate_hot_seed(user_id, agent, session_id, history)
+            return True
+        window = self.hot_seed_turns
         try:
-            session_id = user_msg.session_id
-            user_id = user_msg.user_id
+            rows = await self._cold_window_rows(user_id, agent, session_id, window, legacy_fallback=False)
+        except IndexNotReadyError:
+            return False
+        turns = [self._hot_tier_turn(t) for t in self._stored_turns(rows, user_id, agent, session_id)]
+        metadata = {
+            HOT_SEED_METADATA_KEY: {"window": window, "complete": len(rows) < window, "validation_pending": uuid4().hex}
+        }
+        # False: another writer's entry won (NX) and that writer fences its own seed
+        await self._redis.install_history(user_id, session_id, turns, chatbot_id=agent, metadata=metadata)
+        # Read the winning seed, which may belong to another writer. Its pending marker survives process death
+        # and transient failures; a later writer must finish validation before its upsert can succeed.
+        history = await self._redis.get_history(user_id, session_id, chatbot_id=agent)
+        if history is not None:
+            await self._validate_hot_seed(user_id, agent, session_id, history)
+        return True
 
-            # Prepare turn data
-            turn_data = {
-                "user_message": user_msg.content,
-                "assistant_response": assistant_msg.content,
-                "timestamp": now,
-                "output": _safe_serialize_value(assistant_msg.output),
-                "output_mode": assistant_msg.output_mode,
-                "data": _safe_serialize_value(assistant_msg.data),
-                "code": assistant_msg.code,
-                "model": assistant_msg.model,
-                "provider": assistant_msg.provider,
-                "response_time_ms": assistant_msg.response_time_ms,
-                "tool_calls": [tc.to_dict() for tc in assistant_msg.tool_calls],
-                "sources": [s.to_dict() for s in assistant_msg.sources],
-                "metadata": assistant_msg.metadata,
-            }
+    async def _validate_hot_seed(self, user_id: str, agent: str, session_id: str, history: Any) -> None:
+        """Remove deleted seed turns, then clear only this seed's validation marker by compare-and-swap."""
+        seed = history.metadata.get(HOT_SEED_METADATA_KEY) or {}
+        token = seed.get("validation_pending")
+        if not token:
+            return
+        # A turn delete may have committed its tombstone and its cold cleanup between the window read and the
+        # install; its hot cleanup then found no key and the install put the deleted turn back. Re-check the
+        # tombstones of the seeded ids (ONE batched read) and drop any resurrected turn from the hot entry.
+        gone = await self._dynamo.deleted_turn_ids(user_id, agent, session_id)
+        for stale in [t.turn_id for t in history.turns if t.turn_id in gone]:
+            await self._delete_hot_turn(user_id, session_id, stale, agent)
 
-            # Extract turn_id from the message_id (e.g. "abc123_user" -> "abc123")
-            turn_id = user_msg.message_id.rsplit("_user", 1)[0]
+        def validated(metadata: Dict[str, Any]) -> Dict[str, Any]:
+            """Keep concurrent metadata updates and never validate a replacement seed or recreate a missing key."""
+            current = metadata.get(HOT_SEED_METADATA_KEY) or {}
+            if current.get("validation_pending") != token:
+                raise _HotSeedChanged
+            ready = dict(current)
+            ready.pop("validation_pending")
+            return {**metadata, HOT_SEED_METADATA_KEY: ready}
 
-            # Save turn
-            await self._dynamo.put_turn(
-                user_id=user_id,
-                agent_id=agent_id,
-                session_id=session_id,
-                turn_id=turn_id,
-                data=turn_data,
+        try:
+            await self._redis.merge_metadata(
+                user_id,
+                session_id,
+                chatbot_id=agent,
+                mutate=validated,
+                ttl=getattr(self._redis, "history_ttl", None),
             )
+        except _HotSeedChanged:
+            # The bounded caller retries the upsert/seed path against the current key.
+            return
 
-            # Upsert thread metadata
-            await self._dynamo.update_thread(
-                user_id=user_id,
-                agent_id=agent_id,
-                session_id=session_id,
-                updated_at=now,
-                last_user_message=user_msg.content[:200],
-                last_assistant_message=assistant_msg.content[:200],
-                model=assistant_msg.model,
-                provider=assistant_msg.provider,
-            )
+    @staticmethod
+    def _hot_tier_turn(turn: ChatStorageTurn) -> "ConversationTurn":
+        """Working-memory projection of ``turn`` with the slim presentation subset in ``metadata``."""
+        ct = turn.to_conversation_turn()
+        p = turn.presentation
+        extra: Dict[str, Any] = {
+            "output_mode": p.output_mode,
+            "model": p.model,
+            "provider": p.provider,
+            "response_time_ms": p.response_time_ms,
+        }
+        for name, value in (("usage", p.usage), ("tenant", p.tenant), ("cost_usd", p.cost_usd)):
+            if value is not None:
+                extra[name] = value
+        ct.metadata = {**ct.metadata, **extra}
+        return ct
 
-            self.logger.debug("Chat turn saved to %s", self._backend_label)
-        except Exception as exc:
-            self.logger.warning(
-                "%s save failed for session %s: %s",
-                self._backend_label,
-                user_msg.session_id,
-                exc,
+    async def _fence_after_write(self, turn: ChatStorageTurn) -> None:
+        """Re-check the tombstones; if a delete landed meanwhile, undo the resurrected copy and raise."""
+        if self._dynamo is None:
+            return
+        key = (turn.user_id, turn.agent_id, turn.session_id)
+        if not await self._dynamo.is_deleted(*key, turn.turn_id):  # session OR this turn: ONE read on the live path
+            return
+        session_gone = await self._dynamo.is_deleted(*key)  # only after a deletion: the session, or just this turn?
+        if session_gone:
+            _, errors = await self._cleanup_conversation(turn.user_id, turn.agent_id, turn.session_id)
+        else:
+            errors = []
+            try:
+                await self._delete_hot_turn(turn.user_id, turn.session_id, turn.turn_id, turn.agent_id)
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
+        for exc in errors:
+            self.logger.error("post-write cleanup failed for turn %s: %s", turn.turn_id, exc)
+        if errors:  # the envelope is acknowledged as terminal below: nothing else would retry this cleanup
+            self._schedule_cleanup_retry(
+                turn.user_id, turn.agent_id, turn.session_id, None if session_gone else turn.turn_id
             )
+        raise ConversationDeletedError(
+            f"turn {turn.turn_id} was deleted while it was being stored; the stored copy was removed"
+        )
+
+    async def handle_turn_completed(self, envelope: "EventEnvelope") -> None:
+        """Bus handler for ``TURN_COMPLETED_TOPIC``.
+
+        Retryable ``StorageError`` propagates (the bus retries, then dead-letters).
+        ``ConversationDeletedError`` and ``InvalidTurnPayloadError`` are terminal: logged at
+        WARNING with the turn id and acknowledged.
+        """
+        try:
+            await self.store_turn(ChatStorageTurn.from_event_payload(envelope.payload))
+        except (ConversationDeletedError, InvalidTurnPayloadError) as exc:
+            self.logger.warning("turn %s not stored (terminal %s): %s", envelope.event_id, type(exc).__name__, exc)
 
     # ------------------------------------------------------------------
     # Read operations
@@ -289,14 +386,26 @@ class ChatStorage:
 
         Returns:
             List of message dicts, sorted by timestamp ascending.
+
+        Raises:
+            ConversationDeletedError: the conversation is tombstoned (even if cleanup has not finished).
+            StorageUnavailableError: the deletion guard or the cold tier could not be read.
         """
+        await self._ensure_not_deleted(user_id, agent_id or "", session_id)
         # Try Redis first
         if self._redis:
             try:
                 history = await self._redis.get_history(user_id, session_id, chatbot_id=agent_id)
                 if history and history.turns:
                     messages = []
-                    for turn in history.turns[-limit:]:
+                    # filter FIRST, then window: a read returns up to ``limit`` LIVE turns
+                    live = await self._drop_tombstoned_turns(
+                        user_id, agent_id or "", session_id, list(history.turns), lambda t: t.turn_id
+                    )
+                    if self._hot_holds_too_few(history, len(live), limit):
+                        return await self._load_cold(user_id, session_id, agent_id, limit)
+                    visible = live[-limit:]
+                    for turn in visible:
                         messages.append(
                             {
                                 "role": MessageRole.USER.value,
@@ -332,52 +441,92 @@ class ChatStorage:
                     exc,
                 )
 
-        # Fallback: DynamoDB
-        if self._dynamo:
+        return await self._load_cold(user_id, session_id, agent_id, limit)
+
+    @staticmethod
+    def _hot_holds_too_few(history: Any, live_turns: int, wanted: int) -> bool:
+        """``True`` when ``history`` was seeded with a TRUNCATED cold window and holds fewer live turns than wanted.
+
+        Pending seed validation also forces a cold read. A validated truncated entry is a contiguous suffix:
+        older live turns exist only in the cold tier.
+        """
+        seed = (getattr(history, "metadata", None) or {}).get(HOT_SEED_METADATA_KEY)
+        return isinstance(seed, dict) and (
+            bool(seed.get("validation_pending")) or (seed.get("complete") is False and live_turns < wanted)
+        )
+
+    async def _load_cold(
+        self, user_id: str, session_id: str, agent_id: Optional[str], limit: int
+    ) -> List[Dict[str, Any]]:
+        """Read the newest ``limit`` live turns from the cold tier as messages (``[]`` without a cold tier).
+
+        Runs no deletion guard: the caller has already run ``_ensure_not_deleted`` for this read.
+
+        Raises:
+            StorageError: the cold tier could not be read — a failed read is raised, never reported as "empty".
+        """
+        if not self._dynamo:
+            return []
+        agent = agent_id or ""
+        rows = await self._cold_window_rows(user_id, agent, session_id, limit)
+        try:
+            messages: List[Dict[str, Any]] = []
+            for stored in self._stored_turns(rows, user_id, agent, session_id):
+                messages.extend(stored.to_messages())
+            return messages
+        except Exception as exc:  # a failed read is raised, never reported as "empty"
+            raise StorageUnavailableError(f"{self._backend_label} load failed: {exc}") from exc
+
+    async def _cold_window_rows(
+        self, user_id: str, agent: str, session_id: str, limit: int, *, legacy_fallback: bool = True
+    ) -> List[Dict[str, Any]]:
+        """The newest ``limit`` LIVE turn rows of the cold tier, ascending (tombstoned turns excluded).
+
+        With ``legacy_fallback=False`` an unready chronological index raises ``IndexNotReadyError`` instead of
+        falling back to the legacy order (which yields the FIRST rows, not the newest suffix).
+
+        Raises:
+            StorageError: the cold tier could not be read — a failed read is raised, never reported as "empty".
+        """
+        try:
             try:
-                agent = agent_id or ""
+                # Chronological: the newest ``limit`` turns by (timestamp, sequence, turn_id), ascending.
+                # NOT filtered again here: ``query_turn_window`` of every backend already excludes tombstoned
+                # turns and applies ``limit`` after doing so.
+                return await self._dynamo.query_turn_window(user_id, agent, session_id, limit)
+            except IndexNotReadyError:
+                if not legacy_fallback:
+                    raise
+                # Legacy session not backfilled yet: the old (sort_key) order is the best available read.
+                # The window backends already exclude tombstoned turns; this path does not, so ask for the
+                # tombstoned count extra (ONE batched lookup), filter, then apply ``limit`` to live turns.
+                gone = await self._dynamo.deleted_turn_ids(user_id, agent, session_id)
                 turns = await self._dynamo.query_turns(
                     user_id=user_id,
                     agent_id=agent,
                     session_id=session_id,
-                    limit=limit,
+                    limit=limit + len(gone),
                     newest_first=False,
                 )
-                messages = []
-                for turn in turns:
-                    turn_id = turn.get("turn_id", "")
-                    ts = turn.get("timestamp", "")
-                    messages.append(
-                        {
-                            "role": MessageRole.USER.value,
-                            "content": turn.get("user_message", ""),
-                            "timestamp": ts,
-                            "turn_id": turn_id,
-                        }
-                    )
-                    messages.append(
-                        {
-                            "role": MessageRole.ASSISTANT.value,
-                            "content": turn.get("assistant_response", ""),
-                            "timestamp": ts,
-                            "turn_id": turn_id,
-                            "output": turn.get("output"),
-                            "output_mode": turn.get("output_mode"),
-                            "data": turn.get("data"),
-                            "code": turn.get("code"),
-                            "model": turn.get("model"),
-                            "provider": turn.get("provider"),
-                            "response_time_ms": turn.get("response_time_ms"),
-                            "tool_calls": turn.get("tool_calls", []),
-                            "sources": turn.get("sources", []),
-                            "metadata": turn.get("metadata", {}),
-                        }
-                    )
-                return messages
-            except Exception as exc:
-                self.logger.warning("%s load failed: %s", self._backend_label, exc)
+                return [t for t in turns if str(t.get("turn_id", "")) not in gone][:limit]
+        except StorageError:
+            raise
+        except Exception as exc:  # a failed read is raised, never reported as "empty"
+            raise StorageUnavailableError(f"{self._backend_label} load failed: {exc}") from exc
 
-        return []
+    def _stored_turns(
+        self, rows: List[Dict[str, Any]], user_id: str, agent: str, session_id: str
+    ) -> List[ChatStorageTurn]:
+        """Parse cold rows into ``ChatStorageTurn``; an unreadable row is logged and skipped."""
+        parsed: List[ChatStorageTurn] = []
+        for row in rows:
+            try:
+                parsed.append(
+                    ChatStorageTurn.from_row({"user_id": user_id, "session_id": session_id, "agent_id": agent, **row})
+                )
+            except (InvalidTurnPayloadError, ValueError) as exc:
+                self.logger.warning("skipping unreadable stored turn %s: %s", row.get("turn_id"), exc)
+        return parsed
 
     async def get_conversation_metadata(self, session_id: str) -> Optional[Dict[str, Any]]:
         """Load conversation metadata.
@@ -399,6 +548,10 @@ class ChatStorage:
     ) -> List[Dict[str, Any]]:
         """List conversations for a user from DynamoDB.
 
+        A tombstoned thread is hidden even while its cleanup is running, and ``limit`` counts LIVE threads: when
+        hidden threads leave a full window short, the window is read again, larger (``query_threads`` has no
+        cursor), until ``limit`` live threads are found, the store is exhausted or the ``since`` cutoff is reached.
+
         Returns:
             List of thread metadata dicts, sorted by updated_at desc.
         """
@@ -406,24 +559,28 @@ class ChatStorage:
             return []
         try:
             agent = agent_id or ""
-            threads = await self._dynamo.query_threads(
-                user_id=user_id,
-                agent_id=agent,
-                limit=limit,
-            )
-            # Filter by 'since' if provided
-            if since:
-                since_iso = since.isoformat()
-                threads = [t for t in threads if t.get("updated_at", "") >= since_iso]
+            since_iso = since.isoformat() if since else None
+            verdicts: Dict[Tuple[str, str], bool] = {}  # (agent, session) -> tombstoned; cached for this call only
+            window = limit
+            while True:
+                rows = await self._dynamo.query_threads(user_id=user_id, agent_id=agent, limit=window)
+                # Rows are newest first: once one predates ``since``, every row after it does too.
+                reached_since = since_iso is not None and any(r.get("updated_at", "") < since_iso for r in rows)
+                threads = [t for t in rows if since_iso is None or t.get("updated_at", "") >= since_iso]
+                keys = [(t.get("agent_id") or agent, t.get("session_id", "")) for t in threads]
+                unseen = list(dict.fromkeys(k for k in keys if k not in verdicts))
+                verdicts.update(zip(unseen, await self._sessions_deleted(user_id, unseen), strict=True))
+                live = [t for t, key in zip(threads, keys, strict=True) if not verdicts[key]]
+                hidden = len(threads) - len(live)
+                if len(live) >= limit or len(rows) < window or not hidden or reached_since:
+                    break
+                window = max(limit + hidden, 2 * window)  # geometric growth bounds the number of re-reads
             # Clean up DynamoDB internal fields
-            results = []
-            for t in threads:
-                clean = {k: v for k, v in t.items() if k not in ("PK", "SK", "type", "ttl")}
-                results.append(clean)
-            return results
-        except Exception as exc:
-            self.logger.warning("list_user_conversations failed: %s", exc)
-        return []
+            return [{k: v for k, v in t.items() if k not in ("PK", "SK", "type", "ttl")} for t in live[:limit]]
+        except StorageError:
+            raise
+        except Exception as exc:  # a failed read is raised, never reported as "empty"
+            raise StorageUnavailableError(f"list_user_conversations failed: {exc}") from exc
 
     async def create_conversation(
         self,
@@ -446,6 +603,7 @@ class ChatStorage:
                 session_id,
             )
             return None
+        await self._ensure_not_deleted(user_id, agent_id, session_id)  # session ids are not reused
         now = datetime.now(timezone.utc)
         metadata = {
             "title": title,
@@ -510,6 +668,7 @@ class ChatStorage:
                 agent_id,
             )
             return False
+        await self._ensure_not_deleted(user_id, agent_id, session_id)  # never recreate a thread of a deleted session
         try:
             await self._dynamo.update_thread(
                 user_id=user_id,
@@ -530,49 +689,117 @@ class ChatStorage:
             self.logger.warning("update_conversation_title failed for %s: %s", session_id, exc)
             return False
 
-    async def delete_conversation(
-        self,
-        user_id: str,
-        session_id: str,
-        agent_id: Optional[str] = None,
-    ) -> bool:
-        """Delete a conversation from both Redis and DynamoDB.
+    async def assert_conversation_active(self, user_id: str, agent_id: str, session_id: str) -> None:
+        """Public deletion guard for callers that write a thread row directly (raises ``ConversationDeletedError``)."""
+        await self._ensure_not_deleted(user_id, agent_id, session_id)
 
-        Cascade-deletes from both the conversations table and artifacts table.
+    async def _drop_tombstoned_turns(
+        self, user_id: str, agent: str, session_id: str, turns: List[Any], turn_id_of: Callable[[Any], str]
+    ) -> List[Any]:
+        """Remove turns whose turn-scoped tombstone exists (a deleted turn is never served, even before cleanup)."""
+        if self._dynamo is None or not turns:
+            return turns
+        try:
+            gone = await self._dynamo.deleted_turn_ids(user_id, agent, session_id)  # ONE batched lookup per read
+        except StorageError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - fail closed: never serve without knowing what was deleted
+            raise StorageUnavailableError(f"tombstone lookup unavailable: {exc}") from exc
+        return [t for t in turns if turn_id_of(t) not in gone] if gone else turns
 
-        Returns:
-            True if at least one store deleted successfully.
+    async def _ensure_not_deleted(self, user_id: str, agent: str, session_id: str) -> None:
+        """Raise ``ConversationDeletedError`` when the session is tombstoned; a guard failure is raised, not ignored."""
+        if self._dynamo is None:
+            return
+        try:
+            deleted = await self._dynamo.is_deleted(user_id, agent, session_id)
+        except StorageError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise StorageUnavailableError(f"deletion guard unavailable: {exc}") from exc
+        if deleted:
+            raise ConversationDeletedError(f"conversation {session_id} is deleted")
+
+    async def _sessions_deleted(self, user_id: str, keys: List[Tuple[str, str]]) -> List[bool]:
+        """Session-tombstone verdict for each ``(agent, session_id)`` in ``keys``, in the same order.
+
+        ONE batched ``deleted_session_ids`` read per distinct agent (normally exactly one); the reads of different
+        agents run concurrently.
+
+        Raises:
+            Exception: the first failed read, unchanged — an unknown verdict is never reported as "not deleted".
         """
-        deleted = False
+        backend = self._dynamo
+        if backend is None:  # no durable store: nothing can be tombstoned (same as ``_ensure_not_deleted``)
+            return [False] * len(keys)
+        if not keys:
+            return []
+        by_agent: Dict[str, List[str]] = {}
+        for agent, session_id in keys:
+            by_agent.setdefault(agent, []).append(session_id)
+        agents = list(by_agent)
 
-        # Redis
-        if self._redis:
-            try:
-                result = await self._redis.delete_history(user_id, session_id, chatbot_id=agent_id)
-                if result:
-                    deleted = True
-            except Exception as exc:
-                self.logger.warning("Redis delete failed: %s", exc)
+        async def lookup(agent: str) -> Set[str]:
+            return set(await backend.deleted_session_ids(user_id, agent, list(dict.fromkeys(by_agent[agent]))))
 
-        # DynamoDB: cascade delete from both tables in parallel
-        if self._dynamo:
-            try:
-                agent = agent_id or ""
-                conv_deleted, art_deleted = await asyncio.gather(
-                    self._dynamo.delete_thread_cascade(user_id, agent, session_id),
-                    self._dynamo.delete_session_artifacts(user_id, agent, session_id),
-                )
-                if conv_deleted > 0 or art_deleted > 0:
-                    deleted = True
-                self.logger.debug(
-                    "Deleted %d conversation items and %d artifacts for session %s",
-                    conv_deleted,
-                    art_deleted,
-                    session_id,
-                )
-            except Exception as exc:
-                self.logger.warning("%s delete failed: %s", self._backend_label, exc)
+        # return_exceptions: every read settles before a failure is raised, so none is left running unobserved
+        results = await asyncio.gather(*(lookup(agent) for agent in agents), return_exceptions=True)
+        gone: Set[Tuple[str, str]] = set()
+        for agent, result in zip(agents, results, strict=True):
+            if isinstance(result, BaseException):
+                raise result
+            gone.update((agent, session_id) for session_id in result)
+        return [key in gone for key in keys]
 
+    def _schedule_cleanup_retry(
+        self, user_id: str, agent_id: Optional[str], session_id: str, turn_id: Optional[str] = None
+    ) -> None:
+        """Retry the post-tombstone cleanup in-process (exponential backoff) until it succeeds.
+
+        Independent of the bus: it covers a failed deletion publish and a cleanup that keeps failing.
+        """
+        key = (user_id, agent_id or "", session_id, turn_id)
+        if key in self._cleanup_retries:
+            return
+        try:
+            task = asyncio.get_running_loop().create_task(self._retry_cleanup(key))
+        except RuntimeError:  # no running loop (sync caller): the bus event is the only retry
+            return
+        self._cleanup_retries[key] = task
+        task.add_done_callback(lambda _t, k=key: self._cleanup_retries.pop(k, None))
+
+    async def _retry_cleanup(self, key: Tuple[str, str, str, Optional[str]]) -> None:
+        user_id, agent, session_id, turn_id = key
+        for attempt in range(self.CLEANUP_RETRY_ATTEMPTS):
+            await asyncio.sleep(min(self.cleanup_retry_base_delay * (2**attempt), 60.0))
+            if turn_id:
+                errors = (await self._cleanup_turn(user_id, agent, session_id, turn_id))[2]
+            else:
+                errors = (await self._cleanup_conversation(user_id, agent or None, session_id))[1]
+            if not errors:
+                self.logger.info("post-delete cleanup of %s finished after %d retries", session_id, attempt + 1)
+                return
+        self.logger.error(
+            "post-delete cleanup of %s still failing after %d retries; the tombstone keeps it "
+            "hidden and the deletion event remains the only retry",
+            session_id,
+            self.CLEANUP_RETRY_ATTEMPTS,
+        )
+
+    async def delete_conversation(self, user_id: str, session_id: str, agent_id: Optional[str] = None) -> bool:
+        """Tombstone first, then clear cold turns, companions, artifacts and the hot tier, run the cleaners, publish the event.
+
+        Raises:
+            StorageError: the tombstone could not be committed — the delete is NOT acknowledged and nothing is cleared.
+        """
+        agent = agent_id or ""
+        await self._commit_tombstone(user_id, agent, session_id)
+        deleted, errors = await self._cleanup_conversation(user_id, agent_id, session_id)
+        for exc in errors:
+            self.logger.error("post-tombstone cleanup failed for session %s (retried): %s", session_id, exc)
+        published = await self._publish_deletion({"user_id": user_id, "agent_id": agent, "session_id": session_id})
+        if errors or not published:
+            self._schedule_cleanup_retry(user_id, agent, session_id)
         return deleted
 
     async def delete_turn(
@@ -582,33 +809,144 @@ class ChatStorage:
         user_id: Optional[str] = None,
         agent_id: Optional[str] = None,
     ) -> bool:
-        """Delete a single turn from DynamoDB.
+        """Turn-scoped tombstone first, then delete from the cold and hot tiers; True if either tier removed the turn."""
+        if not user_id or not agent_id:
+            return False
+        await self._commit_tombstone(user_id, agent_id, session_id, turn_id)
+        cold, hot, errors = await self._cleanup_turn(user_id, agent_id, session_id, turn_id)
+        for exc in errors:
+            self.logger.error("post-tombstone cleanup failed for turn %s in %s (retried): %s", turn_id, session_id, exc)
+        published = await self._publish_deletion(
+            {"user_id": user_id, "agent_id": agent_id, "session_id": session_id, "turn_id": turn_id}
+        )
+        if errors or not published:
+            self._schedule_cleanup_retry(user_id, agent_id, session_id, turn_id)
+        return cold or hot
 
-        Note: DynamoDB requires user_id and agent_id to build the PK.
+    async def _commit_tombstone(self, user_id: str, agent: str, session_id: str, turn_id: Optional[str] = None) -> None:
+        """Durably record the deletion; raise ``StorageError`` (never swallow) when it cannot be committed."""
+        if self._dynamo is None:
+            return  # no durable store: nothing can resurrect, nothing to fence
+        if not agent:
+            self.logger.warning(
+                "deleting session %s with an empty agent id: the tombstone does not fence turns stored "
+                "under a real agent name",
+                session_id,
+            )
+        try:
+            await self._dynamo.put_tombstone(user_id, agent, session_id, turn_id)
+        except StorageError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise StorageWriteError(f"could not commit the deletion tombstone for {session_id}: {exc}") from exc
+
+    async def _cleanup_conversation(
+        self, user_id: str, agent_id: Optional[str], session_id: str
+    ) -> Tuple[bool, List[BaseException]]:
+        """Idempotent post-tombstone cleanup. Returns ``(something_deleted, errors)``; never raises."""
+        deleted = False
+        errors: List[BaseException] = []
+        if self._redis:
+            try:
+                deleted = bool(await self._redis.delete_history(user_id, session_id, chatbot_id=agent_id)) or deleted
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
+        if self._dynamo:
+            agent = agent_id or ""
+            try:
+                conv_deleted, art_deleted = await asyncio.gather(
+                    self._dynamo.delete_thread_cascade(user_id, agent, session_id),
+                    self._dynamo.delete_session_artifacts(user_id, agent, session_id),
+                )
+                deleted = deleted or conv_deleted > 0 or art_deleted > 0
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
+        for cleaner in self._memory_cleaners:
+            try:
+                await cleaner(user_id, agent_id or "", session_id)
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
+        return deleted, errors
+
+    async def _cleanup_turn(
+        self, user_id: str, agent_id: str, session_id: str, turn_id: str
+    ) -> Tuple[bool, bool, List[BaseException]]:
+        """Remove one turn from both tiers; returns ``(cold_removed, hot_removed, errors)``; never raises."""
+        errors: List[BaseException] = []
+        cold = hot = False
+        if self._dynamo:
+            try:
+                cold = bool(await self._dynamo.delete_turn(user_id, agent_id, session_id, turn_id))
+                if cold:
+                    await self._dynamo.update_thread(
+                        user_id=user_id, agent_id=agent_id, session_id=session_id, updated_at=datetime.now(timezone.utc)
+                    )
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
+        try:
+            hot = await self._delete_hot_turn(user_id, session_id, turn_id, agent_id)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+        for cleaner in self._turn_memory_cleaners:
+            try:
+                await cleaner(user_id, agent_id, session_id, turn_id)
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
+        return cold, hot, errors
+
+    async def _delete_hot_turn(self, user_id: str, session_id: str, turn_id: str, agent_id: str) -> bool:
+        """Remove ``turn_id`` from the hot-tier history, if it holds one.
+
+        Args:
+            user_id: Conversation owner.
+            session_id: Conversation session.
+            turn_id: The turn to drop.
+            agent_id: ChatStorage key (agent NAME); the hot tier stores it as ``chatbot_id``.
 
         Returns:
-            True if deletion succeeded.
-        """
-        if not self._dynamo or not user_id or not agent_id:
-            return False
-        try:
-            # Delegate to backend ABC — no direct DynamoDB internals here
-            ok = await self._dynamo.delete_turn(user_id, agent_id, session_id, turn_id)
-            if not ok:
-                return False
+            True when this call removed the turn from the hot tier; False when it held no such turn.
 
-            # Update thread turn count
-            await self._dynamo.update_thread(
-                user_id=user_id,
-                agent_id=agent_id,
-                session_id=session_id,
-                updated_at=datetime.now(timezone.utc),
-            )
-            self.logger.debug("Deleted turn %s from session %s", turn_id, session_id)
-            return True
-        except Exception as exc:
-            self.logger.warning("delete_turn failed for %s in %s: %s", turn_id, session_id, exc)
+        Raises:
+            Exception: whatever the hot tier raises — the callers collect it and retry via the deletion event.
+        """
+        if not self._redis:
             return False
+        # One atomic removal (compare-and-swap on Redis): a turn upserted concurrently is never overwritten.
+        return await self._redis.remove_turn(user_id, session_id, turn_id, chatbot_id=agent_id)
+
+    async def _publish_deletion(self, payload: Dict[str, Any]) -> bool:
+        """Publish the deletion event; a failure is logged, never raised.
+
+        Returns:
+            ``True`` when published or when no publisher is attached (no bus retry exists, nothing to wait
+            for); ``False`` when the publish failed (the caller then falls back to the in-process retry).
+        """
+        if self._deletion_publisher is None:
+            return True
+        try:
+            await self._deletion_publisher(CONVERSATION_DELETED_TOPIC, payload)
+            return True
+        except Exception as exc:  # noqa: BLE001
+            self.logger.error("could not publish the deletion event for %s: %s", payload.get("session_id"), exc)
+            return False
+
+    async def handle_conversation_deleted(self, envelope: "EventEnvelope") -> None:
+        """Idempotent cleanup retry for ``CONVERSATION_DELETED_TOPIC``; raises ``StorageWriteError`` while any step fails."""
+        payload = envelope.payload if isinstance(envelope.payload, dict) else {}
+        user_id, session_id = payload.get("user_id"), payload.get("session_id")
+        if not user_id or not session_id:
+            self.logger.warning("malformed deletion event %s: %r", envelope.event_id, payload)
+            return
+        agent = payload.get("agent_id") or ""
+        turn_id = payload.get("turn_id")
+        if turn_id:
+            _, _, errors = await self._cleanup_turn(user_id, agent, session_id, turn_id)
+        else:
+            _, errors = await self._cleanup_conversation(user_id, agent or None, session_id)
+        if errors:
+            raise StorageWriteError(
+                f"deletion cleanup for session {session_id} still failing: " + "; ".join(str(e) for e in errors)
+            ) from errors[0]
 
     async def get_context_for_agent(
         self,
@@ -622,7 +960,11 @@ class ChatStorage:
 
         Returns:
             List of {role, content} dicts ready for the model API.
+
+        Raises:
+            ConversationDeletedError: the conversation is tombstoned.
         """
+        await self._ensure_not_deleted(user_id, agent_id or "", session_id)
         # Try Redis first for speed
         if self._redis:
             try:
@@ -633,25 +975,17 @@ class ChatStorage:
                     # AttributeError would be swallowed by the `except Exception:
                     # pass` below and this Redis fast path would silently fall
                     # through to DynamoDB forever.
-                    return [
-                        {"role": m.role, "content": m.content} for m in render_history(history, max_turns=max_turns)
-                    ]
+                    history.turns = await self._drop_tombstoned_turns(
+                        user_id, agent_id or "", session_id, list(history.turns), lambda t: t.turn_id
+                    )
+                    if not self._hot_holds_too_few(history, len(history.turns), max_turns):
+                        return [
+                            {"role": m.role, "content": m.content} for m in render_history(history, max_turns=max_turns)
+                        ]
             except Exception:
                 pass
 
-        # Fallback to DynamoDB
-        messages = await self.load_conversation(user_id, session_id, agent_id=agent_id, limit=max_turns)
+        # Fallback: the cold tier directly. The guard above already ran and the hot tier was just tried, so going
+        # through load_conversation() would repeat both the tombstone read and the Redis read.
+        messages = await self._load_cold(user_id, session_id, agent_id, max_turns)
         return [{"role": m.get("role", "user"), "content": m.get("content", "")} for m in messages]
-
-
-def _safe_serialize_value(obj: Any) -> Any:
-    """Convert complex objects to a serializable form for DynamoDB."""
-    if obj is None:
-        return None
-    if hasattr(obj, "to_dict"):
-        return obj.to_dict()
-    if hasattr(obj, "model_dump"):
-        return obj.model_dump()
-    if hasattr(obj, "to_json"):
-        return obj.to_json()
-    return obj

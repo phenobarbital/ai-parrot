@@ -38,6 +38,7 @@ from parrot.integrations.telegram.mcp_persistence import (
 @pytest.fixture(autouse=True)
 def _enable_documentdb(monkeypatch: pytest.MonkeyPatch) -> None:
     """These tests cover the persistence-enabled path (USE_DOCUMENTDB=True)."""
+    monkeypatch.setenv("TELEGRAM_MCP_STORE", "documentdb")
     monkeypatch.setattr("parrot.conf.USE_DOCUMENTDB", True, raising=False)
 
 

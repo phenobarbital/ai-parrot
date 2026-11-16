@@ -16,8 +16,13 @@ to Codex — see ``parrot.clients.detection.detect_coding_agent_llm``) and
 defaults to it, logging a visible warning naming the auto-selected spec.
 Set ``PARROT_NO_AUTO_LLM`` to disable this auto-detection.
 
-When nothing is configured (no explicit spec and no coding-agent CLI
-detected, or auto-detection is disabled) the bookstore runs degraded
+When no coding-agent CLI is detected, the module defaults to
+``google:<GoogleModel.GEMINI_3_5_FLASH>`` (resolved from the enum so the
+value tracks model renames). Set ``PARROT_NO_AUTO_LLM=1`` to skip both
+auto-detection and this default and run degraded.
+
+When nothing is configured (auto-detection disabled and the google
+client package is not installed) the bookstore runs degraded
 (BM25/catalog only) — that is a supported mode, not an error.
 
 Heavy parrot imports happen lazily inside the functions, under a
@@ -35,6 +40,13 @@ from typing import Any, Optional
 
 ENV_LLM = "PARROT_BOOKSTORE_LLM"
 ENV_LLM_LIGHT = "PARROT_BOOKSTORE_LLM_LIGHT"
+
+
+def _default_llm_spec() -> str:
+    from parrot.clients.google.models import GoogleModel
+
+    return f"google:{GoogleModel.GEMINI_3_5_FLASH.value}"
+
 
 logger = logging.getLogger(__name__)
 
@@ -82,11 +94,18 @@ def resolve_adapter(
                 )
                 spec = detected
         if not spec:
-            logger.warning(
-                "No LLM configured (%s unset) — bookstore runs BM25/catalog only",
-                ENV_LLM,
-            )
-            return None, None, None
+            try:
+                spec = _default_llm_spec()
+            except Exception:  # noqa: BLE001 — missing google client package
+                spec = None
+            if spec:
+                logger.info("Using default bookstore LLM: %s", spec)
+            else:
+                logger.warning(
+                    "No LLM configured (%s unset) — bookstore runs BM25/catalog only",
+                    ENV_LLM,
+                )
+                return None, None, None
     try:
         with contextlib.redirect_stdout(sys.stderr):
             from parrot.clients.factory import LLMFactory

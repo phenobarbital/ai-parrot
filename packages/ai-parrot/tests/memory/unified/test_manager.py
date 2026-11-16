@@ -1,12 +1,18 @@
-"""Unit tests for UnifiedMemoryManager — mocked subsystems."""
+"""Unit tests for UnifiedMemoryManager — mocked and isolated subsystems."""
+
+import asyncio
+from datetime import datetime, timezone
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, create_autospec
 
-from parrot.memory.unified.manager import UnifiedMemoryManager
-from parrot.memory.unified.models import MemoryConfig
+from parrot.memory.agent_memory.models import MemoryEvent, MemoryRequestScope
 from parrot.memory.episodic.models import EpisodeCategory, EpisodeOutcome, MemoryNamespace
 from parrot.memory.episodic.store import EpisodicMemoryStore
+from parrot.memory.unified.manager import UnifiedMemoryManager
+from parrot.memory.unified.models import MemoryConfig
+from parrot.memory.user.models import UserKnowledgeCandidate, UserKnowledgeCommand
+from parrot.memory.user.store import UserMemoryStore
 
 
 @pytest.fixture
@@ -45,6 +51,25 @@ def mock_conversation() -> AsyncMock:
 
 
 class TestUnifiedMemoryManager:
+
+    @staticmethod
+    def _scope(
+        *,
+        tenant_id: str = "test",
+        agent_id: str = "test-agent",
+        user_id: str | None = "user1",
+        turn_id: str = "turn-1",
+    ) -> MemoryRequestScope:
+        """Build a deterministic trusted request scope for scoped-path tests."""
+        return MemoryRequestScope(
+            tenant_id=tenant_id,
+            agent_id=agent_id,
+            user_id=user_id,
+            session_id="session-1",
+            turn_id=turn_id,
+            identity_provenance="server_resolved",
+        )
+
     @pytest.mark.asyncio
     async def test_parallel_retrieval(self, namespace, mock_episodic, mock_skills):
         """get_context_for_query retrieves from all subsystems."""
@@ -165,8 +190,205 @@ class TestUnifiedMemoryManager:
         ctx = await manager.get_context_for_query("q", "user1", "s1")
         assert ctx.episodic_warnings == ""
 
+    @pytest.mark.asyncio
+    async def test_independent_capabilities_and_scoped_context(self, namespace, tmp_path):
+        """User-only requests use their trusted scope without mutating manager state."""
+        store = UserMemoryStore(tmp_path / "user-memory.sqlite3")
+        scope_a = self._scope(user_id="user-a", turn_id="turn-a")
+        scope_b = self._scope(user_id="user-b", turn_id="turn-b")
+        for scope, value in ((scope_a, "vegetarian"), (scope_b, "allergic to peanuts")):
+            candidate = UserKnowledgeCandidate(
+                kind="preference",
+                value=value,
+                provenance="explicit",
+                evidence_refs=(f"event:{scope.turn_id}",),
+            )
+            await store.upsert(
+                UserKnowledgeCommand(event_id=f"seed-{scope.turn_id}", candidate=candidate),
+                scope=scope,
+            )
+
+        manager = UnifiedMemoryManager(
+            namespace=namespace,
+            user_memory_store=store,
+            config=MemoryConfig(
+                enable_episodic=False,
+                enable_skills=False,
+                enable_conversation=False,
+                enable_user_memory=True,
+            ),
+        )
+        context_a, context_b = await asyncio.gather(
+            manager.prepare_context("vegetarian", scope=scope_a),
+            manager.prepare_context("allergic", scope=scope_b),
+        )
+
+        assert "vegetarian" in context_a.user_knowledge
+        assert "peanuts" not in context_a.user_knowledge
+        assert "peanuts" in context_b.user_knowledge
+        assert "vegetarian" not in context_b.user_knowledge
+        assert manager.namespace is namespace
+        assert manager.namespace.user_id == "user1"
+        await store.close()
+
+    @pytest.mark.asyncio
+    async def test_single_partial_response_event(self, namespace, mock_episodic):
+        """One unverified response creates one PARTIAL episode and never replays tool work."""
+        mock_episodic.record_episode.return_value = MagicMock(episode_id="episode-1")
+        manager = UnifiedMemoryManager(namespace=namespace, episodic_store=mock_episodic)
+        event = MemoryEvent(
+            event_id="response-1",
+            kind="response",
+            scope=self._scope(),
+            observed_at=datetime(2026, 11, 15, tzinfo=timezone.utc),
+            payload={"query": "Plan dinner", "response": "Try pasta"},
+        )
+
+        receipt = await manager.record_event(event)
+
+        assert receipt.status == "applied"
+        assert receipt.episode_ids == ("episode-1",)
+        kwargs = mock_episodic.record_episode.await_args.kwargs
+        assert kwargs["outcome"] == EpisodeOutcome.PARTIAL
+        assert kwargs["category"] == EpisodeCategory.QUERY_RESOLUTION
+        mock_episodic.record_tool_episode.assert_not_called()
+        mock_episodic.review.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_brain_service_tenant_and_no_history_duplication(self, namespace, mock_conversation):
+        """Scoped brain recall binds the request tenant and never reloads conversation history."""
+        brain_service = MagicMock()
+        brain_service.search = AsyncMock(return_value="Tenant-specific knowledge")
+        manager = UnifiedMemoryManager(
+            namespace=namespace,
+            conversation_memory=mock_conversation,
+            brain_service=brain_service,
+            config=MemoryConfig(
+                enable_episodic=False,
+                enable_skills=False,
+                enable_conversation=False,
+                enable_brain=True,
+            ),
+        )
+        scope = self._scope(tenant_id="tenant-a")
+
+        context = await manager.prepare_context("where are we?", scope=scope)
+
+        assert context.semantic_knowledge == "Tenant-specific knowledge"
+        assert context.conversation_summary == ""
+        assert not any(ref.startswith("brain_text:") for ref in context.delivered_refs)
+        brain_service.search.assert_awaited_once_with("where are we?", "tenant-a", 2000)
+        mock_conversation.get_history.assert_not_awaited()
+
     def test_import(self):
         """Import path works as specified."""
         from parrot.memory.unified.manager import UnifiedMemoryManager as UMM  # noqa: F401
 
         assert UMM is UnifiedMemoryManager
+
+
+# ---------------------------------------------------------------------------
+# Feature-level review fixes (FEAT-892)
+# ---------------------------------------------------------------------------
+
+
+def _review_scope(*, turn_id: str = "turn-1", user_id: str | None = "user1") -> MemoryRequestScope:
+    """Build a runtime-derived scope for the review-fix tests."""
+    return MemoryRequestScope(
+        tenant_id="test",
+        agent_id="test-agent",
+        user_id=user_id,
+        session_id="session-1",
+        turn_id=turn_id,
+        identity_provenance="runtime_derived",
+    )
+
+
+def _response_event(scope: MemoryRequestScope, *, event_id: str = "event-1") -> MemoryEvent:
+    """Build one completed-response event."""
+    return MemoryEvent(
+        event_id=event_id,
+        kind="response",
+        scope=scope,
+        observed_at=datetime.now(timezone.utc),
+        payload={"query": "How do I deploy?", "response": "Run the pipeline.", "user_message": "I prefer dark mode"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_cleanup_releases_every_subsystem_and_reports_the_first_failure(namespace: MemoryNamespace) -> None:
+    """One failing subsystem must not leave the others open; its error still propagates."""
+    failing = AsyncMock()
+    failing.cleanup = AsyncMock(side_effect=RuntimeError("episodic close failed"))
+    later = AsyncMock()
+    later.cleanup = AsyncMock()
+    manager = UnifiedMemoryManager(namespace, episodic_store=failing, skill_registry=later)
+
+    with pytest.raises(RuntimeError, match="episodic close failed"):
+        await manager.cleanup()
+
+    later.cleanup.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_retried_response_event_writes_one_episode(tmp_path, namespace: MemoryNamespace) -> None:
+    """The same response event recorded twice (a retried turn) yields a single episode on a real SQLite store."""
+    from parrot.memory.episodic.backends.sqlite import SQLiteEpisodeBackend
+
+    backend = SQLiteEpisodeBackend(tmp_path / "episodes.sqlite")
+    await backend.configure()
+    try:
+        store = EpisodicMemoryStore(backend, default_ttl_days=0)
+        manager = UnifiedMemoryManager(namespace, episodic_store=store, config=MemoryConfig(enable_episodic=True))
+        scope = _review_scope()
+        event = _response_event(scope)
+
+        first = await manager.record_event(event)
+        second = await manager.record_event(event)
+
+        assert first.episode_ids == second.episode_ids
+        assert await backend.count(manager._namespace_for_scope(scope).build_filter()) == 1
+        other = await manager.record_event(_response_event(scope, event_id="event-2"))
+        assert other.episode_ids != first.episode_ids
+        assert await backend.count(manager._namespace_for_scope(scope).build_filter()) == 2
+    finally:
+        await backend.close()
+
+
+class _EnteredClient:
+    """LLM client double that, like a real AbstractClient, must be entered before ask()."""
+
+    def __init__(self) -> None:
+        self.entered = False
+        self.asked_while_entered: list[bool] = []
+
+    async def __aenter__(self) -> "_EnteredClient":
+        self.entered = True
+        return self
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        self.entered = False
+
+    async def ask(self, *_args: object, **_kwargs: object) -> str:
+        self.asked_while_entered.append(self.entered)
+        return "[]"
+
+
+@pytest.mark.asyncio
+async def test_user_extraction_enters_the_client_context(tmp_path, namespace: MemoryNamespace) -> None:
+    """Extraction goes through the client's async context, as every bot call does."""
+    user_store = UserMemoryStore(tmp_path / "user.sqlite")
+    client = _EnteredClient()
+    manager = UnifiedMemoryManager(
+        namespace,
+        user_memory_store=user_store,
+        extraction_client=client,
+        config=MemoryConfig(enable_user_memory=True, enable_episodic=False),
+    )
+    try:
+        await manager.record_event(_response_event(_review_scope()))
+    finally:
+        await user_store.close()
+
+    assert client.asked_while_entered == [True]
+    assert client.entered is False

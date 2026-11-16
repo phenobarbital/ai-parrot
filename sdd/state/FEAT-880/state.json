@@ -1,0 +1,133 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-880",
+  "feature_slug": "datasetmanager-semantic-source",
+  "started_at": "2026-11-11T22:03:39Z",
+  "updated_at": "2026-11-11T22:22:36Z",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": null,
+    "raw_path": "sdd/state/FEAT-880/source.md",
+    "fetched_at": "2026-11-11T22:03:39Z",
+    "summary_oneline": "DatasetManager add_semantic(): dataset sourced from a Semantic Layer YAML model, compiled to SQL and run by DatasetManager"
+  },
+  "mode": "auto",
+  "phase": "committed",
+  "phases": {
+    "source": {
+      "status": "completed",
+      "started_at": "2026-11-11T22:03:39Z",
+      "completed_at": "2026-11-11T22:03:39Z"
+    },
+    "plan": {
+      "status": "completed",
+      "started_at": "2026-11-11T22:03:39Z",
+      "completed_at": "2026-11-11T22:03:39Z",
+      "queries_total": 37,
+      "approved_by_user": false,
+      "edited_by_user": false,
+      "plan_path": "sdd/state/FEAT-880/research_plan.json"
+    },
+    "research": {
+      "status": "completed",
+      "started_at": "2026-11-11T22:03:39Z",
+      "parallel": {
+        "enabled": true,
+        "fallback_reason": null,
+        "lanes": {
+          "codebase": {
+            "status": "completed",
+            "completed_at": "2026-11-11T22:08:46Z",
+            "findings_count": 8,
+            "queries_executed": 24,
+            "queries_skipped": 0,
+            "error": null
+          },
+          "git": {
+            "status": "completed",
+            "completed_at": "2026-11-11T22:08:46Z",
+            "findings_count": 5,
+            "queries_executed": 5,
+            "queries_skipped": 0,
+            "error": null
+          },
+          "wiki": {
+            "status": "completed",
+            "completed_at": "2026-11-11T22:08:46Z",
+            "findings_count": 4,
+            "queries_executed": 8,
+            "queries_skipped": 0,
+            "error": null
+          }
+        },
+        "merge": {
+          "started_at": "2026-11-11T22:08:46Z",
+          "completed_at": "2026-11-11T22:08:46Z",
+          "input_count": 17,
+          "output_count": 15,
+          "merged_count": 2,
+          "audit_dir": "findings/.audit"
+        }
+      },
+      "completed_at": "2026-11-11T22:08:46Z",
+      "queries_executed": 37,
+      "queries_skipped": 0,
+      "depth_reached": 1,
+      "files_read": 18,
+      "grep_calls": 17,
+      "git_calls": 10,
+      "truncated": false,
+      "truncation_reason": null
+    },
+    "synthesis": {
+      "status": "completed",
+      "completed_at": "2026-11-11T22:10:23Z",
+      "synthesis_path": "sdd/state/FEAT-880/synthesis.json",
+      "thinking_path": null,
+      "overall_confidence": "medium",
+      "claims_total": 13,
+      "claims_high_conf": 8,
+      "claims_medium_conf": 4,
+      "claims_low_conf": 1,
+      "unknowns_count": 4,
+      "lint_passed": true,
+      "lint_iterations": 1
+    },
+    "qa": {
+      "status": "completed",
+      "completed_at": "2026-11-11T22:22:36Z",
+      "questions_total": 4,
+      "questions_answered": 4,
+      "skipped_reason": null
+    },
+    "output": {
+      "status": "completed",
+      "completed_at": "2026-11-11T22:22:36Z",
+      "proposal_path": "sdd/proposals/datasetmanager-semantic-source.proposal.md",
+      "commit_sha": null,
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "Localization is high-confidence and every building block exists; the only architectural fork (governance posture, executor, query pinning) is a set of owner decisions captured as U1-U3, not something more exploration would settle."
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 18,
+    "grep_calls": 17,
+    "git_calls": 10,
+    "wall_seconds": 222
+  },
+  "resume_hint": {
+    "next_phase": "done",
+    "next_action": "/sdd-spec FEAT-880"
+  },
+  "detected_mode": "enrichment"
+}

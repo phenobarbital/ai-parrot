@@ -18,7 +18,7 @@ from .pdf_to_markdown import extract_markdown_per_page
 from .tree_ops import splice_subtree, delete_node, reindex_node_ids
 from .hybrid_search import HybridPageIndexSearch
 from .ingest import TwoStepIngester, IngestedMarkdown
-from .toolkit import PageIndexToolkit
+from .toolkit import PageIndexToolkit, PageIndexWriteDenied
 from .loader import PageIndexLoader
 from .generation import GenerationInfo, StaleGenerationError
 from .locks import TreeLockTimeout
@@ -49,6 +49,7 @@ __all__ = [
     "TwoStepIngester",
     "IngestedMarkdown",
     "PageIndexToolkit",
+    "PageIndexWriteDenied",
     "PageIndexLoader",
     "GenerationInfo",
     "StaleGenerationError",

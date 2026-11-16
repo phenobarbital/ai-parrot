@@ -39,7 +39,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import sys
 import uuid
+from pathlib import Path
 from dataclasses import is_dataclass
 from enum import Enum
 from typing import (
@@ -262,6 +265,63 @@ def _import_sdk():
     return query, ClaudeSDKClient, ClaudeAgentOptions
 
 
+#: Environment markers set by a running Claude Code session for its children.
+_CLAUDE_CODE_SESSION_MARKERS: tuple[str, ...] = (
+    "CLAUDECODE",
+    "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_CODE_ENTRYPOINT",
+)
+#: Environment variables that, on their own, prove a non-API-key auth path.
+_SESSION_AUTH_ENV: tuple[str, ...] = (
+    "CLAUDE_CODE_OAUTH_TOKEN",
+    "CLAUDE_CODE_USE_VERTEX",
+    "CLAUDE_CODE_USE_BEDROCK",
+)
+#: Opt-out switch: ``0``/``false``/``no``/``off`` keeps ``ANTHROPIC_API_KEY``.
+PREFER_SESSION_ENV = "PARROT_CLAUDE_AGENT_PREFER_SESSION"
+
+
+def _env_flag(name: str, default: bool) -> bool:
+    """Read a boolean environment flag.
+
+    Args:
+        name: Environment variable name.
+        default: Value used when the variable is unset or empty.
+
+    Returns:
+        The parsed flag.
+    """
+    raw = os.environ.get(name, "").strip().lower()
+    if not raw:
+        return default
+    return raw not in {"0", "false", "no", "off"}
+
+
+def detect_claude_code_session() -> bool:
+    """Return ``True`` when running inside a Claude Code session with its own auth.
+
+    Two conditions must hold: a Claude Code session marker is present in the
+    environment (the CLI sets them for every child process, MCP servers
+    included), and that session has a non-API-key credential the spawned CLI
+    can reuse — an OAuth token / Vertex / Bedrock env switch, or the
+    ``.credentials.json`` login file. On macOS the login lives in the Keychain,
+    so the session marker alone is trusted there.
+
+    Returns:
+        Whether the session's own auth should be preferred over the API key.
+    """
+    if not any(_env_flag(name, False) for name in _CLAUDE_CODE_SESSION_MARKERS):
+        return False
+    if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") or any(
+        _env_flag(name, False) for name in ("CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_BEDROCK")
+    ):
+        return True
+    config_dir = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+    if (config_dir / ".credentials.json").is_file():
+        return True
+    return sys.platform == "darwin"
+
+
 class ClaudeAgentClient(AbstractClient):
     """Dispatch tasks to a Claude Code agent via ``claude-agent-sdk``.
 
@@ -269,9 +329,14 @@ class ClaudeAgentClient(AbstractClient):
     intended for ai-parrot Agents that need to delegate file-aware,
     bash-capable, tool-using work to a Claude Code sub-agent.
 
-    Authentication is delegated to the CLI: it picks up ``ANTHROPIC_API_KEY``
-    from the environment when set, otherwise it relies on whatever auth
-    flow the user has previously completed via ``claude auth``.
+    Authentication is delegated to the CLI. When this process runs inside a
+    logged-in Claude Code session (an SDD flow, a local MCP server such as
+    bookstore or pageindex), that session's auth is preferred: the spawned
+    CLI gets ``ANTHROPIC_API_KEY=""`` so an API key that merely happens to be
+    in the environment is not billed. Outside a session, or with
+    ``prefer_session_auth=False`` / ``PARROT_CLAUDE_AGENT_PREFER_SESSION=0``,
+    the CLI picks up ``ANTHROPIC_API_KEY`` as usual. An ``ANTHROPIC_API_KEY``
+    passed explicitly in ``run_options.env`` always wins.
 
     Methods that have no SDK equivalent (``batch_ask``, ``ask_to_image``,
     the analytic helpers) raise ``NotImplementedError`` with a redirect to
@@ -294,6 +359,7 @@ class ClaudeAgentClient(AbstractClient):
         cwd: Optional[str] = None,
         permission_mode: Optional[str] = None,
         run_options: Optional[ClaudeAgentRunOptions] = None,
+        prefer_session_auth: Optional[bool] = None,
         **kwargs: Any,
     ) -> None:
         """Initialise a ``ClaudeAgentClient``.
@@ -305,6 +371,9 @@ class ClaudeAgentClient(AbstractClient):
                 ``"acceptEdits"``, ``"plan"``, ``"bypassPermissions"``).
             run_options: Optional default :class:`ClaudeAgentRunOptions`
                 applied to every call. Per-call overrides are still honoured.
+            prefer_session_auth: Prefer a detected Claude Code session's auth
+                over ``ANTHROPIC_API_KEY``. ``None`` reads
+                ``PARROT_CLAUDE_AGENT_PREFER_SESSION`` (default on).
             **kwargs: Forwarded to :class:`AbstractClient`.
         """
         # No HTTP headers needed — the transport is a subprocess CLI.
@@ -312,6 +381,9 @@ class ClaudeAgentClient(AbstractClient):
         self.cli_path = cli_path
         self.cwd = cwd
         self.permission_mode = permission_mode
+        self.prefer_session_auth: bool = (
+            _env_flag(PREFER_SESSION_ENV, True) if prefer_session_auth is None else prefer_session_auth
+        )
         self.default_run_options: ClaudeAgentRunOptions = run_options or ClaudeAgentRunOptions()
         # Maps an ai-parrot session id to the CLI's OWN session id, so a
         # second turn on the same conversation resumes instead of trying to
@@ -355,6 +427,31 @@ class ClaudeAgentClient(AbstractClient):
             if isinstance(cli_session, str) and cli_session:
                 self._cli_sessions[session_id] = cli_session
                 return
+
+    def _auth_env(self, env: Optional[Dict[str, str]]) -> Dict[str, str]:
+        """Return the CLI env, blanking ``ANTHROPIC_API_KEY`` under a session.
+
+        The SDK spawns the CLI with ``os.environ`` merged under
+        ``options.env``, so the key cannot be removed — it is overridden with
+        an empty string, which the CLI treats as unset. ``os.environ`` itself
+        is never mutated (concurrent calls stay isolated).
+
+        Args:
+            env: The caller-supplied environment overrides, if any.
+
+        Returns:
+            The environment overrides to pass to ``ClaudeAgentOptions``.
+        """
+        result = dict(env or {})
+        if (
+            self.prefer_session_auth
+            and os.environ.get("ANTHROPIC_API_KEY")
+            and "ANTHROPIC_API_KEY" not in result
+            and detect_claude_code_session()
+        ):
+            self.logger.debug("Claude Code session detected: using session auth instead of ANTHROPIC_API_KEY")
+            result["ANTHROPIC_API_KEY"] = ""
+        return result
 
     def _build_options(
         self,
@@ -435,8 +532,9 @@ class ClaudeAgentClient(AbstractClient):
             kwargs["fallback_model"] = merged.fallback_model
         if merged.add_dirs:
             kwargs["add_dirs"] = list(merged.add_dirs)
-        if merged.env:
-            kwargs["env"] = dict(merged.env)
+        env = self._auth_env(merged.env)
+        if env:
+            kwargs["env"] = env
         if merged.agents is not None:
             kwargs["agents"] = merged.agents
         if merged.setting_sources is not None:

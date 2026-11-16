@@ -1,0 +1,86 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-713",
+  "feature_slug": "accounting-metrics-layer",
+  "started_at": "2026-11-11T22:32:22Z",
+  "updated_at": "2026-11-11T22:45:35Z",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": null,
+    "raw_path": "sdd/state/FEAT-713/source.md",
+    "fetched_at": "2026-11-11T22:32:22Z",
+    "summary_oneline": "Rewrite FEAT-713 accounting-metrics-layer on top of the ai-parrot-semantic package that exists on dev; resolve what FEAT-880 needs (DuckDB/Arrow)"
+  },
+  "mode": "auto",
+  "detected_mode": "enrichment",
+  "wiki_available": true,
+  "phase": "committed",
+  "phases": {
+    "source": {"status": "completed", "started_at": "2026-11-11T22:32:22Z", "completed_at": "2026-11-11T22:32:22Z"},
+    "plan": {
+      "status": "completed",
+      "started_at": "2026-11-11T22:32:22Z",
+      "completed_at": "2026-11-11T22:32:22Z",
+      "queries_total": 45,
+      "approved_by_user": false,
+      "edited_by_user": false,
+      "plan_path": "sdd/state/FEAT-713/research_plan.json"
+    },
+    "research": {
+      "status": "completed",
+      "started_at": "2026-11-11T22:32:22Z",
+      "parallel": {
+        "enabled": true,
+        "fallback_reason": null,
+        "lanes": {
+          "codebase": {"status": "completed", "findings_count": 9, "queries_executed": 29, "queries_skipped": 1, "error": null, "note": "exceeded its 255s wall slice (345s); findings kept"},
+          "git": {"status": "completed", "findings_count": 7, "queries_executed": 7, "queries_skipped": 0, "error": null},
+          "wiki": {"status": "completed", "findings_count": 6, "queries_executed": 17, "queries_skipped": 0, "error": null}
+        },
+        "merge": {"input_count": 22, "output_count": 14, "merged_count": 8, "audit_dir": "findings/.audit"}
+      },
+      "citation_probe": {"mode": "inline-script", "total": 136, "verified": 131, "flagged": 5, "flagged_note": "paraphrased excerpts; 4 confirmed by hand at the cited lines, 1 cites a located-but-unopened file"},
+      "queries_executed": 53,
+      "queries_skipped": 1,
+      "depth_reached": 1,
+      "files_read": 22,
+      "grep_calls": 20,
+      "git_calls": 6,
+      "truncated": false,
+      "truncation_reason": null
+    },
+    "synthesis": {
+      "status": "completed",
+      "synthesis_path": "sdd/state/FEAT-713/synthesis.json",
+      "thinking_path": null,
+      "overall_confidence": "medium",
+      "claims_total": 14,
+      "claims_high_conf": 9,
+      "claims_medium_conf": 4,
+      "claims_low_conf": 1,
+      "unknowns_count": 4,
+      "lint_passed": true,
+      "lint_iterations": 1
+    },
+    "qa": {"status": "completed", "questions_total": 4, "questions_answered": 4, "skipped_reason": null},
+    "output": {
+      "status": "completed",
+      "proposal_path": "sdd/proposals/accounting-metrics-layer.proposal.md",
+      "commit_sha": null,
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "Localization is high-confidence, the accounting design carries over, and the four alignment forks are closed by U1-U4; the remaining items are spec-level decisions."
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {"files_read": 22, "grep_calls": 20, "git_calls": 6, "wall_seconds": 345},
+  "resume_hint": {"next_phase": "done", "next_action": "/sdd-spec FEAT-713"}
+}

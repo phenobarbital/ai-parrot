@@ -45,19 +45,39 @@ def test_factory_uses_env_var(monkeypatch):
     assert isinstance(instance, _Fake)
 
 
-def test_factory_defaults_to_documentdb(monkeypatch):
-    """When name_or_instance=None and no env var, falls back to 'documentdb'."""
+def test_factory_default_follows_global(monkeypatch):
+    """No name, no CREW_RESULT_STORAGE follows PARROT_USER_STORE, else Redis."""
     monkeypatch.setattr(
         "parrot.bots.flows.core.storage.backends.factory.CREW_RESULT_STORAGE",
-        "",
+        None,
     )
+    monkeypatch.delenv("PARROT_USER_STORE", raising=False)
     with patch(
         "parrot.bots.flows.core.storage.backends.factory._import_class"
     ) as imp:
         imp.return_value = _Fake
         get_result_storage(None)
         called_path = imp.call_args.args[0]
+        assert "redis" in called_path
+
+        monkeypatch.setenv("PARROT_USER_STORE", "documentdb")
+        get_result_storage(None)
+        called_path = imp.call_args.args[0]
         assert "documentdb" in called_path
+
+
+def test_result_storage_explicit_value_wins(monkeypatch):
+    """An explicit CREW_RESULT_STORAGE takes precedence over the global switch."""
+    monkeypatch.setattr(
+        "parrot.bots.flows.core.storage.backends.factory.CREW_RESULT_STORAGE",
+        "postgres",
+    )
+    monkeypatch.setenv("PARROT_USER_STORE", "documentdb")
+    with patch("parrot.bots.flows.core.storage.backends.factory._import_class") as imp:
+        imp.return_value = _Fake
+        get_result_storage(None)
+        called_path = imp.call_args.args[0]
+        assert "postgres" in called_path
 
 
 def test_factory_resolves_string_name(monkeypatch):

@@ -5,10 +5,12 @@ and RediSearch FT.SEARCH for namespace-filtered vector similarity search.
 
 Requires Redis Stack with the RediSearch module installed.
 """
+
 from __future__ import annotations
 
 import json
 import logging
+import re
 import struct
 from datetime import datetime, timezone
 from typing import Any
@@ -27,6 +29,8 @@ _KEY_PREFIX = "ep:"
 
 # RediSearch index name default
 _DEFAULT_INDEX = "idx:episodes"
+
+_TAG_SPECIAL_CHARACTERS = re.compile(r"([\\,.<>{}\[\]\"':;!@#$%^&*()\-+=~|/ ])")
 
 
 def _embedding_to_bytes(embedding: list[float]) -> bytes:
@@ -54,6 +58,30 @@ def _bytes_to_embedding(data: bytes) -> list[float]:
     return list(struct.unpack(f"{n}f", data))
 
 
+def _escape_tag_value(value: Any) -> str:
+    """Escape a value for an exact RediSearch TAG query."""
+    return _TAG_SPECIAL_CHARACTERS.sub(r"\\\1", str(value))
+
+
+def _matches_unset_dimension(namespace_filter: dict[str, Any]) -> bool:
+    """Report a filter this backend cannot apply: one that matches only unset dimensions.
+
+    An unset dimension is stored as an empty TAG value, which the index does not hold, so the
+    filter cannot be applied before the limit. Callers return no rows instead of ignoring it,
+    because ignoring it would widen the scope to every value of that dimension.
+
+    Args:
+        namespace_filter: Dict of field_name -> value; ``None`` asks for unset values only.
+
+    Returns:
+        True when the filter names at least one unset-only dimension.
+    """
+    if any(value is None for value in namespace_filter.values()):
+        logger.debug("RedisVectorBackend cannot match unset namespace dimensions; returning no rows")
+        return True
+    return False
+
+
 def _episode_to_hash(episode: EpisodicMemory) -> dict[str, Any]:
     """Convert an EpisodicMemory to a flat Redis HASH mapping.
 
@@ -70,6 +98,7 @@ def _episode_to_hash(episode: EpisodicMemory) -> dict[str, Any]:
         "expires_at": episode.expires_at.timestamp() if episode.expires_at else -1.0,
         "tenant_id": episode.tenant_id,
         "agent_id": episode.agent_id,
+        "model_id": episode.model_id or "",
         "user_id": episode.user_id or "",
         "session_id": episode.session_id or "",
         "room_id": episode.room_id or "",
@@ -103,11 +132,7 @@ def _hash_to_episode(data: dict[str, Any]) -> EpisodicMemory:
         EpisodicMemory instance.
     """
     expires_ts = float(data.get("expires_at", -1))
-    expires_at = (
-        datetime.fromtimestamp(expires_ts, tz=timezone.utc)
-        if expires_ts > 0
-        else None
-    )
+    expires_at = datetime.fromtimestamp(expires_ts, tz=timezone.utc) if expires_ts > 0 else None
 
     embedding_bytes = data.get("embedding", b"")
     embedding = _bytes_to_embedding(embedding_bytes) if embedding_bytes else None
@@ -119,6 +144,7 @@ def _hash_to_episode(data: dict[str, Any]) -> EpisodicMemory:
         expires_at=expires_at,
         tenant_id=str(data["tenant_id"]),
         agent_id=str(data["agent_id"]),
+        model_id=str(data.get("model_id", "")) or None,
         user_id=str(data["user_id"]) or None,
         session_id=str(data["session_id"]) or None,
         room_id=str(data["room_id"]) or None,
@@ -207,11 +233,7 @@ class RedisVectorBackend:
         # Verify RediSearch is available
         try:
             modules = await self._redis.execute_command("MODULE LIST")
-            has_search = any(
-                b"search" in (m[1] if isinstance(m, list) else m).lower()
-                for m in (modules or [])
-                if m
-            )
+            has_search = any(b"search" in (m[1] if isinstance(m, list) else m).lower() for m in (modules or []) if m)
             if not has_search:
                 raise RuntimeError(
                     "RediSearch module not found on Redis server. "
@@ -226,36 +248,84 @@ class RedisVectorBackend:
         # Create index (ignore if already exists)
         try:
             await self._redis.execute_command(
-                "FT.CREATE", self._index_name,
-                "ON", "HASH",
-                "PREFIX", "1", _KEY_PREFIX,
+                "FT.CREATE",
+                self._index_name,
+                "ON",
+                "HASH",
+                "PREFIX",
+                "1",
+                _KEY_PREFIX,
                 "SCHEMA",
-                "embedding", "VECTOR", "HNSW", "6",
-                "TYPE", "FLOAT32",
-                "DIM", str(self._embedding_dim),
-                "DISTANCE_METRIC", "COSINE",
-                "tenant_id", "TAG",
-                "agent_id", "TAG",
-                "user_id", "TAG",
-                "session_id", "TAG",
-                "room_id", "TAG",
-                "crew_id", "TAG",
-                "is_failure", "TAG",
-                "category", "TAG",
-                "importance", "NUMERIC", "SORTABLE",
-                "created_at", "NUMERIC", "SORTABLE",
-                "expires_at", "NUMERIC", "SORTABLE",
-                "situation", "TEXT",
-                "action_taken", "TEXT",
-                "lesson_learned", "TEXT",
+                "embedding",
+                "VECTOR",
+                "HNSW",
+                "6",
+                "TYPE",
+                "FLOAT32",
+                "DIM",
+                str(self._embedding_dim),
+                "DISTANCE_METRIC",
+                "COSINE",
+                "tenant_id",
+                "TAG",
+                "agent_id",
+                "TAG",
+                "model_id",
+                "TAG",
+                "user_id",
+                "TAG",
+                "session_id",
+                "TAG",
+                "room_id",
+                "TAG",
+                "crew_id",
+                "TAG",
+                "is_failure",
+                "TAG",
+                "category",
+                "TAG",
+                "importance",
+                "NUMERIC",
+                "SORTABLE",
+                "created_at",
+                "NUMERIC",
+                "SORTABLE",
+                "expires_at",
+                "NUMERIC",
+                "SORTABLE",
+                "situation",
+                "TEXT",
+                "action_taken",
+                "TEXT",
+                "lesson_learned",
+                "TEXT",
             )
             logger.info("RediSearch index created: %s", self._index_name)
         except Exception as e:
             error_msg = str(e).lower()
             if "index already exists" in error_msg or "already exists" in error_msg:
                 logger.debug("RediSearch index already exists: %s", self._index_name)
+                await self._ensure_model_index_field()
             else:
                 logger.warning("Failed to create RediSearch index: %s", e)
+
+    async def _ensure_model_index_field(self) -> None:
+        """Add the optional model TAG field to an existing index."""
+        try:
+            await self._redis.execute_command(
+                "FT.ALTER",
+                self._index_name,
+                "SCHEMA",
+                "ADD",
+                "model_id",
+                "TAG",
+            )
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "already exists" in error_msg or "duplicate" in error_msg:
+                logger.debug("RediSearch model_id field already exists: %s", self._index_name)
+            else:
+                raise
 
     async def cleanup(self) -> None:
         """Close the Redis connection pool.
@@ -286,7 +356,13 @@ class RedisVectorBackend:
         try:
             key = f"{_KEY_PREFIX}{episode.episode_id}"
             hash_data = _episode_to_hash(episode)
-            await self._redis.hset(key, mapping=hash_data)
+            reserved = await self._redis.hsetnx(key, "episode_id", episode.episode_id)
+            if not reserved:
+                return episode.episode_id
+            await self._redis.hset(
+                key,
+                mapping={field: value for field, value in hash_data.items() if field != "episode_id"},
+            )
             logger.debug("Stored episode %s", episode.episode_id)
             return episode.episode_id
         except Exception as e:
@@ -319,14 +395,15 @@ class RedisVectorBackend:
         if self._redis is None:
             logger.warning("RedisVectorBackend not configured; search_similar() returns []")
             return []
+        if _matches_unset_dimension(namespace_filter):
+            return []
 
         try:
             # Build pre-filter string for TAG fields
             filter_parts = []
             for field, value in namespace_filter.items():
-                if value:
-                    # Escape special chars in tag values
-                    safe_val = str(value).replace("-", r"\-")
+                if value is not None:
+                    safe_val = _escape_tag_value(value)
                     filter_parts.append(f"@{field}:{{{safe_val}}}")
 
             if include_failures_only:
@@ -340,13 +417,22 @@ class RedisVectorBackend:
             embedding_bytes = _embedding_to_bytes(embedding)
 
             raw = await self._redis.execute_command(
-                "FT.SEARCH", self._index_name,
+                "FT.SEARCH",
+                self._index_name,
                 query,
-                "PARAMS", "2", "vec", embedding_bytes,
-                "SORTBY", "vector_score",
-                "LIMIT", "0", str(top_k),
-                "RETURN", "0",
-                "DIALECT", "2",
+                "PARAMS",
+                "2",
+                "vec",
+                embedding_bytes,
+                "SORTBY",
+                "vector_score",
+                "LIMIT",
+                "0",
+                str(top_k),
+                "RETURN",
+                "0",
+                "DIALECT",
+                "2",
             )
 
             if not raw or len(raw) < 2:
@@ -355,7 +441,6 @@ class RedisVectorBackend:
             results: list[EpisodeSearchResult] = []
             # FT.SEARCH returns [total, key1, [fields...], key2, [fields...], ...]
             # With RETURN 0, it returns keys only: [total, key1, [], key2, [], ...]
-            total = raw[0]
             idx = 1
             while idx < len(raw):
                 key = raw[idx].decode() if isinstance(raw[idx], bytes) else raw[idx]
@@ -379,7 +464,7 @@ class RedisVectorBackend:
 
                 # Compute semantic similarity score (cosine)
                 if episode.embedding and embedding:
-                    dot = sum(a * b for a, b in zip(embedding, episode.embedding))
+                    dot = sum(a * b for a, b in zip(embedding, episode.embedding, strict=False))
                     norm_a = sum(x * x for x in embedding) ** 0.5
                     norm_b = sum(x * x for x in episode.embedding) ** 0.5
                     score = dot / (norm_a * norm_b) if norm_a and norm_b else 0.0
@@ -422,12 +507,14 @@ class RedisVectorBackend:
         if self._redis is None:
             logger.warning("RedisVectorBackend not configured; get_recent() returns []")
             return []
+        if _matches_unset_dimension(namespace_filter):
+            return []
 
         try:
             filter_parts = []
             for field, value in namespace_filter.items():
-                if value:
-                    safe_val = str(value).replace("-", r"\-")
+                if value is not None:
+                    safe_val = _escape_tag_value(value)
                     filter_parts.append(f"@{field}:{{{safe_val}}}")
 
             if since is not None:
@@ -436,12 +523,19 @@ class RedisVectorBackend:
             query_filter = " ".join(filter_parts) if filter_parts else "*"
 
             raw = await self._redis.execute_command(
-                "FT.SEARCH", self._index_name,
+                "FT.SEARCH",
+                self._index_name,
                 query_filter,
-                "SORTBY", "created_at", "DESC",
-                "LIMIT", "0", str(limit),
-                "RETURN", "0",
-                "DIALECT", "2",
+                "SORTBY",
+                "created_at",
+                "DESC",
+                "LIMIT",
+                "0",
+                str(limit),
+                "RETURN",
+                "0",
+                "DIALECT",
+                "2",
             )
 
             if not raw or len(raw) < 2:
@@ -514,11 +608,16 @@ class RedisVectorBackend:
             now = datetime.now(timezone.utc).timestamp()
             # Find expired episodes via RediSearch
             raw = await self._redis.execute_command(
-                "FT.SEARCH", self._index_name,
+                "FT.SEARCH",
+                self._index_name,
                 f"@expires_at:[-inf ({now}]",
-                "LIMIT", "0", "1000",
-                "RETURN", "0",
-                "DIALECT", "2",
+                "LIMIT",
+                "0",
+                "1000",
+                "RETURN",
+                "0",
+                "DIALECT",
+                "2",
             )
 
             if not raw or len(raw) < 2:
@@ -563,9 +662,7 @@ class RedisVectorBackend:
             return 0
 
         if self._redis is None:
-            logger.warning(
-                "RedisVectorBackend not configured; update_metadata() returns 0"
-            )
+            logger.warning("RedisVectorBackend not configured; update_metadata() returns 0")
             return 0
 
         updated = 0
@@ -578,11 +675,7 @@ class RedisVectorBackend:
                     if not await self._redis.exists(key):
                         continue
                     raw_metadata = b"{}"
-                current = json.loads(
-                    raw_metadata.decode()
-                    if isinstance(raw_metadata, bytes)
-                    else raw_metadata
-                )
+                current = json.loads(raw_metadata.decode() if isinstance(raw_metadata, bytes) else raw_metadata)
                 current.update(patch)
                 await self._redis.hset(key, "metadata", json.dumps(current))
                 updated += 1
@@ -607,21 +700,27 @@ class RedisVectorBackend:
         if self._redis is None:
             logger.warning("RedisVectorBackend not configured; count() returns 0")
             return 0
+        if _matches_unset_dimension(namespace_filter):
+            return 0
 
         try:
             filter_parts = []
             for field, value in namespace_filter.items():
-                if value:
-                    safe_val = str(value).replace("-", r"\-")
+                if value is not None:
+                    safe_val = _escape_tag_value(value)
                     filter_parts.append(f"@{field}:{{{safe_val}}}")
 
             query_filter = " ".join(filter_parts) if filter_parts else "*"
 
             raw = await self._redis.execute_command(
-                "FT.SEARCH", self._index_name,
+                "FT.SEARCH",
+                self._index_name,
                 query_filter,
-                "LIMIT", "0", "0",
-                "DIALECT", "2",
+                "LIMIT",
+                "0",
+                "0",
+                "DIALECT",
+                "2",
             )
 
             # FT.SEARCH with LIMIT 0 0 returns [total_count]

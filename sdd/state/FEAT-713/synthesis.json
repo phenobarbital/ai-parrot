@@ -1,0 +1,798 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-713",
+  "mode": "enrichment",
+  "summary_oneline": "Re-base the accounting metrics layer as a parrot.semantic.accounting sub-package of the shipped ai-parrot-semantic, keeping its accounting compiler and adding the in-process DuckDB-over-Arrow runtime that nothing provides today",
+  "localization": [
+    {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/__init__.py",
+      "symbol": "__all__",
+      "lines": "1-7",
+      "role": "package entry point; eagerly imports SemanticLayerToolkit, so any parrot.semantic.accounting import loads the whole governed stack",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-semantic/README.md",
+      "symbol": "Layering",
+      "lines": "6-9",
+      "role": "reserves 'the future accounting extension' and requires it to stay independently importable",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/models.py",
+      "symbol": "CompiledQuery",
+      "lines": "192-199",
+      "role": "existing pre-governance compiler output; the name the accounting CompiledMetricQuery must not reuse",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/models.py",
+      "symbol": "Grain",
+      "lines": "12-12",
+      "role": "existing grain literal (second..year) an accounting Grain would duplicate",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/engines/__init__.py",
+      "symbol": "compile",
+      "lines": "29-46",
+      "role": "single compile entry point, hard-wired to NativeCompiler (no engine dispatch)",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/engines/native.py",
+      "symbol": "NativeCompiler",
+      "lines": "45-54",
+      "role": "generic measures/dimensions/joins compiler; has no account sets, sign normalisation, effective dating, cumulative windows or assertions",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/execution.py",
+      "symbol": "Executor.run_with_columns",
+      "lines": "52-90",
+      "role": "the shipped way to run SQL: DatabaseQueryToolkit source + env-named connection, dict rows, limit+1 truncation probe",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/execution.py",
+      "symbol": "ConnectionResolver.resolve",
+      "lines": "18-49",
+      "role": "PARROT_SEMANTIC_CONN_* overlay; defaults DuckDB files to read_only",
+      "evidence": [
+        "F001",
+        "F012"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/databasequery/sources/duckdb.py",
+      "symbol": "DuckDBSource._execute_sync",
+      "lines": "110-156",
+      "role": "only duckdb.connect in package sources: one short-lived connection per query, fetchall into dicts — no frame registration, no Arrow",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/audit.py",
+      "symbol": "SemanticAuditLedger.append",
+      "lines": "95-124",
+      "role": "signed, storage(json_str), fail-closed-when-required ledger — the mechanics old M7 designed as AccountingAuditLedger",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/audit.py",
+      "symbol": "SemanticAuditEntry",
+      "lines": "23-67",
+      "role": "entry type the ledger is bound to; lacks model_hash/snapshot_hash/sql_hash/lineage_ref/assertion_status/target",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/loader.py",
+      "symbol": "SemanticModelLoader._build_snapshot",
+      "lines": "97-133",
+      "role": "flat models directory with a mandatory <model>.policy.yaml side-file; no tenant level",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/policy.py",
+      "symbol": "ModelPolicy",
+      "lines": "58-75",
+      "role": "policy schema (governed, connection, limits, role grants, masks, rls) an accounting model could be governed by",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/governance/pbac.py",
+      "symbol": "PbacGate.authorize",
+      "lines": "63-100",
+      "role": "fail-closed PBAC adapter over DataPlanePolicyGuard with <driver>:<table> resources",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/toolkit.py",
+      "symbol": "SemanticLayerToolkit._run_governed",
+      "lines": "289-328",
+      "role": "the single governed path (authorize, rights, compile, govern, execute, audit); pattern for the finance toolkit's query path",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-semantic/tests/test_packaging.py",
+      "symbol": "test_namespace_version_and_package_data",
+      "lines": "22-43",
+      "role": "pins the exact dependency list and extras dict; must change with any new dependency or extra",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-semantic/pyproject.toml",
+      "symbol": "dependencies",
+      "lines": "12-16",
+      "role": "sqlglot pin and the duckdb / bigquery extras already declared",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "symbol": "Semantic-layer tests",
+      "lines": "668-671",
+      "role": "existing CI step that already runs the satellite tests with the duckdb extra",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/database/toolkits/sql.py",
+      "symbol": "SQLToolkit.execute_query",
+      "lines": "297-302",
+      "role": "the database execution path the old spec chose (limit default 1000); a different stack from the semantic Executor",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/auth/dataset_guard.py",
+      "symbol": "DatasetPolicyGuard",
+      "lines": "56-56",
+      "role": "guard the old spec used for metric visibility ('no guard => allow')",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/auth/dataplane_guard.py",
+      "symbol": "DataPlanePolicyGuard.authorize_source",
+      "lines": "193-193",
+      "role": "guard the shipped semantic layer is built on",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+      "symbol": "AbstractKMSSigner",
+      "lines": "135-135",
+      "role": "core signer reused by the semantic ledger and by any accounting audit",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/cli/__init__.py",
+      "symbol": "cli._lazy_commands",
+      "lines": "170-217",
+      "role": "lazy CLI registry where a 'finance' command would be added (anchor moved from :109-139)",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/scheduler/base.py",
+      "symbol": "SchedulerManager.register_object_schedules",
+      "lines": "806-812",
+      "role": "scheduler seam for the daily live validation (anchor moved from :798)",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/integrations/agentd/service.py",
+      "symbol": "AgentSchedulerManager()",
+      "lines": "465-465",
+      "role": "the only scheduler construction found; new lead for the old Q11",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/_imports.py",
+      "symbol": "require_extra",
+      "lines": "248-248",
+      "role": "lazy-extra helper for importing duckdb only when the runtime is used",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/tool.py",
+      "symbol": "DatasetEntry._df",
+      "lines": "278-278",
+      "role": "DatasetManager stores each dataset as a pandas DataFrame; no DuckDB/Arrow store exists",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/tool.py",
+      "symbol": "DatasetManager.materialize",
+      "lines": "4308-4321",
+      "role": "materialize + Redis Parquet cache path that reads and writes entry._df",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/repl_worker/transport.py",
+      "symbol": "pa.Table.from_pandas",
+      "lines": "120-120",
+      "role": "existing pandas->Arrow bridge (REPL worker transport); pattern for the frame conversion",
+      "evidence": [
+        "F005",
+        "F010",
+        "F014"
+      ]
+    },
+    {
+      "path": "sdd/specs/accounting-metrics-layer.spec.md",
+      "symbol": "Module 6",
+      "lines": "570-604",
+      "role": "old design of the DuckDB-over-Arrow and SQLToolkit runtimes, to be re-based",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "sdd/specs/accounting-metrics-layer.spec.md",
+      "symbol": "Module 1",
+      "lines": "389-401",
+      "role": "obsolete skeleton module (delivered by FEAT-704)",
+      "evidence": [
+        "F006",
+        "F003",
+        "F007"
+      ]
+    },
+    {
+      "path": "sdd/specs/semantic-layer.spec.md",
+      "symbol": "U6",
+      "lines": "1254",
+      "role": "recorded owner decision: FEAT-704 creates the skeleton, FEAT-713's M1 becomes 'extend' (closes Q10)",
+      "evidence": [
+        "F002"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "statement": "The satellite, its workspace source, release entry, CI step, nightly matrix entry and the duckdb extra already exist and are pinned by tests/test_packaging.py with equality assertions",
+      "evidence": [
+        "F003",
+        "F007"
+      ],
+      "implication": "the revision creates no packaging; any new dependency or extra must update test_packaging.py in the same task"
+    },
+    {
+      "statement": "parrot/semantic/__init__.py eagerly imports SemanticLayerToolkit while the README requires the accounting extension to remain independently importable",
+      "evidence": [
+        "F002"
+      ],
+      "implication": "'independently importable' is not true today; the revision must either make the package __init__ lazy and test the independence, or drop the requirement"
+    },
+    {
+      "statement": "engines.compile instantiates NativeCompiler directly and the semantic-layer spec records 'single compiler with no dispatch'; the native grammar is measures/dimensions/joins",
+      "evidence": [
+        "F002",
+        "F008"
+      ],
+      "implication": "the accounting compiler is a second, parallel compiler inside the package, not an engine plug-in; its relation to the reserved FEAT-742 Rust compiler must be stated"
+    },
+    {
+      "statement": "The shipped layer executes through Executor over DatabaseQueryToolkit with env-named connections and dict rows; the old spec executed through SQLToolkit.execute_query",
+      "evidence": [
+        "F001",
+        "F004"
+      ],
+      "implication": "two database execution stacks exist; the revision must choose one for the 'database' target"
+    },
+    {
+      "statement": "DuckDB is used only as a queried database: one short-lived connection per query in DuckDBSource, read-only for files; nothing registers frames, keeps a root connection or returns Arrow",
+      "evidence": [
+        "F001",
+        "F005",
+        "F012"
+      ],
+      "implication": "the DuckDB-over-Arrow runtime of old M6 is entirely new code and cannot be built on DuckDBSource"
+    },
+    {
+      "statement": "SemanticAuditLedger already provides signing, storage(json_str) and fail-closed-when-required, but it is typed to SemanticAuditEntry, stores SQL text and user_id, retains entries in memory, and requires durability only when a sink is configured",
+      "evidence": [
+        "F002"
+      ],
+      "implication": "reusing it needs a generalised entry contract; keeping a separate AccountingAuditLedger duplicates about one module"
+    },
+    {
+      "statement": "The shipped PBAC posture is fail-closed over DataPlanePolicyGuard with table-level resources and per-role member grants from a mandatory policy side-file; the old spec used DatasetPolicyGuard with 'no guard => allow' and accounting:<tenant>:<model>:<metric> resources",
+      "evidence": [
+        "F002",
+        "F004",
+        "F006"
+      ],
+      "implication": "two opposite governance postures would live in one package unless the revision aligns them"
+    },
+    {
+      "statement": "The semantic loader reads one flat models directory with no tenant level; the old spec placed models at <models_dir>/<tenant>/<model>.yaml",
+      "evidence": [
+        "F002",
+        "F006"
+      ],
+      "implication": "tenant scoping of accounting models is a layout decision the revision must restate against the shipped convention"
+    },
+    {
+      "statement": "DatasetManager keeps datasets as pandas frames on entry._df, read directly from many sites in tool.py, with a Redis Parquet cache; no DuckDB- or Arrow-backed store exists and no recent commit or branch touches storage",
+      "evidence": [
+        "F005",
+        "F011",
+        "F013"
+      ],
+      "implication": "a DuckDB-backed dataset store is a cross-cutting DatasetManager change, distinct from a DuckDB runtime that only reads frames through a frame_provider"
+    },
+    {
+      "statement": "FEAT-880 moved the DuckDB-backed dataset store 'into a revision of FEAT-713', while the old FEAT-713 spec lists 'Modifying DatasetManager' as a non-goal (codex S7)",
+      "evidence": [
+        "F005",
+        "F006",
+        "F009"
+      ],
+      "implication": "the two documents contradict each other; the owner must say which scope the revision takes"
+    },
+    {
+      "statement": "pyarrow>=25.0 is a core dependency; duckdb is declared only as the semantic satellite's extra; polars is declared nowhere",
+      "evidence": [
+        "F003"
+      ],
+      "implication": "AC17 already holds; the polars half of AC10 needs an optional import or must be dropped"
+    },
+    {
+      "statement": "Core integration points named by the old spec still resolve; the CLI registry and register_object_schedules anchors moved, docs/semantic/ does not exist (docs live in wiki/tools/semantic-layer.md), and no scheduler construction was found in ai-parrot-server",
+      "evidence": [
+        "F004"
+      ],
+      "implication": "M8-M10 anchors must be refreshed; the scheduled validation still has no verified call site"
+    }
+  ],
+  "investigation": null,
+  "enrichment": {
+    "new": [
+      "parrot.semantic.accounting sub-package inside the existing satellite: contracts and error taxonomy (old M2), closed metric grammar (old M3), chart snapshot + loader + per-interval validation (old M4), deterministic sqlglot compiler with cumulative windows, hashing, lineage, self-check and per-dialect golden tests (old M5)",
+      "In-process DuckDB-over-Arrow runtime: one root connection, Arrow-registered frames, per-thread cursors under asyncio.to_thread, duckdb imported lazily through require_extra — the first of its kind in the repository",
+      "Database runtime for the same compiled query (executor choice is U1)",
+      "AccountingToolkit with tool_prefix 'finance' (list/explain/query/validate), a 'parrot finance' CLI command and an MCP-local config example",
+      "Live validation (assertions + chart drift) on demand and scheduled",
+      "Accounting audit record carrying model_hash, snapshot_hash, sql_hash, lineage_ref, assertion status and target (ledger reuse is U1)",
+      "Documentation as an accounting section under the wiki/tools convention plus a README update"
+    ],
+    "modified": [
+      {
+        "path": "packages/ai-parrot-semantic/src/parrot/semantic/__init__.py",
+        "symbol": "__all__",
+        "change": "make the toolkit import lazy (or otherwise honour 'independently importable') and add a test for it",
+        "evidence": [
+          "F002"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-semantic/README.md",
+        "symbol": "Layering",
+        "change": "replace 'future accounting extension' with the actual layering contract",
+        "evidence": [
+          "F002"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-semantic/tests/test_packaging.py",
+        "symbol": "test_namespace_version_and_package_data",
+        "change": "only if a dependency or extra is added (e.g. polars)",
+        "evidence": [
+          "F003"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/cli/__init__.py",
+        "symbol": "cli._lazy_commands",
+        "change": "register the lazy 'finance' command and its extras hint",
+        "evidence": [
+          "F004"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-semantic/src/parrot/semantic/audit.py",
+        "symbol": "SemanticAuditLedger",
+        "change": "generalise the entry contract — only if U1 chooses reuse",
+        "evidence": [
+          "F002"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/tool.py",
+        "symbol": "DatasetEntry._df",
+        "change": "only if U3 puts the DuckDB-backed dataset store inside this feature",
+        "evidence": [
+          "F005"
+        ]
+      }
+    ],
+    "untouched": [
+      "Satellite packaging, release entry, CI step and nightly matrix (old M1, AC2, the 'test-semantic' job of AC16) — already delivered by FEAT-704",
+      "The generic NativeCompiler, engines.compile, GovernancePipeline and the sl_* tools",
+      "parrot/clients/base.py, SQLToolkit and AuditLedgerEntry",
+      "Joins to dimension tables, fiscal calendars, parent: hierarchy selectors, multi-entity consolidation, FX, result caching, an admin UI — unchanged non-goals of the old spec",
+      "Lowering accounting metrics into the generic layer and the FEAT-742 Rust compiler"
+    ],
+    "patterns": [
+      {
+        "pattern": "compile off the event loop with asyncio.to_thread plus a compile cache keyed by model digest, canonical request and dialect",
+        "evidence": [
+          "F002"
+        ]
+      },
+      {
+        "pattern": "sign canonical_bytes() (sorted-key JSON without signature) with AbstractKMSSigner and forward model_dump_json() to an async storage callable",
+        "evidence": [
+          "F002",
+          "F004"
+        ]
+      },
+      {
+        "pattern": "single governed entry path in the toolkit (authorize, rights, compile, execute, audit) and a _pre_execute check for a bound PermissionContext",
+        "evidence": [
+          "F002"
+        ]
+      },
+      {
+        "pattern": "DuckDB work inside asyncio.to_thread with a lazy import and a clear error when the extra is missing; governed DuckDB files opened read-only",
+        "evidence": [
+          "F001",
+          "F012"
+        ]
+      },
+      {
+        "pattern": "pandas to Arrow through pa.Table.from_pandas, as the REPL worker transport does",
+        "evidence": [
+          "F005",
+          "F010",
+          "F014"
+        ]
+      },
+      {
+        "pattern": "lazy CLI command registration with an extras hint",
+        "evidence": [
+          "F004"
+        ]
+      }
+    ],
+    "risks": [
+      {
+        "risk": "Two compilers and two governance postures in one package",
+        "impact": "users and FEAT-742 cannot tell which rules apply to a finance metric; mitigate by stating the layering contract and aligning PBAC/audit with the shipped layer (U1, U2)",
+        "evidence": [
+          "F002",
+          "F008"
+        ]
+      },
+      {
+        "risk": "Scope creep from the DuckDB-backed dataset store",
+        "impact": "rewriting DatasetManager storage inside an accounting feature multiplies its size and blast radius; mitigate by deciding U3 before the spec",
+        "evidence": [
+          "F005",
+          "F006"
+        ]
+      },
+      {
+        "risk": "Import independence regresses silently",
+        "impact": "an accounting import pulls parrot.auth, databasequery and jsonschema; mitigate with a subprocess import test",
+        "evidence": [
+          "F002"
+        ]
+      },
+      {
+        "risk": "Decimal exactness across runtimes",
+        "impact": "the shipped contracts return dict rows with no Decimal handling, and pandas to Arrow copies and may carry object/float amounts; mitigate with the old AC9 rules and conversion errors",
+        "evidence": [
+          "F002",
+          "F005"
+        ]
+      },
+      {
+        "risk": "DuckDB connection shared across threads",
+        "impact": "the only existing DuckDB code opens one connection per query; the root-connection/per-thread-cursor design has no in-repo precedent and needs a concurrency test",
+        "evidence": [
+          "F001",
+          "F006"
+        ]
+      },
+      {
+        "risk": "Scheduled validation has no verified call site",
+        "impact": "old Q11 is still open; mitigate by resolving it in the spec or shipping on-demand validation first",
+        "evidence": [
+          "F004"
+        ]
+      },
+      {
+        "risk": "Golden SQL drift on a sqlglot bump",
+        "impact": "the pin sqlglot>=30.1,<31 is shared with the generic compiler; a bump now changes both",
+        "evidence": [
+          "F003",
+          "F006"
+        ]
+      }
+    ]
+  },
+  "confidence_map": [
+    {
+      "id": "C1",
+      "statement": "Old M1, AC2, Q10, the 'FEAT-704 merge collision' risk and codex S11 are obsolete: FEAT-704 created and shipped the satellite, and the owner recorded on 2026-10-25 that FEAT-713 extends it",
+      "evidence": [
+        "F002",
+        "F003",
+        "F007"
+      ],
+      "confidence": "high",
+      "reasoning": "packaging files, tests, merge history and the semantic-layer spec U6 all read directly"
+    },
+    {
+      "id": "C2",
+      "statement": "The reason FEAT-713 was standalone (FEAT-704 paused on an AGPL dependency) no longer exists; the package ships a clean-room native sqlglot compiler",
+      "evidence": [
+        "F002",
+        "F003",
+        "F008"
+      ],
+      "confidence": "high",
+      "reasoning": "dependency list, packaging test banning the removed module, rev2 decision"
+    },
+    {
+      "id": "C3",
+      "statement": "The generic compiler cannot express the accounting model (account sets, sign normalisation, effective-dated membership, cumulative windows, reconciliation assertions), so the accounting compiler remains a separate component",
+      "evidence": [
+        "F002"
+      ],
+      "confidence": "medium",
+      "reasoning": "native.py was read only to line 140 and the wiki outline shows none of these; absence beyond line 140 is inferred"
+    },
+    {
+      "id": "C4",
+      "statement": "There is no engine seam to plug an accounting compiler into",
+      "evidence": [
+        "F002"
+      ],
+      "confidence": "high",
+      "reasoning": "engines.compile read directly"
+    },
+    {
+      "id": "C5",
+      "statement": "No in-process DuckDB engine over registered frames and no Arrow result path exists anywhere in package sources",
+      "evidence": [
+        "F001",
+        "F005"
+      ],
+      "confidence": "high",
+      "reasoning": "grep over package sources for duckdb imports, register and fetch_arrow_table"
+    },
+    {
+      "id": "C6",
+      "statement": "AC17 already holds: pyarrow is a core dependency and duckdb is only an extra of the satellite",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "high",
+      "reasoning": "pyproject files read"
+    },
+    {
+      "id": "C7",
+      "statement": "The signed, fail-closed audit mechanics of old M7 already exist in SemanticAuditLedger; only the entry shape and the default mode differ",
+      "evidence": [
+        "F002"
+      ],
+      "confidence": "high",
+      "reasoning": "audit.py read directly"
+    },
+    {
+      "id": "C8",
+      "statement": "The old spec's PBAC, executor, tenant layout and audit-mode choices each conflict with what the shipped layer does",
+      "evidence": [
+        "F001",
+        "F002",
+        "F004",
+        "F006"
+      ],
+      "confidence": "high",
+      "reasoning": "both sides read: old spec inventory and shipped modules"
+    },
+    {
+      "id": "C9",
+      "statement": "The accounting-domain design of old M2-M5 (contracts, grammar, loader/validation, compiler, goldens) does not depend on the package state and carries over unchanged",
+      "evidence": [
+        "F006",
+        "F002"
+      ],
+      "confidence": "medium",
+      "reasoning": "inferred: none of those modules cites a FEAT-704 premise, but name collisions (Grain, Metric) and shared sqlglot pin need a pass in the spec"
+    },
+    {
+      "id": "C10",
+      "statement": "A DuckDB-backed dataset store and the frame_provider-fed DuckDB runtime are different features; the first rewrites DatasetManager storage, the second touches none of it",
+      "evidence": [
+        "F005",
+        "F006"
+      ],
+      "confidence": "high",
+      "reasoning": "entry._df accessor inventory and old spec non-goal read directly"
+    },
+    {
+      "id": "C11",
+      "statement": "FEAT-880 does not need an accounting feature to work: its source runs through the semantic executor and returns a DataFrame; what it deferred here is only the DuckDB-backed store",
+      "evidence": [
+        "F005",
+        "F009"
+      ],
+      "confidence": "medium",
+      "reasoning": "from the FEAT-880 proposal text and its F014; the FEAT-880 spec in progress was not read"
+    },
+    {
+      "id": "C12",
+      "statement": "Old integration points still resolve, with two moved anchors, no docs/semantic/ directory and no verified scheduler call site in the server",
+      "evidence": [
+        "F004"
+      ],
+      "confidence": "high",
+      "reasoning": "each symbol grepped; the scheduler absence is a negative grep result"
+    },
+    {
+      "id": "C13",
+      "statement": "Collision risk is low: no unmerged branch touches the semantic package, an accounting area or dataset storage, and FEAT-742 has no branch",
+      "evidence": [
+        "F007",
+        "F011",
+        "F013"
+      ],
+      "confidence": "medium",
+      "reasoning": "branch-name search plus recent history; a peer session is editing the FEAT-880 spec in the main checkout"
+    },
+    {
+      "id": "C14",
+      "statement": "The revised feature is roughly the old M2-M10 minus M1, with M6-M8 re-based; it remains a multi-task feature of similar size",
+      "evidence": [
+        "F006",
+        "F003"
+      ],
+      "confidence": "low",
+      "reasoning": "sizing by analogy; U1-U3 can each add or remove a module"
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "May parrot.semantic.accounting reuse the shipped semantic infrastructure (audit ledger, Executor/ConnectionResolver over DatabaseQueryToolkit, compile cache), or does it stay standalone as originally designed (own AccountingAuditLedger, DatabaseRunner over SQLToolkit)?",
+      "blocks_claims": [
+        "C8",
+        "C14"
+      ],
+      "plausible_answers": [
+        "reuse the shipped infrastructure; only model, grammar, validation and compiler are accounting-specific",
+        "standalone as in the original spec",
+        "hybrid: reuse audit only, keep SQLToolkit for execution"
+      ],
+      "ask_user": true,
+      "user_answer": "Reuse the shipped infrastructure: SemanticAuditLedger (generalising the entry), Executor/ConnectionResolver over DatabaseQueryToolkit and the compile cache; only model, grammar, validation and compiler are accounting-specific.",
+      "answered_at": "2026-11-11"
+    },
+    {
+      "id": "U2",
+      "question": "Which governance posture do finance metrics get: the shipped fail-closed model (DataPlanePolicyGuard on the journal table + per-role metric grants in a policy side-file) or the original one (DatasetPolicyGuard, per-metric resources, no guard means allow)?",
+      "blocks_claims": [
+        "C8"
+      ],
+      "plausible_answers": [
+        "shipped fail-closed model with a policy side-file",
+        "original DatasetPolicyGuard model",
+        "fail-closed guard but per-metric resource names"
+      ],
+      "ask_user": true,
+      "user_answer": "The original spec's posture: DatasetPolicyGuard with accounting:<tenant>:<model>:<metric> resources; no guard configured means allow (same as DatasetManager).",
+      "answered_at": "2026-11-11"
+    },
+    {
+      "id": "U3",
+      "question": "What DuckDB scope does this revision take for FEAT-880: only a DuckDB-over-Arrow runtime fed through a frame_provider (DatasetManager untouched), a reusable in-process DuckDB engine that a later store feature builds on, or the DuckDB-backed dataset store itself?",
+      "blocks_claims": [
+        "C10",
+        "C11",
+        "C14"
+      ],
+      "plausible_answers": [
+        "runtime only, DatasetManager untouched",
+        "reusable engine here, store in its own feature",
+        "the dataset store is part of FEAT-713"
+      ],
+      "ask_user": true,
+      "user_answer": "Reusable engine here: FEAT-713 delivers an in-process DuckDB-over-Arrow engine (root connection, frame registration, per-thread cursors) designed for reuse; the DuckDB-backed dataset store goes into its own feature that builds on it.",
+      "answered_at": "2026-11-11"
+    },
+    {
+      "id": "U4",
+      "question": "Where do accounting models live: <models_dir>/<tenant>/<model>.yaml as originally decided, or the shipped flat directory with a policy side-file per model?",
+      "blocks_claims": [
+        "C8"
+      ],
+      "plausible_answers": [
+        "tenant sub-directories",
+        "flat directory + policy side-file, tenant from the request context",
+        "tenant sub-directories, each with policy side-files"
+      ],
+      "ask_user": true,
+      "user_answer": "Tenant sub-directories: <models_dir>/<tenant>/<model>.yaml, as the brainstorm decided.",
+      "answered_at": "2026-11-11"
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization is high-confidence and the accounting design carries over; the four forks are owner decisions about alignment with the shipped layer, not something more exploration would settle."
+  },
+  "overall_confidence": "medium",
+  "meta": {
+    "findings_used": [
+      "F001",
+      "F002",
+      "F003",
+      "F004",
+      "F005",
+      "F006",
+      "F007",
+      "F008",
+      "F009",
+      "F010",
+      "F011",
+      "F012",
+      "F013",
+      "F014"
+    ],
+    "findings_unused": [],
+    "notes": "Follow-up research for /sdd-spec (answerable by reading): native.py beyond line 140 (windows / CASE handling) to firm up C3; whether DuckDBSource accepts a shared in-memory database; the scheduler bootstrap in ai-parrot-server (old Q11); the FEAT-880 spec being written in the main checkout, to confirm what it expects from this feature."
+  }
+}

@@ -18,6 +18,17 @@ Bubblewrap: nested bwrap is not used, and the policy is compiled by
   scratchpad (`/tmp/claude-<uid>`). Everything else, including the primary checkout, `$HOME`, the
   shared `.venv` (and any symlink alias to it), RTK's data directory, Git `config`/`hooks`/
   `config.worktree`, is read-only. Network egress is denied unless a host is explicitly allowed.
+- Extra writable directories: a tool that writes outside the checkout (navconfig logs to
+  `/tmp/navigator/log`, so every `parrot …` command needs it) is declared by the operator as
+  `sandbox_extra_write_paths = ["/tmp/navigator"]` in `[tool.parrot.sdd]` of the **primary checkout's**
+  `pyproject.toml`. Each directory is created if missing, added to the native `allowWrite`, and bound
+  back through the legacy backend's private `/tmp`, so its files reach the host. Entries must be absolute
+  and normalized; symlinks are resolved and the target is what is granted. Refused: `/` and top-level
+  directories (`/tmp` itself can never be granted — in the native backend it is the real host `/tmp`),
+  and anything equal to, inside, or containing the primary checkout, `$HOME` or a shared environment. A
+  refused or malformed value stops the launcher with exit 2; the per-command hook, which must never
+  raise, grants nothing from it. The key is ignored in a worktree's own `pyproject.toml` and when the
+  session runs in the primary checkout, because the session can write those files.
 - File tools (`Write`/`Edit`/`MultiEdit`/`NotebookEdit`) are checked by the retained hook against the
   same allow/deny lists and the policy/hook control files.
 - **Trusted surfaces that run outside the sandbox**: hooks themselves, MCP servers, plugins and LSP
@@ -84,13 +95,38 @@ output and passes it through unchanged, so the resend is approved. Each rewritte
 session policy and sets `CLAUDE_CODE_SHELL_PREFIX` to a launcher which receives **one command-string argument** from
 Claude Code.  The prefix passes through only the exact hook command strings and exact stdio-MCP argv entries recorded
 in that policy.  It wraps every other invocation — including each Bash-tool preamble — with `/usr/bin/bwrap`; this is
-the filesystem boundary in legacy mode.  Pass-through commands receive a SHA-256 policy token in
-`PARROT_SDD_SHELL_PREFIX_TOKEN`, which lets the hook prove that the prefix already supplied the boundary.  Missing,
-invalid, or unsafe policy state exits 2 rather than running an unguarded command.
+the filesystem boundary in legacy mode.  Hook pass-through commands receive a SHA-256 policy token in
+`PARROT_SDD_SHELL_PREFIX_TOKEN`, which lets the hook prove that the prefix already supplied the boundary; MCP
+servers pass through without it.  The hook honours the token only after validating the policy it names with the
+prefix's own loader (regular file, not group/world-writable, complete schema) and checking that its `worktree` is
+the session's frozen root; otherwise it wraps the command in Bubblewrap itself. The hook reuses that validated
+policy for the RTK and sandbox decisions within each Bash wrapping call.  Missing, invalid, or unsafe policy
+state exits 2 rather than running an unguarded command.
+
+**MCP servers (FEAT-881).**  The pass-through allowlist is built from the **primary checkout's** `.mcp.json`, never
+from the worktree: that file is gitignored (a fresh worktree has none) and the primary checkout is read-only inside
+the legacy sandbox. Symlinks (including dangling links) and nonregular config files are rejected. The launcher
+reads the primary config once and writes a private, read-only `mcp.json` beside the session policy. Claude starts
+with `--mcp-config <session>/mcp.json --strict-mcp-config`, so later edits to the primary file cannot change the
+loaded servers. Do not copy `.mcp.json` into a worktree.
+
+The allowlist expands `${VAR}` and `${VAR:-default}` in stdio `command` and `args` using the environment passed
+to Claude.  Expansion is single-pass, follows bash `:-` semantics (an empty or unset variable with a `:-` default
+uses the default), and an unset variable without a default stays literal.  The snapshot retains variable references,
+letting Claude perform the same expansion without persisting expanded header/env credentials or expanding
+substituted text twice. A malformed `.mcp.json` (JSON parse error) is reported on stderr and treated as absent.
+When the primary checkout has no usable `.mcp.json`, the launcher prints `WARNING no MCP servers` and passes an
+empty server snapshot.
 
 The policy and executable live below `$XDG_STATE_HOME/parrot-sdd/shell-prefix/<session>/` (or
 `~/.local/state/parrot-sdd/shell-prefix/<session>/`), outside the worktree and session-writable cache roots.  The
-directory is mode 0700, its executable is 0500, and its policy is 0400.  RTK runs in the prefix against Claude's
+directory is mode 0700, its executable is 0500, and its policy is 0400.  The directory also holds read-only (0400)
+copies of `shell_prefix.py` and `worktree_environment.py`, plus the `0400` MCP snapshot; the executable runs those copies, so a launcher started
+from a feature worktree never executes prefix code the session could edit.  `owner.pid` records the launcher
+process (which becomes Claude Code); a session directory is removed after 7 days only once that process is gone.
+A prefix launch requires Claude Code >= 2.1.321, the version on which Bash was verified live to go through the
+prefix; an older or unreadable `claude --version` makes the launcher exit 1.  A launch that prepares no prefix
+drops an inherited `CLAUDE_CODE_SHELL_PREFIX`.  RTK runs in the prefix against Claude's
 `eval` payload, so neither its optimization nor the legacy Bubblewrap boundary changes Bash input after auto mode
 has reviewed it.  The task-3 live probe on Claude Code 2.1.321 did not observe a prefix invocation while the native
 sandbox was active; native sessions therefore keep their established launcher/native-hook path and do not rely on
@@ -148,7 +184,7 @@ announced release once the FEAT-633 installer provisions the host prerequisites.
   `--setting-sources` must not include `user`.
 - `--sandbox-allow-domain HOST` (repeatable, or `=HOST`): exact DNS hostnames only.
 - Rejected caller options (the launcher owns them): `--settings`, `--add-dir`, `--dangerously-skip-permissions`,
-  `--plugin-dir`, `--mcp-config`, `--agents`, any `--agent` other than `sdd-worker`, a `--setting-sources`
+  `--plugin-dir`, `--mcp-config`, `--strict-mcp-config`, `--agents`, any `--agent` other than `sdd-worker`, a `--setting-sources`
   value containing `user`.
 - Exit codes: **1** — a host prerequisite is missing (`claude`, `bwrap` or `socat` not on `PATH`);
   **2** — the caller's input violates the policy (rejected option, invalid domain, or the cwd is not a

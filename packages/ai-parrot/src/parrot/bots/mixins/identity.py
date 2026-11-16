@@ -13,7 +13,7 @@ Opt-in mixin that ties the file-based identity loader
 2. Adds ``CAPABILITIES_LAYER`` to a per-instance clone of the agent's
    effective prompt builder via :meth:`_configure_identity`, called
    explicitly by the adopting agent after ``await super().configure()`` —
-   mirroring the ``SkillRegistryMixin`` / ``EpisodicMemoryMixin`` pattern
+   mirroring the ``SkillRegistryMixin`` / ``AgentMemoryMixin`` pattern
    (this mixin does NOT override ``configure()``).
 3. Hot-reloads all five fields on every ``_build_prompt`` call (mtime-keyed,
    near-free) by re-cloning a pristine (never-configured) builder snapshot
@@ -133,7 +133,7 @@ class IdentityMixin:
         Guarded on :attr:`enable_identity`. Call explicitly after
         ``await super().configure()`` — this mixin does NOT override
         ``configure()`` (mirrors ``SkillRegistryMixin`` /
-        ``EpisodicMemoryMixin``).
+        ``AgentMemoryMixin``).
 
         Clones the pristine ``__init__``-time builder snapshot (never the
         current, possibly-already-configured ``self._prompt_builder`` —

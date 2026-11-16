@@ -1,128 +1,126 @@
-"""Unit tests for LongTermMemoryMixin."""
+"""Unit tests for the unified AgentMemoryMixin facade."""
+
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+from unittest.mock import AsyncMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
-from parrot.memory.unified.mixin import LongTermMemoryMixin
+from parrot.memory.agent_memory import AgentMemoryMixin
+from parrot.memory.agent_memory.models import AgentMemoryConfig, MemoryEvent, MemoryRequestScope
+from parrot.memory.unified.models import MemoryContext
 
 
-class MockAgent(LongTermMemoryMixin):
-    """Minimal test agent using the mixin."""
+class _Host:
+    """Minimal cooperative lifecycle host for facade tests."""
+
+    def __init__(self) -> None:
+        """Initialize observable lifecycle state."""
+        self.configure_skipped = False
+        self.host_cleaned = False
+
+    async def configure(self, app: Any = None) -> None:
+        """Accept facade configuration without acquiring host resources."""
+        self.configure_skipped = False
+
+    async def cleanup(self) -> None:
+        """Record cooperative host cleanup."""
+        self.host_cleaned = True
+
+
+class MockAgent(AgentMemoryMixin, _Host):
+    """Minimal host using the replacement memory facade."""
 
     name = "test-agent"
-    enable_long_term_memory = True
+    tenant_id = "test-tenant"
+    enable_episodic_memory = True
 
-    def __init__(self):
-        self._llm = MagicMock()
-        self.conversation_memory = None
-        self.logger = MagicMock()
+    def __init__(self, storage_path: Path | None = None) -> None:
+        """Initialize the host with an optional persistent store path."""
+        super().__init__()
+        self.agent_memory_config = {"storage_path": str(storage_path)} if storage_path is not None else None
 
 
-class TestLongTermMemoryMixin:
-    @pytest.mark.asyncio
-    async def test_disabled_is_noop(self):
-        """When disabled, configure is a no-op and manager stays None."""
+def _scope() -> MemoryRequestScope:
+    """Build one deterministic trusted request scope."""
+    return MemoryRequestScope(
+        tenant_id="test-tenant",
+        agent_id="test-agent",
+        user_id="user-1",
+        session_id="session-1",
+        room_id="room-1",
+        turn_id="turn-1",
+        identity_provenance="server_resolved",
+    )
+
+
+class TestAgentMemoryMixin:
+    """Verify the hard-cut facade contracts formerly covered by the old mixin tests."""
+
+    def test_capabilities_resolve_independently(self) -> None:
+        """Resolve the replacement flags without a legacy master switch."""
         agent = MockAgent()
-        agent.enable_long_term_memory = False
-        await agent._configure_long_term_memory()
+        agent.enable_user_memory = True
+
+        config = agent._resolve_agent_memory_config()
+
+        assert config.enable_episodic_memory is True
+        assert config.enable_user_memory is True
+        assert config.enable_brain is False
+
+        agent.agent_memory_config = {"enable_long_term_memory": True}
+        with pytest.raises(ValueError, match="enable_episodic_memory and/or enable_user_memory"):
+            agent._resolve_agent_memory_config()
+
+    @pytest.mark.asyncio
+    async def test_configure_creates_real_manager(self, tmp_path: Path) -> None:
+        """Configure and close a real task-local SQLite episodic store."""
+        agent = MockAgent(tmp_path / "agent-memory.sqlite3")
+
+        await agent.configure()
+        manager = agent._memory_manager
+
+        assert manager is not None
+        assert manager.episodic is not None
+        assert manager.namespace.agent_id == "test-agent"
+        assert manager.namespace.tenant_id == "test-tenant"
+
+        await agent.cleanup()
         assert agent._memory_manager is None
+        assert agent.host_cleaned is True
 
     @pytest.mark.asyncio
-    async def test_configure_creates_manager(self):
-        """configure() creates a UnifiedMemoryManager when enabled."""
-        agent = MockAgent()
-        with patch("parrot.memory.unified.mixin.UnifiedMemoryManager") as MockManager:
-            instance = MagicMock()
-            instance.configure = AsyncMock()
-            MockManager.return_value = instance
-            # Also patch subsystem factories so they return None quickly
-            with (
-                patch.object(agent, "_create_episodic_store", AsyncMock(return_value=None)),
-                patch.object(agent, "_create_skill_registry", AsyncMock(return_value=None)),
-            ):
-                await agent._configure_long_term_memory()
-        assert agent._memory_manager is not None
-
-    @pytest.mark.asyncio
-    async def test_get_memory_context_no_manager(self):
-        """Returns empty string when manager is not configured."""
+    async def test_prepare_without_manager_returns_empty_context(self) -> None:
+        """Return the configured budget without accessing persistence before setup."""
         agent = MockAgent()
         agent._memory_manager = None
-        result = await agent.get_memory_context("query", "user1", "s1")
-        assert result == ""
+
+        context = await agent.prepare_memory("query", scope=_scope())
+
+        assert context == MemoryContext(tokens_budget=AgentMemoryConfig().max_context_tokens)
 
     @pytest.mark.asyncio
-    async def test_get_memory_context_disabled(self):
-        """Returns empty string when enable_long_term_memory is False."""
+    async def test_prepare_and_complete_delegate_to_manager(self) -> None:
+        """Delegate scoped reads and completed events to the single manager owner."""
         agent = MockAgent()
-        agent.enable_long_term_memory = False
-        agent._memory_manager = AsyncMock()
-        result = await agent.get_memory_context("query", "user1", "s1")
-        assert result == ""
-
-    @pytest.mark.asyncio
-    async def test_post_response_hook_exception_safe(self):
-        """_post_response_memory_hook never raises."""
-        agent = MockAgent()
-        agent._memory_manager = AsyncMock()
-        agent._memory_manager.record_interaction = AsyncMock(
-            side_effect=Exception("fail")
-        )
-        # Should not raise
-        await agent._post_response_memory_hook("query", MagicMock(), "user1", "s1")
-
-    @pytest.mark.asyncio
-    async def test_post_response_hook_noop_when_disabled(self):
-        """Hook is a no-op when enable_long_term_memory is False."""
-        agent = MockAgent()
-        agent.enable_long_term_memory = False
-        mock_manager = AsyncMock()
-        agent._memory_manager = mock_manager
-        await agent._post_response_memory_hook("query", "response", "u1", "s1")
-        mock_manager.record_interaction.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_get_memory_context_returns_prompt_string(self):
-        """get_memory_context delegates to manager and calls to_prompt_string."""
-        agent = MockAgent()
-        mock_ctx = MagicMock()
-        mock_ctx.to_prompt_string.return_value = "MEMORY CONTENT"
-        mock_manager = AsyncMock()
-        mock_manager.get_context_for_query = AsyncMock(return_value=mock_ctx)
-        agent._memory_manager = mock_manager
-        result = await agent.get_memory_context("my query", "user1", "sess1")
-        assert result == "MEMORY CONTENT"
-        mock_manager.get_context_for_query.assert_called_once_with(
-            query="my query", user_id="user1", session_id="sess1"
+        manager = AsyncMock()
+        expected = MemoryContext(episodic_warnings="remember this")
+        manager.prepare_context.return_value = expected
+        agent._memory_manager = manager
+        scope = _scope()
+        event = MemoryEvent(
+            event_id="response-1",
+            kind="response",
+            scope=scope,
+            observed_at=datetime(2026, 11, 16, tzinfo=UTC),
+            payload={"query": "query", "response": "answer"},
         )
 
-    def test_create_namespace_uses_agent_name(self):
-        """_create_namespace uses self.name as agent_id."""
-        agent = MockAgent()
-        ns = agent._create_namespace()
-        assert ns.agent_id == "test-agent"
-        assert ns.tenant_id == "default"
+        context = await agent.prepare_memory("query", scope=scope)
+        await agent.complete_memory(event)
+        await agent._drain_memory_writes()  # a bound extraction client makes the write detached
 
-    def test_create_namespace_fallback(self):
-        """_create_namespace falls back to 'unknown_agent' when name is empty/None."""
-        agent = MockAgent()
-        agent.name = ""  # empty string — should fall back to default
-        ns = agent._create_namespace()
-        assert ns.agent_id == "unknown_agent"
-
-    @pytest.mark.asyncio
-    async def test_configure_exception_leaves_manager_none(self):
-        """If configure() raises, manager stays None (no crash)."""
-        agent = MockAgent()
-        with patch("parrot.memory.unified.mixin.UnifiedMemoryManager") as MockManager:
-            MockManager.side_effect = RuntimeError("boom")
-            with (
-                patch.object(agent, "_create_episodic_store", AsyncMock(return_value=None)),
-                patch.object(agent, "_create_skill_registry", AsyncMock(return_value=None)),
-            ):
-                await agent._configure_long_term_memory()
-        assert agent._memory_manager is None
-
-    def test_import(self):
-        """Import path works as specified."""
-        from parrot.memory.unified.mixin import LongTermMemoryMixin as LTM  # noqa: F401
-        assert LTM is LongTermMemoryMixin
+        assert context is expected
+        manager.prepare_context.assert_awaited_once_with("query", scope=scope)
+        manager.record_event.assert_awaited_once_with(event)

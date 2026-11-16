@@ -62,6 +62,7 @@ inside `<path>`* — never in the primary checkout.
 - Working tree clean, branch pushed.
 - SDD lane: `/sdd-done <FEAT-ID>` verifies the tasks, stamps the index, pushes, opens a PR feature → `base_branch` (`main` included for a hotfix brief; `--merge` merges directly, but it never merges into `main`) and cleans up.
 - Ad-hoc lane: `gh pr create --base <base_branch> --head <branch> --title "..." --body "..."` — never against `main` for a feature. If `gh` is missing or unauthenticated, hand the user the exact commands instead.
+- Changing an open PR (base, title, body): never `gh pr edit` — on repositories that still carry "Projects (classic)" data it fails with a GraphQL `Projects (classic)` deprecation error, a `gh` CLI bug and not an SDD-flow problem. Go straight to the REST API: `gh api -X PATCH "repos/{owner}/{repo}/pulls/<number>" -f base=<base_branch>` (`-f title=...` / `-f body=...` for the other fields; `gh` fills in `{owner}/{repo}` itself). Do not try `gh pr edit` first and do not retry it.
 
 ## 6. Clean up
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import warnings
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Literal, Optional, Tuple
 from uuid import UUID
@@ -227,7 +228,25 @@ class FeedbackConfig(BaseModel):
 
     enabled: bool = True
     max_tokens: int = Field(default=1800, ge=0, le=6000)
-    max_age_days: int = Field(default=90, ge=1, le=365)
+    max_age_days: int = Field(
+        default=90,
+        ge=1,
+        le=365,
+        json_schema_extra={
+            "deprecated": True,
+            "description": "Feedback ageing will move to dynamics; the current value still filters historical feedback.",
+        },
+    )
+
+    def model_post_init(self, __context: Any) -> None:
+        """Warn only when callers explicitly configure the deprecated age bound."""
+        if "max_age_days" in self.model_fields_set:
+            warnings.warn(
+                "FeedbackConfig.max_age_days is deprecated; dynamics will own feedback ageing in a future release. "
+                "Its current filtering effect remains unchanged.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
 
 class FailureModel(BaseModel):
@@ -303,6 +322,10 @@ class RosterConfig(BaseModel):
     suspension_policy: SuspensionPolicy = Field(default_factory=SuspensionPolicy)
     runners: RunnerConfig = Field(default_factory=RunnerConfig)
     """FEAT-559: cooldown/summary-budget policy shared by every execution pool for this roster."""
+    expert_tier_seats: Dict[str, Literal["complex", "standard", "cheap"]] = Field(
+        default_factory=lambda: {"judgment": "complex", "balanced": "standard", "templated": "cheap"}
+    )
+    """FEAT-890: expert tier name -> seat hint class consumed by `eligible_seats_for_tier`."""
 
 
 class SeatProbeResult(BaseModel):
@@ -397,6 +420,12 @@ class AttemptRecord(BaseModel):
     duration_s: float = 0.0
     usage: Dict[str, Any] = Field(default_factory=dict)
     error: str = ""
+    development_output: Optional[DevelopmentOutput] = None
+    """Validated coder response, including blockers, retained even when this attempt fails.
+
+    This is coder-reported evidence, not proof of delivery. Older/native attempts
+    and dispatches that fail before producing valid output leave it unset.
+    """
     attempt_uid: str = ""
     """Globally unique id for this attempt, minted by the engine.
 

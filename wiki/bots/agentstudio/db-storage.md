@@ -29,13 +29,22 @@ All keys are read through `navconfig` (environment variables or the host's `env/
 | `STUDIO_ASSET_MAX_BYTES_SKILLS` | `131072` | Per-file cap for `skills` assets. |
 | `STUDIO_AGENT_MAX_ASSET_BYTES` | `4194304` | Total asset bytes per agent (413 `agent_assets_quota`). |
 
-### Phase 2 — secrets stores (default: DocumentDB, unchanged behaviour)
+### Phase 2 — secrets stores (default follows `PARROT_USER_STORE`, Redis by default)
 
 | Key | Default | Values | Moves to PostgreSQL |
 |---|---|---|---|
-| `BYOK_STORE` | `documentdb` | `documentdb` \| `postgres` | per-user LLM keys (`user_llm_keys`) -> `navigator.ai_user_llm_keys` (migration 0006) |
-| `VAULT_STORE` | `documentdb` | `documentdb` \| `postgres` | vault credentials (`user_credentials`: agent toolkit/MCP secrets, per-user override secrets) -> `navigator.ai_user_credentials` (migration 0007) |
-| `TOOLKIT_OVERRIDES_STORE` | `documentdb` | `documentdb` \| `postgres` | per-user toolkit overrides (`user_toolkit_configs`) -> `navigator.ai_user_toolkit_overrides` (migration 0008) |
+| `BYOK_STORE` | follows `PARROT_USER_STORE` | `documentdb` \| `postgres` | per-user LLM keys (`user_llm_keys`) -> `navigator.ai_user_llm_keys` (migration 0006) |
+| `VAULT_STORE` | follows `PARROT_USER_STORE` | `documentdb` \| `postgres` | vault credentials (`user_credentials`: agent toolkit/MCP secrets, per-user override secrets) -> `navigator.ai_user_credentials` (migration 0007) |
+| `TOOLKIT_OVERRIDES_STORE` | follows `PARROT_USER_STORE` | `documentdb` \| `postgres` | per-user toolkit overrides (`user_toolkit_configs`) -> `navigator.ai_user_toolkit_overrides` (migration 0008) |
+
+**Note:** FEAT-878 changed the default from `documentdb` to following `PARROT_USER_STORE` (which defaults to `redis`).
+To keep MongoDB, set `PARROT_USER_STORE=documentdb`. See [User stores](../../stores/user-stores.md) for the upgrade path.
+
+A `postgres` value requires the Studio backend to resolve to `database`. Otherwise startup **fails** with an error
+naming the switch and the reason (fail closed: a store never silently stays on DocumentDB). The Postgres stores are
+registered in `ensure_studio_storage`, run by the `on_startup` resolve hook that `BotManager.setup()`,
+`setup_registry_only()` and `setup_studio_routes()` all install, so registration does not depend on Studio routes being
+mounted or on any `/keys` call. An `on_cleanup` hook clears the process-global registrations again.
 
 Each switch is independent. Ciphertexts keep the same format and the same AAD contexts in both stores, so a value
 sealed for DocumentDB opens unchanged from PostgreSQL (this is what makes the copy script a verbatim copy).
