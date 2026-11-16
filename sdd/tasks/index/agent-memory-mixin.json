@@ -62,7 +62,7 @@
     ],
     "digest": "sha256:aa9c7d6f6ea63a16cb64afb23f6639b84c9b3e03e071f915e0a68518674177b3"
   },
-  "planning_notes": "Owner authorized decomposition with explicit blockers and core toolkit placement. The cached contract covers legacy and planned task tests, not gate acceptance. Current scheduler treats non-done statuses as pending: blocked is documentary, not a dispatch fence. Do not launch unattended until gate amendments are accepted; executors must stop on unmet release preconditions.",
+  "planning_notes": "Owner authorized decomposition with explicit blockers and core toolkit placement. The cached contract covers legacy and planned task tests, not gate acceptance. All task gates are accepted as of spec rev 0.8 (G3 for TASK-5674, 2026-11-16); no task is blocked. Executors must still stop on unmet release preconditions.",
   "tasks": [
     {
       "id": "TASK-5653",
@@ -533,7 +533,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "blocked",
+      "status": "pending",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -549,7 +549,7 @@
       "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5674-agent-memory-attribution.md",
-      "blocked_reason": "G3: concrete runtime outcome adapter and verified-check schema must be accepted; generic tool return values are not a substitute."
+      "blocked_reason": null
     },
     {
       "id": "TASK-5675",

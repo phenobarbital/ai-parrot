@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-892 - Agent Memory — Unified Integration, User Knowledge and Dynamics
 **Spec**: `sdd/specs/agent-memory-mixin.spec.md`
-**Status**: blocked
+**Status**: pending
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-5673, TASK-5669, TASK-5664, TASK-5656, TASK-5670
@@ -18,7 +18,7 @@ These are planning artifacts, not evidence that carried G1–G4 gates passed.
 
 ## Release Preconditions
 
-G3: concrete runtime outcome adapter and verified-check schema must be accepted; generic tool return values are not a substitute.
+G3: ACCEPTED in the spec section "Gate amendment accepted for TASK-5674" (rev 0.8), E1–E13: the `tool_runtime` adapter (E1–E5, E7), the 200-character signature comparison (E6), the verified-check schema (E8), exposure at final packing (E9), `cited`-only attribution (E10), tool-event routing (E11) and the evidence reference (E12). The blueprint's FILL IN items are superseded by that section where they disagree. Generic tool return values are still not a substitute: a normal return is `incomplete` and earns no review.
 
 **FEAT-886 merged — satisfied (spec rev 0.5).** PR #2121 was merged into `dev` as `bfdbe3fd84`; it rewrote the
 BaseBot sites this task edits. The anchors below were re-verified on the feature branch after merging `dev` `a8f4df5cf3` (merge `6123d22199`).
@@ -39,6 +39,7 @@ the task executor must stop before code if its release preconditions are unmet.
 - Mint exposure at final prompt delivery and record provider outcomes (`packages/ai-parrot/src/parrot/bots/base.py`).
 - Connect delivered manifests and reviews to event routing (`packages/ai-parrot/src/parrot/memory/unified/manager.py`).
 - Delivered-version, recovery, guard and cancellation tests (`packages/ai-parrot/tests/memory/dynamics/test_attribution.py`).
+- Compare error signatures on their first 200 normalized characters (spec E6) (`packages/ai-parrot/src/parrot/memory/dynamics/grade.py`, `packages/ai-parrot/tests/memory/dynamics/test_core.py`).
 
 **NOT in scope:** FEAT-889 brain stores/schedulers/HTTP/PBAC; optimizer/fitting; provider SDK
 or clients/base.py changes; dependency additions; deletion of persisted user/episode data
@@ -53,6 +54,8 @@ except the separately authorized scoped forget API; unrelated refactoring.
 | `packages/ai-parrot/src/parrot/bots/base.py` | MODIFY | Mint exposure at final prompt delivery and record provider outcomes |
 | `packages/ai-parrot/src/parrot/memory/unified/manager.py` | MODIFY | Connect delivered manifests and reviews to event routing |
 | `packages/ai-parrot/tests/memory/dynamics/test_attribution.py` | CREATE | Delivered-version, recovery, guard and cancellation tests |
+| `packages/ai-parrot/src/parrot/memory/dynamics/grade.py` | MODIFY | Cut the memory's normalized signature to 200 characters before comparing (spec E6) |
+| `packages/ai-parrot/tests/memory/dynamics/test_core.py` | MODIFY | Long-signature AGAIN case |
 
 ## Codebase Contract
 
@@ -77,18 +80,21 @@ import pytest
 ### Existing Signatures and Anchors
 
 - `packages/ai-parrot/src/parrot/tools/manager.py:1737`: `    async def _observed(` (exact-line occurrence count 1).
-- `packages/ai-parrot/src/parrot/bots/base.py:130`: `class BaseBot(AbstractBot):` (exact-line occurrence count 1).
+- `packages/ai-parrot/src/parrot/bots/base.py:137`: `class BaseBot(AbstractBot):` (exact-line occurrence count 1).
 - `packages/ai-parrot/src/parrot/memory/unified/manager.py:57`: `class UnifiedMemoryManager:` (exact-line occurrence count 1).
 - `packages/ai-parrot/src/parrot/tools/manager.py`: 292:class ToolManager(MCPToolManagerMixin):
-- `packages/ai-parrot/src/parrot/bots/base.py:237` — `BaseBot.conversation`: `async def conversation(self, question: str, session_id: Optional[str]=None, user_id: Optional[str]=None, search_type: str='similarity', search_kwargs: dict=None, metric_type: Optional[str]=None, use_vector_context: bool=True, use_conversation_history: bool=True, return_sources: bool=True, return_context: bool=False, memory: Optional[Callable]=None, ensemble_config: dict=None, mode: str='adaptive', ctx: Optional[RequestContext]=None, output_mode: OutputMode=OutputMode.DEFAULT, format_kwargs: dict=None, system_prompt: Optional[str]=None, use_tools: Optional[bool]=None, trace_context=None, **kwargs) -> AIMessage:`
-- `packages/ai-parrot/src/parrot/bots/base.py:726` — `BaseBot.invoke`: `async def invoke(self, question: str, session_id: Optional[str]=None, user_id: Optional[str]=None, use_conversation_history: bool=True, memory: Optional[Callable]=None, ctx: Optional[RequestContext]=None, response_model: Optional[Type[BaseModel]]=None, **kwargs) -> AIMessage:`
-- `packages/ai-parrot/src/parrot/bots/base.py:1123` — `BaseBot.ask`: `async def ask(self, question: str, session_id: Optional[str]=None, user_id: Optional[str]=None, search_type: str='similarity', search_kwargs: dict=None, metric_type: Optional[str]=None, use_vector_context: bool=True, use_conversation_history: bool=True, return_sources: bool=True, memory: Optional[Callable]=None, ensemble_config: dict=None, ctx: Optional[RequestContext]=None, permission_context: Optional[Any]=None, a2ui_surface_state: Optional[Any]=None, structured_output: Optional[Union[Type[BaseModel], StructuredOutputConfig]]=None, system_prompt: Optional[str]=None, output_mode: OutputMode=OutputMode.DEFAULT, format_kwargs: dict=None, use_tools: bool=True, trace_context=None, tenant: Optional[str]=None, **kwargs) -> AIMessage:`
-- `packages/ai-parrot/src/parrot/bots/base.py:1927` — `BaseBot.ask_stream`: `async def ask_stream(self, question: str, session_id: Optional[str]=None, user_id: Optional[str]=None, search_type: str='similarity', search_kwargs: dict=None, metric_type: Optional[str]=None, use_vector_context: bool=True, use_conversation_history: bool=True, return_sources: bool=True, memory: Optional[Callable]=None, ensemble_config: dict=None, ctx: Optional[RequestContext]=None, permission_context: Optional[Any]=None, structured_output: Optional[Union[Type[BaseModel], StructuredOutputConfig]]=None, output_mode: OutputMode=OutputMode.DEFAULT, system_prompt: Optional[str]=None, use_tools: bool=True, trace_context=None, tenant: Optional[str]=None, **kwargs) -> AsyncIterator[Union[str, AIMessage]]:`
+- `packages/ai-parrot/src/parrot/bots/base.py:298` — `BaseBot.conversation`: `async def conversation(self, question: str, session_id: Optional[str]=None, user_id: Optional[str]=None, search_type: str='similarity', search_kwargs: dict=None, metric_type: Optional[str]=None, use_vector_context: bool=True, use_conversation_history: bool=True, return_sources: bool=True, return_context: bool=False, memory: Optional[Callable]=None, ensemble_config: dict=None, mode: str='adaptive', ctx: Optional[RequestContext]=None, output_mode: OutputMode=OutputMode.DEFAULT, format_kwargs: dict=None, system_prompt: Optional[str]=None, use_tools: Optional[bool]=None, trace_context=None, **kwargs) -> AIMessage:`
+- `packages/ai-parrot/src/parrot/bots/base.py:787` — `BaseBot.invoke`: `async def invoke(self, question: str, session_id: Optional[str]=None, user_id: Optional[str]=None, use_conversation_history: bool=True, memory: Optional[Callable]=None, ctx: Optional[RequestContext]=None, response_model: Optional[Type[BaseModel]]=None, **kwargs) -> AIMessage:`
+- `packages/ai-parrot/src/parrot/bots/base.py:1218` — `BaseBot.ask`: `async def ask(self, question: str, session_id: Optional[str]=None, user_id: Optional[str]=None, search_type: str='similarity', search_kwargs: dict=None, metric_type: Optional[str]=None, use_vector_context: bool=True, use_conversation_history: bool=True, return_sources: bool=True, memory: Optional[Callable]=None, ensemble_config: dict=None, ctx: Optional[RequestContext]=None, permission_context: Optional[Any]=None, a2ui_surface_state: Optional[Any]=None, structured_output: Optional[Union[Type[BaseModel], StructuredOutputConfig]]=None, system_prompt: Optional[str]=None, output_mode: OutputMode=OutputMode.DEFAULT, format_kwargs: dict=None, use_tools: bool=True, trace_context=None, tenant: Optional[str]=None, **kwargs) -> AIMessage:`
+- `packages/ai-parrot/src/parrot/bots/base.py:2046` — `BaseBot.ask_stream`: `async def ask_stream(self, question: str, session_id: Optional[str]=None, user_id: Optional[str]=None, search_type: str='similarity', search_kwargs: dict=None, metric_type: Optional[str]=None, use_vector_context: bool=True, use_conversation_history: bool=True, return_sources: bool=True, memory: Optional[Callable]=None, ensemble_config: dict=None, ctx: Optional[RequestContext]=None, permission_context: Optional[Any]=None, structured_output: Optional[Union[Type[BaseModel], StructuredOutputConfig]]=None, output_mode: OutputMode=OutputMode.DEFAULT, system_prompt: Optional[str]=None, use_tools: bool=True, trace_context=None, tenant: Optional[str]=None, **kwargs) -> AsyncIterator[Union[str, AIMessage]]:`
 - `packages/ai-parrot/src/parrot/memory/unified/manager.py:90` — `UnifiedMemoryManager.__init__`: `def __init__(self, namespace: MemoryNamespace, conversation_memory: Optional[ConversationMemory]=None, episodic_store: Optional[EpisodicMemoryStore]=None, skill_registry: Optional[Any]=None, config: Optional[MemoryConfig]=None, cross_domain_router: Optional[CrossDomainRouter]=None, user_memory_store: UserMemoryStore | None=None, extraction_client: Any | None=None, brain_service: Any | None=None) -> None:`
 - `packages/ai-parrot/src/parrot/memory/unified/manager.py:118` — `UnifiedMemoryManager.configure`: `async def configure(self, **kwargs: Any) -> None:`
 - `packages/ai-parrot/src/parrot/memory/unified/manager.py:133` — `UnifiedMemoryManager.cleanup`: `async def cleanup(self) -> None:`
 - `packages/ai-parrot/src/parrot/memory/unified/manager.py:148` — `UnifiedMemoryManager.get_context_for_query`: `async def get_context_for_query(self, query: str, user_id: str, session_id: str) -> MemoryContext:`
 - `packages/ai-parrot/src/parrot/memory/unified/manager.py:265` — `UnifiedMemoryManager.record_interaction`: `async def record_interaction(self, query: str, response: Any, tool_calls: list[Any], user_id: str, session_id: str) -> None:`
+- `packages/ai-parrot/src/parrot/memory/dynamics/grade.py:13` — `_normalize_signature(value: str | None) -> str | None`; `:28` — `select_grade(signal: ReviewSignal, *, attribution: Attribution | None, memory_error_signature: str | None, verified_recovery: bool) -> Grade | None`.
+- `packages/ai-parrot/src/parrot/memory/episodic/store.py:305` — `EpisodicMemoryStore.cite(self, memory_ids: list[str], *, namespace: MemoryNamespace, exposure_id: str) -> MemoryCitation`; `:353` — `EpisodicMemoryStore.review(self, memory_ids: list[str], signal: ReviewSignal, *, namespace: MemoryNamespace, exposure_id: str) -> list[ReviewReceipt]` (read-only here: this task does not edit `store.py`).
+- `packages/ai-parrot/src/parrot/tools/abstract.py:252` — `class ToolResult(BaseModel)` with `success: bool = True`, `status: str = "success"`, `error: Optional[str] = None`; use `model_fields_set` (spec E4), never these defaults.
 - `packages/ai-parrot/src/parrot/tools/manager.py:1668` — `ToolManager.set_invocation_observer`: `def set_invocation_observer(self, observer: Optional[Any]) -> None:`
 - `packages/ai-parrot/src/parrot/tools/manager.py:1737` — `ToolManager._observed`: `async def _observed(self, observation: Optional['_Observation'], tool_name: str, call: Any, *, sync: bool=False, gated: bool=False) -> Any:`
 
@@ -204,7 +210,7 @@ async def record_tool_event(event: MemoryEvent) -> None:
 
 ```python
 # occurrences: 1 (verified: grep -F -x -c -- 'class BaseBot(AbstractBot):' packages/ai-parrot/src/parrot/bots/base.py)
-# MODIFY anchor at packages/ai-parrot/src/parrot/bots/base.py:130: class BaseBot(AbstractBot):
+# MODIFY anchor at packages/ai-parrot/src/parrot/bots/base.py:137: class BaseBot(AbstractBot):
 # Mint exposure at final prompt delivery and record provider outcomes.
 # FILL IN: AC11: bind exposure only after final packing into the model request; trimmed refs, arbitrary citations and cancelled/provider-failed responses earn no review.
 # FILL IN: AC05/AC11: publish final exposure ID through runtime.bind_memory_exposure and restore it in finally; invocation entry clears inherited IDs, and durable manifests—not the ID alone—authorize citations.
@@ -225,6 +231,16 @@ async def record_tool_event(event: MemoryEvent) -> None:
 ```
 
 **Why:** Observing the executed body after guards preserves FEAT-538 evidence and avoids grading calls that never ran.
+
+### `packages/ai-parrot/src/parrot/memory/dynamics/grade.py` (MODIFY)
+
+```python
+# occurrences: 1 (verified: grep -F -x -c -- 'def _normalize_signature(value: str | None) -> str | None:' packages/ai-parrot/src/parrot/memory/dynamics/grade.py)
+# MODIFY anchor at packages/ai-parrot/src/parrot/memory/dynamics/grade.py:13: def _normalize_signature(value: str | None) -> str | None:
+# FILL IN: spec E6 — cut the normalized memory signature to 200 characters before the AGAIN comparison; no other grade rule changes.
+```
+
+**Why:** `ReviewSignal` caps its signature at 200 characters; without the same cut on the memory side a long error message can never match.
 
 ### `packages/ai-parrot/tests/memory/dynamics/test_attribution.py` (CREATE)
 
@@ -266,6 +282,7 @@ def test_structural_recovery_and_citation_channel() -> None:
 - [ ] `packages/ai-parrot/src/parrot/bots/base.py` — Mint exposure at final prompt delivery and record provider outcomes; bounded by the acceptance criteria below.
 - [ ] `packages/ai-parrot/src/parrot/memory/unified/manager.py` — Connect delivered manifests and reviews to event routing; bounded by the acceptance criteria below.
 - [ ] `packages/ai-parrot/tests/memory/dynamics/test_attribution.py` — Delivered-version, recovery, guard and cancellation tests; bounded by the acceptance criteria below.
+- [ ] `packages/ai-parrot/src/parrot/memory/dynamics/grade.py` and `packages/ai-parrot/tests/memory/dynamics/test_core.py` — 200-character signature comparison and its test (spec E6).
 - [ ] Replace every blueprint-only stub with working behavior; completed implementation files contain no placeholders.
 - [ ] Verify planned imports after dependencies land and refresh contracts on drift.
 
@@ -274,19 +291,23 @@ def test_structural_recovery_and_citation_channel() -> None:
 - [ ] AC11: bind exposure only after final packing into the model request; trimmed refs, arbitrary citations and cancelled/provider-failed responses earn no review.
 - [ ] AC05/AC11: publish final exposure ID through runtime.bind_memory_exposure and restore it in finally; invocation entry clears inherited IDs, and durable manifests—not the ID alone—authorize citations.
 - [ ] AC11: ToolManager._observed preserves FEAT-538 observer/guards and execution exceptions; use request-local capture, not replacement instance observer.
-- [ ] AC11/G3: structured recovery requires linked verified evidence; cited is default, overlap opt-in/capped; citations never enter user-visible prose.
+- [ ] AC11/G3 (spec E3–E5, E8, E10): a normal tool return is `incomplete` and earns no review; only a raised or explicitly reported failure builds a `failure` signal, and it can only select AGAIN; `passed_check_ids` is always empty for `tool_runtime`; `cited` is the only attribution mode and overlap cannot be enabled; citations never enter user-visible prose.
+- [ ] E6: `select_grade` compares on the first 200 normalized characters, so a cited episode whose stored error message is longer than 200 characters still receives AGAIN.
 - [ ] Narrow task checks pass; scoped black/ruff pass for touched Python; validation logs identify skipped external coverage explicitly.
 
 ## Validation Commands
 
 - `pytest packages/ai-parrot/tests/memory/dynamics/test_attribution.py -q`
+- `pytest packages/ai-parrot/tests/memory/dynamics/test_core.py -q`
 
 ## Test Specification
 
 - `final_packing_controls_citable_refs`: AC11: bind exposure only after final packing into the model request; trimmed refs, arbitrary citations and cancelled/provider-failed responses earn no review.
 - `guard_denial_and_cancellation_no_success`: AC05/AC11: publish final exposure ID through runtime.bind_memory_exposure and restore it in finally; invocation entry clears inherited IDs, and durable manifests—not the ID alone—authorize citations.
 - `task_observer_and_memory_capture_coexist`: AC11: ToolManager._observed preserves FEAT-538 observer/guards and execution exceptions; use request-local capture, not replacement instance observer.
-- `structural_recovery_and_citation_channel`: AC11/G3: structured recovery requires linked verified evidence; cited is default, overlap opt-in/capped; citations never enter user-visible prose.
+- `structural_recovery_and_citation_channel`: AC11/G3 (spec E3–E5, E10): a default `ToolResult` is `incomplete` with no review; an explicit `success=False` and a raised exception each give `failure` with the normalized signature, and a cited episode with that signature receives AGAIN exactly once; a citation of a trimmed ref, another scope or a stale exposure id is rejected without revealing content; citations never enter user-visible prose.
+- `test_core.py` — long-signature case (spec E6): a memory signature longer than 200 characters matches a signal cut to 200 and selects AGAIN.
+- Two concurrent invocations on one `ToolManager` never see each other's attempt records (spec E2).
 
 Use deterministic clocks, runtime-derived identities and isolated temporary stores. Preserve
 CancelledError. Use subprocesses for crash/multiprocess checks, never shared production data.

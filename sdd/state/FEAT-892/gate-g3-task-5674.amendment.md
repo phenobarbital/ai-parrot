@@ -1,10 +1,10 @@
-# Proposed spec amendment — G3 for TASK-5674 · status: PROPOSED (owner review)
+# Spec amendment — G3 for TASK-5674 · status: ACCEPTED by the owner, 2026-11-16 (Q1-A, Q2-A, Q3-A, Q4-A, Q5 as recommended)
 
-**Feature**: FEAT-892 `agent-memory-mixin` · **Releases**: TASK-5674 only · **Would become**: spec rev 0.8,
+**Feature**: FEAT-892 `agent-memory-mixin` · **Releases**: TASK-5674 only · **Recorded as**: spec rev 0.8,
 section "Gate amendment accepted for TASK-5674 — G3 runtime outcome adapter, verified-check schema,
 attribution policy".
 
-Nothing here is accepted. The spec, TASK-5674 and the index are unchanged. Sources: spec §2 (C1–C10,
+The accepted text is the spec section; this file keeps the reasoning and the alternatives that were not chosen. Rule numbers differ: the spec's E6 is this file's Q3-A, so E6–E12 here are E7–E13 there. Sources: spec §2 (C1–C10,
 review admission order), `sdd/state/FEAT-571/spikes/s3-attribution/` (amendment, REPORT, metrics), and the
 code delivered by TASK-5653..5673 on `feat-FEAT-892-agent-memory-mixin` at `19af004944`.
 
