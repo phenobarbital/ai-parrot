@@ -457,6 +457,9 @@ class _EngineValidationCapability:
         return verdict_to_json(verdict)
 
 
+_MAX_REVIEW_CHECK_IDS = 16
+
+
 class SddCoderEngine:
     """See spec §3 M4 for the method contracts.
 
@@ -2874,12 +2877,19 @@ class SddCoderEngine:
         verified_execution_id, passed_check_ids = verified
         if verified_execution_id != execution_id:
             raise CoderFailure("invalid_arguments", "checked patterns do not belong to the calling execution")
+        passed = set(passed_check_ids)
+        cited: list[str] = []
         for claim in review.checked_patterns:
             if claim.exposure_id != review.attempt_uid:
                 raise CoderFailure("invalid_arguments", "checked pattern exposure must match the engine-issued attempt")
-            if not set(claim.evidence_refs).intersection(passed_check_ids):
+            claim_checks = [reference for reference in claim.evidence_refs if reference in passed]
+            if not claim_checks:
                 raise CoderFailure("invalid_arguments", "checked pattern must cite an engine-owned passed check")
-        return passed_check_ids
+            cited.extend(claim_checks)
+        # Record only the engine-owned checks the claims cite, bounded like CoderReviewMeasurement.passed_check_ids
+        # (max 16): a verdict may carry more evidence ids, and the measurement must never fail after the durable
+        # review artifact was written.
+        return tuple(dict.fromkeys(cited))[:_MAX_REVIEW_CHECK_IDS]
 
     async def feedback_report(self, feature: str, worktree: str) -> CoderReviewReport:
         """Return repository-wide review-fix rates by model and exposure cohort."""

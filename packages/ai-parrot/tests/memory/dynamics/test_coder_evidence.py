@@ -91,6 +91,42 @@ async def test_verified_zero_fix_success_keeps_review_ref(tmp_path: Path, monkey
     assert measurement.review_ref == f"coder-review/v1/{_EXECUTION_ID}/TASK-0001/{_ATTEMPT_UID}"
 
 
+@pytest.mark.asyncio
+async def test_many_validation_evidence_ids_are_bounded_and_cited_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A verdict with more than 16 evidence ids records only the cited ids and never fails after the artifact write."""
+    engine, worktree, store = _engine_with_review_context(tmp_path, monkeypatch)
+    many = tuple(f"check-{index}" for index in range(40)) + (_CHECK_ID,)
+    engine._review_checks[_ATTEMPT_UID] = (_EXECUTION_ID, many)
+
+    receipt = await engine.record_review("demo", str(worktree), _review(claim=_claim()), _EXECUTION_ID)
+
+    assert receipt.review_ref is not None
+    event, _offset = next(store.log.iter_events())
+    measurement = CoderReviewMeasurement.model_validate_json(event.payload["fact"])
+    assert measurement.passed_check_ids == (_CHECK_ID,)
+
+
+@pytest.mark.asyncio
+async def test_claim_without_a_passed_check_or_receipt_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A claim citing no engine-owned passed check, another execution, or an attempt without a receipt fails closed."""
+    engine, worktree, _store = _engine_with_review_context(tmp_path, monkeypatch)
+
+    with pytest.raises(CoderFailure, match="validation receipt"):
+        await engine.record_review("demo", str(worktree), _review(claim=_claim()), _EXECUTION_ID)
+
+    engine._review_checks[_ATTEMPT_UID] = (_EXECUTION_ID, (_CHECK_ID,))
+    with pytest.raises(CoderFailure, match="engine-owned passed check"):
+        await engine.record_review("demo", str(worktree), _review(claim=_claim(check_id="unrelated")), _EXECUTION_ID)
+
+    engine._review_checks[_ATTEMPT_UID] = ("another-execution", (_CHECK_ID,))
+    with pytest.raises(CoderFailure, match="calling execution"):
+        await engine.record_review("demo", str(worktree), _review(claim=_claim()), _EXECUTION_ID)
+
+
 def _engine_with_review_context(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> tuple[SddCoderEngine, Path, CoderFeedbackStore]:
