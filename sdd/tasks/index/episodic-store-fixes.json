@@ -66,7 +66,7 @@
       "feature_id": "FEAT-903",
       "feature": "episodic-store-fixes",
       "spec": "sdd/specs/episodic-store-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -74,8 +74,8 @@
       ],
       "parallel": true,
       "parallelism_notes": "TASK-5720 provides visible citation/review admission in episodic/store.py and full-ref attribution in agent_memory/attribution.py consumed by the manager.",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "agent:sdd-fix:5d23ba57",
+      "started_at": "2026-11-16T12:34:31.853983+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5721-original-refs-in-final-exposure.md"
     },
