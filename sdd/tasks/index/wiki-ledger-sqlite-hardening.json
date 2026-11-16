@@ -127,7 +127,7 @@
       "feature_id": "FEAT-902",
       "feature": "wiki-ledger-sqlite-hardening",
       "spec": "sdd/specs/wiki-ledger-sqlite-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -135,8 +135,9 @@
       "parallelism_notes": "No predecessor: creates only the benchmark driver and its contract tests, using existing LedgerService/SQLiteWikiStore APIs. New phase records are optional inputs and missing baseline phases remain unavailable, so driver preparation can run beside the cursor implementation.",
       "assigned_to": null,
       "started_at": "2026-11-16T21:11:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5717-sqlite-ledger-benchmark-driver.md"
+      "completed_at": "2026-11-16T21:40:46+00:00",
+      "file": "sdd/tasks/completed/TASK-5717-sqlite-ledger-benchmark-driver.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5718",
