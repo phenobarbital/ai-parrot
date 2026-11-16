@@ -15,6 +15,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import time
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
@@ -36,6 +38,33 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from parrot.knowledge.wiki.ledger.store import LedgerStore
 
 logger = logging.getLogger(__name__)
+
+
+def _timing_outcome(exc: BaseException) -> str:
+    """Classify an index exception for timing telemetry."""
+    return "cancelled" if isinstance(exc, asyncio.CancelledError) else "error"
+
+
+def _emit_timing(store: "LedgerStore", phase: str, started: float, outcome: str, **counts: int | bool) -> None:
+    """Emit guarded index timings without exposing ledger content."""
+    if not logger.isEnabledFor(logging.DEBUG):
+        return
+    try:
+        logger.debug(
+            "wiki.sqlite.timing",
+            extra={
+                "event": "wiki.sqlite.timing",
+                "operation": "ledger.sync",
+                "phase": phase,
+                "duration_ms": (time.perf_counter() - started) * 1000,
+                "outcome": outcome,
+                "pid": os.getpid(),
+                "db_name": store.db_path.name,
+                **counts,
+            },
+        )
+    except BaseException:
+        pass
 
 
 class ClaimHeldByOther(Exception):
@@ -318,18 +347,25 @@ class LedgerIndex:
             applied, _offset, _event_id = await self._sync_locked(conn)
             return applied
 
+        probe_started = time.perf_counter()
         try:
-            first_cursor = await self.store.read_cursor()
-        except LedgerCursorInvalid:
-            pass
-        else:
-            probe_result = await asyncio.to_thread(self.log.probe_cursor, *first_cursor)
-            if probe_result == "current":
-                try:
-                    if first_cursor == await self.store.read_cursor():
-                        return 0
-                except LedgerCursorInvalid:
-                    pass
+            try:
+                first_cursor = await self.store.read_cursor()
+            except LedgerCursorInvalid:
+                pass
+            else:
+                probe_result = await asyncio.to_thread(self.log.probe_cursor, *first_cursor)
+                if probe_result == "current":
+                    try:
+                        if first_cursor == await self.store.read_cursor():
+                            _emit_timing(self.store, "sync_probe", probe_started, "success", fast_path=True)
+                            return 0
+                    except LedgerCursorInvalid:
+                        pass
+        except BaseException as exc:
+            _emit_timing(self.store, "sync_probe", probe_started, _timing_outcome(exc), fast_path=False)
+            raise
+        _emit_timing(self.store, "sync_probe", probe_started, "success", fast_path=False)
 
         async with self.store.ledger_transaction("ledger.sync") as new_conn:
             applied, _offset, _event_id = await self._sync_locked(new_conn)
@@ -338,6 +374,9 @@ class LedgerIndex:
     async def _sync_locked(self, conn: "aiosqlite.Connection") -> tuple[int, int, str | None]:
         """Read this transaction's cursor and explicitly rebuild malformed state.
 
+        The ``replay`` timing record is inclusive of this locked reduction only.
+        Chained claim replay remains outside this method, so it is not counted twice.
+
         Returns:
             ``(applied_count, cursor_offset, cursor_event_id)`` reflecting
             where replay stopped — always the current tip, whether or not
@@ -345,12 +384,23 @@ class LedgerIndex:
             new was found). The cursor is already persisted for this
             connection's transaction when ``applied_count > 0``.
         """
+        replay_started = time.perf_counter()
         try:
-            offset, last_event_id = await self.store.read_cursor_in(conn)
-        except LedgerCursorInvalid:
-            logger.warning("Ledger cursor is invalid; rebuilding the materialized ledger projection.")
-            return await self._rebuild_locked_with_cursor(conn)
-        return await self._apply_from(conn, offset, last_event_id)
+            try:
+                offset, last_event_id = await self.store.read_cursor_in(conn)
+            except LedgerCursorInvalid:
+                try:
+                    logger.warning("Ledger cursor is invalid; rebuilding the materialized ledger projection.")
+                except BaseException:
+                    pass
+                result = await self._rebuild_locked_with_cursor(conn)
+            else:
+                result = await self._apply_from(conn, offset, last_event_id)
+        except BaseException as exc:
+            _emit_timing(self.store, "replay", replay_started, _timing_outcome(exc))
+            raise
+        _emit_timing(self.store, "replay", replay_started, "success", applied_events=result[0])
+        return result
 
     async def _apply_from(
         self, conn: "aiosqlite.Connection", offset: int, last_event_id: str | None

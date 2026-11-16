@@ -1,10 +1,38 @@
-import os
+import asyncio
 import json
 import logging
+import os
+import time
 from typing import Iterator, Literal
 from parrot.knowledge.wiki.ledger.events import LedgerEvent
 
 logger = logging.getLogger(__name__)
+
+
+def _timing_outcome(exc: BaseException) -> str:
+    """Classify an append exception for timing telemetry."""
+    return "cancelled" if isinstance(exc, asyncio.CancelledError) else "error"
+
+
+def _emit_timing(operation: str, phase: str, started: float, outcome: str) -> None:
+    """Emit one guarded ledger-log timing record."""
+    if not logger.isEnabledFor(logging.DEBUG):
+        return
+    try:
+        logger.debug(
+            "wiki.sqlite.timing",
+            extra={
+                "event": "wiki.sqlite.timing",
+                "operation": operation,
+                "phase": phase,
+                "duration_ms": (time.perf_counter() - started) * 1000,
+                "outcome": outcome,
+                "pid": os.getpid(),
+                "db_name": "ledger.db",
+            },
+        )
+    except BaseException:
+        pass
 
 
 class LedgerLog:
@@ -56,9 +84,10 @@ class LedgerLog:
         if len(encoded) > 4096:
             raise ValueError(f"Serialized event size ({len(encoded)} bytes) exceeds the 4 KiB limit.")
 
-        # Open with O_APPEND | O_WRONLY | O_CREAT
-        fd = os.open(self.path, os.O_APPEND | os.O_WRONLY | os.O_CREAT)
+        append_started = time.perf_counter()
         try:
+            # Open with O_APPEND | O_WRONLY | O_CREAT
+            fd = os.open(self.path, os.O_APPEND | os.O_WRONLY | os.O_CREAT)
             # To get the start offset of the append, we can seek to the end or use fstat.
             # Since we opened with O_APPEND, writes always go to the end, but we want to know
             # the exact byte offset where this write starts.
@@ -74,9 +103,21 @@ class LedgerLog:
             # Force the write to durable storage before returning — a
             # crash-only-safe (page-cache-only) append is not enough for
             # the log this feature bills as its durable source of truth.
-            os.fsync(fd)
+            fsync_started = time.perf_counter()
+            try:
+                os.fsync(fd)
+            except BaseException as exc:
+                _emit_timing("ledger.append", "log_fsync", fsync_started, _timing_outcome(exc))
+                raise
+            _emit_timing("ledger.append", "log_fsync", fsync_started, "success")
+        except BaseException as exc:
+            _emit_timing("ledger.append", "log_append", append_started, _timing_outcome(exc))
+            raise
         finally:
-            os.close(fd)
+            if "fd" in locals():
+                os.close(fd)
+
+        _emit_timing("ledger.append", "log_append", append_started, "success")
 
         return event.event_id, start_offset
 
@@ -96,15 +137,28 @@ class LedgerLog:
         if len(encoded) > 4096:
             raise ValueError(f"Serialized event size ({len(encoded)} bytes) exceeds the 4 KiB limit.")
 
-        fd = os.open(self.path, os.O_APPEND | os.O_WRONLY | os.O_CREAT)
+        append_started = time.perf_counter()
         try:
+            fd = os.open(self.path, os.O_APPEND | os.O_WRONLY | os.O_CREAT)
             start_offset = os.lseek(fd, 0, os.SEEK_END)
             written = os.write(fd, encoded)
             if written != len(encoded):
                 raise OSError("Failed to write the complete event line atomically.")
-            os.fsync(fd)
+            fsync_started = time.perf_counter()
+            try:
+                os.fsync(fd)
+            except BaseException as exc:
+                _emit_timing("ledger.append_line", "log_fsync", fsync_started, _timing_outcome(exc))
+                raise
+            _emit_timing("ledger.append_line", "log_fsync", fsync_started, "success")
+        except BaseException as exc:
+            _emit_timing("ledger.append_line", "log_append", append_started, _timing_outcome(exc))
+            raise
         finally:
-            os.close(fd)
+            if "fd" in locals():
+                os.close(fd)
+
+        _emit_timing("ledger.append_line", "log_append", append_started, "success")
 
         return start_offset
 

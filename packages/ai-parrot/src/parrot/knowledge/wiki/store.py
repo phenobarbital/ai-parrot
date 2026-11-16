@@ -1492,17 +1492,57 @@ class SQLiteWikiStore(BaseWikiStore):
         Yields:
             A configured connection.
         """
-        async with aiosqlite.connect(
-            str(self._db_path),
-            timeout=self._policy.busy_timeout_s,
-            isolation_level=None,
-        ) as conn:
-            conn.row_factory = aiosqlite.Row
-            await self._apply_pragmas(conn, writable=writable)
-            await self._check_runtime_gate(conn)
-            if writable:
-                await self._ensure_schema(conn)
+        connection_started = time.perf_counter()
+        try:
+            conn = await aiosqlite.connect(
+                str(self._db_path),
+                timeout=self._policy.busy_timeout_s,
+                isolation_level=None,
+            )
+        except BaseException as exc:
+            self._emit_timing("sqlite.connection", "connection_open", connection_started, self._timing_outcome(exc))
+            raise
+        self._emit_timing("sqlite.connection", "connection_open", connection_started, "success")
+        try:
+            setup_started = time.perf_counter()
+            try:
+                conn.row_factory = aiosqlite.Row
+                await self._apply_pragmas(conn, writable=writable)
+                await self._check_runtime_gate(conn)
+                if writable:
+                    await self._ensure_schema(conn)
+            except BaseException as exc:
+                self._emit_timing("sqlite.connection", "connection_setup", setup_started, self._timing_outcome(exc))
+                raise
+            self._emit_timing("sqlite.connection", "connection_setup", setup_started, "success")
             yield conn
+        finally:
+            await conn.close()
+
+    @staticmethod
+    def _timing_outcome(exc: BaseException) -> str:
+        """Classify an exception for a structured timing record."""
+        return "cancelled" if isinstance(exc, asyncio.CancelledError) else "error"
+
+    def _emit_timing(self, operation: str, phase: str, started: float, outcome: str) -> None:
+        """Emit a failure-contained SQLite phase record when DEBUG is enabled."""
+        if not self.logger.isEnabledFor(logging.DEBUG):
+            return
+        try:
+            self.logger.debug(
+                "wiki.sqlite.timing",
+                extra={
+                    "event": "wiki.sqlite.timing",
+                    "operation": operation,
+                    "phase": phase,
+                    "duration_ms": (time.perf_counter() - started) * 1000,
+                    "outcome": outcome,
+                    "pid": os.getpid(),
+                    "db_name": self._db_path.name,
+                },
+            )
+        except BaseException:
+            pass
 
     async def _ensure_schema(self, conn: aiosqlite.Connection) -> None:
         """Replay the schema when a cheap presence probe shows it missing.
@@ -1869,24 +1909,49 @@ class SQLiteWikiStore(BaseWikiStore):
         self._assert_writable()
         async with self._open(writable=True) as conn:
             await self._maybe_migrate(conn)
+            begin_started = time.perf_counter()
             try:
                 await conn.execute("BEGIN IMMEDIATE")
-            except sqlite3.OperationalError as exc:
+            except BaseException as exc:
+                self._emit_timing(operation, "begin_wait", begin_started, self._timing_outcome(exc))
                 # Codes, not message substrings (spec §7): 5 = SQLITE_BUSY,
                 # 517 = SQLITE_BUSY_SNAPSHOT. Anything else is a real
                 # error and keeps its own semantics.
-                if getattr(exc, "sqlite_errorcode", None) in (5, 517):
+                if isinstance(exc, sqlite3.OperationalError) and getattr(exc, "sqlite_errorcode", None) in (5, 517):
                     raise WikiStoreBusy(self._db_path, operation, self._policy.busy_timeout_s) from exc
                 raise
+            self._emit_timing(operation, "begin_wait", begin_started, "success")
+            body_started = time.perf_counter()
             try:
                 yield conn
-            except BaseException:
+            except BaseException as exc:
+                self._emit_timing(operation, "transaction_body", body_started, self._timing_outcome(exc))
+                rollback_started = time.perf_counter()
                 try:
                     await conn.execute("ROLLBACK")
+                except asyncio.CancelledError:
+                    self._emit_timing(operation, "rollback", rollback_started, "cancelled")
+                    raise
                 except sqlite3.Error:  # pragma: no cover - rollback best effort
-                    self.logger.debug("rollback failed after %s", operation, exc_info=True)
+                    self._emit_timing(operation, "rollback", rollback_started, "error")
+                    try:
+                        self.logger.debug("rollback failed after %s", operation, exc_info=True)
+                    except BaseException:
+                        pass
+                except BaseException:
+                    self._emit_timing(operation, "rollback", rollback_started, "error")
+                    raise
+                else:
+                    self._emit_timing(operation, "rollback", rollback_started, "success")
                 raise
-            await conn.execute("COMMIT")
+            self._emit_timing(operation, "transaction_body", body_started, "success")
+            commit_started = time.perf_counter()
+            try:
+                await conn.execute("COMMIT")
+            except BaseException as exc:
+                self._emit_timing(operation, "commit", commit_started, self._timing_outcome(exc))
+                raise
+            self._emit_timing(operation, "commit", commit_started, "success")
 
     def _sidecars_quiescent(self) -> bool:
         """Whether the plane has no live ``-wal`` / ``-journal`` sidecar.
