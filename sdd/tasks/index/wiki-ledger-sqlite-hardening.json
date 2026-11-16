@@ -109,7 +109,7 @@
       "feature_id": "FEAT-902",
       "feature": "wiki-ledger-sqlite-hardening",
       "spec": "sdd/specs/wiki-ledger-sqlite-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -119,8 +119,9 @@
       "parallelism_notes": "Depends on TASK-5715 for _append_durably and shared ledger/index.py serialization; TASK-5714's probe and ledger/log.py edits are transitively available. Adds timings to store.py and service.py without changing resource lifetime.",
       "assigned_to": null,
       "started_at": "2026-11-16T21:11:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5716-sqlite-ledger-phase-timings.md"
+      "completed_at": "2026-11-16T22:26:47+00:00",
+      "file": "sdd/tasks/completed/TASK-5716-sqlite-ledger-phase-timings.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5717",
