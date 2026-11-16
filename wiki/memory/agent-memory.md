@@ -170,6 +170,7 @@ class MyAgent(BasicAgent):
   - an identified user: that user's episodes from every session;
   - an anonymous request with a session: that session's episodes that carry no user;
   - always: agent-level episodes, recorded with neither a user nor a session (explicit lessons and episodes that predate request scoping).
+- The agent-facing `search_episodic_memory` and `get_warnings` tools follow the same visibility inside a request; `get_warnings` reads the identified user's failures only. Outside a request they use the toolkit's configured namespace.
 - Another user's episodes are never recalled. Set room, crew and model dimensions keep narrowing every recall.
 - Agent-level recall needs a backend that can match an unset dimension: SQLite, pgvector and FAISS can; the Redis backend returns no agent-level episodes.
 

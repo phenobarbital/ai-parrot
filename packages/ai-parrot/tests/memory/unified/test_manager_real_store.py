@@ -14,7 +14,9 @@ import pytest
 
 from parrot.memory.agent_memory.models import MemoryEvent, MemoryRequestScope
 from parrot.memory.episodic.models import EpisodeCategory, EpisodeOutcome, MemoryNamespace
+from parrot.memory.agent_memory.runtime import bind_memory_scope, reset_memory_scope
 from parrot.memory.episodic.store import EpisodicMemoryStore
+from parrot.memory.episodic.tools import EpisodicMemoryToolkit
 from parrot.memory.unified.manager import UnifiedMemoryManager
 
 pytest.importorskip("faiss")
@@ -252,3 +254,104 @@ def test_recall_scopes_follow_the_request_identity(recall_manager) -> None:
     )
     anonymous = _scope(None, "anon-1")
     assert recall_manager._recall_scopes(anonymous)[0] == (recall_manager._namespace_for_scope(anonymous), ("user_id",))
+
+
+# ── Agent-facing tools follow the request's visibility (TASK-5708, issue:3b9765e02458) ──
+
+
+@pytest.fixture
+def toolkit(store: EpisodicMemoryStore) -> EpisodicMemoryToolkit:
+    """The toolkit as ``AgentMemoryMixin`` registers it: namespace = (tenant, agent)."""
+    return EpisodicMemoryToolkit(store=store, namespace=MemoryNamespace(tenant_id="acme", agent_id="planner"))
+
+
+async def _private_failure(store: EpisodicMemoryStore, secret: str, **dimensions: str) -> None:
+    await store.record_episode(
+        namespace=MemoryNamespace(tenant_id="acme", agent_id="planner", **dimensions),
+        situation=f"deploy rollout failed for {secret}",
+        action_taken="ran the rollout",
+        outcome=EpisodeOutcome.FAILURE,
+        error_message=f"rollout timed out for {secret}",
+        generate_reflection=False,
+    )
+
+
+async def test_search_tool_never_returns_another_users_episode(toolkit, store) -> None:
+    """Inside a request the search tool reads the requester's episodes and the agent-level ones only."""
+    await _private_failure(store, "alpha", user_id="u1", session_id="s1")
+    await _private_failure(store, "bravo", user_id="u2", session_id="s9")
+    await _private_failure(store, "charlie")
+    await _private_failure(store, "delta", session_id="anon-1")
+
+    token = bind_memory_scope(_scope("u1", "s2"))
+    try:
+        found = await toolkit.search_episodic_memory(_QUERY, top_k=10)
+    finally:
+        reset_memory_scope(token)
+    assert "alpha" in found and "charlie" in found
+    assert "bravo" not in found and "delta" not in found
+
+    token = bind_memory_scope(_scope(None, "anon-1"))
+    try:
+        anonymous = await toolkit.search_episodic_memory(_QUERY, top_k=10)
+    finally:
+        reset_memory_scope(token)
+    assert "delta" in anonymous and "charlie" in anonymous
+    assert "alpha" not in anonymous and "bravo" not in anonymous
+
+
+async def test_search_tool_respects_top_k_across_scopes(toolkit, store) -> None:
+    """The merged result of the visibility scopes is cut to the requested size."""
+    for index in range(3):
+        await _private_failure(store, f"own-{index}", user_id="u1", session_id="s1")
+        await _private_failure(store, f"shared-{index}")
+
+    token = bind_memory_scope(_scope("u1", "s2"))
+    try:
+        found = await toolkit.search_episodic_memory(_QUERY, top_k=2)
+    finally:
+        reset_memory_scope(token)
+    assert found.startswith("Found 2 relevant experiences")
+
+
+async def test_warnings_tool_never_returns_another_users_failure(toolkit, store) -> None:
+    """Inside a request the warnings tool reads the identified user's failures only."""
+    await _private_failure(store, "alpha", user_id="u1", session_id="s1")
+    await _private_failure(store, "bravo", user_id="u2", session_id="s9")
+
+    token = bind_memory_scope(_scope("u1", "s2"))
+    try:
+        warnings = await toolkit.get_warnings(_QUERY)
+    finally:
+        reset_memory_scope(token)
+    assert "alpha" in warnings and "bravo" not in warnings
+
+    token = bind_memory_scope(_scope(None, "s9"))
+    try:
+        anonymous = await toolkit.get_warnings(_QUERY)
+    finally:
+        reset_memory_scope(token)
+    assert anonymous == "No relevant warnings from past experiences."
+
+
+async def test_tools_keep_the_configured_namespace_outside_a_request(toolkit, store) -> None:
+    """With no request bound, the configured namespace is the caller's choice and is used as is."""
+    await _private_failure(store, "bravo", user_id="u2", session_id="s9")
+
+    assert "bravo" in await toolkit.search_episodic_memory(_QUERY, top_k=10)
+
+
+async def test_user_bound_toolkit_does_not_widen_to_the_agent_level(store) -> None:
+    """A toolkit configured for one user keeps that restriction inside a request."""
+    await _private_failure(store, "alpha", user_id="u1", session_id="s1")
+    await _private_failure(store, "charlie")
+    bound = EpisodicMemoryToolkit(
+        store=store, namespace=MemoryNamespace(tenant_id="acme", agent_id="planner", user_id="u1")
+    )
+
+    token = bind_memory_scope(_scope("u1", "s2"))
+    try:
+        found = await bound.search_episodic_memory(_QUERY, top_k=10)
+    finally:
+        reset_memory_scope(token)
+    assert "alpha" in found and "charlie" not in found

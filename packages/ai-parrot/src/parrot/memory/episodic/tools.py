@@ -12,8 +12,9 @@ import logging
 from parrot.memory.agent_memory.runtime import current_memory_exposure, current_memory_scope
 from parrot.tools.toolkit import AbstractToolkit
 
-from .models import EpisodeCategory, EpisodeOutcome, MemoryNamespace
+from .models import EpisodeCategory, EpisodeOutcome, EpisodeSearchResult, MemoryNamespace
 from .store import EpisodicMemoryStore, _EXPLICIT_LESSON_KEY, _EXPLICIT_REFLECTION_KEY
+from .visibility import recall_scopes, visible_to_scope
 
 logger = logging.getLogger(__name__)
 
@@ -64,12 +65,7 @@ class EpisodicMemoryToolkit(AbstractToolkit):
             Formatted list of relevant past experiences with lessons learned.
         """
         try:
-            results = await self._store.recall_similar(
-                query=query,
-                namespace=self._namespace,
-                top_k=top_k,
-                include_failures_only=failures_only,
-            )
+            results = await self._search(query, top_k=top_k, failures_only=failures_only)
 
             if not results:
                 return "No relevant past experiences found."
@@ -180,6 +176,55 @@ class EpisodicMemoryToolkit(AbstractToolkit):
             logger.warning("cite_memory rejected runtime references: %s", exc)
             return "Error citing episodic memory: one or more references are unavailable."
 
+    async def _search(self, query: str, *, top_k: int, failures_only: bool) -> list[EpisodeSearchResult]:
+        """Search what the caller may read.
+
+        Inside a request the bound memory scope decides: the requester's own episodes plus the
+        agent-level ones, never another user's, whatever the configured namespace is. Each scope is
+        filtered by the backend before its top-k and every returned episode is checked again.
+        Outside a request the configured namespace is the caller's own choice and is used as is.
+        """
+        scope = current_memory_scope()
+        if scope is None:
+            return await self._store.recall_similar(
+                query=query,
+                namespace=self._namespace,
+                top_k=top_k,
+                include_failures_only=failures_only,
+            )
+
+        visible: dict[str, EpisodeSearchResult] = {}
+        for namespace, null_dimensions in recall_scopes(scope):
+            if not self._namespace_allows(namespace):
+                continue
+            rows = await self._store.recall_similar(
+                query=query,
+                namespace=namespace,
+                top_k=top_k,
+                include_failures_only=failures_only,
+                null_dimensions=null_dimensions,
+            )
+            for row in rows:
+                if visible_to_scope(row, scope):
+                    visible.setdefault(row.episode_id, row)
+        return sorted(visible.values(), key=lambda row: (-row.score, row.episode_id))[:top_k]
+
+    def _warnings_namespace(self) -> MemoryNamespace | None:
+        """Pick the namespace whose failures the caller may read as warnings.
+
+        Inside a request that is the identified user's own episodes across sessions. A request
+        without a user gets none here: the cached failure lookup cannot require an unset user, and
+        the automatic context already carries the agent-level warnings. Outside a request the
+        configured namespace is used as is.
+        """
+        scope = current_memory_scope()
+        if scope is None:
+            return self._namespace
+        if scope.user_id is None:
+            return None
+        namespace = recall_scopes(scope)[0][0]
+        return namespace if self._namespace_allows(namespace) else None
+
     def _namespace_allows(self, runtime_namespace: MemoryNamespace) -> bool:
         """Require configured scope dimensions to agree with the runtime-derived scope."""
         if (
@@ -210,8 +255,11 @@ class EpisodicMemoryToolkit(AbstractToolkit):
             or a message if no relevant warnings exist.
         """
         try:
+            namespace = self._warnings_namespace()
+            if namespace is None:
+                return "No relevant warnings from past experiences."
             warnings = await self._store.get_failure_warnings(
-                namespace=self._namespace,
+                namespace=namespace,
                 current_query=context if context else None,
             )
 

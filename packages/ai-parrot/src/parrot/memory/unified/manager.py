@@ -20,6 +20,7 @@ from parrot.memory.agent_memory.models import MemoryEvent, MemoryRequestScope, M
 from parrot.memory.dynamics.models import MemoryExposure, MemoryRef
 from parrot.memory.episodic.models import EpisodeCategory, EpisodeOutcome, MemoryNamespace
 from parrot.memory.episodic.store import EpisodicMemoryStore
+from parrot.memory.episodic.visibility import recall_scopes, visible_to_scope
 from parrot.memory.unified.models import MemoryCandidate
 from parrot.memory.user.extraction import extract_user_knowledge
 from parrot.memory.user.models import UserKnowledge, UserKnowledgeCommand, UserMemoryReceipt
@@ -781,50 +782,20 @@ class UnifiedMemoryManager:
             crew_id=scope.crew_id,
         )
 
-    @classmethod
-    def _recall_scopes(cls, scope: MemoryRequestScope) -> list[tuple[MemoryNamespace, tuple[str, ...]]]:
-        """Return the namespace filters that make up one request's episodic recall visibility.
+    @staticmethod
+    def _recall_scopes(scope: MemoryRequestScope) -> list[tuple[MemoryNamespace, tuple[str, ...]]]:
+        """Return the namespace filters of one request's episodic recall visibility.
 
-        A request recalls its own episodes plus the agent-level ones, never another user's:
-
-        - an identified user: that user's episodes in every session;
-        - an anonymous request with a session: that session's episodes that carry no user;
-        - always: agent-level episodes, recorded with neither a user nor a session (explicit
-          lessons and episodes written before request scoping existed).
-
-        Set room, crew and model dimensions keep narrowing every filter. Writes are not affected:
-        an episode is still recorded under the full request namespace.
-
-        Args:
-            scope: Immutable identity of the request.
-
-        Returns:
-            ``(namespace, null_dimensions)`` pairs for ``EpisodicMemoryStore.recall_similar``.
+        The policy lives in :func:`parrot.memory.episodic.visibility.recall_scopes`, shared with the
+        agent-facing tools. Writes are not affected: an episode is still recorded under the full
+        request namespace.
         """
-        exact = cls._namespace_for_scope(scope)
-        scopes: list[tuple[MemoryNamespace, tuple[str, ...]]] = []
-        if scope.user_id is not None:
-            scopes.append((exact.model_copy(update={"session_id": None}), ()))
-        elif scope.session_id is not None:
-            scopes.append((exact, ("user_id",)))
-        agent_level = exact.model_copy(update={"user_id": None, "session_id": None})
-        scopes.append((agent_level, ("user_id", "session_id")))
-        return scopes
+        return recall_scopes(scope)
 
     @staticmethod
     def _visible_to_scope(episode: Any, scope: MemoryRequestScope) -> bool:
         """Apply the recall visibility of :meth:`_recall_scopes` to one returned episode."""
-        if (episode.tenant_id, episode.agent_id) != (scope.tenant_id, scope.agent_id):
-            return False
-        for dimension in ("room_id", "crew_id", "model_id"):
-            wanted = getattr(scope, dimension)
-            if wanted is not None and getattr(episode, dimension) != wanted:
-                return False
-        if episode.user_id is None and episode.session_id is None:
-            return True
-        if scope.user_id is not None:
-            return episode.user_id == scope.user_id
-        return episode.user_id is None and scope.session_id is not None and episode.session_id == scope.session_id
+        return visible_to_scope(episode, scope)
 
     @staticmethod
     def _recorded_under(episode: Any, namespace: MemoryNamespace) -> bool:
