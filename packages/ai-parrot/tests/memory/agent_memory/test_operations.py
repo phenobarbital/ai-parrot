@@ -237,3 +237,35 @@ def test_memory_cli_reports_unexpected_failures_without_traceback(
     assert result.output.strip().startswith(message)
     assert len(result.output.strip().splitlines()) == 1
     assert "Traceback" not in result.output
+
+
+@pytest.mark.asyncio
+async def test_sync_observes_backend_health_and_unknown_capabilities(tmp_path: Path) -> None:
+    """Sync never claims success for missing capabilities, degraded vectors or closed storage."""
+    from types import SimpleNamespace
+
+    toolkit = AgentMemoryToolkit(config=_config(tmp_path / "sync.db"), namespace=_namespace())
+    try:
+        healthy = await toolkit.memory_sync()
+        assert healthy == {"status": "synchronized", "replayed": 0, "durable_pending_reviews": 0}
+        manager = toolkit._manager
+        backend = manager.episodic._backend
+        manager.episodic._backend = SimpleNamespace()
+        unknown = await toolkit.memory_sync()
+        assert unknown["status"] != "synchronized"
+        assert unknown["durable_pending_reviews"] is None
+        manager.episodic._backend = backend
+        original_status = backend.vector_status
+
+        async def degraded(namespace_filter: dict[str, Any]) -> dict[str, Any]:
+            """Expose the measured vector ceiling degradation."""
+            return {"status": "degraded"}
+
+        backend.vector_status = degraded
+        assert (await toolkit.memory_sync())["status"] == "degraded"
+        backend.vector_status = original_status
+        await backend.close()
+        with pytest.raises(RuntimeError, match="not configured"):
+            await toolkit.memory_sync()
+    finally:
+        await toolkit._close()

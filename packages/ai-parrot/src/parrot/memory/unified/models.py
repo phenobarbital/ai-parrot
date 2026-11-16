@@ -10,6 +10,8 @@ from __future__ import annotations
 from typing import Literal
 
 from parrot.memory.agent_memory.models import MemoryRequestScope
+from html import escape
+
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
@@ -113,7 +115,7 @@ class MemoryContext(BaseModel):
 
         def block(tag: str, text: str) -> str:
             # Recalled text is data; a closing tag inside it must not end the section early.
-            safe = text.replace(f"</{tag}>", f"<\\/{tag}>")
+            safe = escape(text, quote=False)
             return f"<{tag}>\n{safe}\n</{tag}>"
 
         if self.episodic_warnings:

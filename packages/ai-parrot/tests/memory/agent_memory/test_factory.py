@@ -129,3 +129,80 @@ async def test_owned_and_borrowed_cleanup() -> None:
     await borrowed_store.close()
     await owned_store.close()
     assert calls == ["owned", "backend"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stored_tenant", ["tenant-factory", "other-tenant", None, "no-resolver"])
+async def test_factory_wires_trusted_evidence_resolver(tmp_path: Path, stored_tenant: str | None) -> None:
+    """Only live tenant-matching ChatStorage metadata can authorize a user-knowledge write."""
+    from parrot.memory.agent_memory.models import ChatStorageEvidenceRef, MemoryRequestScope
+    from parrot.memory.user.models import UserKnowledgeCandidate, UserKnowledgeCommand
+
+    scope = MemoryRequestScope(
+        tenant_id="tenant-factory",
+        agent_id="agent-factory",
+        user_id="user",
+        session_id="session",
+        turn_id="turn",
+        identity_provenance="server_resolved",
+    )
+    evidence = ChatStorageEvidenceRef(
+        tenant_id=scope.tenant_id, agent_name=scope.agent_id, user_id="user", session_id="session", turn_id="turn"
+    )
+    observed: list[ChatStorageEvidenceRef] = []
+
+    async def resolver(reference: ChatStorageEvidenceRef) -> str | None:
+        """Read trusted metadata; None represents absent or tombstoned storage."""
+        observed.append(reference)
+        return stored_tenant
+
+    manager = await create_memory_manager(
+        AgentMemoryConfig(enable_user_memory=True, storage_path=str(tmp_path / "evidence.db")),
+        namespace=_namespace(),
+        evidence_tenant_resolver=None if stored_tenant == "no-resolver" else resolver,
+    )
+    try:
+        receipt = await manager.user_memory_store.upsert(
+            UserKnowledgeCommand(
+                event_id="event",
+                candidate=UserKnowledgeCandidate(
+                    kind="preference", value="tea", provenance="explicit", evidence_refs=(evidence.to_reference(),)
+                ),
+            ),
+            scope=scope,
+        )
+        assert receipt.status == ("applied" if stored_tenant == scope.tenant_id else "ignored")
+        assert observed == ([] if stored_tenant == "no-resolver" else [evidence])
+    finally:
+        await manager.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_mixin_passes_evidence_resolver_to_factory(tmp_path: Path) -> None:
+    """The host's trusted resolver reaches its real user store through the facade."""
+    from parrot.memory.agent_memory.mixin import AgentMemoryMixin
+    from parrot.memory.agent_memory.models import ChatStorageEvidenceRef
+
+    class Lifecycle:
+        async def configure(self, app: object = None) -> None:
+            """Complete minimal cooperative host setup."""
+
+        async def cleanup(self) -> None:
+            """Complete minimal cooperative host cleanup."""
+
+    class Host(AgentMemoryMixin, Lifecycle):
+        name = "agent-factory"
+        tenant_id = "tenant-factory"
+
+    async def resolver(reference: ChatStorageEvidenceRef) -> str | None:
+        """Stand in for the trusted metadata service."""
+        return reference.tenant_id
+
+    host = Host()
+    host.agent_memory_config = {"enable_user_memory": True, "storage_path": str(tmp_path / "host.db")}
+    host.memory_evidence_tenant_resolver = resolver
+    await host.configure()
+    try:
+        assert host._memory_manager.user_memory_store._evidence_tenant_resolver is resolver
+    finally:
+        await host.cleanup()

@@ -795,6 +795,15 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
                 results.append(EpisodeSearchResult(**json.loads(payload), score=min(max(score, 0.0), 1.01)))
         return results
 
+    async def review_status(self, namespace_filter: dict[str, Any]) -> dict[str, int | str]:
+        """Verify storage availability before reporting this backend's transactional review state.
+
+        SQLite commits each review and its derived state atomically; it has no durable replay queue.
+        A closed or failed connection raises instead of advertising a synchronized store.
+        """
+        await self.count(namespace_filter)
+        return {"status": "synchronized", "durable_pending_reviews": 0}
+
     async def vector_status(self, namespace_filter: dict[str, Any]) -> dict[str, int | str]:
         """Report whether a scope exceeded the measured exact-vector ceiling.
 

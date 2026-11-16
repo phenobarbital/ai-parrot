@@ -14,7 +14,7 @@ from parrot.memory.episodic.models import MemoryNamespace
 from parrot.memory.episodic.store import EpisodicMemoryStore
 from parrot.memory.unified.manager import UnifiedMemoryManager
 from parrot.memory.unified.models import MemoryConfig
-from parrot.memory.user.store import UserMemoryStore
+from parrot.memory.user.store import EvidenceTenantResolver, UserMemoryStore
 
 from .models import AgentMemoryConfig
 
@@ -141,12 +141,18 @@ async def _close_owned_resources(resources: list[_ManagedResource]) -> None:
             logger.exception("memory resource cleanup failed")
 
 
-async def create_memory_manager(config: AgentMemoryConfig, *, namespace: MemoryNamespace) -> UnifiedMemoryManager:
+async def create_memory_manager(
+    config: AgentMemoryConfig,
+    *,
+    namespace: MemoryNamespace,
+    evidence_tenant_resolver: EvidenceTenantResolver | None = None,
+) -> UnifiedMemoryManager:
     """Build enabled resources and unwind any partial acquisition before propagating failure.
 
     Args:
         config: Explicit memory capability and persistent-storage configuration.
         namespace: Stable agent namespace used by episodic storage.
+        evidence_tenant_resolver: Trusted metadata lookup for live ChatStorage evidence; missing lookup fails closed.
 
     Returns:
         A manager containing only the configured memory capabilities.
@@ -173,7 +179,10 @@ async def create_memory_manager(config: AgentMemoryConfig, *, namespace: MemoryN
             episodic_store = _OwnedEpisodicMemoryStore(backend, owns_backend=True)
 
         if config.enable_user_memory:
-            user_memory_store = UserMemoryStore(path)
+            user_options: dict[str, Any] = {}
+            if evidence_tenant_resolver is not None:
+                user_options["evidence_tenant_resolver"] = evidence_tenant_resolver
+            user_memory_store = UserMemoryStore(path, **user_options)
             resources.append(_ManagedResource(resource=user_memory_store, owned=True))
             await user_memory_store.configure()
     except BaseException:

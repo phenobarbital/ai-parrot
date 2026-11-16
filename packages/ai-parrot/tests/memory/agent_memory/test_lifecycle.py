@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any, AsyncIterator
 
 import pytest
@@ -26,6 +27,8 @@ class _Client(AbstractClient):
         """Initialize a deterministic client mode."""
         super().__init__(model="stub")
         self.mode = mode
+        self.stream_blocked = asyncio.Event()
+        self.stream_release = asyncio.Event()
 
     async def get_client(self) -> "_Client":
         """Return the configured client."""
@@ -56,7 +59,8 @@ class _Client(AbstractClient):
         if self.mode == "error":
             raise RuntimeError("stream failed")
         if self.mode == "hang":
-            await asyncio.sleep(30)
+            self.stream_blocked.set()
+            await self.stream_release.wait()
         yield self._message(prompt)
 
     async def invoke(self, *args: Any, **kwargs: Any) -> AIMessage:
@@ -129,13 +133,14 @@ async def test_cancelled_stream_preserves_history_only() -> None:
             pass
 
     task = asyncio.create_task(consume())
-    await asyncio.sleep(0)
+    await asyncio.wait_for(bot._llm.stream_blocked.wait(), 1)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
 
     history = await bot.conversation_memory.get_history("u", "s", chatbot_id=bot.memory_key_id)
     assert history is not None and history.turns[0].error
+    assert history.turns[0].assistant_response == "partial"
     assert recorder.events == []
 
 
@@ -196,3 +201,35 @@ async def test_event_identity_and_partial_turns() -> None:
     history = await failing_bot.conversation_memory.get_history("u", "s", chatbot_id=failing_bot.memory_key_id)
     assert history is not None and history.turns[0].error == "stream failed"
     assert failing_recorder.events == []
+
+
+@pytest.mark.asyncio
+async def test_retried_bot_turn_persists_one_real_episode(tmp_path: Path) -> None:
+    """Retrying the public ask boundary persists one SQLite episode, beyond merely reusing an event ID."""
+    from parrot.memory.agent_memory.factory import create_memory_manager
+    from parrot.memory.agent_memory.models import AgentMemoryConfig
+    from parrot.memory.episodic.models import MemoryNamespace
+
+    bot, recorder = await _bot()
+    manager = await create_memory_manager(
+        AgentMemoryConfig(enable_episodic_memory=True, storage_path=str(tmp_path / "retry.db")),
+        namespace=MemoryNamespace(tenant_id="default", agent_id=bot.name),
+    )
+
+    async def complete(event: MemoryEvent) -> None:
+        """Connect the real public lifecycle to its durable event writer."""
+        await recorder.complete(event)
+        await manager.record_event(event)
+
+    bot.complete_memory = complete
+    try:
+        for _ in range(2):
+            await bot.ask("retry", user_id="u", session_id="s", use_vector_context=False, turn_id="client-turn")
+        assert len(recorder.events) == 2
+        assert recorder.events[0].event_id == recorder.events[1].event_id
+        rows = await manager.episodic._backend.get_recent({"agent_id": bot.name}, limit=10)
+        assert len(rows) == 1
+        assert rows[0].user_id == "u"
+        assert rows[0].situation == "retry"
+    finally:
+        await manager.cleanup()

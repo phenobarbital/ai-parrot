@@ -75,12 +75,18 @@ class AgentMemoryToolkit(AbstractToolkit):
         """Report enabled capabilities, durable pending reviews and degraded state."""
         manager = await self._opened_manager()
         vector_status: dict[str, Any] = {"status": "disabled"}
+        review_status: dict[str, Any] = {"status": "disabled", "durable_pending_reviews": None}
         if manager.episodic is not None:
             status = getattr(manager.episodic._backend, "vector_status", None)
             if callable(status):
                 vector_status = await status(self._namespace.build_filter())
             else:
                 vector_status = {"status": "unavailable"}
+            review_probe = getattr(manager.episodic._backend, "review_status", None)
+            if callable(review_probe):
+                review_status = await review_probe(self._namespace.build_filter())
+            else:
+                review_status = {"status": "unavailable", "durable_pending_reviews": None}
         return {
             "namespace": self._namespace.model_dump(mode="json"),
             "capabilities": {
@@ -89,7 +95,8 @@ class AgentMemoryToolkit(AbstractToolkit):
                 "dynamics": self._config.memory_dynamics,
                 "brain": self._config.enable_brain,
             },
-            "durable_pending_reviews": 0,
+            "durable_pending_reviews": review_status["durable_pending_reviews"],
+            "reviews": review_status,
             "vector": vector_status,
         }
 
@@ -201,7 +208,9 @@ class AgentMemoryToolkit(AbstractToolkit):
         """
         status = await self.memory_status()
         return {
-            "status": "synchronized",
+            "status": (
+                "degraded" if status["vector"]["status"] in {"degraded", "unavailable"} else status["reviews"]["status"]
+            ),
             "replayed": 0,
             "durable_pending_reviews": status["durable_pending_reviews"],
         }

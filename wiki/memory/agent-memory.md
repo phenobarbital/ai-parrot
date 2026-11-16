@@ -60,10 +60,34 @@ The `AgentMemoryConfig` class controls all memory capabilities with the followin
 
 ### Configuration Precedence
 
-1. Instance attributes (highest priority)
+1. Explicit instance capability flags and overrides of fields declared by memory-aware subclasses (highest priority)
 2. Explicit `agent_memory_config` dict or `AgentMemoryConfig` object
-3. Class attributes from MRO
+3. Plain class attributes from subclasses of `AgentMemoryMixin`; unrelated MRO parents and descriptors are ignored
 4. Default values from `AgentMemoryConfig` (lowest priority)
+
+Generic host fields such as `storage_path` and `max_context_tokens` should be placed in
+`agent_memory_config`; unrelated host instance attributes cannot silently configure memory.
+
+### Background extraction and evidence
+
+Completed response writes that extract user knowledge run as owned background tasks. Cleanup and
+reconfiguration drain them before closing memory resources. Each extraction gets a fresh client
+constructed from the host's resolved LLM configuration, with no shared response-client session.
+For a custom live client instance, set `memory_extraction_client_factory` on the host to a callable
+that returns a new independently owned client for each extraction (use `staticmethod` for a class
+attribute). Without that factory, automatic extraction is unavailable; episodic recording continues.
+
+ChatStorage-backed evidence also needs a trusted metadata resolver. Pass
+`evidence_tenant_resolver=` to `create_memory_manager`, or set the host's
+`memory_evidence_tenant_resolver`. The async callable receives `ChatStorageEvidenceRef` and returns
+the stored tenant for a live turn, or `None` for missing/tombstoned evidence. The host must connect
+this callable to its authoritative storage service; the factory does not infer evidence authority
+from the reference itself. Missing resolvers and tenant mismatches reject the knowledge write.
+
+`memory_status` reports the backend's review state. SQLite reviews commit transactionally and
+report zero pending reviews only after verifying storage availability. Unsupported backends report
+an unknown pending count (`null`); `memory_sync` does not claim synchronization for unknown or
+degraded storage. It does not replay already committed reviews.
 
 ### Legacy Flag Migration
 

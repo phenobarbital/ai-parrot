@@ -15,6 +15,7 @@ from .models import AgentMemoryConfig, MemoryEvent, MemoryRequestScope
 
 if TYPE_CHECKING:
     from parrot.memory.dream.service import BrainService
+    from parrot.memory.user.store import EvidenceTenantResolver
 
 
 class AgentMemoryMixin:
@@ -27,6 +28,7 @@ class AgentMemoryMixin:
     brain_service: BrainService | None = None
 
     memory_extraction_client_factory: Callable[[], Any] | None = None
+    memory_evidence_tenant_resolver: EvidenceTenantResolver | None = None
 
     _memory_manager: UnifiedMemoryManager | None = None
     _resolved_agent_memory_config: AgentMemoryConfig | None = None
@@ -54,7 +56,10 @@ class AgentMemoryMixin:
                 tenant_id=str(getattr(self, "tenant_id", None) or "default"),
                 agent_id=str(getattr(self, "name", None) or self.__class__.__name__),
             )
-            manager = await create_memory_manager(config, namespace=namespace)
+            factory_options: dict[str, Any] = {}
+            if self.memory_evidence_tenant_resolver is not None:
+                factory_options["evidence_tenant_resolver"] = self.memory_evidence_tenant_resolver
+            manager = await create_memory_manager(config, namespace=namespace, **factory_options)
 
         try:
             await manager.configure()
@@ -254,12 +259,17 @@ class AgentMemoryMixin:
         values: dict[str, Any] = {}
         field_names = AgentMemoryConfig.model_fields
 
+        attribute_names = {"enable_episodic_memory", "enable_user_memory", "enable_brain"}
         for owner in reversed(type(self).__mro__):
-            if owner in {AgentMemoryMixin, object}:
+            if owner is AgentMemoryMixin or not issubclass(owner, AgentMemoryMixin):
                 continue
             for name in field_names:
                 if name in owner.__dict__:
-                    values[name] = owner.__dict__[name]
+                    value = owner.__dict__[name]
+                    if callable(value) or hasattr(value, "__get__"):
+                        continue
+                    attribute_names.add(name)
+                    values[name] = value
 
         explicit = self.agent_memory_config
         if explicit is not None:
@@ -272,7 +282,7 @@ class AgentMemoryMixin:
                     "invalid_configuration: agent_memory_config must be AgentMemoryConfig, a mapping, or None"
                 )
 
-        for name in field_names:
+        for name in attribute_names:
             if name in self.__dict__:
                 values[name] = self.__dict__[name]
 
