@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from parrot.knowledge.wiki.ledger.coder_feedback import CoderFeedbackReceipt
 from parrot.knowledge.wiki.ledger.events import InsightRecordedPayload, LedgerEvent
 from parrot.knowledge.wiki.ledger.log import LedgerLog
+from parrot.memory.dynamics.models import CheckedPattern
 
 logger = logging.getLogger(__name__)
 CommitSha = Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")]
@@ -34,6 +35,8 @@ class CoderReview(BaseModel):
     review_evidence: str = Field(min_length=1, max_length=600)
     execution_id: str = Field("", max_length=64)
     """FEAT-559: the execution this review was recorded under. Empty for historical records."""
+    checked_patterns: list[CheckedPattern] = Field(default_factory=list, max_length=16)
+    """Untrusted delivery claims; the engine verifies them before persistence."""
 
 
 class CoderReviewMeasurement(CoderReview):
@@ -41,6 +44,10 @@ class CoderReviewMeasurement(CoderReview):
 
     exposure: Literal["with_feedback", "without_feedback", "unavailable"]
     feedback_tokens: int = Field(ge=0)
+    review_ref: str = Field(default="", max_length=512)
+    """Engine-minted ``coder-review/v1/...`` outcome evidence reference."""
+    passed_check_ids: tuple[str, ...] = Field(default=(), max_length=16)
+    """Engine-owned validation receipt identifiers; never accepted from a caller."""
 
 
 class CoderReviewMetrics(BaseModel):

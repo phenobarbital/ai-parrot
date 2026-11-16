@@ -536,6 +536,10 @@ class SddCoderEngine:
         self._feedback_sources: Dict[str, Tuple[str, str, str, str]] = {}
         self._feedback_contexts: Dict[str, str] = {}
         self._feedback_unknown_exposure: set[str] = set()
+        # A checked-pattern claim becomes usable only when this engine observed
+        # its attempt pass the task-tier gate with durable validation evidence.
+        # The caller never supplies these identifiers.
+        self._review_checks: Dict[str, Tuple[str, Tuple[str, ...]]] = {}
 
         # FEAT-559: execution pools (begin_execution/end_execution lifecycle)
         self._executions: Dict[str, ExecutionPool] = {}  # execution_id -> pool
@@ -2781,6 +2785,7 @@ class SddCoderEngine:
             if review.execution_id and review.execution_id != execution_id:
                 raise CoderFailure("invalid_arguments", "review execution_id does not match the calling execution")
             review = review.model_copy(update={"execution_id": execution_id})
+        passed_check_ids = self._verified_review_checks(review, execution_id)
         for sha in set(review.fix_commits):
             rc, subject, _err = await _git("show", "-s", "--format=%s", sha, cwd=ctx.worktree)
             ancestor_rc, _out, _err = await _git("merge-base", "--is-ancestor", sha, "HEAD", cwd=ctx.worktree)
@@ -2834,11 +2839,47 @@ class SddCoderEngine:
             else "with_feedback" if "[coder-feedback:" in context else "without_feedback"
         )
         measurement = CoderReviewMeasurement(
-            **review.model_dump(), exposure=exposure, feedback_tokens=estimate_tokens(context)
+            **review.model_dump(),
+            exposure=exposure,
+            feedback_tokens=estimate_tokens(context),
+            review_ref=(
+                f"coder-review/v1/{review.execution_id}/{review.task_id}/{review.attempt_uid}"
+                if review.execution_id
+                else ""
+            ),
+            passed_check_ids=passed_check_ids,
         )
         store = await asyncio.to_thread(CoderFeedbackStore.from_root, Path(ctx.worktree))
         ledger_receipt = await CoderReviewStore(store.log).record(measurement)
         return CoderReviewReceipt(feedback_id=ledger_receipt.feedback_id, review_ref=review_ref)
+
+    def _verified_review_checks(self, review: CoderReview, execution_id: Optional[str]) -> Tuple[str, ...]:
+        """Return engine-owned checks after validating checked-pattern claims.
+
+        Claims without patterns retain historical review behavior. A claim is
+        eligible only when the engine-issued attempt, its execution, and its
+        final exposure all match, and the claim names a passed check from the
+        task-tier validation receipt. This deliberately keeps caller-provided
+        checks, grades, and prose out of the trusted outcome path.
+        """
+        if not review.checked_patterns:
+            return ()
+        if execution_id is None or review.execution_id != execution_id:
+            raise CoderFailure("invalid_arguments", "checked patterns require the calling execution identity")
+        verified = self._review_checks.get(review.attempt_uid)
+        if verified is None:
+            raise CoderFailure(
+                "invalid_arguments", "checked patterns require a passed engine validation receipt for this attempt"
+            )
+        verified_execution_id, passed_check_ids = verified
+        if verified_execution_id != execution_id:
+            raise CoderFailure("invalid_arguments", "checked patterns do not belong to the calling execution")
+        for claim in review.checked_patterns:
+            if claim.exposure_id != review.attempt_uid:
+                raise CoderFailure("invalid_arguments", "checked pattern exposure must match the engine-issued attempt")
+            if not set(claim.evidence_refs).intersection(passed_check_ids):
+                raise CoderFailure("invalid_arguments", "checked pattern must cite an engine-owned passed check")
+        return passed_check_ids
 
     async def feedback_report(self, feature: str, worktree: str) -> CoderReviewReport:
         """Return repository-wide review-fix rates by model and exposure cohort."""
@@ -3268,6 +3309,15 @@ class SddCoderEngine:
                 ),
                 lint=lint_report,
             )
+        passed_check_ids = tuple(
+            dict.fromkeys(
+                evidence
+                for evidence in verdict.evidence
+                if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/@+=-]{0,255}", evidence)
+            )
+        )
+        if execution_id is not None and passed_check_ids:
+            self._review_checks[self._attempt_uid_for(task.task_id, branch)] = (execution_id, passed_check_ids)
         return TaskResult(task_id=task.task_id, outcome="merged", branch=branch, worktree_path=path, lint=lint_report)
 
     @staticmethod

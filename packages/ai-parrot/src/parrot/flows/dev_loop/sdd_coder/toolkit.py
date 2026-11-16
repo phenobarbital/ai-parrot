@@ -387,6 +387,12 @@ class SddCoderToolkit(AbstractToolkit):
         SHAs of all fix(...) TASK-N review fixes commits, [] when none), and
         review_evidence. Exclude engine lint commits. The engine attaches actual
         feedback exposure so before/after rates include clean deliveries too.
+        ``review.checked_patterns`` may carry delivery claims, but the engine
+        accepts them only when their attempt/exposure and evidence references
+        match its own passed validation receipt; callers cannot supply grades
+        or passed-check identifiers. A zero-fix delivery remains reviewable
+        when that engine-owned receipt exists. The public method arguments and
+        execution_id binding remain unchanged.
         The result's review_ref is the EvidenceRef to pass as
         TaskCompletionEvidence.review_evidence to `parrot sdd task finalize`.
         """
