@@ -8,12 +8,12 @@ import logging
 import os
 import stat
 import time
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from parrot.knowledge.wiki.experience.fastpath import append_event, safe_open
+from parrot.knowledge.wiki.experience.fastpath import append_event, is_current_file, lock_exclusive, safe_open
 from parrot.knowledge.wiki.experience.models import ExperienceEvent, Lesson, validate_event
 from parrot.knowledge.wiki.experience.reducer import reduce_events
 from parrot.knowledge.wiki.project import find_shared_root, load_project_config
@@ -28,6 +28,9 @@ _MAX_SOURCE_BYTES = 8 * 1024 * 1024
 _MAX_SHARED_BYTES = 64 * 1024 * 1024
 _MAX_SHARED_FILES = 1024
 _MAX_CONFIG_BYTES = 1024 * 1024
+_READ_CHUNK_BYTES = 64 * 1024
+_ROTATION_LOCK_TIMEOUT_SECONDS = 5.0
+_MAX_SPLIT_PASSES = 3
 _DERIVED_STATES = frozenset({"confirmed", "quarantined", "retired"})
 _STATE_ATTESTATION_KINDS = ATTESTATION_KINDS - frozenset({"lesson.graduated"})
 
@@ -51,6 +54,8 @@ def sync_global(repo_plane: Path) -> int:
     Returns:
         Number of previously absent events durably appended to the global log.
     """
+    if not rotate_repo_log(Path(repo_plane)):
+        return 0
     repo_events, repo_complete = _read_repo_events(Path(repo_plane))
     global_events, global_complete = _read_events(global_plane_dir() / _EVENTS_FILE)
     if not repo_complete or not global_complete:
@@ -87,6 +92,9 @@ def shared_event_ids(checkout: Path) -> set[str]:
 def export_shared(repo_plane: Path, checkout: Path) -> Path | None:
     """Export new definitions and derived lifecycle attestations immutably.
 
+    One export never exceeds the bounded readers' cap. When more is pending,
+    it holds the first events by identity and the next export continues.
+
     Args:
         repo_plane: Repository experience plane containing the local event log.
         checkout: Checkout that receives a new content-addressed shared file.
@@ -97,7 +105,7 @@ def export_shared(repo_plane: Path, checkout: Path) -> Path | None:
     """
     repo_plane = Path(repo_plane)
     checkout = Path(checkout)
-    if not _rotate_repo_log(repo_plane):
+    if not rotate_repo_log(repo_plane):
         return None
     repo_events, repo_complete = _read_repo_events(repo_plane)
     global_events, global_complete = _read_events(global_plane_dir() / _EVENTS_FILE)
@@ -143,7 +151,13 @@ def export_shared(repo_plane: Path, checkout: Path) -> Path | None:
     if not pending:
         return None
 
-    content = b"".join(_canonical_line(pending[event_id]) for event_id in sorted(pending))
+    batch = bytearray()
+    for event_id in sorted(pending):
+        line = _canonical_line(pending[event_id])
+        if batch and len(batch) + len(line) > _MAX_SOURCE_BYTES:
+            break
+        batch += line
+    content = bytes(batch)
     digest = hashlib.sha256(content).hexdigest()[:16]
     shared_dir = checkout / SHARED_DIR
     if not _ensure_directory(shared_dir):
@@ -189,13 +203,47 @@ def _repo_event_sources(repo_plane: Path) -> list[Path]:
     return [repo_plane / _EVENTS_FILE, *sorted(repo_plane.glob("events-*.jsonl"))]
 
 
-def _rotate_repo_log(repo_plane: Path) -> bool:
-    """Seal an over-cap active log before an export can append further events.
+def rotate_repo_log(repo_plane: Path) -> bool:
+    """Bring every repository event source back within the bounded readers' cap.
 
-    The sealed segment remains in the repository source set, allowing the
-    bounded readers to reject it explicitly rather than silently forgetting
-    its history. A subsequent recorder creates a fresh active log.
+    An over-cap active log is first sealed under a unique ``events-*.jsonl``
+    name while holding the append lock, so recorders move on to a fresh
+    active log. Every over-cap sealed segment, including one sealed earlier
+    without being split, is then split at line boundaries into cap-bounded
+    parts. The over-cap original is removed only after all of its parts are
+    durable; until then it stays in the source set and the bounded readers
+    fail closed, so no reader ever observes a partial history.
+
+    Args:
+        repo_plane: Repository experience plane.
+
+    Returns:
+        ``True`` when every repository source is within the cap, otherwise
+        ``False``.
     """
+    repo_plane = Path(repo_plane)
+    if not _seal_active_log(repo_plane):
+        return False
+    try:
+        segments = sorted(repo_plane.glob("events-*.jsonl"))
+    except OSError:
+        return False
+    for segment in segments:
+        try:
+            info = segment.lstat()
+        except FileNotFoundError:
+            continue
+        except OSError:
+            return False
+        if not stat.S_ISREG(info.st_mode):
+            return False
+        if info.st_size > _MAX_SOURCE_BYTES and not _split_segment(segment):
+            return False
+    return True
+
+
+def _seal_active_log(repo_plane: Path) -> bool:
+    """Rename an over-cap active log to a unique sealed segment under the append lock."""
     source = repo_plane / _EVENTS_FILE
     try:
         info = source.lstat()
@@ -208,22 +256,127 @@ def _rotate_repo_log(repo_plane: Path) -> bool:
     if info.st_size <= _MAX_SOURCE_BYTES:
         return True
 
-    for _ in range(4):
-        sealed = repo_plane / f"events-{time.time_ns()}-{uuid4().hex}.jsonl"
-        descriptor = safe_open(sealed, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
-        if descriptor is None:
-            continue
+    descriptor = safe_open(source, os.O_RDONLY)
+    if descriptor is None:
+        return False
+    try:
+        if not lock_exclusive(descriptor, _ROTATION_LOCK_TIMEOUT_SECONDS):
+            return False
+        if not is_current_file(descriptor, source):
+            # A concurrent rotation already sealed this log.
+            return True
+        if os.fstat(descriptor).st_size <= _MAX_SOURCE_BYTES:
+            return True
+        for _ in range(4):
+            sealed = repo_plane / f"events-{time.time_ns()}-{uuid4().hex}.jsonl"
+            placeholder = safe_open(sealed, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+            if placeholder is None:
+                continue
+            try:
+                os.close(placeholder)
+                os.replace(source, sealed)
+                return True
+            except OSError:
+                try:
+                    sealed.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                return False
+        return False
+    except OSError:
+        return False
+    finally:
         try:
             os.close(descriptor)
-            os.replace(source, sealed)
-            return True
         except OSError:
-            try:
-                sealed.unlink(missing_ok=True)
-            except OSError:
-                pass
+            pass
+
+
+def _split_segment(segment: Path) -> bool:
+    """Split one over-cap sealed segment into cap-bounded parts, then remove it.
+
+    Part names derive from the segment name and each part is published by an
+    atomic replace, so an interrupted or concurrent split converges on the
+    same files. A line longer than the cap cannot hold a recorded event and
+    is dropped.
+    """
+    descriptor = safe_open(segment, os.O_RDONLY)
+    if descriptor is None:
+        return False
+    try:
+        if not lock_exclusive(descriptor, _ROTATION_LOCK_TIMEOUT_SECONDS):
             return False
-    return False
+        if not is_current_file(descriptor, segment):
+            # A concurrent split already published the parts and removed it.
+            return True
+        for _ in range(_MAX_SPLIT_PASSES):
+            consumed = _write_segment_parts(descriptor, segment)
+            if consumed is None:
+                return False
+            # Re-split when a writer that predates the append lock grew the segment meanwhile.
+            if os.fstat(descriptor).st_size == consumed:
+                segment.unlink()
+                return True
+        return False
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
+    finally:
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+
+
+def _write_segment_parts(descriptor: int, segment: Path) -> int | None:
+    """Publish ``segment`` as line-aligned parts and return the bytes consumed."""
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    part = bytearray()
+    index = 0
+    for line in _bounded_lines(descriptor, _MAX_SOURCE_BYTES):
+        if part and len(part) + len(line) > _MAX_SOURCE_BYTES:
+            if not _atomic_replace(_segment_part(segment, index), bytes(part)):
+                return None
+            index += 1
+            part.clear()
+        part += line
+    if part and not _atomic_replace(_segment_part(segment, index), bytes(part)):
+        return None
+    return os.lseek(descriptor, 0, os.SEEK_CUR)
+
+
+def _segment_part(segment: Path, index: int) -> Path:
+    """Return the deterministic name of one split part of ``segment``."""
+    return segment.with_name(f"{segment.stem}-{index:06d}.jsonl")
+
+
+def _bounded_lines(descriptor: int, max_line_bytes: int) -> Iterator[bytes]:
+    """Yield lines read from ``descriptor``, dropping any line over ``max_line_bytes``."""
+    pending = bytearray()
+    oversized = False
+    while True:
+        chunk = os.read(descriptor, _READ_CHUNK_BYTES)
+        if not chunk:
+            break
+        start = 0
+        while start < len(chunk):
+            newline = chunk.find(b"\n", start)
+            end = len(chunk) if newline < 0 else newline + 1
+            if not oversized:
+                pending += chunk[start:end]
+                if len(pending) > max_line_bytes:
+                    pending.clear()
+                    oversized = True
+            if newline < 0:
+                break
+            if not oversized:
+                yield bytes(pending)
+            pending.clear()
+            oversized = False
+            start = end
+    if pending:
+        yield bytes(pending)
 
 
 def register_namespace(root: Path) -> bool:

@@ -58,6 +58,8 @@ _MAX_HOOK_EXECUTABLE_LENGTH = 128
 
 _MAX_SESSION_BYTES = 64 * 1024
 _LOCK_POLL_SECONDS = 0.01
+_APPEND_LOCK_TIMEOUT_SECONDS = 1.0
+_MAX_APPEND_ATTEMPTS = 4
 _AGY_EXIT_CODE_RE = re.compile(r"^Command exited with code (\d+)\.$")
 _ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 _ABSOLUTE_PATH_RE = re.compile(r"(?:(?:[A-Za-z]:)?/)[^\s:'\"`]+")
@@ -74,11 +76,11 @@ _SECRET_ASSIGNMENT_RE = re.compile(
 _SECRET_FLAG_RE = re.compile(
     r"(?P<long>--(?:api[-_]?key|token|secret|password|pass|auth(?:orization)?|credential))"
     r"(?P<separator>=|\s+)(?P<long_value>\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'|\S+)"
-    r"|(?P<short>-p)(?P<short_value>\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'|\S+)",
+    r"|(?<![\w-])(?P<short>-p)(?P<short_value>\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'|\S+)",
     re.IGNORECASE,
 )
 _BASIC_AUTH_RE = re.compile(
-    r"\b(Authorization\s*:\s*Basic\s+)(?:\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'|[^\s,;]+)",
+    r"\b(Authorization\s*:\s*Basic\s+)(?:\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'|[^\s,;\"']+)",
     re.IGNORECASE,
 )
 _JSON_SECRET_RE = re.compile(
@@ -119,6 +121,45 @@ def safe_open(path: Path, flags: int) -> int | None:
             pass
         return None
     return descriptor
+
+
+def lock_exclusive(descriptor: int, timeout_s: float) -> bool:
+    """Take an exclusive advisory lock on an open descriptor within a bounded wait.
+
+    Args:
+        descriptor: Open file descriptor to lock; closing it releases the lock.
+        timeout_s: Maximum seconds to wait while another holder owns the lock.
+
+    Returns:
+        ``True`` once the lock is held, ``False`` on timeout or lock failure.
+    """
+    deadline = time.monotonic() + max(timeout_s, 0.0)
+    while True:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return True
+        except OSError as exc:
+            if exc.errno not in (errno.EACCES, errno.EAGAIN) or time.monotonic() >= deadline:
+                return False
+            time.sleep(_LOCK_POLL_SECONDS)
+
+
+def is_current_file(descriptor: int, path: Path) -> bool:
+    """Return whether an open descriptor still refers to the file named by ``path``.
+
+    Args:
+        descriptor: Open file descriptor.
+        path: Path the descriptor was opened from.
+
+    Returns:
+        ``False`` when the path was renamed, removed, or replaced since opening.
+    """
+    try:
+        opened = os.fstat(descriptor)
+        current = path.lstat()
+    except OSError:
+        return False
+    return (opened.st_dev, opened.st_ino) == (current.st_dev, current.st_ino)
 
 
 def session_file(plane_dir: Path, session_key: str) -> Path:
@@ -543,6 +584,11 @@ def frozen_plane_dir(cwd: Path, env: Mapping[str, str]) -> Path | None:
 def append_event(plane_dir: Path, record: Mapping[str, Any]) -> bool:
     """Append one bounded JSON event and synchronously flush it to disk.
 
+    The append holds the log's advisory lock, which log rotation also takes
+    before renaming the active log. An append that opened a log which was
+    rotated away meanwhile reopens the fresh active log, so no event lands in
+    a sealed segment after rotation.
+
     Args:
         plane_dir: Repository experience plane.
         record: JSON-serializable event mapping.
@@ -556,20 +602,27 @@ def append_event(plane_dir: Path, record: Mapping[str, Any]) -> bool:
         return False
     if len(payload) > MAX_EVENT_BYTES or not _ensure_directory(plane_dir):
         return False
-    descriptor = safe_open(plane_dir / EVENTS_FILE, os.O_WRONLY | os.O_APPEND | os.O_CREAT)
-    if descriptor is None:
-        return False
-    try:
-        _write_all(descriptor, payload)
-        os.fsync(descriptor)
-        return True
-    except OSError:
-        return False
-    finally:
+    target = plane_dir / EVENTS_FILE
+    for _ in range(_MAX_APPEND_ATTEMPTS):
+        descriptor = safe_open(target, os.O_WRONLY | os.O_APPEND | os.O_CREAT)
+        if descriptor is None:
+            return False
         try:
-            os.close(descriptor)
+            if not lock_exclusive(descriptor, _APPEND_LOCK_TIMEOUT_SECONDS):
+                return False
+            if not is_current_file(descriptor, target):
+                continue
+            _write_all(descriptor, payload)
+            os.fsync(descriptor)
+            return True
         except OSError:
-            pass
+            return False
+        finally:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+    return False
 
 
 def load_triggers(plane_dir: Path, *, max_bytes: int) -> dict[str, list[dict[str, Any]]]:

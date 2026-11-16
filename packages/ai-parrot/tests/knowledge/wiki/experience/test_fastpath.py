@@ -10,6 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from parrot.knowledge.wiki.experience import fastpath
 
 
@@ -109,6 +111,47 @@ def test_redact_covers_password_flags_basic_auth_json_and_aws_keys(tmp_path: Pat
     assert "Authorization: Basic [REDACTED]" in result
     assert '"api_key": "[REDACTED]"' in result
     assert result == fastpath.redact(result)
+
+
+def test_redact_short_password_flag_needs_a_token_boundary() -> None:
+    """Mask a standalone ``-pVALUE`` token but leave ``-p`` inside words and long flags alone."""
+    assert fastpath.redact("git-pull origin main") == "git-pull origin main"
+    assert fastpath.redact("git log --pretty=oneline") == "git log --pretty=oneline"
+    assert fastpath.redact("mysql -uroot -pSECRET db") == "mysql -uroot -p[REDACTED] db"
+
+
+def test_redact_basic_auth_keeps_the_closing_quote() -> None:
+    """Mask an unquoted Basic credential inside a quoted header without eating the quote."""
+    assert (
+        fastpath.redact('curl -H "Authorization: Basic dXNlcjpwYXNz" https://example.test')
+        == 'curl -H "Authorization: Basic [REDACTED]" https://example.test'
+    )
+    assert fastpath.redact("curl -H 'Authorization: Basic dXNlcjpwYXNz'") == "curl -H 'Authorization: Basic [REDACTED]'"
+
+
+def test_append_event_follows_a_log_rotated_before_it_takes_the_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Never append into a sealed segment: reopen the fresh active log after a rotation."""
+    plane = tmp_path / "plane"
+    active = plane / fastpath.EVENTS_FILE
+    sealed = plane / "events-1-sealed.jsonl"
+    assert fastpath.append_event(plane, {"n": 1})
+    original_lock = fastpath.lock_exclusive
+    locked: list[int] = []
+
+    def rotate_then_lock(descriptor: int, timeout_s: float) -> bool:
+        if not locked:
+            os.replace(active, sealed)
+        locked.append(descriptor)
+        return original_lock(descriptor, timeout_s)
+
+    monkeypatch.setattr(fastpath, "lock_exclusive", rotate_then_lock)
+
+    assert fastpath.append_event(plane, {"n": 2})
+    assert len(locked) == 2
+    assert sealed.read_bytes() == b'{"n":1}\n'
+    assert active.read_bytes() == b'{"n":2}\n'
 
 
 def test_append_event_rejects_oversize(tmp_path: Path) -> None:

@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from parrot.knowledge.wiki.experience import index as experience_index
 from parrot.knowledge.wiki.experience import sync
 from parrot.knowledge.wiki.experience.fastpath import append_event
 from parrot.knowledge.wiki.experience.graduation import graduate
@@ -280,21 +281,73 @@ def test_export_filename_is_content_digest(tmp_path: Path, monkeypatch: pytest.M
     assert first_export.name == second_export.name == f"{expected}.jsonl"
 
 
-def test_export_rotates_an_over_cap_repository_log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Seal an over-cap active log without dropping it from index sources."""
+def _cap_to_two_lines(monkeypatch: pytest.MonkeyPatch, log: Path) -> int:
+    """Shrink both bounded readers' cap so that one part holds two of ``log``'s lines."""
+    cap = 2 * max(len(line) for line in log.read_bytes().splitlines(keepends=True))
+    monkeypatch.setattr(sync, "_MAX_SOURCE_BYTES", cap)
+    monkeypatch.setattr(experience_index, "_MAX_SOURCE_BYTES", cap)
+    return cap
+
+
+@pytest.mark.asyncio
+async def test_export_splits_an_over_cap_log_so_export_and_rebuild_recover(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Record past the cap, rotate on export, then keep exporting and rebuilding."""
     monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
-    monkeypatch.setattr(sync, "_MAX_SOURCE_BYTES", 8)
-    _, plane = _checkout(tmp_path, "primary")
+    root, plane = _checkout(tmp_path, "primary")
     active = plane / "events.jsonl"
-    active.write_bytes(b"oversized\n")
+    _append(plane, *(_record(f"pit-{n}", f"rev-{n}", sequence=n) for n in range(1, 6)))
+    original = active.read_bytes()
+    cap = _cap_to_two_lines(monkeypatch, active)
+    assert len(original) > cap
+    assert await ExperienceIndex(plane).rebuild() == -1
 
-    assert sync.export_shared(plane, plane.parents[1]) is None
+    exports = [path for path in (sync.export_shared(plane, root) for _ in range(4)) if path is not None]
 
-    sealed = list(plane.glob("events-*.jsonl"))
-    assert len(sealed) == 1
-    assert sealed[0].read_bytes() == b"oversized\n"
+    assert [len(path.read_bytes().splitlines()) for path in exports] == [2, 2, 1]
+    assert all(path.stat().st_size <= cap for path in exports)
     assert not active.exists()
-    assert sealed[0] in ExperienceIndex(plane).sources()
+    parts = sorted(plane.glob("events-*.jsonl"))
+    assert len(parts) == 3
+    assert all(part.stat().st_size <= cap for part in parts)
+    assert b"".join(part.read_bytes() for part in parts) == original
+    assert await ExperienceIndex(plane).rebuild() == 5
+
+    _append(plane, _record("pit-6", "rev-6", sequence=6))
+    second_export = sync.export_shared(plane, root)
+
+    assert second_export is not None
+    assert len(second_export.read_bytes().splitlines()) == 1
+    assert active.exists()
+    assert sync.sync_global(plane) == 0
+    assert await ExperienceIndex(plane).rebuild() == 6
+
+
+@pytest.mark.asyncio
+async def test_rotation_splits_a_previously_sealed_over_cap_segment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Recover a segment sealed without splitting and drop lines no part can hold."""
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
+    _, plane = _checkout(tmp_path, "primary")
+    scratch = tmp_path / "scratch"
+    _append(scratch, *(_record(f"pit-{n}", f"rev-{n}", sequence=n) for n in range(1, 4)))
+    lines = (scratch / "events.jsonl").read_bytes()
+    cap = _cap_to_two_lines(monkeypatch, scratch / "events.jsonl")
+    sealed = plane / "events-1-legacy.jsonl"
+    sealed.write_bytes(lines + b"x" * (cap + 1) + b"\n")
+    assert await ExperienceIndex(plane).rebuild() == -1
+
+    assert sync.rotate_repo_log(plane)
+
+    assert not sealed.exists()
+    parts = sorted(plane.glob("events-*.jsonl"))
+    assert [part.name for part in parts] == ["events-1-legacy-000000.jsonl", "events-1-legacy-000001.jsonl"]
+    assert b"".join(part.read_bytes() for part in parts) == lines
+    assert sync.rotate_repo_log(plane)
+    assert sorted(plane.glob("events-*.jsonl")) == parts
+    assert await ExperienceIndex(plane).rebuild() == 3
 
 
 def test_register_namespace_absolute(tmp_path: Path) -> None:
