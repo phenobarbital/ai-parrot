@@ -35,7 +35,7 @@ SELECT
           ON attribute.attrelid = default_value.adrelid AND attribute.attnum = default_value.adnum
         WHERE default_value.adrelid = 'navigator.infographic_recipes'::regclass
           AND attribute.attname = 'owner'
-    ) = ''''::character varying'
+    ) = '''''::character varying'
     AND NOT EXISTS (
         SELECT 1
         FROM (VALUES
