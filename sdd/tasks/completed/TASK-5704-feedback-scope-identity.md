@@ -3,7 +3,7 @@
 **Feature**: FEAT-892 — Agent Memory — Unified Integration, User Knowledge and Dynamics
 **Spec**: `sdd/specs/agent-memory-mixin.spec.md`
 **Discovered-from**: `issue:fbc5627878da`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5675
@@ -163,3 +163,12 @@ imports and retractions across scopes. No shared services or paid providers.
 Work in the FEAT-892 worktree. Preserve concurrent edits. TASK-5675 must be done.
 Commit only scoped files, retain logs in artifacts/logs, review semantics, and finalize
 using parrot sdd task finalize with real validation/review evidence and the exact commit SHA.
+
+## Completion Note
+
+Implemented in commit 5879085cb8 (earlier session); reviewed here against AC1–AC4.
+Scoped v2 IDs over all seven namespace fields, exact-scope legacy/prefixed ID reuse,
+bounded growing-window compatibility scan, amendment doc created. Validation:
+`pytest packages/ai-parrot/tests/memory/dynamics/test_feedback.py -q` → 24 passed;
+ruff and black (120) clean. Closed with close_task.sh (no coder attempt existed, so
+`parrot sdd task finalize` review evidence was unavailable). No coder feedback recorded.
