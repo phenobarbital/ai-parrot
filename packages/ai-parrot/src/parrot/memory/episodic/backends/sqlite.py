@@ -135,20 +135,28 @@ def _rank_candidates(
     Returns:
         ``(candidate index, cosine similarity)`` pairs, best first.
 
-    Raises:
-        ValueError: If a stored vector has an invalid shape or a non-finite value.
     """
     query = np.asarray(embedding, dtype=np.float64)
     dimension = int(query.shape[0])
-    scores = np.zeros(len(candidates), dtype=np.float64)
+    scores = np.full(len(candidates), np.nan, dtype=np.float64)
     comparable: list[int] = []
+    skipped = 0
     for index, (payload, stored_dimension) in enumerate(candidates):
-        if stored_dimension <= 0 or len(payload) != stored_dimension * 4:
-            raise ValueError("stored embedding has an invalid shape")
+        if type(stored_dimension) is not int or stored_dimension <= 0 or not isinstance(payload, bytes):
+            skipped += 1
+            continue
+        if len(payload) != stored_dimension * 4:
+            skipped += 1
+            continue
+        stored = np.frombuffer(payload, dtype="<f4")
+        if not np.isfinite(stored).all():
+            skipped += 1
+            continue
+        scores[index] = 0.0
         if stored_dimension == dimension:
             comparable.append(index)
-        elif not np.isfinite(np.frombuffer(payload, dtype="<f4")).all():
-            raise ValueError("stored embedding values must be finite")
+    if skipped:
+        logger.warning("Skipped %d corrupt stored vector candidates during vector search", skipped)
 
     # Sums accumulate in float64 straight from the float32 blobs, so no widened copy of the vectors is made.
     # A query whose norm overflows scores 0.0 or NaN; NaN ranks last and never qualifies.
@@ -160,9 +168,6 @@ def _rank_candidates(
                 len(block_rows), dimension
             )
             squared_norms = np.einsum("ij,ij->i", block, block, dtype=np.float64)
-            # A finite float32 vector cannot overflow a float64 sum, so a non-finite sum means a non-finite value.
-            if not np.isfinite(squared_norms).all():
-                raise ValueError("stored embedding values must be finite")
             denominators = np.sqrt(squared_norms) * query_norm
             scores[block_rows] = np.divide(
                 np.einsum("ij,j->i", block, query, dtype=np.float64),
@@ -174,6 +179,8 @@ def _rank_candidates(
     ranked: list[tuple[int, float]] = []
     for index in np.argsort(-scores, kind="stable"):
         score = float(scores[index])
+        if not math.isfinite(score):
+            continue
         if not score >= score_threshold:
             break
         ranked.append((int(index), score))
@@ -763,7 +770,7 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
         database = self._require_database()
         cursor = await database.execute(
             f"SELECT episode_id, embedding, embedding_dim FROM episodes WHERE {where_sql} "
-            "AND embedding IS NOT NULL ORDER BY created_at DESC, episode_id DESC LIMIT ?",
+            "AND (embedding IS NOT NULL OR embedding_dim IS NOT NULL) ORDER BY created_at DESC, episode_id DESC LIMIT ?",
             [*params, self._vector_ceiling + 1],
         )
         rows = list(await cursor.fetchall())
@@ -782,7 +789,7 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
         ranked = await asyncio.to_thread(
             _rank_candidates,
             embedding,
-            [(row[1], int(row[2])) for row in rows],
+            [(row[1], row[2]) for row in rows],
             score_threshold,
             top_k,
         )

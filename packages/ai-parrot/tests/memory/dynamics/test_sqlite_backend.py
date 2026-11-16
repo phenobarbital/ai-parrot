@@ -506,31 +506,57 @@ async def test_vector_scoring_matches_reference_semantics(tmp_path) -> None:
         await backend.close()
 
 
+@pytest.mark.parametrize(
+    ("blob", "dimension"),
+    [
+        pytest.param(b"\x00\x00\x00", 2, id="malformed-shape"),
+        pytest.param(None, 2, id="null-blob"),
+        pytest.param("not-a-blob", 2, id="non-blob-type"),
+        pytest.param(struct.pack("<2f", 0.0, 1.0), None, id="null-dimension"),
+        pytest.param(struct.pack("<2f", 0.0, 1.0), "two", id="non-integer-dimension"),
+        pytest.param(struct.pack("<2f", 0.0, 1.0), 0, id="zero-dimension"),
+        pytest.param(struct.pack("<2f", 0.0, 1.0), -1, id="negative-dimension"),
+        pytest.param(struct.pack("<2f", math.nan, 0.0), 2, id="nan-vector"),
+        pytest.param(struct.pack("<2f", math.inf, 0.0), 2, id="infinite-vector"),
+    ],
+)
 @pytest.mark.asyncio
-async def test_vector_scoring_rejects_malformed_and_non_finite_vectors(tmp_path) -> None:
-    """A corrupt stored vector fails the search visibly instead of being scored or skipped."""
+async def test_vector_scoring_skips_malformed_and_non_finite_vectors(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, blob: bytes | str | None, dimension: object
+) -> None:
+    """Corrupt stored vectors are skipped without excluding valid scoped candidates."""
     backend = SQLiteEpisodeBackend(tmp_path / "corrupt.sqlite")
     await backend.configure()
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        sqlite_backend.logger, "warning", lambda message, *arguments: warnings.append(message % arguments)
+    )
     try:
-        await backend.store(_episode(1))
-        await backend.store(_episode(2))
+        await backend.store(_episode(1, embedding=[1.0, 0.0]))
+        await backend.store(_episode(2, embedding=[0.0, 1.0]))
+        await backend.store(_episode(3, embedding=[1.0, 0.0, 0.0]))
         assert backend._db is not None
 
-        async def corrupt(blob: bytes, dimension: int) -> None:
+        async def corrupt(episode_id: str) -> None:
             await backend._db.execute(
-                "UPDATE episodes SET embedding = ?, embedding_dim = ? WHERE episode_id = 'episode-2'",
-                (blob, dimension),
+                "UPDATE episodes SET embedding = ?, embedding_dim = ? WHERE episode_id = ?",
+                (blob, dimension, episode_id),
             )
 
-        await corrupt(b"\x00\x00\x00", 2)
-        with pytest.raises(ValueError, match="stored embedding has an invalid shape"):
-            await backend.search_similar([1.0, 0.0], _SCOPE)
-        await corrupt(struct.pack("<2f", math.inf, 0.0), 2)
-        with pytest.raises(ValueError, match="stored embedding values must be finite"):
-            await backend.search_similar([1.0, 0.0], _SCOPE)
-        await corrupt(struct.pack("<3f", math.nan, 0.0, 0.0), 3)
-        with pytest.raises(ValueError, match="stored embedding values must be finite"):
-            await backend.search_similar([1.0, 0.0], _SCOPE)
+        await corrupt("episode-2")
+        results = await backend.search_similar([1.0, 0.0], _SCOPE, top_k=3, score_threshold=0.0)
+        assert [result.episode_id for result in results] == ["episode-1", "episode-3"]
+        assert [result.score for result in results] == [1.0, 0.0]
+        assert warnings == ["Skipped 1 corrupt stored vector candidates during vector search"]
+
+        zero_query = await backend.search_similar([0.0, 0.0], _SCOPE, top_k=3, score_threshold=0.0)
+        assert [result.episode_id for result in zero_query] == ["episode-3", "episode-1"]
+        assert [result.score for result in zero_query] == [0.0, 0.0]
+
+        await corrupt("episode-1")
+        await corrupt("episode-3")
+        assert await backend.search_similar([1.0, 0.0], _SCOPE, top_k=3, score_threshold=0.0) == []
+        assert warnings[-1] == "Skipped 3 corrupt stored vector candidates during vector search"
     finally:
         await backend.close()
 
