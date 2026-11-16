@@ -15,6 +15,7 @@ from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
+from parrot.memory.lexical import query_terms
 from parrot.memory.dynamics.grade import select_grade
 from parrot.memory.dynamics.models import (
     MemoryCitation,
@@ -365,7 +366,7 @@ class EpisodicMemoryStore:
         null_dimensions: tuple[str, ...] = (),
     ) -> list[EpisodeSearchResult]:
         """Provide bounded local recall when no embedding provider is configured."""
-        terms = tuple(term for term in query.casefold().split() if term)
+        terms = query_terms(query)
         if not terms or top_k == 0:
             return []
         namespace_filter = namespace.build_filter(null_dimensions=null_dimensions)
