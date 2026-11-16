@@ -12,6 +12,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from parrot.memory.episodic.backends import sqlite as sqlite_backend
 from parrot.memory.episodic.backends.sqlite import SQLiteEpisodeBackend
 from parrot.memory.dynamics.models import Grade, MemoryParameters, ReviewCommand
 from parrot.memory.episodic.models import EpisodicMemory, MemoryNamespace
@@ -88,19 +89,32 @@ async def test_scope_before_top_k(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_measured_ceiling_reports_degradation(tmp_path) -> None:
+async def test_measured_ceiling_reports_degradation(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify over-ceiling vector search reports degradation without lexical substitution."""
     backend = SQLiteEpisodeBackend(tmp_path / "episodes.sqlite", vector_ceiling=2)
     await backend.configure()
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        sqlite_backend.logger, "warning", lambda message, *arguments: warnings.append(message % arguments)
+    )
     try:
-        for index in range(3):
+        for index in range(2):
             await backend.store(_episode(index))
+        at_ceiling = await backend.search_similar([1.0, 0.0], {"tenant_id": "tenant-a", "agent_id": "agent-a"}, top_k=5)
+        assert [result.episode_id for result in at_ceiling] == ["episode-1", "episode-0"]
+        assert warnings == []
 
+        await backend.store(_episode(2))
         status = await backend.vector_status({"tenant_id": "tenant-a", "agent_id": "agent-a"})
         results = await backend.search_similar([1.0, 0.0], {"tenant_id": "tenant-a", "agent_id": "agent-a"}, top_k=5)
 
         assert status == {"status": "degraded", "candidate_count": 3, "vector_ceiling": 2}
         assert [result.episode_id for result in results] == ["episode-2", "episode-1"]
+        # D7: truncation is logged once per search, naming the scope dimensions and never their values.
+        assert len(warnings) == 1
+        assert "more than 2 candidates" in warnings[0]
+        assert "agent_id, tenant_id" in warnings[0]
+        assert "tenant-a" not in warnings[0] and "agent-a" not in warnings[0]
     finally:
         await backend.close()
 
@@ -670,5 +684,63 @@ async def test_get_by_ids_and_recent_matching_filter_in_sql(tmp_path) -> None:
         assert await backend.get_recent_matching(_SCOPE, limit=0) == []
         with pytest.raises(ValueError, match="limit must be non-negative"):
             await backend.get_recent_matching(_SCOPE, limit=-1)
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_list_reviews_follows_commit_order_when_clock_steps_back(tmp_path) -> None:
+    """Reviews are listed in commit order even when a later commit carries an earlier wall-clock time."""
+    backend = SQLiteEpisodeBackend(tmp_path / "order.sqlite")
+    namespace = MemoryNamespace(tenant_id="tenant-a", agent_id="agent-a")
+    await backend.configure()
+    try:
+        await backend.store(_episode(1))
+        for revision, outcome_id in enumerate(("first", "second", "third")):
+            command = _review_command(
+                namespace, episode_id="episode-1", outcome_id=outcome_id, expected_revision=revision
+            )
+            assert (await backend.apply_review(command)).status == "applied"
+        assert backend._db is not None
+        # The process that committed "second" and "third" had a clock behind the one that committed "first".
+        for outcome_id, recorded_at in (("first", "2026-03-01"), ("second", "2026-01-01"), ("third", "2026-02-01")):
+            await backend._db.execute(
+                "UPDATE reviews SET recorded_at = ? WHERE outcome_id = ?", (f"{recorded_at}T00:00:00+00:00", outcome_id)
+            )
+
+        listed = await backend.list_reviews(namespace)
+        limited = await backend.list_reviews(namespace, limit=2)
+
+        assert [row["outcome_id"] for row in listed] == ["first", "second", "third"]
+        assert [row["apply_revision"] for row in listed] == [1, 2, 3]
+        assert [row["outcome_id"] for row in limited] == ["first", "second"]
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_apply_review_requires_exact_episode_scope(tmp_path) -> None:
+    """A ref that leaves a dimension unset cannot review an episode that sets it."""
+    backend = SQLiteEpisodeBackend(tmp_path / "exact-scope.sqlite")
+    agent_level = MemoryNamespace(tenant_id="tenant-a", agent_id="agent-a")
+    user_level = MemoryNamespace(tenant_id="tenant-a", agent_id="agent-a", user_id="user-a")
+    await backend.configure()
+    try:
+        await backend.store(_episode(1, user_id="user-a"))
+        await backend.store(_episode(2))
+
+        broader = await backend.apply_review(_review_command(agent_level, episode_id="episode-1", outcome_id="broad"))
+        narrower = await backend.apply_review(_review_command(user_level, episode_id="episode-2", outcome_id="narrow"))
+
+        assert (broader.status, broader.reason) == ("ignored", "memory ref is unavailable")
+        assert (narrower.status, narrower.reason) == ("ignored", "memory ref is unavailable")
+        assert backend._db is not None
+        for table in ("reviews", "memory_state"):
+            cursor = await backend._db.execute(f"SELECT COUNT(*) FROM {table}")
+            assert (await cursor.fetchone())[0] == 0
+
+        exact = await backend.apply_review(_review_command(user_level, episode_id="episode-1", outcome_id="exact"))
+        assert exact.status == "applied"
+        assert [row["outcome_id"] for row in await backend.list_reviews(user_level)] == ["exact"]
     finally:
         await backend.close()

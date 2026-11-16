@@ -201,3 +201,39 @@ def test_jsonrpc_stdout_and_no_optimizer(tmp_path: Path, capsys: pytest.CaptureF
         "episodic": True,
         "user_memory": False,
     }
+
+
+@pytest.mark.parametrize(
+    ("failure", "message"),
+    [
+        (OSError("disk unavailable"), "Error: OSError: disk unavailable"),
+        (RuntimeError("SQLiteEpisodeBackend is not configured"), "Error: RuntimeError: SQLiteEpisodeBackend is not"),
+        (ValueError("limit must be positive"), "Error: limit must be positive"),
+        (click.ClickException("episodic memory is not enabled"), "Error: episodic memory is not enabled"),
+    ],
+)
+def test_memory_cli_reports_unexpected_failures_without_traceback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: Exception, message: str
+) -> None:
+    """A failing command exits non-zero with one error line that names an unexpected failure's type."""
+
+    async def failing_status(self: AgentMemoryToolkit) -> dict[str, Any]:
+        raise failure
+
+    monkeypatch.setattr(AgentMemoryToolkit, "memory_status", failing_status)
+
+    @click.group()
+    def root() -> None:
+        """Test command root."""
+
+    register_memory_commands(root)
+    result = CliRunner().invoke(
+        root,
+        ["memory", "--storage-path", str(tmp_path / "cli.sqlite3"), "--agent-id", "agent-cli", "status"],
+    )
+
+    assert result.exit_code == 1
+    assert isinstance(result.exception, SystemExit)
+    assert result.output.strip().startswith(message)
+    assert len(result.output.strip().splitlines()) == 1
+    assert "Traceback" not in result.output

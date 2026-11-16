@@ -356,7 +356,6 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
         ref_key = command.ref.canonical_key
         payload = json.dumps(command.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
         namespace = command.ref.namespace
-        scope_filter = namespace.build_filter()
 
         async with self._write_lock:
             database = self._require_database()
@@ -396,9 +395,12 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
                         reason="dedupe key was committed with a different payload",
                     )
 
+                # The ref key is derived from the whole namespace, so the episode must match every dimension:
+                # an unset dimension admits only an episode that leaves it unset.
                 clauses = ["episode_id = ?"]
                 episode_parameters: list[Any] = [command.ref.memory_id]
-                for field, value in scope_filter.items():
+                for field in _FILTERABLE_COLUMNS:
+                    value = getattr(namespace, field)
                     if value is None:
                         clauses.append(f"{field} IS NULL")
                     else:
@@ -708,7 +710,8 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
             "SELECT dedupe_key, outcome_id, outcome_revision, ref_key, apply_revision, recorded_at, payload, "
             "grade, before_state, after_state, parameter_id, memory_error_signature "
             f"FROM reviews WHERE {' AND '.join(clauses)} "
-            "ORDER BY recorded_at ASC, dedupe_key ASC"
+            # rowid follows commit order; recorded_at is a wall clock that can step back between processes.
+            "ORDER BY rowid ASC"
         )
         if limit is not None:
             query += " LIMIT ?"
@@ -761,11 +764,21 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
         cursor = await database.execute(
             f"SELECT episode_id, embedding, embedding_dim FROM episodes WHERE {where_sql} "
             "AND embedding IS NOT NULL ORDER BY created_at DESC, episode_id DESC LIMIT ?",
-            [*params, self._vector_ceiling],
+            [*params, self._vector_ceiling + 1],
         )
         rows = list(await cursor.fetchall())
         if not rows:
             return []
+        if len(rows) > self._vector_ceiling:
+            # One row beyond the ceiling is read only to detect truncation; it is never scored.
+            del rows[self._vector_ceiling :]
+            logger.warning(
+                "Vector search is degraded: the scope holds more than %d candidates, only the newest %d are scored "
+                "(scope dimensions: %s)",
+                self._vector_ceiling,
+                self._vector_ceiling,
+                ", ".join(sorted(namespace_filter)) or "none",
+            )
         ranked = await asyncio.to_thread(
             _rank_candidates,
             embedding,

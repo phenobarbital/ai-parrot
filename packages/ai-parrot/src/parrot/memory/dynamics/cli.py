@@ -35,11 +35,20 @@ def _execute(
     settings: dict[str, Any],
     operation: Callable[[AgentMemoryToolkit], Awaitable[Any]],
 ) -> None:
-    """Bridge one async operation to Click and emit deterministic JSON."""
+    """Bridge one async operation to Click and emit deterministic JSON.
+
+    Raises:
+        click.ClickException: If the operation fails. A rejected argument keeps its message; any other failure is
+            reported with its exception type instead of a traceback.
+    """
     try:
         result = asyncio.run(_invoke(settings, operation))
+    except click.ClickException:
+        raise
     except (TypeError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - a command reports its failure, it does not print a traceback
+        raise click.ClickException(f"{type(exc).__name__}: {exc}") from exc
     click.echo(json.dumps(result, sort_keys=True, separators=(",", ":")))
 
 
