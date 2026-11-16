@@ -2,7 +2,7 @@
 
 **Feature**: sandbox-extra-write-paths (BRIEF-sandbox-extra-write-paths)
 **Spec**: sdd/briefs/sandbox-extra-write-paths.brief.md
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S
 **Depends-on**: none
@@ -99,3 +99,19 @@ paths; making all of `/tmp` writable in the native backend.
 - `PYTHONPATH=packages/ai-parrot/src pytest packages/ai-parrot/tests/flows/dev_loop/test_worktree_environment.py packages/ai-parrot/tests/flows/dev_loop/test_native_claude_sandbox.py -q`
 
 ## Completion Note
+Implemented in commit 42d99b6f0a. `worktree_environment.py` gains `EXTRA_WRITE_PATHS_KEY`, the strict
+`load_extra_write_paths(primary)` and the never-raising `sandbox_extra_write_dirs(root, git_dir)`;
+`protected_argv` binds each directory right after the scratch-root bind. `native_sandbox_settings` and
+`_prefix_writable_roots` include the same directories, and `load_launch_config` validates the key so a bad
+value exits 2. Root `pyproject.toml` declares `["/tmp/navigator"]`; the wiki page documents the key.
+
+Tests: 285 passed in the two task test files (27 new cases, including a real Bubblewrap run that writes
+`navigator/log/navigator.log` through to the host while a stray `/tmp` write stays private, and the
+assertion that `/tmp` never reaches `allowWrite` or the bind list). `ruff check` and `black --check` clean.
+The real repository value was validated under `python -S`: `/tmp/navigator` is accepted.
+
+Not verified: a live native Claude Code session writing the log (it needs a worker launched from a primary
+checkout that already carries the key, i.e. after merge). Unrelated: `test_sdd_launch.py::
+test_cli_snapshots_environment_before_importing_parrot_flows` fails identically on the unmodified `dev`
+checkout. `parrot sdd task close` does not handle brief tasks (looks in `active/`), so the index and status
+were updated by hand. Seat: native (main session).

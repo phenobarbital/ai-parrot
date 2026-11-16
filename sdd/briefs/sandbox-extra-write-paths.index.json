@@ -16,15 +16,15 @@
       "feature_id": "BRIEF-sandbox-extra-write-paths",
       "feature": "sandbox-extra-write-paths",
       "spec": "sdd/briefs/sandbox-extra-write-paths.brief.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Single task.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
+      "started_at": "2026-11-16T09:27:37+00:00",
+      "completed_at": "2026-11-16T09:27:37+00:00",
       "file": "sdd/briefs/sandbox-extra-write-paths/tasks/HOTFIX-sandbox-extra-write-paths-1-extra-write-paths.md"
     }
   ]
