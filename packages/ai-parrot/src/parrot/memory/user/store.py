@@ -510,6 +510,11 @@ class UserMemoryStore:
         return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
     @staticmethod
+    def _payload_digest(command_payload: str) -> str:
+        """Return the content-free identity stored for events that produced no fact."""
+        return "sha256:" + hashlib.sha256(command_payload.encode("utf-8")).hexdigest()
+
+    @staticmethod
     def _command_payload(command: UserKnowledgeCommand) -> str:
         """Return canonical JSON used to detect conflicting event reuse."""
         return json.dumps(command.model_dump(mode="json"), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
@@ -662,7 +667,7 @@ class UserMemoryStore:
         row = await cursor.fetchone()
         if row is None:
             return None
-        if row[0] != command_payload:
+        if row[0] not in (command_payload, self._payload_digest(command_payload)):
             return UserMemoryReceipt(status="conflict")
         return UserMemoryReceipt(knowledge_id=row[1], revision=row[2], status="duplicate")
 
@@ -674,12 +679,18 @@ class UserMemoryStore:
         command_payload: str,
         receipt: UserMemoryReceipt,
     ) -> None:
-        """Persist a command outcome in the same transaction as its mutation."""
+        """Persist a command outcome in the same transaction as its mutation.
+
+        An event tied to a stored fact keeps its canonical payload: ``forget`` deletes it with the fact. An event that
+        never produced a fact (ignored, suppressed or unavailable evidence) has no knowledge id for ``forget`` to find,
+        so it keeps only a digest and can never retain the content of a claim the user later erases.
+        """
+        stored_payload = command_payload if receipt.knowledge_id is not None else self._payload_digest(command_payload)
         await database.execute(
             "INSERT INTO user_knowledge_events "
             "(tenant_id, agent_id, user_id, event_id, command_payload, result_status, knowledge_id, revision) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (*identity, command.event_id, command_payload, receipt.status, receipt.knowledge_id, receipt.revision),
+            (*identity, command.event_id, stored_payload, receipt.status, receipt.knowledge_id, receipt.revision),
         )
 
     async def _matching_active(

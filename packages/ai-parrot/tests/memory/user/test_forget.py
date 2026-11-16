@@ -215,3 +215,33 @@ async def test_tombstoned_or_foreign_tenant_evidence_unavailable(tmp_path: Path)
     assert await store.list(scope=scope) == []
     await store.close()
     assert await _table_rows(path, "user_knowledge_suppressions") == []
+
+
+@pytest.mark.asyncio
+async def test_ignored_events_do_not_retain_forgotten_content(tmp_path: Path) -> None:
+    """Events that never produced a fact keep only a digest, so a later forget leaves no claim content on disk."""
+    path = tmp_path / "memory.sqlite3"
+    scope = _scope()
+    evidence = ("message:turn-1",)
+    store = UserMemoryStore(path)
+    applied = await store.upsert(_upsert("upsert-1", _candidate(evidence_refs=evidence)), scope=scope)
+    assert applied.knowledge_id is not None and applied.revision is not None
+    assert (
+        await store.forget(_forget("forget-1", applied.knowledge_id, applied.revision), scope=scope)
+    ).status == "applied"
+
+    stale = _upsert("stale-explicit", _candidate(evidence_refs=evidence))
+    assert (await store.upsert(stale, scope=scope)).status == "ignored"
+    # Replay detection still works without the raw payload: same command is a duplicate, a different one conflicts.
+    assert (await store.upsert(stale, scope=scope)).status == "duplicate"
+    other = _upsert("stale-explicit", _candidate(evidence_refs=("message:turn-9",)))
+    assert (await store.upsert(other, scope=scope)).status == "conflict"
+    await store.close()
+
+    async with aiosqlite.connect(path) as database:
+        cursor = await database.execute(
+            "SELECT command_payload FROM user_knowledge_events WHERE event_id = ?", ("stale-explicit",)
+        )
+        stored = [row[0] for row in await cursor.fetchall()]
+    assert stored and all(payload.startswith("sha256:") for payload in stored)
+    assert b'"value":"metric"' not in path.read_bytes()
