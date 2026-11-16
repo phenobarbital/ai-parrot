@@ -1,0 +1,190 @@
+---
+title: Agent Memory
+summary: Architecture, flags, lifecycle, scope and hard-cut migration
+---
+
+# Agent Memory
+
+## Purpose
+
+The `AgentMemoryMixin` provides a unified integration for persistent memory capabilities in AI Parrot agents. It consolidates episodic memory and user knowledge into a single lifecycle adapter, eliminating duplicate context and recording paths. This mixin is designed to work with the `UnifiedMemoryManager`, which orchestrates memory operations while stores retain ownership of persistence and dynamics.
+
+Key responsibilities:
+- One preparation/finalization path for persistent memory in `ask`, `ask_stream`, and `invoke`
+- Independent control of user memory and episodic memory capabilities
+- Hard-cut migration from legacy mixins (`EpisodicMemoryMixin` and `LongTermMemoryMixin`)
+- Integration with `BrainService` for tenant-bound recall and derivative forgetting
+
+## Public API
+
+### Core Classes
+
+- [`AgentMemoryMixin`](ref:parrot.memory.agent_memory.mixin.AgentMemoryMixin) — Main integration point for agent memory
+- [`AgentMemoryConfig`](ref:parrot.memory.agent_memory.models.AgentMemoryConfig) — Configuration for memory capabilities
+- [`MemoryRequestScope`](ref:parrot.memory.agent_memory.models.MemoryRequestScope) — Immutable runtime-derived identity
+- [`UnifiedMemoryManager`](ref:parrot.memory.unified.manager.UnifiedMemoryManager) — Memory operation orchestrator
+
+### Configuration
+
+- [`AgentMemoryConfig`](ref:parrot.memory.agent_memory.models.AgentMemoryConfig) — Main configuration class
+
+### Toolkit
+
+- [`AgentMemoryToolkit`](ref:parrot.memory.agent_memory.toolkit.AgentMemoryToolkit) — Exposes scoped memory operations
+
+## Configuration & Parameters
+
+### AgentMemoryConfig
+
+The `AgentMemoryConfig` class controls all memory capabilities with the following fields:
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `enable_episodic_memory` | `bool` | `False` | Enable episodic memory storage and retrieval |
+| `enable_user_memory` | `bool` | `False` | Enable user knowledge storage and retrieval |
+| `enable_brain` | `bool` | `False` | Enable BrainService integration (implies episodic memory) |
+| `memory_dynamics` | `bool` | `False` | Enable dynamics (reviews, state tracking) |
+| `max_context_tokens` | `int` | `2000` | Maximum tokens for memory context (ge=0) |
+| `episodic_context_tokens` | `int` | `600` | Tokens budget for episodic memory |
+| `user_context_tokens` | `int` | `600` | Tokens budget for user knowledge |
+| `user_memory_priority` | `Literal["high", "normal"]` | `"high"` | Priority for user memory in context |
+| `brain_context_tokens` | `int` | `400` | Tokens budget for brain recall |
+| `skills_context_tokens` | `int` | `400` | Tokens budget for skills context |
+| `include_relevant_skills` | `bool` | `False` | Include relevant skills in context |
+| `episodic_backend` | `Literal["sqlite"]` | `"sqlite"` | Backend for episodic storage |
+| `storage_path` | `str | None` | `None` | Path to SQLite database |
+| `enable_reflection` | `bool` | `True` | Enable automatic reflection generation |
+| `max_episodic_warnings` | `int` | `3` | Maximum warnings to include (ge=0) |
+| `suppress_trivial_tools` | `bool` | `True` | Suppress trivial tool calls |
+| `flush_on_startup` | `bool` | `False` | Flush memory on startup |
+
+### Configuration Precedence
+
+1. Instance attributes (highest priority)
+2. Explicit `agent_memory_config` dict or `AgentMemoryConfig` object
+3. Class attributes from MRO
+4. Default values from `AgentMemoryConfig` (lowest priority)
+
+### Legacy Flag Migration
+
+The old `enable_long_term_memory` flag has been removed. Use the new independent flags:
+- `enable_episodic_memory` for episodic memory
+- `enable_user_memory` for user knowledge
+
+## Usage Examples
+
+### Basic Agent Configuration
+
+```python
+from parrot.bots import BasicAgent
+from parrot.memory.agent_memory import AgentMemoryMixin
+
+class MyAgent(AgentMemoryMixin, BasicAgent):
+    enable_episodic_memory = True
+    enable_user_memory = True
+    agent_memory_config = {
+        "max_context_tokens": 1500,
+        "episodic_context_tokens": 500,
+        "user_context_tokens": 500,
+    }
+
+agent = MyAgent(name="my-agent")
+```
+
+### Using the Mixin
+
+```python
+from parrot.memory.agent_memory.models import MemoryRequestScope
+
+# Prepare memory context
+scope = MemoryRequestScope(
+    tenant_id="default",
+    agent_id="my-agent",
+    user_id="user123",
+    session_id="session456",
+    turn_id="turn789",
+    identity_provenance="server_resolved"
+)
+
+memory_context = await agent.prepare_memory("user query", scope=scope)
+
+# Record an event
+from parrot.memory.agent_memory.models import MemoryEvent
+
+event = MemoryEvent(
+    event_id="event123",
+    kind="response",
+    scope=scope,
+    observed_at=datetime.now(timezone.utc),
+    evidence_refs=(),
+    payload={}
+)
+
+await agent.complete_memory(event)
+```
+
+### Brain Service Integration
+
+```python
+class MyAgent(AgentMemoryMixin, BasicAgent):
+    enable_episodic_memory = True
+    enable_brain = True  # Implies episodic memory
+
+# The brain service is automatically constructed and started
+# Access it through agent.brain_service
+```
+
+## Gotchas
+
+### Hard-Cut Migration
+
+- The old `EpisodicMemoryMixin` and `LongTermMemoryMixin` have been removed without compatibility shims
+- Existing code using these mixins must be updated to use `AgentMemoryMixin`
+- Persisted data from the old mixins is preserved but must be accessed through the new interfaces
+
+### Brain Service Limitations
+
+- `enable_brain=True` implies `enable_episodic_memory=True`
+- The brain service is constructed lazily and requires an episodic store
+- Brain operations are tenant-bound and use the server-resolved request tenant
+- No agent-side `BrainAdminToolkit` is registered; administrative operations go through the HTTP handler
+
+### Configuration Constraints
+
+- `enable_user_memory=False` stops automatic learning and recall but doesn't delete existing data
+- Explicit forget operations are required to remove user knowledge
+- User memory works independently of episodic memory
+
+### Scope and Identity
+
+- `MemoryRequestScope` is immutable and runtime-bound
+- Missing or anonymous identity prevents user profile operations
+- Tenant and agent IDs are required; user/session/room/crew/model IDs are optional
+- Scope is applied before top-k selection in all retrieval operations
+
+### Dynamics and Reviews
+
+- Memory dynamics (reviews, state tracking) is disabled by default
+- Reviews require delivered version, attribution, and verified outcome
+- Recall/citation alone doesn't reinforce memory
+- Synthetic evidence is rejected; only verified outcomes produce reviews
+
+## Related
+
+### Wiki Pages
+
+- [User Memory](user-memory.md) — Independent knowledge, provenance, correction and suppression
+- [Memory Dynamics](memory-dynamics.md) — Accepted gates, evidence, backends, CLI/MCP/export and measured limits
+- [Conversation Memory](conversation-memory.md) — How conversation history is stored and managed
+
+### External References
+
+- [FEAT-892 Specification](../../specs/agent-memory-mixin.spec.md) — Full feature specification
+- [FEAT-889 Agent Brain](../../specs/agent-brain.spec.md) — Brain service and administrative interfaces (phase 2)
+- [FEAT-571 Memory Dynamics](../../specs/memory-dynamics.spec.md) — Historical dynamics specification
+
+### Ownership
+
+- `AgentMemoryMixin` and related classes are owned by FEAT-892
+- `BrainService` and administrative interfaces are owned by FEAT-889
+- Persisted data migration and CLI/MCP contracts are separately governed
