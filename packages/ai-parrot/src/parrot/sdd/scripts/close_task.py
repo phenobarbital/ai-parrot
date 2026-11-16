@@ -12,6 +12,7 @@ brief index and a missing task file.
 Exit codes: 0 closed (idempotent) · 1 usage · 2 nothing to close · 3 post-condition failed ·
 5 index not valid JSON / no task list (jq parity) · 128 not a git repository (git parity).
 """
+
 from __future__ import annotations
 
 import json
@@ -123,7 +124,9 @@ def _emit_task_closed(start_dir: Path, task_id: str, feature_slug: str, verifica
             _err(f"⚠️  task.closed ledger emission skipped ({override}): {exc}")
             return
         if proc.returncode != 0:
-            _err(f"⚠️  task.closed ledger emission skipped ({override} exited {proc.returncode}): {proc.stderr.strip()}")
+            _err(
+                f"⚠️  task.closed ledger emission skipped ({override} exited {proc.returncode}): {proc.stderr.strip()}"
+            )
         return
     try:
         _emit_task_closed_inprocess(start_dir, task_id, feature_slug, verification)

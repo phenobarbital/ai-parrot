@@ -1,5 +1,6 @@
 # packages/ai-parrot/tests/sdd/test_scripts_shell_port.py
 """FEAT-633: Python ports of close_task.sh / heal_orphans.sh keep CLI + behaviour identical."""
+
 from __future__ import annotations
 
 import json
@@ -28,8 +29,17 @@ def repo(tmp_path: Path) -> Path:
     _git(root, "config", "user.email", "t@example.com")
     _git(root, "config", "user.name", "T")
     (root / "sdd/tasks/active/TASK-9001-demo.md").write_text("# TASK-9001\n", encoding="utf-8")
-    index = {"feature": "demo", "tasks": [{"id": "TASK-9001", "status": "in-progress", "completed_at": None,
-                                           "file": "sdd/tasks/active/TASK-9001-demo.md"}]}
+    index = {
+        "feature": "demo",
+        "tasks": [
+            {
+                "id": "TASK-9001",
+                "status": "in-progress",
+                "completed_at": None,
+                "file": "sdd/tasks/active/TASK-9001-demo.md",
+            }
+        ],
+    }
     (root / "sdd/tasks/index/demo.json").write_text(json.dumps(index), encoding="utf-8")
     _git(root, "add", "-A")
     _git(root, "commit", "-q", "-m", "seed")
@@ -43,13 +53,19 @@ def _env() -> dict[str, str]:
 
 
 def _module(name: str, cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run([sys.executable, "-m", f"parrot.sdd.scripts.{name}", *args],
-                          cwd=cwd, env=_env(), capture_output=True, text=True)
+    return subprocess.run(
+        [sys.executable, "-m", f"parrot.sdd.scripts.{name}", *args], cwd=cwd, env=_env(), capture_output=True, text=True
+    )
 
 
 def _wrapper(name: str, cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["bash", str(REPO_ROOT / "scripts" / "sdd" / f"{name}.sh"), *args],
-                          cwd=cwd, env={**_env(), "PYTHON": sys.executable}, capture_output=True, text=True)
+    return subprocess.run(
+        ["bash", str(REPO_ROOT / "scripts" / "sdd" / f"{name}.sh"), *args],
+        cwd=cwd,
+        env={**_env(), "PYTHON": sys.executable},
+        capture_output=True,
+        text=True,
+    )
 
 
 @pytest.mark.parametrize("runner", [_module, _wrapper])
@@ -60,7 +76,11 @@ def test_close_moves_marks_done_and_stages(repo: Path, runner) -> None:
     assert (repo / "sdd/tasks/completed/TASK-9001-demo.md").is_file()
     data = json.loads((repo / "sdd/tasks/index/demo.json").read_text(encoding="utf-8"))
     task = data["tasks"][0]
-    assert (task["status"], task["verification"], task["file"]) == ("done", "verified", "sdd/tasks/completed/TASK-9001-demo.md")
+    assert (task["status"], task["verification"], task["file"]) == (
+        "done",
+        "verified",
+        "sdd/tasks/completed/TASK-9001-demo.md",
+    )
     assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\+00:00", task["completed_at"])
     assert data["completed_at"] == task["completed_at"]
     assert "sdd/tasks/index/demo.json" in _git(repo, "diff", "--cached", "--name-only")
@@ -137,8 +157,12 @@ def brief_repo(tmp_path: Path) -> Path:
     _git(root, "config", "user.email", "t@example.com")
     _git(root, "config", "user.name", "T")
     (root / BRIEF_TASK).write_text("# HOTFIX-demo-1\n\n**Status**: in-progress\n", encoding="utf-8")
-    index = {"feature": "demo", "type": "brief", "completed_at": None,
-             "tasks": [{"id": "HOTFIX-demo-1", "status": "in-progress", "completed_at": None, "file": BRIEF_TASK}]}
+    index = {
+        "feature": "demo",
+        "type": "brief",
+        "completed_at": None,
+        "tasks": [{"id": "HOTFIX-demo-1", "status": "in-progress", "completed_at": None, "file": BRIEF_TASK}],
+    }
     (root / BRIEF_INDEX).write_text(json.dumps(index), encoding="utf-8")
     _git(root, "add", "-A")
     _git(root, "commit", "-q", "-m", "seed")
