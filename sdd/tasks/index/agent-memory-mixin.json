@@ -582,7 +582,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -594,8 +594,9 @@
       "parallelism_notes": "Consumes permanent feedback adapter from TASK-5675; Consumes CheckedPattern/ReviewSignal from TASK-5656; Consumes versioned exposure and trusted checks from TASK-5674",
       "assigned_to": null,
       "started_at": "2026-11-16T00:56:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5676-agent-memory-coder.md"
+      "completed_at": "2026-11-16T01:13:34+00:00",
+      "file": "sdd/tasks/completed/TASK-5676-agent-memory-coder.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5677",
@@ -733,4 +734,3 @@
     }
   ]
 }
-
