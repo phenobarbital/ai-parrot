@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-892 - Agent Memory — Unified Integration, User Knowledge and Dynamics
 **Spec**: `sdd/specs/agent-memory-mixin.spec.md`
-**Status**: in-progress (reopened twice — second extension: persisted ReviewRecord, issue:cef9e1a8c0e6)
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-5678, TASK-5662
@@ -380,3 +380,22 @@ CancelledError. Use subprocesses for crash/multiprocess checks, never shared pro
 5. Run validation, commit scoped implementation, and finalize with `parrot sdd task finalize`
    using real TaskCompletionEvidence and the exact implementation HEAD. Let finalization own
    the completion note and active-to-completed move; do not fabricate completion evidence.
+
+## Completion Note
+
+- Task: TASK-5679
+- Feature: agent-memory-mixin
+- Implementation SHA: 8fd85474ae86056209f1e557a8634400235eabcc
+- Closed at (UTC): 2026-11-16T02:23:04+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| AC12 | met: replay yields one application per review, failed export loses/re-applies nothing |
+| AC18 | met end to end: archive carries command, apply_revision, recorded_at and, for reviews committed with a record, grade, before/after MemoryState, parameter_id and memory_error_signature; legacy rows export without a record (never fabricated); deterministic; replay does not depend on the record |
+| issues | issue:cef9e1a8c0e6 resolved by this delivery; issue:ca240b187f61 resolved by fe3561614b |
+| note | recall.py keeps its own inline neutral-parameter literal (parameter_id episodic-neutral-v1); store.py defines the review parameters once - drift risk flagged, recall.py was out of scope |
+| scope | Reopened twice by owner decision: (1) review read API + real export (merge 19d6dae59a, fix fe3561614b), (2) persisted ReviewRecord + additive v3 migration (this delivery). |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 (second extension) · Duration: 526s · Tokens: n/a |
