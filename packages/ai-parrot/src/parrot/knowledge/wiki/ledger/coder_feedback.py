@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import warnings
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 from typing import Annotated, Literal
@@ -157,6 +158,20 @@ class CoderFeedbackStore:
             records.setdefault(feedback.feedback_id(), (event.ts, feedback))
         return list(records.values())
 
+    def retracted_feedback_ids(self) -> set[str]:
+        """Return IDs whose current replay state is a feedback retraction.
+
+        A later record for the same stable occurrence restores it, matching
+        the append-only replay semantics used by :meth:`_read`.
+        """
+        active_ids = {feedback.feedback_id() for _timestamp, feedback in self._read()}
+        retracted_ids = {
+            event.subject
+            for event, _offset in self.log.iter_events()
+            if event.kind == "insight.superseded" and event.payload.get("category") == "coder_feedback"
+        }
+        return retracted_ids - active_ids
+
     async def context(
         self, backend: str, model: str, files: list[str], max_tokens: int = 1800, max_age_days: int = 90
     ) -> str:
@@ -166,6 +181,12 @@ class CoderFeedbackStore:
         can be prevented in newly created modules as well. Keep whole lessons
         within the estimated budget; never truncate their verification step.
         """
+        warnings.warn(
+            "max_age_days is deprecated; dynamics will own feedback ageing in a future release. "
+            "Its current filtering effect remains unchanged.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         if max_tokens <= 0 or max_age_days <= 0:
             return ""
         cutoff = datetime.now(timezone.utc) - timedelta(days=max_age_days)
