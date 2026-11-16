@@ -149,7 +149,7 @@
       "feature_id": "FEAT-902",
       "feature": "wiki-ledger-sqlite-hardening",
       "spec": "sdd/specs/wiki-ledger-sqlite-hardening.spec.md",
-      "status": "in-progress",
+      "status": "pending",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -159,7 +159,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on TASK-5716 for candidate phase instrumentation and TASK-5717 for the executable benchmark/report schema and test file. Exclusive: owns the measurement host I/O/CPU window and isolated baseline snapshot during comparable trials.",
       "assigned_to": null,
-      "started_at": "2026-11-16T21:11:01+00:00",
+      "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5718-sqlite-ledger-measurement-followup.md"
     },
@@ -170,7 +170,7 @@
       "feature_id": "FEAT-902",
       "feature": "wiki-ledger-sqlite-hardening",
       "spec": "sdd/specs/wiki-ledger-sqlite-hardening.spec.md",
-      "status": "in-progress",
+      "status": "pending",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -184,9 +184,10 @@
       "parallel": true,
       "parallelism_notes": "Consumes TASK-5713's read_cursor_in/LedgerCursorInvalid, TASK-5714's probe_cursor/sync behavior, TASK-5715's durable cancellation helper, TASK-5716's timing events, TASK-5717's benchmark CLI/schema and TASK-5718's measured report/follow-up. Writes only its page and documentation example smoke test.",
       "assigned_to": null,
-      "started_at": "2026-11-16T21:11:01+00:00",
+      "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5719-sqlite-ledger-documentation.md"
     }
   ]
 }
+
