@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-887 — SDD Experience Memory (`experience.pitfall`)
 **Spec**: `sdd/specs/sdd-experience-memory.spec.md`
-**Status**: in-progress
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5607, TASK-5608
@@ -195,4 +195,25 @@ Follow `docs/sdd/WORKFLOW.md` § "Implementing a task by hand" inside
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+- Task: TASK-5700
+- Feature: sdd-experience-memory
+- Implementation SHA: 212c435787edd348218416f89e6ae18ec89f1a99 (port of `ac826c4735`, TASK-5650)
+- Closed at (UTC): 2026-11-16T01:14:33+00:00
+- Implemented by `/sdd-fix issue:94b993feac9d` on the host, in a baseline tree built on FEAT-887 HEAD
+  `3c79c75083`, while the FEAT-887 worker was running TASK-5695. It was then cherry-picked into the feature
+  worktree. Closed with `scripts/sdd/close_task.sh` (verified).
+- Conflict: `test_procedure_cli.py` (this branch's `test_branch_pushed_unknown_on_git_failure` versus the
+  ported tests), resolved by keeping both sides. The cherry-picked `experience_cli` wheel-only scenario
+  duplicated this branch's key (ruff F601) and was dropped.
+- Mutation check: with `engine.py` reverted, `test_engine_procedure_briefing`,
+  `test_engine_uses_task_worktree_state` and both `test_engine_briefing_both_seats` cases fail.
+- FEAT-891's index still records TASK-5650 as `done-with-issues`, a historical record of that task.
+  This task is where its deferred delivery happens.
+
+| Metric | Value |
+|---|---|
+| tests | test_engine_dispatch.py + test_procedure_cli.py + test_worker_prompt_orchestrator.py + test_start_optimization_contract.py + test_docs_present.py + test_doctor_sdd.py: 145 passed; test_check_asset_sync.py: 28 passed |
+| baseline-only reds | test_wheel_only_foreign_repo.py: 6 failed / 1 passed, identical on bare `3c79c75083` (`parrot sdd install` exits 1 inside the wheel-only harness on this host) |
+| manual | `parrot sdd procedure brief --task-file <task>` exits 0 (empty output, no plane) |
+| lint | `ruff check` clean on the four Python files; `black --check` clean |
+| review_evidence | none: host `/sdd-fix` port, no reviewer run |

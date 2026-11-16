@@ -750,7 +750,7 @@
       "feature_id": "FEAT-887",
       "feature": "sdd-experience-memory",
       "spec": "sdd/specs/sdd-experience-memory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -761,11 +761,12 @@
       "parallelism_notes": "TASK-5700: exclusive; edits sdd_coder/engine.py, the six sdd-start twins and three tests; no file overlap with TASK-5694..5697",
       "assigned_to": null,
       "started_at": "2026-11-16T01:13:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5700-procedure-briefing-port.md",
+      "completed_at": "2026-11-16T01:14:33+00:00",
+      "file": "sdd/tasks/completed/TASK-5700-procedure-briefing-port.md",
       "discovered_from": [
         "issue:94b993feac9d"
-      ]
+      ],
+      "verification": "verified"
     }
   ]
 }
