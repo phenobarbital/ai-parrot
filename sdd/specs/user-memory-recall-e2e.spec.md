@@ -103,22 +103,29 @@ budget but never raise that ceiling. A record that does not fit is skipped, neve
 The ceiling uses the existing `len(text) // 4` estimate on packed section content, including newlines;
 it is not a provider-token guarantee or a new accounting rule for section wrappers.
 
-**`user_memory_priority` decides whether that ceiling is also a guarantee.** The agent setting exists
-today but nothing reads it. It is wired here:
+**`user_memory_priority` decides whether the user ceiling is reserved within the effective budget.**
+Both modes retain the existing 10% headroom: `effective_budget = int(max_context_tokens * 0.9)`.
+Use the assembler's existing `_max_tokens` for this value; do not apply headroom twice. The margin
+helps absorb approximate token estimates and section wrappers, but is not a provider-token guarantee.
+The agent setting exists today but nothing reads it. It is wired here:
 
 - `"high"` (the agent default): the user section is packed **first** with a budget of
-  `min(user_context_tokens, max_context_tokens)`, independent of the other sections' weights. The other
+  `min(user_context_tokens, effective_budget)`, independent of the other sections' weights. The other
   sections then keep their existing weighted allocation and rollover chain, each clamped to what is
-  left of `max_context_tokens`; when the total does not fit, the sections packed last yield. Budget
+  left of `effective_budget`; when the total does not fit, the sections packed last yield. Budget
   the user section does not use is not redistributed.
 - `"normal"`: the user section is packed last with its weighted allocation plus rollover, clamped to
   the ceiling. This is the allocation described above and the only one for direct `MemoryConfig`
   callers that do not set the new field.
 
-The two modes pack the same context whenever the weighted allocation already reaches the ceiling
-(true for the default budgets). They differ when `max_context_tokens` is smaller than the sum of the
-per-source budgets: `"normal"` shrinks the profile with every other section, `"high"` keeps it whole.
-The rendered section order and the order of `delivered_refs` / `memory_refs` do not depend on the mode.
+The two modes produce identical content, references and digests when their allocations admit the
+same records; equality is not guaranteed under default settings. With all four sections enabled,
+default relative shares, `max_context_tokens=2000` and no rollover, the effective budget is 1800:
+the normal user allocation is 540, while high priority reserves up to the 600-token user ceiling.
+At `max_context_tokens=400`, the effective budget is 360 and the normal user share is 108; high
+priority may use up to 360, so a 125-token profile record fits only in high mode when no rollover
+is available. The rendered section order and the order of `delivered_refs` / `memory_refs` do not
+depend on the mode. Both modes keep `tokens_used <= effective_budget`.
 
 `recall()` keeps its signature for explicit lookups (`AgentMemoryToolkit.memory_recall`, tests) but
 matches on normalized terms: a record matches when it contains at least one query term, ranked by
@@ -348,6 +355,8 @@ class EpisodicMemoryStore:
       user_priority: Literal["high", "normal"] = "normal"
 
   # unified/context.py  (modifies assemble_candidates, verified: context.py:125)
+  #   In both modes budget = self._max_tokens = int(config.max_context_tokens * 0.9).
+  #   Preserve the existing headroom; do not multiply the effective budget by 0.9 again.
   #   The "episodic" section keeps ONE budget. Candidates are ordered warnings first, then recall,
   #   each by the existing key. Accepted warning text goes to `episodic_warnings`, accepted recall
   #   text to `episodic_recall`. The fit test and `tokens_used` count both texts together.
@@ -426,7 +435,8 @@ class EpisodicMemoryStore:
 - **User ceiling compatibility**: the new `MemoryConfig.user_context_tokens` defaults to `None`
   for direct manager callers. The agent factory always supplies the existing agent setting
   (600 by default); it remains a relative weight as well as becoming a hard ceiling. The final
-  user allocation is the smaller of that ceiling and the normal allocation after rollover.
+  normal-priority user allocation is the smaller of that ceiling and its allocation after rollover,
+  within the existing effective budget. High priority reserves the ceiling within that same budget.
 - **Priority compatibility**: `MemoryConfig.user_priority` defaults to `"normal"`, so direct manager
   callers keep today's packing order. The agent factory always forwards
   `AgentMemoryConfig.user_memory_priority`, whose existing default is `"high"`: agents built through
@@ -524,8 +534,8 @@ class EpisodicMemoryStore:
 | `test_agent_config_maps_new_limits` | M3 | `max_episodic_recall` / `max_user_records` reach `MemoryConfig` |
 | `test_user_section_cap_applies_after_normalization_and_rollover` | M3 | only-user config and empty earlier sections cannot exceed 600 estimated tokens; an 800-token record is omitted whole |
 | `test_user_section_cap_zero_and_legacy_none` | M3 | zero emits no user content/refs, including sub-four-character records; None preserves direct-manager packing; factory maps the ceiling |
-| `test_user_priority_high_reserves_ceiling_before_weighted_sections` | M3 | `max_context_tokens=400`, four sections enabled with default shares and the three earlier sections filled to their allocation (no rollover): a 125-token record is omitted under `"normal"` (weighted share 120) and delivered under `"high"`; `tokens_used <= 400`; later sections are clamped to the remainder; refs keep the fixed section order |
-| `test_user_priority_modes_agree_when_weighted_share_reaches_ceiling` | M3 | default budgets: `"high"` and `"normal"` produce the same packed context and digest; `"high"` with a `None` ceiling packs first on the weighted share; zero ceiling emits nothing in both modes |
+| `test_user_priority_high_reserves_ceiling_before_weighted_sections` | M3 | `max_context_tokens=400`, four sections enabled with default shares and the three earlier sections filled to their allocation (no rollover): a 125-token record is omitted under `"normal"` (effective budget 360, weighted share 108) and delivered under `"high"`; `tokens_used <= 360`; later sections are clamped to the remainder; refs keep the fixed section order |
+| `test_user_priority_modes_agree_when_weighted_share_reaches_ceiling` | M3 | with max_context_tokens=2400, default shares and records fitting both allocations, `"high"` and `"normal"` produce the same context/refs/digest; also cover max_context_tokens=2000 with no rollover and a 550-token profile that fits high but not normal; `"high"` with a `None` ceiling packs first on the weighted share; zero ceiling emits nothing in both modes |
 | `test_agent_config_maps_user_memory_priority` | M3 | factory forwards `"high"` (default) and `"normal"`; `MemoryConfig()` defaults to `"normal"`; setting `user_memory_priority="normal"` no longer logs the no-effect warning, the other three knobs still do |
 | `test_optional_live_plan_requires_successful_proof` | M6 | optional plan with required live node validates; runner and verifier reject failed/skipped/missing and bad-phase evidence, accepting only successful execution |
 | `test_extraction_prompt_rejects_task_instructions_and_keeps_language` | M4 | prompt text contains both rules |
@@ -609,9 +619,10 @@ python examples/memory/agent_memory_e2e.py
       `MemoryConfig.user_context_tokens=None` preserves legacy direct-manager allocation.
 - [ ] `AgentMemoryConfig.user_memory_priority` has an effect and is no longer reported as unused:
       `"high"` (default) packs the user section first with `min(user_context_tokens,
-      max_context_tokens)` even when the weighted share is smaller; `"normal"` keeps the weighted
-      allocation. `tokens_used` never exceeds `max_context_tokens` in either mode, both modes pack the
-      same context under the default budgets, and `MemoryConfig.user_priority` defaults to `"normal"`.
+      effective_budget)` even when the weighted share is smaller; `"normal"` keeps the weighted
+      allocation. Both modes retain `effective_budget = int(max_context_tokens * 0.9)` and never
+      exceed it. Content/refs/digests agree when both allocations admit the same records; default
+      budgets do not guarantee equality. `MemoryConfig.user_priority` defaults to `"normal"`.
 - [ ] `recall()` finds a record from a multi-word natural-language query that contains one of its
       terms even beyond the first 100 eligible rows; blank and short literal queries behave as before.
 - [ ] A non-failure episode recorded in an earlier session of the same user is delivered under
@@ -818,9 +829,10 @@ Verified against: `9f42c6960a`
 - **Prompt growth.** Every request of an identified user now carries the profile. It is bounded by
   `user_context_tokens` (600 by default) and `max_user_records`.
 - **Priority changes a default.** `user_memory_priority` already defaults to `"high"`, so wiring it
-  changes agents that never set it: with a `max_context_tokens` smaller than the sum of the per-source
-  budgets, the profile now keeps its full ceiling and the sections packed last (brain, then skills)
-  lose budget. Under the default budgets nothing changes. `"normal"` restores the weighted split.
+  changes agents that never set it: high priority reserves the profile ceiling within the effective
+  budget, so sections packed last (brain, then skills) may lose budget. This can occur even with
+  default budgets because the 10% headroom reduces their total. `"normal"` retains the weighted split;
+  both modes keep the existing headroom and direct normal-priority callers keep their allocation.
 - **Compatibility.** Zero disables only the new episodic lane; it does not roll back the tokenizer
   or profile changes. With identical candidates and no eligible recall, enabled/disabled lane
   prompts are equal. Direct `MemoryConfig` callers retain prior packing through a `None` user cap.
@@ -950,8 +962,12 @@ Coverage:
       and every extraction client, using the helpers in `parrot.e2e.live` (§3, M6).
 - [x] Should `user_memory_priority` (declared, unused) be removed or wired now that the profile is
       always delivered? — *Resolved by Jesus Lara, 2026-11-16*: wire it in this feature. `"high"`
-      packs the user section first with `min(user_context_tokens, max_context_tokens)`; `"normal"`
+      packs the user section first with `min(user_context_tokens, effective_budget)`; `"normal"`
       keeps the weighted allocation (§2, M3). Removing the field and leaving it unused were rejected.
+- [x] Does priority remove the existing 10% headroom? — *Resolved by Jesus Lara, 2026-11-16*:
+      retain `int(max_context_tokens * 0.9)` in both modes, with high priority reserving the user
+      ceiling inside that effective budget. Equality is conditional on both allocations admitting
+      the same records, not on default settings.
 
 ---
 
@@ -1023,3 +1039,4 @@ implementation and live evidence are still required before feature acceptance.
 | 0.2 | 2026-11-16 | Codex | Resolve all four review findings: pre-limit episodic eligibility, full-population user ranking, hard user token ceiling and required proof within an optional live plan; align regression tests and acceptance |
 | 0.3 | 2026-11-16 | Jesus Lara / Codex | User approved the reviewed specification for task decomposition and implementation |
 | 0.4 | 2026-11-16 | Jesus Lara / Claude | Close the last open question: wire `user_memory_priority` (M3 assembler packing order, `MemoryConfig.user_priority`, factory mapping, three tests, one acceptance criterion). Not re-reviewed by Codex |
+| 0.5 | 2026-11-16 | Jesus Lara / Codex | User approved retaining 10% headroom in both priority modes; correct 400-token example to 360 effective/108 weighted, and replace unconditional default-budget equality with equal-admission compatibility |
