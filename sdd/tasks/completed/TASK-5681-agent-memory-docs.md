@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-892 - Agent Memory — Unified Integration, User Knowledge and Dynamics
 **Spec**: `sdd/specs/agent-memory-mixin.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-5653, TASK-5654, TASK-5655, TASK-5656, TASK-5657, TASK-5658, TASK-5659, TASK-5660, TASK-5661, TASK-5662, TASK-5663, TASK-5664, TASK-5665, TASK-5666, TASK-5667, TASK-5668, TASK-5669, TASK-5670, TASK-5671, TASK-5672, TASK-5673, TASK-5674, TASK-5675, TASK-5676, TASK-5677, TASK-5678, TASK-5679, TASK-5680
@@ -326,3 +326,20 @@ Run `parrot sdd techwiki check --spec sdd/specs/agent-memory-mixin.spec.md --roo
 The repository currently registers no techwiki test runner. The declared pytest test must
 invoke this exact CLI with subprocess.run and inspect its JSON/report for missing pages/API
 symbols as well as exit status. Do not add an unrelated runner extension or weaken graph lint.
+
+## Completion Note
+
+- Task: TASK-5681
+- Feature: agent-memory-mixin
+- Implementation SHA: f4865e3be69fb0c448c92191c32596a76a6f2465
+- Closed at (UTC): 2026-11-16T02:42:55+00:00
+- Fix commits: f4865e3be69fb0c448c92191c32596a76a6f2465
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 1 |
+| not_audited | Behavioral sentences in the Gotchas lists (for example conflict-resolution and retention rules) were not each checked against code. |
+| scope | Docs reflect the post-rework facts: lazy wikitoolkit memory group, persisted review record + schema v3, list_reviews and export archive. |
+| seat_summary | Seat: mistral · Backend: nova · Model: mistral.devstral-2-123b · Attempts: 1 · Duration: 439s · Tokens: 3908879/18398 |
+| verification | All doc examples executed against real temp stores; 25+ ref: links resolve; relative links resolve; techwiki check ok with an absolute root (relative --root . reports pages missing because import parrot changes the cwd); docs test rewritten so a failure fails the test. |
