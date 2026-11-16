@@ -828,6 +828,52 @@
       "file": "sdd/tasks/completed/TASK-5703-episodic-recall-visibility.md",
       "discovered_from": "issue:2a40a9f62877",
       "verification": "verified"
+    },
+    {
+      "id": "TASK-5706",
+      "slug": "sqlite-vector-scoring-and-targeted-reads",
+      "title": "SQLite vector scoring off the event loop and targeted scoped reads",
+      "feature_id": "FEAT-892",
+      "feature": "agent-memory-mixin",
+      "spec": "sdd/specs/agent-memory-mixin.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5661",
+        "TASK-5665",
+        "TASK-5679",
+        "TASK-5702"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Modifies backends/sqlite.py created by TASK-5661 and the recall routes of episodic/store.py from TASK-5665; TASK-5679 (list_reviews) and TASK-5702 (get_memory_states, _resolve_dynamics_states) modified the same two files and test_sqlite_backend.py.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5706-sqlite-vector-scoring-and-targeted-reads.md",
+      "discovered_from": "issue:2bb5faf7fe99"
+    },
+    {
+      "id": "TASK-5707",
+      "slug": "sqlite-review-order-scope-and-cli-errors",
+      "title": "Replay-safe review order, exact review scope, ceiling warning and CLI errors",
+      "feature_id": "FEAT-892",
+      "feature": "agent-memory-mixin",
+      "spec": "sdd/specs/agent-memory-mixin.spec.md",
+      "status": "pending",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5706",
+        "TASK-5678"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Modifies backends/sqlite.py after TASK-5706 (same file, and the ceiling warning sits in the search_similar it rewrites) and dynamics/cli.py created by TASK-5678.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5707-sqlite-review-order-scope-and-cli-errors.md",
+      "discovered_from": "issue:5fb1a338c719"
     }
   ]
 }
