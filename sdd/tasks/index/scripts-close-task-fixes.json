@@ -36,7 +36,7 @@
       "feature_id": "FEAT-901",
       "feature": "scripts-close-task-fixes",
       "spec": "sdd/specs/scripts-close-task-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -44,7 +44,8 @@
       "parallelism_notes": "single task; files: sdd/scripts/close_task.py, tests/sdd/test_scripts_shell_port.py; no shared resources",
       "assigned_to": null,
       "discovered_from": "issue:2693ab44132d",
-      "file": "sdd/tasks/active/TASK-5705-close-brief-task-in-place.md"
+      "file": "sdd/tasks/active/TASK-5705-close-brief-task-in-place.md",
+      "started_at": "2026-11-16T09:38:50+00:00"
     }
   ]
 }

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-901 — `parrot sdd task close` closes `/sdd-brief` tasks in place
 **Spec**: `sdd/specs/scripts-close-task-fixes.spec.md`
-**Status**: pending
+**Status**: in-progress
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
