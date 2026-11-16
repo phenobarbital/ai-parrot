@@ -10,6 +10,7 @@ from typing import Any, Awaitable, Callable
 import click
 
 from parrot.memory.agent_memory.toolkit import AgentMemoryToolkit
+from parrot.memory.episodic.models import MemoryNamespace
 
 
 def _toolkit(settings: dict[str, Any]) -> AgentMemoryToolkit:
@@ -179,18 +180,7 @@ def register_memory_commands(group: click.Group) -> None:
         from parrot.memory.dynamics.export import export_reviews as do_export
 
         async def run_export(toolkit: AgentMemoryToolkit) -> dict[str, Any]:
-            namespace_dict = settings["namespace"]
-            from parrot.memory.episodic.models import MemoryNamespace
-
-            namespace = MemoryNamespace(
-                tenant_id=namespace_dict.get("tenant_id", "default"),
-                agent_id=namespace_dict.get("agent_id", ""),
-                user_id=namespace_dict.get("user_id"),
-                session_id=namespace_dict.get("session_id"),
-                room_id=namespace_dict.get("room_id"),
-                crew_id=namespace_dict.get("crew_id"),
-                model_id=namespace_dict.get("model_id"),
-            )
+            namespace = MemoryNamespace(**settings["namespace"])
             manager = await toolkit._opened_manager()
             if manager.episodic is None:
                 raise click.ClickException("episodic memory is not enabled")

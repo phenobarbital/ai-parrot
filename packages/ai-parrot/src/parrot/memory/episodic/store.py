@@ -11,7 +11,14 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from parrot.memory.dynamics.grade import select_grade
-from parrot.memory.dynamics.models import MemoryCitation, MemoryRef, ReviewCommand, ReviewReceipt, ReviewSignal
+from parrot.memory.dynamics.models import (
+    MemoryCitation,
+    MemoryParameters,
+    MemoryRef,
+    ReviewCommand,
+    ReviewReceipt,
+    ReviewSignal,
+)
 
 from .backends.abstract import AbstractEpisodeBackend
 from .cache import EpisodeRedisCache
@@ -31,6 +38,12 @@ logger = logging.getLogger(__name__)
 
 _EXPLICIT_LESSON_KEY = "_parrot_explicit_lesson"
 _EXPLICIT_REFLECTION_KEY = "_parrot_explicit_reflection"
+_EPISODIC_REVIEW_PARAMETERS = MemoryParameters(
+    algorithm="fsrs-6",
+    time_policy="days-v1",
+    parameter_id="episodic-neutral-v1",
+    provenance="episodic-review",
+)
 
 # Known error types that boost importance
 _KNOWN_ERROR_TYPES = {
@@ -430,7 +443,13 @@ class EpisodicMemoryStore:
             )
             command = provisional.model_copy(update={"expected_revision": expected_revision})
             try:
-                receipt, command = await self._apply_review_with_current_revision(apply_review, command)
+                receipt, command = await self._apply_review_with_current_revision(
+                    apply_review,
+                    command,
+                    grade=grade,
+                    memory_error_signature=episode.error_message or episode.error_type,
+                    parameters=_EPISODIC_REVIEW_PARAMETERS,
+                )
             except Exception as exc:
                 logger.warning("Review application failed for %s: %s", ref.canonical_key, exc)
                 receipts.append(self._unavailable_receipt(ref, signal, reason="review storage is unavailable"))
@@ -471,11 +490,12 @@ class EpisodicMemoryStore:
         self,
         apply_review: Any,
         command: ReviewCommand,
+        **record: Any,
     ) -> tuple[ReviewReceipt, ReviewCommand]:
         """Retry only a compare-and-swap miss using the backend's committed revision."""
         current_command = command
         for _ in range(3):
-            receipt = await apply_review(current_command)
+            receipt = await apply_review(current_command, **record)
             expected_miss = (
                 receipt.status == "stale_revision"
                 and receipt.apply_revision is not None
