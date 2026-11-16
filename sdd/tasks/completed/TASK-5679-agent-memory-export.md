@@ -291,3 +291,33 @@ CancelledError. Use subprocesses for crash/multiprocess checks, never shared pro
 5. Run validation, commit scoped implementation, and finalize with `parrot sdd task finalize`
    using real TaskCompletionEvidence and the exact implementation HEAD. Let finalization own
    the completion note and active-to-completed move; do not fabricate completion evidence.
+
+## Completion Note
+
+- Task: TASK-5679
+- Feature: agent-memory-mixin
+- Status: **done-with-issues** (closed by hand; `parrot sdd task finalize` only records `done`)
+- Closed at (UTC): 2026-11-16T01:52:45+00:00
+- Delivery: rework merged as 19d6dae59a (seat gpt-5.6-terra, codex, attempt 1, 617s) + review fix fe3561614b (real-clock assertion tightened). Replaces the first, rejected delivery (438c492521).
+- Validation: merge-tier 99 passed on the delivery; 5 passed on the final HEAD (test_export.py). Artifacts: 3b568f295cde5b177593bd900e5d6d2e0a5c6ecd164cd3d27fe1a3f0a37904a9, 3ab7745f39ad97f7f52e7dba80d2c89e902c2adf7207d0035e9bd54ae597664b. Review: e3769a4fc5a74baa1542f657553e5d21e07d89b0fa4927b394b93f1af7d4e41d. Feedback: coder-feedback:24a316f0bf2e51f75f222f43 (terra, weak assertion), coder-feedback:c8a070acc23bf6bd00971522 (minimax, first attempt placeholder).
+
+### Owner decision — what was done
+
+1. `SQLiteEpisodeBackend.list_reviews(namespace, *, limit=None)`: every `namespace.build_filter()` item applied in SQL against the committed command's namespace before `ORDER BY recorded_at, dedupe_key` and before `LIMIT`; `limit<=0` raises; closed backend fails visibly. `EpisodicMemoryStore.list_reviews` delegates and raises `RuntimeError` when the backend has no such capability (never an empty list).
+2. `export_reviews(*, namespace, destination, store=None, clock=None)` exports what the store holds; `store=None` raises `ValueError`. CLI `export-reviews` resolves the store from the opened toolkit manager and fails visibly (`ClickException`) when episodic memory is not enabled. No placeholder or empty-data path remains.
+3. Smaller issues: reviews are a list keyed by `dedupe_key` (two reviews of one memory version both survive, `record_count` matches); `exported_at` is the real UTC time via an injectable clock; `retry_export` was deleted (a re-run is idempotent; no unbacked backoff claim); the write runs in `asyncio.to_thread` using a unique `mkstemp` file in the destination directory, fsynced, `os.replace`d and removed on failure.
+4. Tests (real temporary SQLite store, reviews committed through `apply_review`): two reviews of one version survive; byte-identical export with an injected clock and a real-time bracket for the default clock; other namespaces excluded; archive replay into a fresh store gives `applied` with the same `apply_revision`, re-applying into the source gives `duplicate` (no double apply) and a re-export has the same review set; write failure leaves no temp file and the store unchanged; missing/incapable store fails with no file written; CLI exports a non-empty archive. Backend tests cover scope-before-limit, deterministic order and closed-backend failure; store tests cover delegation and visible failure.
+
+### Interpretation recorded for the owner
+
+The blueprint signature has no store parameter, but a store cannot be derived from `namespace` and `destination`. `namespace` and `destination` remain the required keyword-only parameters; `store` and `clock` were added as optional keyword-only parameters and the CLI supplies the configured store. Scope uses `MemoryNamespace.build_filter()` semantics (unset dimensions are unconstrained), not literal equality on every dimension.
+
+### AC12 / AC18 — what is met and what is still missing
+
+- **AC12 met:** replay of the exported archive produces one application per review (verified by the duplicate result), and a failed export neither loses nor re-applies reviews.
+- **AC18 met:** no optimizer/fitting code or dependency; the export is deterministic (stable scope, order and bytes for the same evidence and clock).
+- **AC18 NOT fully met — "usable by a later fitting feature":** the SQLite review log persists only the validated `ReviewCommand` plus `apply_revision` and `recorded_at`. The FSRS grade, the before/after `MemoryState` and the `parameter_id` are never stored, so the archive cannot carry them (and must not invent them), and the memory's error signature that `select_grade` compares is not in the archive either. A fitter cannot reconstruct grades from the archive alone. Needs an owner decision: persist grade + before/after state + parameter_id at `apply_review` time (ReviewCommand/apply_review change plus migration), or retain an episode snapshot for reconstruction. Tracked as issue:cef9e1a8c0e6. The previous gap (no read API) is closed (issue:ca240b187f61, resolved by fe3561614b; unpushed, lands with the FEAT-892 PR).
+
+### Also found while verifying (not part of this task)
+
+TASK-5678 registers the memory command group with an eager module-level import in `knowledge/wiki/cli.py`, so every `wikitoolkit` start imports `parrot.memory`; in the worker sandbox that crashes `wikitoolkit` (navconfig log directory). Tracked as issue:76c09075409e.

@@ -650,7 +650,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "in-progress",
+      "status": "done-with-issues",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -661,9 +661,9 @@
       "parallelism_notes": "Consumes lazy command group and overlapping cli.py from TASK-5678; Consumes durable review/archive source from TASK-5662",
       "assigned_to": null,
       "started_at": "2026-11-16T01:13:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5679-agent-memory-export.md",
-      "verification": null
+      "completed_at": "2026-11-16T01:52:45+00:00",
+      "file": "sdd/tasks/completed/TASK-5679-agent-memory-export.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-5680",
