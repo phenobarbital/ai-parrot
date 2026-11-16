@@ -5,7 +5,7 @@
 **Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
-**Depends-on**: TASK-5661, TASK-5665, TASK-5679, TASK-5702
+**Depends-on**: TASK-5661, TASK-5665, TASK-5679, TASK-5702, TASK-5703
 **Assigned-to**: claude (sdd-fix)
 **Discovered-from**: `issue:2bb5faf7fe99`
 
@@ -249,3 +249,5 @@ get_by_ids = getattr(self._backend, "get_by_ids", None)
 - `started_at` was written together with this note; no separate start commit was made, to keep index conflicts with the
   two other sessions working on FEAT-892 to a minimum.
 - Implemented by Claude through `/sdd-fix`, by hand (no coder seat).
+- Rebased onto TASK-5703 before landing: its `null_dimensions` filter and this task's paging meet in
+  `_fallback_lexical_search`; the paged read uses the filter TASK-5703 builds. `depends_on` gained TASK-5703 for it.
