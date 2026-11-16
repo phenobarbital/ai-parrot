@@ -215,3 +215,17 @@ CancelledError. Use subprocesses for crash/multiprocess checks, never shared pro
 5. Run validation, commit scoped implementation, and finalize with `parrot sdd task finalize`
    using real TaskCompletionEvidence and the exact implementation HEAD. Let finalization own
    the completion note and active-to-completed move; do not fabricate completion evidence.
+
+## Completion Note
+
+- Task: TASK-5678
+- Feature: agent-memory-mixin
+- Implementation SHA: 3d4ef24e71027298d47a084c1e39132a7e3e2516
+- Closed at (UTC): 2026-11-16T02:11:30+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 (rework of the original sol delivery) · Duration: 545s · Tokens: n/a |
