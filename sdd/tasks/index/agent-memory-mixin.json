@@ -861,7 +861,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -870,11 +870,12 @@
       ],
       "parallel": true,
       "parallelism_notes": "Modifies backends/sqlite.py after TASK-5706 (same file, and the ceiling warning sits in the search_similar it rewrites) and dynamics/cli.py created by TASK-5678.",
-      "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5707-sqlite-review-order-scope-and-cli-errors.md",
-      "discovered_from": "issue:5fb1a338c719"
+      "assigned_to": "claude",
+      "started_at": "2026-11-16T10:01:50+00:00",
+      "completed_at": "2026-11-16T10:04:28+00:00",
+      "file": "sdd/tasks/completed/TASK-5707-sqlite-review-order-scope-and-cli-errors.md",
+      "discovered_from": "issue:5fb1a338c719",
+      "verification": "verified"
     }
   ]
 }

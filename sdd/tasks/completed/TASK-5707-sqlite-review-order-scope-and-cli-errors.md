@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-892 — Agent Memory — Unified Integration, User Knowledge and Dynamics
 **Spec**: `sdd/specs/agent-memory-mixin.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: S (1–2h)
 **Depends-on**: TASK-5706, TASK-5678
@@ -172,4 +172,21 @@ except Exception as exc:  # noqa: BLE001 - a command reports its failure, it doe
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+- Task: TASK-5707
+- Feature: agent-memory-mixin
+- Implementation SHA: d64b2eac04
+- Closed at (UTC): 2026-11-16T10:04:28+00:00
+- Resolves: findings (a), (b), (c) and (g) of `issue:5fb1a338c719`
+- Validation: `test_sqlite_backend.py`, `test_operations.py` and `test_export.py` pass (29 tests) in a clean tree of
+  the commit. Each new assertion fails on the previous code: the order test lists `second, third, first`, the scope
+  test gets `applied`, the ceiling test sees no warning and the CLI test gets a raw exception.
+- (b) is consistent with TASK-5703, which keeps review identity on the exact namespace and leaves cross-scope review out
+  of scope. Only `EpisodicMemoryStore` calls `apply_review`, and it already required the exact match.
+- (c) reads one row beyond the ceiling to detect truncation; that row is dropped before scoring.
+- (g) keeps the plain message for `TypeError` / `ValueError` and lets a `click.ClickException` through unchanged.
+- Not done here: findings (d) Redis write atomicity, (e) `HybridBM25Strategy.invalidate`, (f) feedback timestamps,
+  (h) deprecation warnings, (i) unshielded completion and (j) private attribute reads. When this task was filed the
+  files of (d), (e), (f) and (j) were being edited by TASK-5703 and TASK-5704; both have landed since. The six findings
+  are re-filed as one ledger issue with their real files, so `issue:5fb1a338c719` can close on the four fixed here.
+- `started_at` was written together with this note; no separate start commit was made.
+- Implemented by Claude through `/sdd-fix`, by hand (no coder seat).
