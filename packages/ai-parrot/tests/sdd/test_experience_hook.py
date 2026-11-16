@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -38,6 +39,32 @@ def _stub() -> dict[str, object]:
 def _write_triggers(plane: Path) -> None:
     """Publish one bounded trigger map in an isolated plane."""
     (plane / "triggers.json").write_text(json.dumps({"gh": [_stub()]}), encoding="utf-8")
+
+
+def test_hook_prefers_frozen_roots_over_forged_marker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify a frozen hook plane cannot be redirected by a writable Git marker."""
+    frozen_root = tmp_path / "worktree"
+    payload_cwd = frozen_root / "sub" / "nested"
+    payload_cwd.mkdir(parents=True)
+    foreign = tmp_path / "foreign"
+    (foreign / ".git").mkdir(parents=True)
+    (frozen_root / "sub" / ".git").write_text(f"gitdir: {foreign / '.git'}\n", encoding="utf-8")
+    common_dir = tmp_path / "primary" / ".git"
+    expected_plane = common_dir.parent / ".parrot" / "experience"
+    captured: list[Path] = []
+
+    def capture_plane(*args: object, plane_dir: Path, **kwargs: object) -> None:
+        captured.append(plane_dir)
+
+    monkeypatch.setenv(
+        "PARROT_SDD_SANDBOX_ROOTS",
+        os.pathsep.join((str(frozen_root), str(common_dir), str(common_dir.parent))),
+    )
+    monkeypatch.setattr(experience_hook, "_read_payload", lambda: {"cwd": str(payload_cwd)})
+    monkeypatch.setattr(experience_hook, "handle_post", capture_plane)
+
+    assert experience_hook.main(["--host", "claude", "--event", "post"]) == 0
+    assert captured == [expected_plane]
 
 
 def test_hook_envelopes_per_host(tmp_path: Path) -> None:
