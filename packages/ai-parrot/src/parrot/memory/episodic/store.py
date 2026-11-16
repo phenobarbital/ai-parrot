@@ -39,6 +39,7 @@ from .models import (
 from .recall import HybridBM25Strategy, RecallStrategy, episode_state_ref, rank_episodes
 from .reflection import ReflectionEngine
 from .scoring import ImportanceScorer
+from .visibility import recall_scopes, visible_to_scope
 
 logger = logging.getLogger(__name__)
 
@@ -462,7 +463,7 @@ class EpisodicMemoryStore:
         namespace: MemoryNamespace,
         exposure_id: str,
     ) -> MemoryCitation:
-        """Bind in-scope episode versions to one delivered runtime exposure.
+        """Bind visible episode versions, under their recording identities, to a runtime exposure.
 
         Citation is intentionally bookkeeping-only: it does not call the
         review backend and therefore cannot change earned dynamics state.
@@ -485,7 +486,7 @@ class EpisodicMemoryStore:
             raise ValueError("citation must contain between 1 and 64 memory references")
 
         episodes = await self._resolve_episodes(unique_ids, namespace=namespace)
-        refs = tuple(self._episode_ref(episodes[memory_id], namespace=namespace) for memory_id in unique_ids)
+        refs = tuple(self._episode_ref(episodes[memory_id]) for memory_id in unique_ids)
         citation = MemoryCitation(exposure_id=exposure_id, refs=refs)
 
         merge_citation = getattr(self._backend, "merge_citation", None)
@@ -581,7 +582,7 @@ class EpisodicMemoryStore:
         Args:
             memory_ids: Episode identifiers attributed to the verified outcome.
             signal: Trusted runtime or coder outcome evidence.
-            namespace: Trusted runtime namespace for the reviewed episodes.
+            namespace: Trusted requesting namespace, checked against the signal.
             exposure_id: Final-delivery exposure previously bound by :meth:`cite`.
 
         Returns:
@@ -600,13 +601,19 @@ class EpisodicMemoryStore:
         citation = await self.get_citation(exposure_id)
         if citation is None or citation.exposure_id != exposure_id:
             raise ValueError("review scope or delivered exposure is unavailable")
-        cited_refs = {ref.memory_id: ref for ref in citation.refs if ref.namespace == namespace}
+        cited_refs = {
+            ref.memory_id: ref
+            for ref in citation.refs
+            if ref.kind == "episode" and visible_to_scope(ref.namespace, namespace)
+        }
         if any(memory_id not in cited_refs for memory_id in unique_ids):
             raise ValueError("review scope or delivered exposure is unavailable")
         if not signal.can_review:
             return []
 
         episodes = await self._resolve_episodes(unique_ids, namespace=namespace)
+        if any(self._episode_ref(episodes[memory_id]) != cited_refs[memory_id] for memory_id in unique_ids):
+            raise ValueError("review scope or delivered exposure is unavailable")
         apply_review = getattr(self._backend, "apply_review", None)
         if not callable(apply_review):
             return [
@@ -616,6 +623,7 @@ class EpisodicMemoryStore:
 
         receipts: list[ReviewReceipt] = []
         state_changed = False
+        changed_namespaces: list[MemoryNamespace] = []
         for memory_id in unique_ids:
             ref = cited_refs[memory_id]
             episode = episodes[memory_id]
@@ -675,9 +683,14 @@ class EpisodicMemoryStore:
                 )
             if receipt.status == "applied":
                 state_changed = True
+                if ref.namespace not in changed_namespaces:
+                    changed_namespaces.append(ref.namespace)
             receipts.append(receipt)
         if state_changed:
-            await self._invalidate_scope_cache(namespace)
+            if namespace not in changed_namespaces:
+                changed_namespaces.append(namespace)
+            for changed_namespace in changed_namespaces:
+                await self._invalidate_scope_cache(changed_namespace)
         return receipts
 
     async def list_reviews(self, namespace: MemoryNamespace, *, limit: int | None = None) -> list[dict[str, Any]]:
@@ -750,26 +763,27 @@ class EpisodicMemoryStore:
         *,
         namespace: MemoryNamespace,
     ) -> dict[str, EpisodicMemory]:
-        """Resolve exact-scope episodes without distinguishing missing from cross-scope IDs."""
-        namespace_filter = namespace.build_filter()
+        """Resolve visible episodes without distinguishing missing from inaccessible IDs."""
         get_by_ids = getattr(self._backend, "get_by_ids", None)
-        if callable(get_by_ids):
-            episodes = await get_by_ids(memory_ids, namespace_filter)
-        else:
-            count = await self._backend.count(namespace_filter)
-            episodes = await self._backend.get_recent(namespace_filter=namespace_filter, limit=max(1, count))
-        resolved = {
-            episode.episode_id: episode
-            for episode in episodes
-            if episode.episode_id in memory_ids and self._episode_matches_namespace(episode, namespace)
-        }
+        resolved: dict[str, EpisodicMemory] = {}
+        for recall_namespace, null_dimensions in recall_scopes(namespace):
+            namespace_filter = recall_namespace.build_filter(null_dimensions=null_dimensions)
+            if callable(get_by_ids):
+                episodes = await get_by_ids(memory_ids, namespace_filter)
+            else:
+                count = await self._backend.count(namespace_filter)
+                episodes = await self._backend.get_recent(namespace_filter=namespace_filter, limit=max(1, count))
+            for episode in episodes:
+                if episode.episode_id in memory_ids and visible_to_scope(episode, namespace):
+                    resolved[episode.episode_id] = episode
         if any(memory_id not in resolved for memory_id in memory_ids):
             raise ValueError("one or more memory references are unavailable")
         return resolved
 
     @staticmethod
-    def _episode_ref(episode: EpisodicMemory, *, namespace: MemoryNamespace) -> MemoryRef:
+    def _episode_ref(episode: EpisodicMemory) -> MemoryRef:
         """Create the immutable write-once version reference for one episode."""
+        namespace = MemoryNamespace(**{field: getattr(episode, field) for field in MemoryNamespace.model_fields})
         return MemoryRef(namespace=namespace, kind="episode", memory_id=episode.episode_id, content_version="v1")
 
     @staticmethod

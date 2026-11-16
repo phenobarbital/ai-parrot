@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 
 from parrot.memory.dynamics.models import MemoryCitation, MemoryExposure, ReviewSignal
+from parrot.memory.episodic.visibility import visible_to_scope
 from parrot.tools.abstract import ToolResult
 
 from .models import ChatStorageEvidenceRef, MemoryEvent, MemoryRequestScope
@@ -179,10 +180,17 @@ def validate_citation(
     unavailable = "citation scope or delivered exposure is unavailable"
     if citation.exposure_id != exposure.exposure_id or exposure.scope != scope:
         raise ValueError(unavailable)
-    delivered = {ref.canonical_key for ref in exposure.refs}
-    if not citation.refs or any(ref.canonical_key not in delivered for ref in citation.refs):
+    delivered = {ref.canonical_key: ref for ref in exposure.refs}
+    if not citation.refs or any(delivered.get(ref.canonical_key) != ref for ref in citation.refs):
         raise ValueError(unavailable)
-    if any(not _namespace_matches_scope(ref.namespace, scope) for ref in citation.refs):
+    if any(
+        not (
+            visible_to_scope(ref.namespace, scope)
+            if ref.kind == "episode"
+            else _namespace_matches_scope(ref.namespace, scope)
+        )
+        for ref in citation.refs
+    ):
         raise ValueError(unavailable)
     return citation
 

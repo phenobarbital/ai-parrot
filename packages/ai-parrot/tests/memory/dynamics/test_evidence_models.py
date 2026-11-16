@@ -7,6 +7,7 @@ import pytest
 from parrot.memory.agent_memory.models import ChatStorageEvidenceRef, MemoryRequestScope
 from parrot.memory.dynamics.models import (
     CheckedPattern,
+    MemoryCitation,
     MemoryRef,
     ReviewCommand,
     ReviewReceipt,
@@ -133,6 +134,77 @@ def test_receipt_requires_durable_identity() -> None:
             ref_key=command.ref.canonical_key,
             apply_revision=2,
         )
+
+
+@pytest.mark.parametrize(
+    ("recorded", "request_fields", "allowed"),
+    [
+        ({"session_id": "earlier"}, {}, True),
+        ({"user_id": None, "session_id": None}, {}, True),
+        ({"user_id": "other"}, {}, False),
+        ({"tenant_id": "other"}, {}, False),
+        ({"agent_id": "other"}, {}, False),
+        ({"user_id": None, "session_id": "anonymous"}, {}, False),
+        ({"user_id": None, "session_id": "anonymous"}, {"user_id": None, "session_id": "anonymous"}, True),
+        ({"user_id": None, "session_id": "anonymous"}, {"user_id": None, "session_id": "other"}, False),
+        ({"room_id": "other"}, {"room_id": "room"}, False),
+        ({"crew_id": "other"}, {"crew_id": "crew"}, False),
+        ({"model_id": "other"}, {"model_id": "model"}, False),
+    ],
+)
+def test_episode_review_uses_visibility(recorded: dict, request_fields: dict, allowed: bool) -> None:
+    """Episode identity is immutable while admission follows the requesting scope."""
+    scope = _scope().model_copy(update=request_fields)
+    ref = _ref(_scope())
+    ref = ref.model_copy(update={"namespace": ref.namespace.model_copy(update=recorded)})
+    signal = ReviewSignal(
+        outcome_id="visible-outcome",
+        outcome_revision=0,
+        observed_at=datetime(2026, 11, 14, tzinfo=timezone.utc),
+        scope=scope,
+        evidence_ref="coder-review/v1/execution/task/attempt",
+        source="coder_engine",
+        outcome="success",
+        first_attempt=True,
+        correction_count=0,
+        passed_check_ids=("visibility",),
+    )
+    if not allowed:
+        with pytest.raises(ValueError, match="namespace must match"):
+            ReviewCommand(ref=ref, signal=signal, exposure_id="exposure", expected_revision=0)
+        return
+    command = ReviewCommand(ref=ref, signal=signal, exposure_id="exposure", expected_revision=0)
+    assert command.ref == ref
+    assert command.signal.scope == scope
+    assert command.ref.canonical_key == ref.canonical_key
+
+
+def test_mixed_citation_preserves_refs_and_rejects_identity_conflicts() -> None:
+    """Mixed recorded scopes merge; canonical-key collisions cannot hide altered model scope."""
+    ref = _ref(_scope())
+    old = ref.model_copy(update={"namespace": ref.namespace.model_copy(update={"session_id": "old"})})
+    first = MemoryCitation(exposure_id="exposure", refs=(ref,))
+    merged = first.merged_with(MemoryCitation(exposure_id="exposure", refs=(old, ref)))
+    assert merged.refs == (ref, old)
+    forged = ref.model_copy(update={"namespace": ref.namespace.model_copy(update={"model_id": "forged"})})
+    assert forged.canonical_key == ref.canonical_key
+    with pytest.raises(ValueError, match="references are unavailable"):
+        first.merged_with(MemoryCitation(exposure_id="exposure", refs=(forged,)))
+    foreign = ref.model_copy(update={"namespace": ref.namespace.model_copy(update={"tenant_id": "foreign"})})
+    with pytest.raises(ValueError, match="references are unavailable"):
+        first.merged_with(MemoryCitation(exposure_id="exposure", refs=(foreign,)))
+
+
+def test_brain_review_still_requires_exact_request_scope() -> None:
+    """Episode visibility never widens brain review admission."""
+    ref = MemoryRef(
+        namespace=_ref(_scope()).namespace.model_copy(update={"session_id": "old"}),
+        kind="brain",
+        memory_id="page",
+        content_version="a" * 40,
+    )
+    with pytest.raises(ValueError, match="namespace must match"):
+        ReviewCommand(ref=ref, signal=_signal(_scope()), exposure_id="exposure", expected_revision=0)
 
 
 def test_checked_pattern_is_not_proof() -> None:

@@ -426,8 +426,19 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
                 current_revision = int(state_row[0]) if state_row is not None else 0
 
                 latest_cursor = await database.execute(
-                    "SELECT MAX(outcome_revision) FROM reviews WHERE outcome_id = ? AND ref_key = ?",
-                    (command.signal.outcome_id, ref_key),
+                    "SELECT MAX(outcome_revision) FROM reviews WHERE outcome_id = ? AND ref_key = ? "
+                    "AND json_extract(payload, '$.signal.scope.tenant_id') IS ? "
+                    "AND json_extract(payload, '$.signal.scope.agent_id') IS ? "
+                    "AND json_extract(payload, '$.signal.scope.user_id') IS ? "
+                    "AND json_extract(payload, '$.signal.scope.session_id') IS ?",
+                    (
+                        command.signal.outcome_id,
+                        ref_key,
+                        command.signal.scope.tenant_id,
+                        command.signal.scope.agent_id,
+                        command.signal.scope.user_id,
+                        command.signal.scope.session_id,
+                    ),
                 )
                 latest_row = await latest_cursor.fetchone()
                 latest_revision = latest_row[0] if latest_row is not None else None

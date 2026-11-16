@@ -13,6 +13,7 @@ from typing import Literal
 
 from parrot.memory.agent_memory.models import ChatStorageEvidenceRef, MemoryRequestScope
 from parrot.memory.episodic.models import MemoryNamespace
+from parrot.memory.episodic.visibility import visible_to_scope
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 FSRS6_REFERENCE = "fsrs-6@v6.3.2:9446cb06605c597a063aeee49f7d188d42e34dc2"
@@ -299,14 +300,21 @@ class MemoryCitation(BaseModel):
             A citation holding this citation's references followed by the new ones.
 
         Raises:
-            ValueError: If the exposures or namespaces differ, or the merge exceeds 64 references.
+            ValueError: If exposure, owner or reference identity conflicts, or the merge exceeds 64 references.
         """
         if other.exposure_id != self.exposure_id:
             raise ValueError("one or more memory references are unavailable")
         every_ref = (*self.refs, *other.refs)
-        if any(ref.namespace != every_ref[0].namespace for ref in every_ref):
+        owners = {(ref.namespace.tenant_id, ref.namespace.agent_id) for ref in every_ref}
+        if len(owners) > 1:
             raise ValueError("one or more memory references are unavailable")
-        known = {ref.canonical_key for ref in self.refs}
+        if any(ref.kind != "episode" for ref in every_ref) and any(
+            ref.namespace != every_ref[0].namespace for ref in every_ref
+        ):
+            raise ValueError("one or more memory references are unavailable")
+        known = {ref.canonical_key: ref for ref in self.refs}
+        if any(ref.canonical_key in known and known[ref.canonical_key] != ref for ref in other.refs):
+            raise ValueError("one or more memory references are unavailable")
         combined = (*self.refs, *(ref for ref in other.refs if ref.canonical_key not in known))
         if len(combined) > 64:
             raise ValueError("citation must contain at most 64 memory references")
@@ -407,17 +415,21 @@ class ReviewCommand(BaseModel):
 
     @model_validator(mode="after")
     def _validate_scope_and_outcome(self) -> "ReviewCommand":
-        if (
+        exact_scope = (
             self.ref.namespace.tenant_id,
             self.ref.namespace.agent_id,
             self.ref.namespace.user_id,
             self.ref.namespace.session_id,
-        ) != (
+        ) == (
             self.signal.scope.tenant_id,
             self.signal.scope.agent_id,
             self.signal.scope.user_id,
             self.signal.scope.session_id,
-        ):
+        )
+        admitted = (
+            visible_to_scope(self.ref.namespace, self.signal.scope) if self.ref.kind == "episode" else exact_scope
+        )
+        if not admitted:
             raise ValueError("review ref namespace must match the signal scope")
         if not self.signal.can_review:
             raise ValueError("cancelled and incomplete outcomes cannot produce a review")
