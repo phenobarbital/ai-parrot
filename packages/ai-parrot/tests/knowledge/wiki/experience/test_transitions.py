@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
 
+import pytest
+
+from parrot.knowledge.wiki.experience.fastpath import failure_signature, lesson_id_for, normalize_error
+from parrot.knowledge.wiki.experience import transitions
 from parrot.knowledge.wiki.experience.transitions import on_outcome
 
 
@@ -267,3 +272,115 @@ def test_codex_occurrence_aliases(tmp_path: Path) -> None:
 
     failures = [event for event in _events(plane) if event["kind"] == "failure.observed"]
     assert [event["observation_id"] for event in failures] == ["hook-one", "hook-two"]
+
+
+def test_on_outcome_redacts_and_bounds_persisted_text(tmp_path: Path) -> None:
+    """Verify failure events and pending state redact and bound host text."""
+    plane = tmp_path / "plane"
+    secret = "ghp_thisisasecretvaluethatmustnotpersist"
+    command = f"gh pr edit 1 -H 'Authorization: Bearer {secret}' GH_TOKEN={secret} " + "x" * 600
+    error = f"Authorization: Bearer {secret} TOKEN={secret} " + "failure " * 1000
+
+    on_outcome(
+        plane,
+        session="safe",
+        command=command,
+        outcome=Outcome(False, error, "failure"),
+        seat="codex",
+        matcher=lambda *_: None,
+    )
+
+    failure = _events(plane)[0]["payload"]
+    session = next((plane / "sessions").glob("*.json"))
+    stored = session.read_text(encoding="utf-8")
+    assert secret not in json.dumps(failure)
+    assert secret not in stored
+    assert len(failure["error_signature"]) <= 300
+    assert len(failure["error_excerpt"]) <= 400
+    pending = json.loads(stored)["pending"][0]
+    assert len(pending["command"]) <= 300
+    assert len(pending["error"]) <= 400
+
+
+def test_paired_lesson_identity_uses_full_error_signature(tmp_path: Path) -> None:
+    """Verify pairing retains identity derived from the full failure error."""
+    plane = tmp_path / "plane"
+    error = "permission denied " + "context " * 1000
+    expected = lesson_id_for(failure_signature("gh", "pr edit", error))
+
+    on_outcome(
+        plane,
+        session="identity",
+        command="gh pr edit 1",
+        outcome=Outcome(False, error, "failure"),
+        seat="codex",
+        matcher=lambda *_: None,
+    )
+    on_outcome(
+        plane,
+        session="identity",
+        command="gh pr edit 1 --base dev",
+        outcome=Outcome(True, observation_id="retry"),
+        seat="codex",
+        matcher=lambda *_: None,
+    )
+
+    recorded = next(event for event in _events(plane) if event["kind"] == "lesson.recorded")
+    assert recorded["lesson_id"] == expected
+    assert recorded["payload"]["draft"]["trigger"]["error_signature"] == normalize_error(error)
+
+
+def test_long_session_state_stays_bounded(tmp_path: Path) -> None:
+    """Verify bounded session tracking leaves room for later advisory output."""
+    plane = tmp_path / "plane"
+    for index in range(400):
+        on_outcome(
+            plane,
+            session="long",
+            command="gh pr edit 1",
+            outcome=Outcome(False, f"permission denied {index}", f"observation-{index}"),
+            seat="codex",
+            matcher=lambda *_: None,
+        )
+
+    advice = on_outcome(
+        plane,
+        session="long",
+        command="gh pr edit 1",
+        outcome=Outcome(False, "permission denied", "advice-observation"),
+        seat="codex",
+        matcher=_matcher(_stub()),
+    )
+
+    session = next((plane / "sessions").glob("*.json"))
+    assert session.stat().st_size < 64 * 1024
+    assert advice is not None
+    state = json.loads(session.read_text(encoding="utf-8"))
+    assert len(state["seen_observations"]) <= 128
+    assert len(state["observation_aliases"]) <= 256
+    assert len(state["command_occurrences"]) <= 128
+    assert len(state["pending"]) <= 32
+
+
+def test_refused_session_write_appends_no_events(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify buffered events are dropped when the session write is refused."""
+    plane = tmp_path / "plane"
+
+    def refuse_write(_plane: Path, _session: str, mutate: Callable[[dict], dict]) -> None:
+        mutate({})
+        return None
+
+    monkeypatch.setattr(transitions, "update_session", refuse_write)
+
+    assert (
+        on_outcome(
+            plane,
+            session="refused",
+            command="gh pr edit 1",
+            outcome=Outcome(False, "permission denied", "failure"),
+            seat="codex",
+            matcher=lambda *_: None,
+        )
+        is None
+    )
+    assert not (plane / "events.jsonl").exists()
