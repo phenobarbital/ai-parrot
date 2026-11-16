@@ -157,3 +157,26 @@ async def test_match_failure_never_refreshes(tmp_path: Path, monkeypatch: pytest
 
     monkeypatch.setattr(service.index, "_snapshot", unavailable_snapshot)
     assert await service.list_lessons() == []
+
+
+@pytest.mark.asyncio
+async def test_rebuild_publishes_hook_knobs_from_project_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify the service's non-default config is published for the stdlib hook after rebuild."""
+    service, _, plane = _service(tmp_path, monkeypatch)
+    service.config.advice_cooldown_seconds = 7
+    service.config.max_session_pending = 3
+    service.config.max_transcript_tail_bytes = 2048
+    service.config.pairing_excluded_executables = ["make"]
+    assert service.index is not None
+    service.index.config = service.config
+
+    await service.record(_draft("gh", "knob error", "use knob"), session="a", source="authored")
+    await service.refresh()
+
+    from parrot.knowledge.wiki.experience.fastpath import load_hook_limits
+
+    limits = load_hook_limits(plane)
+    assert limits["advice_cooldown_seconds"] == 7
+    assert limits["max_session_pending"] == 3
+    assert limits["max_transcript_tail_bytes"] == 2048
+    assert tuple(limits["pairing_excluded_executables"]) == ("make",)

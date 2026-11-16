@@ -191,3 +191,88 @@ def test_worktree_uses_primary_plane(tmp_path: Path) -> None:
     )
 
     assert fastpath.resolve_plane_dir(worktree) == primary / fastpath.EXPERIENCE_DIR
+
+
+def test_append_event_never_raises(tmp_path: Path) -> None:
+    """Verify unserializable, oversize and unwritable appends return False instead of raising."""
+    plane = tmp_path / "plane"
+    blocker = tmp_path / "blocker"
+    blocker.write_text("not a directory", encoding="utf-8")
+
+    assert fastpath.append_event(plane, {"bad": object()}) is False
+    assert fastpath.append_event(plane, {"bad": {1, 2}}) is False
+    assert fastpath.append_event(blocker / "plane", {"event_id": "x"}) is False
+    assert fastpath.append_event(plane, {"text": "x" * (fastpath.MAX_EVENT_BYTES + 1)}) is False
+    assert not (plane / fastpath.EVENTS_FILE).exists()
+
+
+def test_session_file_name_is_hashed(tmp_path: Path) -> None:
+    """Verify a hostile session key maps to one stable hashed single-component file name."""
+    plane = tmp_path / "plane"
+    hostile = "../../etc/passwd/../session"
+    path = fastpath.session_file(plane, hostile)
+
+    assert path.parent == plane / fastpath.SESSIONS_DIR
+    assert path.name != hostile
+    assert "/" not in path.name and ".." not in path.name
+    assert path.suffix == ".json"
+    assert len(path.stem) == 16 and all(char in "0123456789abcdef" for char in path.stem)
+    assert path == fastpath.session_file(plane, hostile)
+    assert path != fastpath.session_file(plane, hostile + "x")
+
+
+def test_load_hook_limits_defaults_and_published_values(tmp_path: Path) -> None:
+    """Verify hook limits fall back to defaults and accept only bounded, validated values."""
+    plane = tmp_path / "plane"
+    plane.mkdir()
+    defaults = fastpath.load_hook_limits(plane)
+    assert defaults["advice_cooldown_seconds"] == 600
+    assert defaults["max_session_pending"] == 32
+
+    (plane / "fastpath.json").write_text(
+        json.dumps(
+            {
+                "inject_min_score": 0.8,
+                "advice_cooldown_seconds": 5,
+                "max_session_pending": 3,
+                "max_transcript_tail_bytes": 4096,
+                "pairing_excluded_executables": ["make"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    limits = fastpath.load_hook_limits(plane)
+    assert limits["inject_min_score"] == 0.8
+    assert limits["advice_cooldown_seconds"] == 5
+    assert limits["max_session_pending"] == 3
+    assert limits["max_transcript_tail_bytes"] == 4096
+    assert tuple(limits["pairing_excluded_executables"]) == ("make",)
+
+    (plane / "fastpath.json").write_text(
+        json.dumps(
+            {
+                "inject_min_score": 7,
+                "advice_cooldown_seconds": -1,
+                "max_session_pending": True,
+                "max_transcript_tail_bytes": 10**12,
+                "pairing_excluded_executables": [1],
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert fastpath.load_hook_limits(plane) == defaults
+    (plane / "fastpath.json").write_text("{broken", encoding="utf-8")
+    assert fastpath.load_hook_limits(plane) == defaults
+
+
+def test_is_repo_local_command_rule(tmp_path: Path) -> None:
+    """Verify scoped, relative and repository-contained absolute commands route to the repo tier."""
+    root = tmp_path / "repo"
+    assert fastpath.is_repo_local_command(root, "gh", ["src/a.py"]) is True
+    assert fastpath.is_repo_local_command(root, "./scripts/check") is True
+    assert fastpath.is_repo_local_command(root, "../tool") is True
+    assert fastpath.is_repo_local_command(root, str(root / "bin" / "tool") + " --flag") is True
+    assert fastpath.is_repo_local_command(root, "/usr/bin/gh") is False
+    assert fastpath.is_repo_local_command(root, str(root / "bin" / "tool")) is True
+    assert fastpath.is_repo_local_command(None, str(root / "bin" / "tool")) is False
+    assert fastpath.is_repo_local_command(root, "gh") is False

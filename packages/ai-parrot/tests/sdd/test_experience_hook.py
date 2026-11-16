@@ -274,3 +274,173 @@ def test_portable_claude_hook_stands_down_in_isolated_session(
 
     assert experience_hook.main(argv) == 0
     assert bool(reads) is runs
+
+
+def _claude_payload(command: str = "gh pr edit 12", **extra: object) -> dict[str, object]:
+    """Return a Claude Bash callback payload."""
+    return {"session_id": "s", "tool_name": "Bash", "tool_input": {"command": command}, **extra}
+
+
+def _events(plane: Path) -> list[dict[str, object]]:
+    """Read the plane's events, empty when none were appended."""
+    path = plane / "events.jsonl"
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()] if path.exists() else []
+
+
+def test_hook_outcome_claude() -> None:
+    """Verify Claude success and failure outcomes come from the event, never from guesswork."""
+    payload = _claude_payload(error="denied")
+    assert experience_hook.outcome_of(payload, "claude", "post") == (True, "")
+    assert experience_hook.outcome_of(payload, "claude", "post-failure") == (False, "denied")
+    assert experience_hook.outcome_of(_claude_payload(), "claude", "post-failure") == (False, "")
+    assert experience_hook.outcome_of(payload, "claude", "post-invocation") is None
+
+
+def test_hook_codex_outcome_from_rollout(tmp_path: Path) -> None:
+    """Verify Codex outcomes join the rollout by item id and ignore other records."""
+    rollout = tmp_path / "rollout.jsonl"
+
+    def item(identifier: str, code: int, output: str) -> str:
+        return json.dumps(
+            {
+                "type": "event_msg",
+                "payload": {
+                    "type": "item_completed",
+                    "item": {
+                        "type": "CommandExecution",
+                        "id": identifier,
+                        "status": "completed" if code == 0 else "failed",
+                        "exit_code": code,
+                        "aggregated_output": output,
+                    },
+                },
+            }
+        )
+
+    rollout.write_text("\n".join((item("other", 0, "fine"), item("mine", 3, "boom"), "not json")) + "\n", encoding="utf-8")
+
+    assert experience_hook.codex_outcome(rollout, "mine", max_bytes=65_536) == (False, "boom")
+    assert experience_hook.codex_outcome(rollout, "other", max_bytes=65_536) == (True, "fine")
+    assert experience_hook.codex_outcome(rollout, "missing", max_bytes=65_536) is None
+    assert experience_hook.codex_outcome(tmp_path / "absent.jsonl", "mine", max_bytes=65_536) is None
+
+
+def test_hook_unknown_outcome_records_nothing(tmp_path: Path) -> None:
+    """Verify an unresolvable outcome appends no event and creates no session."""
+    plane = _plane(tmp_path)
+    _write_triggers(plane)
+    codex = _claude_payload(tool_use_id="missing", transcript_path=str(tmp_path / "absent.jsonl"))
+
+    assert experience_hook.handle_post(codex, host="codex", event="post", plane_dir=plane) is None
+    assert experience_hook.handle_post(_claude_payload(), host="claude", event="post-invocation", plane_dir=plane) is None
+    assert _events(plane) == []
+    assert not (plane / "sessions").exists()
+
+
+def test_hook_post_failure_injects_candidate_labeled(tmp_path: Path) -> None:
+    """Verify a matching failure injects advice labelled as an unverified candidate."""
+    plane = _plane(tmp_path)
+    _write_triggers(plane)
+    payload = _claude_payload(tool_use_id="call-1", error="denied")
+
+    advice = experience_hook.handle_post(payload, host="claude", event="post-failure", plane_dir=plane)
+
+    assert advice is not None
+    assert advice.startswith("[experience:pit-hook candidate]")
+    assert "not an instruction" in advice
+    assert [event["kind"] for event in _events(plane)] == ["failure.observed", "lesson.injected"]
+
+
+def test_hook_advice_cooldown(tmp_path: Path) -> None:
+    """Verify the published advice cooldown suppresses a repeat injection of the same lesson."""
+    plane = _plane(tmp_path)
+    _write_triggers(plane)
+    (plane / "fastpath.json").write_text(json.dumps({"advice_cooldown_seconds": 3600}), encoding="utf-8")
+
+    def fail(identifier: str) -> str | None:
+        return experience_hook.handle_post(
+            _claude_payload(tool_use_id=identifier, error="denied"), host="claude", event="post-failure", plane_dir=plane
+        )
+
+    assert fail("one") is not None
+    assert fail("two") is None  # refutes the open injection
+    assert fail("three") is None  # re-injected inside the published cooldown
+
+
+def test_hook_published_knobs_change_hook_behaviour(tmp_path: Path) -> None:
+    """Verify a rebuilt non-default fastpath.json changes cooldown, pending bound and exclusions."""
+    plane = _plane(tmp_path)
+    _write_triggers(plane)
+    (plane / "fastpath.json").write_text(
+        json.dumps({"advice_cooldown_seconds": 1, "max_session_pending": 1, "pairing_excluded_executables": ["make"]}),
+        encoding="utf-8",
+    )
+
+    for index in range(3):
+        experience_hook.handle_post(
+            _claude_payload("make test", tool_use_id=f"m{index}", error="boom"),
+            host="claude",
+            event="post-failure",
+            plane_dir=plane,
+        )
+    assert _events(plane) == []  # "make" is excluded by the published knob
+
+    for index in range(3):
+        experience_hook.handle_post(
+            _claude_payload(f"gh pr list {index}", tool_use_id=f"g{index}", error=f"boom {index}"),
+            host="claude",
+            event="post-failure",
+            plane_dir=plane,
+        )
+    state = json.loads(next((plane / "sessions").glob("*.json")).read_text(encoding="utf-8"))
+    assert len(state["pending"]) == 1  # bounded by the published max_session_pending
+
+
+def test_hook_never_rebuilds_or_graduates(tmp_path: Path) -> None:
+    """Verify the hook writes only events and sessions, never the published index or graduation files."""
+    plane = _plane(tmp_path)
+    _write_triggers(plane)
+    before = (plane / "triggers.json").read_bytes()
+
+    experience_hook.handle_post(
+        _claude_payload(tool_use_id="c", error="denied"), host="claude", event="post-failure", plane_dir=plane
+    )
+
+    assert (plane / "triggers.json").read_bytes() == before
+    assert {entry.name for entry in plane.iterdir()} <= {"triggers.json", "events.jsonl", "sessions"}
+    assert not (plane / "fastpath.json").exists()
+
+
+def test_hook_never_blocks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify every failure path exits zero so an advisory hook cannot block its host."""
+
+    def explode(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(experience_hook, "_read_payload", explode)
+    assert experience_hook.main(["--host", "claude", "--event", "post"]) == 0
+    assert experience_hook.main(["--host", "unknown", "--event", "post"]) == 0
+    assert experience_hook.main([]) == 0
+
+    monkeypatch.setattr(experience_hook, "_read_payload", lambda: {"cwd": str(tmp_path / "nowhere")})
+    monkeypatch.setattr(experience_hook, "handle_post", explode)
+    assert experience_hook.main(["--host", "claude", "--event", "post"]) == 0
+
+
+def test_hook_agy_unreadable_transcript_defers_to_replay(tmp_path: Path) -> None:
+    """Verify an unreadable agy transcript records nothing and leaves the step for replay."""
+    plane = _plane(tmp_path)
+    _write_triggers(plane)
+    post = {
+        "conversationId": "agy-session",
+        "stepIdx": 4,
+        "toolCall": {"name": "run_command", "args": {"CommandLine": "gh pr edit 12"}},
+    }
+
+    assert experience_hook.handle_post(post, host="agy", event="post", plane_dir=plane) is None
+    advice = experience_hook.handle_post_invocation(
+        {"conversationId": "agy-session", "transcriptPath": str(tmp_path / "missing.jsonl")}, plane_dir=plane
+    )
+
+    assert advice is None
+    assert _events(plane) == []

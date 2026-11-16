@@ -384,3 +384,130 @@ def test_refused_session_write_appends_no_events(tmp_path: Path, monkeypatch: py
         is None
     )
     assert not (plane / "events.jsonl").exists()
+
+
+def _fail_then_ok(plane: Path, session: str, command: str, limits: dict | None = None) -> None:
+    """Record one failure then one same-family success so a paired lesson is drafted."""
+    on_outcome(
+        plane,
+        session=session,
+        command=command,
+        outcome=Outcome(False, "permission denied", f"{session}-fail"),
+        seat="codex",
+        matcher=lambda *_: None,
+        limits=limits,
+    )
+    on_outcome(
+        plane,
+        session=session,
+        command=command + " --retry",
+        outcome=Outcome(True, observation_id=f"{session}-ok"),
+        seat="codex",
+        matcher=lambda *_: None,
+        limits=limits,
+    )
+
+
+def test_hook_advice_cooldown(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify the published cooldown suppresses repeat advice, then lets it through once elapsed."""
+    plane = tmp_path / "plane"
+    matcher = _matcher(_stub())
+    clock = {"now": 1_000.0}
+    monkeypatch.setattr(transitions.time, "time", lambda: clock["now"])
+
+    def fail(observation: str) -> str | None:
+        return on_outcome(
+            plane,
+            session="cool",
+            command="gh pr edit 1",
+            outcome=Outcome(False, "permission denied", observation),
+            seat="codex",
+            matcher=matcher,
+            limits={"advice_cooldown_seconds": 30},
+        )
+
+    assert fail("one") is not None  # injected, advice emitted
+    assert fail("two") is None  # trigger-family failure refutes the open injection
+    assert fail("three") is None  # re-injected inside the cooldown window: no advice
+    clock["now"] += 31
+    assert fail("four") is None  # refutes again
+    assert fail("five") is not None  # cooldown elapsed
+
+
+def test_hook_published_limits_change_behaviour(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify non-default cooldown, pending bound and excluded executables take effect."""
+    clock = {"now": 1_000.0}
+    monkeypatch.setattr(transitions.time, "time", lambda: clock["now"])
+    matcher = _matcher(_stub())
+
+    def run(plane: Path, limits: dict | None) -> list[str | None]:
+        results = []
+        for index in range(5):
+            results.append(
+                on_outcome(
+                    plane,
+                    session="limits",
+                    command="gh pr edit 1",
+                    outcome=Outcome(False, "permission denied", f"obs-{index}"),
+                    seat="codex",
+                    matcher=matcher,
+                    limits=limits,
+                )
+            )
+            clock["now"] += 100
+        return results
+
+    default_results = run(tmp_path / "default", None)
+    short_results = run(tmp_path / "short", {"advice_cooldown_seconds": 10})
+    assert sum(result is not None for result in short_results) > sum(result is not None for result in default_results)
+
+    bounded = tmp_path / "bounded"
+    run(bounded, {"max_session_pending": 2})
+    state = json.loads(next((bounded / "sessions").glob("*.json")).read_text(encoding="utf-8"))
+    assert len(state["pending"]) <= 2
+
+    excluded_plane = tmp_path / "excluded"
+    on_outcome(
+        excluded_plane,
+        session="ex",
+        command="make test",
+        outcome=Outcome(False, "boom", "make-one"),
+        seat="codex",
+        matcher=lambda *_: None,
+        limits={"pairing_excluded_executables": ["make"]},
+    )
+    assert _events(excluded_plane) == []
+    on_outcome(
+        tmp_path / "not-excluded",
+        session="ex",
+        command="make test",
+        outcome=Outcome(False, "boom", "make-one"),
+        seat="codex",
+        matcher=lambda *_: None,
+    )
+    assert [event["kind"] for event in _events(tmp_path / "not-excluded")] == ["failure.observed"]
+
+
+def test_paired_lesson_tier_matches_is_repo_local(tmp_path: Path) -> None:
+    """Verify paired lessons route to the same tier as the shared repo-local rule."""
+    from parrot.knowledge.wiki.experience.fastpath import is_repo_local_command
+
+    root = tmp_path / "repo"
+    plane = root / ".parrot" / "experience"
+    for name, command in (
+        ("relative", "./scripts/check build"),
+        ("inside", f"{root}/bin/tool build"),
+        ("outside", "/usr/bin/gh pr edit 1"),
+        ("plain", "gh pr edit 1"),
+    ):
+        _fail_then_ok(plane, name, command)
+        recorded = [
+            event
+            for event in _events(plane)
+            if event["kind"] == "lesson.recorded" and event["session"] == name
+        ]
+        assert len(recorded) == 1
+        expected = "repo" if is_repo_local_command(root, command) else "global"
+        assert recorded[0]["payload"]["tier"] == expected
+    tiers = {event["session"]: event["payload"]["tier"] for event in _events(plane) if event["kind"] == "lesson.recorded"}
+    assert tiers == {"relative": "repo", "inside": "repo", "outside": "global", "plain": "global"}

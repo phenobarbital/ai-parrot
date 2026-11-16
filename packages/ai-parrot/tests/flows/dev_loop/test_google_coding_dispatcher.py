@@ -901,3 +901,18 @@ async def test_create_process_env_is_optional_and_copies_environ(dispatcher, mon
     assert captured[1]["env"]["PARROT_EXPERIENCE_SESSION"] == "s"
     assert captured[1]["env"]["AGY_REPLAY_PROBE"] == "1"
     assert "PARROT_EXPERIENCE_SESSION" not in __import__("os").environ
+
+
+def test_agy_tool_step_outcomes_collected() -> None:
+    from parrot.flows.dev_loop.dispatchers.google_coding import _AgyExperienceCollector
+
+    collector = _AgyExperienceCollector()
+    collector.observe(_done_run_command(1, "ls", _header(0, "ok")))
+    collector.observe(_done_run_command(2, "false", _header(1, "denied")))
+    collector.observe(_done_run_command(3, "read", None, state="ACTIVE"))
+    outcomes = collector.finish()
+
+    assert [(o.command, o.ok, o.observation_id) for o in outcomes] == [
+        ("ls", True, f"{_CONV}:1"),
+        ("false", False, f"{_CONV}:2"),
+    ]
