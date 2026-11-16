@@ -218,8 +218,12 @@ class ContextAssembler:
                 packed_sections["episodic_recall"] = ""
                 return 0
 
-            warning_candidates = [candidate for candidate in section_candidates["episodic"] if candidate.lane == "warning"]
-            recall_candidates = [candidate for candidate in section_candidates["episodic"] if candidate.lane == "recall"]
+            warning_candidates = [
+                candidate for candidate in section_candidates["episodic"] if candidate.lane == "warning"
+            ]
+            recall_candidates = [
+                candidate for candidate in section_candidates["episodic"] if candidate.lane == "recall"
+            ]
             ordered_candidates = warning_candidates + recall_candidates
             warning_text = ""
             recall_text = ""
@@ -256,11 +260,15 @@ class ContextAssembler:
             user_tokens = pack_with_budget("user_knowledge", user_budget)
             tokens_used += user_tokens
 
-        sections = ("episodic", "skills", "brain") if self.config.user_priority == "high" else (
-            "episodic",
-            "skills",
-            "brain",
-            "user_knowledge",
+        sections = (
+            ("episodic", "skills", "brain")
+            if self.config.user_priority == "high"
+            else (
+                "episodic",
+                "skills",
+                "brain",
+                "user_knowledge",
+            )
         )
         for section in sections:
             if section not in weights:
@@ -275,9 +283,7 @@ class ContextAssembler:
 
         ordered_sections = ("episodic", "skills", "brain", "user_knowledge")
         delivered_refs = [
-            self._candidate_ref(candidate)
-            for section in ordered_sections
-            for candidate in accepted_candidates[section]
+            self._candidate_ref(candidate) for section in ordered_sections for candidate in accepted_candidates[section]
         ]
         memory_refs: list[MemoryRef] = [
             candidate.memory_ref

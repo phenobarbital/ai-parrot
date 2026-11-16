@@ -147,8 +147,12 @@ def test_user_priority_high_reserves_ceiling_before_weighted_sections() -> None:
     )
     candidates = [
         _candidate(scope, memory_id="episode", text="E" * 1004),
-        _candidate(scope, memory_id="large-profile", text="L" * 500, source="user", candidate_type="user", relevance=1.0),
-        _candidate(scope, memory_id="small-profile", text="S" * 432, source="user", candidate_type="user", relevance=0.5),
+        _candidate(
+            scope, memory_id="large-profile", text="L" * 500, source="user", candidate_type="user", relevance=1.0
+        ),
+        _candidate(
+            scope, memory_id="small-profile", text="S" * 432, source="user", candidate_type="user", relevance=0.5
+        ),
     ]
 
     normal = ContextAssembler(MemoryConfig(**common, user_priority="normal")).assemble_candidates(
@@ -183,7 +187,9 @@ def test_user_priority_modes_agree_when_weighted_share_reaches_ceiling() -> None
         _candidate(scope, memory_id="profile", text="P" * 1600, source="user", candidate_type="user"),
     ]
 
-    normal = ContextAssembler(MemoryConfig(**config, user_priority="normal")).assemble_candidates(candidates, scope=scope)
+    normal = ContextAssembler(MemoryConfig(**config, user_priority="normal")).assemble_candidates(
+        candidates, scope=scope
+    )
     high = ContextAssembler(MemoryConfig(**config, user_priority="high")).assemble_candidates(candidates, scope=scope)
 
     assert normal.model_dump() == high.model_dump()
