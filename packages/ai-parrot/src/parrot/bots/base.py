@@ -1063,7 +1063,7 @@ class BaseBot(AbstractBot):
     ) -> str:
         """Hook called before the LLM call in ask().
 
-        Override in mixins (e.g. EpisodicMemoryMixin) to inject additional
+        Override in mixins (e.g. AgentMemoryMixin) to inject additional
         context into the system prompt.
 
         Returns:
@@ -1082,7 +1082,7 @@ class BaseBot(AbstractBot):
     ) -> None:
         """Hook called after ask() produces a successful response.
 
-        Override in mixins (e.g. EpisodicMemoryMixin) to record episodes
+        Override in mixins (e.g. AgentMemoryMixin) to record episodes
         or perform other post-response processing. Called fire-and-forget.
         """
 

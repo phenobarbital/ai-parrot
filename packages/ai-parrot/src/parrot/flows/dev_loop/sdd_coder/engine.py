@@ -3337,6 +3337,9 @@ class SddCoderEngine:
         )
         review_execution_id = self._execution_for(branch)
         if review_execution_id is not None and passed_check_ids:
+            if len(self._review_checks) >= 1024:
+                # Bounded: only recent attempts are ever reviewed, so drop the oldest entry.
+                self._review_checks.pop(next(iter(self._review_checks)))
             self._review_checks[self._attempt_uid_for(task.task_id, branch)] = (review_execution_id, passed_check_ids)
         return TaskResult(task_id=task.task_id, outcome="merged", branch=branch, worktree_path=path, lint=lint_report)
 
