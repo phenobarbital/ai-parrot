@@ -56,7 +56,7 @@ SELECT
           ON attribute.attrelid = default_value.adrelid AND attribute.attnum = default_value.adnum
         WHERE default_value.adrelid = 'navigator.service_scheduler'::regclass
           AND attribute.attname = 'schedule_id'
-    ) ~ '(^|\\.)((gen_random_uuid)|(uuid_generate_v4))\\(\\)$'
+    ) ~ '(^|\.)((gen_random_uuid)|(uuid_generate_v4))\(\)$'
     AND (
         SELECT pg_catalog.pg_get_expr(default_value.adbin, default_value.adrelid)
         FROM pg_catalog.pg_attrdef default_value
