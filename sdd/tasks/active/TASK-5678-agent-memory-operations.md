@@ -54,12 +54,11 @@ except the separately authorized scoped forget API; unrelated refactoring.
 
 ## Files to Create / Modify
 
+The original delivery (toolkit, dynamics CLI, operations tests) is merged and unchanged by this rework; only these two files change:
+
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot/src/parrot/memory/agent_memory/toolkit.py` | CREATE | Core toolkit as explicitly authorized by user |
-| `packages/ai-parrot/src/parrot/memory/dynamics/cli.py` | CREATE | Lazy registration of status/recall/cite/review/forget/sync/import/export |
 | `packages/ai-parrot/src/parrot/knowledge/wiki/cli.py` | MODIFY | Attach the memory command group lazily (no import of parrot.memory at startup) |
-| `packages/ai-parrot/tests/memory/agent_memory/test_operations.py` | CREATE | Explicit YAML, lazy resources, CLI scope and stdout purity |
 | `packages/ai-parrot/tests/knowledge/wiki/test_cli_lazy_memory.py` | CREATE | Fresh-subprocess regression: wikitoolkit commands do not import parrot.memory |
 
 ## Codebase Contract
@@ -96,9 +95,7 @@ import pytest
 
 ### Does NOT Exist
 
-- `packages/ai-parrot/src/parrot/memory/agent_memory/toolkit.py` is a new delivery path, absent on the verified base.
-- `packages/ai-parrot/src/parrot/memory/dynamics/cli.py` is a new delivery path, absent on the verified base.
-- `packages/ai-parrot/tests/memory/agent_memory/test_operations.py` is a new delivery path, absent on the verified base.
+- `packages/ai-parrot/tests/knowledge/wiki/test_cli_lazy_memory.py` is a new test (absent before this rework).
 - `parrot.memory.agent.mixin` does not exist; `memory/agent.py` is the existing AnswerMemory compatibility module.
 - Production `BrainService` is a future FEAT-889 contract, not an existing runtime import; never implement its placeholder here.
 - No production optimizer/fitting module is authorized by this feature.
@@ -110,20 +107,8 @@ import pytest
   "schema_version": 1,
   "targets": [
     {
-      "path": "packages/ai-parrot/src/parrot/memory/agent_memory/toolkit.py",
-      "action": "CREATE"
-    },
-    {
-      "path": "packages/ai-parrot/src/parrot/memory/dynamics/cli.py",
-      "action": "CREATE"
-    },
-    {
       "path": "packages/ai-parrot/src/parrot/knowledge/wiki/cli.py",
       "action": "MODIFY"
-    },
-    {
-      "path": "packages/ai-parrot/tests/memory/agent_memory/test_operations.py",
-      "action": "CREATE"
     },
     {
       "path": "packages/ai-parrot/tests/knowledge/wiki/test_cli_lazy_memory.py",
@@ -131,12 +116,7 @@ import pytest
     }
   ],
   "contract_symbols": [
-    "sym:packages/ai-parrot/src/parrot/knowledge/wiki/cli.py#wiki",
-    "sym:packages/ai-parrot/src/parrot/mcp/toolkit_config.py#ToolkitSection",
-    "sym:packages/ai-parrot/src/parrot/tools/toolkit.py#AbstractToolkit",
-    "sym:packages/ai-parrot/src/parrot/tools/toolkit.py#AbstractToolkit._close",
-    "sym:packages/ai-parrot/src/parrot/tools/toolkit.py#AbstractToolkit._ensure_open",
-    "sym:packages/ai-parrot/src/parrot/tools/toolkit.py#AbstractToolkit._open"
+    "sym:packages/ai-parrot/src/parrot/knowledge/wiki/cli.py#wiki"
   ]
 }
 ```
@@ -158,58 +138,6 @@ parrot.memory.agent_memory; do not move it into parrot_tools.
 3. Apply each per-file block and complete its bounded FILL IN items — preserve public contracts outside this task's scope.
 4. Implement the behavioral cases below with real temporary stores where persistence matters — mocks alone cannot prove durability.
 5. Run the narrow validation commands and scoped style checks — do not mark missing backend evidence as a passing persistence test.
-
-### `packages/ai-parrot/src/parrot/memory/agent_memory/toolkit.py` (CREATE)
-
-```python
-"""Explicitly configured core memory toolkit with lazy resource ownership."""
-from typing import Any
-from parrot.tools.toolkit import AbstractToolkit
-from .factory import create_memory_manager
-from .models import AgentMemoryConfig
-
-class AgentMemoryToolkit(AbstractToolkit):
-    """Expose scoped memory operations over the same stores as agents."""
-    def __init__(self, config: dict[str, Any], namespace: dict[str, Any], **kwargs: Any) -> None:
-        """Validate trusted serializable configuration without opening resources."""
-        super().__init__(**kwargs)
-        # FILL IN: validate config/namespace, no model-chosen principal — AC05/AC17.
-
-    async def _open(self) -> None:
-        """Construct configured stores; unwind partially acquired resources on failure."""
-        # FILL IN: create_memory_manager with explicit ownership — AC07/AC17.
-        raise NotImplementedError
-
-    async def _close(self) -> None:
-        """Drain/close owned resources and reset inherited opened state."""
-        # FILL IN: idempotent cleanup then await super()._close() — AC07/AC17.
-        raise NotImplementedError
-
-    async def memory_status(self) -> dict[str, Any]:
-        """Report enabled capabilities, durable pending reviews and degraded state."""
-        # FILL IN: scoped store status without exposing secrets — AC17.
-        raise NotImplementedError
-
-    # FILL IN: typed/docstringed recall/cite/review/forget/sync/import operations — AC17.
-    # Accept evidence references, never model grades; user profile operations disabled by default.
-```
-
-**Why:** The MCP constructor receives serialized kwargs before any async lifecycle; lazy acquisition and inherited close-state reset make reopen reliable.
-
-### `packages/ai-parrot/src/parrot/memory/dynamics/cli.py` (CREATE)
-
-```python
-"""Lazy memory CLI registration; resource acquisition belongs to command execution."""
-import click
-
-def register_memory_commands(group: click.Group) -> None:
-    """Attach status/recall/cite/review/forget/sync/import-feedback/export-reviews commands."""
-    # FILL IN: explicit configuration, async operation bridge, structured status — AC17.
-    # No fitting command/optimizer import; retain existing configured memory target semantics.
-    raise NotImplementedError
-```
-
-**Why:** The MCP constructor receives serialized kwargs before any async lifecycle; lazy acquisition and inherited close-state reset make reopen reliable.
 
 ### `packages/ai-parrot/src/parrot/knowledge/wiki/cli.py` (MODIFY)
 
@@ -251,49 +179,17 @@ inherit the environment; the child prints one JSON line):
    option listed, and `memory_loaded is True` (the group still resolves on demand);
 3. in-process: `"memory" in wiki.commands`.
 
-### `packages/ai-parrot/tests/memory/agent_memory/test_operations.py` (CREATE)
-
-```python
-"""Behavioral acceptance tests for Core AgentMemoryToolkit and lazy CLI operations."""
-import pytest
-
-def test_explicit_yaml_lazy_construct_close_reopen() -> None:
-    """Verify explicit yaml lazy construct close reopen."""
-    # FILL IN: real subject/isolated fixture and observable assertions — task acceptance criteria below.
-    # Use pytest.mark.asyncio and async def for async subject calls; never run paid/shared services.
-    raise NotImplementedError
-
-def test_cli_scope_and_evidence_validation() -> None:
-    """Verify cli scope and evidence validation."""
-    # FILL IN: real subject/isolated fixture and observable assertions — task acceptance criteria below.
-    # Use pytest.mark.asyncio and async def for async subject calls; never run paid/shared services.
-    raise NotImplementedError
-
-def test_jsonrpc_stdout_and_no_optimizer() -> None:
-    """Verify jsonrpc stdout and no optimizer."""
-    # FILL IN: real subject/isolated fixture and observable assertions — task acceptance criteria below.
-    # Use pytest.mark.asyncio and async def for async subject calls; never run paid/shared services.
-    raise NotImplementedError
-```
-
-**Why:** The MCP constructor receives serialized kwargs before any async lifecycle; lazy acquisition and inherited close-state reset make reopen reliable.
-
 ### FILL IN checklist
 
-- [ ] `packages/ai-parrot/src/parrot/memory/agent_memory/toolkit.py` — Core toolkit as explicitly authorized by user; bounded by the acceptance criteria below.
-- [ ] `packages/ai-parrot/src/parrot/memory/dynamics/cli.py` — Lazy registration of status/recall/cite/review/forget/sync/import/export; bounded by the acceptance criteria below.
-- [ ] `packages/ai-parrot/src/parrot/knowledge/wiki/cli.py` — Attach the lazy memory command group; bounded by the acceptance criteria below.
-- [ ] `packages/ai-parrot/tests/memory/agent_memory/test_operations.py` — Explicit YAML, lazy resources, CLI scope and stdout purity; bounded by the acceptance criteria below.
-- [ ] Replace every blueprint-only stub with working behavior; completed implementation files contain no placeholders.
-- [ ] Verify planned imports after dependencies land and refresh contracts on drift.
+- [ ] `wiki/cli.py`: no module-level import of `parrot.memory`; lazy `memory` group attached; behavior of `wikitoolkit memory ...` unchanged.
+- [ ] `test_cli_lazy_memory.py`: fresh-subprocess assertions as described above.
+- [ ] No placeholders; existing `test_operations.py` and `tests/knowledge/wiki/test_cli.py` keep passing.
 
 ## Acceptance Criteria
 
-- [ ] AC17: explicit YAML class_path/kwargs constructs the toolkit synchronously and acquires stores only in _open; close/reopen and partial failure work.
-- [ ] AC05/AC17: all operations use runtime/trusted scope and evidence references, not supplied grades; profile operations are not exposed to coder tooling by default.
-- [ ] AC17/AC18: stdout stays JSON-RPC clean, no implicit registry, no fitting command/dependency, and shared SDD root is resolved independently of worker CWD.
-- [ ] User instruction: AgentMemoryToolkit remains core at parrot.memory.agent_memory; this explicit exception overrides the general concrete-toolkit location convention for this feature.
-- [ ] Rework (issue:76c09075409e): `parrot.memory` is NOT imported when `parrot.knowledge.wiki.cli` is imported or a non-memory wikitoolkit command runs (fresh-subprocess test); `wiki.commands["memory"]` still exists and `wikitoolkit memory ...` behaves as before.
+- [ ] Rework (issue:76c09075409e): `parrot.memory` is NOT imported when `parrot.knowledge.wiki.cli` is imported or a non-memory wikitoolkit command runs (fresh-subprocess test).
+- [ ] `wiki.commands["memory"]` still exists and `wikitoolkit memory ...` (options, sub-commands, `--help`) behaves as before.
+- [ ] The previously delivered behavior still holds: `tests/memory/agent_memory/test_operations.py` and `tests/knowledge/wiki/test_cli.py` pass.
 - [ ] Narrow task checks pass; scoped black/ruff pass for touched Python; validation logs identify skipped external coverage explicitly.
 
 ## Validation Commands
