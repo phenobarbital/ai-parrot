@@ -46,16 +46,23 @@ class ExperienceIndex:
     failed rebuild leaves readers on the preceding generation.
     """
 
-    def __init__(self, plane_dir: Path, *, read_only: bool = False) -> None:
+    def __init__(
+        self,
+        plane_dir: Path,
+        *,
+        config: ExperienceConfig | None = None,
+        read_only: bool = False,
+    ) -> None:
         """Configure the index rooted at ``plane_dir``.
 
         Args:
             plane_dir: Shared repository ``.parrot/experience`` directory.
+            config: Effective project experience configuration.
             read_only: Refuse rebuilds while still permitting published reads.
         """
         self.plane_dir = Path(plane_dir)
         self.read_only = read_only
-        self.config = ExperienceConfig()
+        self.config = config or ExperienceConfig()
         self.logger = logger
 
     def sources(self) -> list[Path]:
@@ -144,7 +151,10 @@ class ExperienceIndex:
                             "generation": generation,
                             "inject_min_score": self.config.inject_min_score,
                             "max_triggers_bytes": self.config.max_triggers_bytes,
+                            "advice_cooldown_seconds": self.config.advice_cooldown_seconds,
                             "max_session_pending": self.config.max_session_pending,
+                            "max_transcript_tail_bytes": self.config.max_transcript_tail_bytes,
+                            "pairing_excluded_executables": self.config.pairing_excluded_executables,
                         }
                     ),
                 )

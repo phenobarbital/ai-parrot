@@ -892,6 +892,7 @@ async def test_create_process_env_is_optional_and_copies_environ(dispatcher, mon
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_exec)
     monkeypatch.setenv("AGY_REPLAY_PROBE", "1")
+    monkeypatch.delenv("PARROT_EXPERIENCE_SESSION", raising=False)
 
     await dispatcher._create_process(["agy"], str(tmp_path))
     await dispatcher._create_process(["agy"], str(tmp_path), env={"PARROT_EXPERIENCE_SESSION": "s"})

@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 from parrot.knowledge.wiki.experience.fastpath import (
     append_event,
     failure_signature,
+    is_repo_local_command,
     leading_command,
     lesson_id_for,
     normalize_error,
@@ -65,6 +66,7 @@ def on_outcome(
     outcome: CommandOutcome,
     seat: str,
     matcher: Callable[[str, str, str], Mapping[str, Any] | None],
+    limits: Mapping[str, Any] | None = None,
 ) -> str | None:
     """Apply one command observation atomically and return bounded advisory data.
 
@@ -95,6 +97,7 @@ def on_outcome(
     if not executable:
         return None
 
+    runtime_limits = _runtime_limits(limits)
     result: dict[str, str | None] = {"advice": None}
     events: list[dict[str, Any]] = []
 
@@ -142,7 +145,7 @@ def on_outcome(
                 _remove_injection(state, injection)
                 return state
 
-            if executable in _PAIRING_EXCLUDED_EXECUTABLES:
+            if executable in runtime_limits["pairing_excluded_executables"]:
                 return state
 
             _append_event(
@@ -167,6 +170,7 @@ def on_outcome(
                 safe_error,
                 signature,
                 canonical_observation,
+                max_pending=runtime_limits["max_session_pending"],
             )
 
             try:
@@ -187,11 +191,15 @@ def on_outcome(
                 seat,
                 {"solution_rev": injection["solution_rev"], "state_at_injection": injection["state"]},
             )
-            if _cooldown_elapsed(state, injection["lesson_id"]):
+            if _cooldown_elapsed(state, injection["lesson_id"], runtime_limits["advice_cooldown_seconds"]):
                 result["advice"] = _render_advice(injection)
             return state
         finally:
-            _bound_state(state)
+            _bound_state(
+                state,
+                max_pending=runtime_limits["max_session_pending"],
+                advice_cooldown_seconds=runtime_limits["advice_cooldown_seconds"],
+            )
 
     buffer_token = _EVENT_BUFFER.set(events)
     try:
@@ -277,6 +285,8 @@ def _add_pending(
     error: str,
     error_signature: str,
     observation_id: str,
+    *,
+    max_pending: int,
 ) -> None:
     """Record one eligible failure, keeping the session state bounded."""
     pending = state.setdefault("pending", [])
@@ -293,7 +303,7 @@ def _add_pending(
             "observation_id": observation_id,
         }
     )
-    del pending[:-_MAX_PENDING]
+    del pending[:-max_pending]
 
 
 def _pop_pending(state: dict, executable: str, subcommand: str) -> dict[str, str] | None:
@@ -327,12 +337,12 @@ def _add_injection(state: dict, injection: dict[str, str]) -> None:
         injections.append(injection)
 
 
-def _bound_state(state: dict) -> None:
+def _bound_state(state: dict, *, max_pending: int, advice_cooldown_seconds: int) -> None:
     """Trim and normalize mutable session state before it is serialized."""
     pending = state.get("pending")
     if isinstance(pending, list):
         bounded_pending: list[dict[str, str]] = []
-        for candidate in pending[-_MAX_PENDING:]:
+        for candidate in pending[-max_pending:]:
             if not isinstance(candidate, Mapping):
                 continue
             executable = candidate.get("executable")
@@ -388,7 +398,7 @@ def _bound_state(state: dict) -> None:
             if isinstance(lesson_id, str)
             and isinstance(recorded_at, (int, float))
             and not isinstance(recorded_at, bool)
-            and now - recorded_at < _ADVICE_COOLDOWN_SECONDS
+            and now - recorded_at < advice_cooldown_seconds
         }
 
     injections = state.get("injections")
@@ -396,14 +406,14 @@ def _bound_state(state: dict) -> None:
         state["injections"] = [candidate for candidate in injections if isinstance(candidate, dict)][-_MAX_INJECTIONS:]
 
 
-def _cooldown_elapsed(state: dict, lesson_id: str) -> bool:
+def _cooldown_elapsed(state: dict, lesson_id: str, advice_cooldown_seconds: int) -> bool:
     """Record and enforce per-lesson advice cooldown within one session."""
     cooldowns = state.setdefault("advice_cooldowns", {})
     if not isinstance(cooldowns, dict):
         return False
     now = time.time()
     previous = cooldowns.get(lesson_id)
-    if isinstance(previous, (int, float)) and now - previous < _ADVICE_COOLDOWN_SECONDS:
+    if isinstance(previous, (int, float)) and now - previous < advice_cooldown_seconds:
         return False
     cooldowns[lesson_id] = now
     return True
@@ -470,10 +480,33 @@ def _append_paired_lesson(
                 "scope_paths": [],
             },
             "solution_rev": solution_rev,
-            "tier": "repo" if pending["command"].lstrip().startswith(("./", "../", "/")) else "global",
+            "tier": "repo" if is_repo_local_command(plane_dir.parent.parent, pending["command"]) else "global",
             "source": "paired",
         },
     )
+
+
+def _runtime_limits(limits: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Return validated transition limits while retaining safe defaults."""
+    source = limits if isinstance(limits, Mapping) else {}
+    cooldown = source.get("advice_cooldown_seconds", _ADVICE_COOLDOWN_SECONDS)
+    pending = source.get("max_session_pending", _MAX_PENDING)
+    excluded = source.get("pairing_excluded_executables", _PAIRING_EXCLUDED_EXECUTABLES)
+    return {
+        "advice_cooldown_seconds": (
+            cooldown
+            if isinstance(cooldown, int) and not isinstance(cooldown, bool) and cooldown > 0
+            else _ADVICE_COOLDOWN_SECONDS
+        ),
+        "max_session_pending": (
+            pending if isinstance(pending, int) and not isinstance(pending, bool) and pending > 0 else _MAX_PENDING
+        ),
+        "pairing_excluded_executables": (
+            frozenset(excluded)
+            if isinstance(excluded, (list, tuple, frozenset)) and all(isinstance(item, str) for item in excluded)
+            else _PAIRING_EXCLUDED_EXECUTABLES
+        ),
+    }
 
 
 def _append_evidence(

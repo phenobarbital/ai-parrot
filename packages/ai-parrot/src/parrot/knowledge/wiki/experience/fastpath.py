@@ -12,7 +12,7 @@ import shlex
 import stat
 import tempfile
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +22,39 @@ EVENTS_FILE = "events.jsonl"
 TRIGGERS_FILE = "triggers.json"
 SESSIONS_DIR = "sessions"
 MAX_EVENT_BYTES = 4096
+
+_DEFAULT_HOOK_LIMITS: dict[str, Any] = {
+    "inject_min_score": 0.35,
+    "max_triggers_bytes": 262_144,
+    "advice_cooldown_seconds": 600,
+    "max_session_pending": 32,
+    "max_transcript_tail_bytes": 262_144,
+    "pairing_excluded_executables": (
+        "pytest",
+        "ruff",
+        "mypy",
+        "black",
+        "pylint",
+        "vitest",
+        "cargo",
+        "grep",
+        "rg",
+        "ls",
+        "cat",
+        "find",
+        "test",
+        "head",
+        "tail",
+        "wc",
+    ),
+}
+_MAX_FASTPATH_METADATA_BYTES = 64 * 1024
+_MAX_HOOK_TRIGGER_BYTES = 1_048_576
+_MAX_HOOK_TRANSCRIPT_BYTES = 1_048_576
+_MAX_HOOK_PENDING = 1_024
+_MAX_HOOK_COOLDOWN_SECONDS = 86_400
+_MAX_HOOK_EXCLUDED_EXECUTABLES = 64
+_MAX_HOOK_EXECUTABLE_LENGTH = 128
 
 _MAX_SESSION_BYTES = 64 * 1024
 _LOCK_POLL_SECONDS = 0.01
@@ -84,6 +117,92 @@ def session_file(plane_dir: Path, session_key: str) -> Path:
     """
     digest = hashlib.sha1(session_key.encode("utf-8")).hexdigest()[:16]  # noqa: S324 - stable identity, not security
     return plane_dir / SESSIONS_DIR / f"{digest}.json"
+
+
+def is_repo_local_command(root: Path | None, executable: str, scope_paths: Sequence[str] = ()) -> bool:
+    """Classify a raw command trigger using the shared tier-routing rule.
+
+    Args:
+        root: Shared repository root when available.
+        executable: Raw executable or command text before basename normalization.
+        scope_paths: Declared repository-relative scope paths.
+
+    Returns:
+        ``True`` for scoped, relative, or repository-contained absolute commands.
+    """
+    if scope_paths or not isinstance(executable, str):
+        return bool(scope_paths)
+    try:
+        tokens = shlex.split(executable, posix=True)
+    except ValueError:
+        tokens = [executable]
+    candidate_text = tokens[0] if tokens else executable
+    if candidate_text.startswith(("./", "../")):
+        return True
+    candidate = Path(candidate_text)
+    if not candidate.is_absolute() or root is None:
+        return False
+    try:
+        candidate.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
+def load_hook_limits(plane_dir: Path) -> dict[str, Any]:
+    """Load bounded hook runtime limits, returning defaults for absent or invalid data.
+
+    Args:
+        plane_dir: Repository experience plane containing published fast-path metadata.
+
+    Returns:
+        A validated copy of the hook limits suitable for stdlib-only callers.
+    """
+    defaults = dict(_DEFAULT_HOOK_LIMITS)
+    descriptor = safe_open(plane_dir / "fastpath.json", os.O_RDONLY)
+    if descriptor is None:
+        return defaults
+    try:
+        size = os.fstat(descriptor).st_size
+        if size < 0 or size > _MAX_FASTPATH_METADATA_BYTES:
+            return defaults
+        payload = os.read(descriptor, size + 1)
+        if len(payload) > size:
+            return defaults
+        values = json.loads(payload.decode("utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return defaults
+    finally:
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+    if not isinstance(values, Mapping):
+        return defaults
+
+    inject_min_score = values.get("inject_min_score")
+    if isinstance(inject_min_score, (int, float)) and not isinstance(inject_min_score, bool):
+        if 0.0 <= float(inject_min_score) <= 1.0:
+            defaults["inject_min_score"] = float(inject_min_score)
+
+    for key, maximum in (
+        ("max_triggers_bytes", _MAX_HOOK_TRIGGER_BYTES),
+        ("advice_cooldown_seconds", _MAX_HOOK_COOLDOWN_SECONDS),
+        ("max_session_pending", _MAX_HOOK_PENDING),
+        ("max_transcript_tail_bytes", _MAX_HOOK_TRANSCRIPT_BYTES),
+    ):
+        value = values.get(key)
+        if isinstance(value, int) and not isinstance(value, bool) and 0 < value <= maximum:
+            defaults[key] = value
+
+    excluded = values.get("pairing_excluded_executables")
+    if (
+        isinstance(excluded, list)
+        and len(excluded) <= _MAX_HOOK_EXCLUDED_EXECUTABLES
+        and all(isinstance(item, str) and item and len(item) <= _MAX_HOOK_EXECUTABLE_LENGTH for item in excluded)
+    ):
+        defaults["pairing_excluded_executables"] = tuple(excluded)
+    return defaults
 
 
 def update_session(

@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 import json
-from math import isfinite
 import os
 from pathlib import Path
 import sys
@@ -15,6 +14,7 @@ from parrot.knowledge.wiki.experience.fastpath import (
     agy_exit_code,
     best_trigger,
     frozen_plane_dir,
+    load_hook_limits,
     load_triggers,
     resolve_plane_dir,
     safe_open,
@@ -25,7 +25,6 @@ from parrot.knowledge.wiki.experience.transitions import on_outcome
 
 _MAX_HOOK_INPUT_BYTES = 262_144
 _MAX_TRANSCRIPT_TAIL_BYTES = 262_144
-_MAX_SESSION_PENDING = 32
 _KNOWN_HOSTS = frozenset({"claude", "codex", "agy"})
 # A sandboxed launch injects its own isolated-interpreter Claude hooks (``--isolated``) and sets this
 # marker; any other Claude registration of this hook (the portable one in a project's settings.json)
@@ -133,7 +132,13 @@ def command_of(payload: Mapping[str, Any], host: str) -> str:
     return ""
 
 
-def outcome_of(payload: Mapping[str, Any], host: str, event: str) -> tuple[bool, str] | None:
+def outcome_of(
+    payload: Mapping[str, Any],
+    host: str,
+    event: str,
+    *,
+    max_transcript_tail_bytes: int = _MAX_TRANSCRIPT_TAIL_BYTES,
+) -> tuple[bool, str] | None:
     """Return a known command outcome, otherwise None.
 
     Args:
@@ -155,7 +160,7 @@ def outcome_of(payload: Mapping[str, Any], host: str, event: str) -> tuple[bool,
         path = payload.get("transcript_path")
         tool_use_id = payload.get("tool_use_id")
         if isinstance(path, str) and path and isinstance(tool_use_id, str) and tool_use_id:
-            return codex_outcome(Path(path), tool_use_id, max_bytes=_MAX_TRANSCRIPT_TAIL_BYTES)
+            return codex_outcome(Path(path), tool_use_id, max_bytes=max_transcript_tail_bytes)
     return None
 
 
@@ -249,7 +254,8 @@ def handle_post(payload: Mapping[str, Any], *, host: str, event: str, plane_dir:
     command = command_of(payload, host)
     if not command:
         return None
-    if not _within_file_limit(plane_dir / "triggers.json", _MAX_HOOK_INPUT_BYTES):
+    limits = load_hook_limits(plane_dir)
+    if not _within_file_limit(plane_dir / "triggers.json", limits["max_triggers_bytes"]):
         return None
     session = session_of(payload, os.environ)
     if host == "agy":
@@ -263,13 +269,18 @@ def handle_post(payload: Mapping[str, Any], *, host: str, event: str, plane_dir:
                 pending = []
                 state["agy_pending"] = pending
             pending.append({"step_idx": step, "command": command, "observation_id": observation_of(payload, host)})
-            del pending[:-_MAX_SESSION_PENDING]
+            del pending[: -limits["max_session_pending"]]
             return state
 
         update_session(plane_dir, session, queue)
         return None
 
-    outcome = outcome_of(payload, host, event)
+    outcome = outcome_of(
+        payload,
+        host,
+        event,
+        max_transcript_tail_bytes=limits["max_transcript_tail_bytes"],
+    )
     if outcome is None:
         return None
     return on_outcome(
@@ -279,6 +290,7 @@ def handle_post(payload: Mapping[str, Any], *, host: str, event: str, plane_dir:
         outcome=_HookOutcome(command, outcome[0], outcome[1], observation_of(payload, host)),
         seat=host,
         matcher=_trigger_matcher(plane_dir),
+        limits=limits,
     )
 
 
@@ -293,6 +305,7 @@ def handle_post_invocation(payload: Mapping[str, Any], *, plane_dir: Path) -> st
         The first produced advisory text, if any.
     """
     session = session_of(payload, os.environ)
+    limits = load_hook_limits(plane_dir)
     try:
         if not session_file(plane_dir, session).exists():
             return None
@@ -325,7 +338,7 @@ def handle_post_invocation(payload: Mapping[str, Any], *, plane_dir: Path) -> st
             or not isinstance(observation, str)
         ):
             continue
-        outcome = agy_outcome(Path(transcript), step, max_bytes=_MAX_TRANSCRIPT_TAIL_BYTES)
+        outcome = agy_outcome(Path(transcript), step, max_bytes=limits["max_transcript_tail_bytes"])
         if outcome is None:
             continue
         result = on_outcome(
@@ -335,6 +348,7 @@ def handle_post_invocation(payload: Mapping[str, Any], *, plane_dir: Path) -> st
             outcome=_HookOutcome(command, outcome[0], outcome[1], observation),
             seat="agy",
             matcher=_trigger_matcher(plane_dir),
+            limits=limits,
         )
         if advice is None and result is not None:
             advice = result
@@ -433,42 +447,14 @@ def _agy_error(content: str) -> str:
 
 def _trigger_matcher(plane_dir: Path):
     """Build the hook's bounded published-trigger matcher."""
-    triggers = load_triggers(plane_dir, max_bytes=_MAX_HOOK_INPUT_BYTES)
-    threshold = _inject_min_score(plane_dir)
+    limits = load_hook_limits(plane_dir)
+    triggers = load_triggers(plane_dir, max_bytes=limits["max_triggers_bytes"])
+    threshold = limits["inject_min_score"]
 
     def match(executable: str, subcommand: str, error: str) -> Mapping[str, Any] | None:
         return best_trigger(triggers.get(executable, []), executable, subcommand, error, min_score=threshold)
 
     return match
-
-
-def _inject_min_score(plane_dir: Path) -> float:
-    """Read the bounded published trigger threshold, defaulting on invalid input."""
-    default = 0.35
-    descriptor = safe_open(plane_dir / "fastpath.json", os.O_RDONLY)
-    if descriptor is None:
-        return default
-    try:
-        size = os.fstat(descriptor).st_size
-        if size < 0 or size > _MAX_HOOK_INPUT_BYTES:
-            return default
-        payload = os.read(descriptor, size + 1)
-        if len(payload) > size:
-            return default
-        metadata = json.loads(payload.decode("utf-8"))
-        value = metadata.get("inject_min_score") if isinstance(metadata, Mapping) else None
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or not isfinite(value):
-            return default
-        if not 0.0 <= value <= 1.0:
-            return default
-        return float(value)
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        return default
-    finally:
-        try:
-            os.close(descriptor)
-        except OSError:
-            pass
 
 
 def _within_file_limit(path: Path, max_bytes: int) -> bool:
