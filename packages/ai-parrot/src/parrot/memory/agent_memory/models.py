@@ -32,6 +32,8 @@ class AgentMemoryConfig(BaseModel):
     storage_path: str | None = None
     enable_reflection: bool = True
     max_episodic_warnings: int = Field(default=3, ge=0)
+    max_episodic_recall: int = Field(default=3, ge=0)
+    max_user_records: int = Field(default=20, ge=0, le=100)
     suppress_trivial_tools: bool = True
     flush_on_startup: bool = False
 

@@ -74,7 +74,7 @@ def _warn_unsupported_knobs(config: AgentMemoryConfig) -> None:
     defaults = AgentMemoryConfig()
     unsupported = [
         name
-        for name in ("enable_reflection", "suppress_trivial_tools", "flush_on_startup", "user_memory_priority")
+        for name in ("enable_reflection", "suppress_trivial_tools", "flush_on_startup")
         if getattr(config, name) != getattr(defaults, name)
     ]
     if unsupported:
@@ -100,6 +100,10 @@ def _manager_config(config: AgentMemoryConfig) -> MemoryConfig:
         enable_brain=config.enable_brain,
         max_context_tokens=config.max_context_tokens,
         episodic_max_warnings=config.max_episodic_warnings,
+        episodic_max_recall=config.max_episodic_recall,
+        user_max_records=config.max_user_records,
+        user_context_tokens=config.user_context_tokens,
+        user_priority=config.user_memory_priority,
     )
     # Per-source token knobs become relative weights; the assembler normalizes them across enabled sections.
     # They are assigned after construction because MemoryConfig's legacy sum-to-one check predates them.
