@@ -66,13 +66,14 @@ class ExperienceIndex:
         self.logger = logger
 
     def sources(self) -> list[Path]:
-        """Return the repository, global, and primary-checkout definition logs.
+        """Return repository segments, global, and primary-checkout definition logs.
 
         The two append-only logs are included even when absent so deleting a
         previously indexed source is observable by :meth:`is_stale`.
         """
         candidates = [
             self.plane_dir / _EVENTS_FILE,
+            *sorted(self.plane_dir.glob("events-*.jsonl")),
             parrot_home() / "experience" / _EVENTS_FILE,
         ]
         shared_root = find_shared_root(self.plane_dir)
@@ -120,6 +121,10 @@ class ExperienceIndex:
             if snapshot is None:
                 return -1
             events, source_snapshots = snapshot
+            previous_marker = self._marker()
+            previous_generation = previous_marker.get("generation") if previous_marker is not None else None
+            if not isinstance(previous_generation, str):
+                previous_generation = ""
             lessons = reduce_events(events, self.config)
             recording_sessions = self._recording_sessions(events, lessons)
             generation = f"generation-{uuid.uuid4().hex}"
@@ -159,6 +164,7 @@ class ExperienceIndex:
                     ),
                 )
                 self._atomic_write(self.plane_dir / _MARKER_FILE, self._json_bytes(metadata))
+                self._prune_generations({generation, previous_generation})
             except (OSError, TypeError, ValueError):
                 self.logger.debug("experience index generation failed", exc_info=True)
                 return -1
@@ -310,20 +316,31 @@ class ExperienceIndex:
         shared_dir = shared_root / "sdd" / "experience" / "lessons" if shared_root is not None else None
         for source in sources:
             shared = shared_dir is not None and self._is_under(source, shared_dir)
-            events.extend(self._read_events(source, shared=shared))
+            source_events = self._read_events(source, shared=shared)
+            if source_events is None:
+                return None
+            events.extend(source_events)
         after = self._source_snapshots(sources)
         if before != after:
             return None
         return events, after
 
-    def _read_events(self, source: Path, *, shared: bool) -> list[Any]:
+    def _read_events(self, source: Path, *, shared: bool) -> list[Any] | None:
         """Read bounded JSONL source records through the safe-open primitive."""
+        try:
+            info = source.lstat()
+        except FileNotFoundError:
+            return []
+        except OSError:
+            return None
+        if not stat.S_ISREG(info.st_mode) or info.st_size > _MAX_SOURCE_BYTES:
+            return None
         descriptor = safe_open(source, os.O_RDONLY)
         if descriptor is None:
-            return []
+            return None
         try:
             if os.fstat(descriptor).st_size > _MAX_SOURCE_BYTES:
-                return []
+                return None
             chunks: list[bytes] = []
             remaining = _MAX_SOURCE_BYTES + 1
             while remaining:
@@ -334,14 +351,14 @@ class ExperienceIndex:
                 remaining -= len(chunk)
             payload = b"".join(chunks)
         except OSError:
-            return []
+            return None
         finally:
             try:
                 os.close(descriptor)
             except OSError:
                 pass
         if len(payload) > _MAX_SOURCE_BYTES:
-            return []
+            return None
 
         events: list[Any] = []
         for line in payload.splitlines():
@@ -354,6 +371,30 @@ class ExperienceIndex:
                 event._shared_attestation = shared
                 events.append(event)
         return events
+
+    def _prune_generations(self, keep: set[str]) -> None:
+        """Remove superseded complete generations after publishing a new marker."""
+        generations_dir = self.plane_dir / _GENERATIONS_DIR
+        try:
+            candidates = list(generations_dir.iterdir())
+        except OSError:
+            return
+        for candidate in candidates:
+            if candidate.name in keep or not candidate.name.startswith("generation-"):
+                continue
+            try:
+                if not stat.S_ISDIR(candidate.lstat().st_mode):
+                    continue
+                descendants = sorted(candidate.rglob("*"), key=lambda path: len(path.parts), reverse=True)
+                for descendant in descendants:
+                    mode = descendant.lstat().st_mode
+                    if stat.S_ISDIR(mode):
+                        descendant.rmdir()
+                    else:
+                        descendant.unlink()
+                candidate.rmdir()
+            except OSError:
+                self.logger.debug("experience generation pruning failed for %s", candidate, exc_info=True)
 
     def _marker(self) -> dict[str, Any] | None:
         """Read the selected generation marker without following links."""

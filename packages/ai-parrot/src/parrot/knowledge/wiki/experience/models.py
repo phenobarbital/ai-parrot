@@ -18,7 +18,7 @@ LessonSource = Literal["paired", "authored", "mined"]
 
 
 class LessonTrigger(BaseModel):
-    """LessonTrigger schema for experience memory."""
+    """Normalized command and error pattern that identifies a reusable lesson."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -30,7 +30,7 @@ class LessonTrigger(BaseModel):
 
 
 class LessonDraft(BaseModel):
-    """What an agent or the pairing logic submits. extra='forbid'."""
+    """Author-supplied candidate lesson accepted from an agent or pairing flow."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -43,7 +43,7 @@ class LessonDraft(BaseModel):
 
 
 class Lesson(BaseModel):
-    """Reduced view; never persisted as a source of truth."""
+    """Reduced current lesson state derived from immutable experience events."""
 
     lesson_id: str
     draft: LessonDraft
@@ -62,7 +62,7 @@ class Lesson(BaseModel):
 
 
 class CommandOutcome(BaseModel):
-    """CommandOutcome schema for experience memory."""
+    """One command execution result, retaining an unknown outcome when needed."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -73,7 +73,7 @@ class CommandOutcome(BaseModel):
 
 
 class ExperienceConfig(BaseModel):
-    """ExperienceConfig schema for experience memory."""
+    """Validated runtime limits and lifecycle thresholds for experience memory."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -125,7 +125,7 @@ ExperienceEventKind = Literal[
 
 
 class ExperienceEvent(BaseModel):
-    """One validated, redacted event from the experience log."""
+    """Canonical redacted event persisted in an append-only experience log."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -144,7 +144,7 @@ class ExperienceEvent(BaseModel):
 
 
 class RecordedPayload(BaseModel):
-    """Payload for a newly recorded lesson."""
+    """Payload defining the initial revision, tier, and provenance of a lesson."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -155,7 +155,7 @@ class RecordedPayload(BaseModel):
 
 
 class FailurePayload(BaseModel):
-    """Payload for a failed command observation."""
+    """Payload describing the normalized command family and observed failure."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -166,7 +166,7 @@ class FailurePayload(BaseModel):
 
 
 class InjectionPayload(BaseModel):
-    """Payload for a lesson injected after a matching failure."""
+    """Payload recording that a lesson was surfaced for a matching failure."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -175,7 +175,7 @@ class InjectionPayload(BaseModel):
 
 
 class EvidencePayload(BaseModel):
-    """Payload for a validation or refutation observation."""
+    """Payload linking validation or refutation evidence to a lesson revision."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -184,7 +184,7 @@ class EvidencePayload(BaseModel):
 
 
 class AttestationPayload(BaseModel):
-    """Payload for a shared lifecycle attestation."""
+    """Payload attesting to a reviewed lifecycle state for one lesson revision."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -192,7 +192,7 @@ class AttestationPayload(BaseModel):
 
 
 class GraduatedPayload(BaseModel):
-    """Payload for a lesson graduated to a ledger issue."""
+    """Payload linking a graduated lesson revision to its owning ledger issue."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -202,7 +202,7 @@ class GraduatedPayload(BaseModel):
 
 
 class RetiredPayload(BaseModel):
-    """Payload for a retired lesson."""
+    """Payload preserving the authored reason that a lesson was retired."""
 
     model_config = ConfigDict(extra="forbid")
 

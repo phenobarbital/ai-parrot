@@ -11,6 +11,7 @@ import time
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from parrot.knowledge.wiki.experience.fastpath import append_event, safe_open
 from parrot.knowledge.wiki.experience.models import ExperienceEvent, Lesson, validate_event
@@ -50,7 +51,7 @@ def sync_global(repo_plane: Path) -> int:
     Returns:
         Number of previously absent events durably appended to the global log.
     """
-    repo_events, repo_complete = _read_events(Path(repo_plane) / _EVENTS_FILE)
+    repo_events, repo_complete = _read_repo_events(Path(repo_plane))
     global_events, global_complete = _read_events(global_plane_dir() / _EVENTS_FILE)
     if not repo_complete or not global_complete:
         return 0
@@ -96,7 +97,9 @@ def export_shared(repo_plane: Path, checkout: Path) -> Path | None:
     """
     repo_plane = Path(repo_plane)
     checkout = Path(checkout)
-    repo_events, repo_complete = _read_events(repo_plane / _EVENTS_FILE)
+    if not _rotate_repo_log(repo_plane):
+        return None
+    repo_events, repo_complete = _read_repo_events(repo_plane)
     global_events, global_complete = _read_events(global_plane_dir() / _EVENTS_FILE)
     shared_events, shared_complete = _read_shared_events(checkout)
     if not repo_complete or not global_complete or not shared_complete:
@@ -168,6 +171,59 @@ def export_shared(repo_plane: Path, checkout: Path) -> Path | None:
         except OSError:
             pass
     return target
+
+
+def _read_repo_events(repo_plane: Path) -> tuple[list[ExperienceEvent], bool]:
+    """Read every active and sealed repository event segment as one source set."""
+    events: list[ExperienceEvent] = []
+    for source in _repo_event_sources(repo_plane):
+        source_events, complete = _read_events(source)
+        if not complete:
+            return [], False
+        events.extend(source_events)
+    return events, True
+
+
+def _repo_event_sources(repo_plane: Path) -> list[Path]:
+    """Return the active log and immutable rotated segments in stable order."""
+    return [repo_plane / _EVENTS_FILE, *sorted(repo_plane.glob("events-*.jsonl"))]
+
+
+def _rotate_repo_log(repo_plane: Path) -> bool:
+    """Seal an over-cap active log before an export can append further events.
+
+    The sealed segment remains in the repository source set, allowing the
+    bounded readers to reject it explicitly rather than silently forgetting
+    its history. A subsequent recorder creates a fresh active log.
+    """
+    source = repo_plane / _EVENTS_FILE
+    try:
+        info = source.lstat()
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
+    if not stat.S_ISREG(info.st_mode):
+        return False
+    if info.st_size <= _MAX_SOURCE_BYTES:
+        return True
+
+    for _ in range(4):
+        sealed = repo_plane / f"events-{time.time_ns()}-{uuid4().hex}.jsonl"
+        descriptor = safe_open(sealed, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+        if descriptor is None:
+            continue
+        try:
+            os.close(descriptor)
+            os.replace(source, sealed)
+            return True
+        except OSError:
+            try:
+                sealed.unlink(missing_ok=True)
+            except OSError:
+                pass
+            return False
+    return False
 
 
 def register_namespace(root: Path) -> bool:

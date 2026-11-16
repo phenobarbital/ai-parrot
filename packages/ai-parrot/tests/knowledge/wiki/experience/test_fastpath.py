@@ -93,6 +93,24 @@ def test_redact_masks_secrets(tmp_path: Path) -> None:
     assert result.count("[REDACTED]") == 4
 
 
+def test_redact_covers_password_flags_basic_auth_json_and_aws_keys(tmp_path: Path) -> None:
+    """Mask documented credential forms while preserving redaction idempotence."""
+    secret = (
+        '--password "secret with spaces" -pSECRET '
+        'Authorization: Basic dXNlcjpwYXNz {"api_key": "quoted api key"} AKIAIOSFODNN7EXAMPLE'
+    )
+
+    result = fastpath.redact(secret)
+
+    for value in ("secret with spaces", "SECRET", "dXNlcjpwYXNz", "quoted api key", "AKIAIOSFODNN7EXAMPLE"):
+        assert value not in result
+    assert "--password [REDACTED]" in result
+    assert "-p[REDACTED]" in result
+    assert "Authorization: Basic [REDACTED]" in result
+    assert '"api_key": "[REDACTED]"' in result
+    assert result == fastpath.redact(result)
+
+
 def test_append_event_rejects_oversize(tmp_path: Path) -> None:
     """Verify an oversized multibyte event is rejected without a partial line."""
     plane = tmp_path / "plane"

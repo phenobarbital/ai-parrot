@@ -280,6 +280,23 @@ def test_export_filename_is_content_digest(tmp_path: Path, monkeypatch: pytest.M
     assert first_export.name == second_export.name == f"{expected}.jsonl"
 
 
+def test_export_rotates_an_over_cap_repository_log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Seal an over-cap active log without dropping it from index sources."""
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(sync, "_MAX_SOURCE_BYTES", 8)
+    _, plane = _checkout(tmp_path, "primary")
+    active = plane / "events.jsonl"
+    active.write_bytes(b"oversized\n")
+
+    assert sync.export_shared(plane, plane.parents[1]) is None
+
+    sealed = list(plane.glob("events-*.jsonl"))
+    assert len(sealed) == 1
+    assert sealed[0].read_bytes() == b"oversized\n"
+    assert not active.exists()
+    assert sealed[0] in ExperienceIndex(plane).sources()
+
+
 def test_register_namespace_absolute(tmp_path: Path) -> None:
     """Register the primary absolute store from an external linked worktree."""
     primary = tmp_path / "primary"

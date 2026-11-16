@@ -21,6 +21,11 @@ logger = logging.getLogger(__name__)
 _MAX_TASK_FILE_BYTES = 1024 * 1024
 _STATES = ("candidate", "confirmed", "quarantined", "retired")
 _TIERS = ("repo", "global")
+_MUTATING_VERBS = frozenset({"record", "retire", "sync", "export", "rebuild"})
+
+
+class _UsageError(ValueError):
+    """Signal a command-line usage error without masking operational errors."""
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -139,7 +144,11 @@ async def _dispatch(args: argparse.Namespace) -> int:
         if _initialize(service):
             await service.refresh()
         return 0
+    if args.verb == "brief" and not args.task_file.is_file():
+        raise _UsageError(f"task file does not exist: {args.task_file}")
     if not _available(service):
+        if args.verb in _MUTATING_VERBS:
+            logger.warning("experience plane unavailable; %s skipped", args.verb)
         return 0
 
     if args.verb == "brief":
@@ -186,7 +195,7 @@ async def _dispatch(args: argparse.Namespace) -> int:
             await service.refresh()
             ledger = LedgerService.from_root(service.root)
             await graduate(service, ledger, ledger_name=service.root.name)
-            exported = export_shared(service.plane_dir, Path.cwd())
+            exported = export_shared(service.plane_dir, service.root)
             if exported is not None:
                 _write(str(exported))
     elif args.verb == "rebuild" and service.index is not None:
@@ -202,6 +211,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return exc.code if isinstance(exc.code, int) else 2
     try:
         return asyncio.run(_dispatch(args))
+    except _UsageError as exc:
+        logger.error("%s", exc)
+        return 2
     except (OSError, UnicodeError, ValueError):
         logger.error("experience CLI operation failed", exc_info=True)
         return 1
