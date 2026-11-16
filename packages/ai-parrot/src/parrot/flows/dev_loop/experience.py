@@ -72,6 +72,7 @@ class ExperienceInterceptor:
                     outcome=outcome,
                     seat=self.seat,
                     matcher=matcher,
+                    limits=self._service_limits(),
                 )
             except Exception:
                 self.logger.debug("experience replay observation failed", exc_info=True)
@@ -94,6 +95,7 @@ class ExperienceInterceptor:
                 outcome=outcome,
                 seat=self.seat,
                 matcher=matcher,
+                limits=self._service_limits(),
             )
         except Exception:
             self.logger.debug("experience observation failed", exc_info=True)
@@ -138,6 +140,15 @@ class ExperienceInterceptor:
             return bool(self._service.config.enabled and plane_dir is not None and plane_dir.is_dir())
         except OSError:
             return False
+
+    def _service_limits(self) -> dict[str, object]:
+        """Expose configured transition limits without loading project config again."""
+        config = self._service.config
+        return {
+            "advice_cooldown_seconds": config.advice_cooldown_seconds,
+            "max_session_pending": config.max_session_pending,
+            "pairing_excluded_executables": config.pairing_excluded_executables,
+        }
 
     def _command(self, tool_args: Mapping[str, Any]) -> str | None:
         """Render the structured argv without invoking shell parsing."""
