@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-901 — `parrot sdd task close` closes `/sdd-brief` tasks in place
 **Spec**: `sdd/specs/scripts-close-task-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -240,8 +240,15 @@ Spec §4 rows 1–6 state what each new test asserts.
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Code (`/sdd-fix` session, actor `agent:sdd-fix:ae77dc9c`)
+**Date**: 2026-11-16
+**Notes**: `close_task.main` dispatches to the new `_close_brief_task` when the slug has
+`sdd/briefs/<slug>.index.json` and no per-spec index. The brief task is closed in place: header, index entry
+(`status`, write-once `completed_at` / `verification`), top-level `completed_at`, staging of both files and the
+`task.closed` event. Code commit `dc3327fb89`. Validation:
+`pytest packages/ai-parrot/tests/sdd/test_scripts_shell_port.py` → 18 passed; with `close_task.py` reverted to
+`origin/dev` the same file gives 8 failed, 10 passed. `ruff check` is clean on both files.
 
-**Deviations from spec**:
+**Deviations from spec**: none. `test_close_brief_task_missing_file_exits_2` is parametrized over three recorded
+`file` values (missing file, path outside the repository, `null`). Both files were already not `black`-conformant
+on `origin/dev`; they were not reformatted here.
