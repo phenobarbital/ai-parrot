@@ -113,3 +113,22 @@ async def test_malformed_or_oversized_extraction() -> None:
         event_id="e1", operation="correct", knowledge_id="k", expected_revision=2, candidate=candidate
     )
     assert command.expected_revision == 2
+
+
+@pytest.mark.asyncio
+async def test_extracts_from_runtime_response_event_payload() -> None:
+    """The runtime response event carries the user text under ``query``, not ``user_message``."""
+    scope = MemoryRequestScope(
+        tenant_id="t1", agent_id="a1", user_id="u1", turn_id="turn-1", identity_provenance="server_resolved"
+    )
+    event = MemoryEvent(
+        event_id="e2",
+        kind="response",
+        scope=scope,
+        observed_at=NOW,
+        payload={"query": "I prefer metric units", "response": "Noted."},
+    )
+    client = FakeClient(json.dumps([{"kind": "preference", "value": "metric", "provenance": "explicit"}]))
+    result = await extract_user_knowledge(event, client=client)
+    assert [c.value for c in result] == ["metric"]
+    assert len(client.calls) == 1

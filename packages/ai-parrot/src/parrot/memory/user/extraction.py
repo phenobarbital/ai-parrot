@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 MAX_INPUT_CHARS = 4000
 MAX_OUTPUT_CHARS = 16000
 MAX_CANDIDATES = 8
-_USER_TEXT_KEYS = ("user_message", "user_text", "text")
+_USER_TEXT_KEYS = ("user_message", "user_text", "query", "text")
 
 _SYSTEM_PROMPT = (
     "You extract durable facts, preferences, goals and constraints that the USER states about "
