@@ -480,9 +480,7 @@ def _append_paired_lesson(
                 "scope_paths": [],
             },
             "solution_rev": solution_rev,
-            "tier": "repo"
-            if is_repo_local_command(plane_dir.parent.parent, pending["command"])
-            else "global",
+            "tier": "repo" if is_repo_local_command(plane_dir.parent.parent, pending["command"]) else "global",
             "source": "paired",
         },
     )
@@ -495,15 +493,19 @@ def _runtime_limits(limits: Mapping[str, Any] | None) -> dict[str, Any]:
     pending = source.get("max_session_pending", _MAX_PENDING)
     excluded = source.get("pairing_excluded_executables", _PAIRING_EXCLUDED_EXECUTABLES)
     return {
-        "advice_cooldown_seconds": cooldown
-        if isinstance(cooldown, int) and not isinstance(cooldown, bool) and cooldown > 0
-        else _ADVICE_COOLDOWN_SECONDS,
-        "max_session_pending": pending
-        if isinstance(pending, int) and not isinstance(pending, bool) and pending > 0
-        else _MAX_PENDING,
-        "pairing_excluded_executables": frozenset(excluded)
-        if isinstance(excluded, (list, tuple, frozenset)) and all(isinstance(item, str) for item in excluded)
-        else _PAIRING_EXCLUDED_EXECUTABLES,
+        "advice_cooldown_seconds": (
+            cooldown
+            if isinstance(cooldown, int) and not isinstance(cooldown, bool) and cooldown > 0
+            else _ADVICE_COOLDOWN_SECONDS
+        ),
+        "max_session_pending": (
+            pending if isinstance(pending, int) and not isinstance(pending, bool) and pending > 0 else _MAX_PENDING
+        ),
+        "pairing_excluded_executables": (
+            frozenset(excluded)
+            if isinstance(excluded, (list, tuple, frozenset)) and all(isinstance(item, str) for item in excluded)
+            else _PAIRING_EXCLUDED_EXECUTABLES
+        ),
     }
 
 
