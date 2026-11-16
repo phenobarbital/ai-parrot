@@ -206,7 +206,7 @@ forget_receipt = await store.forget(forget_command, scope=scope)
 
 - Knowledge has explicit validity periods (`valid_from`, `expires_at`)
 - Status can be `active`, `pending`, `superseded`, or `invalidated`
-- Explicit confirmation is required for inferred knowledge
+- An `explicit` candidate is admitted `active`; an `inferred` one is admitted `pending`, and `recall` returns only active, currently valid facts
 
 ### Conflict Resolution
 
@@ -216,16 +216,16 @@ forget_receipt = await store.forget(forget_command, scope=scope)
 
 ### Evidence and Provenance
 
-- Evidence references are validated before persistence
-- Provenance distinguishes caller-supplied identity from anonymous defaults
-- Cross-scope evidence references are rejected
+- `provenance` is `explicit` (the user said it directly) or `inferred`; for extracted candidates the extraction model chooses the label, so treat it as a model assertion, not verified authority
+- `chatstorage/...` evidence references are validated before persistence: malformed, cross-scope and tombstoned ones are rejected (see the next bullet); other reference schemes are stored as given
 - `chatstorage/...` evidence references fail closed: a command carrying one is `ignored` unless the store was built with an `evidence_tenant_resolver` that confirms the stored tenant matches the scope (malformed, cross-scope and tombstoned references are ignored too); other reference schemes are not resolved
 
 ### Physical Erasure
 
-- Forget operations write suppression markers by default
-- Physical deletion policy is governed by separate retention rules
-- Only explicit user requests can lift suppression markers
+- `forget` runs in one transaction: it deletes the whole claim chain (superseded revisions included) and its event rows, with `PRAGMA secure_delete=ON`, and writes a suppression marker that holds only hashes (no content)
+- Events that never produced a fact (ignored or suppressed) keep a payload digest, not the claim content
+- A suppression marker is lifted by an `explicit` candidate that brings at least one evidence reference not already blocked; because the extractor labels provenance, that label alone is not proof of an explicit user request
+- `user_derivative_forgets` records the source episodes for derivative invalidation; nothing in this feature reads it yet (FEAT-889 consumes it)
 
 ## Related
 
@@ -245,4 +245,4 @@ forget_receipt = await store.forget(forget_command, scope=scope)
 
 - User memory models and store are owned by FEAT-892
 - Knowledge extraction and validation policies are governed by accepted gates
-- Physical erasure and retention policies are separately managed
+- Physical erasure is implemented here (see Physical Erasure); retention of other stores is governed separately
