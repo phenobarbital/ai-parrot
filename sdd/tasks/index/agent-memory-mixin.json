@@ -695,7 +695,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -731,9 +731,10 @@
       "parallel": true,
       "parallelism_notes": "Consumes documented public symbols, configuration or migration behavior from A0/X1 from TASK-5653; Consumes documented public symbols, configuration or migration behavior from A0 from TASK-5654; Consumes documented public symbols, configuration or migration behavior from M1 from TASK-5655; Consumes documented public symbols, configuration or migration behavior from M1/M3 from TASK-5656; Consumes documented public symbols, configuration or migration behavior from M1 from TASK-5657; Consumes documented public symbols, configuration or migration behavior from A1/M3 from TASK-5658; Consumes documented public symbols, configuration or migration behavior from M1 from TASK-5659; Consumes documented public symbols, configuration or migration behavior from M2 from TASK-5660; Consumes documented public symbols, configuration or migration behavior from M2 from TASK-5661; Consumes documented public symbols, configuration or migration behavior from M2 from TASK-5662; Consumes documented public symbols, configuration or migration behavior from M2 from TASK-5663; Consumes documented public symbols, configuration or migration behavior from M2 from TASK-5664; Consumes documented public symbols, configuration or migration behavior from M2 from TASK-5665; Consumes documented public symbols, configuration or migration behavior from U1 from TASK-5666; Consumes documented public symbols, configuration or migration behavior from U1 from TASK-5667; Consumes documented public symbols, configuration or migration behavior from U1 from TASK-5668; Consumes documented public symbols, configuration or migration behavior from A1/M3 from TASK-5669; Consumes documented public symbols, configuration or migration behavior from A1 from TASK-5670; Consumes documented public symbols, configuration or migration behavior from M6/A1 from TASK-5671; Consumes documented public symbols, configuration or migration behavior from A1 from TASK-5672; Consumes documented public symbols, configuration or migration behavior from A1 from TASK-5673; Consumes documented public symbols, configuration or migration behavior from M3 from TASK-5674; Consumes documented public symbols, configuration or migration behavior from M5 from TASK-5675; Consumes documented public symbols, configuration or migration behavior from M5 from TASK-5676; Consumes documented public symbols, configuration or migration behavior from M5 from TASK-5677; Consumes documented public symbols, configuration or migration behavior from M6 from TASK-5678; Consumes documented public symbols, configuration or migration behavior from M6 from TASK-5679; Consumes documented public symbols, configuration or migration behavior from X1 from TASK-5680",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-16T02:23:25+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5681-agent-memory-docs.md"
     }
   ]
 }
+

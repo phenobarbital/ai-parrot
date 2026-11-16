@@ -113,6 +113,27 @@ artifacts/logs. All DB/process fixtures are isolated; no shared DDL or dependenc
 authorized. User explicitly confirmed that the new AgentMemoryToolkit remains in core at
 parrot.memory.agent_memory; do not move it into parrot_tools.
 
+## Facts the pages must reflect (post-rework, verified on the feature branch)
+
+Document what is implemented, not the first delivery or the blueprint wording:
+
+- **Review log (memory-dynamics.md):** `SQLiteEpisodeBackend.apply_review(command, *, grade=None, memory_error_signature=None, parameters=None)` commits the
+  review row, the new columns and the `memory_state` upsert in one `BEGIN IMMEDIATE` transaction. The stored record is: selected `grade`, `before` and `after`
+  `MemoryState`, `parameter_id` (`episodic-neutral-v1`, fsrs-6, days-v1) and `memory_error_signature` (at most 2000 characters). `EpisodicMemoryStore.review`
+  supplies them; a direct `apply_review(command)` call stores no record. Schema version is **3**: additive nullable columns added through an idempotent
+  `PRAGMA user_version` migration, **no backfill**; rows written earlier have no record and are exported without one (never fabricated). A legacy memory's
+  `before` state is the neutral uninitialized state.
+- **Read API and export:** `SQLiteEpisodeBackend.list_reviews(namespace, *, limit=None)` (scope filters applied before the limit; order `recorded_at, dedupe_key`) and
+  `EpisodicMemoryStore.list_reviews` (visible `RuntimeError` when the backend cannot list). `export_reviews(*, namespace, destination, store=None, clock=None)` writes a
+  deterministic JSON archive (`format`, real UTC `exported_at` from an injectable clock, `namespace`, `provenance`, `reviews` — a list keyed by `dedupe_key`, so two reviews of one
+  memory version both survive); `store=None` raises `ValueError`; the write is atomic, off the event loop, with a unique temp file; there is no `retry_export` (re-running is idempotent).
+  Replay applies only each archived `command` and yields exactly one application per review; it does not depend on the record.
+- **CLI:** `wikitoolkit memory --storage-path ... export-reviews --output PATH` exports what the configured store holds. The `memory` group is attached **lazily**
+  (`knowledge/wiki/cli.py` placeholder group): ordinary `wikitoolkit` commands do not import `parrot.memory`; it is imported only when `wikitoolkit memory ...` is used.
+- **Still deferred:** parameter fitting/optimizer (follow-up feature, spec Q6); the export carries the inputs a fitter needs but no fitting code exists.
+- Known, unresolved limitation to state plainly: `memory/episodic/recall.py` keeps its own inline neutral-parameter literal (same `parameter_id`), separate from the
+  one in `store.py`; do not claim they are a single definition.
+
 ## Implementation Blueprint
 
 ### Steps (in order)
