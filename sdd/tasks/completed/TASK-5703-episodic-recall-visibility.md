@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-892 — Agent Memory — Unified Integration, User Knowledge and Dynamics
 **Spec**: `sdd/specs/agent-memory-mixin.spec.md`
-**Status**: in-progress
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5663, TASK-5670
@@ -233,10 +233,24 @@ from parrot.memory.unified.manager import UnifiedMemoryManager        # unified/
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: claude (`/sdd-fix`, actor `agent:sdd-fix:436cb5fa`)
+**Date**: 2026-11-16
+**Notes**: Implemented as scoped. Developed in an isolated baseline tree because three sibling `/sdd-fix`
+sessions were editing this worktree, then replayed onto the branch (code commit `47eb4be4ba`). The feature's
+validation contract (35 files) passes on the branch head: 303 passed, 2 skipped. The new tests were
+mutation-checked: reverting each source file fails the test that covers it.
 
-**Completed by**:
-**Date**:
-**Notes**:
+External review (codex, neutral brief), three findings, all adopted:
 
-**Deviations from spec**:
+- CONFIRM — an anonymous request could read an identified user's episode recorded in the same session. The
+  anonymous scope now also requires `user_id` unset, in the backend filter and in the re-check.
+- CONFIRM — a write under `(user, session)` did not invalidate the wider hybrid BM25 indexes that recall now
+  reads. `HybridBM25Strategy.invalidate` drops every cached index of the same tenant and agent.
+- CONFIRM — the write-scope test never wrote. It now records a response event and reads the stored episode.
+
+Follow-ups filed, not fixed here: `issue:3b9765e02458` (the `search_episodic_memory` tool returns other users'
+episodes), plus the two limits listed under "NOT in scope" (cross-scope review identity, Redis unset matching).
+
+**Deviations from spec**: none. Spec §3 line 130 says episode filters "may narrow by session"; recall no longer
+does, by owner decision. Agent-level is read as user **and** session unset, narrower than the decision's wording
+("user_id is NULL"), so that an anonymous session's text never reaches other users.
