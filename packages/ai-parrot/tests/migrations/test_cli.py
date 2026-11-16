@@ -107,7 +107,7 @@ def test_configuration_and_parse_errors_exit_three(arguments: list[str], install
 
 
 def test_resolve_dsn_uses_mode_specific_precedence(monkeypatch, caplog) -> None:
-    """Reads never elevate to admin while writes prefer it and safely log fallback."""
+    """Reads never elevate to admin while writes prefer it and silently fall back to the runtime DSN."""
     monkeypatch.setattr("parrot.migrations.cli.PARROT_ADMIN_DSN", "postgresql://admin:admin-secret@host/db")
     monkeypatch.setattr("parrot.migrations.cli.default_dsn", "postgresql://runtime:runtime-secret@host/db")
     assert resolve_dsn("explicit", mutating=True) == "explicit"
@@ -115,8 +115,18 @@ def test_resolve_dsn_uses_mode_specific_precedence(monkeypatch, caplog) -> None:
     assert resolve_dsn(None, mutating=True) == "postgresql://admin:admin-secret@host/db"
     monkeypatch.setattr("parrot.migrations.cli.PARROT_ADMIN_DSN", None)
     assert resolve_dsn(None, mutating=True) == "postgresql://runtime:runtime-secret@host/db"
-    assert "runtime database DSN" in caplog.text
-    assert "secret" not in caplog.text
+    assert caplog.text == ""
+
+
+def test_admin_dsn_defaults_to_the_runtime_dsn() -> None:
+    """An unset PARROT_ADMIN_DSN resolves to default_dsn at configuration time."""
+    import os
+
+    from parrot import conf
+
+    if os.environ.get("PARROT_ADMIN_DSN") or conf.config.get("PARROT_ADMIN_DSN"):
+        pytest.skip("PARROT_ADMIN_DSN is explicitly configured in this environment")
+    assert conf.PARROT_ADMIN_DSN == conf.default_dsn
 
 
 @pytest.mark.parametrize("verb", ["upgrade", "baseline"])

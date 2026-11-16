@@ -54,8 +54,6 @@ def resolve_dsn(explicit: str | None, *, mutating: bool) -> str:
     if mutating and PARROT_ADMIN_DSN:
         return PARROT_ADMIN_DSN
     if default_dsn:
-        if mutating:
-            logger.warning("PARROT_ADMIN_DSN is not configured; using the runtime database DSN")
         return default_dsn
     raise MigrationConfigurationError("Database DSN is not configured; pass --dsn or configure the runtime database")
 
