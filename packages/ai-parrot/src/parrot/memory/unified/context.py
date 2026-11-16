@@ -187,33 +187,108 @@ class ContextAssembler:
         budget = self._max_tokens
         rollover = 0
         packed_sections: dict[str, str] = {}
-        delivered_refs: list[str] = []
-        memory_refs: list[MemoryRef] = []
+        accepted_candidates: dict[str, list[MemoryCandidate]] = {
+            "episodic": [],
+            "skills": [],
+            "brain": [],
+            "user_knowledge": [],
+        }
         tokens_used = 0
 
-        for section in ("episodic", "skills", "brain", "user_knowledge"):
-            if section not in weights:
-                continue
-            section_budget = int(budget * weights[section]) + rollover
+        def pack_section(section: str, section_budget: int) -> int:
+            """Pack complete candidates into one section budget."""
+            if section_budget <= 0:
+                packed_sections[section] = ""
+                return 0
+
             section_text = ""
-            delivered_in_section: list[str] = []
             for candidate in section_candidates[section]:
                 proposed = candidate.text if not section_text else f"{section_text}\n{candidate.text}"
                 if self._estimate_tokens(proposed) > section_budget:
                     continue
                 section_text = proposed
-                delivered_in_section.append(self._candidate_ref(candidate))
-                if candidate.memory_ref is not None:
-                    memory_refs.append(candidate.memory_ref)
-
-            section_tokens = self._estimate_tokens(section_text)
+                accepted_candidates[section].append(candidate)
             packed_sections[section] = section_text
-            delivered_refs.extend(delivered_in_section)
+            return self._estimate_tokens(section_text)
+
+        def pack_episodic(section_budget: int) -> int:
+            """Pack warning and recall lanes into one shared episodic budget."""
+            if section_budget <= 0:
+                packed_sections["episodic_warnings"] = ""
+                packed_sections["episodic_recall"] = ""
+                return 0
+
+            warning_candidates = [candidate for candidate in section_candidates["episodic"] if candidate.lane == "warning"]
+            recall_candidates = [candidate for candidate in section_candidates["episodic"] if candidate.lane == "recall"]
+            ordered_candidates = warning_candidates + recall_candidates
+            warning_text = ""
+            recall_text = ""
+
+            for candidate in ordered_candidates:
+                lane_text = warning_text if candidate.lane == "warning" else recall_text
+                proposed_lane = candidate.text if not lane_text else f"{lane_text}\n{candidate.text}"
+                proposed_warning = proposed_lane if candidate.lane == "warning" else warning_text
+                proposed_recall = proposed_lane if candidate.lane == "recall" else recall_text
+                combined = "\n".join(text for text in (proposed_warning, proposed_recall) if text)
+                if self._estimate_tokens(combined) > section_budget:
+                    continue
+                if candidate.lane == "warning":
+                    warning_text = proposed_lane
+                else:
+                    recall_text = proposed_lane
+                accepted_candidates["episodic"].append(candidate)
+
+            packed_sections["episodic_warnings"] = warning_text
+            packed_sections["episodic_recall"] = recall_text
+            return self._estimate_tokens("\n".join(text for text in (warning_text, recall_text) if text))
+
+        def pack_with_budget(section: str, section_budget: int) -> int:
+            """Pack a section, using the shared episodic lane budget when needed."""
+            if section == "episodic":
+                return pack_episodic(section_budget)
+            return pack_section(section, section_budget)
+
+        if self.config.user_priority == "high" and "user_knowledge" in weights:
+            user_cap = self.config.user_context_tokens
+            if user_cap is None:
+                user_cap = int(budget * weights["user_knowledge"])
+            user_budget = min(user_cap, budget)
+            user_tokens = pack_with_budget("user_knowledge", user_budget)
+            tokens_used += user_tokens
+
+        sections = ("episodic", "skills", "brain") if self.config.user_priority == "high" else (
+            "episodic",
+            "skills",
+            "brain",
+            "user_knowledge",
+        )
+        for section in sections:
+            if section not in weights:
+                continue
+            section_budget = int(budget * weights[section]) + rollover
+            section_budget = min(section_budget, budget - tokens_used)
+            if section == "user_knowledge" and self.config.user_context_tokens is not None:
+                section_budget = min(section_budget, self.config.user_context_tokens)
+            section_tokens = pack_with_budget(section, section_budget)
             tokens_used += section_tokens
             rollover = section_budget - section_tokens
 
+        ordered_sections = ("episodic", "skills", "brain", "user_knowledge")
+        delivered_refs = [
+            self._candidate_ref(candidate)
+            for section in ordered_sections
+            for candidate in accepted_candidates[section]
+        ]
+        memory_refs: list[MemoryRef] = [
+            candidate.memory_ref
+            for section in ordered_sections
+            for candidate in accepted_candidates[section]
+            if candidate.memory_ref is not None
+        ]
+
         context = MemoryContext(
-            episodic_warnings=packed_sections.get("episodic", ""),
+            episodic_warnings=packed_sections.get("episodic_warnings", ""),
+            episodic_recall=packed_sections.get("episodic_recall", ""),
             relevant_skills=packed_sections.get("skills", ""),
             semantic_knowledge=packed_sections.get("brain", ""),
             user_knowledge=packed_sections.get("user_knowledge", ""),
