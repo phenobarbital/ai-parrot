@@ -11,11 +11,11 @@ The accounting metrics layer (`parrot.semantic.accounting`) compiles finance que
 
 ## Public API
 
-- [`AccountingToolkit`](ref:parrot.semantic.accounting.toolkit.AccountingToolkit) — finance tools (`finance_list_metrics`, `finance_explain_metric`, `finance_query_metric`, `finance_validate_model`)
-- [`DuckDBEngine`](ref:parrot.interfaces.duckdb_engine.DuckDBEngine) — in-process DuckDB over Arrow (core, `ai-parrot[duckdb]`)
-- [`load_model`](ref:parrot.semantic.accounting.loader.load_model) — load and validate a model from YAML
-- [`compile_metric`](ref:parrot.semantic.accounting.compiler.compile_metric) — compile a metric request to SQL
-- [`AccountingAuditEntry`](ref:parrot.semantic.accounting.audit.AccountingAuditEntry) — signed audit entry for the shared ledger
+- [`AccountingToolkit`](ref:parrot.semantic.accounting.toolkit) — finance tools (`finance_list_metrics`, `finance_explain_metric`, `finance_query_metric`, `finance_validate_model`)
+- [`DuckDBEngine`](ref:parrot.interfaces.duckdb_engine) — in-process DuckDB over Arrow (core, `ai-parrot[duckdb]`)
+- [`load_model`](ref:parrot.semantic.accounting.loader) — load and validate a model from YAML
+- [`compile_metric`](ref:parrot.semantic.accounting.compiler) — compile a metric request to SQL
+- [`AccountingAuditEntry`](ref:parrot.semantic.accounting.audit) — signed audit entry for the shared ledger
 
 ## Configuration & Parameters
 
@@ -331,6 +331,6 @@ print(lineage.sets)
 
 ## Related
 
-- [Semantic layer](../semantic-layer.md) — governed semantic queries and the two governance postures (fail-closed `sl_*` vs. per-metric `finance_*`).
+- [Semantic layer](semantic-layer.md) — governed semantic queries and the two governance postures (fail-closed `sl_*` vs. per-metric `finance_*`).
 - [DuckDB engine](https://duckdb.org/docs/) — in-process DuckDB over Arrow.
 - [Parrot CLI](https://github.com/phenobarbital/ai-parrot/wiki/CLI) — `parrot finance` commands.

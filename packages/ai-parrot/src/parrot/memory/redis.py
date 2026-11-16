@@ -1,12 +1,18 @@
 from typing import List, Dict, Any, Callable, Optional, TYPE_CHECKING
-from datetime import datetime
+from datetime import datetime, timezone
 import asyncio
 import json
 import random
 from redis.asyncio import Redis
 from redis.exceptions import WatchError
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
-from .abstract import ConversationMemory, ConversationHistory, ConversationTurn
+from .abstract import (
+    ConversationMemory,
+    ConversationHistory,
+    ConversationTurn,
+    is_hydration_pending,
+    merge_pending_history,
+)
 from .compaction.omission import OmissionStore, RedisOmissionStore
 from ..conf import REDIS_HISTORY_URL
 
@@ -27,6 +33,80 @@ _MERGE_MAX_ATTEMPTS: int = 16
 #: writers are involved.
 _MERGE_BACKOFF_BASE: float = 0.002
 _MERGE_BACKOFF_CAP: float = 0.100
+
+
+def _turn_sort_key(turn: Dict[str, Any]) -> Optional[tuple]:
+    """``(UTC timestamp, sequence or 0, turn_id)`` of a stored turn dict, or ``None`` when unparseable."""
+    try:
+        ts = datetime.fromisoformat(str(turn["timestamp"]))
+    except (KeyError, ValueError, TypeError):
+        return None
+    ts = ts.replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts.astimezone(timezone.utc)
+    return ts, int(turn.get("sequence") or 0), str(turn.get("turn_id", ""))
+
+
+def _upsert_turn_dict(turns: List[Dict[str, Any]], new: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Replace the dict with ``new['turn_id']`` (keeping its ``timestamp``/``sequence``) or insert it chronologically."""
+    result = list(turns)
+    for i, old in enumerate(result):
+        if old.get("turn_id") == new.get("turn_id"):
+            result[i] = {
+                **new,
+                "timestamp": old.get("timestamp", new.get("timestamp")),
+                "sequence": old.get("sequence"),
+            }
+            return result
+    new_key = _turn_sort_key(new)
+    if new_key is None:
+        return result + [new]
+    insert_at = len(result)
+    for i, old in enumerate(result):
+        old_key = _turn_sort_key(old)
+        if old_key is None:
+            return result + [new]  # an unparseable stored timestamp: never reorder around it
+        if old_key > new_key:
+            insert_at = i
+            break
+    result.insert(insert_at, new)
+    return result
+
+
+def _is_truncated_seed(metadata: Any) -> bool:
+    """``True`` when ``metadata`` carries a ``cold_seed`` marker saying the seed holds only the newest window."""
+    seed = metadata.get("cold_seed") if isinstance(metadata, dict) else None
+    return isinstance(seed, dict) and seed.get("complete") is False
+
+
+def _is_unvalidated_seed(metadata: Any) -> bool:
+    """Whether a cold seed still needs its post-install tombstone check."""
+    seed = metadata.get("cold_seed") if isinstance(metadata, dict) else None
+    return isinstance(seed, dict) and bool(seed.get("validation_pending"))
+
+
+def _predates_truncated_seed(turns: List[Dict[str, Any]], new: Dict[str, Any], metadata: Any) -> bool:
+    """``True`` when ``new`` is absent from ``turns`` and sorts before the oldest of them, under a TRUNCATED seed."""
+    if not _is_truncated_seed(metadata) or not turns:
+        return False
+    if any(t.get("turn_id") == new.get("turn_id") for t in turns):
+        return False  # a replay of a stored turn is replaced in place
+    new_key = _turn_sort_key(new)
+    oldest = _turn_sort_key(turns[0])
+    return new_key is not None and oldest is not None and new_key < oldest
+
+
+def _without_turn(turns: Any, turn_id: str) -> Optional[List[Dict[str, Any]]]:
+    """``turns`` minus the stored turn ``turn_id``; ``None`` when ``turns`` is not a list or holds no such turn."""
+    if not isinstance(turns, list):
+        return None
+    kept = [t for t in turns if not (isinstance(t, dict) and t.get("turn_id") == turn_id)]
+    return kept if len(kept) != len(turns) else None
+
+
+_INSTALL_NX_LUA = """
+if redis.call('EXISTS', KEYS[1]) == 1 then return 0 end
+redis.call('HSET', KEYS[1], unpack(ARGV))
+return 1
+"""
 
 
 async def _merge_backoff(attempt: int) -> None:
@@ -171,19 +251,7 @@ class RedisConversation(ConversationMemory):
         if self.use_hash_storage:
             # Method 1: Using Redis Hash (RECOMMENDED for objects)
             key = self._get_key(user_id, session_id, chatbot_id)
-            history_dict = history.to_dict()
-
-            # Store each field separately in a hash
-            mapping = {
-                "session_id": str(history_dict["session_id"]),
-                "user_id": str(history_dict["user_id"]),
-                "turns": self._serialize_data(history_dict["turns"]),
-                "created_at": history_dict["created_at"],
-                "updated_at": history_dict["updated_at"],
-                "metadata": self._serialize_data(history_dict["metadata"]),
-            }
-            if chatbot_id:
-                mapping["chatbot_id"] = str(chatbot_id)
+            await self.redis.hset(key, mapping=self._history_mapping(history))
         else:
             # Method 2: Using simple key-value storage
             key = self._get_key(user_id, session_id, chatbot_id)
@@ -287,6 +355,86 @@ class RedisConversation(ConversationMemory):
                     print(f"Error deserializing conversation history: {e}")
                     return None
             return None
+
+    def _history_mapping(self, history: ConversationHistory) -> Dict[str, str]:
+        """The hash fields of one history (single source for create / install / merge)."""
+        data = history.to_dict()
+        mapping = {
+            "session_id": str(data["session_id"]),
+            "user_id": str(data["user_id"]),
+            "turns": self._serialize_data(data["turns"]),
+            "created_at": data["created_at"],
+            "updated_at": data["updated_at"],
+            "metadata": self._serialize_data(data["metadata"]),
+        }
+        if data.get("chatbot_id") is not None:
+            mapping["chatbot_id"] = str(data["chatbot_id"])
+        return mapping
+
+    async def _install_history(self, history: ConversationHistory) -> bool:
+        """Atomic NX install (single Lua script in hash mode, ``SET NX`` in string mode); pending histories merge by CAS."""
+        key = self._get_key(history.user_id, history.session_id, history.chatbot_id)
+        if history.chatbot_id:
+            legacy = self._get_key(history.user_id, history.session_id, None)
+            if legacy != key and not await self.redis.exists(key) and await self.redis.exists(legacy):
+                await self.get_history(history.user_id, history.session_id, history.chatbot_id)  # FEAT-524 re-key
+                return False  # never shadow a legacy history
+        if self.use_hash_storage:
+            flat = [x for item in self._history_mapping(history).items() for x in item]
+            installed = bool(await self.redis.eval(_INSTALL_NX_LUA, 1, key, *flat))
+        else:
+            installed = bool(await self.redis.set(key, self._serialize_data(history.to_dict()), nx=True))
+        if installed:
+            await self.redis.sadd(self._get_user_sessions_key(history.user_id, history.chatbot_id), history.session_id)
+            await self._refresh_ttl(history.user_id, history.session_id, history.chatbot_id)
+            return True
+        return await self._merge_pending(key, history)
+
+    def _merged_or_none(
+        self, existing: Optional[ConversationHistory], history: ConversationHistory
+    ) -> Optional[ConversationHistory]:
+        """The history to write for a pending merge, or ``None`` when the existing one is not pending."""
+        if existing is None:
+            return history
+        if is_hydration_pending(existing.metadata):
+            return merge_pending_history(existing, history)
+        return None
+
+    async def _write_merged(self, conn: Any, key: str, merged: ConversationHistory) -> None:
+        if self.use_hash_storage:
+            conn.hset(key, mapping=self._history_mapping(merged))
+        else:
+            conn.set(key, self._serialize_data(merged.to_dict()))
+
+    async def _merge_pending(self, key: str, history: ConversationHistory) -> bool:
+        """CAS-merge ``history`` into an existing PENDING history; ``False`` when the existing one is not pending."""
+        if not self._supports_cas():
+            merged = self._merged_or_none(
+                await self._load_history(history.user_id, history.session_id, history.chatbot_id), history
+            )
+            if merged is None:
+                return False
+            await self.update_history(merged)
+            await self._refresh_ttl(history.user_id, history.session_id, history.chatbot_id)
+            return True
+        for attempt in range(_MERGE_MAX_ATTEMPTS):
+            async with self.redis.pipeline() as pipe:
+                try:
+                    await pipe.watch(key)
+                    existing = await self._load_history(history.user_id, history.session_id, history.chatbot_id)
+                    merged = self._merged_or_none(existing, history)
+                    if merged is None:
+                        await pipe.unwatch()
+                        return False
+                    pipe.multi()
+                    await self._write_merged(pipe, key, merged)
+                    await pipe.execute()
+                    await self._refresh_ttl(history.user_id, history.session_id, history.chatbot_id)
+                    return True
+                except WatchError:
+                    pass
+            await _merge_backoff(attempt)
+        raise RuntimeError(f"history install for {key} still conflicting after {_MERGE_MAX_ATTEMPTS} attempts")
 
     async def update_history(self, history: ConversationHistory) -> None:
         """Update a conversation history."""
@@ -489,6 +637,275 @@ class RedisConversation(ConversationMemory):
         """Append ``turn`` (see :meth:`_append_turn`) and refresh the history TTL."""
         await self._append_turn(user_id, session_id, turn, chatbot_id, compaction_state=compaction_state)
         await self._refresh_ttl(user_id, session_id, chatbot_id)
+
+    async def upsert_turn(
+        self,
+        user_id: str,
+        session_id: str,
+        turn: ConversationTurn,
+        chatbot_id: Optional[str] = None,
+        *,
+        create: bool = True,
+        keep_seed_suffix: bool = False,
+    ) -> bool:
+        """Replace the stored turn with the same ``turn_id``, or insert it, in ONE compare-and-swap write.
+
+        Runs the ``add_turn`` normalize / count / offload steps. Idempotent: replaying the same turn leaves
+        one copy; the ordering fields of an existing turn never change.
+
+        Args:
+            user_id: Owner of the conversation.
+            session_id: Conversation session.
+            turn: The turn to upsert.
+            chatbot_id: Agent key segment.
+            create: When ``True`` (default) a missing history is created holding ``turn``. When ``False``
+                a missing history is left missing and nothing is written: the existence check runs inside
+                the same compare-and-swap, so the caller can seed the history first without racing an expiry.
+            keep_seed_suffix: When ``True`` and the history carries a TRUNCATED ``cold_seed`` marker, a turn that
+                is not stored yet and sorts before the oldest stored turn is NOT inserted (it lives in the cold
+                tier): inserting it would leave a gap between it and the seeded suffix, and a read would count
+                the gap as coverage. The call still returns ``True`` (the history exists, nothing to seed).
+                A seed with pending tombstone validation instead returns ``False`` without writing, so the
+                caller must finish that validation before retrying the upsert.
+
+        Returns:
+            ``True`` when the turn was written or deliberately kept cold-only; ``False`` when ``create=False``
+            and no history exists, or ``keep_seed_suffix=True`` and the seed needs tombstone validation.
+
+        Raises:
+            RuntimeError: the CAS still conflicts after ``_MERGE_MAX_ATTEMPTS`` (the caller's bus retries).
+        """
+        prepared = await self._prepare_turn(user_id, session_id, turn, chatbot_id)
+        key = self._get_key(user_id, session_id, chatbot_id)
+        new = prepared.to_dict()
+        attempts = _MERGE_MAX_ATTEMPTS if self._supports_cas() else 1
+        for attempt in range(attempts):
+            if self._supports_cas():
+                async with self.redis.pipeline() as pipe:
+                    try:
+                        await pipe.watch(key)
+                        written = await self._write_upserted(
+                            pipe,
+                            key,
+                            user_id,
+                            session_id,
+                            chatbot_id,
+                            new,
+                            cas=True,
+                            create=create,
+                            keep_seed_suffix=keep_seed_suffix,
+                        )
+                    except WatchError:
+                        await _merge_backoff(attempt)
+                        continue
+            else:
+                written = await self._write_upserted(
+                    self.redis,
+                    key,
+                    user_id,
+                    session_id,
+                    chatbot_id,
+                    new,
+                    cas=False,
+                    create=create,
+                    keep_seed_suffix=keep_seed_suffix,
+                )
+            if not written:
+                return False
+            await self._refresh_ttl(user_id, session_id, chatbot_id)
+            await self.redis.sadd(self._get_user_sessions_key(user_id, chatbot_id), session_id)
+            return True
+        raise RuntimeError(f"turn upsert for {key} still conflicting after {_MERGE_MAX_ATTEMPTS} attempts")
+
+    async def _write_upserted(
+        self,
+        conn: Any,
+        key: str,
+        user_id: str,
+        session_id: str,
+        chatbot_id: Optional[str],
+        new: Dict[str, Any],
+        *,
+        cas: bool,
+        create: bool = True,
+        keep_seed_suffix: bool = False,
+    ) -> bool:
+        """Read the stored turns through ``conn``, upsert ``new`` and write once (MULTI/EXEC when ``cas``).
+
+        Returns ``False`` (nothing written, WATCH released) when creation is disabled and the key is absent,
+        or suffix preservation is enabled and the seed needs tombstone validation.
+        """
+        now = datetime.now().isoformat()
+        if self.use_hash_storage:
+            exists = await conn.exists(key)
+            if not exists and not create:
+                return await self._abort_upsert(conn, cas)
+            raw = await conn.hget(key, "turns") if exists else None
+            turns = self._deserialize_data(raw) if raw else []
+            if keep_seed_suffix and exists:
+                metadata = self._deserialize_data(await conn.hget(key, "metadata") or b"null")
+                if _is_unvalidated_seed(metadata):
+                    return await self._abort_upsert(conn, cas)
+                if _predates_truncated_seed(turns, new, metadata):
+                    return await self._skip_upsert(conn, cas)
+            mapping: Dict[str, Any] = {"turns": self._serialize_data(_upsert_turn_dict(turns, new)), "updated_at": now}
+            if chatbot_id is not None:
+                mapping["chatbot_id"] = str(chatbot_id)
+            if not exists:
+                mapping.update(
+                    {
+                        "session_id": str(session_id),
+                        "user_id": str(user_id),
+                        "created_at": now,
+                        "metadata": self._serialize_data({}),
+                    }
+                )
+            if cas:
+                conn.multi()
+                conn.hset(key, mapping=mapping)
+                await conn.execute()
+            else:
+                await conn.hset(key, mapping=mapping)
+            return True
+        raw = await conn.get(key)
+        if raw is None and not create:
+            return await self._abort_upsert(conn, cas)
+        payload = self._deserialize_data(raw) if raw else None
+        if isinstance(payload, dict):
+            history = ConversationHistory.from_dict(payload)
+        else:
+            history = ConversationHistory(session_id=session_id, user_id=user_id, chatbot_id=chatbot_id)
+        if chatbot_id and not history.chatbot_id:
+            history.chatbot_id = chatbot_id
+        if keep_seed_suffix and _is_unvalidated_seed(history.metadata):
+            return await self._abort_upsert(conn, cas)
+        if keep_seed_suffix and _predates_truncated_seed([t.to_dict() for t in history.turns], new, history.metadata):
+            return await self._skip_upsert(conn, cas)
+        merged = _upsert_turn_dict([t.to_dict() for t in history.turns], new)
+        history.turns = [ConversationTurn.from_dict(t) for t in merged]
+        data = self._serialize_data(history.to_dict())
+        if cas:
+            conn.multi()
+            conn.set(key, data)
+            await conn.execute()
+        else:
+            await conn.set(key, data)
+        return True
+
+    @classmethod
+    async def _skip_upsert(cls, conn: Any, cas: bool) -> bool:
+        """Release the WATCH; the history exists and the turn is deliberately not stored (reports ``True``)."""
+        await cls._abort_upsert(conn, cas)
+        return True
+
+    @staticmethod
+    async def _abort_upsert(conn: Any, cas: bool) -> bool:
+        """Release the WATCH (``cas``) and report that nothing was written."""
+        if cas:
+            await conn.unwatch()
+        return False
+
+    async def remove_turn(self, user_id: str, session_id: str, turn_id: str, chatbot_id: Optional[str] = None) -> bool:
+        """Remove the turn ``turn_id`` in ONE compare-and-swap write (``WATCH``/``MULTI``/``EXEC``).
+
+        The base read-modify-write (``get_history`` -> filter -> ``update_history``) overwrote a turn appended
+        between its read and its write. Here a concurrent writer aborts the transaction and the filter re-runs
+        against the fresh value. Hash mode rewrites only ``turns``/``updated_at``, so a concurrent ``metadata``
+        write survives as well. A legacy un-segmented history is re-keyed first (FEAT-524), exactly as
+        :meth:`get_history` would, so the turn also leaves the record the bot reads next.
+
+        Args:
+            user_id: Owner of the conversation.
+            session_id: Conversation session.
+            turn_id: The turn to drop.
+            chatbot_id: Agent key segment.
+
+        Returns:
+            ``True`` when this call removed the turn; ``False`` when there is no history or it holds no such turn.
+
+        Raises:
+            RuntimeError: the CAS still conflicts after ``_MERGE_MAX_ATTEMPTS`` (the deletion cleanup retries).
+        """
+        key = self._get_key(user_id, session_id, chatbot_id)
+        if chatbot_id and not await self.redis.exists(key):
+            if await self.get_history(user_id, session_id, chatbot_id) is None:  # FEAT-524 legacy re-key
+                return False
+        attempts = _MERGE_MAX_ATTEMPTS if self._supports_cas() else 1
+        for attempt in range(attempts):
+            if self._supports_cas():
+                async with self.redis.pipeline() as pipe:
+                    try:
+                        await pipe.watch(key)
+                        removed = await self._write_without_turn(pipe, key, turn_id, cas=True)
+                    except WatchError:
+                        await _merge_backoff(attempt)
+                        continue
+            else:
+                removed = await self._write_without_turn(self.redis, key, turn_id, cas=False)
+            if removed:
+                await self._refresh_ttl(user_id, session_id, chatbot_id)
+            return removed
+        raise RuntimeError(f"turn removal for {key} still conflicting after {_MERGE_MAX_ATTEMPTS} attempts")
+
+    async def _write_without_turn(self, conn: Any, key: str, turn_id: str, *, cas: bool) -> bool:
+        """Read the stored turns through ``conn``, drop ``turn_id`` and write once (MULTI/EXEC when ``cas``).
+
+        Args:
+            conn: The watching pipeline (``cas``) or the plain client.
+            key: The history key.
+            turn_id: The turn to drop.
+            cas: Whether ``conn`` is a pipeline in ``WATCH`` mode.
+
+        Returns:
+            ``True`` when the turn was dropped and written; ``False`` (nothing written) when the key holds no
+            such turn.
+        """
+        payload: Optional[Dict[str, Any]] = None
+        if self.use_hash_storage:
+            raw = await conn.hget(key, "turns")
+            kept = _without_turn(self._deserialize_data(raw) if raw else None, turn_id)
+        else:
+            raw = await conn.get(key)
+            loaded = self._deserialize_data(raw) if raw else None
+            payload = loaded if isinstance(loaded, dict) else None
+            kept = _without_turn(payload.get("turns") if payload is not None else None, turn_id)
+        if kept is None:
+            if cas:
+                await conn.unwatch()
+            return False
+        if not kept:
+            meta = await conn.hget(key, "metadata") if payload is None else payload.get("metadata")
+            if _is_truncated_seed(self._deserialize_data(meta) if isinstance(meta, (bytes, str)) else meta):
+                # Every seeded turn is gone while the cold tier still holds older ones: an empty truncated entry
+                # would let a replayed older turn become the whole "newest suffix". Invalidate it so the next
+                # write reseeds from the cold tier.
+                if cas:
+                    conn.multi()
+                    conn.delete(key)
+                    await conn.execute()
+                else:
+                    await conn.delete(key)
+                return True
+        now = datetime.now().isoformat()
+        if payload is None:
+            mapping = {"turns": self._serialize_data(kept), "updated_at": now}
+            if cas:
+                conn.multi()
+                conn.hset(key, mapping=mapping)
+                await conn.execute()
+            else:
+                await conn.hset(key, mapping=mapping)
+            return True
+        payload["turns"] = kept
+        payload["updated_at"] = now
+        data = self._serialize_data(payload)
+        if cas:
+            conn.multi()
+            conn.set(key, data)
+            await conn.execute()
+        else:
+            await conn.set(key, data)
+        return True
 
     async def _append_turn(
         self,

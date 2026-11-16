@@ -14,6 +14,7 @@ from parrot.experts.knowledge.resolver import KnowledgeResolver
 from parrot.experts.knowledge.sources.adr import ADRSource
 from parrot.experts.knowledge.sources.bookstore import BookstoreSource
 from parrot.experts.knowledge.sources.bundled import BundledSource
+from parrot.experts.knowledge.sources.episodes import EpisodeSource
 from parrot.experts.knowledge.sources.graphindex import GraphIndexSource
 from parrot.experts.knowledge.sources.wiki import WikiSource
 from parrot.experts.knowledge.sources.workspace import WorkspaceSource
@@ -245,6 +246,7 @@ class ExpertRegistry:
             WikiSource(self.wiki_toolkit, namespace=f"expert-{bundle.manifest.name}"),
             BookstoreSource(),
             GraphIndexSource(),
+            EpisodeSource(self.wiki_toolkit),
         ]
         if self.decisions is not None:
             sources.append(ADRSource(self.decisions))

@@ -1,0 +1,492 @@
+"""Tests for the hook-side procedure advice module (FEAT-891)."""
+
+from __future__ import annotations
+
+import json
+import hashlib
+import os
+import subprocess
+import sys
+from pathlib import Path
+from typing import Mapping
+
+import pytest
+
+from parrot.sdd.scripts import procedure_advice as advice
+
+GUARDS = [
+    {
+        "procedure": "sdd:task-close",
+        "kind": "entry",
+        "executable": "parrot",
+        "argv_prefix": ["sdd", "task", "close"],
+        "path_globs": [],
+        "scope": {"task": {"argv": 0}, "feature": {"argv": 1}},
+    },
+    {
+        "procedure": "sdd:task-close",
+        "kind": "bypass",
+        "executable": "git",
+        "argv_prefix": ["mv"],
+        "path_globs": ["sdd/tasks/active/*"],
+        "scope": {},
+    },
+]
+
+
+def test_advice_stdlib_only() -> None:
+    """Importing the module in a fresh interpreter loads no pydantic, yaml or sqlite3."""
+    code = (
+        "import sys\n"
+        "from parrot.sdd.scripts import procedure_advice\n"
+        "print(sorted(m for m in ('pydantic', 'yaml', 'sqlite3') if m in sys.modules))\n"
+    )
+    env = os.environ.copy()
+    source_root = Path(__file__).parents[2] / "src"
+    env["PYTHONPATH"] = os.pathsep.join((str(source_root), env.get("PYTHONPATH", "")))
+    proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False, env=env)
+    assert proc.stdout.strip() == "[]", proc.stdout + proc.stderr
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("cd x && rtk git mv a b", ("git", ["mv", "a", "b"])),
+        ("FOO=1 BAR=2 /usr/bin/git push", ("git", ["push"])),
+        ("uv run pytest -q", ("pytest", ["-q"])),
+        ("timeout 30 gh pr create --base dev", ("gh", ["pr", "create", "--base", "dev"])),
+        ("echo 'unbalanced", ("", [])),
+    ],
+)
+def test_leading_command_wrappers(command: str, expected: tuple[str, list[str]]) -> None:
+    """Assignments, ``cd … &&`` and known wrappers are skipped."""
+    assert advice.leading_command(command) == expected
+
+
+def test_match_guards_every_segment() -> None:
+    """A guarded command is found in any segment of a compound command."""
+    index = {"schema_version": advice.INDEX_SCHEMA_VERSION, "guards": GUARDS}
+    matched = advice.match_guards(index, "mkdir -p x && git mv sdd/tasks/active/TASK-1-a.md sdd/tasks/completed/")
+    assert matched[0]["argv"] == ["sdd/tasks/active/TASK-1-a.md", "sdd/tasks/completed/"]
+    assert advice.match_guards(index, "git mv README.md docs/") == []
+
+    matched = advice.match_guards(index, "parrot sdd task close TASK-1 demo verified")
+    assert matched[0]["argv"] == ["TASK-1", "demo", "verified"]
+
+
+def test_match_guards_resolves_effective_directory(tmp_path: Path) -> None:
+    """``cd``, ``git -C`` and absolute paths cannot hide the path a bypass guard protects."""
+    checkout = tmp_path / "repo"
+    (checkout / "sdd" / "tasks" / "active").mkdir(parents=True)
+    index = {"schema_version": advice.INDEX_SCHEMA_VERSION, "guards": GUARDS}
+
+    def bypassed(command: str, *, cwd: Path = checkout) -> bool:
+        matches = advice.match_guards(index, command, checkout=checkout, cwd=cwd)
+        return any(match["kind"] == "bypass" for match in matches)
+
+    assert bypassed("cd sdd/tasks/active && git mv TASK-1.md ../completed/")
+    assert bypassed("cd sdd && cd tasks/active; git mv TASK-1.md ../completed/")
+    assert bypassed("git -C sdd/tasks/active mv TASK-1.md ../completed/")
+    assert bypassed("git -C sdd -C tasks/active mv TASK-1.md ../completed/")
+    assert bypassed(f"git mv {checkout}/sdd/tasks/active/TASK-1.md {checkout}/sdd/tasks/completed/")
+    assert bypassed(f"cd {checkout}/sdd/tasks && git mv active/TASK-1.md completed/")
+    assert bypassed("git mv TASK-1.md ../completed/", cwd=checkout / "sdd" / "tasks" / "active")
+    assert bypassed("cd sdd/tasks/completed && git mv ../active/TASK-1.md .")
+
+    matched = advice.match_guards(index, "git -C sdd/tasks/active mv TASK-1.md ../completed/", checkout=checkout)
+    assert matched[0]["argv"] == ["TASK-1.md", "../completed/"]
+
+    assert not bypassed("cd docs && git mv a.md b.md")
+    assert not bypassed("cd sdd/tasks/active && cd ../../.. && git mv README.md docs/")
+    assert not bypassed(f"git mv {tmp_path}/other/sdd/tasks/active/TASK-1.md {tmp_path}/other/done/")
+    assert not bypassed("git mv ../sdd/tasks/active/TASK-1.md ../done/")
+
+
+def test_match_guards_keeps_as_written_match(tmp_path: Path) -> None:
+    """Changing into another checkout or an unresolvable directory never turns a guard off."""
+    checkout = tmp_path / "repo"
+    (checkout / "sdd" / "tasks" / "active").mkdir(parents=True)
+    index = {"schema_version": advice.INDEX_SCHEMA_VERSION, "guards": GUARDS}
+    move = "git mv sdd/tasks/active/TASK-1.md sdd/tasks/completed/"
+
+    def bypassed(command: str) -> bool:
+        matches = advice.match_guards(index, command, checkout=checkout, cwd=checkout)
+        return any(match["kind"] == "bypass" for match in matches)
+
+    for prefix in (
+        "cd .parrot/worktrees/feat-FEAT-1-demo",
+        f"cd {tmp_path}/other-checkout",
+        'cd "$WORKTREES_DIR/feat-FEAT-1-demo"',
+        "cd ~/proyectos/demo",
+        "cd $(git rev-parse --show-toplevel)",
+        "cd -",
+        "cd",
+    ):
+        assert bypassed(f"{prefix} && {move}"), prefix
+    assert bypassed("git -C .parrot/worktrees/feat-FEAT-1-demo mv sdd/tasks/active/TASK-1.md sdd/tasks/completed/")
+    assert bypassed('git -C "$WT" mv sdd/tasks/active/TASK-1.md sdd/tasks/completed/')
+
+    # An unresolvable directory change stops directory tracking instead of reusing the previous directory.
+    assert not bypassed("cd sdd/tasks/active && ls; cd - && git mv README.md docs/")
+    assert not bypassed("cd sdd/tasks/active && ls; cd && git mv README.md docs/")
+    assert not bypassed('cd sdd/tasks/active; cd "$HOME" && git mv README.md docs/')
+    # An absolute directory makes it known again.
+    assert bypassed(f"cd - && cd {checkout}/sdd/tasks/active && git mv TASK-1.md ../completed/")
+
+
+def test_match_guards_default_arguments_unchanged() -> None:
+    """Without ``checkout``/``cwd`` a command with no ``cd`` and no ``git -C`` matches as before."""
+    index = {"schema_version": advice.INDEX_SCHEMA_VERSION, "guards": GUARDS}
+    matched = advice.match_guards(index, "mkdir -p x && git mv ./sdd/tasks/active/TASK-1-a.md sdd/tasks/completed/")
+    assert [match["kind"] for match in matched] == ["bypass"]
+    assert matched[0]["argv"] == ["./sdd/tasks/active/TASK-1-a.md", "sdd/tasks/completed/"]
+    assert advice.match_guards(index, "git mv README.md docs/") == []
+    assert advice.match_guards(index, "git mv /abs/sdd/tasks/active/TASK-1.md /abs/sdd/tasks/completed/") == []
+    assert advice.match_guards(index, "parrot sdd task close TASK-1 demo verified")[0]["argv"] == [
+        "TASK-1",
+        "demo",
+        "verified",
+    ]
+
+
+def test_evaluate_command_denies_cd_bypass(tmp_path: Path) -> None:
+    """The hook entry point denies a hand move hidden behind ``cd`` or ``git -C``."""
+    root = _repo(tmp_path)
+    for command in (
+        "cd sdd/tasks/active && git mv TASK-1.md ../completed/",
+        "git -C sdd/tasks/active mv TASK-1.md ../completed/",
+        f"git mv {root}/sdd/tasks/active/TASK-1.md {root}/sdd/tasks/completed/",
+    ):
+        assert advice.evaluate_command(command, root, env={}).decision == "deny", command
+    assert advice.evaluate_command("cd docs && git mv a.md b.md", root, env={}).decision == "none"
+    nested = root / "sdd" / "tasks" / "active"
+    nested.mkdir(parents=True)
+    assert advice.evaluate_command("git mv TASK-1.md ../completed/", nested, env={}).decision == "deny"
+
+
+def test_shared_root_plain_and_worktree(tmp_path: Path) -> None:
+    """A plain checkout and linked worktree resolve to the primary checkout."""
+    main = tmp_path / "main"
+    main_git = main / ".git"
+    main_git.mkdir(parents=True)
+    assert advice.checkout_root(main / "src") == main
+    assert advice.shared_root(main / "src") == main
+
+    worktree = tmp_path / "worktree"
+    admin = main_git / "worktrees" / "linked"
+    admin.mkdir(parents=True)
+    (admin / "commondir").write_text("../..\n", encoding="utf-8")
+    worktree.mkdir()
+    (worktree / ".git").write_text(f"gitdir: {admin}\n", encoding="utf-8")
+    assert advice.checkout_root(worktree / "src") == worktree
+    assert advice.shared_root(worktree / "src") == main
+
+
+def test_load_index_rejects_bad_files(tmp_path: Path) -> None:
+    """Absent, unparsable, oversized and wrong-version files all return None."""
+    root = tmp_path / "repo"
+    index_path = root / advice.PLANE_DIR / advice.INDEX_FILE
+    index_path.parent.mkdir(parents=True)
+
+    assert advice.load_index(root) is None
+
+    index_path.write_text("not json", encoding="utf-8")
+    assert advice.load_index(root) is None
+
+    index_path.write_text(json.dumps({"schema_version": 2}), encoding="utf-8")
+    assert advice.load_index(root) is None
+
+    index_path.write_text("x" * (advice.MAX_INDEX_BYTES + 1), encoding="utf-8")
+    assert advice.load_index(root) is None
+
+    index_path.write_text(json.dumps({"schema_version": advice.INDEX_SCHEMA_VERSION}), encoding="utf-8")
+    assert advice.load_index(root) == {"schema_version": advice.INDEX_SCHEMA_VERSION}
+
+
+def _repo(tmp_path: Path, *, status: str = "in-progress", config: dict | None = None) -> Path:
+    """Create a small plain checkout with a fresh compiled procedure plane."""
+    root = tmp_path / "repo"
+    (root / ".git").mkdir(parents=True)
+    (root / ".git" / "HEAD").write_text("ref: refs/heads/feat-FEAT-1-demo\n", encoding="utf-8")
+    (root / "sdd" / "specs").mkdir(parents=True)
+    (root / "sdd" / "specs" / "demo.spec.md").write_text("# demo\n", encoding="utf-8")
+    (root / "sdd" / "procedures").mkdir(parents=True)
+    source = root / "sdd" / "procedures" / "sdd-workflow.yaml"
+    source.write_text("graph: sdd\n", encoding="utf-8")
+    (root / "sdd" / "tasks" / "index").mkdir(parents=True)
+    index = {
+        "schema_version": advice.INDEX_SCHEMA_VERSION,
+        "feature": "demo",
+        "feature_id": "FEAT-1",
+        "tasks": [
+            {"id": "TASK-1", "status": status, "depends_on": []},
+            {"id": "TASK-2", "status": "pending", "depends_on": ["TASK-1"]},
+        ],
+        "guards": [
+            {
+                "procedure": "sdd:task-close",
+                "kind": "entry",
+                "executable": "parrot",
+                "argv_prefix": ["sdd", "task", "close"],
+                "path_globs": [],
+                "scope": {"task": {"argv": 0}, "feature": {"argv": 1}},
+            },
+            {
+                "procedure": "sdd:task-close",
+                "kind": "bypass",
+                "executable": "git",
+                "argv_prefix": ["mv"],
+                "path_globs": ["sdd/tasks/active/*"],
+                "scope": {},
+            },
+            {
+                "procedure": "sdd:pr-create",
+                "kind": "entry",
+                "executable": "gh",
+                "argv_prefix": ["pr", "create"],
+                "path_globs": [],
+                "scope": {"base": {"flag": "--base|-B"}},
+            },
+            {
+                "procedure": "sdd:push",
+                "kind": "entry",
+                "executable": "git",
+                "argv_prefix": ["push"],
+                "path_globs": [],
+                "scope": {},
+            },
+        ],
+        "procedures": {
+            "sdd:task-close": {
+                "mode": "mandatory",
+                "command": "parrot sdd task close <TASK> <slug> verified",
+                "use_instead": "parrot sdd task close <TASK> <slug> verified",
+                "advice": "Close tasks through the SDD command.",
+                "preconditions": [
+                    {"probe": "task.status", "expect": "in-progress", "cost": "local"},
+                    {"probe": "task.depends_done", "expect": True, "cost": "local"},
+                ],
+            },
+            "sdd:pr-create": {
+                "mode": "mandatory",
+                "command": "gh pr create --base <base>",
+                "advice": "Pass the intended base branch.",
+                "preconditions": [{"probe": "flow.base_allowed", "expect": True, "cost": "local"}],
+            },
+            "sdd:push": {
+                "mode": "advisory",
+                "command": "git push",
+                "advice": "Push through the normal SDD workflow.",
+                "preconditions": [{"probe": "env.not_worker_sandbox", "expect": True, "cost": "local"}],
+            },
+        },
+        "sources": [
+            {"path": "sdd/procedures/sdd-workflow.yaml", "sha1": hashlib.sha1(source.read_bytes()).hexdigest()}
+        ],
+    }
+    index_path = root / "sdd" / "tasks" / "index" / "demo.json"
+    index_path.write_text(json.dumps({"feature": "demo", "tasks": index["tasks"]}), encoding="utf-8")
+    config_payload = {"hotfix_base": "main"}
+    if config:
+        config_payload.update(config)
+    (root / "sdd" / "config.json").write_text(json.dumps(config_payload), encoding="utf-8")
+    plane = root / advice.PLANE_DIR
+    plane.mkdir(parents=True)
+    (plane / advice.INDEX_FILE).write_text(json.dumps(index), encoding="utf-8")
+    return root
+
+
+def test_guard_decision_table(tmp_path: Path) -> None:
+    """Exercise every local row of the guard decision table."""
+    root = _repo(tmp_path)
+    assert (
+        advice.evaluate_command("git mv sdd/tasks/active/TASK-1.md sdd/tasks/completed/", root, env={}).decision
+        == "deny"
+    )
+    assert (
+        "parrot sdd task close"
+        in advice.evaluate_command("git mv sdd/tasks/active/TASK-1.md sdd/tasks/completed/", root, env={}).text
+    )
+    assert advice.evaluate_command("parrot sdd task close TASK-2 demo verified", root, env={}).decision == "deny"
+    assert advice.evaluate_command("parrot sdd task close TASK-1 demo verified", root, env={}).decision == "none"
+    assert advice.evaluate_command("parrot sdd task close TASK-9 demo verified", root, env={}).decision == "advise"
+    assert advice.evaluate_command("gh pr create --base main", root, env={}).decision == "deny"
+    assert advice.evaluate_command("gh pr create -B main", root, env={}).decision == "deny"
+    assert advice.evaluate_command("gh pr create", root, env={}).decision != "deny"
+    assert advice.evaluate_command("git push", root, env={"PARROT_SDD_CACHE_DIR": "1"}).decision == "advise"
+
+
+@pytest.mark.parametrize("switch", ["PARROT_ALLOW_PROCEDURE", "PARROT_ALLOW_DANGEROUS", "enforce-false"])
+def test_escape_downgrades_deny(tmp_path: Path, switch: str) -> None:
+    """Each supported escape switch changes a denial into an advisory."""
+    config = {"procedure": {"enforce": False}} if switch == "enforce-false" else None
+    env = {} if config else {switch: "1"}
+    assert (
+        advice.evaluate_command(
+            "git mv sdd/tasks/active/TASK-1.md sdd/tasks/completed/", _repo(tmp_path, config=config), env=env
+        ).decision
+        == "advise"
+    )
+
+
+def test_stale_index_is_silent(tmp_path: Path) -> None:
+    """A changed or missing listed source makes the plane silent."""
+    root = _repo(tmp_path)
+    source = root / "sdd" / "procedures" / "sdd-workflow.yaml"
+    source.write_text("changed\n", encoding="utf-8")
+    assert (
+        advice.evaluate_command("git mv sdd/tasks/active/TASK-1.md sdd/tasks/completed/", root, env={}).decision
+        == "none"
+    )
+    source.unlink()
+    assert (
+        advice.evaluate_command("git mv sdd/tasks/active/TASK-1.md sdd/tasks/completed/", root, env={}).decision
+        == "none"
+    )
+
+
+def test_disabled_and_absent_plane_are_silent(tmp_path: Path) -> None:
+    """A disabled or absent procedure plane never emits advice."""
+    disabled = _repo(tmp_path / "disabled", config={"procedure": {"enabled": False}})
+    assert (
+        advice.evaluate_command("git mv sdd/tasks/active/TASK-1.md sdd/tasks/completed/", disabled, env={}).decision
+        == "none"
+    )
+    absent = tmp_path / "absent"
+    (absent / ".git").mkdir(parents=True)
+    (absent / ".git" / "HEAD").write_text("ref: refs/heads/feat-demo\n", encoding="utf-8")
+    assert advice.evaluate_command("git push", absent, env={}).decision == "none"
+
+
+def test_apply_check_semantics(tmp_path: Path) -> None:
+    """String expectations are probe arguments; boolean expectations compare values."""
+    seen: dict[str, str] = {}
+
+    def probe(checkout: Path, scope: Mapping[str, str], args: Mapping[str, str]) -> bool | None:
+        seen["expect"] = args["expect"]
+        return args["expect"] == "in-progress|done"
+
+    assert (
+        advice.apply_check({"probe": "custom", "expect": "in-progress|done"}, tmp_path, {}, probes={"custom": probe})
+        is True
+    )
+    assert seen["expect"] == "in-progress|done"
+    assert (
+        advice.apply_check({"probe": "custom", "expect": True}, tmp_path, {}, probes={"custom": lambda *_: True})
+        is True
+    )
+    assert (
+        advice.apply_check({"probe": "custom", "expect": True}, tmp_path, {}, probes={"custom": lambda *_: None})
+        is None
+    )
+
+
+@pytest.mark.parametrize("separator", [";", "&&", "||", "\n"])
+def test_repeated_entry_checks_every_scope(tmp_path: Path, separator: str) -> None:
+    """An allowed first occurrence never masks a forbidden later occurrence."""
+    root = _repo(tmp_path)
+    for command in (
+        f"gh pr create --base dev {separator} gh pr create --base main",
+        f"parrot sdd task close TASK-1 demo verified {separator} parrot sdd task close TASK-2 demo verified",
+    ):
+        assert advice.evaluate_command(command, root, env={}).decision == "deny"
+
+
+@pytest.mark.parametrize(
+    "prefix", ["# comment\n", "echo safe # comment\n", "echo '# data'\n", "echo value#tag\n", "echo value#tag;"]
+)
+def test_comments_preserve_following_commands(tmp_path: Path, prefix: str) -> None:
+    """A comment ends at the original newline, not at the end of the command string."""
+    assert advice.evaluate_command(prefix + "gh pr create --base main", _repo(tmp_path), env={}).decision == "deny"
+
+
+@pytest.mark.parametrize(
+    "header, body, terminator",
+    [
+        ("cat <<EOF", "git mv sdd/tasks/active/TASK-1.md sdd/tasks/completed/", "EOF"),
+        ("cat <<'EOF'", "it's documentation; gh pr create --base main", "EOF"),
+        ('cat <<"EOF"', 'unbalanced " documentation', "EOF"),
+        ("cat <<\\EOF", "gh pr create --base main", "EOF"),
+        ("cat <<-'END WORD'", "\tgh pr create --base main", "\tEND WORD"),
+        ("cat <<A <<'B'", "first body\nA\nit's the second body", "B"),
+    ],
+)
+def test_heredoc_data_is_not_a_command(tmp_path: Path, header: str, body: str, terminator: str) -> None:
+    """Ignore heredoc data without losing a command after its terminator."""
+    root = _repo(tmp_path)
+    command = f"{header}\n{body}\n{terminator}\n"
+    assert advice.evaluate_command(command, root, env={}).decision == "none"
+    assert advice.evaluate_command(command + "gh pr create --base main", root, env={}).decision == "deny"
+
+
+def test_herestring_and_escaped_newline(tmp_path: Path) -> None:
+    """Here strings are not heredocs; shell continuations join command words."""
+    root = _repo(tmp_path)
+    assert advice.evaluate_command('cat <<< "data"\ngh pr create --base main', root, env={}).decision == "deny"
+    assert advice.evaluate_command("gh pr \\\ncreate --base main", root, env={}).decision == "deny"
+
+
+@pytest.mark.parametrize("expression", ["n=$((1 << 2))", "((n = 1 << 2))", "n=$(((1 + 2) << 2))"])
+def test_arithmetic_shift_is_not_heredoc(tmp_path: Path, expression: str) -> None:
+    """Arithmetic left shifts do not consume later executable lines as heredoc data."""
+    command = expression + "\ngh pr create --base main"
+    assert advice.evaluate_command(command, _repo(tmp_path), env={}).decision == "deny"
+
+
+def test_new_overlay_invalidates_hook(tmp_path: Path) -> None:
+    """New source files make the hook silent until the plane has been rebuilt."""
+    from parrot.knowledge.wiki.procedure.index import is_stale
+
+    root = _repo(tmp_path)
+    (root / "sdd/procedures/overlay.yaml").write_text("graph: sdd\nexclude: [pr-create]\n", encoding="utf-8")
+    index = advice.load_index(root)
+    assert is_stale(index, root=root)
+    assert not advice._fresh_sources(root, index)
+    assert advice.evaluate_command("gh pr create --base main", root, env={}).decision == "none"
+
+
+def test_deny_text_keeps_escape_hint(tmp_path: Path) -> None:
+    """A long instruction is truncated in the middle; the deliberate-exception hint survives."""
+    root = _repo(tmp_path)
+    command = "git mv sdd/tasks/active/TASK-1.md sdd/tasks/completed/"
+    hint = "(Deliberate exception: ask the user to re-run with PARROT_ALLOW_PROCEDURE=1.)"
+
+    short = advice.evaluate_command(command, root, env={})
+    assert short.text == (
+        "Procedure sdd:task-close is mandatory: do not replace this procedure by hand. "
+        f"Use: parrot sdd task close <TASK> <slug> verified. {hint}"
+    )
+
+    index_path = root / advice.PLANE_DIR / advice.INDEX_FILE
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    index["procedures"]["sdd:task-close"]["use_instead"] = "parrot sdd task close " + "x" * (
+        advice.MAX_ADVICE_CHARS * 2
+    )
+    index["procedures"]["sdd:task-close"]["advice"] = "y" * (advice.MAX_ADVICE_CHARS * 2)
+    index_path.write_text(json.dumps(index), encoding="utf-8")
+
+    denied = advice.evaluate_command(command, root, env={})
+    assert denied.decision == "deny"
+    assert len(denied.text) == advice.MAX_ADVICE_CHARS
+    assert denied.text.startswith("Procedure sdd:task-close is mandatory: do not replace this procedure by hand.")
+    assert denied.text.endswith(f"…. {hint}")
+
+    advised = advice.evaluate_command(command, root, env={advice.ESCAPE_ENV: "1"})
+    assert advised.decision == "advise"
+    assert len(advised.text) == advice.MAX_ADVICE_CHARS
+    assert advised.text.endswith("…")
+
+    assert advice._bounded_text("ab", "cdef", "gh", limit=7) == "abcd…gh"
+    assert advice._bounded_text("abcd", "efgh", "ijkl", limit=6) == "abcdef"
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [("done", True), ("done-with-issues", True), ("in-progress", False), ("pending", False)],
+)
+def test_depends_done_accepts_done_with_issues(tmp_path: Path, status: str, expected: bool) -> None:
+    """A dependency closed with issues satisfies ``task.depends_done``; an open one does not."""
+    root = _repo(tmp_path, status=status)
+    check = {"probe": "task.depends_done", "expect": True}
+    assert advice.apply_check(check, root, {"feature": "demo", "task": "TASK-2"}) is expected
+    assert advice.apply_check({"probe": "feature.tasks_done", "expect": True}, root, {"feature": "demo"}) is False

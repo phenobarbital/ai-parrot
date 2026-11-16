@@ -38,6 +38,29 @@ def rtk_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(policy.RTK_ENV_SWITCH, "0")
 
 
+#: Variables a sandboxed launch (``parrot sdd launch worker``, the dev-loop dispatcher, the shell prefix)
+#: exports into its session. The policy reads every one of them from ``os.environ``.
+AMBIENT_SANDBOX_VARIABLES = (
+    "PARROT_SDD_SANDBOX_BACKEND",
+    *policy.LAUNCHER_MARKERS,
+    "PARROT_SDD_SANDBOX_DEGRADED",
+    "PARROT_SDD_SHELL_PREFIX_POLICY",
+    "PARROT_SDD_SHELL_PREFIX_TOKEN",
+)
+
+
+@pytest.fixture(autouse=True)
+def ambient_sandbox_cleared(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Start every test outside a sandboxed launch, whatever session runs the suite.
+
+    A worker's own ``PARROT_SDD_SANDBOX_ROOTS`` names its real worktree, which never matches a test's
+    ``tmp_path`` checkout, so an inherited value silently invalidates a test's shell-prefix proof. Tests
+    that model a launch set the variables they need themselves.
+    """
+    for name in AMBIENT_SANDBOX_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
+
+
 @pytest.fixture
 def checkout(tmp_path: Path) -> tuple[Path, Path]:
     """Model a pool checkout and the primary repository's shared environment."""

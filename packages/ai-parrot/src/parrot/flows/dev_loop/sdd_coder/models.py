@@ -303,6 +303,10 @@ class RosterConfig(BaseModel):
     suspension_policy: SuspensionPolicy = Field(default_factory=SuspensionPolicy)
     runners: RunnerConfig = Field(default_factory=RunnerConfig)
     """FEAT-559: cooldown/summary-budget policy shared by every execution pool for this roster."""
+    expert_tier_seats: Dict[str, Literal["complex", "standard", "cheap"]] = Field(
+        default_factory=lambda: {"judgment": "complex", "balanced": "standard", "templated": "cheap"}
+    )
+    """FEAT-890: expert tier name -> seat hint class consumed by `eligible_seats_for_tier`."""
 
 
 class SeatProbeResult(BaseModel):

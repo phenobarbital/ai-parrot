@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from parrot.sdd.techwiki.config import TechwikiConfig
 
@@ -20,6 +20,29 @@ _BRANCH_FIELDS = ("base_branch", "staging_branch", "hotfix_base", "ledger_branch
 
 class SddConfigError(ValueError):
     """Raised when ``sdd/config.json`` exists but cannot be used."""
+
+
+class ProcedureSettings(BaseModel):
+    """Procedure-graph settings (``sdd/config.json`` key ``procedure`` -- FEAT-891)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    #: False: the guards never deny a mandatory violation, they advise instead.
+    enforce: bool = True
+    brief_max_lines: int = 8
+    remote_probe_timeout_seconds: int = 5
+    skill_directories: list[str] = Field(default_factory=lambda: ["skills"])
+
+    @field_validator("skill_directories")
+    @classmethod
+    def _relative_skill_directories(cls, values: list[str]) -> list[str]:
+        """Keep discovery within the repository's configured skill locations."""
+        from pathlib import Path
+
+        if any(not value or Path(value).is_absolute() or ".." in Path(value).parts for value in values):
+            raise ValueError("skill_directories must contain repository-relative paths")
+        return sorted(set(values))
 
 
 class SddConfig(BaseModel):
@@ -41,6 +64,8 @@ class SddConfig(BaseModel):
     projects: list[str] | None = None
     #: FEAT-801 — technical-wiki pipeline settings; ``None`` means defaults.
     techwiki: TechwikiConfig | None = None
+    #: FEAT-891 — procedure-graph settings; ``None`` means defaults.
+    procedure: ProcedureSettings | None = None
 
     @field_validator("test_command")
     @classmethod

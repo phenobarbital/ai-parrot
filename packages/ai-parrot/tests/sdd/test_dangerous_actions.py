@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -11,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from parrot.sdd.scripts.dangerous_actions import evaluate, protected_branches
+from parrot.sdd.scripts.dangerous_actions import _render, evaluate, protected_branches
 
 FAKE_GHP = "ghp_" + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"
 
@@ -222,13 +223,18 @@ def _clean_env() -> dict[str, str]:
     return {k: v for k, v in os.environ.items() if k != "PARROT_ALLOW_DANGEROUS"}
 
 
-def _run_hook(stdin: str) -> subprocess.CompletedProcess[str]:
+def _run_hook(
+    stdin: str, *, cwd: Path | None = None, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
+    hook_env = _clean_env() if env is None else dict(env)
+    hook_env["PYTHONPATH"] = str(Path(__file__).resolve().parents[2] / "src")
     return subprocess.run(
         [sys.executable, "-m", "parrot.sdd.scripts.dangerous_actions", "--hook"],
         input=stdin,
         capture_output=True,
         text=True,
-        env=_clean_env(),
+        env=hook_env,
+        cwd=cwd,
         check=False,
     )
 
@@ -263,6 +269,97 @@ def test_hook_main_does_not_import_parrot_cli() -> None:
     )
     proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)
     assert "CLI=False" in proc.stderr, proc.stderr
+
+
+def _plane_repo(tmp_path: Path) -> Path:
+    """Create a repository with a hand-written mandatory procedure plane."""
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    (repo / ".git" / "HEAD").write_text("ref: refs/heads/feat-FEAT-1-demo\n")
+
+    source = repo / "sdd" / "procedures" / "x.yaml"
+    source.parent.mkdir(parents=True)
+    source.write_text("name: x\n")
+    index = {
+        "schema_version": 1,
+        "generation": "test",
+        "sources": [{"path": "sdd/procedures/x.yaml", "sha1": hashlib.sha1(source.read_bytes()).hexdigest()}],
+        "procedures": {
+            "sdd:task-close": {
+                "mode": "mandatory",
+                "use_instead": "parrot sdd task close",
+                "preconditions": [],
+            }
+        },
+        "guards": [
+            {
+                "procedure": "sdd:task-close",
+                "kind": "bypass",
+                "executable": "git",
+                "argv_prefix": ["mv"],
+                "path_globs": ["sdd/tasks/active/*"],
+                "scope": {},
+            }
+        ],
+    }
+    plane = repo / ".parrot" / "procedure"
+    plane.mkdir(parents=True)
+    (plane / "procedures.json").write_text(json.dumps(index))
+    return repo
+
+
+def test_dangerous_guard_unchanged_without_plane(tmp_path: Path) -> None:
+    """Without an index, allowed and denied output stays byte-identical to today's behavior."""
+    allowed_payload = _bash("ls")
+    allowed_payload["cwd"] = str(tmp_path)
+    allowed = _run_hook(json.dumps(allowed_payload), cwd=tmp_path)
+    assert allowed.stdout == "{}\n"
+
+    denied_payload = _bash("git reset --hard")
+    denied_payload["cwd"] = str(tmp_path)
+    denied = _run_hook(json.dumps(denied_payload), cwd=tmp_path)
+    assert denied.stdout == json.dumps(_render(evaluate(denied_payload, root=tmp_path))) + "\n"
+
+
+def test_dangerous_guard_denies_bypass(tmp_path: Path) -> None:
+    """A guarded task move is denied and names the prescribed command."""
+    repo = _plane_repo(tmp_path)
+    payload = _bash("git mv sdd/tasks/active/TASK-1-x.md moved.md")
+    payload["cwd"] = str(repo)
+    proc = _run_hook(json.dumps(payload), cwd=repo)
+    output = json.loads(proc.stdout)
+    hook_output = output["hookSpecificOutput"]
+    assert hook_output["permissionDecision"] == "deny"
+    assert "parrot sdd task close" in hook_output["permissionDecisionReason"]
+
+
+def test_dangerous_guard_existing_deny_wins(tmp_path: Path) -> None:
+    """An original destructive-action denial wins and carries no procedure text."""
+    repo = _plane_repo(tmp_path)
+    payload = _bash("git reset --hard && git mv sdd/tasks/active/TASK-1-x.md moved.md")
+    payload["cwd"] = str(repo)
+    proc = _run_hook(json.dumps(payload), cwd=repo)
+    output = json.loads(proc.stdout)
+    hook_output = output["hookSpecificOutput"]
+    assert hook_output["permissionDecision"] == "deny"
+    assert hook_output["permissionDecisionReason"].startswith("BLOCKED:")
+    assert "Procedure" not in hook_output["permissionDecisionReason"]
+    assert "additionalContext" not in hook_output
+
+
+def test_dangerous_guard_escape_turns_deny_into_context(tmp_path: Path) -> None:
+    """The procedure escape hatch turns a bypass denial into additional context."""
+    repo = _plane_repo(tmp_path)
+    payload = _bash("git mv sdd/tasks/active/TASK-1-x.md moved.md")
+    payload["cwd"] = str(repo)
+    environment = _clean_env()
+    environment["PARROT_ALLOW_PROCEDURE"] = "1"
+    proc = _run_hook(json.dumps(payload), cwd=repo, env=environment)
+    output = json.loads(proc.stdout)
+    hook_output = output["hookSpecificOutput"]
+    assert hook_output["hookEventName"] == "PreToolUse"
+    assert "parrot sdd task close" in hook_output["additionalContext"]
+    assert "updatedInput" not in output
 
 
 def _bash_hook() -> Path | None:

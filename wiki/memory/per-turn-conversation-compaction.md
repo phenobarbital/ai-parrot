@@ -89,6 +89,16 @@ condensation). A turn with no tool invocations renders an empty suffix in
 either tier, so text-only histories render byte-identically to FEAT-524's
 plain `render_history`.
 
+### Structured parts (FEAT-886)
+
+`compact_history` and the prune policies now also produce already-budgeted `MessagePart`s next to the text:
+`TurnView.parts` and `PrunedInvocation.parts` (`parrot.memory.parts`). `render_parts_text` is the one canonical
+formatter: `assistant_suffix == render_parts_text(parts)` for every view with tool activity, and the token counter
+measures exactly that text. `render_history` carries `parts` on `HistoryMessage` next to the rendered `content`;
+every client still consumes `content` once and never appends parts. With compaction disabled the output is
+byte-identical and `parts` is unset. Streamed rounds (`ask_stream`) now commit `metadata.compaction` like `ask()`
+does; a stream that raised keeps `compaction=None`.
+
 ---
 
 ## The write path — always on
@@ -283,8 +293,9 @@ turns; out of scope here).
   (`stage2_needed`, `TurnState.SUMMARIZED`, `Stage2CompactionNeededEvent`)
   are reserved.
 - **`ChatStorage`** (`storage/chat.py`, `key_prefix="chat"`) — normalized
-  and counted like any writer, but **never compacted**; a budgeted
-  `ChatStorage.get_context_for_agent` is a follow-up.
+  and counted like any writer, but **never compacted** (it is the audit log).
+  Older turns are brought back into the working thread by hydration, not by
+  summaries; see [Durable Conversation Memory](durable-conversation-memory.md).
 - **`ContextAssembler`** (`memory/unified/context.py`) keeps
   `len(text) // 4`.
 - Migrating the three existing `cl100k_base` sites

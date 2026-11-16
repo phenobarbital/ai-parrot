@@ -22,6 +22,7 @@ import orjson
 from parrot.memory.abstract import ConversationTurn
 from parrot.memory.compaction.models import Limit, Omission, ToolInvocation, ToolStatus
 from parrot.memory.compaction.omission import content_id
+from parrot.memory.parts import MessagePart, render_parts_text
 
 #: Version stamp for the pruning rules, in case the notice/line format
 #: ever needs to change in a way older renders should not be replayed
@@ -31,10 +32,15 @@ POLICY_VERSION: str = "1"
 
 @dataclass(frozen=True)
 class PrunedInvocation:
-    """One invocation's rendered PRUNED-view line, plus any new omissions."""
+    """One invocation's rendered PRUNED-view line, plus any new omissions.
+
+    ``parts`` are the ``tool_use`` + ``tool_result`` parts matching ``notice``; a custom policy may leave it
+    empty (the caller then wraps ``notice`` in one ``text`` part).
+    """
 
     notice: str
     omissions: Tuple[Omission, ...]
+    parts: Tuple[MessagePart, ...] = ()
 
 
 class PrunePolicy(Protocol):
@@ -57,20 +63,16 @@ class PrunePolicy(Protocol):
         ...
 
 
-def format_invocation_line(inv: ToolInvocation, *, limit: Limit, body: str) -> str:
-    """Build the shared ``"- {tool} {ok|error}[ {Ns}] in=... {body}"`` line.
+def format_invocation_parts(inv: ToolInvocation, *, limit: Limit, body: str) -> Tuple[MessagePart, ...]:
+    """The ``tool_use`` header part and, when ``body`` is non-empty, the ``tool_result`` part of one line.
 
     Args:
-        inv: The invocation being rendered. Its ``input`` is canonicalized
-            and truncated for the ``in=`` field — pass a copy with a
-            narrowed ``input`` (e.g. via :func:`dataclasses.replace`) to
-            show a restricted summary instead of the full arguments.
+        inv: The invocation being rendered (its ``input`` is canonicalized and truncated for ``in=``).
         limit: ``limit.max_input_chars`` bounds the ``in=`` field.
-        body: Already-rendered notice / error fragment(s), joined with a
-            single space and appended after ``in=...``.
+        body: Already-rendered notice / error fragment(s), joined with a single space.
 
     Returns:
-        The formatted line.
+        ``(tool_use,)`` or ``(tool_use, tool_result)``.
     """
     status_word = "error" if (inv.status is ToolStatus.ERROR or inv.error) else "ok"
     elapsed = f" {inv.elapsed_ms / 1000:.1f}s" if inv.elapsed_ms is not None else ""
@@ -79,10 +81,28 @@ def format_invocation_line(inv: ToolInvocation, *, limit: Limit, body: str) -> s
     if len(canonical_input) > limit.max_input_chars:
         canonical_input = canonical_input[: limit.max_input_chars] + "…"
 
-    line = f"- {inv.tool_name} {status_word}{elapsed} in={canonical_input}"
+    header = f"- {inv.tool_name} {status_word}{elapsed} in={canonical_input}"
+    parts = (MessagePart("tool_use", header, inv.tool_name),)
     if body:
-        line = f"{line} {body}"
-    return line
+        parts += (MessagePart("tool_result", body, inv.tool_name),)
+    return parts
+
+
+def format_invocation_line(inv: ToolInvocation, *, limit: Limit, body: str) -> str:
+    """Build the shared ``"- {tool} {ok|error}[ {Ns}] in=... {body}"`` line.
+
+    Derived from :func:`format_invocation_parts` so a line and its parts cannot drift apart.
+
+    Args:
+        inv: The invocation being rendered. Pass a copy with a narrowed ``input`` (e.g. via
+            :func:`dataclasses.replace`) to show a restricted summary instead of the full arguments.
+        limit: ``limit.max_input_chars`` bounds the ``in=`` field.
+        body: Already-rendered notice / error fragment(s), appended after ``in=...``.
+
+    Returns:
+        The formatted line.
+    """
+    return " ".join(p.content for p in format_invocation_parts(inv, limit=limit, body=body))
 
 
 def omission_notice(inv: ToolInvocation, content_id_: str, chars: int) -> str:
@@ -173,8 +193,8 @@ def _prune_shared(
         parts.append(f"error={inv.error}")
 
     line_source = inv if narrowed_input is None else replace(inv, input=narrowed_input)
-    line = format_invocation_line(line_source, limit=limit, body=" ".join(p for p in parts if p))
-    return PrunedInvocation(line, tuple(omissions))
+    line_parts = format_invocation_parts(line_source, limit=limit, body=" ".join(p for p in parts if p))
+    return PrunedInvocation(" ".join(p.content for p in line_parts), tuple(omissions), line_parts)
 
 
 class DefaultPolicy:
@@ -317,33 +337,30 @@ def get_policy(tool_name: str) -> PrunePolicy:
     return DefaultPolicy()
 
 
-def prune_turn(
+def prune_turn_parts(
     turn: ConversationTurn,
     *,
     limit: Limit = Limit(),
     policies: Optional[Dict[str, PrunePolicy]] = None,
-) -> Tuple[str, Tuple[Omission, ...]]:
-    """Render the PRUNED-view ``<tool-activity>`` suffix for a turn.
+) -> Tuple[Tuple[MessagePart, ...], Tuple[Omission, ...]]:
+    """PRUNED-view parts of a turn (``()`` for a turn with no invocations) plus new omissions.
 
-    Pure: does not read ``context_used`` and does not mutate ``turn``.
+    Pure: does not read ``context_used`` and does not mutate ``turn``. A custom policy that returns no
+    ``parts`` contributes one ``text`` part holding its rendered line. When at least one
+    ``<tool-output-omitted`` notice was emitted, a trailing recovery-hint ``text`` part is appended.
 
     Args:
         turn: The turn to render.
         limit: Bounds on each rendered line.
-        policies: When given, consulted before the module registry /
-            built-in alias table for each invocation's tool name.
+        policies: When given, consulted before the module registry / built-in alias table.
 
     Returns:
-        A tuple of ``(assistant_suffix, omissions)``. ``assistant_suffix``
-        is ``""`` for a turn with no invocations; otherwise it wraps one
-        line per invocation in ``<tool-activity>...</tool-activity>``,
-        followed by a recovery hint line **iff** at least one
-        ``<tool-output-omitted`` notice was emitted.
+        ``(parts, omissions)``.
     """
     if not turn.tool_invocations:
-        return "", ()
+        return (), ()
 
-    lines: List[str] = []
+    parts: List[MessagePart] = []
     omissions: List[Omission] = []
     has_notice = False
 
@@ -355,15 +372,37 @@ def prune_turn(
             policy = get_policy(inv.tool_name)
 
         pruned = policy.prune(inv, turn_id=turn.turn_id, limit=limit)
-        lines.append(pruned.notice)
+        parts.extend(pruned.parts or (MessagePart("text", pruned.notice),))
         omissions.extend(pruned.omissions)
         if "<tool-output-omitted" in pruned.notice:
             has_notice = True
 
-    suffix = "\n\n<tool-activity>\n" + "\n".join(lines) + "\n</tool-activity>"
     if has_notice:
-        suffix += (
-            "\nOmitted content can be recovered with read_omitted_content(content_id) "
-            f'or read_omitted_content(turn_id="{turn.turn_id}").'
+        parts.append(
+            MessagePart(
+                "text",
+                "\nOmitted content can be recovered with read_omitted_content(content_id) "
+                f'or read_omitted_content(turn_id="{turn.turn_id}").',
+            )
         )
-    return suffix, tuple(omissions)
+    return tuple(parts), tuple(omissions)
+
+
+def prune_turn(
+    turn: ConversationTurn,
+    *,
+    limit: Limit = Limit(),
+    policies: Optional[Dict[str, PrunePolicy]] = None,
+) -> Tuple[str, Tuple[Omission, ...]]:
+    """Render the PRUNED-view ``<tool-activity>`` suffix for a turn (derived from :func:`prune_turn_parts`).
+
+    Args:
+        turn: The turn to render.
+        limit: Bounds on each rendered line.
+        policies: Consulted before the module registry for each tool name.
+
+    Returns:
+        ``(assistant_suffix, omissions)``; ``assistant_suffix`` is ``""`` for a turn with no invocations.
+    """
+    parts, omissions = prune_turn_parts(turn, limit=limit, policies=policies)
+    return render_parts_text(parts), omissions

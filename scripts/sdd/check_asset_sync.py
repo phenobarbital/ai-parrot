@@ -48,6 +48,7 @@ ASSET_SOURCES: tuple[tuple[str, tuple[str, ...]], ...] = (
     (".agents/agents/qa-runner/agent.md", ("google",)),  # FEAT-847
     ("sdd/templates/*", HOST_ORDER),
     ("sdd/WORKFLOW.md", HOST_ORDER),
+    ("sdd/procedures/sdd-workflow.yaml", HOST_ORDER),  # FEAT-891 — the SDD procedure graph; overlays never ship
     ("sdd/CONVENTIONS.md", HOST_ORDER),  # C10 — seed, see SEED_TARGETS
 )
 #: Hand-maintained, repo-neutral assets that exist ONLY in the wheel (their repo-side originals name monorepo paths,
@@ -62,15 +63,26 @@ PACKAGED_ONLY: tuple[tuple[str, str, tuple[str, ...]], ...] = (
 PACKAGED_SOURCES: frozenset[str] = frozenset(source for _target, source, _hosts in PACKAGED_ONLY)
 #: rev 0.5 C22 — `/sdd-insight` does not ship on any host (it depends on unshipped `reference/sdd-insight/`
 #: and `.claude/workflows/sdd-insight.js`); these targets match the globs above and are dropped.
-EXCLUDED_TARGETS: frozenset[str] = frozenset({
-    ".claude/commands/sdd-insight.md", ".agents/skills/sdd-insight/SKILL.md", ".agent/workflows/sdd-insight.md",
-})
+EXCLUDED_TARGETS: frozenset[str] = frozenset(
+    {
+        ".claude/commands/sdd-insight.md",
+        ".agents/skills/sdd-insight/SKILL.md",
+        ".agent/workflows/sdd-insight.md",
+    }
+)
 #: Targets written once by the installer and never overwritten/removed (manifest `"seed": true`).
 SEED_TARGETS: frozenset[str] = frozenset({"sdd/CONVENTIONS.md"})
 #: Wheel paths (relative to WHEEL_PREFIX) that must never ship — C11d. fnmatch on the posix path.
 DENY_PATTERNS: tuple[str, ...] = (
-    "sdd/references/*", "sdd/state/*", "sdd/ledger/*", ".parrot/*", "*/.parrot/*",
-    "*.jsonl", "*.db", "*.id_ledger*", "sdd/tasks/*",
+    "sdd/references/*",
+    "sdd/state/*",
+    "sdd/ledger/*",
+    ".parrot/*",
+    "*/.parrot/*",
+    "*.jsonl",
+    "*.db",
+    "*.id_ledger*",
+    "sdd/tasks/*",
 )
 #: C16 — a monorepo source path in shipped content (`packages/…`, `scripts/…`, `$CLAUDE_PROJECT_DIR/…`);
 #: the same pattern as TASK-4089's `test_no_repo_script_refs._MONOREPO_PATH`.
@@ -81,9 +93,14 @@ MONOREPO_TEXT_RE = re.compile(r"tests/sdd_scripts/|\bfrom navconfig\b|PYTHONPATH
 #: (target, stripped line) pairs exempted from both patterns — C22 category D (= D3 (d)): the ONLY entry, the same single
 #: entry as TASK-4089's `_C16_ALLOWLIST` (`${CLAUDE_PROJECT_DIR:-}/.venv/bin` is the target repo's own venv, the
 #: PATH-first fallback). Add nothing else; D3 (c) prose is rewritten by TASK-4089, never allowlisted.
-MONOREPO_PATH_ALLOWLIST: frozenset[tuple[str, str]] = frozenset({
-    (".claude/hooks/sdd-worker-format.sh", 'for candidate in "$CWD/.venv/bin" "${CLAUDE_PROJECT_DIR:-}/.venv/bin" \\'),
-})
+MONOREPO_PATH_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
+    {
+        (
+            ".claude/hooks/sdd-worker-format.sh",
+            'for candidate in "$CWD/.venv/bin" "${CLAUDE_PROJECT_DIR:-}/.venv/bin" \\',
+        ),
+    }
+)
 #: The guard-hook line exactly as it ships (same text as ``parrot.sdd.installer.GUARD_HOOK_LINE``). ``parrot sdd
 #: install`` without the global launcher on PATH bakes the installing venv's absolute ``parrot`` path into it; that
 #: machine-local form must never reach the package (the installer would then prefix the path a second time).
@@ -125,15 +142,15 @@ def asset_source_for(target: str) -> str:
     """
     for prefix, replacement in PREFIX_MAP:
         if target.startswith(prefix):
-            return replacement + target[len(prefix):]
+            return replacement + target[len(prefix) :]
     raise ValueError(f"no _assets/ prefix mapping for {target!r}")
 
 
 def expected_entries(root: Path) -> list[AssetEntry]:
     """Resolve ``ASSET_SOURCES`` against the git-tracked files of ``root``, sorted by target, then ``PACKAGED_ONLY``."""
-    out = subprocess.run(
-        ["git", "-C", str(root), "ls-files", "-z"], check=True, capture_output=True
-    ).stdout.decode("utf-8")
+    out = subprocess.run(["git", "-C", str(root), "ls-files", "-z"], check=True, capture_output=True).stdout.decode(
+        "utf-8"
+    )
     tracked = sorted(p for p in out.split("\0") if p)
     entries: dict[str, set[str]] = {}
     for path in tracked:
@@ -154,7 +171,7 @@ def expected_entries(root: Path) -> list[AssetEntry]:
     ] + [
         AssetEntry(source=source, target=target, hosts=hosts)
         for target, source, hosts in PACKAGED_ONLY
-        if (root / ASSETS_DIR).is_dir()   # only a repo that already ships the wheel assets (not a bare fixture)
+        if (root / ASSETS_DIR).is_dir()  # only a repo that already ships the wheel assets (not a bare fixture)
     ]
 
 
@@ -293,7 +310,7 @@ def check_wheel(wheel: Path) -> list[str]:
         for name in sorted(names):
             if not name.startswith(WHEEL_PREFIX) or name.endswith("/"):
                 continue
-            rel = name[len(WHEEL_PREFIX):]
+            rel = name[len(WHEEL_PREFIX) :]
             if any(fnmatch.fnmatchcase(rel, pat) for pat in DENY_PATTERNS):
                 problems.append(f"forbidden in wheel: {name}")
         for entry in assets:
@@ -312,7 +329,9 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--check", action="store_true", help="exit 1 on divergence (default)")
     mode.add_argument("--wheel", type=Path, help="verify a built wheel carries every manifest entry")
     parser.add_argument("--root", type=Path, default=Path.cwd(), help="repo root (default: cwd)")
-    parser.add_argument("--assets-dir", type=Path, default=None, help="override (tests); default <root>/" + str(ASSETS_DIR))
+    parser.add_argument(
+        "--assets-dir", type=Path, default=None, help="override (tests); default <root>/" + str(ASSETS_DIR)
+    )
     args = parser.parse_args(argv)
     root = args.root.resolve()
     assets_dir = args.assets_dir or root / ASSETS_DIR

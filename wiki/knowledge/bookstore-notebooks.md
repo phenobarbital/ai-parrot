@@ -28,7 +28,7 @@ Catalog rows distinguish the two kinds of tree with the `kind` (`"book"` | `"not
 
 ## Public API
 
-- [`Bookstore`](ref:parrot.knowledge.bookstore.library.Bookstore) — the library facade:
+- [`Bookstore`](ref:parrot.knowledge.bookstore.library) — the library facade:
   - `notebook_for(book_id)` — the book's `<book_id>_notes` card, or `None`. A conventional tree that exists on disk
     without a row is registered lazily (`kind="notes"`, `source_format="tree"`, `card_origin="fallback"`).
   - `library_notebook(scope)` — the scope's `_library_notes` card, or `None` (same lazy registration).
@@ -44,7 +44,7 @@ Catalog rows distinguish the two kinds of tree with the `kind` (`"book"` | `"not
 - [`notebooks`](ref:parrot.knowledge.bookstore.notebooks) — drafting and relation sheets:
   `draft_library_notebook(store, scope="project", *, use_llm=True)`, `draft_book_notebook(store, book_id)`,
   `relation_sheets(store, scope=None)`, `apply_relation_sheets(store, scope=None)`.
-- [`LibraryPageIndexToolkit`](ref:parrot.knowledge.bookstore.pageindex.LibraryPageIndexToolkit) — the
+- [`LibraryPageIndexToolkit`](ref:parrot.knowledge.bookstore.pageindex) — the
   `pageindex_*` tool surface over the project and global libraries, with the write policy below.
 - Models in `parrot.knowledge.bookstore.models`: `Anchor` (`book_id`, `scope`, `node_id`, `doc_id`, `revision`),
   `Annotation` (`note_tree`, `node_id`, `title`, `body`, `note_kind`, `origin`, `anchor_status`) and `SectorDraft`.

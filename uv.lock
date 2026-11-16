@@ -528,6 +528,9 @@ dev = [
 docling = [
     { name = "docling", extra = ["tesserocr"] },
 ]
+duckdb = [
+    { name = "duckdb" },
+]
 eda = [
     { name = "sweetviz" },
 ]
@@ -909,6 +912,7 @@ requires-dist = [
     { name = "docker", marker = "extra == 'agents-lite'", specifier = "==7.1.0" },
     { name = "docker", marker = "extra == 'mcp'", specifier = "==7.1.0" },
     { name = "docling", extras = ["tesserocr"], marker = "extra == 'docling'", specifier = ">=2.74.0" },
+    { name = "duckdb", marker = "extra == 'duckdb'", specifier = ">=1.0" },
     { name = "duckduckgo-search", marker = "extra == 'agents'", specifier = "==8.1.1" },
     { name = "duckduckgo-search", marker = "extra == 'agents-lite'", specifier = "==8.1.1" },
     { name = "duckduckgo-search", marker = "extra == 'mcp'", specifier = "==8.1.1" },
@@ -1122,7 +1126,7 @@ requires-dist = [
     { name = "zeep", extras = ["async"], marker = "extra == 'agents-lite'", specifier = "==4.3.3" },
     { name = "zeep", extras = ["async"], marker = "extra == 'mcp'", specifier = "==4.3.3" },
 ]
-provides-extras = ["notify-all", "db", "bigquery", "pdf", "ocr", "audio", "finance", "flowtask", "graphindex", "graphindex-postgres", "ontology-store", "wiki-languages", "wiki-structural", "leiden", "wiki", "techwiki", "bookstore", "manuals", "scheduler", "wikitoolkit-server", "server", "reddit", "jira", "retrieval", "tokenizer", "msgraph", "gdrive", "agents", "charts", "agents-lite", "mcp", "images", "anthropic", "bedrock", "bedrock-native", "claude-agent", "codex-agent", "openai", "google", "groq", "zai", "grok", "gemma4", "hf", "nvidia", "moonshot", "openrouter", "local", "vllm", "meta", "jev", "llms", "integrations", "grpc", "eda", "security", "needle", "xai", "deploy", "docling", "filesystem-transport", "filesystem-transport-full", "messaging", "otel", "observability", "observability-openlit", "observability-traceloop", "observability-prometheus", "dev", "remote-tools", "visualizations", "rust", "all", "all-fast"]
+provides-extras = ["notify-all", "db", "bigquery", "pdf", "ocr", "audio", "duckdb", "finance", "flowtask", "graphindex", "graphindex-postgres", "ontology-store", "wiki-languages", "wiki-structural", "leiden", "wiki", "techwiki", "bookstore", "manuals", "scheduler", "wikitoolkit-server", "server", "reddit", "jira", "retrieval", "tokenizer", "msgraph", "gdrive", "agents", "charts", "agents-lite", "mcp", "images", "anthropic", "bedrock", "bedrock-native", "claude-agent", "codex-agent", "openai", "google", "groq", "zai", "grok", "gemma4", "hf", "nvidia", "moonshot", "openrouter", "local", "vllm", "meta", "jev", "llms", "integrations", "grpc", "eda", "security", "needle", "xai", "deploy", "docling", "filesystem-transport", "filesystem-transport-full", "messaging", "otel", "observability", "observability-openlit", "observability-traceloop", "observability-prometheus", "dev", "remote-tools", "visualizations", "rust", "all", "all-fast"]
 
 [[package]]
 name = "ai-parrot-advisors"

@@ -16,7 +16,8 @@ from pydantic import BaseModel
 from parrot.cli.devloop.bootstrap import default_identities  # verified: cli/devloop/bootstrap.py:378
 from parrot.flows.dev_flow.models import DevRequestBrief  # verified: dev_flow/models.py:61
 from parrot.flows.dev_loop import WorkBrief  # verified: dev_loop/__init__.py:73
-from parrot.integrations.devloop.bridge import LoopbackRestChannel, RunCommandChannel
+from parrot.bots.flows.core.gates import GateError
+from parrot.integrations.devloop.bridge import LoopbackRestChannel, RunCommandChannel, gate_error_result
 from parrot.integrations.devloop.briefs import (
     brief_summary_fields,
     brief_to_file,
@@ -235,18 +236,26 @@ class DevLoopDispatchService:
     ) -> BridgeResult:
         """Approve an ``open_questions`` gate with structured answers."""
         record = await self._require_owned(run_id, requester)
-        return await self._channel(record).resolve_gate(
-            run_id, gate_id, resolution="approved", resolved_by=requester.actor, answers=answers
-        )
+        try:
+            return await self._channel(record).resolve_gate(
+                run_id, gate_id, resolution="approved", resolved_by=requester.actor, answers=answers
+            )
+        except GateError as exc:
+            self.logger.info("gate %s/%s not resolvable: %s", run_id, gate_id, exc)
+            return gate_error_result(exc)
 
     async def resolve_gate(
         self, run_id: str, gate_id: str, requester: Requester, resolution: str, comment: str = ""
     ) -> BridgeResult:
         """Approve or reject any other gate kind, with an optional comment."""
         record = await self._require_owned(run_id, requester)
-        return await self._channel(record).resolve_gate(
-            run_id, gate_id, resolution=resolution, resolved_by=requester.actor, comment=comment
-        )
+        try:
+            return await self._channel(record).resolve_gate(
+                run_id, gate_id, resolution=resolution, resolved_by=requester.actor, comment=comment
+            )
+        except GateError as exc:
+            self.logger.info("gate %s/%s not resolvable: %s", run_id, gate_id, exc)
+            return gate_error_result(exc)
 
     async def cancel(self, run_id: str, requester: Requester) -> BridgeResult:
         """Cancel a run; escalate to ``terminate()`` if it does not exit in time (S7).

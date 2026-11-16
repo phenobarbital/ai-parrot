@@ -24,7 +24,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     Returns:
         Zero on success, one for validation errors, two for config or bundle errors, three when griffe is
-        absent, or four with ``--strict`` when a module was skipped.
+        absent, or four with ``--strict`` when a module was skipped by a parse or load failure (native modules
+        are listed in the report but never fail strict mode).
     """
     parser = argparse.ArgumentParser(description="Assemble a technical-wiki bundle")
     parser.add_argument("--out", type=Path, required=True, help="Output directory")
@@ -33,10 +34,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true", help="Write only techwiki-report.json")
     parser.add_argument("--json", action="store_true", dest="as_json", help="Print JSON report")
     parser.add_argument("--sidebar-only", action="store_true", help="Render Home.md and _Sidebar.md only")
-    parser.add_argument("--strict", action="store_true", help="Exit 4 when any module was skipped")
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Exit 4 when a module was skipped by a parse or load failure (native modules are listed, not fatal)",
+    )
     args = parser.parse_args(argv)
 
-    from parrot.sdd.techwiki.api import GriffeUnavailable
+    from parrot.sdd.techwiki.api import GriffeUnavailable, strict_failures
     from parrot.sdd.techwiki.bundle import assemble, report_payload, write_bundle, write_navigation
     from parrot.sdd.techwiki.config import load_techwiki_config
 
@@ -72,7 +77,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"Skipped {skipped_module['module']}: {skipped_module['reason']}", file=sys.stderr)
     if not report.ok():
         return 1
-    return 4 if args.strict and report.skipped_modules else 0
+    return 4 if args.strict and strict_failures(report.skipped_modules) else 0
 
 
 if __name__ == "__main__":

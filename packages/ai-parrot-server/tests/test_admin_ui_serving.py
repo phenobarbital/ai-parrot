@@ -28,6 +28,29 @@ def fake_dist(tmp_path, monkeypatch):
     return dist
 
 
+class TestDisabledFlag:
+    async def test_enable_ui_admin_false_skips_everything(self, fake_dist, monkeypatch):
+        """ENABLE_UI_ADMIN=false prevents all route registration — SPA,
+        assets AND JSON API endpoints — even when dist/ is present."""
+        monkeypatch.setenv("ENABLE_UI_ADMIN", "false")
+        app = web.Application()
+        result = setup_admin_ui(app)
+
+        assert result is False
+        paths = {r.resource.canonical for r in app.router.routes()}
+        assert len(paths) == 0
+
+    async def test_enable_ui_admin_true_mounts_normally(self, fake_dist, monkeypatch, aiohttp_client):
+        """Explicit ENABLE_UI_ADMIN=true behaves like the default."""
+        monkeypatch.setenv("ENABLE_UI_ADMIN", "true")
+        app = web.Application()
+        assert setup_admin_ui(app) is True
+
+        client = await aiohttp_client(app)
+        resp = await client.get("/admin")
+        assert resp.status == 200
+
+
 class TestAbsentDist:
     async def test_absent_dist_returns_false_and_registers_no_spa_routes(self, tmp_path, monkeypatch, caplog):
         """No dist -> no SPA mount, but the status and catalog JSON

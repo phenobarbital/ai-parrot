@@ -10,11 +10,12 @@ HITL-gated tools.
 
 from __future__ import annotations
 
+from enum import Enum
 from pathlib import Path
 from typing import Any, ClassVar
 
 from parrot.bots.agent import Agent
-from parrot.conf import STUDIO_AGENT_MODEL
+from parrot.conf import STUDIO_AGENT_LLM, STUDIO_AGENT_MODEL
 from parrot.skills.mixin import SkillRegistryMixin
 
 from .tools import build_studio_tools
@@ -51,6 +52,83 @@ for the conventions each artifact type must follow.
 """
 
 
+#: Model used when ``STUDIO_AGENT_MODEL`` is unset, per provider key. A provider
+#: missing here omits the model, so the client constructor's own default applies.
+_PROVIDER_DEFAULT_MODELS: dict[str, str] = {"anthropic": "claude-opus-5", "google": "gemini-flash-latest"}
+
+
+def studio_agent_provider() -> str:
+    """Return the configured Studio Assistant provider key (``STUDIO_AGENT_LLM``), normalised.
+
+    This is the single source of the provider name: the agent builds its client
+    from it and the HTTP handler resolves BYOK keys / key-source choice with it.
+
+    Returns:
+        The lower-cased provider key (``"anthropic"`` by default).
+    """
+    return str(STUDIO_AGENT_LLM or "anthropic").strip().lower()
+
+
+def _resolve_studio_client_class(provider: str) -> type:
+    """Resolve ``provider`` through the client registry (lazy; no provider module at import time).
+
+    Raises:
+        ValueError: If ``provider`` is not a registered client provider.
+    """
+    from parrot.clients.factory import SUPPORTED_CLIENTS
+
+    if provider not in SUPPORTED_CLIENTS:
+        raise ValueError(
+            f"Unknown STUDIO_AGENT_LLM provider '{provider}'. "
+            f"Supported: {sorted(SUPPORTED_CLIENTS)}"
+        )
+    client_class = SUPPORTED_CLIENTS[provider]
+    if callable(client_class) and not isinstance(client_class, type):
+        client_class = client_class()
+    return client_class
+
+
+def build_studio_client(
+    provider: str,
+    model: str | None = None,
+    api_key: str | None = None,
+    tool_manager: Any = None,
+) -> Any:
+    """Build the Studio Assistant LLM client for ``provider`` through ``LLMFactory``.
+
+    The single construction path for BOTH the agent's default client and the
+    handler's per-ask BYOK client, so provider-specific wiring
+    (``PROVIDER_BACKEND``: bedrock / anthropic-aws) always matches.
+
+    Args:
+        provider: Registered provider key (validated; unknown → ``ValueError``).
+        model: Model id; a provider model enum is reduced to its value. Only a real,
+            non-empty string is then used; anything else is
+            ignored and the client's own constructor default applies.
+        api_key: Credential to use; forwarded only when not ``None`` (an explicit
+            ``None`` would disable the client's own navconfig key fallback).
+        tool_manager: Optional ToolManager to attach.
+
+    Returns:
+        The initialised client.
+
+    Raises:
+        ValueError: ``provider`` is not a registered client provider.
+    """
+    _resolve_studio_client_class(provider)
+    from parrot.clients.factory import LLMFactory
+
+    create_kwargs: dict[str, Any] = {}
+    if api_key is not None:
+        create_kwargs["api_key"] = api_key
+    if tool_manager is not None:
+        create_kwargs["tool_manager"] = tool_manager
+    if isinstance(model, Enum):  # provider model enums (ClaudeModel, GoogleModel, ...) carry the id in .value
+        model = model.value
+    spec = f"{provider}:{model}" if isinstance(model, str) and model else provider
+    return LLMFactory.create(spec, **create_kwargs)
+
+
 class AgentStudioAgent(SkillRegistryMixin, Agent):
     """Meta-agent for AgentStudio (spec §3 Module 13).
 
@@ -75,13 +153,15 @@ class AgentStudioAgent(SkillRegistryMixin, Agent):
 
         Args:
             name: Bot instance name.
-            api_key: Optional Anthropic API key override — the caller
-                (``StudioAssistantHandler``) resolves the session's BYOK
-                key (TASK-2516) BEFORE construction and passes it here;
-                ``None`` falls back to the server's configured
-                ``ANTHROPIC_API_KEY`` (``AnthropicClient``'s own default).
+            api_key: Optional API key override for the configured provider
+                (``STUDIO_AGENT_LLM``) — the caller (``StudioAssistantHandler``)
+                resolves the session's BYOK key (TASK-2516) BEFORE construction
+                and passes it here; ``None`` falls back to the provider
+                client's own server-key default (e.g. ``ANTHROPIC_API_KEY``,
+                ``GOOGLE_API_KEY``).
             model: Optional model id override. Falls back to
-                ``parrot.conf.STUDIO_AGENT_MODEL``.
+                ``parrot.conf.STUDIO_AGENT_MODEL`` and, when that is unset, to
+                the configured provider's own default model.
             system_prompt: Optional system prompt override. Falls back to
                 this module's default AgentStudio prompt.
             declarative_only: Tenant partitions (FEAT-621 X11): offer
@@ -90,16 +170,23 @@ class AgentStudioAgent(SkillRegistryMixin, Agent):
                 explicit ``llm=`` kwarg (instance/class/string) takes
                 precedence over the ``api_key``/``model`` construction
                 path below.
+
+        Raises:
+            ValueError: ``STUDIO_AGENT_LLM`` names an unknown provider (and no
+                explicit ``llm=`` was given).
         """
         self._declarative_only = declarative_only
         llm = kwargs.pop("llm", None)
         if llm is None:
-            # FEAT-523 (TASK-2846): lazy import — core must not import a
-            # provider module at module scope (AC-3).
-            from parrot.clients.anthropic import AnthropicClient
-
-            resolved_model = model or STUDIO_AGENT_MODEL
-            llm = AnthropicClient(api_key=api_key, model=resolved_model)
+            # FEAT-523 (TASK-2846): resolved lazily through the client
+            # registry — core must not import a provider module at module
+            # scope (AC-3).
+            provider = studio_agent_provider()
+            # Only real string defaults: the Studio per-provider table, else
+            # omit the model so the client's own constructor default applies
+            # (class attrs may be properties, e.g. Gemma4/Transformers).
+            resolved_model = model or STUDIO_AGENT_MODEL or _PROVIDER_DEFAULT_MODELS.get(provider)
+            llm = build_studio_client(provider, resolved_model, api_key)
         super().__init__(
             name=name,
             llm=llm,

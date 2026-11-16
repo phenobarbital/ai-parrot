@@ -17,6 +17,8 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from parrot.clients.base import AbstractClient
+from parrot.clients.factory import SUPPORTED_CLIENTS
 from aiohttp import web
 from aiohttp.test_utils import make_mocked_request
 from parrot.bots.studio import agent as agent_module
@@ -65,6 +67,165 @@ def _patch_fake_anthropic(monkeypatch):
     monkeypatch.setattr(tools_module, "build_studio_tools", list)
     return captured
 
+
+class TestProviderResolution:
+    """``STUDIO_AGENT_LLM`` picks the client; real client classes, no network (key passed explicitly)."""
+
+    def test_default_is_anthropic_with_opus(self, monkeypatch):
+        from parrot.clients.anthropic import AnthropicClient
+
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_LLM", "anthropic")
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_MODEL", None)
+        monkeypatch.setattr(tools_module, "build_studio_tools", list)
+
+        bot = AgentStudioAgent(name="t", api_key="k")
+
+        assert type(bot.llm) is AnthropicClient
+        assert bot.llm.model == "claude-opus-5"
+
+    def test_google_uses_gemini_default_never_a_claude_model(self, monkeypatch):
+        from parrot.clients.google import GoogleGenAIClient
+
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_LLM", "google")
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_MODEL", None)
+        monkeypatch.setattr(tools_module, "build_studio_tools", list)
+
+        bot = AgentStudioAgent(name="t", api_key="k")
+
+        assert type(bot.llm) is GoogleGenAIClient
+        assert bot.llm.model == "gemini-flash-latest"
+
+    def test_google_with_explicit_model(self, monkeypatch):
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_LLM", "google")
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_MODEL", "gemini-2.5-pro")
+        monkeypatch.setattr(tools_module, "build_studio_tools", list)
+
+        bot = AgentStudioAgent(name="t", api_key="k")
+
+        assert bot.llm.model == "gemini-2.5-pro"
+
+    def test_unknown_provider_fails_at_construction(self, monkeypatch):
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_LLM", "no-such-provider")
+        monkeypatch.setattr(tools_module, "build_studio_tools", list)
+
+        with pytest.raises(ValueError, match="no-such-provider"):
+            AgentStudioAgent(name="t", api_key="k")
+
+    def test_explicit_llm_wins(self, monkeypatch):
+        from parrot.clients.google import GoogleGenAIClient
+
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_LLM", "no-such-provider")
+        monkeypatch.setattr(tools_module, "build_studio_tools", list)
+        explicit = GoogleGenAIClient(api_key="k", model="gemini-flash-latest")
+
+        bot = AgentStudioAgent(name="t", llm=explicit)
+
+        assert bot.llm is explicit
+
+    def test_provider_helper_normalises(self, monkeypatch):
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_LLM", " Google ")
+        assert agent_module.studio_agent_provider() == "google"
+
+
+class _FakeNavconfig:
+    """Stand-in for ``navconfig.config`` serving only the given key/values."""
+
+    def __init__(self, values: dict):
+        self._values = values
+
+    def get(self, key, *args, **kwargs):
+        return self._values.get(key, args[0] if args else kwargs.get("fallback"))
+
+
+class TestKeyFallbackAndBackend:
+    """No BYOK key must not shadow the client's navconfig key; backends come from ``PROVIDER_BACKEND``."""
+
+    @pytest.mark.parametrize(
+        ("provider", "module", "cfg_key", "attr"),
+        [
+            ("google", "parrot.clients.google.client", "GOOGLE_API_KEY", "api_key"),
+            ("anthropic", "parrot.clients.anthropic.client", "ANTHROPIC_API_KEY", "api_key"),
+        ],
+    )
+    def test_navconfig_key_used_when_no_override(self, monkeypatch, provider, module, cfg_key, attr):
+        import importlib
+
+        mod = importlib.import_module(module)
+        monkeypatch.setattr(mod, "config", _FakeNavconfig({cfg_key: "from-navconfig"}))
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_LLM", provider)
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_MODEL", None)
+        monkeypatch.setattr(tools_module, "build_studio_tools", list)
+
+        def _effective(bot):
+            # AnthropicClient's base __init__ resets ``self.api_key``; its backend holds the real key.
+            llm = bot.llm
+            return llm._backend.api_key if hasattr(llm, "_backend") else llm.api_key
+
+        assert _effective(AgentStudioAgent(name="t")) == "from-navconfig"
+        assert _effective(AgentStudioAgent(name="t", api_key="byok")) == "byok"
+
+    @pytest.mark.parametrize(
+        ("provider", "backend"),
+        [("anthropic", "direct"), ("bedrock", "bedrock"), ("anthropic-aws", "aws")],
+    )
+    def test_backend_mapping_goes_through_factory(self, monkeypatch, provider, backend):
+        captured: dict = {}
+
+        from parrot.clients.anthropic import AnthropicClient
+
+        class _Recorder:
+            def __new__(cls, **kwargs):
+                captured.update(kwargs)
+                return MagicMock(spec=AnthropicClient)
+
+        monkeypatch.setitem(SUPPORTED_CLIENTS, provider, _Recorder)
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_LLM", provider)
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_MODEL", "m")
+        monkeypatch.setattr(tools_module, "build_studio_tools", list)
+
+        AgentStudioAgent(name="t", api_key="k")
+
+        assert captured.get("backend", "direct") == backend
+        assert captured["api_key"] == "k"
+
+
+    def test_property_default_model_is_never_passed(self, monkeypatch):
+        """A client class exposing ``default_model`` as a property must not leak the property object."""
+        captured: dict = {}
+
+        from parrot.clients.anthropic import AnthropicClient
+
+        class _PropertyModelClient:
+            @property
+            def default_model(self) -> str:
+                return "own-default"
+
+            def __new__(cls, **kwargs):
+                captured.update(kwargs)
+                return MagicMock(spec=AnthropicClient)
+
+        monkeypatch.setitem(SUPPORTED_CLIENTS, "propprov", _PropertyModelClient)
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_LLM", "propprov")
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_MODEL", None)
+        monkeypatch.setattr(tools_module, "build_studio_tools", list)
+
+        AgentStudioAgent(name="t")
+
+        assert "model" not in captured, f"non-string model leaked: {captured.get('model')!r}"
+
+
+    def test_model_enum_is_forwarded_as_its_value(self, monkeypatch):
+        """``AgentStudioAgent(model=ClaudeModel.X)`` keeps the requested model (the enum is reduced to its id)."""
+        from parrot.clients.anthropic import ClaudeModel
+
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_LLM", "anthropic")
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_MODEL", None)
+        monkeypatch.setattr(tools_module, "build_studio_tools", list)
+        requested = next(iter(ClaudeModel))
+
+        bot = AgentStudioAgent(name="t", model=requested, api_key="k")
+
+        assert str(getattr(bot.llm.model, "value", bot.llm.model)) == requested.value
 
 class TestModelResolution:
     def test_default_model(self, monkeypatch):
@@ -340,7 +501,8 @@ class _FakeAssistantAgent:
 
     async def ask(self, question: str, **_kw):
         self.ask_calls.append(question)
-        self.served_by.append(self.llm.api_key)
+        backend = getattr(self.llm, "_backend", None)  # real AnthropicClient keeps its key on the backend
+        self.served_by.append(backend.api_key if backend is not None else self.llm.api_key)
         return SimpleNamespace(content="assistant reply", metadata={})
 
 
@@ -352,6 +514,127 @@ def _make_handler(app, *, method="POST", path="/assistant", json_body=None, sess
     handler._get_user = AsyncMock(return_value=StudioUser(user_id="1"))
     handler._resolve_session = AsyncMock(return_value=session if session is not None else {})
     return handler
+
+
+class TestAssistantProviderKeySource:
+    """The BYOK lookup and the key-source refusal follow ``STUDIO_AGENT_LLM`` (real ``choose_key_source``)."""
+
+    @pytest.mark.asyncio
+    async def test_google_provider_drives_byok_lookup_and_refusal(self, monkeypatch):
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_LLM", "google")
+        looked_up: list[str] = []
+
+        async def _resolve(_app, _user_id, provider):
+            looked_up.append(provider)
+            return None  # no personal key
+
+        monkeypatch.setattr(meta_agent_module, "resolve_user_api_key", _resolve)
+        monkeypatch.setattr(meta_agent_module, "AgentStudioAgent", lambda **kw: _FakeAssistantAgent())
+
+        handler = _make_handler(web.Application(), json_body={"query": "hi", "key_source": "byok"})
+        response = await _unwrap(StudioAssistantHandler.post)(handler)
+
+        assert looked_up == ["google"]
+        body = await _decode(response)
+        assert response.status == 422 and body["code"] == "key_source_unavailable"
+        assert body["details"] == {"provider": "google", "requested": "byok"}
+
+    @pytest.mark.asyncio
+    async def test_default_provider_stays_anthropic(self, monkeypatch):
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_LLM", "anthropic")
+        looked_up: list[str] = []
+
+        async def _resolve(_app, _user_id, provider):
+            looked_up.append(provider)
+            return None
+
+        monkeypatch.setattr(meta_agent_module, "resolve_user_api_key", _resolve)
+
+        handler = _make_handler(web.Application(), json_body={"query": "hi", "key_source": "byok"})
+        response = await _unwrap(StudioAssistantHandler.post)(handler)
+
+        assert looked_up == ["anthropic"]
+        assert (await _decode(response))["details"]["provider"] == "anthropic"
+
+
+class _ClientRecordingAgent(_FakeAssistantAgent):
+    """Fake agent whose ``ask`` records the REAL client class/backend serving each ask."""
+
+    def __init__(self, llm):
+        super().__init__()
+        self.llm = llm
+        self.served_clients: list = []
+
+    async def ask(self, question: str, **_kw):
+        self.served_clients.append((type(self.llm), getattr(self.llm, "backend", None)))
+        return await super().ask(question)
+
+
+class TestByokSwapMatchesDefaultClient:
+    """The per-ask BYOK client is built through the same factory path as the default (provider AND backend)."""
+
+    @pytest.mark.parametrize(
+        ("provider", "backend"),
+        [("anthropic", "direct"), ("anthropic-aws", "aws"), ("bedrock", "bedrock")],
+    )
+    @pytest.mark.asyncio
+    async def test_anthropic_family_backend_preserved(self, monkeypatch, provider, backend):
+        seen: list[dict] = []
+
+        from parrot.clients.anthropic import AnthropicClient
+
+        class _Recorder(AbstractClient):  # inherits the class-level credential API the handler inspects
+            def __new__(cls, **kwargs):
+                seen.append(kwargs)
+                inst = MagicMock(spec=AnthropicClient)
+                inst.model = kwargs.get("model", "m")
+                inst.backend = kwargs.get("backend", "direct")
+                inst.api_key = kwargs.get("api_key")
+                return inst
+
+        monkeypatch.setitem(SUPPORTED_CLIENTS, provider, _Recorder)
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_LLM", provider)
+        default_llm = agent_module.build_studio_client(provider, "m", "server-key")
+        fake_agent = _ClientRecordingAgent(default_llm)
+        monkeypatch.setattr(meta_agent_module, "AgentStudioAgent", lambda **kw: fake_agent)
+        monkeypatch.setattr(meta_agent_module, "resolve_user_api_key", AsyncMock(return_value="byok-key"))
+
+        handler = _make_handler(web.Application(), json_body={"query": "hi", "use_byok": True})
+        response = await _unwrap(StudioAssistantHandler.post)(handler)
+
+        assert response.status == 200
+        assert seen[-1]["api_key"] == "byok-key"
+        assert seen[-1].get("backend", "direct") == backend
+        assert fake_agent.served_clients[0][1] == backend
+        assert fake_agent.llm is default_llm  # restored after the ask
+
+    @pytest.mark.asyncio
+    async def test_google_swap_is_google_client(self, monkeypatch):
+        from parrot.clients.google import GoogleGenAIClient
+
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_LLM", "google")
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_MODEL", None)
+        monkeypatch.setattr(tools_module, "build_studio_tools", list)
+        # real provider resolution (configured ``google``, no ``llm=`` injected)
+        default_llm = AgentStudioAgent(name="t", api_key="server-key").llm
+        assert type(default_llm) is GoogleGenAIClient
+        fake_agent = _ClientRecordingAgent(default_llm)
+        monkeypatch.setattr(meta_agent_module, "AgentStudioAgent", lambda **kw: fake_agent)
+        looked_up: list[str] = []
+
+        async def _resolve(_app, _user_id, provider):
+            looked_up.append(provider)
+            return "g-byok"
+
+        monkeypatch.setattr(meta_agent_module, "resolve_user_api_key", _resolve)
+
+        handler = _make_handler(web.Application(), json_body={"query": "hi", "use_byok": True})
+        response = await _unwrap(StudioAssistantHandler.post)(handler)
+
+        assert response.status == 200
+        assert looked_up == ["google"]
+        assert fake_agent.served_clients[0][0] is GoogleGenAIClient
+        assert fake_agent.llm is default_llm and type(fake_agent.llm) is GoogleGenAIClient
 
 
 class TestAssistantSessionInstance:
@@ -378,7 +661,9 @@ class TestAssistantSessionInstance:
     async def test_byok_key_serves_only_its_own_ask(self, monkeypatch):
         """true -> false -> true on ONE cached instance: the personal key never outlives the ask that used it."""
         app = web.Application()
+        monkeypatch.setattr(agent_module, "STUDIO_AGENT_LLM", "anthropic")
         fake_agent = _FakeAssistantAgent()
+        fake_agent.llm = agent_module.build_studio_client("anthropic", "m", "sk-ant-server")
         monkeypatch.setattr(meta_agent_module, "AgentStudioAgent", lambda **kw: fake_agent)
         monkeypatch.setattr(
             meta_agent_module, "resolve_user_api_key", AsyncMock(return_value="sk-ant-stored-key")
@@ -391,7 +676,7 @@ class TestAssistantSessionInstance:
             response = await _unwrap(StudioAssistantHandler.post)(handler)
             assert response.status == 200
             assert fake_agent.llm is default_llm            # restored after every ask
-        assert fake_agent.served_by == ["sk-ant-stored-key", None, "sk-ant-stored-key", None]
+        assert fake_agent.served_by == ["sk-ant-stored-key", "sk-ant-server", "sk-ant-stored-key", "sk-ant-server"]
         assert fake_agent.configure_calls == 1
 
     @pytest.mark.asyncio
