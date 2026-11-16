@@ -691,7 +691,7 @@
     {
       "id": "TASK-5681",
       "slug": "agent-memory-docs",
-      "title": "Documentation — agent-memory, user-memory and memory-dynamics",
+      "title": "Documentation \u2014 agent-memory, user-memory and memory-dynamics",
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
@@ -791,7 +791,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -799,8 +799,8 @@
       ],
       "parallel": true,
       "parallelism_notes": "Depends on TASK-5675 because it creates feedback.py and test_feedback.py; this repair modifies both.",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "codex",
+      "started_at": "2026-11-16T09:37:38.968281+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5704-feedback-scope-identity.md",
       "discovered_from": "issue:fbc5627878da"
