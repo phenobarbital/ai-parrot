@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-13T14:35:05.027355+00:00",
-  "completed_at": "2026-11-15T03:09:17+00:00",
+  "completed_at": null,
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -600,6 +600,146 @@
       "completed_at": "2026-11-15T03:09:17+00:00",
       "file": "sdd/tasks/completed/TASK-5611-documentation.md",
       "verification": "verified"
+    },
+    {
+      "id": "TASK-5693",
+      "slug": "experience-hook-bounded-text",
+      "title": "Redact and bound hook-path text before it is persisted",
+      "feature_id": "FEAT-887",
+      "feature": "sdd-experience-memory",
+      "spec": "sdd/specs/sdd-experience-memory.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5595",
+        "TASK-5596"
+      ],
+      "parallel": false,
+      "parallelism_notes": "TASK-5693: exclusive review-fix step; edits transitions.py, test_transitions.py, test_experience_hook.py; first review-fix step on top of the completed FEAT-887 tasks",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5693-experience-hook-bounded-text.md",
+      "discovered_from": [
+        "issue:5632e784dae7",
+        "issue:b6be8a0fe492"
+      ]
+    },
+    {
+      "id": "TASK-5694",
+      "slug": "experience-plane-anchor",
+      "title": "Anchor the hook's experience plane to trusted Git metadata",
+      "feature_id": "FEAT-887",
+      "feature": "sdd-experience-memory",
+      "spec": "sdd/specs/sdd-experience-memory.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5693",
+        "TASK-5588",
+        "TASK-5596"
+      ],
+      "parallel": false,
+      "parallelism_notes": "TASK-5694: exclusive review-fix step; edits fastpath.py, experience_hook.py, test_fastpath.py, test_experience_hook.py; follows TASK-5693 (shared experience modules)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5694-experience-plane-anchor.md",
+      "discovered_from": [
+        "issue:33ab30fb1190"
+      ]
+    },
+    {
+      "id": "TASK-5695",
+      "slug": "experience-shared-matcher",
+      "title": "One deterministic failure matcher for the hook, the interceptor and the service",
+      "feature_id": "FEAT-887",
+      "feature": "sdd-experience-memory",
+      "spec": "sdd/specs/sdd-experience-memory.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5694",
+        "TASK-5588",
+        "TASK-5591",
+        "TASK-5592",
+        "TASK-5595",
+        "TASK-5596",
+        "TASK-5601"
+      ],
+      "parallel": false,
+      "parallelism_notes": "TASK-5695: exclusive review-fix step; edits fastpath.py, reducer.py, index.py, transitions.py…; follows TASK-5694 (shared experience modules)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5695-experience-shared-matcher.md",
+      "discovered_from": [
+        "issue:e0f0c2637a0a"
+      ]
+    },
+    {
+      "id": "TASK-5696",
+      "slug": "experience-review-leftovers",
+      "title": "Wire the experience config knobs, fix tier routing, frame briefings, add the missing spec tests",
+      "feature_id": "FEAT-887",
+      "feature": "sdd-experience-memory",
+      "spec": "sdd/specs/sdd-experience-memory.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-5695",
+        "TASK-5588",
+        "TASK-5592",
+        "TASK-5593",
+        "TASK-5595",
+        "TASK-5596",
+        "TASK-5601",
+        "TASK-5603",
+        "TASK-5608"
+      ],
+      "parallel": false,
+      "parallelism_notes": "TASK-5696: exclusive review-fix step; edits index.py, service.py, fastpath.py, transitions.py…; follows TASK-5695 (shared experience modules)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5696-experience-review-leftovers.md",
+      "discovered_from": [
+        "issue:f8f19fc19fa9"
+      ]
+    },
+    {
+      "id": "TASK-5697",
+      "slug": "experience-hardening",
+      "title": "Experience memory hardening — dispatcher fail-open, index caps, redaction gaps, CLI edges",
+      "feature_id": "FEAT-887",
+      "feature": "sdd-experience-memory",
+      "spec": "sdd/specs/sdd-experience-memory.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "L",
+      "depends_on": [
+        "TASK-5696",
+        "TASK-5588",
+        "TASK-5589",
+        "TASK-5590",
+        "TASK-5592",
+        "TASK-5598",
+        "TASK-5599",
+        "TASK-5604"
+      ],
+      "parallel": false,
+      "parallelism_notes": "TASK-5697: exclusive review-fix step; edits gemini.py, index.py, sync.py, fastpath.py…; follows TASK-5696 (shared experience modules)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5697-experience-hardening.md",
+      "discovered_from": [
+        "issue:46d135cd1101"
+      ]
     }
   ]
 }
