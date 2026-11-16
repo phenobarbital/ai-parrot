@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-892 - Agent Memory — Unified Integration, User Knowledge and Dynamics
 **Spec**: `sdd/specs/agent-memory-mixin.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-5673, TASK-5674, TASK-5665
@@ -355,3 +355,17 @@ CancelledError. Use subprocesses for crash/multiprocess checks, never shared pro
 The two old mixin code files are MODIFY targets for complexity schema 1 (which only accepts
 CREATE/MODIFY); their explicit final change is deletion. Verify the live-consumer inventory
 before `git rm` of those two tracked code paths. Never remove non-code data or add aliases.
+
+## Completion Note
+
+- Task: TASK-5680
+- Feature: agent-memory-mixin
+- Implementation SHA: a8f3f984c48710cedda96de65480c3f7df6d749e
+- Closed at (UTC): 2026-11-16T00:56:07+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-sol · Backend: codex · Model: gpt-5.6-sol · Attempts: 1 · Duration: 597s · Tokens: n/a |
