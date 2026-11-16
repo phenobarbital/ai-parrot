@@ -124,3 +124,30 @@ async def test_cancellation_and_clone_do_not_leak() -> None:
 
     assert current_memory_scope() is None
     assert current_memory_exposure() is None
+
+
+def test_memory_context_resets_tolerate_a_token_from_another_context() -> None:
+    """Closing an async generator from another Context must not raise out of a finally that still has cleanup to run."""
+    import contextvars
+
+    from parrot.memory.agent_memory.runtime import (
+        bind_memory_exposure,
+        bind_memory_scope,
+        current_memory_exposure,
+        current_memory_scope,
+        reset_memory_exposure,
+        reset_memory_scope,
+    )
+
+    scope = MemoryRequestScope(
+        tenant_id="tenant-a", agent_id="agent-a", turn_id="turn-1", identity_provenance="runtime_derived"
+    )
+    other = contextvars.copy_context()
+    scope_token = other.run(bind_memory_scope, scope)
+    exposure_token = other.run(bind_memory_exposure, "exposure-1")
+
+    reset_memory_scope(scope_token)
+    reset_memory_exposure(exposure_token)
+
+    assert current_memory_scope() is None
+    assert current_memory_exposure() is None

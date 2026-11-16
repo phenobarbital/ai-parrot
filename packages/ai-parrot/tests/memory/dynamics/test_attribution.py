@@ -155,6 +155,23 @@ def test_final_packing_controls_citable_refs() -> None:
         validate_citation(delivered.model_copy(update={"exposure_id": "stale"}), exposure, scope=scope)
 
 
+def test_completed_exposure_is_released_and_cannot_be_reactivated() -> None:
+    """A finished invocation frees its manifest instead of growing the registry for the manager's lifetime."""
+    scope = _scope()
+    store = EpisodicMemoryStore(SQLiteEpisodeBackend(":memory:"), default_ttl_days=0)
+    manager = UnifiedMemoryManager(_namespace(), episodic_store=store, config=MemoryConfig(max_context_tokens=40))
+    context = manager._assembler.assemble_candidates([_candidate("delivered", "fits the budget", scope)], scope=scope)
+    committed = manager.commit_memory_exposure(context, scope=scope)
+    assert committed.exposure_id is not None
+
+    assert manager.activate_memory_exposure(committed.exposure_id, scope) is True
+    manager.deactivate_memory_exposure(committed.exposure_id)
+
+    assert manager._memory_exposures == {}
+    assert manager._active_memory_exposures == set()
+    assert manager.activate_memory_exposure(committed.exposure_id, scope) is False
+
+
 @pytest.mark.asyncio
 async def test_guard_denial_and_cancellation_no_success() -> None:
     """Verify bodies that never ran and cancelled providers earn no review."""

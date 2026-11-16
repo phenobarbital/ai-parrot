@@ -114,7 +114,6 @@ class UnifiedMemoryManager:
         self.brain_service = brain_service
         self._memory_exposures: dict[str, MemoryExposure] = {}
         self._active_memory_exposures: set[str] = set()
-        self._completed_memory_exposures: set[str] = set()
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
     # ------------------------------------------------------------------
@@ -141,11 +140,19 @@ class UnifiedMemoryManager:
 
         Calls ``cleanup()`` on each subsystem that exposes it.
         """
+        first_error: Exception | None = None
         for name, subsystem in self._subsystems():
             method = getattr(subsystem, "cleanup", None) or getattr(subsystem, "close", None)
             if callable(method):
                 self.logger.debug("Cleaning up subsystem: %s", name)
-                await method()
+                try:
+                    await method()
+                except Exception as exc:  # noqa: BLE001 - a failing subsystem must not leak the others
+                    self.logger.warning("Cleanup of subsystem %s failed: %s", name, type(exc).__name__)
+                    if first_error is None:
+                        first_error = exc
+        if first_error is not None:
+            raise first_error
 
     # ------------------------------------------------------------------
     # Primary API
@@ -259,22 +266,25 @@ class UnifiedMemoryManager:
     def activate_memory_exposure(self, exposure_id: str, scope: MemoryRequestScope) -> bool:
         """Make a manifest reviewable only after its provider response completed."""
         exposure = self._memory_exposures.get(exposure_id)
-        if exposure is None or exposure.scope != scope or exposure_id in self._completed_memory_exposures:
+        if exposure is None or exposure.scope != scope:
             return False
         self._active_memory_exposures.add(exposure_id)
         return True
 
     def deactivate_memory_exposure(self, exposure_id: str) -> None:
-        """Reject later events for a manifest after its invocation has been admitted."""
+        """Reject later events for a manifest after its invocation has been admitted.
+
+        The manifest is released, not retained: an unknown ID is rejected by ``activate_memory_exposure`` and by tool
+        events, so the registry does not grow with every invocation.
+        """
         self._active_memory_exposures.discard(exposure_id)
-        self._completed_memory_exposures.add(exposure_id)
+        self._memory_exposures.pop(exposure_id, None)
         if self.episodic is not None:
             self.episodic._citations.pop(exposure_id, None)
 
     def discard_memory_exposure(self, exposure_id: str) -> None:
         """Invalidate a provider-failed or cancelled manifest without revealing its refs."""
         self._active_memory_exposures.discard(exposure_id)
-        self._completed_memory_exposures.discard(exposure_id)
         self._memory_exposures.pop(exposure_id, None)
         if self.episodic is not None:
             self.episodic._citations.pop(exposure_id, None)
@@ -678,6 +688,7 @@ class UnifiedMemoryManager:
         query = self._event_text(event.payload, "query", "user_message", "prompt")
         response = self._event_text(event.payload, "response", "response_text", "assistant_message")
         return await self.episodic.record_episode(  # type: ignore[union-attr]
+            episode_id=self._response_episode_id(event.event_id),
             namespace=self._namespace_for_scope(event.scope),
             situation=query[:500],
             action_taken=f"Responded: {response}",
@@ -690,7 +701,13 @@ class UnifiedMemoryManager:
         if not self.config.enable_user_memory or self.user_memory_store is None or self.extraction_client is None:
             return [], [], []
         try:
-            candidates = await extract_user_knowledge(event, client=self.extraction_client)
+            client = self.extraction_client
+            if hasattr(client, "__aenter__"):
+                # Bots enter their client before every call (it initializes the provider session).
+                async with client as entered:
+                    candidates = await extract_user_knowledge(event, client=entered)
+            else:
+                candidates = await extract_user_knowledge(event, client=client)
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("User knowledge extraction failed: %s", type(exc).__name__)
             return ["storage_unavailable"], [], [f"user_extraction:{type(exc).__name__}"]
@@ -728,6 +745,11 @@ class UnifiedMemoryManager:
             room_id=scope.room_id,
             crew_id=scope.crew_id,
         )
+
+    @staticmethod
+    def _response_episode_id(event_id: str) -> str:
+        """Derive a stable episode ID from the response event so a retried turn is written once (spec F3)."""
+        return str(uuid.uuid5(uuid.NAMESPACE_URL, f"parrot:agent-memory:response-episode:{event_id}"))
 
     @staticmethod
     def _event_text(payload: dict[str, Any], *keys: str) -> str:

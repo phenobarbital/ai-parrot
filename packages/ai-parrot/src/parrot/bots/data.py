@@ -47,6 +47,7 @@ from ..observability.context import (
 from ..memory.agent_memory.runtime import (
     bind_memory_exposure,
     bind_memory_scope,
+    current_memory_exposure,
     reset_memory_exposure,
     reset_memory_scope,
 )
@@ -2447,6 +2448,13 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             raise
         finally:
             if _memory_context_exposure_token is not None:
+                # PandasAgent never binds a tool-event capture, so nothing else would release the exposure committed
+                # by _prepare_agent_memory; discard it so the manager registry does not grow per invocation.
+                _exposure_manager = getattr(self, "_memory_manager", None)
+                _discard_exposure = getattr(_exposure_manager, "discard_memory_exposure", None)
+                _exposure_id = current_memory_exposure()
+                if _exposure_id is not None and callable(_discard_exposure):
+                    _discard_exposure(_exposure_id)
                 reset_memory_exposure(_memory_context_exposure_token)
             reset_memory_exposure(_memory_exposure_token)
             reset_memory_scope(_memory_scope_token)

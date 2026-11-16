@@ -27,6 +27,7 @@ class AgentMemoryMixin:
     _memory_manager: UnifiedMemoryManager | None = None
     _resolved_agent_memory_config: AgentMemoryConfig | None = None
     _brain_started: bool = False
+    _memory_tool_names: tuple[str, ...] = ()
 
     async def configure(self, app: Any = None) -> None:
         """Await host setup, respect configure skips, and initialize owned resources once.
@@ -54,6 +55,7 @@ class AgentMemoryMixin:
         try:
             await manager.configure()
             await self._configure_brain(config, manager)
+            self._register_memory_tools(manager)
         except BaseException:
             try:
                 await self._release_memory_resources(manager)
@@ -95,6 +97,7 @@ class AgentMemoryMixin:
         """
         manager = self._memory_manager
         if manager is not None:
+            self._bind_extraction_client(manager)
             await manager.record_event(event)
 
     async def cleanup(self) -> None:
@@ -120,6 +123,7 @@ class AgentMemoryMixin:
             else:
                 self._memory_manager = None
                 self._resolved_agent_memory_config = None
+                self._unregister_memory_tools()
 
         try:
             await super().cleanup()
@@ -129,6 +133,46 @@ class AgentMemoryMixin:
 
         if first_error is not None:
             raise first_error
+
+    def _register_memory_tools(self, manager: UnifiedMemoryManager) -> None:
+        """Register the agent-facing episodic tools once, only when this host has a tool manager and an episodic store."""
+        tool_manager = getattr(self, "tool_manager", None)
+        if self._memory_tool_names or tool_manager is None or getattr(manager, "episodic", None) is None:
+            return
+        from parrot.memory.episodic.tools import EpisodicMemoryToolkit
+
+        toolkit = EpisodicMemoryToolkit(store=manager.episodic, namespace=manager.namespace)
+        names: list[str] = []
+        for tool in toolkit.get_tools():
+            tool_manager.register_tool(tool)
+            names.append(tool.name)
+        self._memory_tool_names = tuple(names)
+
+    def _unregister_memory_tools(self) -> None:
+        """Remove the tools this mixin registered so a reconfigured or closed store is never left bound to them."""
+        tool_manager = getattr(self, "tool_manager", None)
+        if tool_manager is not None:
+            for name in self._memory_tool_names:
+                tool_manager.unregister_tool(name)
+        self._memory_tool_names = ()
+
+    def _bind_extraction_client(self, manager: UnifiedMemoryManager) -> None:
+        """Give user-knowledge extraction the host's current LLM client (spec step 5: AbstractClient)."""
+        config = getattr(manager, "config", None)
+        if not getattr(config, "enable_user_memory", False):
+            return
+        get_client = getattr(self, "get_client", None)
+        if not callable(get_client):
+            return
+        try:
+            client = get_client()
+        except Exception as exc:  # noqa: BLE001 - extraction is optional and must not fail the completed response
+            logger = getattr(self, "logger", None)
+            if logger is not None:
+                logger.warning("memory extraction client unavailable: %s", type(exc).__name__)
+            return
+        if client is not None:
+            manager.extraction_client = client
 
     def _resolve_agent_memory_config(self) -> AgentMemoryConfig:
         """Resolve defaults, subclass policy, explicit config, then instance overrides."""
@@ -199,6 +243,7 @@ class AgentMemoryMixin:
 
     async def _release_memory_resources(self, manager: UnifiedMemoryManager) -> None:
         """Unwind partially initialized resources without hiding cancellation."""
+        self._unregister_memory_tools()
         first_error: BaseException | None = None
         brain = self.brain_service
         if brain is not None and self._brain_started:

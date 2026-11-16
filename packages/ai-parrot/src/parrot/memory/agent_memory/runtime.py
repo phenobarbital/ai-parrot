@@ -14,8 +14,16 @@ def bind_memory_scope(scope: MemoryRequestScope) -> Token:
 
 
 def reset_memory_scope(token: Token) -> None:
-    """Restore the prior scope, including after nested invocation or cancellation."""
-    _scope.reset(token)
+    """Restore the prior scope, including after nested invocation or cancellation.
+
+    A token created in a different ``Context`` (for example an async generator closed from another task) cannot be
+    reset there; that binding does not exist in the current context, so the error is not allowed to skip the caller's
+    remaining cleanup.
+    """
+    try:
+        _scope.reset(token)
+    except ValueError:
+        pass
 
 
 def current_memory_scope() -> MemoryRequestScope | None:
@@ -29,8 +37,11 @@ def bind_memory_exposure(exposure_id: str | None) -> Token:
 
 
 def reset_memory_exposure(token: Token) -> None:
-    """Restore the prior attempt's exposure binding in finally."""
-    _exposure.reset(token)
+    """Restore the prior attempt's exposure binding in finally (tolerates a token from another ``Context``)."""
+    try:
+        _exposure.reset(token)
+    except ValueError:
+        pass
 
 
 def current_memory_exposure() -> str | None:

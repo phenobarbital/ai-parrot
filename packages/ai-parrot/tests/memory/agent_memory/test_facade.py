@@ -212,3 +212,106 @@ async def test_stop_drain_before_host_cleanup(monkeypatch: pytest.MonkeyPatch) -
 
     assert events[-3:] == [f"manager.record:{event.event_id}", "manager.cleanup", "host.cleanup"]
     assert subject._memory_manager is None
+
+
+class _RecordingToolManager:
+    """Observe tool registration without a real ToolManager."""
+
+    def __init__(self) -> None:
+        self.registered: list[str] = []
+        self.unregistered: list[str] = []
+
+    def register_tool(self, tool: Any) -> None:
+        self.registered.append(tool.name)
+
+    def unregister_tool(self, name: str) -> bool:
+        self.unregistered.append(name)
+        return True
+
+
+class _ToolFacade(_Facade):
+    """Host that owns a tool manager and an LLM client, like a real bot."""
+
+    def __init__(self, events: list[str] | None = None) -> None:
+        super().__init__(events)
+        self.tool_manager = _RecordingToolManager()
+        self.client_calls = 0
+
+    def get_client(self) -> object:
+        self.client_calls += 1
+        return self._client
+
+    _client = object()
+
+
+class _ToolManagerManager(_Manager):
+    """Manager double that exposes what the toolkit and extraction wiring read."""
+
+    def __init__(self, events: list[str] | None = None) -> None:
+        super().__init__(events)
+        from types import SimpleNamespace
+
+        from parrot.memory.episodic.models import MemoryNamespace
+
+        self.namespace = MemoryNamespace(tenant_id="tenant-1", agent_id="facade-agent")
+        self.config = SimpleNamespace(enable_user_memory=True)
+        self.extraction_client: object | None = None
+
+
+@pytest.mark.asyncio
+async def test_episodic_tools_register_once_and_are_removed_on_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Configure registers the agent-facing episodic tools exactly once, and cleanup removes them again."""
+    manager = _ToolManagerManager()
+
+    async def create_manager(config: object, *, namespace: object) -> _ToolManagerManager:
+        return manager
+
+    monkeypatch.setattr("parrot.memory.agent_memory.mixin.create_memory_manager", create_manager)
+    subject = _ToolFacade()
+
+    await subject.configure(object())
+    registered = list(subject.tool_manager.registered)
+    await subject.configure(subject.app)
+
+    assert registered and len(registered) == len(set(registered))
+    assert any(name.endswith("cite_memory") for name in registered)
+    assert subject.tool_manager.registered == registered
+
+    await subject.cleanup()
+
+    assert sorted(subject.tool_manager.unregistered) == sorted(registered)
+
+
+@pytest.mark.asyncio
+async def test_completion_hands_the_host_client_to_user_extraction(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With user memory enabled, extraction uses the host's current client; a missing client never fails the turn."""
+    manager = _ToolManagerManager()
+
+    async def create_manager(config: object, *, namespace: object) -> _ToolManagerManager:
+        return manager
+
+    monkeypatch.setattr("parrot.memory.agent_memory.mixin.create_memory_manager", create_manager)
+    subject = _ToolFacade()
+    await subject.configure(object())
+    scope = MemoryRequestScope(
+        tenant_id="tenant-1", agent_id="facade-agent", turn_id="turn-1", identity_provenance="runtime_derived"
+    )
+    event = MemoryEvent(
+        event_id="event-1", kind="response", scope=scope, observed_at=datetime.now(UTC), payload={"response": "ok"}
+    )
+
+    await subject.complete_memory(event)
+
+    assert manager.extraction_client is subject._client
+    assert "manager.record:event-1" in manager.events
+
+    manager.extraction_client = None
+
+    def failing_client() -> object:
+        raise RuntimeError("no client configured")
+
+    subject.get_client = failing_client  # type: ignore[method-assign]
+    await subject.complete_memory(event)
+
+    assert manager.extraction_client is None
+    assert manager.events.count("manager.record:event-1") == 2

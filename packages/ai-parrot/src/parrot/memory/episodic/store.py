@@ -141,6 +141,7 @@ class EpisodicMemoryStore:
         metadata: dict[str, Any] | None = None,
         generate_reflection: bool = True,
         ttl_days: int | None = None,
+        episode_id: str | None = None,
     ) -> EpisodicMemory:
         """Record a new episode with auto-enrichment.
 
@@ -162,6 +163,8 @@ class EpisodicMemoryStore:
             metadata: Additional key-value metadata.
             generate_reflection: Whether to generate reflection via engine.
             ttl_days: Override default TTL. 0 = no expiry.
+            episode_id: Caller-supplied stable ID. Backends store an episode write-once by ID, so recording the same
+                ID again (a retried event) does not create a second episode.
 
         Returns:
             The stored EpisodicMemory with all enrichments.
@@ -207,6 +210,7 @@ class EpisodicMemoryStore:
 
         # Build episode
         episode = EpisodicMemory(
+            **({"episode_id": episode_id} if episode_id else {}),
             tenant_id=namespace.tenant_id,
             agent_id=namespace.agent_id,
             model_id=namespace.model_id,

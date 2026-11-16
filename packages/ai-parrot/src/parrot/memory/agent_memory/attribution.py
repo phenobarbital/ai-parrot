@@ -62,7 +62,11 @@ def reset_tool_event_capture(token: Token) -> None:
         discard = getattr(capture.manager, "discard_memory_exposure", None)
         if callable(discard):
             discard(capture.exposure_id)
-    _tool_capture.reset(token)
+    try:
+        _tool_capture.reset(token)
+    except ValueError:
+        # Token created in another Context: nothing is bound here, and cleanup must not abort the caller's finally.
+        pass
 
 
 def note_memory_exposure(exposure_id: str | None) -> None:
