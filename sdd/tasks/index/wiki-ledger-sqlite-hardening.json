@@ -67,7 +67,7 @@
       "feature_id": "FEAT-902",
       "feature": "wiki-ledger-sqlite-hardening",
       "spec": "sdd/specs/wiki-ledger-sqlite-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -77,8 +77,9 @@
       "parallelism_notes": "Depends on TASK-5713 for LedgerCursorInvalid/read_cursor_in and serializes the shared ledger/index.py writer. Modifies ledger/log.py and creates its own fast-path test file.",
       "assigned_to": null,
       "started_at": "2026-11-16T21:11:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5714-ledger-sync-fast-path.md"
+      "completed_at": "2026-11-16T21:56:24+00:00",
+      "file": "sdd/tasks/completed/TASK-5714-ledger-sync-fast-path.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5715",
