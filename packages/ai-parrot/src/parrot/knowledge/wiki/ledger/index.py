@@ -453,6 +453,38 @@ class LedgerIndex:
             await self._write_cursor(conn, cursor_line_start, cursor_event_id)
         return applied, cursor_line_start, cursor_event_id
 
+    async def _append_durably(self, event: LedgerEvent) -> tuple[str, int]:
+        """Drain a dispatched append/fsync before propagating cancellation.
+
+        Args:
+            event: The event to durably append to the ledger log.
+
+        Returns:
+            The event id and informational byte offset returned by the log.
+
+        Raises:
+            asyncio.CancelledError: If the caller is cancelled after the append
+                is dispatched. The append is still drained before cancellation
+                is re-raised.
+        """
+        append_task = asyncio.create_task(asyncio.to_thread(self.log.append, event))
+        try:
+            return await asyncio.shield(append_task)
+        except asyncio.CancelledError as cancellation:
+            while not append_task.done():
+                try:
+                    await asyncio.shield(append_task)
+                except asyncio.CancelledError:
+                    continue
+                except BaseException as append_error:
+                    raise cancellation from append_error
+
+            try:
+                append_task.result()
+            except BaseException as append_error:
+                raise cancellation from append_error
+            raise
+
     # ------------------------------------------------------------------
     # Atomic claim
     # ------------------------------------------------------------------
@@ -511,7 +543,7 @@ class LedgerIndex:
             # LedgerLog.append() is a blocking syscall sequence
             # (open/lseek/write/fsync) — off-thread so it never blocks the
             # event loop while this transaction is held open.
-            await asyncio.to_thread(self.log.append, event)
+            await self._append_durably(event)
             await self._apply_from(conn, offset, last_event_id)
             return True
 
@@ -558,7 +590,7 @@ class LedgerIndex:
             if resolved_by is not None:
                 payload["resolved_by"] = resolved_by
             event = LedgerEvent(kind="issue.closed", subject=issue_id, actor=actor, payload=payload)
-            await asyncio.to_thread(self.log.append, event)
+            await self._append_durably(event)
             await self._apply_from(conn, offset, last_event_id)
             return True
 
@@ -595,7 +627,7 @@ class LedgerIndex:
                 actor=actor,
                 payload={"unclaimed_by": actor, "reason": reason},
             )
-            await asyncio.to_thread(self.log.append, event)
+            await self._append_durably(event)
             await self._apply_from(conn, offset, last_event_id)
             return True
 
