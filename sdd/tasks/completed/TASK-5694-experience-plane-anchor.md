@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-887 — SDD Experience Memory (`experience.pitfall`)
 **Spec**: `sdd/specs/sdd-experience-memory.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5693, TASK-5588, TASK-5596
@@ -162,4 +162,18 @@ Follow `docs/sdd/WORKFLOW.md` § "Implementing a task by hand" inside
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+
+- Task: TASK-5694
+- Feature: sdd-experience-memory
+- Implementation SHA: b89c139d078e33cd8dc2e879e6d7cb554bb2a941
+- Closed at (UTC): 2026-11-16T01:04:57+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 2 |
+| fix_commits | 0 |
+| closed_from | host finalize; the sandboxed worker could not run finalize (navconfig log directory not writable) |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 478s · Tokens: n/a |
+| task_commits | 0c58902024 deliverable, merged by b89c139d07 |
+| validation | task tier passed; merge tier passed (0 failures) |

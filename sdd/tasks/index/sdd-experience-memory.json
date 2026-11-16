@@ -634,7 +634,7 @@
       "feature_id": "FEAT-887",
       "feature": "sdd-experience-memory",
       "spec": "sdd/specs/sdd-experience-memory.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -646,11 +646,12 @@
       "parallelism_notes": "TASK-5694: exclusive review-fix step; edits fastpath.py, experience_hook.py, test_fastpath.py, test_experience_hook.py; follows TASK-5693 (shared experience modules)",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5694-experience-plane-anchor.md",
+      "completed_at": "2026-11-16T01:04:57+00:00",
+      "file": "sdd/tasks/completed/TASK-5694-experience-plane-anchor.md",
       "discovered_from": [
         "issue:33ab30fb1190"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-5695",
