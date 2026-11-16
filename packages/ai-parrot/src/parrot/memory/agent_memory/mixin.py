@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from parrot.memory.episodic.models import MemoryNamespace
@@ -24,6 +25,8 @@ class AgentMemoryMixin:
     enable_brain: bool = False
     agent_memory_config: AgentMemoryConfig | dict[str, Any] | None = None
     brain_service: BrainService | None = None
+
+    memory_extraction_client_factory: Callable[[], Any] | None = None
 
     _memory_manager: UnifiedMemoryManager | None = None
     _resolved_agent_memory_config: AgentMemoryConfig | None = None
@@ -101,7 +104,10 @@ class AgentMemoryMixin:
             return
         self._bind_extraction_client(manager)
         self._bind_skill_registry(manager)
-        if event.kind == "response" and getattr(manager, "extraction_client", None) is not None:
+        if event.kind == "response" and (
+            getattr(manager, "extraction_client_factory", None) is not None
+            or getattr(manager, "extraction_client", None) is not None
+        ):
             # User extraction is a full provider round trip; it must not delay the answer. The task is
             # owned here and drained by cleanup()/_release_memory_resources().
             task = asyncio.ensure_future(self._record_in_background(manager, event))
@@ -202,22 +208,46 @@ class AgentMemoryMixin:
         self._memory_tool_names = ()
 
     def _bind_extraction_client(self, manager: UnifiedMemoryManager) -> None:
-        """Give user-knowledge extraction the host's current LLM client (spec step 5: AbstractClient)."""
+        """Bind construction once; extraction never borrows the response client's session."""
         config = getattr(manager, "config", None)
         if not getattr(config, "enable_user_memory", False):
             return
-        get_client = getattr(self, "get_client", None)
-        if not callable(get_client):
+        if getattr(manager, "extraction_client_factory", None) is not None:
             return
-        try:
-            client = get_client()
-        except Exception as exc:  # noqa: BLE001 - extraction is optional and must not fail the completed response
-            logger = getattr(self, "logger", None)
-            if logger is not None:
-                logger.warning("memory extraction client unavailable: %s", type(exc).__name__)
+        factory = self.memory_extraction_client_factory
+        llm_config = getattr(self, "_llm_config", None)
+        if factory is None and llm_config is not None and llm_config.client_instance is None:
+            client_class = llm_config.client_class
+            if client_class is not None:
+                options = dict(llm_config.extra)
+                options.update(model=llm_config.model, temperature=0.0, max_tokens=1024)
+                options.pop("tool_manager", None)
+                redaction = getattr(self, "enable_redaction", False)
+
+                def factory() -> Any:
+                    """Construct an independent client from the resolved host configuration."""
+                    client = client_class(**options)
+                    client.enable_redaction = redaction
+                    return client
+
+        if factory is None:
+            # Custom live instances cannot safely be copied or reconstructed without their owner's factory.
+            if not getattr(manager, "extraction_client", None) and not self.__dict__.get("_extraction_warning"):
+                logger = getattr(self, "logger", None)
+                if logger is not None:
+                    logger.warning("user memory extraction requires memory_extraction_client_factory for a live client")
+                self._extraction_warning = True
             return
-        if client is not None:
-            manager.extraction_client = client
+        primary_client = getattr(self, "_llm", None)
+
+        def owned_client() -> Any:
+            """Reject factories that return the live response client before entering it."""
+            client = factory()
+            if client is None or client is primary_client:
+                raise ValueError("memory extraction requires an independent client")
+            return client
+
+        manager.extraction_client_factory = owned_client
 
     def _resolve_agent_memory_config(self) -> AgentMemoryConfig:
         """Resolve defaults, subclass policy, explicit config, then instance overrides."""

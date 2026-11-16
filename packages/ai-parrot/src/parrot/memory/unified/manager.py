@@ -8,6 +8,7 @@ token-budgeted context assembly.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 import hashlib
 import json
 import logging
@@ -106,6 +107,7 @@ class UnifiedMemoryManager:
         user_memory_store: UserMemoryStore | None = None,
         extraction_client: Any | None = None,
         brain_service: Any | None = None,
+        extraction_client_factory: Callable[[], Any] | None = None,
     ) -> None:
         self.namespace = namespace
         self.conversation = conversation_memory
@@ -116,6 +118,8 @@ class UnifiedMemoryManager:
         self._cross_domain_router = cross_domain_router
         self.user_memory_store = user_memory_store
         self.extraction_client = extraction_client
+        self.extraction_client_factory = extraction_client_factory
+        self._extraction_lock = asyncio.Lock()
         self.brain_service = brain_service
         self._memory_exposures: dict[str, MemoryExposure] = {}
         self._active_memory_exposures: set[str] = set()
@@ -734,16 +738,34 @@ class UnifiedMemoryManager:
 
     async def _record_user_knowledge(self, event: MemoryEvent) -> tuple[list[str], list[str], list[str]]:
         """Extract and persist scoped user knowledge, retaining each durable result."""
-        if not self.config.enable_user_memory or self.user_memory_store is None or self.extraction_client is None:
+        if (
+            not self.config.enable_user_memory
+            or self.user_memory_store is None
+            or (self.extraction_client is None and self.extraction_client_factory is None)
+        ):
             return [], [], []
         try:
-            client = self.extraction_client
-            if hasattr(client, "__aenter__"):
-                # Bots enter their client before every call (it initializes the provider session).
-                async with client as entered:
-                    candidates = await extract_user_knowledge(event, client=entered)
+            if self.extraction_client_factory is not None:
+                client = self.extraction_client_factory()
+                if hasattr(client, "__aenter__"):
+                    async with client as entered:
+                        candidates = await extract_user_knowledge(event, client=entered)
+                else:
+                    try:
+                        candidates = await extract_user_knowledge(event, client=client)
+                    finally:
+                        close = getattr(client, "close", None)
+                        if callable(close):
+                            await close()
             else:
-                candidates = await extract_user_knowledge(event, client=client)
+                # Standalone callers may lend a client; serialize its contexts and never overwrite it per turn.
+                async with self._extraction_lock:
+                    client = self.extraction_client
+                    if hasattr(client, "__aenter__"):
+                        async with client as entered:
+                            candidates = await extract_user_knowledge(event, client=entered)
+                    else:
+                        candidates = await extract_user_knowledge(event, client=client)
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("User knowledge extraction failed: %s", type(exc).__name__)
             return ["storage_unavailable"], [], [f"user_extraction:{type(exc).__name__}"]

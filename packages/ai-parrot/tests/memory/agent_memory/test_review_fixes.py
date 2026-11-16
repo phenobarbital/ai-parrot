@@ -23,6 +23,7 @@ class _Host(AgentMemoryMixin):
     def __init__(self, manager: Any, client: Any = None) -> None:
         self._memory_manager = manager
         self._client = client
+        self.memory_extraction_client_factory = (lambda: client) if client is not None else None
         self._skill_registry = "registry"
         self.logger = None
 

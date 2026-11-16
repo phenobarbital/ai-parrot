@@ -283,8 +283,8 @@ async def test_episodic_tools_register_once_and_are_removed_on_cleanup(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_completion_hands_the_host_client_to_user_extraction(monkeypatch: pytest.MonkeyPatch) -> None:
-    """With user memory enabled, extraction uses the host's current client; a missing client never fails the turn."""
+async def test_completion_binds_a_separate_extraction_factory(monkeypatch: pytest.MonkeyPatch) -> None:
+    """User extraction binds its factory once and never borrows the response client."""
     manager = _ToolManagerManager()
 
     async def create_manager(config: object, *, namespace: object) -> _ToolManagerManager:
@@ -292,6 +292,8 @@ async def test_completion_hands_the_host_client_to_user_extraction(monkeypatch: 
 
     monkeypatch.setattr("parrot.memory.agent_memory.mixin.create_memory_manager", create_manager)
     subject = _ToolFacade()
+    extraction_client = object()
+    subject.memory_extraction_client_factory = lambda: extraction_client
     await subject.configure(object())
     scope = MemoryRequestScope(
         tenant_id="tenant-1", agent_id="facade-agent", turn_id="turn-1", identity_provenance="runtime_derived"
@@ -303,7 +305,9 @@ async def test_completion_hands_the_host_client_to_user_extraction(monkeypatch: 
     await subject.complete_memory(event)
     await subject._drain_memory_writes()  # extraction writes are detached and drained, never inline
 
-    assert manager.extraction_client is subject._client
+    assert manager.extraction_client is None
+    assert manager.extraction_client_factory() is extraction_client
+    assert subject.client_calls == 0
     assert "manager.record:event-1" in manager.events
 
     manager.extraction_client = None
