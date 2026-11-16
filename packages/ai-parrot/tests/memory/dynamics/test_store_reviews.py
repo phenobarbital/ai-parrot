@@ -192,3 +192,24 @@ async def test_lesson_text_persisted_before_ack(tmp_path: Path) -> None:
         assert episodes[0].metadata == {}
     finally:
         await reopened.close()
+
+
+@pytest.mark.asyncio
+async def test_store_list_reviews_delegates_and_fails_visibly(tmp_path: Path) -> None:
+    """The store forwards review listing and rejects backends without that capability."""
+    namespace = _namespace()
+    backend = SQLiteEpisodeBackend(tmp_path / "delegation.sqlite")
+    await backend.configure()
+    try:
+        store = EpisodicMemoryStore(backend, default_ttl_days=0)
+        await backend.store(_episode("episode-a", namespace=namespace))
+        await store.cite(["episode-a"], namespace=namespace, exposure_id="exposure-a")
+        assert (await store.review(["episode-a"], _signal(), namespace=namespace, exposure_id="exposure-a"))[0].status == "applied"
+        rows = await store.list_reviews(namespace)
+        assert len(rows) == 1
+        assert rows[0]["command"]["ref"]["memory_id"] == "episode-a"
+    finally:
+        await backend.close()
+
+    with pytest.raises(RuntimeError, match="has no list_reviews capability"):
+        await EpisodicMemoryStore(object()).list_reviews(namespace)

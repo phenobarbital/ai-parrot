@@ -1,387 +1,249 @@
-"""Behavioral acceptance tests for Deterministic review export and replayable archives."""
+"""Behavioral acceptance tests for committed review export archives."""
 
 from __future__ import annotations
 
 import json
-import tempfile
+import os
+import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
+import click
 import pytest
+from click.testing import CliRunner
 
 from parrot.memory.dynamics import export as export_module
-from parrot.memory.dynamics.export import (
-    ExportError,
-    ExportState,
-    export_reviews,
-    retry_export,
-)
-from parrot.memory.episodic.models import MemoryNamespace
+from parrot.memory.dynamics.cli import register_memory_commands
+from parrot.memory.dynamics.export import ExportError, export_reviews
+from parrot.memory.dynamics.models import ReviewCommand
+from parrot.memory.episodic.backends.sqlite import SQLiteEpisodeBackend
+from parrot.memory.episodic.models import EpisodicMemory, MemoryNamespace
+from parrot.memory.episodic.store import EpisodicMemoryStore
+
+_CLOCK = datetime(2026, 1, 3, tzinfo=timezone.utc)
 
 
-def _namespace(
-    tenant_id: str = "tenant-a",
-    agent_id: str = "agent-a",
-    user_id: str | None = "user-a",
-    session_id: str | None = "session-a",
-) -> MemoryNamespace:
-    """Build a test namespace."""
-    return MemoryNamespace(
-        tenant_id=tenant_id,
-        agent_id=agent_id,
-        user_id=user_id,
-        session_id=session_id,
+def _namespace(*, tenant_id: str = "tenant-a") -> MemoryNamespace:
+    """Build a stable namespace for one isolated test store."""
+    return MemoryNamespace(tenant_id=tenant_id, agent_id="agent-a", user_id="user-a", session_id="session-a")
+
+
+def _episode(namespace: MemoryNamespace, episode_id: str = "episode-a") -> EpisodicMemory:
+    """Build an episode which a real review command can reference."""
+    return EpisodicMemory(
+        episode_id=episode_id,
+        tenant_id=namespace.tenant_id,
+        agent_id=namespace.agent_id,
+        user_id=namespace.user_id,
+        session_id=namespace.session_id,
+        room_id=namespace.room_id,
+        crew_id=namespace.crew_id,
+        model_id=namespace.model_id,
+        situation="Validate the archive",
+        action_taken="Ran the scoped test",
+        outcome="success",
+        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
     )
 
 
-@pytest.mark.asyncio
-async def test_deterministic_round_trip() -> None:
-    """Verify deterministic round trip: identical source produces stable mappings/order/provenance."""
-    namespace = _namespace()
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        destination = Path(tmpdir) / "export.json"
-
-        # First export
-        reviews_1 = [
-            {
-                "memory_id": "mem-001",
+def _command(
+    namespace: MemoryNamespace,
+    *,
+    outcome_id: str,
+    expected_revision: int,
+    episode_id: str = "episode-a",
+) -> ReviewCommand:
+    """Build a validated durable review command for the seeded episode."""
+    return ReviewCommand.model_validate(
+        {
+            "ref": {
+                "namespace": namespace.model_dump(mode="json"),
+                "kind": "episode",
+                "memory_id": episode_id,
                 "content_version": "v1",
-                "ref_key": "ref-001",
-                "before": {"difficulty": None, "stability": None, "review_count": 0},
-                "after": {"difficulty": 2.5, "stability": 1.5, "review_count": 1},
-                "parameter_id": "fsrs-6-default",
-                "grade": 3,
-                "reviewed_at": datetime(2026, 11, 15, tzinfo=timezone.utc),
             },
-            {
-                "memory_id": "mem-002",
-                "content_version": "v1",
-                "ref_key": "ref-002",
-                "before": {"difficulty": None, "stability": None, "review_count": 0},
-                "after": {"difficulty": 3.0, "stability": 2.0, "review_count": 1},
-                "parameter_id": "fsrs-6-default",
-                "grade": 3,
-                "reviewed_at": datetime(2026, 11, 15, tzinfo=timezone.utc),
+            "signal": {
+                "outcome_id": outcome_id,
+                "outcome_revision": 0,
+                "observed_at": datetime(2026, 1, 2, tzinfo=timezone.utc),
+                "scope": {
+                    **namespace.model_dump(mode="json"),
+                    "turn_id": "turn-a",
+                    "identity_provenance": "runtime_derived",
+                },
+                "evidence_ref": f"coder-review/v1/execution/task/{outcome_id}",
+                "source": "coder_engine",
+                "outcome": "success",
+                "first_attempt": True,
+                "correction_count": 0,
+                "passed_check_ids": ("export-check",),
             },
-        ]
-        parameters = {
-            "fsrs-6-default": {
-                "algorithm": "fsrs-6",
-                "time_policy": "days-v1",
-                "reference": "fsrs-6@v6.3.2:9446cb06605c597a063aeee49f7d188d42e34dc2",
-                "provenance": "default-weights",
-            }
+            "exposure_id": f"exposure-{outcome_id}",
+            "expected_revision": expected_revision,
         }
+    )
 
-        result_1 = await export_reviews(
-            namespace=namespace,
-            destination=destination,
-            reviews=reviews_1,
-            parameters=parameters,
-        )
 
-        # Read the export file
-        content_1 = destination.read_text(encoding="utf-8")
-        parsed_1 = json.loads(content_1)
-
-        # Second export with identical data should produce identical output
-        destination_2 = Path(tmpdir) / "export2.json"
-        result_2 = await export_reviews(
-            namespace=namespace,
-            destination=destination_2,
-            reviews=reviews_1,
-            parameters=parameters,
-        )
-
-        content_2 = destination_2.read_text(encoding="utf-8")
-
-        # Verify deterministic: identical content
-        assert content_1 == content_2, "Identical source data must produce identical exports"
-
-        # Verify stable ordering: reviews should be sorted by stable key
-        reviews_list = parsed_1.get("reviews", {})
-        assert len(reviews_list) == 2
-
-        # Verify parameter provenance is included
-        assert "parameter_provenance" in parsed_1
-        assert "fsrs-6-default" in parsed_1["parameter_provenance"]
-
-        # Verify export metadata
-        assert result_1["record_count"] == 2
-        assert result_1["format_version"] == "v1"
-        assert "content_hash" in result_1
-
-        # Verify the content hash is stable
-        assert result_1["content_hash"] == result_2["content_hash"]
+async def _seed_store(path: Path, namespace: MemoryNamespace) -> tuple[SQLiteEpisodeBackend, EpisodicMemoryStore]:
+    """Create a real SQLite store with two committed reviews of one memory version."""
+    backend = SQLiteEpisodeBackend(path)
+    await backend.configure()
+    await backend.store(_episode(namespace))
+    assert (await backend.apply_review(_command(namespace, outcome_id="outcome-a", expected_revision=0))).status == "applied"
+    assert (await backend.apply_review(_command(namespace, outcome_id="outcome-b", expected_revision=1))).status == "applied"
+    return backend, EpisodicMemoryStore(backend, default_ttl_days=0)
 
 
 @pytest.mark.asyncio
-async def test_export_failure_replay_no_double_apply() -> None:
-    """Verify export failure replay does not lose or reapply reviews; archives remain replayable."""
+async def test_two_reviews_same_version_survive_and_export_is_deterministic(tmp_path: Path) -> None:
+    """Export both committed outcomes in stable backend order with an injected clock."""
     namespace = _namespace()
+    backend, store = await _seed_store(tmp_path / "reviews.sqlite", namespace)
+    try:
+        first_path = tmp_path / "first.json"
+        second_path = tmp_path / "second.json"
+        first = await export_reviews(namespace=namespace, destination=first_path, store=store, clock=lambda: _CLOCK)
+        second = await export_reviews(namespace=namespace, destination=second_path, store=store, clock=lambda: _CLOCK)
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        destination = Path(tmpdir) / "export.json"
-
-        reviews = [
-            {
-                "memory_id": "mem-001",
-                "content_version": "v1",
-                "ref_key": "ref-001",
-                "before": {"difficulty": None, "stability": None, "review_count": 0},
-                "after": {"difficulty": 2.5, "stability": 1.5, "review_count": 1},
-                "parameter_id": "fsrs-6-default",
-                "grade": 3,
-                "reviewed_at": datetime(2026, 11, 15, tzinfo=timezone.utc),
-            },
+        archive = json.loads(first_path.read_text(encoding="utf-8"))
+        assert first_path.read_bytes() == second_path.read_bytes()
+        assert first["content_hash"] == second["content_hash"]
+        assert first["record_count"] == 2
+        assert [review["command"]["signal"]["outcome_id"] for review in archive["reviews"]] == [
+            "outcome-a",
+            "outcome-b",
         ]
-        parameters = {"fsrs-6-default": {"algorithm": "fsrs-6", "provenance": "test"}}
-
-        # Successful export
-        result = await export_reviews(
-            namespace=namespace,
-            destination=destination,
-            reviews=reviews,
-            parameters=parameters,
-        )
-
-        assert result["record_count"] == 1
-        assert destination.exists()
-
-        # Verify the export can be read back
-        content = destination.read_text(encoding="utf-8")
-        parsed = json.loads(content)
-
-        # The reviews are preserved in the export file
-        assert len(parsed["reviews"]) == 1
-
-        # Re-exporting (simulating retry) produces same result
-        # This demonstrates reviews are not double-applied
-        result_retry = await export_reviews(
-            namespace=namespace,
-            destination=destination,
-            reviews=reviews,
-            parameters=parameters,
-        )
-
-        # Same content hash = no double application
-        assert result["content_hash"] == result_retry["content_hash"]
-
-
-@pytest.mark.asyncio
-async def test_archive_retains_required_provenance() -> None:
-    """Verify archive retains required provenance: no fit.py, fitting CLI or optimizer changes."""
-    namespace = _namespace()
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        destination = Path(tmpdir) / "export.json"
-
-        # Include parameter provenance
-        parameters = {
-            "fsrs-6-default": {
-                "algorithm": "fsrs-6",
-                "time_policy": "days-v1",
-                "reference": "fsrs-6@v6.3.2:9446cb06605c597a063aeee49f7d188d42e34dc2",
-                "weights": (
-                    0.212,
-                    1.2931,
-                    2.3065,
-                    8.2956,
-                    6.4133,
-                    0.8334,
-                    3.0194,
-                    0.001,
-                    1.8722,
-                    0.1666,
-                    0.796,
-                    1.4835,
-                    0.0614,
-                    0.2629,
-                    1.6483,
-                    0.6014,
-                    1.8729,
-                    0.5425,
-                    0.0912,
-                    0.0658,
-                    0.1542,
-                ),
-                "provenance": "default-weights-v6.3.2",
-            }
+        assert archive["exported_at"] == _CLOCK.isoformat()
+        assert archive["provenance"] == {
+            "backend": "SQLiteEpisodeBackend",
+            "table": "reviews",
+            "persisted_fields": ["command", "apply_revision", "recorded_at"],
         }
+        assert "parameter_id" not in json.dumps(archive)
 
-        reviews = [
-            {
-                "memory_id": "mem-001",
-                "content_version": "v1",
-                "ref_key": "ref-001",
-                "before": {"difficulty": None, "stability": None, "review_count": 0},
-                "after": {"difficulty": 2.5, "stability": 1.5, "review_count": 1},
-                "parameter_id": "fsrs-6-default",
-                "grade": 3,
-                "reviewed_at": datetime(2026, 11, 15, tzinfo=timezone.utc),
-            },
-        ]
-
-        result = await export_reviews(
-            namespace=namespace,
-            destination=destination,
-            reviews=reviews,
-            parameters=parameters,
-        )
-
-        # Read and verify provenance is retained
-        content = destination.read_text(encoding="utf-8")
-        parsed = json.loads(content)
-
-        # Verify parameter provenance is present and complete
-        provenance = parsed["parameter_provenance"]["fsrs-6-default"]
-        assert provenance["algorithm"] == "fsrs-6"
-        assert provenance["time_policy"] == "days-v1"
-        assert provenance["reference"].startswith("fsrs-6@v6.3.2")
-        assert provenance["provenance"] == "default-weights-v6.3.2"
-        assert "weights" in provenance
-
-        # Verify no optimizer/fitting fields are present
-        assert "optimizer" not in parsed
-        assert "fitter" not in parsed
-        assert "fit" not in json.dumps(parsed).lower()
-
-        # Verify export is suitable for deferred fitting
-        # (has all needed data: grades, states, parameters)
-        review = list(parsed["reviews"].values())[0]
-        assert "grade" in review
-        assert "before" in review
-        assert "after" in review
-        assert "parameter_id" in review
+        real_clock_path = tmp_path / "real-clock.json"
+        await export_reviews(namespace=namespace, destination=real_clock_path, store=store)
+        assert datetime.fromisoformat(json.loads(real_clock_path.read_text(encoding="utf-8"))["exported_at"]).tzinfo is not None
+    finally:
+        await backend.close()
 
 
 @pytest.mark.asyncio
-async def test_export_state_stable_key() -> None:
-    """Verify ExportState generates stable keys for deterministic ordering."""
+async def test_scope_excludes_other_namespace_and_archive_replays_without_double_apply(tmp_path: Path) -> None:
+    """Replay validated archived commands into a fresh store without changing the source."""
     namespace = _namespace()
+    other_namespace = _namespace(tenant_id="tenant-b")
+    backend, store = await _seed_store(tmp_path / "source.sqlite", namespace)
+    try:
+        await backend.store(_episode(other_namespace, episode_id="other-episode"))
+        assert (
+            await backend.apply_review(
+                _command(other_namespace, outcome_id="other", expected_revision=0, episode_id="other-episode")
+            )
+        ).status == "applied"
+        destination = tmp_path / "archive.json"
+        await export_reviews(namespace=namespace, destination=destination, store=store, clock=lambda: _CLOCK)
+        archive = json.loads(destination.read_text(encoding="utf-8"))
+        assert len(archive["reviews"]) == 2
+        commands = [ReviewCommand.model_validate(review["command"]) for review in archive["reviews"]]
 
-    state = ExportState(namespace=namespace, export_path=Path("/tmp/export.json"))
-
-    # Same inputs should produce same key
-    key1 = state._stable_key("mem-001", "v1")
-    key2 = state._stable_key("mem-001", "v1")
-    assert key1 == key2
-
-    # Different memory_id should produce different key
-    key3 = state._stable_key("mem-002", "v1")
-    assert key3 != key1
-
-    # Different content_version should produce different key
-    key4 = state._stable_key("mem-001", "v2")
-    assert key4 != key1
+        replay_backend = SQLiteEpisodeBackend(tmp_path / "replay.sqlite")
+        await replay_backend.configure()
+        try:
+            await replay_backend.store(_episode(namespace))
+            receipts = [await replay_backend.apply_review(command) for command in commands]
+            assert [receipt.status for receipt in receipts] == ["applied", "applied"]
+            assert [receipt.apply_revision for receipt in receipts] == [1, 2]
+            assert [
+                (await backend.apply_review(command)).status
+                for command in commands
+            ] == ["duplicate", "duplicate"]
+            replay_export = await export_reviews(
+                namespace=namespace,
+                destination=tmp_path / "replay.json",
+                store=EpisodicMemoryStore(replay_backend, default_ttl_days=0),
+                clock=lambda: _CLOCK,
+            )
+            assert replay_export["record_count"] == 2
+            replay_archive = json.loads((tmp_path / "replay.json").read_text(encoding="utf-8"))
+            assert [review["dedupe_key"] for review in replay_archive["reviews"]] == [
+                review["dedupe_key"] for review in archive["reviews"]
+            ]
+        finally:
+            await replay_backend.close()
+    finally:
+        await backend.close()
 
 
 @pytest.mark.asyncio
-async def test_export_state_ordering() -> None:
-    """Verify ExportState orders reviews deterministically."""
+async def test_write_failure_leaves_store_and_directory_clean(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failed atomic replace keeps durable reviews and removes the unique temporary file."""
     namespace = _namespace()
+    backend, store = await _seed_store(tmp_path / "reviews.sqlite", namespace)
+    destination = tmp_path / "archive.json"
+    try:
+        original_replace = os.replace
 
-    state = ExportState(namespace=namespace, export_path=Path("/tmp/export.json"))
+        def fail_replace(source: Path, target: Path) -> None:
+            raise OSError("replace failed")
 
-    # Add reviews in non-sorted order
-    state.add_review(
-        ref_key="ref-c",
-        memory_id="mem-c",
-        content_version="v1",
-        before_state={},
-        after_state={"difficulty": 3.0},
-        parameter_id="param-1",
-        grade=3,
-        reviewed_at=datetime(2026, 11, 15, tzinfo=timezone.utc),
+        monkeypatch.setattr(export_module.os, "replace", fail_replace)
+        with pytest.raises(ExportError, match="replace failed"):
+            await export_reviews(namespace=namespace, destination=destination, store=store, clock=lambda: _CLOCK)
+        assert not list(tmp_path.glob(".archive.json.*.tmp"))
+        assert len(await store.list_reviews(namespace)) == 2
+
+        monkeypatch.setattr(export_module.os, "replace", original_replace)
+        result = await export_reviews(namespace=namespace, destination=destination, store=store, clock=lambda: _CLOCK)
+        assert result["record_count"] == 2
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_missing_or_incapable_store_fails_without_writing(tmp_path: Path) -> None:
+    """Never create a placeholder archive when review listing is unavailable."""
+    namespace = _namespace()
+    destination = tmp_path / "archive.json"
+    with pytest.raises(ValueError, match="configured episodic store"):
+        await export_reviews(namespace=namespace, destination=destination)
+    incapable_store = EpisodicMemoryStore(object())
+    with pytest.raises(RuntimeError, match="has no list_reviews capability"):
+        await export_reviews(namespace=namespace, destination=destination, store=incapable_store)
+    assert not destination.exists()
+
+
+def test_cli_exports_store_contents(tmp_path: Path) -> None:
+    """The Click command opens the configured real store and exports its committed reviews."""
+    namespace = _namespace()
+    database_path = tmp_path / "reviews.sqlite"
+
+    async def seed() -> None:
+        backend, _ = await _seed_store(database_path, namespace)
+        await backend.close()
+
+    asyncio.run(seed())
+    root = click.Group()
+    register_memory_commands(root)
+    output = tmp_path / "cli.json"
+    result = CliRunner().invoke(
+        root,
+        [
+            "memory",
+            "--storage-path",
+            str(database_path),
+            "--tenant-id",
+            namespace.tenant_id,
+            "--agent-id",
+            namespace.agent_id,
+            "--user-id",
+            namespace.user_id or "",
+            "--session-id",
+            namespace.session_id or "",
+            "export-reviews",
+            "--output",
+            str(output),
+        ],
     )
-    state.add_review(
-        ref_key="ref-a",
-        memory_id="mem-a",
-        content_version="v1",
-        before_state={},
-        after_state={"difficulty": 1.0},
-        parameter_id="param-1",
-        grade=1,
-        reviewed_at=datetime(2026, 11, 15, tzinfo=timezone.utc),
-    )
-    state.add_review(
-        ref_key="ref-b",
-        memory_id="mem-b",
-        content_version="v1",
-        before_state={},
-        after_state={"difficulty": 2.0},
-        parameter_id="param-1",
-        grade=2,
-        reviewed_at=datetime(2026, 11, 15, tzinfo=timezone.utc),
-    )
-
-    result = state.to_dict()
-    reviews_keys = list(result["reviews"].keys())
-
-    # Keys should be sorted (deterministic order)
-    assert reviews_keys == sorted(reviews_keys)
-
-
-@pytest.mark.asyncio
-async def test_export_empty_reviews() -> None:
-    """Verify export handles empty reviews list correctly."""
-    namespace = _namespace()
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        destination = Path(tmpdir) / "export.json"
-
-        result = await export_reviews(
-            namespace=namespace,
-            destination=destination,
-            reviews=[],
-            parameters={},
-        )
-
-        assert result["record_count"] == 0
-        assert destination.exists()
-
-        content = destination.read_text(encoding="utf-8")
-        parsed = json.loads(content)
-        assert parsed["reviews"] == {}
-        assert parsed["parameter_provenance"] == {}
-
-
-@pytest.mark.asyncio
-async def test_export_atomic_write() -> None:
-    """Verify export writes atomically (temp file then rename)."""
-    namespace = _namespace()
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        destination = Path(tmpdir) / "export.json"
-
-        reviews = [
-            {
-                "memory_id": "mem-001",
-                "content_version": "v1",
-                "ref_key": "ref-001",
-                "before": {},
-                "after": {"difficulty": 2.5},
-                "parameter_id": "param-1",
-                "grade": 3,
-                "reviewed_at": datetime(2026, 11, 15, tzinfo=timezone.utc),
-            },
-        ]
-
-        result = await export_reviews(
-            namespace=namespace,
-            destination=destination,
-            reviews=reviews,
-            parameters={},
-        )
-
-        # Verify final file exists and temp file does not
-        assert destination.exists()
-        temp_path = destination.with_suffix(".tmp")
-        assert not temp_path.exists()
-
-        # Verify content is complete
-        content = destination.read_text(encoding="utf-8")
-        parsed = json.loads(content)
-        assert len(parsed["reviews"]) == 1
+    assert result.exit_code == 0, result.output
+    assert json.loads(output.read_text(encoding="utf-8"))["reviews"]
