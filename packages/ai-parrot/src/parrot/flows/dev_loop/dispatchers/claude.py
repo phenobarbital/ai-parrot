@@ -661,6 +661,7 @@ class ClaudeCodeDispatcher:
             env = dict(env or {})
             env[native_claude_sandbox.BACKEND_ENV] = native_claude_sandbox.launch_backend(mode)
             env.update(native_claude_sandbox.native_root_env(Path(cwd)))
+            env.update(native_claude_sandbox.experience_isolation_env())
             if mode == "legacy":
                 self.logger.warning(
                     "native sandbox LEGACY for %s: Bubblewrap hook boundary, no network isolation", profile.subagent

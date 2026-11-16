@@ -192,6 +192,12 @@ do not run task closure again on base_branch and do not clean worktrees with unk
    - run `parrot sdd task heal <feature-slug>` inside the worktree
      (PR flow and `--merge` alike)
    - stage only the index and this feature's task files, verify cached names
+   - close out experience inside the feature worktree: run
+     `parrot sdd experience sync` (advisory; warn and continue on failure),
+     then `parrot sdd experience export`, which returns one newly-created
+     `sdd/experience/lessons/<digest>.jsonl` path; stage only that returned
+     path with `git -C "$WORKTREE_PATH" add -- <path>`;
+     never stage the whole lessons directory
    - commit `sdd: close tasks for FEAT-NNN - <feature-slug>`
 8.1. Close resolved ledger issues (feature flows only, after step 8, before step 11's snapshot):
    - the `$sdd-fix` SDD lane hands issue closure to this step; without it fixed

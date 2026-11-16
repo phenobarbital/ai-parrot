@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from parrot.flows.dev_loop.feature_launcher import _preflight_sandbox
 from parrot.launcher import script_path
 from parrot.sdd.cli import VERBS
 from parrot.sdd.installer import (
@@ -34,6 +35,74 @@ def empty_repo(tmp_path: Path) -> Path:
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     (tmp_path / "README.md").write_text("# foreign repo\n")
     return tmp_path
+
+
+@pytest.mark.asyncio
+async def test_preflight_sync_failure_is_nonfatal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failed global sync does not prevent native sandbox planning."""
+    from parrot.flows.dev_loop import feature_launcher
+    from parrot.knowledge.wiki.experience import sync
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    synced: list[Path] = []
+    planned: list[tuple[Path, tuple[str, ...]]] = []
+
+    def fail_sync(plane: Path) -> int:
+        synced.append(plane)
+        raise OSError("read-only global plane")
+
+    def plan(worktree: Path, *, allowed_domains: tuple[str, ...]) -> None:
+        planned.append((worktree, allowed_domains))
+
+    monkeypatch.setattr(sync, "sync_global", fail_sync)
+    monkeypatch.setattr(feature_launcher.native_claude_sandbox, "plan_native_launch", plan)
+
+    _preflight_sandbox(tmp_path, ("example.com",))
+
+    assert synced == [tmp_path / ".parrot" / "experience"]
+    assert planned == [(tmp_path, ("example.com",))]
+
+
+@pytest.mark.asyncio
+async def test_closeout_exports_in_worktree(tmp_path: Path) -> None:
+    """Every closeout surface exports in-worktree and stages only the returned definition."""
+    repo_root = Path(__file__).resolve().parents[4]
+    assert tmp_path != repo_root
+    pairs = (
+        (
+            ".claude/commands/sdd-done.md",
+            "packages/ai-parrot/src/parrot/sdd/_assets/claude/commands/sdd-done.md",
+        ),
+        (
+            ".agent/workflows/sdd-done.md",
+            "packages/ai-parrot/src/parrot/sdd/_assets/agent/workflows/sdd-done.md",
+        ),
+        (
+            ".agents/skills/sdd-done/SKILL.md",
+            "packages/ai-parrot/src/parrot/sdd/_assets/agents/skills/sdd-done/SKILL.md",
+        ),
+    )
+    texts: dict[str, str] = {}
+    for source, packaged in pairs:
+        source_text = (repo_root / source).read_text(encoding="utf-8")
+        assert source_text == (repo_root / packaged).read_text(encoding="utf-8")
+        texts[source] = source_text
+
+    for source in (".claude/commands/sdd-done.md", ".agent/workflows/sdd-done.md"):
+        source_text = texts[source]
+        sync_at = source_text.index('(cd "$WORKTREE_PATH" && parrot sdd experience sync)')
+        export_at = source_text.index('EXPERIENCE_EXPORT="$(cd "$WORKTREE_PATH" && parrot sdd experience export)"')
+        closeout_stage_at = source_text.index('git -C "$WORKTREE_PATH" add "$INDEX" sdd/tasks/completed/')
+        assert sync_at < export_at < closeout_stage_at
+        assert '"$WORKTREE_PATH"/sdd/experience/lessons/*.jsonl)' in source_text
+        assert 'git -C "$WORKTREE_PATH" add -- "$EXPERIENCE_EXPORT"' in source_text
+        assert 'add "$INDEX" sdd/tasks/completed/ sdd/experience/lessons/' not in source_text
+
+    skill_text = texts[".agents/skills/sdd-done/SKILL.md"]
+    assert skill_text.index("parrot sdd experience sync") < skill_text.index("parrot sdd experience export")
+    assert "inside the feature worktree" in skill_text
+    assert "sdd/experience/lessons/<digest>.jsonl" in skill_text
+    assert "never stage the whole lessons directory" in skill_text
 
 
 def _claude_targets() -> list[str]:
@@ -59,6 +128,141 @@ def test_reinstall_is_idempotent(empty_repo: Path) -> None:
     actions = install_sdd_integration(empty_repo)
     # asset lines end with the verb; the wiring note / hook lines mention "installed" in other positions
     assert not any(a.endswith((" — installed", " — upgraded")) or "overwritten" in a for a in actions)
+
+
+def test_worker_hook_ignores_worktree_pythonpath(empty_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Installed hook commands stay portable even with a hostile worktree PYTHONPATH."""
+    monkeypatch.setenv("PYTHONPATH", str(empty_repo / "packages" / "ai-parrot" / "src"))
+    install_sdd_integration(empty_repo, dangerous_guard=False, sdd_coder=False, portable=False)
+    settings = json.loads((empty_repo / ".claude/settings.json").read_text(encoding="utf-8"))
+    commands = [
+        hook["command"]
+        for event in ("PostToolUse", "PostToolUseFailure")
+        for entry in settings["hooks"][event]
+        for hook in entry["hooks"]
+        if hook.get("type") == "command"
+    ]
+    assert commands == [
+        "parrot sdd experience hook --host claude --event post",
+        "parrot sdd experience hook --host claude --event post-failure",
+    ]
+    assert all(str(empty_repo) not in command for command in commands)
+
+
+def test_experience_install_idempotent(empty_repo: Path) -> None:
+    """Upgrade a foreign wheel-shaped command once, then preserve the stable managed settings."""
+    install_sdd_integration(empty_repo, dangerous_guard=False, sdd_coder=False, portable=False)
+    settings_path = empty_repo / ".claude/settings.json"
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    settings["hooks"]["PostToolUse"][0]["hooks"][0][
+        "command"
+    ] = "/foreign-wheel/bin/parrot sdd experience hook --host claude --event post"
+    settings["hooks"]["PostToolUse"].append(
+        {"matcher": "Bash", "hooks": [{"type": "command", "command": "foreign-command"}]}
+    )
+    settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+
+    actions = install_sdd_integration(empty_repo, dangerous_guard=False, sdd_coder=False, portable=False)
+    upgraded = json.loads(settings_path.read_text(encoding="utf-8"))
+    post_hooks = upgraded["hooks"]["PostToolUse"]
+    assert post_hooks[0]["hooks"][0]["command"] == ("parrot sdd experience hook --host claude --event post")
+    assert any(hook["command"] == "foreign-command" for entry in post_hooks for hook in entry["hooks"])
+    assert any("Claude experience hooks updated" in action for action in actions)
+
+    stable = settings_path.read_bytes()
+    repeat = install_sdd_integration(empty_repo, dangerous_guard=False, sdd_coder=False, portable=False)
+    assert settings_path.read_bytes() == stable
+    assert any("Claude experience hooks already registered" in action for action in repeat)
+
+
+_AGY_EXPERIENCE = {
+    "PostToolUse": [
+        {
+            "matcher": "run_command",
+            "hooks": [
+                {"type": "command", "command": "parrot sdd experience hook --host agy --event post", "timeout": 5}
+            ],
+        }
+    ],
+    "PostInvocation": [
+        {"type": "command", "command": "parrot sdd experience hook --host agy --event post-invocation", "timeout": 5}
+    ],
+}
+
+
+def _agy_install(root: Path) -> tuple[bool, list[str]]:
+    from parrot.sdd import installer
+
+    return installer._install_agy_hook(root, {"settings_hooks": []}, portable=True)
+
+
+def test_agy_hooks_json_shape(tmp_path: Path) -> None:
+    """Grouped PostToolUse, FLAT PostInvocation, no pre hook; reinstall is byte-stable; foreign wheel is upgraded."""
+    registered, _ = _agy_install(tmp_path)
+    assert registered
+    path = tmp_path / ".agents/hooks.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["parrot-sdd-experience"] == _AGY_EXPERIENCE
+    assert set(data["parrot-sdd-experience"]) == {"PostToolUse", "PostInvocation"}  # no pre experience hook
+    assert "matcher" not in data["parrot-sdd-experience"]["PostInvocation"][0]
+
+    stable = path.read_bytes()
+    _, lines = _agy_install(tmp_path)
+    assert path.read_bytes() == stable
+    assert any("agy experience hooks already registered" in line for line in lines)
+
+    data["parrot-sdd-experience"]["PostToolUse"][0]["hooks"][0]["command"] = "/old/bin/parrot sdd experience hook"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    _, lines = _agy_install(tmp_path)
+    assert json.loads(path.read_text(encoding="utf-8"))["parrot-sdd-experience"] == _AGY_EXPERIENCE
+    assert any("agy experience hooks updated" in line for line in lines)
+
+
+def test_agy_permissions_preserved(tmp_path: Path) -> None:
+    """The permission group and unrelated named hooks are unchanged by the experience merge."""
+    from parrot.sdd import installer
+
+    _agy_install(tmp_path)
+    path = tmp_path / ".agents/hooks.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    permissions = json.dumps(data[installer.AGY_HOOK_NAME], sort_keys=True)
+    data["foreign-hook"] = {"PreToolUse": [{"matcher": "x", "hooks": []}]}
+    path.write_text(json.dumps(data), encoding="utf-8")
+    _agy_install(tmp_path)
+    after = json.loads(path.read_text(encoding="utf-8"))
+    assert json.dumps(after[installer.AGY_HOOK_NAME], sort_keys=True) == permissions
+    assert after["foreign-hook"] == {"PreToolUse": [{"matcher": "x", "hooks": []}]}
+
+    # a malformed hooks file is never clobbered by the experience merge
+    path.write_text("[not an object]", encoding="utf-8")
+    registered, _ = _agy_install(tmp_path)
+    assert not registered and path.read_text(encoding="utf-8") == "[not an object]"
+
+    # removal drops both managed groups but keeps foreign ones
+    path.write_text(json.dumps(data), encoding="utf-8")
+    _agy_install(tmp_path)
+    receipt = {"settings_hooks": ["agy-permissions"]}
+    installer._remove_agy_permissions(tmp_path, receipt)
+    left = json.loads(path.read_text(encoding="utf-8"))
+    assert set(left) == {"foreign-hook"}
+
+
+def test_codex_experience_hook_shape() -> None:
+    """The tracked Codex hooks file registers the PostToolUse Bash experience hook next to the PreToolUse guard."""
+    repo_root = Path(__file__).resolve().parents[4]
+    hooks = json.loads((repo_root / ".codex/hooks.json").read_text(encoding="utf-8"))["hooks"]
+    assert hooks["PostToolUse"] == [
+        {
+            "matcher": "Bash",
+            "hooks": [
+                {"type": "command", "command": "parrot sdd experience hook --host codex --event post", "timeout": 5}
+            ],
+        }
+    ]
+    assert "sh scripts/sdd/codex_hook.sh" in json.dumps(hooks["PreToolUse"])
+    assert "experience" not in json.dumps(hooks["PreToolUse"])
+    agy = json.loads((repo_root / ".agents/hooks.json").read_text(encoding="utf-8"))
+    assert agy["parrot-sdd-experience"] == _AGY_EXPERIENCE
 
 
 def _tree_digest(root: Path) -> dict[str, str]:

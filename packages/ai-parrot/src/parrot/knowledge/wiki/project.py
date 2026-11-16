@@ -28,6 +28,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from parrot.knowledge.wiki.decisions.models import DecisionConfig
+from parrot.knowledge.wiki.experience.models import ExperienceConfig
 from parrot.knowledge.wiki.schema.models import SchemaPlaneConfig
 from parrot.launcher import parrot_home as _launcher_parrot_home  # FEAT-633: single PARROT_HOME authority (stdlib-only)
 
@@ -711,6 +712,10 @@ class WikiProjectConfig(BaseModel):
     standup: StandupConfig = Field(
         default_factory=StandupConfig,
         description="Daily/period standup brief settings (FEAT-627).",
+    )
+    experience: ExperienceConfig = Field(
+        default_factory=ExperienceConfig,
+        description="Experience-memory thresholds and hook runtime bounds (FEAT-887).",
     )
     sqlite_busy_timeout: float = Field(
         default=15.0,

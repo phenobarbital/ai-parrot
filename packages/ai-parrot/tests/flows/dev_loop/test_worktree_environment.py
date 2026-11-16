@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from parrot.flows.dev_loop import worktree_environment as policy
+from parrot.sdd.scripts import native_claude_sandbox as native
 from parrot.flows.dev_loop.dispatchers.llm import LLMCodeDispatcher
 from parrot.flows.dev_loop.dispatchers.claude import ClaudeCodeDispatcher
 from parrot.flows.dev_loop.models import ClaudeCodeDispatchProfile, LLMCodeDispatchProfile
@@ -470,6 +471,7 @@ def test_linked_checkout_without_admin_dir_binds_nothing_extra(
         worktree.resolve(),
         (env.parent / ".git").resolve(),
         (env.parent / "artifacts" / "logs" / "sdd-coder-usage").resolve(),
+        (env.parent / ".parrot" / "experience").resolve(),
     ]
 
 
@@ -650,6 +652,45 @@ def test_coder_evidence_dir_matches_resolve_durable_root(tmp_path: Path, monkeyp
     subprocess.run(["git", "init"], cwd=repo, capture_output=True, check=True)
     resolved = resolve_durable_root(None, worktree_base_path=str(repo / ".parrot" / "worktrees"))
     assert resolved == (repo / policy.CODER_EVIDENCE_DIR).resolve()
+
+
+def test_experience_dirs_contract(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Create only the external linked worktree's primary experience plane and degrade on errors."""
+    main, worktree = _registered_feature_worktree(tmp_path)
+    git_dir = (main / ".git").resolve()
+    experience = (main / ".parrot" / "experience").resolve()
+
+    assert policy.experience_dirs(main, git_dir) == ()
+    assert policy.experience_dirs(worktree, None) == ()
+    assert not experience.exists()
+    assert policy.experience_dirs(worktree, git_dir) == (experience,)
+    assert experience.is_dir()
+
+    failed_main, failed_worktree = _registered_feature_worktree(tmp_path / "mkdir-failure")
+
+    def raise_os_error(*args: object, **kwargs: object) -> None:
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(policy.Path, "mkdir", raise_os_error)
+    assert policy.experience_dirs(failed_worktree, (failed_main / ".git").resolve()) == ()
+
+
+def test_control_files_include_experience_hook(tmp_path: Path) -> None:
+    """Deny worktree and installed copies of every experience hook control file."""
+    _main, worktree = _registered_feature_worktree(tmp_path)
+    deny = set(native.native_sandbox_settings(worktree)["sandbox"]["filesystem"]["denyWrite"])
+    worktree_parrot = worktree / "packages" / "ai-parrot" / "src" / "parrot"
+    installed_parrot = Path(native.__file__).resolve().parents[2]
+
+    expected = {
+        worktree_parrot / "sdd" / "scripts" / "experience_hook.py",
+        worktree_parrot / "knowledge" / "wiki" / "experience" / "fastpath.py",
+        worktree_parrot / "launcher.py",
+        installed_parrot / "sdd" / "scripts" / "experience_hook.py",
+        installed_parrot / "knowledge" / "wiki" / "experience" / "fastpath.py",
+        installed_parrot / "launcher.py",
+    }
+    assert {str(path.resolve()) for path in expected} <= deny
 
 
 # ---------------------------------------------------------------------------

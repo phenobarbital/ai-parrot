@@ -105,7 +105,7 @@ def test_foreign_hooks_and_user_rules_survive(repo: Path, home: Path) -> None:
     }
     _write(home / SETTINGS, original)
     _install(repo)
-    assert set(_read(repo / HOOKS)) == {"lint", AGY_HOOK_NAME}
+    assert set(_read(repo / HOOKS)) == {"lint", AGY_HOOK_NAME, "parrot-sdd-experience"}
     settings = _read(home / SETTINGS)
     assert settings["model"] == "m"
     assert settings["permissions"]["allow"][:2] == ["command(npm test)", "command(find)"]
@@ -353,9 +353,9 @@ def test_not_owned_legacy_matcher_emits_note(repo: Path, home: Path) -> None:
         }
     }
     _write(repo / HOOKS, legacy)
-    before = (repo / HOOKS).read_bytes()
     actions = install_sdd_integration(repo, ("google",), sdd_coder=False, portable=True)
-    assert (repo / HOOKS).read_bytes() == before
+    # The not-owned legacy permissions group stays untouched; the independent experience group is added beside it.
+    assert _read(repo / HOOKS)[AGY_HOOK_NAME] == legacy[AGY_HOOK_NAME]
     assert any("stale matcher" in a for a in actions)
     assert any("not owned" in a for a in actions)
 

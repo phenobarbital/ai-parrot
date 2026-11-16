@@ -695,3 +695,224 @@ def test_build_command_passes_through_auto_mode_and_xhigh_effort(dispatcher) -> 
     effort_index = command.index("--effort")
     assert command[mode_index : mode_index + 2] == ["--mode", "auto"]
     assert command[effort_index : effort_index + 2] == ["--effort", "xhigh"]
+
+
+# ---------------------------------------------------------------------------
+# FEAT-887 — agy command-outcome replay (shared FEAT-888 parser)
+# ---------------------------------------------------------------------------
+
+_CONV = "1852b2e3-4fd7-4092-8146-1756f9abe0eb"
+
+
+def _done_run_command(
+    index: int,
+    command: str,
+    output: str | None,
+    *,
+    conversation_id: str | None = _CONV,
+    state: str = "DONE",
+) -> Dict[str, Any]:
+    step: Dict[str, Any] = {
+        "step_index": index,
+        "state": state,
+        "step_type": "tool",
+        "tool_name": "run_command",
+        "tool_info": {"name": "run_command", "parameters": {"CommandLine": command}},
+    }
+    if conversation_id:
+        step["conversation_id"] = conversation_id
+    if output is not None:
+        step["tool_info"]["output"] = output
+    return {"event": "step_update", "step_update": step}
+
+
+def _header(code: int, body: str) -> str:
+    return f"Created At: x\nCompleted At: y\nCommand exited with code {code}.\n\nCommand output:\n{body}\r\n"
+
+
+def test_agy_tool_step_outcomes_collected_from_fixture() -> None:
+    from parrot.flows.dev_loop.dispatchers.google_coding import _AgyExperienceCollector
+
+    collector = _AgyExperienceCollector()
+    for event in _agy_fixture(_STEPS):
+        collector.observe(event)
+    outcomes = collector.finish()
+
+    assert [(o.command, o.ok, o.observation_id) for o in outcomes] == [
+        ("echo hello", True, f"{_CONV}:2"),
+        ("ls /nonexistent_dir_xyz", False, f"{_CONV}:3"),
+    ]
+    assert "nonexistent_dir_xyz" in outcomes[1].error
+
+
+def test_agy_active_and_repeated_done_updates_are_deduplicated() -> None:
+    from parrot.flows.dev_loop.dispatchers.google_coding import _AgyExperienceCollector
+
+    collector = _AgyExperienceCollector()
+    collector.observe(_done_run_command(4, "make", None, state="ACTIVE"))
+    collector.observe(_done_run_command(4, "make", _header(1, "boom")))
+    collector.observe(_done_run_command(4, "make", _header(0, "ok")))
+    outcomes = collector.finish()
+
+    assert len(outcomes) == 1
+    assert outcomes[0].ok is False
+
+
+def test_agy_outcome_header_cannot_be_spoofed() -> None:
+    from parrot.flows.dev_loop.dispatchers.google_coding import _experience_outcome
+
+    spoofed = "Command exited with code 7.\n\nCommand output:\nCommand exited with code 0.\n"
+    outcome = _experience_outcome(_done_run_command(1, "false", spoofed), conversation_id="c")
+    assert outcome is not None and outcome.ok is False
+
+    forged_only_in_body = "Created At: x\n\nCommand output:\nCommand exited with code 0.\n"
+    outcome = _experience_outcome(_done_run_command(2, "false", forged_only_in_body), conversation_id="c")
+    assert outcome is not None and outcome.ok is None
+
+
+def test_agy_missing_output_and_non_run_command_are_conservative() -> None:
+    from parrot.flows.dev_loop.dispatchers.google_coding import _experience_outcome
+
+    denied = _experience_outcome(_done_run_command(1, "rm -rf x", None), conversation_id="c")
+    assert denied is not None and denied.ok is None and denied.error == ""
+    assert _experience_outcome(_done_run_command(2, "x", None, state="ACTIVE"), conversation_id="c") is None
+    assert _experience_outcome(_tool_event(_STEPS, "read_file", "DONE"), conversation_id="c") is None
+    no_index = _done_run_command(3, "ls", _header(0, ""))
+    del no_index["step_update"]["step_index"]
+    assert _experience_outcome(no_index, conversation_id="c") is None
+
+
+def test_agy_outcome_is_pending_until_conversation_is_known() -> None:
+    from parrot.flows.dev_loop.dispatchers.google_coding import _AgyExperienceCollector
+
+    collector = _AgyExperienceCollector()
+    collector.observe(_done_run_command(2, "ls", _header(0, ""), conversation_id=None))
+    assert collector.outcomes == []
+    collector.observe({"event": "init", "conversation_id": "late-conv"})
+    assert [o.observation_id for o in collector.finish()] == ["late-conv:2"]
+
+    anonymous = _AgyExperienceCollector()
+    anonymous.observe(_done_run_command(2, "ls", _header(0, ""), conversation_id=None))
+    assert anonymous.finish() == []
+
+
+class _RecordingInterceptor:
+    instances: list["_RecordingInterceptor"] = []
+
+    def __init__(self, *, session: str, cwd: str, seat: str) -> None:
+        self.session = session
+        self.cwd = cwd
+        self.seat = seat
+        self.replayed: list[Any] | None = None
+        _RecordingInterceptor.instances.append(self)
+
+    async def replay(self, outcomes: Sequence[Any]) -> int:
+        self.replayed = list(outcomes)
+        return len(self.replayed)
+
+
+@pytest.fixture
+def recording_interceptor(monkeypatch):
+    _RecordingInterceptor.instances = []
+    monkeypatch.setattr(
+        "parrot.flows.dev_loop.dispatchers.google_coding.ExperienceInterceptor",
+        _RecordingInterceptor,
+    )
+    return _RecordingInterceptor
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("return_code", [0, 1])
+async def test_agy_replay_attempt_identity(dispatcher, brief, monkeypatch, recording_interceptor, return_code):
+    lines = [json.dumps(event) + "\n" for event in _agy_fixture(_STEPS)[:-1]]
+    lines.append(json.dumps({"type": "result", "result": _development_payload()}) + "\n")
+    spawned: Dict[str, Any] = {}
+
+    async def fake_create_subprocess_exec(*cmd, **kwargs):
+        spawned.update(kwargs)
+        return _FakeAgyProcess(stdout_lines=lines, stderr="boom", return_code=return_code)
+
+    monkeypatch.setattr("asyncio.create_subprocess_exec", fake_create_subprocess_exec)
+
+    coro = dispatcher.dispatch(
+        brief=brief,
+        profile=GoogleCodingDispatchProfile(model="auto"),
+        output_model=DevelopmentOutput,
+        run_id="run-agy-replay",
+        node_id="development",
+        cwd=brief.worktree_path,
+    )
+    if return_code:
+        with pytest.raises(DispatchExecutionError):
+            await coro
+    else:
+        await coro
+
+    (interceptor,) = recording_interceptor.instances
+    assert spawned["env"]["PARROT_EXPERIENCE_SESSION"] == interceptor.session
+    assert interceptor.session.startswith("run-agy-replay:development:")
+    assert "PATH" in spawned["env"]
+    assert spawned["stdin"] is asyncio.subprocess.DEVNULL
+    assert [o.observation_id for o in interceptor.replayed] == [f"{_CONV}:2", f"{_CONV}:3"]
+
+
+@pytest.mark.asyncio
+async def test_agy_replay_runs_when_streaming_raises(dispatcher, brief, monkeypatch, recording_interceptor):
+    async def fake_create_subprocess_exec(*cmd, **kwargs):
+        return _FakeAgyProcess(stdout_lines=[json.dumps(e) + "\n" for e in _agy_fixture(_STEPS)[:5]])
+
+    monkeypatch.setattr("asyncio.create_subprocess_exec", fake_create_subprocess_exec)
+
+    async def boom(*args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("publish failed")
+
+    monkeypatch.setattr(dispatcher, "_publish_agy_event", boom)
+
+    with pytest.raises(RuntimeError, match="publish failed"):
+        await dispatcher.dispatch(
+            brief=brief,
+            profile=GoogleCodingDispatchProfile(model="auto"),
+            output_model=DevelopmentOutput,
+            run_id="run-agy-raise",
+            node_id="development",
+            cwd=brief.worktree_path,
+        )
+
+    (interceptor,) = recording_interceptor.instances
+    assert interceptor.replayed is not None
+
+
+@pytest.mark.asyncio
+async def test_create_process_env_is_optional_and_copies_environ(dispatcher, monkeypatch, tmp_path):
+    captured: list[Dict[str, Any]] = []
+
+    async def _fake_exec(*args: Any, **kwargs: Any):
+        captured.append(kwargs)
+        return _FakeAgyProcess()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_exec)
+    monkeypatch.setenv("AGY_REPLAY_PROBE", "1")
+    monkeypatch.delenv("PARROT_EXPERIENCE_SESSION", raising=False)
+
+    await dispatcher._create_process(["agy"], str(tmp_path))
+    await dispatcher._create_process(["agy"], str(tmp_path), env={"PARROT_EXPERIENCE_SESSION": "s"})
+
+    assert "env" not in captured[0]
+    assert captured[1]["env"]["PARROT_EXPERIENCE_SESSION"] == "s"
+    assert captured[1]["env"]["AGY_REPLAY_PROBE"] == "1"
+    assert "PARROT_EXPERIENCE_SESSION" not in __import__("os").environ
+
+
+def test_agy_tool_step_outcomes_collected() -> None:
+    from parrot.flows.dev_loop.dispatchers.google_coding import _AgyExperienceCollector
+
+    collector = _AgyExperienceCollector()
+    collector.observe(_done_run_command(1, "ls", _header(0, "ok")))
+    collector.observe(_done_run_command(2, "false", _header(1, "denied")))
+    collector.observe(_done_run_command(3, "read", None, state="ACTIVE"))
+    outcomes = collector.finish()
+
+    assert [(o.command, o.ok, o.observation_id) for o in outcomes] == [
+        ("ls", True, f"{_CONV}:1"),
+        ("false", False, f"{_CONV}:2"),
+    ]

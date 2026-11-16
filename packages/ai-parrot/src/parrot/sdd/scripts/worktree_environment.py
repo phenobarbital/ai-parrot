@@ -141,6 +141,10 @@ def command_policy_error(cwd: Path, argv: Sequence[str]) -> str | None:
 # resolves to the primary checkout, so a worktree agent filing a finding with
 # ``wikitoolkit ledger open`` writes there, never into its own checkout.
 SHARED_LEDGER_DIR = Path(".parrot") / "ledger"
+# The experience plane is shared by every linked worktree and intentionally
+# writable by sandboxed agents. Keep this path local so this policy module
+# remains importable with the standard library alone.
+EXPERIENCE_PLANE_DIR = Path(".parrot") / "experience"
 # The sdd-coder durable evidence store. ``resolve_durable_root``
 # (parrot/flows/dev_loop/sdd_coder/telemetry.py) places it under the PRIMARY
 # checkout so the dataset outlives ``git worktree remove``, and
@@ -285,6 +289,37 @@ def coder_evidence_dirs(root: Path, git_dir: Path | None) -> tuple[Path, ...]:
     return (evidence_dir,)
 
 
+def experience_dirs(root: Path, git_dir: Path | None) -> tuple[Path, ...]:
+    """Return the primary checkout's experience plane for a linked worktree.
+
+    The plane is created before the sandbox starts because Bubblewrap cannot
+    bind a missing path. The primary checkout already owns its writable root,
+    so it needs neither an additional bind nor a filesystem side effect.
+
+    Args:
+        root: The checkout root resolved for the command's working directory.
+        git_dir: The common Git directory, or ``None`` outside a repository.
+
+    Returns:
+        The experience directory to bind writable, or an empty tuple for the
+        primary checkout, missing Git metadata, or a directory creation error.
+    """
+    if git_dir is None:
+        return ()
+    primary = git_dir.parent
+    if primary == root:
+        return ()
+    experience_dir = (primary / EXPERIENCE_PLANE_DIR).resolve()
+    if experience_dir.is_relative_to(root):
+        return ()
+    try:
+        experience_dir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        # Never deny every Bash call because the shared plane cannot be
+        # prepared. The experience CLI reports its own write failure.
+        return ()
+    return (experience_dir,)
+
 def load_extra_write_paths(primary: Path) -> tuple[Path, ...]:
     """Read and validate ``[tool.parrot.sdd].sandbox_extra_write_paths`` from the primary checkout.
 
@@ -344,7 +379,6 @@ def load_extra_write_paths(primary: Path) -> tuple[Path, ...]:
         if path not in found:
             found.append(path)
     return tuple(found)
-
 
 def sandbox_extra_write_dirs(root: Path, git_dir: Path | None) -> tuple[Path, ...]:
     """Return the operator-declared extra writable directories for a linked worktree.
@@ -411,7 +445,8 @@ def protected_argv(cwd: Path, argv: Sequence[str], *, derive_pythonpath: bool = 
     (``artifacts/logs/sdd-coder-usage``, so review checkpoints and task journals can be
     written), the operator-declared ``sandbox_extra_write_paths`` of the primary
     checkout's ``pyproject.toml``, private temporary storage,
-    and Claude Code's scratchpad root (``/tmp/claude-<uid>``, bound back over the
+    the shared experience plane (``.parrot/experience``), and Claude Code's
+    scratchpad root (``/tmp/claude-<uid>``, bound back over the
     private ``/tmp`` so a seat's scratchpad survives between commands) are
     writable. The rest of the primary checkout and existing shared
     environments remain read-only even when the checkout is the primary
@@ -467,6 +502,8 @@ def protected_argv(cwd: Path, argv: Sequence[str], *, derive_pythonpath: bool = 
         command.extend(["--bind", str(ledger_dir), str(ledger_dir)])
     for evidence_dir in coder_evidence_dirs(root, git_dir):
         command.extend(["--bind", str(evidence_dir), str(evidence_dir)])
+    for experience_dir in experience_dirs(root, git_dir):
+        command.extend(["--bind", str(experience_dir), str(experience_dir)])
     for environment in shared_environments(cwd):
         command.extend(["--ro-bind", str(environment), str(environment)])
     # Caches are disposable and must not write into the shared host cache.

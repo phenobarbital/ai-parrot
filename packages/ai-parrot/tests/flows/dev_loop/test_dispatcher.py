@@ -920,6 +920,8 @@ class TestNativeSandboxDispatch:
         options = dispatcher._resolve_run_options(ClaudeCodeDispatchProfile(), str(linked_worktree))
         roots = options.env[native.ROOTS_ENV].split(os.pathsep)
         assert len(roots) == 3 and roots[0] == str(linked_worktree.resolve())
+        # The injected settings carry the isolated experience hooks; a project-settings copy stands down.
+        assert options.env[native.EXPERIENCE_ISOLATED_ENV] == "1"
 
     def test_real_settings_follow_probe_outcome(self, dispatcher, linked_worktree, monkeypatch, caplog):
         """Only the probe is stubbed: the real plan compiles hook-only settings when degraded, strict otherwise."""

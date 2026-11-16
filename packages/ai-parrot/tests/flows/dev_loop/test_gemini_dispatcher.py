@@ -105,6 +105,23 @@ def _development_payload() -> str:
     )
 
 
+def _experience_plane(root: Path) -> Path:
+    """Create a minimal repository-scoped experience plane for replay tests."""
+    (root / ".git").mkdir()
+    plane = root / ".parrot" / "experience"
+    plane.mkdir(parents=True)
+    (plane / "triggers.json").write_text("{}", encoding="utf-8")
+    return plane
+
+
+def _experience_records(plane: Path) -> list[dict[str, Any]]:
+    """Read the event records produced by one isolated replay plane."""
+    events_path = plane / "events.jsonl"
+    if not events_path.exists():
+        return []
+    return [json.loads(line) for line in events_path.read_text(encoding="utf-8").splitlines() if line]
+
+
 def _published_events(dispatcher: GeminiCodeDispatcher) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
     for call in dispatcher._fake_redis.xadd.await_args_list:  # type: ignore[attr-defined]
@@ -120,7 +137,7 @@ class TestGeminiCommandAndEvents:
     ):
         captured: dict[str, Sequence[str]] = {}
 
-        async def _fake_create(command: Sequence[str], cwd: str):
+        async def _fake_create(command: Sequence[str], cwd: str, *, env: dict[str, str] | None = None):
             captured["command"] = list(command)
             payload_str = _development_payload()
             assistant_event = {
@@ -173,7 +190,7 @@ class TestGeminiCommandAndEvents:
     async def test_dispatch_transparent_profile_conversion(self, dispatcher, brief, _patch_worktree_base, monkeypatch):
         captured: dict[str, Sequence[str]] = {}
 
-        async def _fake_create(command: Sequence[str], cwd: str):
+        async def _fake_create(command: Sequence[str], cwd: str, *, env: dict[str, str] | None = None):
             captured["command"] = list(command)
             payload_str = _development_payload()
             assistant_event = {
@@ -212,7 +229,8 @@ class TestGeminiCommandAndEvents:
 class TestGeminiFailures:
     @pytest.mark.asyncio
     async def test_missing_cli_raises_execution_error(self, dispatcher, brief, _patch_worktree_base, monkeypatch):
-        async def _missing(_command: Sequence[str], cwd: str):
+
+        async def _missing(_command: Sequence[str], cwd: str, *, env: dict[str, str] | None = None):
             raise FileNotFoundError("gemini")
 
         monkeypatch.setattr(dispatcher, "_create_process", _missing)
@@ -229,7 +247,8 @@ class TestGeminiFailures:
 
     @pytest.mark.asyncio
     async def test_nonzero_exit_raises_execution_error(self, dispatcher, brief, _patch_worktree_base, monkeypatch):
-        async def _fake_create(command: Sequence[str], cwd: str):
+
+        async def _fake_create(command: Sequence[str], cwd: str, *, env: dict[str, str] | None = None):
             return _FakeGeminiProcess(stderr="some error occurred", return_code=1)
 
         monkeypatch.setattr(dispatcher, "_create_process", _fake_create)
@@ -246,7 +265,8 @@ class TestGeminiFailures:
 
     @pytest.mark.asyncio
     async def test_invalid_output_raises_validation_error(self, dispatcher, brief, _patch_worktree_base, monkeypatch):
-        async def _fake_create(command: Sequence[str], cwd: str):
+
+        async def _fake_create(command: Sequence[str], cwd: str, *, env: dict[str, str] | None = None):
             assistant_event = {
                 "type": "message",
                 "role": "assistant",
@@ -326,7 +346,7 @@ class TestGeminiEventExtraction:
     async def test_dispatch_accepts_labels(self, dispatcher, brief, _patch_worktree_base, monkeypatch):
         from parrot.flows.dev_loop.models import DispatchLabels
 
-        async def _fake_create(command, cwd):
+        async def _fake_create(command, cwd, *, env=None):
             return _FakeGeminiProcess(stdout_lines=[])
 
         monkeypatch.setattr(dispatcher, "_create_process", _fake_create)
@@ -346,3 +366,220 @@ class TestGeminiEventExtraction:
         events = _published_events(dispatcher)
         queued = next(e for e in events if e["kind"] == "dispatch.queued")
         assert queued["payload"]["task_id"] == "TASK-1"
+
+
+class TestGeminiExperienceReplay:
+    """Experience-memory replay from Gemini's stream-json events."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("failure", ("construction", "replay"))
+    async def test_gemini_dispatch_survives_interceptor_failures(
+        self, dispatcher, brief, _patch_worktree_base, monkeypatch, failure: str
+    ) -> None:
+        """Keep a successful Gemini result when optional experience handling fails."""
+
+        class FailingInterceptor:
+            """Minimal interceptor double that fails at the selected fail-open boundary."""
+
+            def __init__(self, **_: object) -> None:
+                if failure == "construction":
+                    raise RuntimeError("interceptor unavailable")
+
+            async def replay(self, outcomes: object) -> None:
+                if failure == "replay":
+                    raise RuntimeError("replay unavailable")
+
+        async def _fake_create(command, cwd, *, env=None):
+            return _FakeGeminiProcess(
+                stdout_lines=[
+                    json.dumps({"type": "message", "role": "assistant", "content": _development_payload()}) + "\n"
+                ]
+            )
+
+        monkeypatch.setattr("parrot.flows.dev_loop.dispatchers.gemini.ExperienceInterceptor", FailingInterceptor)
+        monkeypatch.setattr(dispatcher, "_create_process", _fake_create)
+
+        result = await dispatcher.dispatch(
+            brief=brief,
+            profile=GeminiCodeDispatchProfile(),
+            output_model=DevelopmentOutput,
+            run_id="fail-open",
+            node_id="development",
+            cwd=str(_patch_worktree_base),
+        )
+
+        assert result.summary == "implemented the spec"
+
+    @pytest.mark.asyncio
+    async def test_gemini_outcomes_collected(self, dispatcher, brief, _patch_worktree_base, monkeypatch):
+        plane = _experience_plane(_patch_worktree_base)
+        assistant_event = {
+            "type": "message",
+            "role": "assistant",
+            "content": _development_payload(),
+        }
+
+        async def _fake_create(command, cwd, *, env=None):
+            return _FakeGeminiProcess(
+                stdout_lines=[
+                    json.dumps(
+                        {
+                            "type": "tool_call",
+                            "toolCallId": "failed-command",
+                            "name": "run_command",
+                            "args": {"command": "git status --short"},
+                        }
+                    )
+                    + "\n",
+                    json.dumps(
+                        {
+                            "type": "tool_response",
+                            "toolCallId": "failed-command",
+                            "status": "error",
+                            "result": "permission denied",
+                        }
+                    )
+                    + "\n",
+                    json.dumps(
+                        {
+                            "type": "tool_response",
+                            "toolCallId": "missing-command",
+                            "status": "error",
+                            "result": "must not be paired",
+                        }
+                    )
+                    + "\n",
+                    json.dumps(
+                        {
+                            "type": "tool_call",
+                            "toolCallId": "fixed-command",
+                            "name": "run_command",
+                            "args": {"command": "git status --short"},
+                        }
+                    )
+                    + "\n",
+                    json.dumps(
+                        {
+                            "type": "tool_response",
+                            "toolCallId": "fixed-command",
+                            "status": "success",
+                            "result": "clean",
+                        }
+                    )
+                    + "\n",
+                    json.dumps(assistant_event) + "\n",
+                ]
+            )
+
+        monkeypatch.setattr(dispatcher, "_create_process", _fake_create)
+
+        await dispatcher.dispatch(
+            brief=brief,
+            profile=GeminiCodeDispatchProfile(),
+            output_model=DevelopmentOutput,
+            run_id="gemini-attempt",
+            node_id="development",
+            cwd=str(_patch_worktree_base),
+        )
+
+        records = _experience_records(plane)
+        assert [record["kind"] for record in records] == ["failure.observed", "lesson.recorded"]
+        assert {record["session"] for record in records} == {"gemini-attempt/development"}
+        assert all(record["seat"] == "gemini" for record in records)
+
+    @pytest.mark.asyncio
+    async def test_gemini_unknown_outcome(self, dispatcher, brief, _patch_worktree_base, monkeypatch):
+        plane = _experience_plane(_patch_worktree_base)
+        assistant_event = {
+            "type": "message",
+            "role": "assistant",
+            "content": _development_payload(),
+        }
+
+        async def _fake_create(command, cwd, *, env=None):
+            return _FakeGeminiProcess(
+                stdout_lines=[
+                    json.dumps(
+                        {
+                            "type": "tool_call",
+                            "id": "unknown-command",
+                            "name": "run_command",
+                            "args": {"command": "git status --short"},
+                        }
+                    )
+                    + "\n",
+                    json.dumps(
+                        {
+                            "type": "tool_response",
+                            "id": "unknown-command",
+                            "result": "no structured status",
+                        }
+                    )
+                    + "\n",
+                    json.dumps(assistant_event) + "\n",
+                ]
+            )
+
+        monkeypatch.setattr(dispatcher, "_create_process", _fake_create)
+
+        await dispatcher.dispatch(
+            brief=brief,
+            profile=GeminiCodeDispatchProfile(),
+            output_model=DevelopmentOutput,
+            run_id="unknown-attempt",
+            node_id="development",
+            cwd=str(_patch_worktree_base),
+        )
+
+        assert _experience_records(plane) == []
+
+    @pytest.mark.asyncio
+    async def test_gemini_replays_failed_attempt(self, dispatcher, brief, _patch_worktree_base, monkeypatch):
+        plane = _experience_plane(_patch_worktree_base)
+        child_sessions: list[str] = []
+
+        async def _fake_create(command, cwd, *, env=None):
+            child_sessions.append(env["PARROT_EXPERIENCE_SESSION"])
+            return _FakeGeminiProcess(
+                stdout_lines=[
+                    json.dumps(
+                        {
+                            "type": "tool_call",
+                            "id": child_sessions[-1],
+                            "name": "run_command",
+                            "args": {"command": "git status --short"},
+                        }
+                    )
+                    + "\n",
+                    json.dumps(
+                        {
+                            "type": "tool_response",
+                            "id": child_sessions[-1],
+                            "status": "error",
+                            "result": "permission denied",
+                        }
+                    )
+                    + "\n",
+                ],
+                stderr="command failed",
+                return_code=1,
+            )
+
+        monkeypatch.delenv("PARROT_EXPERIENCE_SESSION", raising=False)
+        monkeypatch.setattr(dispatcher, "_create_process", _fake_create)
+
+        for run_id in ("failed-attempt-one", "failed-attempt-two"):
+            with pytest.raises(DispatchExecutionError, match="exit code 1"):
+                await dispatcher.dispatch(
+                    brief=brief,
+                    profile=GeminiCodeDispatchProfile(),
+                    output_model=DevelopmentOutput,
+                    run_id=run_id,
+                    node_id="development",
+                    cwd=str(_patch_worktree_base),
+                )
+
+        records = _experience_records(plane)
+        assert child_sessions == ["failed-attempt-one/development", "failed-attempt-two/development"]
+        assert [record["kind"] for record in records] == ["failure.observed", "failure.observed"]
+        assert {record["session"] for record in records} == set(child_sessions)

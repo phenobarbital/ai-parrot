@@ -83,6 +83,28 @@ def test_native_allow_write_includes_coder_evidence_dir(linked: tuple[Path, Path
     assert str((main / "artifacts").resolve()) not in allow
 
 
+def test_protected_argv_binds_experience(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, scratch_root: Path
+) -> None:
+    """Bubblewrap grants the exact shared roots, including experience but excluding wiki and HOME."""
+    feature, main = linked
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+
+    argv = policy.protected_argv(feature, ["true"])
+    binds = [Path(argv[index + 1]) for index, token in enumerate(argv) if token == "--bind"]
+
+    assert binds == [
+        scratch_root.resolve(),
+        (main / ".parrot" / "worktrees").resolve(),
+        (main / ".git").resolve(),
+        (main / ".parrot" / "ledger").resolve(),
+        (main / "artifacts" / "logs" / "sdd-coder-usage").resolve(),
+        (main / ".parrot" / "experience").resolve(),
+    ]
+    assert (main / ".parrot" / "wiki").resolve() not in binds
+    assert Path.home().resolve() not in binds
+
+
 def test_settings_are_strict_and_explicit(linked: tuple[Path, Path]) -> None:
     """All security keys are present with strict values."""
     feature, main = linked
@@ -346,7 +368,7 @@ def test_launch_worker_prints_macos_seatbelt_notice(
 ) -> None:
     """A strict macOS launch makes the unqualified backend visible to the operator."""
     feature, _main = linked
-    monkeypatch.setattr(native.shutil, "which", lambda name: "/usr/bin/claude" if name == "claude" else None)
+    monkeypatch.setattr(native.shutil, "which", lambda name, **_kwargs: "/usr/bin/claude" if name == "claude" else None)
     monkeypatch.setattr(native, "_native_roots", lambda cwd: (feature, feature / ".git", feature))
     monkeypatch.setattr(native, "plan_native_launch", lambda *args, **kwargs: ("required", False, "", {}))
     monkeypatch.setattr(native, "native_root_env", lambda cwd: {})
@@ -968,6 +990,101 @@ def test_hook_command_uses_the_launching_interpreter(linked: tuple[Path, Path]) 
     assert command.startswith((native.shlex.quote(sys.executable), sys.executable))
 
 
+def test_hook_import_closure_is_write_protected(linked: tuple[Path, Path]) -> None:
+    """Every module the host-side experience hook imports is a control file (issue:7993840a23a1).
+
+    ``experience_hook`` imports ``transitions`` at module top, and importing either executes each
+    parent package's ``__init__``; a worktree-writable copy of any of them would run host-side.
+    """
+    feature, _main = linked
+    running = Path(native.__file__).resolve().parents[2]
+    worktree = feature / "packages" / "ai-parrot" / "src" / "parrot"
+    deny = native.native_sandbox_settings(feature)["sandbox"]["filesystem"]["denyWrite"]
+    for package_root in (running, worktree):
+        targets = [
+            package_root / "knowledge" / "wiki" / "experience" / "transitions.py",
+            package_root / "knowledge" / "wiki" / "experience" / "fastpath.py",
+            package_root / "__init__.py",
+            package_root / "version.py",
+            package_root / "sdd" / "__init__.py",
+            package_root / "sdd" / "scripts" / "__init__.py",
+            package_root / "knowledge" / "__init__.py",
+            package_root / "knowledge" / "wiki" / "__init__.py",
+            package_root / "knowledge" / "wiki" / "experience" / "__init__.py",
+        ]
+        for target in targets:
+            assert str(target.resolve()) in deny, target
+    with pytest.raises(ValueError):
+        native.validate_native_write_path(feature, worktree / "knowledge" / "wiki" / "experience" / "transitions.py")
+    with pytest.raises(ValueError):
+        native.validate_native_write_path(feature, worktree / "knowledge" / "wiki" / "__init__.py")
+
+
+def test_hook_import_closure_matches_the_hook_source() -> None:
+    """The protected list covers every ``parrot`` module ``experience_hook`` imports at module top."""
+    import ast
+
+    package_root = Path(native.__file__).resolve().parents[2]
+    protected = set(native._control_files(package_root.parents[3]))
+    pending = [package_root / "sdd" / "scripts" / "experience_hook.py"]
+    seen: set[Path] = set()
+    while pending:
+        source = pending.pop()
+        if source in seen:
+            continue
+        seen.add(source)
+        assert source in protected, source
+        for node in ast.parse(source.read_text(encoding="utf-8")).body:
+            if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("parrot."):
+                parts = node.module.split(".")[1:]
+                pending.append(package_root.joinpath(*parts).with_suffix(".py"))
+                for depth in range(len(parts)):
+                    assert package_root.joinpath(*parts[:depth], "__init__.py") in protected
+
+
+@pytest.mark.parametrize(
+    "module",
+    ["parrot.sdd.scripts.experience_hook", "parrot.sdd.scripts.worktree_environment"],
+)
+def test_hook_runtime_import_closure_is_protected(module: str, tmp_path: Path) -> None:
+    """Every ``parrot`` file a host-side hook loads at import time is a control file (issue:57c0839196d4).
+
+    The closure is measured in a fresh interpreter rather than parsed, so a relative import inside a
+    package ``__init__`` (``parrot/__init__.py`` -> ``version.py``) cannot slip past the protected list.
+    """
+    package_root = Path(native.__file__).resolve().parents[2]
+    protected = set(native._control_files(package_root.parents[3]))
+    probe = (
+        "import importlib, json, sys\n"
+        f"importlib.import_module({module!r})\n"
+        "files = [getattr(m, '__file__', None) for n, m in sys.modules.items() if n.split('.')[0] == 'parrot']\n"
+        "print(json.dumps(sorted(f for f in files if f)))\n"
+    )
+    env = {**os.environ, "PYTHONPATH": str(package_root.parent)}
+    done = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True, env=env, cwd=tmp_path, check=True
+    )
+    loaded = [Path(item).resolve() for item in json.loads(done.stdout.strip().splitlines()[-1])]
+    inside = [path for path in loaded if path.is_relative_to(package_root)]
+    assert package_root / "version.py" in inside
+    assert package_root.joinpath(*module.split(".")[1:]).with_suffix(".py") in inside
+    assert [path for path in inside if path not in protected] == []
+
+
+def test_launch_worker_marks_experience_hooks_isolated(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The worker environment tells a project-settings experience hook to stand down."""
+    from parrot.sdd.scripts import experience_hook
+
+    feature, seen = _launch_harness(linked, monkeypatch, primary_toml=None)
+    monkeypatch.delenv(native.EXPERIENCE_ISOLATED_ENV, raising=False)
+    native.launch_worker([], cwd=feature)
+    _path, _command, env = seen["exec"]  # type: ignore[misc]
+    assert native.EXPERIENCE_ISOLATED_ENV == experience_hook.ISOLATED_ENV
+    assert env[native.EXPERIENCE_ISOLATED_ENV] == "1"
+
+
 def test_sibling_worktree_admin_dirs_are_denied(linked: tuple[Path, Path]) -> None:
     feature, main = linked
     sibling = main / ".git" / "worktrees" / "other"
@@ -975,6 +1092,95 @@ def test_sibling_worktree_admin_dirs_are_denied(linked: tuple[Path, Path]) -> No
     deny = native.native_sandbox_settings(feature)["sandbox"]["filesystem"]["denyWrite"]
     assert str(sibling.resolve()) in deny
     assert str((main / ".git" / "worktrees" / "feat").resolve()) not in deny  # our own admin dir stays usable
+
+
+def test_native_settings_experience_hooks(linked: tuple[Path, Path]) -> None:
+    """Generate exact advisory hook entries with the primary shared interpreter."""
+    feature, main = linked
+    shared_python = main / ".venv" / "bin" / "python"
+    shared_python.parent.mkdir()
+    shared_python.symlink_to(sys.executable)
+    settings = native.native_sandbox_settings(feature)
+
+    assert settings["hooks"]["PostToolUse"] == [
+        {
+            "matcher": "Bash",
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": native.shlex.join(
+                        [
+                            str(shared_python),
+                            "-I",
+                            "-m",
+                            "parrot.sdd.scripts.experience_hook",
+                            "--host",
+                            "claude",
+                            "--event",
+                            "post",
+                            "--isolated",
+                        ]
+                    ),
+                    "timeout": 5,
+                }
+            ],
+        }
+    ]
+    assert settings["hooks"]["PostToolUseFailure"][0]["matcher"] == "Bash"
+    failure_command = settings["hooks"]["PostToolUseFailure"][0]["hooks"][0]["command"]
+    assert "--event post-failure" in failure_command
+    assert "|| exit 2" not in failure_command
+    assert all("experience_hook" not in hook.get("command", "") for hook in settings["hooks"]["PreToolUse"][0]["hooks"])
+    assert str(feature / ".venv" / "bin" / "python") not in settings["hooks"]["PostToolUse"][0]["hooks"][0]["command"]
+    pre_tool_command = settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+    assert pre_tool_command.startswith(native.shlex.quote(str(shared_python)) + " ")
+    assert str(shared_python.resolve()) not in pre_tool_command
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX venv layout (bin/python symlink)")
+def test_shared_python_keeps_the_venv_symlink_importable(tmp_path: Path) -> None:
+    """The hook interpreter must start through the venv link, or the venv's packages vanish.
+
+    Regression for issue:1315b9a83d8a: resolving ``.venv/bin/python`` lands on the base interpreter,
+    which never reads ``pyvenv.cfg``, so ``import parrot`` failed in the PreToolUse guard (``|| exit 2``).
+    """
+    base = Path(sys.executable).resolve()
+    primary = tmp_path / "primary"
+    venv = primary / ".venv"
+    (venv / "bin").mkdir(parents=True)
+    (venv / "pyvenv.cfg").write_text(f"home = {base.parent}\ninclude-system-site-packages = false\n")
+    (venv / "bin" / "python").symlink_to(base)
+    version = f"python{sys.version_info.major}.{sys.version_info.minor}"
+    site_packages = venv / "lib" / version / "site-packages"
+    site_packages.mkdir(parents=True)
+    (site_packages / "feat887_venv_marker.py").write_text("VALUE = 'venv'\n")
+    probe = ["-I", "-c", "import feat887_venv_marker as m; print(m.VALUE)"]
+
+    python = native._shared_python(primary)
+
+    assert python == venv / "bin" / "python"
+    assert python.is_symlink()
+    ran = subprocess.run([str(python), *probe], capture_output=True, text=True, timeout=30, check=False)
+    assert ran.returncode == 0, ran.stderr
+    assert ran.stdout.strip() == "venv"
+    # The resolved target is the base interpreter: it cannot see the venv (the bug this guards).
+    resolved = subprocess.run([str(python.resolve()), *probe], capture_output=True, text=True, timeout=30, check=False)
+    assert resolved.returncode != 0
+
+
+def test_agent_frontmatter_has_no_experience_hooks() -> None:
+    """Shipped Claude agent frontmatter does not duplicate settings-level experience hooks."""
+    paths = (
+        Path(".claude/agents/sdd-coder.md"),
+        Path(".claude/agents/sdd-worker.md"),
+        Path("packages/ai-parrot/src/parrot/sdd/_assets/claude/agents/sdd-coder.md"),
+        Path("packages/ai-parrot/src/parrot/sdd/_assets/claude/agents/sdd-worker.md"),
+        Path("packages/ai-parrot/src/parrot/sdd/_assets/agents/agents/sdd-coder/agent.md"),
+        Path("packages/ai-parrot/src/parrot/sdd/_assets/agents/agents/sdd-worker/agent.md"),
+    )
+    for path in paths:
+        assert path.is_file()
+        assert "parrot sdd experience hook" not in path.read_text(encoding="utf-8")
 
 
 def test_frozen_roots_win_over_a_forged_git_marker(linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:

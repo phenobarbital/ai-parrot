@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from parrot.flows.dev_loop._subagent_defs import load_subagent_definition
+from parrot.flows.dev_loop.dispatchers.codex import _strict_output_schema
+from parrot.flows.dev_loop.models.base import DevelopmentOutput, TaskScopedBrief
+from parrot.flows.dev_loop.sdd_coder.models import NativePrep
+from parrot.knowledge.wiki.experience.models import LessonDraft
 
 TOOLS = [
     f"mcp__parrot-sdd-coder__coder_{n}"
@@ -35,6 +41,109 @@ def _repo_agents_dir() -> Path:
         if candidate.is_dir():
             return candidate
     raise AssertionError("`.claude/agents/` not found relative to this test file")
+
+
+def _research_payload(tmp_path: Path) -> dict[str, object]:
+    """Return the smallest valid research payload for task-scoped model tests."""
+    return {
+        "jira_issue_key": "",
+        "spec_path": "sdd/specs/example.spec.md",
+        "feat_id": "FEAT-887",
+        "branch_name": "feat-FEAT-887-example",
+        "worktree_path": str(tmp_path),
+    }
+
+
+def _lesson_draft() -> LessonDraft:
+    """Return a valid authored lesson for output-model regression tests."""
+    return LessonDraft(
+        trigger={"executable": "gh", "subcommand": "pr edit"},
+        symptom="GraphQL Projects Classic error",
+        solution="Use the REST pull-request endpoint.",
+        fix_example="gh api -X PATCH repos/acme/widgets/pulls/42",
+        scope_paths=["packages/ai-parrot"],
+    )
+
+
+def test_brief_field_reaches_prompt(tmp_path: Path) -> None:
+    """The dedicated experience briefing survives dispatched brief JSON."""
+    brief = TaskScopedBrief.model_validate(
+        {
+            "research": _research_payload(tmp_path),
+            "task_id": "TASK-5606",
+            "experience_briefing": "Known pitfall: use the REST endpoint.",
+        }
+    )
+
+    serialized = brief.model_dump_json()
+    restored = TaskScopedBrief.model_validate_json(serialized)
+
+    assert '"experience_briefing":"Known pitfall: use the REST endpoint."' in serialized
+    assert restored.experience_briefing == brief.experience_briefing
+
+
+def test_lessons_field_in_codex_schema(tmp_path: Path) -> None:
+    """Strict Codex output schema and JSON round-trip retain nested lessons."""
+    output = DevelopmentOutput(
+        files_changed=[str(tmp_path / "example.py")],
+        commit_shas=["abc123"],
+        summary="Implemented the task.",
+        lessons=[_lesson_draft()],
+    )
+
+    restored = DevelopmentOutput.model_validate_json(output.model_dump_json())
+    schema = _strict_output_schema(DevelopmentOutput.model_json_schema())
+
+    assert restored.lessons == output.lessons
+    assert "lessons" in schema["properties"]
+    assert "lessons" in schema["required"]
+    assert schema["$defs"]["LessonDraft"]["additionalProperties"] is False
+    assert set(schema["$defs"]["LessonDraft"]["required"]) == set(schema["$defs"]["LessonDraft"]["properties"])
+    assert schema["$defs"]["LessonTrigger"]["additionalProperties"] is False
+
+    invalid_draft = _lesson_draft().model_dump()
+    invalid_draft["unexpected"] = True
+    with pytest.raises(ValueError, match="Extra inputs are not permitted"):
+        DevelopmentOutput(
+            files_changed=[],
+            commit_shas=[],
+            summary="Invalid lesson.",
+            lessons=[invalid_draft],
+        )
+
+
+def test_output_models_backward_compatible(tmp_path: Path) -> None:
+    """Old constructors keep defaults, ignored extras, and independent lists."""
+    brief = TaskScopedBrief(
+        research=_research_payload(tmp_path),
+        task_id="TASK-5606",
+        legacy_extra="ignored",
+    )
+    prep = NativePrep(
+        task_id="TASK-5606",
+        task_file="sdd/tasks/active/TASK-5606-output-models.md",
+        branch="attempt",
+        worktree_path=str(tmp_path),
+        seat_label="codex",
+        legacy_extra="ignored",
+    )
+    first = DevelopmentOutput(
+        files_changed=[],
+        commit_shas=[],
+        summary="First output.",
+        legacy_extra="ignored",
+    )
+    second = DevelopmentOutput(files_changed=[], commit_shas=[], summary="Second output.")
+
+    first.lessons.append(_lesson_draft())
+
+    assert brief.experience_briefing == ""
+    assert prep.experience_briefing == ""
+    assert "legacy_extra" not in brief.model_dump()
+    assert "legacy_extra" not in prep.model_dump()
+    assert "legacy_extra" not in first.model_dump()
+    assert len(first.lessons) == 1
+    assert second.lessons == []
 
 
 def test_worker_prompt_has_orchestrator_loop():
@@ -244,3 +353,91 @@ def test_sdd_worker_prompt_twins_are_identical():
     live = root / ".claude" / "agents" / "sdd-worker.md"
     asset = root / "packages" / "ai-parrot" / "src" / "parrot" / "sdd" / "_assets" / "claude" / "agents" / "sdd-worker.md"
     assert live.read_text(encoding="utf-8") == asset.read_text(encoding="utf-8")
+
+
+def test_experience_asset_twins_are_identical():
+    """Every authoring asset has one byte-for-byte packaged twin."""
+    root = Path(__file__).resolve().parents[5]
+    pairs = (
+        (".claude/commands/sdd-start.md", "packages/ai-parrot/src/parrot/sdd/_assets/claude/commands/sdd-start.md"),
+        (".agent/workflows/sdd-start.md", "packages/ai-parrot/src/parrot/sdd/_assets/agent/workflows/sdd-start.md"),
+        (
+            ".agents/skills/sdd-start/SKILL.md",
+            "packages/ai-parrot/src/parrot/sdd/_assets/agents/skills/sdd-start/SKILL.md",
+        ),
+        (".claude/agents/sdd-coder.md", "packages/ai-parrot/src/parrot/sdd/_assets/claude/agents/sdd-coder.md"),
+        (".claude/agents/sdd-worker.md", "packages/ai-parrot/src/parrot/sdd/_assets/claude/agents/sdd-worker.md"),
+        (
+            ".agents/agents/sdd-coder/agent.md",
+            "packages/ai-parrot/src/parrot/sdd/_assets/agents/agents/sdd-coder/agent.md",
+        ),
+        (
+            ".agents/agents/sdd-worker/agent.md",
+            "packages/ai-parrot/src/parrot/sdd/_assets/agents/agents/sdd-worker/agent.md",
+        ),
+    )
+    for live_path, asset_path in pairs:
+        assert (root / live_path).read_text(encoding="utf-8") == (root / asset_path).read_text(
+            encoding="utf-8"
+        ), live_path
+
+
+def test_native_worker_prompt_forwards_experience_separately_from_feedback():
+    """Native dispatch carries Known pitfalls without changing coder feedback."""
+    prompt = load_subagent_definition("sdd-worker")
+    dispatch = prompt.split("## Orchestrator Loop (FEAT-549)", 1)[1]
+
+    assert "prepared.experience_briefing" in dispatch
+    assert "separate" in dispatch
+    assert "Known pitfalls" in dispatch
+    assert "unverified quoted experience data" in dispatch
+    assert "byte-for-byte unchanged" in dispatch
+
+
+def test_coder_prompt_instructions_cover_authored_lessons():
+    """Coder definitions describe the strict LessonDraft fields and native record path."""
+    root = Path(__file__).resolve().parents[5]
+    paths = (
+        root / ".claude/agents/sdd-coder.md",
+        root / "packages/ai-parrot/src/parrot/sdd/_assets/claude/agents/sdd-coder.md",
+        root / ".agents/agents/sdd-coder/agent.md",
+        root / "packages/ai-parrot/src/parrot/sdd/_assets/agents/agents/sdd-coder/agent.md",
+    )
+    required = (
+        "lessons: []",
+        "category",
+        "trigger",
+        "symptom",
+        "solution",
+        "fix_example",
+        "scope_paths",
+        "Native Claude output is not parsed",
+        "parrot sdd experience record",
+        '"category": "pitfall"',
+        '"executable": "gh"',
+    )
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        for marker in required:
+            assert marker in text, f"{marker!r} missing from {path}"
+
+
+def test_agent_frontmatter_has_no_experience_hooks():
+    """Experience hooks belong to host settings, never duplicated in agent frontmatter."""
+    root = Path(__file__).resolve().parents[5]
+    paths = (
+        root / ".claude/agents/sdd-coder.md",
+        root / ".claude/agents/sdd-worker.md",
+        root / "packages/ai-parrot/src/parrot/sdd/_assets/claude/agents/sdd-coder.md",
+        root / "packages/ai-parrot/src/parrot/sdd/_assets/claude/agents/sdd-worker.md",
+        root / ".agents/agents/sdd-coder/agent.md",
+        root / ".agents/agents/sdd-worker/agent.md",
+        root / "packages/ai-parrot/src/parrot/sdd/_assets/agents/agents/sdd-coder/agent.md",
+        root / "packages/ai-parrot/src/parrot/sdd/_assets/agents/agents/sdd-worker/agent.md",
+    )
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        assert text.startswith("---\n"), path
+        frontmatter = text.split("\n---\n", 1)[0]
+        assert "experience hook" not in frontmatter.lower(), path
+        assert "experience_hook" not in frontmatter, path

@@ -14,9 +14,10 @@ Bubblewrap: nested bwrap is not used, and the policy is compiled by
 ## What it protects — and what it does not
 
 - Bash commands and their descendants: writes are limited to the task worktree, the common Git
-  directory, the primary checkout's worktree root (default `.parrot/worktrees/`) and `.parrot/ledger/`, and the per-user
-  scratchpad (`/tmp/claude-<uid>`). Everything else, including the primary checkout, `$HOME`, the
-  shared `.venv` (and any symlink alias to it), RTK's data directory, Git `config`/`hooks`/
+  directory, the primary checkout's worktree root (default `.parrot/worktrees/`) and `.parrot/ledger/`, the primary
+  checkout's `.parrot/experience/` directory (writable for experience memory), and the per-user
+  scratchpad (`/tmp/claude-<uid>`). Everything else, including the primary checkout (except `.parrot/experience/`),
+  `$HOME`, the shared `.venv` (and any symlink alias to it), RTK's data directory, Git `config`/`hooks`/
   `config.worktree`, is read-only. Network egress is denied unless a host is explicitly allowed.
 - Extra writable directories: a tool that writes outside the checkout (navconfig logs to
   `/tmp/navigator/log`, so every `parrot …` command needs it) is declared by the operator as
@@ -35,6 +36,19 @@ Bubblewrap: nested bwrap is not used, and the policy is compiled by
   servers. The sandbox does not confine them, and it offers **no secret confidentiality**: anything
   readable by the user is readable by the session. These are spec non-goals, not gaps to be fixed by
   configuration.
+
+### Experience memory integration
+
+The native sandbox integrates with the [experience memory system](../sdd/experience-memory.md):
+
+- **Writable experience directory**: `.parrot/experience/` in the primary checkout is writable so that experience hooks can record and replay lessons. The wiki (`$HOME` and `.parrot/wiki`) remains read-only.
+- **Hook delivery**: PostToolUse and PostToolUseFailure hooks are advisory and use the isolated shared Python interpreter. Their runtime files (`experience_hook.py`, `fastpath.py`, `transitions.py`, `launcher.py`, `version.py`, and the `__init__.py` of every package those imports pass through) are protected as OS-denied control files. The injected hooks carry `--isolated` and the launch sets `PARROT_SDD_EXPERIENCE_ISOLATED=1`, so a portable `parrot sdd experience hook` registered in the project's `.claude/settings.json` (loaded through `--setting-sources project`) stands down instead of firing a second, unisolated time.
+- **Troubleshooting**: See the [experience memory documentation](../sdd/experience-memory.md) for hook-integrity scenarios and common issues.
+
+Reconciliation with existing lists:
+- The writable policy now includes `.parrot/experience/` alongside the worktree root, `.parrot/ledger/`, and the scratchpad.
+- All other protections (primary checkout read-only except for the experience directory, `$HOME` read-only, shared environments read-only) remain unchanged.
+- Platform qualifications (Linux/WSL2 qualified, macOS not certified, Windows degraded) still apply.
 
 ## Tmux feature completion notifications
 
