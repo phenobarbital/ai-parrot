@@ -559,7 +559,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -570,7 +570,7 @@
       "parallel": true,
       "parallelism_notes": "Consumes scope-correct ranked episodic retrieval from TASK-5665; Consumes durable dedupe/archive replay from TASK-5662; Consumes verified evidence admission contract from TASK-5674",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-16T00:41:26+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5675-agent-memory-feedback.md"
     },
@@ -667,7 +667,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -678,7 +678,7 @@
       "parallel": true,
       "parallelism_notes": "Consumes BasicAgent built-in AgentMemoryMixin and real invocation paths from TASK-5673; Consumes single tool/response ownership from TASK-5674; Consumes legacy preference/room behavior from TASK-5665",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-16T00:41:26+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5680-agent-memory-migration.md"
     },
@@ -731,3 +731,4 @@
     }
   ]
 }
+
