@@ -88,7 +88,7 @@
       "feature_id": "FEAT-902",
       "feature": "wiki-ledger-sqlite-hardening",
       "spec": "sdd/specs/wiki-ledger-sqlite-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -98,8 +98,9 @@
       "parallelism_notes": "Depends on TASK-5714 solely to serialize modifications of ledger/index.py after its sync changes (which transitively include TASK-5713). Uses existing LedgerLog.append and LedgerStore.ledger_transaction.",
       "assigned_to": null,
       "started_at": "2026-11-16T21:11:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5715-ledger-append-cancellation.md"
+      "completed_at": "2026-11-16T22:12:03+00:00",
+      "file": "sdd/tasks/completed/TASK-5715-ledger-append-cancellation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5716",
