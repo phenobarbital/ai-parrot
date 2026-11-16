@@ -126,11 +126,12 @@ async def test_two_reviews_same_version_survive_and_export_is_deterministic(tmp_
         assert "parameter_id" not in json.dumps(archive)
 
         real_clock_path = tmp_path / "real-clock.json"
+        before = datetime.now(timezone.utc)
         await export_reviews(namespace=namespace, destination=real_clock_path, store=store)
-        assert (
-            datetime.fromisoformat(json.loads(real_clock_path.read_text(encoding="utf-8"))["exported_at"]).tzinfo
-            is not None
-        )
+        after = datetime.now(timezone.utc)
+        exported_at = datetime.fromisoformat(json.loads(real_clock_path.read_text(encoding="utf-8"))["exported_at"])
+        assert exported_at.tzinfo is not None
+        assert before <= exported_at <= after
     finally:
         await backend.close()
 
