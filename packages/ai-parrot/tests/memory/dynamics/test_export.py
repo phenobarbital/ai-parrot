@@ -266,7 +266,9 @@ async def test_legacy_reviews_export_without_a_fabricated_record(tmp_path: Path)
     await backend.configure()
     try:
         await backend.store(_episode(namespace))
-        assert (await backend.apply_review(_command(namespace, outcome_id="legacy", expected_revision=0))).status == "applied"
+        assert (
+            await backend.apply_review(_command(namespace, outcome_id="legacy", expected_revision=0))
+        ).status == "applied"
         destination = tmp_path / "legacy.json"
         await export_reviews(
             namespace=namespace,

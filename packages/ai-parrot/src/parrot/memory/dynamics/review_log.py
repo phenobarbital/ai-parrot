@@ -4,7 +4,6 @@ from typing import Protocol, runtime_checkable
 
 from .models import Grade, MemoryParameters, ReviewCommand, ReviewReceipt
 
-
 @runtime_checkable
 class ReviewBackend(Protocol):
     """Apply scoped dedupe, expected revision, review and state as one transaction."""

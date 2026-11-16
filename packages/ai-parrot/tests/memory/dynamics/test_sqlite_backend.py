@@ -216,8 +216,7 @@ async def test_review_schema_migration_preserves_legacy_rows_and_completes_parti
     legacy_path = tmp_path / "legacy-v2.sqlite"
     connection = sqlite3.connect(legacy_path)
     try:
-        connection.executescript(
-            """
+        connection.executescript("""
             CREATE TABLE reviews (
                 dedupe_key TEXT PRIMARY KEY,
                 outcome_id TEXT NOT NULL,
@@ -235,8 +234,7 @@ async def test_review_schema_migration_preserves_legacy_rows_and_completes_parti
                 updated_at TEXT NOT NULL
             );
             PRAGMA user_version = 2;
-            """
-        )
+            """)
         payload = json.dumps(command.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
         state = json.dumps({"apply_revision": 1, "command": command.model_dump(mode="json")})
         connection.execute(
@@ -290,8 +288,7 @@ async def test_review_schema_migration_preserves_legacy_rows_and_completes_parti
     partial_path = tmp_path / "partial-v2.sqlite"
     connection = sqlite3.connect(partial_path)
     try:
-        connection.executescript(
-            """
+        connection.executescript("""
             CREATE TABLE reviews (
                 dedupe_key TEXT PRIMARY KEY,
                 outcome_id TEXT NOT NULL,
@@ -304,8 +301,7 @@ async def test_review_schema_migration_preserves_legacy_rows_and_completes_parti
                 grade INTEGER
             );
             PRAGMA user_version = 2;
-            """
-        )
+            """)
         connection.commit()
     finally:
         connection.close()

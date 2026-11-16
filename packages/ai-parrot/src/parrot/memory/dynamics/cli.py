@@ -12,7 +12,6 @@ import click
 from parrot.memory.agent_memory.toolkit import AgentMemoryToolkit
 from parrot.memory.episodic.models import MemoryNamespace
 
-
 def _toolkit(settings: dict[str, Any]) -> AgentMemoryToolkit:
     """Construct a lazy toolkit from explicit trusted command options."""
     return AgentMemoryToolkit(config=settings["config"], namespace=settings["namespace"])
