@@ -907,7 +907,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -917,8 +917,8 @@
       ],
       "parallel": true,
       "parallelism_notes": "TASK-5708 owns manager.py visibility changes; TASK-5681 owns existing memory docs; TASK-5704 owns related reviewed storage changes.",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "agent:sdd-fix:6b5223d0",
+      "started_at": "2026-11-16T10:33:29.538446+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5709-memory-extraction-client-ownership.md"
     },
