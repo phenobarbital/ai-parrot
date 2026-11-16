@@ -504,7 +504,9 @@ async def test_compact_embeddings_hydrate_every_public_read_path(tmp_path: Path)
             for episode in await backend.get_by_ids([compact.episode_id, none_vector.episode_id], _SCOPE)
         }
         matching = {episode.episode_id: episode.embedding for episode in await backend.get_recent_matching(_SCOPE)}
-        failures = {episode.episode_id: episode.embedding for episode in await backend.get_failures("agent-a", "tenant-a")}
+        failures = {
+            episode.episode_id: episode.embedding for episode in await backend.get_failures("agent-a", "tenant-a")
+        }
         assert recent[compact.episode_id] == expected_float32
         assert by_id == {compact.episode_id: expected_float32, none_vector.episode_id: None}
         assert matching[compact.episode_id] == expected_float32
@@ -581,7 +583,9 @@ async def test_compact_payload_size_and_legacy_embedding_precedence(tmp_path: Pa
         }
 
         assert await backend.update_metadata([legacy_vector.episode_id], {"checked": True}) == 1
-        cursor = await backend._db.execute("SELECT payload FROM episodes WHERE episode_id = ?", (legacy_vector.episode_id,))
+        cursor = await backend._db.execute(
+            "SELECT payload FROM episodes WHERE episode_id = ?", (legacy_vector.episode_id,)
+        )
         persisted_legacy = json.loads((await cursor.fetchone())[0])
         assert persisted_legacy["embedding"] == legacy_vector.embedding
         assert persisted_legacy["metadata"]["checked"] is True
@@ -770,7 +774,9 @@ async def test_vector_search_meets_latency_contract_at_ceiling(tmp_path) -> None
     try:
         generator = np.random.default_rng(892)
         vectors = generator.standard_normal((_CEILING_ROWS, _PRODUCTION_DIMENSION), dtype=np.float32)
-        template = json.dumps(_episode(0, episode_id="EPISODE-ID", embedding=vectors[0].tolist()).model_dump(mode="json"))
+        template = json.dumps(
+            _episode(0, episode_id="EPISODE-ID", embedding=vectors[0].tolist()).model_dump(mode="json")
+        )
         started_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
         assert backend._db is not None
         await backend._db.execute("BEGIN")
