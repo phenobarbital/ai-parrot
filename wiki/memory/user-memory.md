@@ -20,22 +20,22 @@ Key features:
 
 ### Core Classes
 
-- [`UserMemoryStore`](ref:parrot.memory.user.store.UserMemoryStore) — Main storage and retrieval interface
-- [`UserKnowledge`](ref:parrot.memory.user.models.UserKnowledge) — User knowledge model
-- [`UserKnowledgeCandidate`](ref:parrot.memory.user.models.UserKnowledgeCandidate) — Extracted knowledge candidate
-- [`UserKnowledgeCommand`](ref:parrot.memory.user.models.UserKnowledgeCommand) — Knowledge operation command
-- [`UserMemoryReceipt`](ref:parrot.memory.user.models.UserMemoryReceipt) — Operation receipt
+- [`UserMemoryStore`](ref:parrot.memory.user.store) — Main storage and retrieval interface
+- [`UserKnowledge`](ref:parrot.memory.user.models) — User knowledge model
+- [`UserKnowledgeCandidate`](ref:parrot.memory.user.models) — Extracted knowledge candidate
+- [`UserKnowledgeCommand`](ref:parrot.memory.user.models) — Knowledge operation command
+- [`UserMemoryReceipt`](ref:parrot.memory.user.models) — Operation receipt
 
 ### Models
 
-- [`UserKnowledge`](ref:parrot.memory.user.models.UserKnowledge) — Main knowledge model
-- [`UserKnowledgeCandidate`](ref:parrot.memory.user.models.UserKnowledgeCandidate) — Candidate for persistence
-- [`UserKnowledgeCommand`](ref:parrot.memory.user.models.UserKnowledgeCommand) — Operation command
-- [`UserMemoryReceipt`](ref:parrot.memory.user.models.UserMemoryReceipt) — Operation result
+- [`UserKnowledge`](ref:parrot.memory.user.models) — Main knowledge model
+- [`UserKnowledgeCandidate`](ref:parrot.memory.user.models) — Candidate for persistence
+- [`UserKnowledgeCommand`](ref:parrot.memory.user.models) — Operation command
+- [`UserMemoryReceipt`](ref:parrot.memory.user.models) — Operation result
 
 ### Extraction
 
-- [`extract_user_knowledge`](ref:parrot.memory.user.extraction.extract_user_knowledge) — Extract knowledge from events
+- [`extract_user_knowledge`](ref:parrot.memory.user.extraction) — Extract knowledge from events
 
 ## Configuration & Parameters
 
@@ -237,9 +237,9 @@ forget_receipt = await store.forget(forget_command, scope=scope)
 
 ### External References
 
-- [FEAT-892 Specification](../../sdd/specs/agent-memory-mixin.spec.md) — Full feature specification
-- [FEAT-889 Agent Brain](../../sdd/specs/agent-brain.spec.md) — Brain service and knowledge promotion
-- [FEAT-571 Memory Dynamics](../../sdd/specs/memory-dynamics.spec.md) — Historical dynamics policies
+- [FEAT-892 Specification](https://github.com/phenobarbital/ai-parrot/blob/main/sdd/specs/agent-memory-mixin.spec.md) — Full feature specification
+- [FEAT-889 Agent Brain](https://github.com/phenobarbital/ai-parrot/blob/main/sdd/specs/agent-brain.spec.md) — Brain service and knowledge promotion
+- [FEAT-571 Memory Dynamics](https://github.com/phenobarbital/ai-parrot/blob/main/sdd/specs/memory-dynamics.spec.md) — Historical dynamics policies
 
 ### Ownership
 
