@@ -217,16 +217,20 @@ class PostgresFormStorage(FormStorage):
         ``true`` — a plain ``<>`` would exclude exactly the rows this path
         exists to promote.
         """
+        # The target is aliased and the WHERE columns qualified: unqualified ``schema_json`` /
+        # ``version`` are ambiguous between the existing row and ``EXCLUDED`` inside
+        # ``ON CONFLICT DO UPDATE``, and Postgres rejects the statement ("column reference
+        # \"schema_json\" is ambiguous") — every publish() of an existing row failed.
         qt = self._qualified(tenant)
         return f"""
-        INSERT INTO {qt} (form_uid, form_id, version, schema_json, tenant)
+        INSERT INTO {qt} AS existing (form_uid, form_id, version, schema_json, tenant)
         VALUES ($1, $2, $3, $4::text::jsonb, $5)
         ON CONFLICT (form_uid, version)
         DO UPDATE SET
             form_id = EXCLUDED.form_id,
             schema_json = EXCLUDED.schema_json,
             updated_at = NOW()
-        WHERE (schema_json ->> 'published_version') IS DISTINCT FROM version
+        WHERE (existing.schema_json ->> 'published_version') IS DISTINCT FROM existing.version
         RETURNING id
         """
 
