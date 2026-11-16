@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-13T21:42:05.413721+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-16T11:20:13+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -951,7 +951,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -960,9 +960,10 @@
       "parallel": true,
       "parallelism_notes": "TASK-5710 modifies packages/ai-parrot/src/parrot/memory/episodic/backends/sqlite.py; serialize writes to that file.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5711-sqlite-corrupt-vector-isolation.md"
+      "started_at": "2026-11-16T11:03:31+00:00",
+      "completed_at": "2026-11-16T11:10:20+00:00",
+      "file": "sdd/tasks/completed/TASK-5711-sqlite-corrupt-vector-isolation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5712",
@@ -971,7 +972,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -980,9 +981,10 @@
       "parallel": true,
       "parallelism_notes": "TASK-5711 modifies sqlite.py and test_sqlite_backend.py, both modified here; documentation follows the completed TASK-5681 through this dependency chain.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5712-sqlite-compact-embedding-payload.md"
+      "started_at": "2026-11-16T11:03:31+00:00",
+      "completed_at": "2026-11-16T11:20:13+00:00",
+      "file": "sdd/tasks/completed/TASK-5712-sqlite-compact-embedding-payload.md",
+      "verification": "verified"
     }
   ]
 }

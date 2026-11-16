@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-892 — Agent Memory — Unified Integration, User Knowledge and Dynamics
 **Spec**: `sdd/specs/agent-memory-mixin.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5710
@@ -119,3 +119,17 @@ targeted payload fetch and ceiling latency coverage. Use temporary databases; do
 Wait for TASK-5710, which modifies sqlite.py. Reverify anchors. Implement only declared files in the feature worktree.
 Use its package source on PYTHONPATH, store logs under artifacts/logs, run Black and Ruff, commit scoped code and
 finalize through `parrot sdd task finalize` with real validation and review evidence.
+
+## Completion Note
+
+- Task: TASK-5711
+- Feature: agent-memory-mixin
+- Implementation SHA: 494e305ee660806b5a946b3d3a68132e6e7aef6b
+- Closed at (UTC): 2026-11-16T11:10:20+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 282.6s · Tokens: n/a |

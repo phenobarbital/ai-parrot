@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-892 — Agent Memory — Unified Integration, User Knowledge and Dynamics
 **Spec**: `sdd/specs/agent-memory-mixin.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-5711
@@ -158,3 +158,17 @@ store/recall integration as additional regression checks. Tests must close resou
 Wait for TASK-5711, which modifies the same backend and test file. Reverify anchors, implement in the feature worktree,
 run task validation with that checkout's source on PYTHONPATH, Black and Ruff. Keep logs in artifacts/logs. Commit
 scoped files and finalize using structured evidence through `parrot sdd task finalize`.
+
+## Completion Note
+
+- Task: TASK-5712
+- Feature: agent-memory-mixin
+- Implementation SHA: b4ff591f3b4a2bc47780d6a6b8c52f2210356489
+- Closed at (UTC): 2026-11-16T11:20:13+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 464.9s · Tokens: n/a |
