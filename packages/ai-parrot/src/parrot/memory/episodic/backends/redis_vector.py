@@ -420,7 +420,6 @@ class RedisVectorBackend:
             results: list[EpisodeSearchResult] = []
             # FT.SEARCH returns [total, key1, [fields...], key2, [fields...], ...]
             # With RETURN 0, it returns keys only: [total, key1, [], key2, [], ...]
-            total = raw[0]
             idx = 1
             while idx < len(raw):
                 key = raw[idx].decode() if isinstance(raw[idx], bytes) else raw[idx]
@@ -444,7 +443,7 @@ class RedisVectorBackend:
 
                 # Compute semantic similarity score (cosine)
                 if episode.embedding and embedding:
-                    dot = sum(a * b for a, b in zip(embedding, episode.embedding))
+                    dot = sum(a * b for a, b in zip(embedding, episode.embedding, strict=False))
                     norm_a = sum(x * x for x in embedding) ** 0.5
                     norm_b = sum(x * x for x in episode.embedding) ** 0.5
                     score = dot / (norm_a * norm_b) if norm_a and norm_b else 0.0
