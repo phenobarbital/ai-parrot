@@ -722,7 +722,7 @@
       "feature_id": "FEAT-887",
       "feature": "sdd-experience-memory",
       "spec": "sdd/specs/sdd-experience-memory.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -738,7 +738,7 @@
       "parallel": false,
       "parallelism_notes": "TASK-5697: exclusive review-fix step; edits gemini.py, index.py, sync.py, fastpath.py…; follows TASK-5696 (shared experience modules)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-16T15:28:29+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5697-experience-hardening.md",
       "discovered_from": [
@@ -772,3 +772,4 @@
     }
   ]
 }
+
