@@ -48,7 +48,7 @@
       "feature_id": "FEAT-902",
       "feature": "wiki-ledger-sqlite-hardening",
       "spec": "sdd/specs/wiki-ledger-sqlite-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -56,8 +56,9 @@
       "parallelism_notes": "No predecessor; creates LedgerCursorInvalid/read_cursor_in and modifies ledger/store.py plus ledger/index.py. The independent benchmark driver uses existing public APIs and writes different files.",
       "assigned_to": null,
       "started_at": "2026-11-16T21:11:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5713-ledger-cursor-consistency.md"
+      "completed_at": "2026-11-16T21:40:18+00:00",
+      "file": "sdd/tasks/completed/TASK-5713-ledger-cursor-consistency.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5714",
@@ -185,4 +186,3 @@
     }
   ]
 }
-
