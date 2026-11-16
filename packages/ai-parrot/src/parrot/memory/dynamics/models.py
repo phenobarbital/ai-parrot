@@ -285,6 +285,33 @@ class MemoryCitation(BaseModel):
             raise ValueError("citation refs must be unique")
         return refs
 
+    def merged_with(self, other: "MemoryCitation") -> "MemoryCitation":
+        """Return this citation extended with the references of a later one.
+
+        Both the in-process and the durable citation paths use this single
+        rule, so an exposure cited from two processes merges exactly as one
+        cited twice from the same process.
+
+        Args:
+            other: A later citation for the same exposure.
+
+        Returns:
+            A citation holding this citation's references followed by the new ones.
+
+        Raises:
+            ValueError: If the exposures or namespaces differ, or the merge exceeds 64 references.
+        """
+        if other.exposure_id != self.exposure_id:
+            raise ValueError("one or more memory references are unavailable")
+        every_ref = (*self.refs, *other.refs)
+        if any(ref.namespace != every_ref[0].namespace for ref in every_ref):
+            raise ValueError("one or more memory references are unavailable")
+        known = {ref.canonical_key for ref in self.refs}
+        combined = (*self.refs, *(ref for ref in other.refs if ref.canonical_key not in known))
+        if len(combined) > 64:
+            raise ValueError("citation must contain at most 64 memory references")
+        return MemoryCitation(exposure_id=self.exposure_id, refs=combined)
+
 
 class ReviewSignal(BaseModel):
     """Immutable observed outcome with engine-verifiable provenance."""

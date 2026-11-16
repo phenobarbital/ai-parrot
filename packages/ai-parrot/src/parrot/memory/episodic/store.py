@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 from typing import Any, TypeVar
 
@@ -39,6 +40,8 @@ from .scoring import ImportanceScorer
 
 logger = logging.getLogger(__name__)
 
+# Citations kept in process only for backends that cannot persist them; least recently cited go first.
+_MAX_LOCAL_CITATIONS = 1024
 _EXPLICIT_LESSON_KEY = "_parrot_explicit_lesson"
 _EXPLICIT_REFLECTION_KEY = "_parrot_explicit_reflection"
 _EPISODIC_REVIEW_PARAMETERS = MemoryParameters(
@@ -173,7 +176,7 @@ class EpisodicMemoryStore:
         self._default_ttl_days = default_ttl_days
         self._importance_scorer = importance_scorer
         self._recall_strategy = recall_strategy
-        self._citations: dict[str, MemoryCitation] = {}
+        self._citations: OrderedDict[str, MemoryCitation] = OrderedDict()
         self._review_revisions: dict[str, int] = {}
         self._review_expected_revisions: dict[str, int] = {}
 
@@ -405,20 +408,49 @@ class EpisodicMemoryStore:
         refs = tuple(self._episode_ref(episodes[memory_id], namespace=namespace) for memory_id in unique_ids)
         citation = MemoryCitation(exposure_id=exposure_id, refs=refs)
 
+        merge_citation = getattr(self._backend, "merge_citation", None)
+        if callable(merge_citation):
+            # The backend is the authority: a separate process, or this one after
+            # a restart, reviews against exactly what was committed here.
+            await merge_citation(citation)
+            return citation
+
         previous = self._citations.get(exposure_id)
-        if previous is not None:
-            previous_namespace = previous.refs[0].namespace
-            if previous_namespace != namespace:
-                raise ValueError("one or more memory references are unavailable")
-            combined = list(previous.refs)
-            known = {ref.canonical_key for ref in combined}
-            combined.extend(ref for ref in refs if ref.canonical_key not in known)
-            if len(combined) > 64:
-                raise ValueError("citation must contain at most 64 memory references")
-            self._citations[exposure_id] = MemoryCitation(exposure_id=exposure_id, refs=tuple(combined))
-        else:
-            self._citations[exposure_id] = citation
+        self._citations[exposure_id] = citation if previous is None else previous.merged_with(citation)
+        self._citations.move_to_end(exposure_id)
+        while len(self._citations) > _MAX_LOCAL_CITATIONS:
+            self._citations.popitem(last=False)
         return citation
+
+    async def _cited(self, exposure_id: str) -> MemoryCitation | None:
+        """Return the references cited for an exposure from the authoritative source.
+
+        Args:
+            exposure_id: Final-delivery exposure identifier.
+
+        Returns:
+            The durable citation when the backend persists citations, otherwise
+            the process-local one; ``None`` when the exposure is unknown.
+        """
+        get_citation = getattr(self._backend, "get_citation", None)
+        if callable(get_citation):
+            return await get_citation(exposure_id)
+        return self._citations.get(exposure_id)
+
+    async def _committed_expected_revision(self, dedupe_key: str) -> int | None:
+        """Read the ``expected_revision`` a review was committed with, when the backend can.
+
+        Args:
+            dedupe_key: Idempotency identity of the review about to be applied.
+
+        Returns:
+            The committed command's ``expected_revision``; ``None`` when nothing
+            is committed for the key or the backend cannot tell.
+        """
+        get_expected_revision = getattr(self._backend, "get_review_expected_revision", None)
+        if not callable(get_expected_revision):
+            return None
+        return await get_expected_revision(dedupe_key)
 
     async def review(
         self,
@@ -448,7 +480,7 @@ class EpisodicMemoryStore:
         if not self._signal_matches_namespace(signal, namespace):
             raise ValueError("review scope or delivered exposure is unavailable")
 
-        citation = self._citations.get(exposure_id)
+        citation = await self._cited(exposure_id)
         if citation is None or citation.exposure_id != exposure_id:
             raise ValueError("review scope or delivered exposure is unavailable")
         cited_refs = {ref.memory_id: ref for ref in citation.refs if ref.namespace == namespace}
@@ -494,12 +526,18 @@ class EpisodicMemoryStore:
                 )
                 continue
 
-            expected_revision = self._review_expected_revisions.get(
-                provisional.dedupe_key,
-                self._review_revisions.get(ref.canonical_key, 0),
-            )
-            command = provisional.model_copy(update={"expected_revision": expected_revision})
             try:
+                # A committed review is replayed with the revision it was committed at,
+                # read from the backend so a retry through a new store instance (a
+                # restart, another process) is a duplicate and never a false conflict.
+                # The in-process maps only serve backends that cannot answer that.
+                expected_revision = await self._committed_expected_revision(provisional.dedupe_key)
+                if expected_revision is None:
+                    expected_revision = self._review_expected_revisions.get(
+                        provisional.dedupe_key,
+                        self._review_revisions.get(ref.canonical_key, 0),
+                    )
+                command = provisional.model_copy(update={"expected_revision": expected_revision})
                 receipt, command = await self._apply_review_with_current_revision(
                     apply_review,
                     command,

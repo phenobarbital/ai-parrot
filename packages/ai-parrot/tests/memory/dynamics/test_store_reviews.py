@@ -279,3 +279,150 @@ async def test_partial_recent_cache_is_not_treated_as_complete(tmp_path: Path) -
         assert len(preferences) == 4
     finally:
         await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_review_retry_through_new_store_instance_is_duplicate(tmp_path: Path) -> None:
+    """Verify a restart retry of a review committed at a non-zero revision is a duplicate, not a conflict."""
+    path = tmp_path / "restart.sqlite"
+    namespace = _namespace()
+    revised_signal = _signal(outcome_revision=1, correction_count=1)
+
+    first_backend = SQLiteEpisodeBackend(path)
+    await first_backend.configure()
+    try:
+        first_store = EpisodicMemoryStore(first_backend, default_ttl_days=0)
+        await first_backend.store(_episode("episode-a", namespace=namespace))
+        await first_store.cite(["episode-a"], namespace=namespace, exposure_id="exposure-a")
+        initial = await first_store.review(["episode-a"], _signal(), namespace=namespace, exposure_id="exposure-a")
+        revised = await first_store.review(["episode-a"], revised_signal, namespace=namespace, exposure_id="exposure-a")
+        assert [receipt.status for receipt in initial] == ["applied"]
+        assert [receipt.status for receipt in revised] == ["applied"]
+        assert revised[0].apply_revision == 2
+    finally:
+        await first_backend.close()
+
+    second_backend = SQLiteEpisodeBackend(path)
+    await second_backend.configure()
+    try:
+        second_store = EpisodicMemoryStore(second_backend, default_ttl_days=0)
+        retried = await second_store.review(
+            ["episode-a"], revised_signal, namespace=namespace, exposure_id="exposure-a"
+        )
+        retried_initial = await second_store.review(
+            ["episode-a"], _signal(), namespace=namespace, exposure_id="exposure-a"
+        )
+        conflict = await second_store.review(
+            ["episode-a"],
+            _signal(outcome_revision=1, correction_count=1, passed_check_ids=("check-b",)),
+            namespace=namespace,
+            exposure_id="exposure-a",
+        )
+
+        assert [receipt.status for receipt in retried] == ["duplicate"]
+        assert retried[0].apply_revision == 2
+        assert [receipt.status for receipt in retried_initial] == ["duplicate"]
+        assert [receipt.status for receipt in conflict] == ["conflict"]
+
+        assert second_backend._db is not None
+        review_cursor = await second_backend._db.execute("SELECT COUNT(*) FROM reviews")
+        state_cursor = await second_backend._db.execute("SELECT apply_revision FROM memory_state")
+        assert (await review_cursor.fetchone())[0] == 2
+        assert (await state_cursor.fetchone())[0] == 2
+    finally:
+        await second_backend.close()
+
+
+@pytest.mark.asyncio
+async def test_citation_is_shared_across_store_instances(tmp_path: Path) -> None:
+    """Verify an exposure cited by one store instance admits a review through another over one database."""
+    path = tmp_path / "citations.sqlite"
+    namespace = _namespace()
+    citing_backend = SQLiteEpisodeBackend(path)
+    reviewing_backend = SQLiteEpisodeBackend(path)
+    await citing_backend.configure()
+    await reviewing_backend.configure()
+    try:
+        citing_store = EpisodicMemoryStore(citing_backend, default_ttl_days=0)
+        reviewing_store = EpisodicMemoryStore(reviewing_backend, default_ttl_days=0)
+        await citing_backend.store(_episode("episode-a", namespace=namespace))
+        await citing_backend.store(_episode("episode-b", namespace=namespace))
+        await citing_backend.store(_episode("episode-c", namespace=namespace))
+
+        await citing_store.cite(["episode-a"], namespace=namespace, exposure_id="exposure-a")
+        await reviewing_store.cite(["episode-b"], namespace=namespace, exposure_id="exposure-a")
+
+        receipts = await reviewing_store.review(
+            ["episode-a", "episode-b"], _signal(), namespace=namespace, exposure_id="exposure-a"
+        )
+        assert [receipt.status for receipt in receipts] == ["applied", "applied"]
+
+        with pytest.raises(ValueError, match="scope or delivered exposure is unavailable"):
+            await citing_store.review(["episode-c"], _signal(), namespace=namespace, exposure_id="exposure-a")
+        with pytest.raises(ValueError, match="scope or delivered exposure is unavailable"):
+            await reviewing_store.review(["episode-a"], _signal(), namespace=namespace, exposure_id="exposure-other")
+    finally:
+        await citing_backend.close()
+        await reviewing_backend.close()
+
+
+@pytest.mark.asyncio
+async def test_durable_citation_rejects_other_namespace_and_prunes_expired(tmp_path: Path) -> None:
+    """Verify a durable exposure cannot change namespace and stale citations are pruned on write."""
+    backend = SQLiteEpisodeBackend(tmp_path / "citation-scope.sqlite")
+    await backend.configure()
+    namespace = _namespace()
+    other_namespace = _namespace(tenant_id="tenant-b")
+    store = EpisodicMemoryStore(backend, default_ttl_days=0)
+    try:
+        await backend.store(_episode("episode-a", namespace=namespace))
+        await backend.store(_episode("episode-cross", namespace=other_namespace))
+        await store.cite(["episode-a"], namespace=namespace, exposure_id="exposure-a")
+        await store.cite(["episode-a"], namespace=namespace, exposure_id="exposure-old")
+
+        with pytest.raises(ValueError, match="references are unavailable"):
+            await store.cite(["episode-cross"], namespace=other_namespace, exposure_id="exposure-a")
+        cited = await backend.get_citation("exposure-a")
+        assert cited is not None
+        assert [ref.memory_id for ref in cited.refs] == ["episode-a"]
+
+        assert backend._db is not None
+        await backend._db.execute(
+            "UPDATE citations SET updated_at = ? WHERE exposure_id = ?",
+            (datetime(2020, 1, 1, tzinfo=timezone.utc).isoformat(), "exposure-old"),
+        )
+        await store.cite(["episode-a"], namespace=namespace, exposure_id="exposure-new")
+        assert await backend.get_citation("exposure-old") is None
+        assert await backend.get_citation("exposure-a") is not None
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_process_local_citations_are_bounded_without_durable_backend(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify a backend without citation persistence keeps a bounded, least-recently-cited-first cache."""
+    from parrot.memory.episodic import store as store_module
+
+    class _NoCitationBackend(SQLiteEpisodeBackend):
+        merge_citation = None  # type: ignore[assignment]
+        get_citation = None  # type: ignore[assignment]
+
+    monkeypatch.setattr(store_module, "_MAX_LOCAL_CITATIONS", 2)
+    backend = _NoCitationBackend(tmp_path / "local.sqlite")
+    await backend.configure()
+    namespace = _namespace()
+    store = EpisodicMemoryStore(backend, default_ttl_days=0)
+    try:
+        await backend.store(_episode("episode-a", namespace=namespace))
+        for exposure_id in ("exposure-1", "exposure-2", "exposure-3"):
+            await store.cite(["episode-a"], namespace=namespace, exposure_id=exposure_id)
+
+        assert list(store._citations) == ["exposure-2", "exposure-3"]
+        with pytest.raises(ValueError, match="scope or delivered exposure is unavailable"):
+            await store.review(["episode-a"], _signal(), namespace=namespace, exposure_id="exposure-1")
+        receipts = await store.review(["episode-a"], _signal(), namespace=namespace, exposure_id="exposure-3")
+        assert [receipt.status for receipt in receipts] == ["applied"]
+    finally:
+        await backend.close()

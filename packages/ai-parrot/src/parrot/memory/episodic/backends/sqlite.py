@@ -7,7 +7,7 @@ import json
 import logging
 import math
 import struct
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -16,12 +16,20 @@ import aiosqlite
 from parrot.memory.episodic.backends.abstract import AbstractEpisodeBackend
 from parrot.memory.episodic.models import EpisodeSearchResult, EpisodicMemory, MemoryNamespace
 from parrot.memory.dynamics.fsrs import transition
-from parrot.memory.dynamics.models import Grade, MemoryParameters, MemoryState, ReviewCommand, ReviewReceipt
+from parrot.memory.dynamics.models import (
+    Grade,
+    MemoryCitation,
+    MemoryParameters,
+    MemoryState,
+    ReviewCommand,
+    ReviewReceipt,
+)
 
 logger = logging.getLogger(__name__)
 
 _SCHEMA_VERSION = 3
 _DEFAULT_VECTOR_CEILING = 5_000
+_CITATION_RETENTION_DAYS = 30
 _FILTERABLE_COLUMNS = (
     "tenant_id",
     "agent_id",
@@ -70,6 +78,13 @@ CREATE TABLE IF NOT EXISTS memory_state (
     state TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS citations (
+    exposure_id TEXT PRIMARY KEY,
+    payload TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_citations_updated
+    ON citations (updated_at);
 """
 
 
@@ -471,6 +486,102 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
             ref_key=ref_key,
             apply_revision=new_revision,
         )
+
+    async def get_review_expected_revision(self, dedupe_key: str) -> int | None:
+        """Read the ``expected_revision`` of the review committed for a dedupe key.
+
+        A retry has to present the command exactly as it was committed to be
+        recognized as a duplicate. The committed row is the only source that
+        survives a restart, so a caller rebuilds its command from this value
+        instead of from process-local bookkeeping.
+
+        Args:
+            dedupe_key: ``ReviewCommand.dedupe_key`` of the review being retried.
+
+        Returns:
+            The committed command's ``expected_revision``, or ``None`` when no
+            review is committed for the key.
+
+        Raises:
+            RuntimeError: If the backend has not been configured.
+        """
+        cursor = await self._require_database().execute(
+            "SELECT json_extract(payload, '$.expected_revision') FROM reviews WHERE dedupe_key = ?",
+            (dedupe_key,),
+        )
+        row = await cursor.fetchone()
+        if row is None or row[0] is None:
+            return None
+        return int(row[0])
+
+    async def merge_citation(self, citation: MemoryCitation) -> MemoryCitation:
+        """Durably merge a citation into the references already cited for its exposure.
+
+        The read, merge and write happen in one ``BEGIN IMMEDIATE`` transaction,
+        so two processes citing the same exposure cannot lose each other's
+        references. Citations older than the retention window are pruned in
+        the same transaction, which keeps the table bounded without a
+        separate maintenance job.
+
+        Args:
+            citation: Validated references cited for one final-delivery exposure.
+
+        Returns:
+            Every reference cited for the exposure after the merge.
+
+        Raises:
+            ValueError: If the exposure was cited under another namespace or the
+                merge exceeds the citation cardinality.
+            RuntimeError: If the backend has not been configured.
+        """
+        now = datetime.now(timezone.utc)
+        async with self._write_lock:
+            database = self._require_database()
+            await database.execute("BEGIN IMMEDIATE")
+            try:
+                await database.execute(
+                    "DELETE FROM citations WHERE updated_at < ?",
+                    ((now - timedelta(days=_CITATION_RETENTION_DAYS)).isoformat(),),
+                )
+                cursor = await database.execute(
+                    "SELECT payload FROM citations WHERE exposure_id = ?", (citation.exposure_id,)
+                )
+                row = await cursor.fetchone()
+                merged = citation
+                if row is not None:
+                    merged = MemoryCitation.model_validate_json(row[0]).merged_with(citation)
+                await database.execute(
+                    "INSERT INTO citations (exposure_id, payload, updated_at) VALUES (?, ?, ?) "
+                    "ON CONFLICT(exposure_id) DO UPDATE SET payload = excluded.payload, "
+                    "updated_at = excluded.updated_at",
+                    (citation.exposure_id, merged.model_dump_json(), now.isoformat()),
+                )
+                await database.execute("COMMIT")
+            except BaseException:
+                await self._rollback(database)
+                raise
+        return merged
+
+    async def get_citation(self, exposure_id: str) -> MemoryCitation | None:
+        """Read the references durably cited for one exposure.
+
+        Args:
+            exposure_id: Final-delivery exposure identifier.
+
+        Returns:
+            The committed citation, or ``None`` when the exposure was never cited
+            or its citation has been pruned.
+
+        Raises:
+            RuntimeError: If the backend has not been configured.
+        """
+        cursor = await self._require_database().execute(
+            "SELECT payload FROM citations WHERE exposure_id = ?", (exposure_id,)
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return MemoryCitation.model_validate_json(row[0])
 
     async def list_reviews(self, namespace: MemoryNamespace, *, limit: int | None = None) -> list[dict[str, Any]]:
         """Return committed reviews for one namespace in a deterministic total order.
