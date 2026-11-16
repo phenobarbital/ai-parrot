@@ -17,7 +17,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import numpy as np
 import pytest
 
-from parrot.bots.data import PandasAgentResponse
+from parrot.memory.agent_memory import AgentMemoryMixin
+from parrot.memory.agent_memory.models import AgentMemoryConfig, MemoryEvent, MemoryRequestScope
 from parrot.memory.episodic.models import (
     EpisodeCategory,
     EpisodeOutcome,
@@ -32,7 +33,7 @@ from parrot.memory.episodic.reflection import ReflectionEngine
 from parrot.memory.episodic.cache import EpisodeRedisCache
 from parrot.memory.episodic.store import EpisodicMemoryStore, _auto_importance
 from parrot.memory.episodic.tools import EpisodicMemoryToolkit
-from parrot.memory.episodic.mixin import EpisodicMemoryMixin
+from parrot.memory.unified.models import MemoryContext
 
 
 # ── Helpers ──
@@ -1081,128 +1082,106 @@ class TestStoreIntegration:
             assert r.user_id != "alice"
 
 
-class TestMixinIntegration:
-    """Integration tests for the EpisodicMemoryMixin."""
+class TestAgentMemoryIntegration:
+    """Integration tests for the replacement AgentMemoryMixin contracts."""
+
+    @staticmethod
+    def _scope() -> MemoryRequestScope:
+        """Build a trusted user-and-room scope."""
+        return MemoryRequestScope(
+            tenant_id="test",
+            agent_id="test-bot",
+            user_id="user-1",
+            session_id="session-1",
+            room_id="room-1",
+            turn_id="turn-1",
+            identity_provenance="server_resolved",
+        )
 
     @pytest.mark.asyncio
-    async def test_mixin_build_context(self, sample_namespace: MemoryNamespace) -> None:
-        """Mock store -> _build_episodic_context returns formatted string."""
+    async def test_mixin_forwards_room_scope(self) -> None:
+        """Pass the immutable room identity to the unified manager unchanged."""
 
-        class TestBot(EpisodicMemoryMixin):
-            name = "test-bot"
-            enable_episodic_memory = True
+        class TestBot(AgentMemoryMixin):
+            """Minimal facade host for scoped read delegation."""
 
         bot = TestBot()
-        # Create a mock store
-        mock_store = AsyncMock()
-        mock_store.get_failure_warnings = AsyncMock(
-            return_value="MISTAKES TO AVOID:\n- Don't do X"
-        )
-        mock_store.get_user_preferences = AsyncMock(return_value=[
-            _make_episode(lesson_learned="User prefers JSON"),
-        ])
-        mock_store.get_room_context = AsyncMock(return_value=[])
-        bot._episodic_store = mock_store
+        manager = AsyncMock()
+        expected = MemoryContext(episodic_warnings="MISTAKES TO AVOID:\n- Don't do X")
+        manager.prepare_context.return_value = expected
+        bot._memory_manager = manager
+        scope = self._scope()
 
-        context = await bot._build_episodic_context(
-            query="test query",
+        context = await bot.prepare_memory("test query", scope=scope)
+
+        assert context is expected
+        manager.prepare_context.assert_awaited_once_with("test query", scope=scope)
+
+    def test_trivial_tool_policy_uses_new_config(self) -> None:
+        """Expose trivial-tool suppression through AgentMemoryConfig after the hard cut."""
+        assert AgentMemoryConfig().suppress_trivial_tools is True
+        assert AgentMemoryConfig(suppress_trivial_tools=False).suppress_trivial_tools is False
+
+    @pytest.mark.asyncio
+    async def test_preferences_and_room_context_remain_available(
+        self,
+        episodic_store: EpisodicMemoryStore,
+    ) -> None:
+        """Preserve preference and room store APIs under the new facade flags."""
+        namespace = MemoryNamespace(
+            tenant_id="test",
+            agent_id="test-bot",
             user_id="user-1",
             room_id="room-1",
         )
-        assert isinstance(context, str)
-        assert "MISTAKES TO AVOID" in context
-        assert "USER PREFERENCES" in context
-
-    @pytest.mark.asyncio
-    async def test_mixin_skip_trivial_tools(self) -> None:
-        """_record_post_tool skips tools in trivial set."""
-
-        class TestBot(EpisodicMemoryMixin):
-            name = "test-bot"
-            enable_episodic_memory = True
-
-        bot = TestBot()
-        mock_store = AsyncMock()
-        mock_store.record_tool_episode = AsyncMock()
-        bot._episodic_store = mock_store
-
-        # Trivial tool — should be skipped
-        await bot._record_post_tool(
-            tool_name="get_time",
-            tool_args={},
-            tool_result="12:00",
-        )
-        # Give any tasks a chance to run
-        await asyncio.sleep(0.05)
-        mock_store.record_tool_episode.assert_not_called()
-
-        # Non-trivial tool — should record
-        await bot._record_post_tool(
-            tool_name="execute_query",
-            tool_args={"sql": "SELECT 1"},
-            tool_result="OK",
-        )
-        await asyncio.sleep(0.05)
-        mock_store.record_tool_episode.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_mixin_record_ask_serializes_pydantic_response(self) -> None:
-        """_safe_record_ask records Pydantic responses without subscripting them."""
-
-        class TestBot(EpisodicMemoryMixin):
-            name = "test-bot"
-            enable_episodic_memory = True
-
-        bot = TestBot()
-        mock_store = AsyncMock()
-        mock_store.record_episode = AsyncMock()
-        bot._episodic_store = mock_store
-        response = PandasAgentResponse(
-            explanation="Ventas agrupadas por tienda.",
-            data_variable="sales_by_store",
-        )
-        namespace = MemoryNamespace(
-            tenant_id="default",
-            agent_id="test-bot",
-        )
-
-        await bot._safe_record_ask(
+        preference = await episodic_store.record_episode(
             namespace=namespace,
-            query="Resume las ventas por tienda",
-            response=response,
+            situation="User requested JSON output",
+            action_taken="Remember the output preference",
+            outcome=EpisodeOutcome.SUCCESS,
+            category=EpisodeCategory.USER_PREFERENCE,
+            generate_reflection=False,
+        )
+        room_episode = await episodic_store.record_episode(
+            namespace=namespace,
+            situation="Room selected the compact report",
+            action_taken="Use the compact report",
+            outcome=EpisodeOutcome.SUCCESS,
+            category=EpisodeCategory.DECISION,
+            generate_reflection=False,
         )
 
-        mock_store.record_episode.assert_awaited_once()
-        kwargs = mock_store.record_episode.await_args.kwargs
-        assert kwargs["action_taken"] == "Responded: Ventas agrupadas por tienda."
+        preferences = await episodic_store.get_user_preferences(namespace, limit=5)
+        room_context = await episodic_store.get_room_context(namespace, limit=5)
+
+        assert [episode.episode_id for episode in preferences] == [preference.episode_id]
+        assert {episode.episode_id for episode in room_context} == {
+            preference.episode_id,
+            room_episode.episode_id,
+        }
 
     @pytest.mark.asyncio
-    async def test_mixin_configure(self) -> None:
-        """_configure_episodic_memory creates store with correct backend."""
+    async def test_tool_event_uses_single_manager_owner(self) -> None:
+        """Route tool observations through the unified manager without a second mixin hook."""
 
-        class TestBot(EpisodicMemoryMixin):
-            name = "test-bot"
-            enable_episodic_memory = True
-            episodic_backend = "faiss"
-            episodic_faiss_path = None
-            episodic_reflection_enabled = False  # Skip reflection to simplify
+        class TestBot(AgentMemoryMixin):
+            """Minimal facade host for completed-event delegation."""
 
         bot = TestBot()
+        manager = AsyncMock()
+        bot._memory_manager = manager
+        scope = self._scope()
+        event = MemoryEvent(
+            event_id="tool-1",
+            kind="tool",
+            scope=scope,
+            observed_at=datetime(2026, 11, 16, tzinfo=timezone.utc),
+            payload={},
+        )
 
-        # Patch at the module level where imports happen inside the method
-        with patch(
-            "parrot.memory.episodic.embedding.EpisodeEmbeddingProvider"
-        ) as mock_emb_cls, patch(
-            "parrot.memory.episodic.store.EpisodicMemoryStore.create_faiss",
-            new_callable=AsyncMock,
-        ) as mock_create_faiss:
-            mock_store_instance = AsyncMock()
-            mock_create_faiss.return_value = mock_store_instance
+        await bot.complete_memory(event)
 
-            await bot._configure_episodic_memory()
-
-            assert bot._episodic_store == mock_store_instance
-            mock_create_faiss.assert_called_once()
+        manager.record_event.assert_awaited_once_with(event)
 
 
 # ═══════════════════════════════════════════════════
