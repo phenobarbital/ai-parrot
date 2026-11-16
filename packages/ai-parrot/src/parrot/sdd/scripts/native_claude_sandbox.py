@@ -265,6 +265,8 @@ def _control_files(root: Path) -> list[Path]:
         )
         # Importing the hook modules executes every parent package's __init__ first.
         found.extend(package_root.joinpath(*parts, "__init__.py") for parts in _HOOK_PACKAGE_PARTS)
+        # parrot/__init__.py imports .version at module top, so every hook import runs it too.
+        found.append(package_root / "version.py")
     return list(dict.fromkeys(found))
 
 

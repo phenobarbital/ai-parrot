@@ -1005,6 +1005,7 @@ def test_hook_import_closure_is_write_protected(linked: tuple[Path, Path]) -> No
             package_root / "knowledge" / "wiki" / "experience" / "transitions.py",
             package_root / "knowledge" / "wiki" / "experience" / "fastpath.py",
             package_root / "__init__.py",
+            package_root / "version.py",
             package_root / "sdd" / "__init__.py",
             package_root / "sdd" / "scripts" / "__init__.py",
             package_root / "knowledge" / "__init__.py",
@@ -1039,6 +1040,35 @@ def test_hook_import_closure_matches_the_hook_source() -> None:
                 pending.append(package_root.joinpath(*parts).with_suffix(".py"))
                 for depth in range(len(parts)):
                     assert package_root.joinpath(*parts[:depth], "__init__.py") in protected
+
+
+@pytest.mark.parametrize(
+    "module",
+    ["parrot.sdd.scripts.experience_hook", "parrot.sdd.scripts.worktree_environment"],
+)
+def test_hook_runtime_import_closure_is_protected(module: str, tmp_path: Path) -> None:
+    """Every ``parrot`` file a host-side hook loads at import time is a control file (issue:57c0839196d4).
+
+    The closure is measured in a fresh interpreter rather than parsed, so a relative import inside a
+    package ``__init__`` (``parrot/__init__.py`` -> ``version.py``) cannot slip past the protected list.
+    """
+    package_root = Path(native.__file__).resolve().parents[2]
+    protected = set(native._control_files(package_root.parents[3]))
+    probe = (
+        "import importlib, json, sys\n"
+        f"importlib.import_module({module!r})\n"
+        "files = [getattr(m, '__file__', None) for n, m in sys.modules.items() if n.split('.')[0] == 'parrot']\n"
+        "print(json.dumps(sorted(f for f in files if f)))\n"
+    )
+    env = {**os.environ, "PYTHONPATH": str(package_root.parent)}
+    done = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True, env=env, cwd=tmp_path, check=True
+    )
+    loaded = [Path(item).resolve() for item in json.loads(done.stdout.strip().splitlines()[-1])]
+    inside = [path for path in loaded if path.is_relative_to(package_root)]
+    assert package_root / "version.py" in inside
+    assert package_root.joinpath(*module.split(".")[1:]).with_suffix(".py") in inside
+    assert [path for path in inside if path not in protected] == []
 
 
 def test_launch_worker_marks_experience_hooks_isolated(
