@@ -386,6 +386,36 @@ async def test_apply_review_persists_record_and_rolls_back_transition_failure(tm
 
 
 @pytest.mark.asyncio
+async def test_outcome_revisions_are_scoped_to_requester(tmp_path) -> None:
+    """Shared agent-level state does not merge independent callers' outcome revision streams."""
+    backend = SQLiteEpisodeBackend(tmp_path / "scoped-outcomes.sqlite")
+    await backend.configure()
+    namespace = MemoryNamespace(tenant_id="tenant-a", agent_id="agent-a")
+    try:
+        await backend.store(_episode(1))
+        template = _review_command(namespace, episode_id="episode-1", outcome_id="same")
+
+        def command(user: str | None, session: str | None, revision: int, expected: int) -> ReviewCommand:
+            """Build a validated command preserving original ref and requesting identity."""
+            data = template.model_dump()
+            data["signal"]["scope"].update(user_id=user, session_id=session)
+            data["signal"]["outcome_revision"] = revision
+            data["expected_revision"] = expected
+            return ReviewCommand.model_validate(data)
+
+        first = command("u1", "s1", 5, 0)
+        assert (await backend.apply_review(first)).status == "applied"
+        for expected, (user, session) in enumerate([("u1", "s2"), ("u2", "s1"), (None, None)], 1):
+            assert (await backend.apply_review(command(user, session, 0, expected))).status == "applied"
+        assert (await backend.apply_review(command("u1", "s1", 4, 4))).status == "stale_revision"
+        assert (await backend.apply_review(first)).status == "duplicate"
+        assert backend._db is not None
+        assert (await (await backend._db.execute("SELECT COUNT(*) FROM memory_state")).fetchone())[0] == 1
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
 async def test_apply_review_without_record_keywords_remains_legacy(tmp_path) -> None:
     """Legacy direct callers write nullable record columns and retain existing receipts."""
     backend = SQLiteEpisodeBackend(tmp_path / "legacy-call.sqlite")

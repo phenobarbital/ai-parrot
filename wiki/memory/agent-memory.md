@@ -203,7 +203,11 @@ class MyAgent(BasicAgent):
 - Memory dynamics (reviews, state tracking) is disabled by default
 - Reviews require delivered version, attribution, and verified outcome
 - Recall/citation alone doesn't reinforce memory
-- Review identity is the exact request namespace: an episode recalled from another session, or from the agent level, is delivered as context only (`episodic_context:` in `delivered_refs`) and cannot be cited or reviewed
+- An episode keeps its original recording namespace when cited or reviewed. A visible episode from an earlier session of the same user, or an agent-level episode, can therefore earn reviews without changing its canonical key or migrating stored state.
+- Citation admission checks the requesting scope against the same visibility policy as recall. Anonymous-session episodes remain private to that anonymous session; tenant, agent, user, room, crew and model restrictions still apply.
+- Only complete candidate content that survives packing enters the final exposure. Original typed references travel with that content; an ID alone, a dropped candidate or an altered reference cannot claim delivery.
+- One citation may contain visible episodes from different recording namespaces. Each episode has one durable dynamics state shared by authorized requesting sessions. Review evidence retains the actual requesting user/session, and independent callers' outcome IDs and revisions remain separate.
+- `memory_cite` and `memory_review` remain operator-only methods, excluded from the LLM/MCP toolkit surface. Runtime outcomes still require the invocation's delivered exposure and verified evidence.
 - Synthetic evidence is rejected; only verified outcomes produce reviews
 
 ## Related

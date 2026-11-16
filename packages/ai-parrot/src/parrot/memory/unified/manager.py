@@ -34,10 +34,6 @@ from .routing import CrossDomainRouter
 
 logger = logging.getLogger(__name__)
 
-# Source of an episode that a request may see but that was recorded under another namespace. It is
-# delivered as context and never enters the review manifest, whose identity is the exact namespace.
-_CONTEXT_ONLY_EPISODIC_SOURCE = "episodic_context"
-
 
 @runtime_checkable
 class SkillRegistry(Protocol):
@@ -246,11 +242,12 @@ class UnifiedMemoryManager:
         """
         if self.episodic is None or context.packed_digest is None:
             return context
-        refs = tuple(
-            memory_ref
+        refs_by_key = {
+            memory_ref.canonical_key: memory_ref
             for delivered_ref in context.delivered_refs
-            if (memory_ref := self._delivered_memory_ref(delivered_ref, scope)) is not None
-        )
+            if (memory_ref := self._delivered_memory_ref(delivered_ref, scope, context.memory_refs)) is not None
+        }
+        refs = tuple(refs_by_key.values())
         if not refs:
             return context
 
@@ -374,7 +371,7 @@ class UnifiedMemoryManager:
             receipts = await self.episodic.review(
                 [ref.memory_id for ref in citation.refs],
                 signal,
-                namespace=citation.refs[0].namespace,
+                namespace=self._namespace_for_scope(event.scope),
                 exposure_id=exposure_id,
             )
         except ValueError:
@@ -403,8 +400,10 @@ class UnifiedMemoryManager:
         )
 
     @staticmethod
-    def _delivered_memory_ref(delivered_ref: str, scope: MemoryRequestScope) -> MemoryRef | None:
-        """Parse one assembler reference into a scoped episodic version."""
+    def _delivered_memory_ref(
+        delivered_ref: str, scope: MemoryRequestScope, memory_refs: tuple[MemoryRef, ...]
+    ) -> MemoryRef | None:
+        """Look up the original visible episode ref for a final delivered token."""
         try:
             source, identity_and_version = delivered_ref.split(":", 1)
             memory_id, content_version = identity_and_version.rsplit(":", 1)
@@ -412,21 +411,14 @@ class UnifiedMemoryManager:
             return None
         if source != "episodic" or not memory_id or not content_version:
             return None
-        namespace = MemoryNamespace(
-            tenant_id=scope.tenant_id,
-            agent_id=scope.agent_id,
-            user_id=scope.user_id,
-            session_id=scope.session_id,
-            room_id=scope.room_id,
-            crew_id=scope.crew_id,
-            model_id=scope.model_id,
-        )
-        return MemoryRef(
-            namespace=namespace,
-            kind="episode",
-            memory_id=memory_id,
-            content_version=content_version,
-        )
+        matches = [
+            ref
+            for ref in memory_refs
+            if ref.kind == "episode" and ref.memory_id == memory_id and ref.content_version == content_version
+        ]
+        if len(matches) != 1 or not visible_to_scope(matches[0].namespace, scope):
+            return None
+        return matches[0]
 
     async def record_interaction(
         self,
@@ -610,9 +602,8 @@ class UnifiedMemoryManager:
         :meth:`_recall_scopes`). Each scope is filtered by the backend before its own top-k, and every
         returned episode is checked again here, so a backend that ignores a filter cannot widen it.
 
-        Review identity stays the exact request namespace: only an episode recorded under it is
-        tagged ``episodic`` and can enter the review manifest. Any other visible episode is delivered
-        as context only.
+        Every visible episode retains its recorded namespace in a typed reference. Only references
+        whose complete candidate content is ultimately delivered can enter the review manifest.
         """
         if not self.config.enable_episodic or self.episodic is None:
             return []
@@ -645,7 +636,6 @@ class UnifiedMemoryManager:
             return episode.ranking_score if episode.ranking_score is not None else episode.score
 
         episodes = sorted(visible.values(), key=lambda episode: (-_score(episode), episode.episode_id))[:top_k]
-        exact_namespace = self._namespace_for_scope(scope)
 
         candidates: list[MemoryCandidate] = []
         for episode in episodes:
@@ -658,8 +648,14 @@ class UnifiedMemoryManager:
                     scope=scope,
                     memory_id=episode.episode_id,
                     content_version="v1",
-                    source=(
-                        "episodic" if self._recorded_under(episode, exact_namespace) else _CONTEXT_ONLY_EPISODIC_SOURCE
+                    source="episodic",
+                    memory_ref=MemoryRef(
+                        namespace=MemoryNamespace(
+                            **{field: getattr(episode, field) for field in MemoryNamespace.model_fields}
+                        ),
+                        kind="episode",
+                        memory_id=episode.episode_id,
+                        content_version="v1",
                     ),
                     text=text,
                     relevance=min(max(score, 0.0), 1.0),

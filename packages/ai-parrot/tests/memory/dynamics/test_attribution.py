@@ -52,7 +52,9 @@ def _namespace(*, tenant_id: str = "tenant-a") -> MemoryNamespace:
     )
 
 
-def _candidate(memory_id: str, text: str, scope: MemoryRequestScope) -> MemoryCandidate:
+def _candidate(
+    memory_id: str, text: str, scope: MemoryRequestScope, namespace: MemoryNamespace | None = None
+) -> MemoryCandidate:
     """Build one versioned episodic candidate."""
     return MemoryCandidate(
         scope=scope,
@@ -62,6 +64,13 @@ def _candidate(memory_id: str, text: str, scope: MemoryRequestScope) -> MemoryCa
         text=text,
         relevance=1.0,
         candidate_type="episodic",
+        memory_ref=MemoryRef(
+            namespace=namespace
+            or MemoryNamespace(**{field: getattr(scope, field) for field in MemoryNamespace.model_fields}),
+            kind="episode",
+            memory_id=memory_id,
+            content_version="v1",
+        ),
     )
 
 
@@ -153,6 +162,16 @@ def test_final_packing_controls_citable_refs() -> None:
         validate_citation(delivered, exposure, scope=_scope(tenant_id="tenant-b"))
     with pytest.raises(ValueError, match="unavailable"):
         validate_citation(delivered.model_copy(update={"exposure_id": "stale"}), exposure, scope=scope)
+    forged_ref = exposure.refs[0].model_copy(
+        update={"namespace": exposure.refs[0].namespace.model_copy(update={"model_id": "forged"})}
+    )
+    assert forged_ref.canonical_key == exposure.refs[0].canonical_key
+    with pytest.raises(ValueError, match="unavailable"):
+        validate_citation(MemoryCitation(exposure_id=committed.exposure_id, refs=(forged_ref,)), exposure, scope=scope)
+    missing_refs = context.model_copy(update={"memory_refs": ()})
+    assert manager.commit_memory_exposure(missing_refs, scope=scope).exposure_id is None
+    final_trimmed = context.model_copy(update={"delivered_refs": ()})
+    assert manager.commit_memory_exposure(final_trimmed, scope=scope).exposure_id is None
 
 
 def test_completed_exposure_is_released_and_cannot_be_reactivated() -> None:
@@ -252,7 +271,16 @@ async def test_task_observer_and_memory_capture_coexist() -> None:
 
 
 @pytest.mark.asyncio
-async def test_structural_recovery_and_citation_channel(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "recorded_scopes",
+    [
+        [{}],
+        [{"session_id": "old"}],
+        [{"user_id": None, "session_id": None}],
+        [{"session_id": "old"}, {"user_id": None, "session_id": None}],
+    ],
+)
+async def test_structural_recovery_and_citation_channel(tmp_path: Path, recorded_scopes: list[dict]) -> None:
     """Verify only explicit or raised cited failures produce one durable AGAIN review."""
     default_result = ToolResult(result="ok")
     explicit_failure = ToolResult(success=False, error="  BOOM  ", result=None)
@@ -337,14 +365,17 @@ async def test_structural_recovery_and_citation_channel(tmp_path: Path) -> None:
     manager = UnifiedMemoryManager(_namespace(), episodic_store=store)
     scope = _scope()
     try:
-        await backend.store(_episode("episode-a"))
-        context = manager._assembler.assemble_candidates(
-            [_candidate("episode-a", "Use the cited recovery", scope)],
-            scope=scope,
-        )
+        candidates = []
+        for index, recorded in enumerate(recorded_scopes):
+            memory_id = f"episode-{index}"
+            namespace = _namespace().model_copy(update=recorded)
+            await backend.store(_episode(memory_id).model_copy(update=recorded))
+            candidates.append(_candidate(memory_id, "Use the cited recovery", scope, namespace))
+        context = manager._assembler.assemble_candidates(candidates, scope=scope)
         committed = manager.commit_memory_exposure(context, scope=scope)
         assert committed.exposure_id is not None
-        await store.cite(["episode-a"], namespace=_namespace(), exposure_id=committed.exposure_id)
+        for candidate in candidates:
+            await store.cite([candidate.memory_id], namespace=_namespace(), exposure_id=committed.exposure_id)
 
         capture_token = bind_tool_event_capture(scope, manager)
         exposure_token = bind_memory_exposure(committed.exposure_id)
@@ -365,7 +396,7 @@ async def test_structural_recovery_and_citation_channel(tmp_path: Path) -> None:
 
         assert backend._db is not None
         cursor = await backend._db.execute("SELECT COUNT(*) FROM reviews")
-        assert (await cursor.fetchone())[0] == 1
+        assert (await cursor.fetchone())[0] == len(recorded_scopes)
         assert manager.activate_memory_exposure(committed.exposure_id, scope) is False
         assert "episode-a" not in context.to_prompt_string()
         assert committed.exposure_id not in context.to_prompt_string()

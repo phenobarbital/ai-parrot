@@ -5,6 +5,8 @@ import hashlib
 import pytest
 
 from parrot.memory.agent_memory.models import MemoryRequestScope
+from parrot.memory.dynamics.models import MemoryRef
+from parrot.memory.episodic.models import MemoryNamespace
 from parrot.memory.unified.context import ContextAssembler
 from parrot.memory.unified.models import MemoryCandidate, MemoryConfig
 
@@ -41,6 +43,48 @@ def _candidate(
         ranking_score=ranking_score,
         candidate_type=candidate_type,
     )
+
+
+def test_packed_original_refs_follow_complete_candidate_content() -> None:
+    """Only fully accepted candidates carry original refs through the token budget."""
+    scope = _scope()
+    namespace = MemoryNamespace(
+        tenant_id=scope.tenant_id, agent_id=scope.agent_id, user_id=scope.user_id, session_id="old"
+    )
+    candidates = []
+    for identity, text in [("fits", "short lesson"), ("dropped", "x" * 1000)]:
+        data = _candidate(scope, memory_id=identity, text=text).model_dump()
+        data["memory_ref"] = MemoryRef(namespace=namespace, kind="episode", memory_id=identity, content_version="v1")
+        candidates.append(MemoryCandidate.model_validate(data))
+    context = ContextAssembler(MemoryConfig(max_context_tokens=40)).assemble_candidates(candidates, scope=scope)
+    assert context.delivered_refs == ("episodic:fits:v1",)
+    assert context.memory_refs == (candidates[0].memory_ref,)
+    assert context.memory_refs[0].namespace.session_id == "old"
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"candidate_type": "user"},
+        {"source": "user_knowledge"},
+        {"memory_id": "different"},
+        {"content_version": "different"},
+        {"scope": _scope(user_id="foreign")},
+    ],
+)
+def test_candidate_rejects_inconsistent_original_ref(changes: dict) -> None:
+    """A typed ref cannot turn foreign or non-episodic content into review evidence."""
+    scope = _scope()
+    data = _candidate(scope, memory_id="episode", text="lesson").model_dump()
+    data["memory_ref"] = MemoryRef(
+        namespace=MemoryNamespace(tenant_id=scope.tenant_id, agent_id=scope.agent_id, user_id=scope.user_id),
+        kind="episode",
+        memory_id="episode",
+        content_version="v1",
+    )
+    data.update(changes)
+    with pytest.raises(ValueError, match="candidate memory ref"):
+        MemoryCandidate.model_validate(data)
 
 
 class TestContextAssembler:

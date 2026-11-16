@@ -169,6 +169,79 @@ async def test_review_admission_and_idempotency(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_cross_session_reviews_share_original_state_and_replay(tmp_path: Path) -> None:
+    """Visible old-session and agent-level refs share durable state across requesting sessions."""
+    path = tmp_path / "cross-session.sqlite"
+    backend = SQLiteEpisodeBackend(path)
+    await backend.configure()
+    requester = _namespace()
+    original = requester.model_copy(update={"session_id": "earlier"})
+    agent = requester.model_copy(update={"user_id": None, "session_id": None})
+    store = EpisodicMemoryStore(backend, default_ttl_days=0)
+    ids = ["old-session", "agent-lesson"]
+    try:
+        await backend.store(_episode(ids[0], namespace=original))
+        await backend.store(_episode(ids[1], namespace=agent))
+        citation = await store.cite(ids, namespace=requester, exposure_id="first")
+        assert [ref.namespace for ref in citation.refs] == [original, agent]
+        first = await store.review(ids, _signal(), namespace=requester, exposure_id="first")
+        assert [receipt.status for receipt in first] == ["applied", "applied"]
+        second_request = requester.model_copy(update={"session_id": "later"})
+        second_signal = _signal().model_copy(update={"scope": _scope().model_copy(update={"session_id": "later"})})
+        second_citation = await store.cite(ids, namespace=second_request, exposure_id="second")
+        assert second_citation.refs == citation.refs
+        second = await store.review(ids, second_signal, namespace=second_request, exposure_id="second")
+        assert [receipt.status for receipt in second] == ["applied", "applied"]
+        assert [receipt.apply_revision for receipt in second] == [2, 2]
+        assert [receipt.dedupe_key for receipt in first] != [receipt.dedupe_key for receipt in second]
+        assert backend._db is not None
+        assert (await (await backend._db.execute("SELECT COUNT(*) FROM memory_state")).fetchone())[0] == 2
+        records = await backend.list_reviews(agent)
+        assert {row["command"]["signal"]["scope"]["session_id"] for row in records} == {"session-a", "later"}
+    finally:
+        await backend.close()
+    reopened = SQLiteEpisodeBackend(path)
+    await reopened.configure()
+    try:
+        replay = await EpisodicMemoryStore(reopened).review(
+            ids, second_signal, namespace=second_request, exposure_id="second"
+        )
+        assert [receipt.status for receipt in replay] == ["duplicate", "duplicate"]
+    finally:
+        await reopened.close()
+
+
+@pytest.mark.asyncio
+async def test_cross_scope_resolution_rejects_hidden_and_altered_refs(tmp_path: Path) -> None:
+    """Visibility and stored full refs are checked even when the canonical key matches."""
+    from parrot.memory.dynamics.models import MemoryCitation
+
+    backend = SQLiteEpisodeBackend(tmp_path / "ref-admission.sqlite")
+    await backend.configure()
+    store = EpisodicMemoryStore(backend)
+    request = _namespace()
+    try:
+        for name, update in [
+            ("other-user", {"user_id": "other"}),
+            ("anonymous", {"user_id": None, "session_id": "private"}),
+            ("other-agent", {"agent_id": "other"}),
+        ]:
+            await backend.store(_episode(name, namespace=request.model_copy(update=update)))
+            with pytest.raises(ValueError, match="references are unavailable"):
+                await store.cite([name], namespace=request, exposure_id=name)
+        await backend.store(_episode("visible", namespace=request.model_copy(update={"model_id": "actual"})))
+        citation = await store.cite(["visible"], namespace=request, exposure_id="valid")
+        forged = citation.refs[0].model_copy(
+            update={"namespace": citation.refs[0].namespace.model_copy(update={"model_id": "forged"})}
+        )
+        await backend.merge_citation(MemoryCitation(exposure_id="forged", refs=(forged,)))
+        with pytest.raises(ValueError, match="scope or delivered exposure"):
+            await store.review(["visible"], _signal(), namespace=request, exposure_id="forged")
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
 async def test_lesson_text_persisted_before_ack(tmp_path: Path) -> None:
     """Verify an acknowledged explicit lesson survives a real-store reopen."""
     path = tmp_path / "lessons.sqlite"

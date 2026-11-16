@@ -10,6 +10,8 @@ from __future__ import annotations
 from typing import Literal
 
 from parrot.memory.agent_memory.models import MemoryRequestScope
+from parrot.memory.dynamics.models import MemoryRef
+from parrot.memory.episodic.visibility import visible_to_scope
 from html import escape
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -37,6 +39,22 @@ class MemoryCandidate(BaseModel):
     candidate_type: Literal["episodic", "user", "brain", "skill"] = "episodic"
     dynamics_state_ref: str | None = Field(default=None, min_length=1)
     importance: int | None = Field(default=None, ge=0, le=10)
+    memory_ref: MemoryRef | None = None
+
+    @model_validator(mode="after")
+    def _validate_memory_ref(self) -> MemoryCandidate:
+        """Accept original episode identity only for a matching, visible episodic candidate."""
+        ref = self.memory_ref
+        if ref is not None and (
+            self.candidate_type != "episodic"
+            or self.source != "episodic"
+            or ref.kind != "episode"
+            or ref.memory_id != self.memory_id
+            or ref.content_version != self.content_version
+            or not visible_to_scope(ref.namespace, self.scope)
+        ):
+            raise ValueError("candidate memory ref is unavailable or inconsistent")
+        return self
 
     @model_validator(mode="after")
     def _reject_user_dynamics_reference(self) -> MemoryCandidate:
@@ -88,6 +106,10 @@ class MemoryContext(BaseModel):
     delivered_refs: tuple[str, ...] = Field(
         default=(),
         description="Ordered memory references whose content was actually delivered",
+    )
+    memory_refs: tuple[MemoryRef, ...] = Field(
+        default=(),
+        description="Original episode identities carried with fully packed candidate content",
     )
     packed_digest: str | None = Field(
         default=None,
