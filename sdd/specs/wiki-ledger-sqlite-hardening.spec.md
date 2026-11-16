@@ -17,7 +17,7 @@ docs:
 **Feature ID**: FEAT-902
 **Date**: 2026-11-16
 **Author**: Jesus Lara (requirements), Codex (specification)
-**Status**: review
+**Status**: approved
 **Target version**: next minor (release assignment pending)
 **Source**: `artifacts/plan_wiki_ledger_sqlite_hardening.md` and the accepted conversation scope.
 
