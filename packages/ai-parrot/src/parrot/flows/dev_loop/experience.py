@@ -10,7 +10,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Callable
 
-from parrot.knowledge.wiki.experience.fastpath import load_triggers, normalize_error
+from parrot.knowledge.wiki.experience.fastpath import best_trigger, load_triggers
 from parrot.knowledge.wiki.experience.models import CommandOutcome
 from parrot.knowledge.wiki.experience.service import ExperienceService
 from parrot.knowledge.wiki.experience.transitions import on_outcome
@@ -121,27 +121,13 @@ class ExperienceInterceptor:
 
         def matcher(executable: str, subcommand: str, error: str) -> Mapping[str, Any] | None:
             """Match one failure against the already-loaded trigger stubs."""
-            observed = normalize_error(error)
-            observed_tokens = set(observed.split())
-            candidates: list[tuple[float, str, dict[str, Any]]] = []
-            for stub in triggers.get(executable, []):
-                if stub.get("subcommand") != subcommand:
-                    continue
-                expected = normalize_error(" ".join(str(token) for token in stub.get("error_tokens", [])))
-                expected_tokens = set(expected.split())
-                union = expected_tokens | observed_tokens
-                score = (
-                    1.0
-                    if expected == observed
-                    else len(expected_tokens & observed_tokens) / len(union) if union else 0.0
-                )
-                if score >= threshold:
-                    lesson_id = stub.get("lesson_id")
-                    if isinstance(lesson_id, str):
-                        candidates.append((score, lesson_id, stub))
-            if not candidates:
-                return None
-            return min(candidates, key=lambda candidate: (-candidate[0], candidate[1]))[2]
+            return best_trigger(
+                triggers.get(executable, []),
+                executable,
+                subcommand,
+                error,
+                min_score=threshold,
+            )
 
         return matcher
 

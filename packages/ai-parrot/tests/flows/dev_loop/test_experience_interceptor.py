@@ -84,6 +84,35 @@ async def test_interceptor_structured_outcome_only(tmp_path: Path, monkeypatch: 
 
 
 @pytest.mark.asyncio
+async def test_interceptor_matcher_ranks_competing_stubs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Use the shared matcher ranking for all interceptor trigger matches."""
+    root, plane = _root(tmp_path, monkeypatch)
+    common = {
+        "solution_rev": "rev-1",
+        "executable": "gh",
+        "subcommand": "pr edit",
+        "error_tokens": ["permission", "denied"],
+        "fix_executable": "gh",
+        "fix_subcommand": "api",
+        "advice": "use the repository token",
+        "recording_session": "other-session",
+    }
+    global_confirmed = {**common, "lesson_id": "global-confirmed", "state": "confirmed", "tier": "global"}
+    repo_candidate = {**common, "lesson_id": "repo-candidate", "state": "candidate", "tier": "repo"}
+    repo_confirmed = {**common, "lesson_id": "repo-confirmed", "state": "confirmed", "tier": "repo"}
+    (plane / "triggers.json").write_text(
+        json.dumps({"gh": [global_confirmed, repo_candidate, repo_confirmed]}), encoding="utf-8"
+    )
+    interceptor = ExperienceInterceptor(session="session-a", cwd=str(root), seat="nova:model")
+
+    matcher = await interceptor._matcher()
+
+    assert matcher is not None
+    assert matcher("gh", "pr edit", "permission denied") == repo_confirmed
+    assert matcher("gh", "pr edit", "network timeout") is None
+
+
+@pytest.mark.asyncio
 async def test_interceptor_replay_aliases_each_observation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify hook-covered aliases are skipped while a repeated command is replayed."""
     root, plane = _root(tmp_path, monkeypatch)

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 import json
+from math import isfinite
 import os
 from pathlib import Path
 import sys
@@ -12,6 +13,7 @@ from typing import Any
 
 from parrot.knowledge.wiki.experience.fastpath import (
     agy_exit_code,
+    best_trigger,
     frozen_plane_dir,
     load_triggers,
     resolve_plane_dir,
@@ -432,20 +434,41 @@ def _agy_error(content: str) -> str:
 def _trigger_matcher(plane_dir: Path):
     """Build the hook's bounded published-trigger matcher."""
     triggers = load_triggers(plane_dir, max_bytes=_MAX_HOOK_INPUT_BYTES)
+    threshold = _inject_min_score(plane_dir)
 
     def match(executable: str, subcommand: str, error: str) -> Mapping[str, Any] | None:
-        normalized_error = error.casefold()
-        for stub in triggers.get(executable, []):
-            if not isinstance(stub, Mapping) or stub.get("subcommand") != subcommand:
-                continue
-            tokens = stub.get("error_tokens")
-            if isinstance(tokens, list) and all(
-                isinstance(token, str) and token.casefold() in normalized_error for token in tokens
-            ):
-                return stub
-        return None
+        return best_trigger(triggers.get(executable, []), executable, subcommand, error, min_score=threshold)
 
     return match
+
+
+def _inject_min_score(plane_dir: Path) -> float:
+    """Read the bounded published trigger threshold, defaulting on invalid input."""
+    default = 0.35
+    descriptor = safe_open(plane_dir / "fastpath.json", os.O_RDONLY)
+    if descriptor is None:
+        return default
+    try:
+        size = os.fstat(descriptor).st_size
+        if size < 0 or size > _MAX_HOOK_INPUT_BYTES:
+            return default
+        payload = os.read(descriptor, size + 1)
+        if len(payload) > size:
+            return default
+        metadata = json.loads(payload.decode("utf-8"))
+        value = metadata.get("inject_min_score") if isinstance(metadata, Mapping) else None
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not isfinite(value):
+            return default
+        if not 0.0 <= value <= 1.0:
+            return default
+        return float(value)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return default
+    finally:
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
 
 
 def _within_file_limit(path: Path, max_bytes: int) -> bool:

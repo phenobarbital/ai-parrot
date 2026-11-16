@@ -37,6 +37,51 @@ def test_normalize_error_strips_volatile(tmp_path: Path) -> None:
     assert fastpath.normalize_error(first) == fastpath.normalize_error(second) == "failure at hash at id"
 
 
+def test_best_trigger_prefers_repo_then_confirmed_at_equal_score(tmp_path: Path) -> None:
+    """Rank same-score matches by repository tier, then confirmation state."""
+    stubs = [
+        {
+            "lesson_id": "global-confirmed",
+            "state": "confirmed",
+            "tier": "global",
+            "executable": "gh",
+            "subcommand": "pr edit",
+            "error_tokens": ["permission", "denied"],
+        },
+        {
+            "lesson_id": "repo-candidate",
+            "state": "candidate",
+            "tier": "repo",
+            "executable": "gh",
+            "subcommand": "pr edit",
+            "error_tokens": ["permission", "denied"],
+        },
+        {
+            "lesson_id": "repo-confirmed",
+            "state": "confirmed",
+            "tier": "repo",
+            "executable": "gh",
+            "subcommand": "pr edit",
+            "error_tokens": ["permission", "denied"],
+        },
+    ]
+
+    match = fastpath.best_trigger(stubs, "gh", "pr edit", "permission denied", min_score=0.35)
+
+    assert match is not None
+    assert match["lesson_id"] == "repo-confirmed"
+
+
+def test_best_trigger_empty_or_low_similarity_signature_does_not_match(tmp_path: Path) -> None:
+    """Reject empty signatures and matches below the configured threshold."""
+    common = {"state": "confirmed", "executable": "gh", "subcommand": "pr edit"}
+    empty = {**common, "lesson_id": "empty", "error_tokens": []}
+    low_similarity = {**common, "lesson_id": "low", "error_tokens": ["permission", "denied"]}
+
+    assert fastpath.best_trigger([empty], "gh", "pr edit", "network timeout", min_score=0.35) is None
+    assert fastpath.best_trigger([low_similarity], "gh", "pr edit", "network timeout", min_score=0.35) is None
+
+
 def test_redact_masks_secrets(tmp_path: Path) -> None:
     """Verify common credential forms never remain in redacted text."""
     secret = "ghp_abcdefghijklmnopqrstuvwxyz123456 Bearer very-secret https://user:pass@example.test API_KEY=value"

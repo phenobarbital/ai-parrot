@@ -142,6 +142,7 @@ class ExperienceIndex:
                     self._json_bytes(
                         {
                             "generation": generation,
+                            "inject_min_score": self.config.inject_min_score,
                             "max_triggers_bytes": self.config.max_triggers_bytes,
                             "max_session_pending": self.config.max_session_pending,
                         }
@@ -258,6 +259,7 @@ class ExperienceIndex:
                 "fix_subcommand": fix_subcommand,
                 "advice": self._advice(lesson),
                 "recording_session": recording_sessions.get((lesson.lesson_id, lesson.solution_rev), ""),
+                "tier": lesson.tier,
             }
             triggers.setdefault(trigger.executable, []).append(stub)
         return triggers

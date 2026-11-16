@@ -201,6 +201,25 @@ def test_hook_budget_overflow_is_noop(tmp_path: Path) -> None:
     assert not (plane / "events.jsonl").exists()
 
 
+def test_hook_matcher_ranks_competing_stubs(tmp_path: Path) -> None:
+    """Use the shared matcher ranking and published threshold in the hook."""
+    plane = _plane(tmp_path)
+    global_confirmed = {**_stub(), "lesson_id": "global-confirmed", "state": "confirmed", "tier": "global"}
+    repo_candidate = {**_stub(), "lesson_id": "repo-candidate", "state": "candidate", "tier": "repo"}
+    repo_confirmed = {**_stub(), "lesson_id": "repo-confirmed", "state": "confirmed", "tier": "repo"}
+    for stub in (global_confirmed, repo_candidate, repo_confirmed):
+        stub["error_tokens"] = ["permission", "denied"]
+    (plane / "triggers.json").write_text(
+        json.dumps({"gh": [global_confirmed, repo_candidate, repo_confirmed]}), encoding="utf-8"
+    )
+    (plane / "fastpath.json").write_text(json.dumps({"inject_min_score": 0.75}), encoding="utf-8")
+
+    matcher = experience_hook._trigger_matcher(plane)
+
+    assert matcher("gh", "pr edit", "permission denied") == repo_confirmed
+    assert matcher("gh", "pr edit", "network timeout") is None
+
+
 def test_hook_post_failure_redacts_token_and_truncates_large_error(tmp_path: Path) -> None:
     """Verify the hook persists only redacted, bounded command failure data."""
     plane = _plane(tmp_path)
