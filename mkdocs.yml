@@ -20,6 +20,7 @@ exclude_docs: |
   /guides/jira-*.md
   /guides/llm-wiki-*.md
   /guides/wiki-adr-decisions.md
+  /sdd/AGY.md
   /sdd/CODEX.md
   /sdd/worktree-sync-base.md
 
