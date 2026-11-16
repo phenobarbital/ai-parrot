@@ -1,5 +1,6 @@
 """Behavioral acceptance tests for scoped store reviews, citations, and lessons."""
 
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -41,7 +42,13 @@ def _scope() -> MemoryRequestScope:
     )
 
 
-def _episode(episode_id: str, *, namespace: MemoryNamespace, outcome: str = "success") -> EpisodicMemory:
+def _episode(
+    episode_id: str,
+    *,
+    namespace: MemoryNamespace,
+    outcome: str = "success",
+    error_message: str | None = None,
+) -> EpisodicMemory:
     """Build a deterministic episode under the supplied namespace."""
     return EpisodicMemory(
         episode_id=episode_id,
@@ -55,6 +62,7 @@ def _episode(episode_id: str, *, namespace: MemoryNamespace, outcome: str = "suc
         situation=f"Situation for {episode_id}",
         action_taken="Completed the action",
         outcome=outcome,
+        error_message=error_message,
         created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
     )
 
@@ -202,7 +210,7 @@ async def test_store_list_reviews_delegates_and_fails_visibly(tmp_path: Path) ->
     await backend.configure()
     try:
         store = EpisodicMemoryStore(backend, default_ttl_days=0)
-        await backend.store(_episode("episode-a", namespace=namespace))
+        await backend.store(_episode("episode-a", namespace=namespace, error_message="the recorded error"))
         await store.cite(["episode-a"], namespace=namespace, exposure_id="exposure-a")
         assert (await store.review(["episode-a"], _signal(), namespace=namespace, exposure_id="exposure-a"))[
             0
@@ -210,6 +218,25 @@ async def test_store_list_reviews_delegates_and_fails_visibly(tmp_path: Path) ->
         rows = await store.list_reviews(namespace)
         assert len(rows) == 1
         assert rows[0]["command"]["ref"]["memory_id"] == "episode-a"
+        record = rows[0]["record"]
+        assert record["grade"] == 3
+        assert record["before"] == {
+            "difficulty": None,
+            "stability": None,
+            "reviewed_at": None,
+            "review_count": 0,
+            "apply_revision": 0,
+            "status": "uninitialized",
+            "parameter_id": None,
+        }
+        assert record["after"]["status"] == "reviewed"
+        assert record["after"]["review_count"] == 1
+        assert record["after"]["apply_revision"] == 1
+        assert record["after"]["parameter_id"] == "episodic-neutral-v1"
+        assert math.isfinite(record["after"]["difficulty"])
+        assert math.isfinite(record["after"]["stability"])
+        assert record["parameter_id"] == "episodic-neutral-v1"
+        assert record["memory_error_signature"] == "the recorded error"
     finally:
         await backend.close()
 

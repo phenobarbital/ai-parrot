@@ -15,12 +15,18 @@ from click.testing import CliRunner
 from parrot.memory.dynamics import export as export_module
 from parrot.memory.dynamics.cli import register_memory_commands
 from parrot.memory.dynamics.export import ExportError, export_reviews
-from parrot.memory.dynamics.models import ReviewCommand
+from parrot.memory.dynamics.models import Grade, MemoryParameters, ReviewCommand
 from parrot.memory.episodic.backends.sqlite import SQLiteEpisodeBackend
 from parrot.memory.episodic.models import EpisodicMemory, MemoryNamespace
 from parrot.memory.episodic.store import EpisodicMemoryStore
 
 _CLOCK = datetime(2026, 1, 3, tzinfo=timezone.utc)
+_PARAMETERS = MemoryParameters(
+    algorithm="fsrs-6",
+    time_policy="days-v1",
+    parameter_id="episodic-neutral-v1",
+    provenance="test-export",
+)
 
 
 def _namespace(*, tenant_id: str = "tenant-a") -> MemoryNamespace:
@@ -90,10 +96,18 @@ async def _seed_store(path: Path, namespace: MemoryNamespace) -> tuple[SQLiteEpi
     await backend.configure()
     await backend.store(_episode(namespace))
     assert (
-        await backend.apply_review(_command(namespace, outcome_id="outcome-a", expected_revision=0))
+        await backend.apply_review(
+            _command(namespace, outcome_id="outcome-a", expected_revision=0),
+            grade=Grade.GOOD,
+            parameters=_PARAMETERS,
+        )
     ).status == "applied"
     assert (
-        await backend.apply_review(_command(namespace, outcome_id="outcome-b", expected_revision=1))
+        await backend.apply_review(
+            _command(namespace, outcome_id="outcome-b", expected_revision=1),
+            grade=Grade.GOOD,
+            parameters=_PARAMETERS,
+        )
     ).status == "applied"
     return backend, EpisodicMemoryStore(backend, default_ttl_days=0)
 
@@ -122,8 +136,18 @@ async def test_two_reviews_same_version_survive_and_export_is_deterministic(tmp_
             "backend": "SQLiteEpisodeBackend",
             "table": "reviews",
             "persisted_fields": ["command", "apply_revision", "recorded_at"],
+            "optional_record_fields": [
+                "grade",
+                "before",
+                "after",
+                "parameter_id",
+                "memory_error_signature",
+            ],
         }
-        assert "parameter_id" not in json.dumps(archive)
+        assert [review["record"]["parameter_id"] for review in archive["reviews"]] == [
+            "episodic-neutral-v1",
+            "episodic-neutral-v1",
+        ]
 
         real_clock_path = tmp_path / "real-clock.json"
         before = datetime.now(timezone.utc)
@@ -154,6 +178,11 @@ async def test_scope_excludes_other_namespace_and_archive_replays_without_double
         archive = json.loads(destination.read_text(encoding="utf-8"))
         assert len(archive["reviews"]) == 2
         commands = [ReviewCommand.model_validate(review["command"]) for review in archive["reviews"]]
+        assert all("record" in review for review in archive["reviews"])
+        stripped_archive = json.loads(json.dumps(archive))
+        for review in stripped_archive["reviews"]:
+            review.pop("record")
+        stripped_commands = [ReviewCommand.model_validate(review["command"]) for review in stripped_archive["reviews"]]
 
         replay_backend = SQLiteEpisodeBackend(tmp_path / "replay.sqlite")
         await replay_backend.configure()
@@ -174,8 +203,19 @@ async def test_scope_excludes_other_namespace_and_archive_replays_without_double
             assert [review["dedupe_key"] for review in replay_archive["reviews"]] == [
                 review["dedupe_key"] for review in archive["reviews"]
             ]
+            assert all("record" not in review for review in replay_archive["reviews"])
         finally:
             await replay_backend.close()
+
+        stripped_backend = SQLiteEpisodeBackend(tmp_path / "stripped-replay.sqlite")
+        await stripped_backend.configure()
+        try:
+            await stripped_backend.store(_episode(namespace))
+            stripped_receipts = [await stripped_backend.apply_review(command) for command in stripped_commands]
+            assert [receipt.status for receipt in stripped_receipts] == ["applied", "applied"]
+            assert [receipt.apply_revision for receipt in stripped_receipts] == [1, 2]
+        finally:
+            await stripped_backend.close()
     finally:
         await backend.close()
 
@@ -218,6 +258,29 @@ async def test_missing_or_incapable_store_fails_without_writing(tmp_path: Path) 
     assert not destination.exists()
 
 
+@pytest.mark.asyncio
+async def test_legacy_reviews_export_without_a_fabricated_record(tmp_path: Path) -> None:
+    """Legacy direct review calls remain replayable and omit record metadata."""
+    namespace = _namespace()
+    backend = SQLiteEpisodeBackend(tmp_path / "legacy.sqlite")
+    await backend.configure()
+    try:
+        await backend.store(_episode(namespace))
+        assert (
+            await backend.apply_review(_command(namespace, outcome_id="legacy", expected_revision=0))
+        ).status == "applied"
+        destination = tmp_path / "legacy.json"
+        await export_reviews(
+            namespace=namespace,
+            destination=destination,
+            store=EpisodicMemoryStore(backend, default_ttl_days=0),
+            clock=lambda: _CLOCK,
+        )
+        assert "record" not in json.loads(destination.read_text(encoding="utf-8"))["reviews"][0]
+    finally:
+        await backend.close()
+
+
 def test_cli_exports_store_contents(tmp_path: Path) -> None:
     """The Click command opens the configured real store and exports its committed reviews."""
     namespace = _namespace()
@@ -251,4 +314,22 @@ def test_cli_exports_store_contents(tmp_path: Path) -> None:
         ],
     )
     assert result.exit_code == 0, result.output
-    assert json.loads(output.read_text(encoding="utf-8"))["reviews"]
+    cli_archive = json.loads(output.read_text(encoding="utf-8"))
+    assert cli_archive["reviews"]
+
+    async def library_export() -> dict[str, object]:
+        backend = SQLiteEpisodeBackend(database_path)
+        await backend.configure()
+        try:
+            library_output = tmp_path / "library.json"
+            await export_reviews(
+                namespace=namespace,
+                destination=library_output,
+                store=EpisodicMemoryStore(backend, default_ttl_days=0),
+                clock=lambda: _CLOCK,
+            )
+            return json.loads(library_output.read_text(encoding="utf-8"))
+        finally:
+            await backend.close()
+
+    assert cli_archive["reviews"] == asyncio.run(library_export())["reviews"]

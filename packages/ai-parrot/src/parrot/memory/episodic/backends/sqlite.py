@@ -15,11 +15,12 @@ import aiosqlite
 
 from parrot.memory.episodic.backends.abstract import AbstractEpisodeBackend
 from parrot.memory.episodic.models import EpisodeSearchResult, EpisodicMemory, MemoryNamespace
-from parrot.memory.dynamics.models import ReviewCommand, ReviewReceipt
+from parrot.memory.dynamics.fsrs import transition
+from parrot.memory.dynamics.models import Grade, MemoryParameters, MemoryState, ReviewCommand, ReviewReceipt
 
 logger = logging.getLogger(__name__)
 
-_SCHEMA_VERSION = 2
+_SCHEMA_VERSION = 3
 _DEFAULT_VECTOR_CEILING = 5_000
 _FILTERABLE_COLUMNS = (
     "tenant_id",
@@ -189,6 +190,22 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
                 if version > _SCHEMA_VERSION:
                     raise ValueError(f"unsupported SQLite episode schema version: {version}")
                 await database.executescript(_SCHEMA)
+                columns_cursor = await database.execute("PRAGMA table_info(reviews)")
+                columns = {row[1] for row in await columns_cursor.fetchall()}
+                for column, definition in (
+                    ("grade", "INTEGER"),
+                    ("before_state", "TEXT"),
+                    ("after_state", "TEXT"),
+                    ("parameter_id", "TEXT"),
+                    ("memory_error_signature", "TEXT"),
+                ):
+                    if column in columns:
+                        continue
+                    try:
+                        await database.execute(f"ALTER TABLE reviews ADD COLUMN {column} {definition}")
+                    except aiosqlite.OperationalError as exc:
+                        if "duplicate column name" not in str(exc).lower():
+                            raise
                 if version < _SCHEMA_VERSION:
                     await database.execute(f"PRAGMA user_version={_SCHEMA_VERSION}")
                 try:
@@ -271,7 +288,14 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
                 raise
         return episode.episode_id
 
-    async def apply_review(self, command: ReviewCommand) -> ReviewReceipt:
+    async def apply_review(
+        self,
+        command: ReviewCommand,
+        *,
+        grade: Grade | None = None,
+        memory_error_signature: str | None = None,
+        parameters: MemoryParameters | None = None,
+    ) -> ReviewReceipt:
         """Atomically deduplicate, check revision and commit review state.
 
         The review row contains the complete validated command, making the local
@@ -279,6 +303,9 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
         source.  A caller can therefore safely retry after losing an
         acknowledgement or after a subordinate export fails.
         """
+        if (grade is None) != (parameters is None):
+            raise ValueError("grade and parameters must be supplied together")
+
         ref_key = command.ref.canonical_key
         payload = json.dumps(command.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
         namespace = command.ref.namespace
@@ -323,15 +350,15 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
                     )
 
                 clauses = ["episode_id = ?"]
-                parameters: list[Any] = [command.ref.memory_id]
+                episode_parameters: list[Any] = [command.ref.memory_id]
                 for field, value in scope_filter.items():
                     if value is None:
                         clauses.append(f"{field} IS NULL")
                     else:
                         clauses.append(f"{field} = ?")
-                        parameters.append(value)
+                        episode_parameters.append(value)
                 episode_cursor = await database.execute(
-                    f"SELECT 1 FROM episodes WHERE {' AND '.join(clauses)}", parameters
+                    f"SELECT 1 FROM episodes WHERE {' AND '.join(clauses)}", episode_parameters
                 )
                 if await episode_cursor.fetchone() is None:
                     await database.execute("ROLLBACK")
@@ -344,7 +371,7 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
                     )
 
                 state_cursor = await database.execute(
-                    "SELECT apply_revision FROM memory_state WHERE ref_key = ?", (ref_key,)
+                    "SELECT apply_revision, state FROM memory_state WHERE ref_key = ?", (ref_key,)
                 )
                 state_row = await state_cursor.fetchone()
                 current_revision = int(state_row[0]) if state_row is not None else 0
@@ -378,11 +405,19 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
                     )
 
                 new_revision = current_revision + 1
-                recorded_at = datetime.now(timezone.utc).isoformat()
+                reviewed_at = datetime.now(timezone.utc)
+                recorded_at = reviewed_at.isoformat()
+                before_state: MemoryState | None = None
+                after_state: MemoryState | None = None
+                if grade is not None and parameters is not None:
+                    stored_state = json.loads(state_row[1]) if state_row is not None else {}
+                    before_state = MemoryState.model_validate(stored_state.get("memory_state", {}))
+                    after_state = transition(before_state, grade, reviewed_at=reviewed_at, parameters=parameters)
                 await database.execute(
                     "INSERT INTO reviews "
                     "(dedupe_key, outcome_id, outcome_revision, ref_key, payload_digest, payload, "
-                    "apply_revision, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "apply_revision, recorded_at, grade, before_state, after_state, parameter_id, "
+                    "memory_error_signature) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         command.dedupe_key,
                         command.signal.outcome_id,
@@ -392,10 +427,29 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
                         payload,
                         new_revision,
                         recorded_at,
+                        int(grade) if grade is not None else None,
+                        (
+                            json.dumps(before_state.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+                            if before_state is not None
+                            else None
+                        ),
+                        (
+                            json.dumps(after_state.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+                            if after_state is not None
+                            else None
+                        ),
+                        parameters.parameter_id if parameters is not None else None,
+                        memory_error_signature[:2000] if memory_error_signature is not None else None,
                     ),
                 )
+                state_contents: dict[str, Any] = {
+                    "apply_revision": new_revision,
+                    "command": command.model_dump(mode="json"),
+                }
+                if after_state is not None:
+                    state_contents["memory_state"] = after_state.model_dump(mode="json")
                 state_payload = json.dumps(
-                    {"apply_revision": new_revision, "command": command.model_dump(mode="json")},
+                    state_contents,
                     sort_keys=True,
                     separators=(",", ":"),
                 )
@@ -442,7 +496,8 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
             parameters.append(value)
 
         query = (
-            "SELECT dedupe_key, outcome_id, outcome_revision, ref_key, apply_revision, recorded_at, payload "
+            "SELECT dedupe_key, outcome_id, outcome_revision, ref_key, apply_revision, recorded_at, payload, "
+            "grade, before_state, after_state, parameter_id, memory_error_signature "
             f"FROM reviews WHERE {' AND '.join(clauses)} "
             "ORDER BY recorded_at ASC, dedupe_key ASC"
         )
@@ -453,8 +508,9 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
         database = self._require_database()
         cursor = await database.execute(query, parameters)
         rows = await cursor.fetchall()
-        return [
-            {
+        reviews: list[dict[str, Any]] = []
+        for row in rows:
+            review = {
                 "dedupe_key": row[0],
                 "outcome_id": row[1],
                 "outcome_revision": row[2],
@@ -463,8 +519,16 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
                 "recorded_at": row[5],
                 "command": json.loads(row[6]),
             }
-            for row in rows
-        ]
+            if row[7] is not None:
+                review["record"] = {
+                    "grade": int(row[7]),
+                    "before": json.loads(row[8]),
+                    "after": json.loads(row[9]),
+                    "parameter_id": row[10],
+                    "memory_error_signature": row[11],
+                }
+            reviews.append(review)
+        return reviews
 
     async def search_similar(
         self,

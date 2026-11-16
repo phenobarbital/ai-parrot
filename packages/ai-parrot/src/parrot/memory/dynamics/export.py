@@ -88,6 +88,13 @@ async def export_reviews(
             "backend": "SQLiteEpisodeBackend",
             "table": "reviews",
             "persisted_fields": ["command", "apply_revision", "recorded_at"],
+            "optional_record_fields": [
+                "grade",
+                "before",
+                "after",
+                "parameter_id",
+                "memory_error_signature",
+            ],
         },
         "reviews": reviews,
     }
