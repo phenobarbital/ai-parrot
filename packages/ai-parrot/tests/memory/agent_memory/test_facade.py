@@ -301,6 +301,7 @@ async def test_completion_hands_the_host_client_to_user_extraction(monkeypatch: 
     )
 
     await subject.complete_memory(event)
+    await subject._drain_memory_writes()  # extraction writes are detached and drained, never inline
 
     assert manager.extraction_client is subject._client
     assert "manager.record:event-1" in manager.events
@@ -312,6 +313,7 @@ async def test_completion_hands_the_host_client_to_user_extraction(monkeypatch: 
 
     subject.get_client = failing_client  # type: ignore[method-assign]
     await subject.complete_memory(event)
+    await subject._drain_memory_writes()
 
     assert manager.extraction_client is None
     assert manager.events.count("manager.record:event-1") == 2

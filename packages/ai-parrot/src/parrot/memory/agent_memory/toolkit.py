@@ -44,7 +44,10 @@ class AgentMemoryToolkit(AbstractToolkit):
         self._config = validated_config
         self._namespace = validated_namespace
         self._manager: Any | None = None
-        self.exclude_tools = () if validated_config.enable_user_memory else ("memory_forget",)
+        # memory_cite/memory_review accept caller-chosen exposure ids and review signals, so they are
+        # operator-only (CLI calls the methods directly) and never part of the LLM/MCP tool surface.
+        operator_only = ("memory_cite", "memory_review")
+        self.exclude_tools = operator_only if validated_config.enable_user_memory else (*operator_only, "memory_forget")
 
     async def _open(self) -> None:
         """Construct configured stores; unwind partially acquired resources on failure."""

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Any
 
 from parrot.memory.episodic.models import MemoryNamespace
@@ -96,13 +97,57 @@ class AgentMemoryMixin:
             event: Validated completed invocation event.
         """
         manager = self._memory_manager
-        if manager is not None:
-            self._bind_extraction_client(manager)
+        if manager is None:
+            return
+        self._bind_extraction_client(manager)
+        self._bind_skill_registry(manager)
+        if event.kind == "response" and getattr(manager, "extraction_client", None) is not None:
+            # User extraction is a full provider round trip; it must not delay the answer. The task is
+            # owned here and drained by cleanup()/_release_memory_resources().
+            task = asyncio.ensure_future(self._record_in_background(manager, event))
+            tasks = self.__dict__.setdefault("_memory_write_tasks", set())
+            tasks.add(task)
+            task.add_done_callback(tasks.discard)
+            return
+        await manager.record_event(event)
+
+    async def _record_in_background(self, manager: UnifiedMemoryManager, event: MemoryEvent) -> None:
+        """Record one completed event, logging (never raising) a failure of the detached write."""
+        try:
             await manager.record_event(event)
+        except Exception as exc:  # noqa: BLE001 - a detached write has no caller to report to
+            logger = getattr(self, "logger", None)
+            if logger is not None:
+                logger.warning("background memory write failed: %s", type(exc).__name__)
+
+    async def _drain_memory_writes(self) -> None:
+        """Wait for every owned background write; a cancelled caller still lets them finish."""
+        tasks = self.__dict__.get("_memory_write_tasks")
+        if not tasks:
+            return
+        pending = asyncio.ensure_future(asyncio.gather(*list(tasks), return_exceptions=True))
+        try:
+            await asyncio.shield(pending)
+        except asyncio.CancelledError:
+            await asyncio.shield(pending)
+            raise
+
+    def _bind_skill_registry(self, manager: UnifiedMemoryManager) -> None:
+        """Give skill recall the host's skill registry when relevant skills are enabled."""
+        config = getattr(manager, "config", None)
+        if not getattr(config, "enable_skills", False) or getattr(manager, "skills", None) is not None:
+            return
+        registry = getattr(self, "_skill_registry", None)
+        if registry is not None:
+            manager.skills = registry
 
     async def cleanup(self) -> None:
         """Stop the brain service and drain owned writes before host resource cleanup."""
         first_error: BaseException | None = None
+        try:
+            await self._drain_memory_writes()
+        except BaseException as exc:
+            first_error = exc
         brain = self.brain_service
 
         if brain is not None and self._brain_started:
@@ -245,6 +290,10 @@ class AgentMemoryMixin:
         """Unwind partially initialized resources without hiding cancellation."""
         self._unregister_memory_tools()
         first_error: BaseException | None = None
+        try:
+            await self._drain_memory_writes()
+        except BaseException as exc:
+            first_error = exc
         brain = self.brain_service
         if brain is not None and self._brain_started:
             try:

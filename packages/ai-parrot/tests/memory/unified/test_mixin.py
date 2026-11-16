@@ -119,6 +119,7 @@ class TestAgentMemoryMixin:
 
         context = await agent.prepare_memory("query", scope=scope)
         await agent.complete_memory(event)
+        await agent._drain_memory_writes()  # a bound extraction client makes the write detached
 
         assert context is expected
         manager.prepare_context.assert_awaited_once_with("query", scope=scope)
