@@ -383,6 +383,7 @@ tests:
 - packages/ai-parrot/tests/knowledge/wiki/test_ledger_append_cancellation.py
 - packages/ai-parrot/tests/knowledge/wiki/test_sqlite_timing.py
 - packages/ai-parrot/tests/knowledge/wiki/test_sqlite_benchmark_contract.py
+- packages/ai-parrot/tests/knowledge/wiki/test_sqlite_ledger_documentation.py
 - tests/knowledge/wiki/test_ledger_store.py
 - tests/knowledge/wiki/test_ledger_index.py
 - tests/knowledge/wiki/test_ledger_log.py
@@ -392,7 +393,9 @@ tests:
 - packages/ai-parrot/tests/knowledge/wiki/test_ledger_service_reads.py
 markers: none
 
-The first five paths are created by this feature; remaining operands are existing
+### Validation Notes
+
+The first six paths are created by this feature; remaining operands are existing
 regression coverage. The full benchmark matrix is an explicit M5 evidence gate, not
 an automatically collected pytest performance test. Store validation logs in artifacts/logs/.
 
