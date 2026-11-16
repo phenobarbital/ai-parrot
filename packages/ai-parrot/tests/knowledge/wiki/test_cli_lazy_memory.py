@@ -10,7 +10,6 @@ from typing import Any
 
 from parrot.knowledge.wiki.cli import wiki
 
-
 REPOSITORY_ROOT = Path(__file__).parents[5]
 
 
