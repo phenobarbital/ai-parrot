@@ -380,3 +380,45 @@ async def test_apply_review_without_record_keywords_remains_legacy(tmp_path) -> 
         assert "record" not in (await backend.list_reviews(namespace))[0]
     finally:
         await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_get_memory_states_reads_committed_state_by_exact_ref(tmp_path) -> None:
+    """Earned state is readable by its canonical ref key only, and a stateless review exposes none."""
+    backend = SQLiteEpisodeBackend(tmp_path / "state-read.sqlite")
+    namespace = MemoryNamespace(tenant_id="tenant-a", agent_id="agent-a")
+    other_namespace = MemoryNamespace(tenant_id="tenant-b", agent_id="agent-a")
+    with pytest.raises(RuntimeError, match="not configured"):
+        await backend.get_memory_states(["mref-v1-missing"])
+    await backend.configure()
+    try:
+        await backend.store(_episode(1))
+        await backend.store(_episode(2))
+        reviewed = _review_command(namespace, episode_id="episode-1", outcome_id="graded")
+        legacy = _review_command(namespace, episode_id="episode-2", outcome_id="legacy")
+        cross_scope = _review_command(other_namespace, episode_id="episode-1", outcome_id="graded")
+        assert (await backend.apply_review(reviewed, grade=Grade.GOOD, parameters=_parameters())).status == "applied"
+        assert (await backend.apply_review(legacy)).status == "applied"
+
+        assert await backend.get_memory_states([]) == {}
+        states = await backend.get_memory_states(
+            [
+                reviewed.ref.canonical_key,
+                reviewed.ref.canonical_key,
+                legacy.ref.canonical_key,
+                cross_scope.ref.canonical_key,
+                "mref-v1-missing",
+            ]
+        )
+
+        assert list(states) == [reviewed.ref.canonical_key]
+        state = states[reviewed.ref.canonical_key]
+        assert state.status == "reviewed"
+        assert state.review_count == 1
+        assert state.parameter_id == "episodic-neutral-v1"
+        assert state.stability is not None and state.stability > 0
+
+        many = [f"mref-v1-absent-{index}" for index in range(1_200)] + [reviewed.ref.canonical_key]
+        assert list(await backend.get_memory_states(many)) == [reviewed.ref.canonical_key]
+    finally:
+        await backend.close()

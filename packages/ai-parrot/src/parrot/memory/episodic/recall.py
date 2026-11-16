@@ -10,14 +10,51 @@ from __future__ import annotations
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Any, Protocol, runtime_checkable
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from parrot._imports import lazy_import
 
 from .backends.abstract import AbstractEpisodeBackend
 from .models import EpisodicMemory, EpisodeSearchResult, MemoryNamespace
 
+if TYPE_CHECKING:
+    from parrot.memory.dynamics.models import MemoryState
+
 logger = logging.getLogger(__name__)
+
+_EPISODIC_PARAMETER_ID = "episodic-neutral-v1"
+
+
+def episode_state_ref(episode: EpisodicMemory) -> str:
+    """Return the durable dynamics-state key of one write-once episode.
+
+    A review is admitted only for an episode whose own namespace equals the
+    reviewing namespace, so the key a review commits its state under is the
+    canonical key of the episode's own scope and ``v1`` content version.
+
+    Args:
+        episode: Stored episode.
+
+    Returns:
+        The ``MemoryRef.canonical_key`` under which the episode's earned state is persisted.
+    """
+    from parrot.memory.dynamics.models import MemoryRef
+
+    return MemoryRef(
+        namespace=MemoryNamespace(
+            tenant_id=episode.tenant_id,
+            agent_id=episode.agent_id,
+            user_id=episode.user_id,
+            session_id=episode.session_id,
+            room_id=episode.room_id,
+            crew_id=episode.crew_id,
+            model_id=episode.model_id,
+        ),
+        kind="episode",
+        memory_id=episode.episode_id,
+        content_version="v1",
+    ).canonical_key
 
 
 def rank_episodes(
@@ -25,19 +62,23 @@ def rank_episodes(
     *,
     namespace: MemoryNamespace,
     now: datetime | None = None,
+    states: Mapping[str, MemoryState] | None = None,
 ) -> list[EpisodicMemory | EpisodeSearchResult]:
     """Apply the shared experiential ranking policy to episodic retrieval.
 
-    The baseline episode protocol does not expose durable dynamics state, so
-    unresolved states deliberately receive the neutral retrievability defined
-    by :func:`rank_candidates`.  This adapter keeps the existing raw
-    similarity on ``EpisodeSearchResult`` while exposing its separate
-    ``ranking_score``.
+    The caller resolves earned dynamics state from a backend that can read it
+    and passes it keyed by :func:`episode_state_ref`.  An episode without a
+    resolved state, or whose state was earned under other parameters, receives
+    the neutral retrievability defined by :func:`rank_candidates`.  Equal
+    scores order newest first.  This adapter keeps the existing raw similarity
+    on ``EpisodeSearchResult`` while exposing its separate ``ranking_score``
+    and, for a reviewed episode, its retrievability, stability and review count.
 
     Args:
         episodes: Retrieved episodes, optionally with raw similarity scores.
         namespace: Exact retrieval namespace.
         now: Optional aware UTC ranking time for deterministic callers.
+        states: Earned dynamics states keyed by :func:`episode_state_ref`; ``None`` ranks every episode neutrally.
 
     Returns:
         Episodes ordered by the shared ranking policy.
@@ -46,9 +87,28 @@ def rank_episodes(
         return []
 
     from parrot.memory.agent_memory.models import MemoryRequestScope
+    from parrot.memory.dynamics.fsrs import retrievability
     from parrot.memory.dynamics.models import MemoryParameters
     from parrot.memory.dynamics.ranking import rank_candidates
     from parrot.memory.unified.models import MemoryCandidate
+
+    ranking_time = now or datetime.now(timezone.utc)
+    parameters = MemoryParameters(
+        algorithm="fsrs-6",
+        time_policy="days-v1",
+        parameter_id=_EPISODIC_PARAMETER_ID,
+        provenance="episodic-recall",
+    )
+    state_refs = {episode.episode_id: episode_state_ref(episode) for episode in episodes} if states else {}
+    earned: dict[str, MemoryState] = {}
+    for state_ref in state_refs.values():
+        state = (states or {}).get(state_ref)
+        if state is None or state.reviewed_at is None or state.stability is None:
+            continue
+        if state.parameter_id is not None and state.parameter_id != parameters.parameter_id:
+            logger.debug("Ignoring dynamics state %s earned under parameters %s", state_ref, state.parameter_id)
+            continue
+        earned[state_ref] = state
 
     scope = MemoryRequestScope(
         tenant_id=namespace.tenant_id,
@@ -71,19 +131,15 @@ def rank_episodes(
             relevance=min(max(episode.score, 0.0), 1.0) if isinstance(episode, EpisodeSearchResult) else 1.0,
             similarity=min(max(episode.score, 0.0), 1.0) if isinstance(episode, EpisodeSearchResult) else None,
             importance=episode.importance,
+            dynamics_state_ref=state_refs.get(episode.episode_id),
         )
         for episode in episodes
     ]
     ranked_candidates = rank_candidates(
         candidates,
-        now=now or datetime.now(timezone.utc),
-        parameters=MemoryParameters(
-            algorithm="fsrs-6",
-            time_policy="days-v1",
-            parameter_id="episodic-neutral-v1",
-            provenance="episodic-recall",
-        ),
-        states={},
+        now=ranking_time,
+        parameters=parameters,
+        states=earned,
         anti_pattern_ids={episode.episode_id for episode in episodes if bool(episode.metadata.get("anti_pattern"))},
         recency={episode.episode_id: episode.created_at for episode in episodes},
     )
@@ -91,10 +147,16 @@ def rank_episodes(
     ranked_episodes: list[EpisodicMemory | EpisodeSearchResult] = []
     for candidate in ranked_candidates:
         episode = by_id[candidate.memory_id]
-        if isinstance(episode, EpisodeSearchResult):
-            ranked_episodes.append(episode.model_copy(update={"ranking_score": candidate.ranking_score}))
-        else:
+        if not isinstance(episode, EpisodeSearchResult):
             ranked_episodes.append(episode)
+            continue
+        update: dict[str, Any] = {"ranking_score": candidate.ranking_score}
+        state = earned.get(candidate.dynamics_state_ref) if candidate.dynamics_state_ref is not None else None
+        if state is not None:
+            update["retrievability"] = retrievability(state, now=ranking_time, parameters=parameters)
+            update["stability"] = state.stability
+            update["review_count"] = state.review_count
+        ranked_episodes.append(episode.model_copy(update=update))
     return ranked_episodes
 
 

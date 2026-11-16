@@ -10,7 +10,14 @@ from parrot.memory.agent_memory.models import MemoryRequestScope
 from parrot.memory.dynamics.models import ReviewSignal
 from parrot.memory.episodic.backends.sqlite import SQLiteEpisodeBackend
 from parrot.memory.episodic.cache import EpisodeRedisCache
-from parrot.memory.episodic.models import EpisodeCategory, EpisodeOutcome, EpisodicMemory, MemoryNamespace
+from parrot.memory.episodic.models import (
+    EpisodeCategory,
+    EpisodeOutcome,
+    EpisodeSearchResult,
+    EpisodicMemory,
+    MemoryNamespace,
+)
+from parrot.memory.episodic.recall import episode_state_ref, rank_episodes
 from parrot.memory.episodic.store import EpisodicMemoryStore
 
 
@@ -289,6 +296,110 @@ async def test_offline_fallback_no_embedding_provider(tmp_path: Path) -> None:
         assert [result.episode_id for result in results] == ["deployment-match"]
         assert results[0].score == 1.0
         assert results[0].ranking_score == pytest.approx(1.7)
+    finally:
+        await backend.close()
+
+
+def _review_signal(namespace: MemoryNamespace, outcome_id: str, *, correction_count: int) -> ReviewSignal:
+    """Build verified success evidence: no corrections earns GOOD, confirmed corrections earn HARD."""
+    return ReviewSignal(
+        outcome_id=outcome_id,
+        outcome_revision=0,
+        observed_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
+        scope=_scope(namespace),
+        evidence_ref=f"coder-review/v1/execution-a/task-a/{outcome_id}",
+        source="coder_engine",
+        outcome="success",
+        first_attempt=correction_count == 0,
+        correction_count=correction_count,
+        passed_check_ids=("check-a",),
+    )
+
+
+@pytest.mark.asyncio
+async def test_earned_review_state_drives_recall_ranking(tmp_path: Path) -> None:
+    """Recall reads committed review state: it is reported per result and reorders equal episodes."""
+    backend = SQLiteEpisodeBackend(tmp_path / "episodes.sqlite")
+    await backend.configure()
+    namespace = _namespace()
+    store = EpisodicMemoryStore(backend, default_ttl_days=0)
+    try:
+        for episode_id in ("steady", "shaky", "unreviewed"):
+            await backend.store(_episode(episode_id, namespace))
+        for episode_id, correction_count in (("steady", 0), ("shaky", 1)):
+            exposure_id = f"exposure-{episode_id}"
+            await store.cite([episode_id], namespace=namespace, exposure_id=exposure_id)
+            receipts = await store.review(
+                [episode_id],
+                _review_signal(namespace, f"outcome-{episode_id}", correction_count=correction_count),
+                namespace=namespace,
+                exposure_id=exposure_id,
+            )
+            assert [receipt.status for receipt in receipts] == ["applied"]
+
+        results = await store.recall_similar("deployment", namespace, top_k=3)
+
+        by_id = {result.episode_id: result for result in results}
+        assert set(by_id) == {"steady", "shaky", "unreviewed"}
+        assert by_id["steady"].review_count == 1
+        assert by_id["steady"].retrievability == pytest.approx(1.0)
+        assert by_id["steady"].stability > by_id["shaky"].stability > 0
+        assert by_id["unreviewed"].review_count == 0
+        assert by_id["unreviewed"].retrievability is None
+        assert by_id["unreviewed"].stability is None
+
+        states = await backend.get_memory_states([episode_state_ref(result) for result in results])
+        assert len(states) == 2
+        later = datetime.now(timezone.utc) + timedelta(days=30)
+        ranked = rank_episodes(results, namespace=namespace, now=later, states=states)
+
+        assert [result.episode_id for result in ranked] == ["unreviewed", "steady", "shaky"]
+        ranked_by_id = {result.episode_id: result for result in ranked}
+        assert 0.0 < ranked_by_id["shaky"].retrievability < ranked_by_id["steady"].retrievability < 1.0
+        assert ranked_by_id["steady"].ranking_score == pytest.approx(1.5 * ranked_by_id["steady"].retrievability)
+        assert ranked_by_id["unreviewed"].ranking_score == pytest.approx(1.5)
+
+        neutral = rank_episodes(results, namespace=namespace, now=later)
+        assert [result.ranking_score for result in neutral] == pytest.approx([1.5, 1.5, 1.5])
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_state_read_failure_and_foreign_parameters_rank_neutrally(tmp_path: Path) -> None:
+    """A failed state read, or state earned under other parameters, never breaks or skews recall."""
+    backend = SQLiteEpisodeBackend(tmp_path / "episodes.sqlite")
+    await backend.configure()
+    namespace = _namespace()
+    store = EpisodicMemoryStore(backend, default_ttl_days=0)
+    try:
+        episode = _episode("deployment-match", namespace, importance=7)
+        await backend.store(episode)
+        await store.cite([episode.episode_id], namespace=namespace, exposure_id="exposure-a")
+        await store.review(
+            [episode.episode_id],
+            _review_signal(namespace, "outcome-a", correction_count=0),
+            namespace=namespace,
+            exposure_id="exposure-a",
+        )
+        state_ref = episode_state_ref(episode)
+        state = (await backend.get_memory_states([state_ref]))[state_ref]
+        later = datetime.now(timezone.utc) + timedelta(days=30)
+
+        foreign = state.model_copy(update={"parameter_id": "other-parameters"})
+        unranked = EpisodeSearchResult(**episode.model_dump(), score=1.0)
+        ranked = rank_episodes([unranked], namespace=namespace, now=later, states={state_ref: foreign})
+        assert ranked[0].ranking_score == pytest.approx(1.7)
+        assert ranked[0].retrievability is None
+
+        async def _failing_read(ref_keys: list[str]) -> dict[str, Any]:
+            raise RuntimeError("state storage unavailable")
+
+        backend.get_memory_states = _failing_read  # type: ignore[method-assign]
+        results = await store.recall_similar("deployment", namespace)
+        assert [result.episode_id for result in results] == ["deployment-match"]
+        assert results[0].ranking_score == pytest.approx(1.7)
+        assert results[0].review_count == 0
     finally:
         await backend.close()
 

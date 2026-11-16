@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 from collections import OrderedDict
+from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 from typing import Any, TypeVar
 
@@ -19,6 +20,7 @@ from parrot.memory.dynamics.models import (
     MemoryCitation,
     MemoryParameters,
     MemoryRef,
+    MemoryState,
     ReviewCommand,
     ReviewReceipt,
     ReviewSignal,
@@ -34,7 +36,7 @@ from .models import (
     EpisodicMemory,
     MemoryNamespace,
 )
-from .recall import HybridBM25Strategy, RecallStrategy, rank_episodes
+from .recall import HybridBM25Strategy, RecallStrategy, episode_state_ref, rank_episodes
 from .reflection import ReflectionEngine
 from .scoring import ImportanceScorer
 
@@ -603,6 +605,30 @@ class EpisodicMemoryStore:
             current_command = current_command.model_copy(update={"expected_revision": receipt.apply_revision})
         return receipt, current_command
 
+    async def _resolve_dynamics_states(
+        self,
+        episodes: Sequence[EpisodicMemory],
+    ) -> dict[str, MemoryState]:
+        """Read the earned dynamics state of retrieved episodes, when the backend can.
+
+        Reading state is an optional backend capability and never a reason to
+        fail recall: a backend without it, or a failed read, ranks neutrally.
+
+        Args:
+            episodes: Episodes about to be ranked.
+
+        Returns:
+            Earned states keyed by :func:`episode_state_ref`; empty when none are available.
+        """
+        get_memory_states = getattr(self._backend, "get_memory_states", None)
+        if not episodes or not callable(get_memory_states):
+            return {}
+        try:
+            return await get_memory_states([episode_state_ref(episode) for episode in episodes])
+        except Exception as exc:
+            logger.warning("Dynamics state read failed; ranking neutrally: %s", exc)
+            return {}
+
     async def _resolve_episodes(
         self,
         memory_ids: list[str],
@@ -876,7 +902,7 @@ class EpisodicMemoryStore:
             results = [r for r in results if r.category == category]
         results = _exclude_retracted(results)
 
-        ranked = rank_episodes(results, namespace=namespace)
+        ranked = rank_episodes(results, namespace=namespace, states=await self._resolve_dynamics_states(results))
         return [result for result in ranked if isinstance(result, EpisodeSearchResult)][:top_k]
 
     async def get_failure_warnings(
@@ -932,7 +958,9 @@ class EpisodicMemoryStore:
         if not failures:
             return ""
 
-        sorted_failures = rank_episodes(list(failures.values()), namespace=namespace)[:max_warnings]
+        candidates = list(failures.values())
+        states = await self._resolve_dynamics_states(candidates)
+        sorted_failures = rank_episodes(candidates, namespace=namespace, states=states)[:max_warnings]
 
         # Format warnings
         lines_mistakes = []
@@ -974,7 +1002,8 @@ class EpisodicMemoryStore:
         count = await self._backend.count(namespace.build_filter())
         episodes = _exclude_retracted(await self._get_scoped_recent(namespace, limit=count))
         preferences = [episode for episode in episodes if episode.category == EpisodeCategory.USER_PREFERENCE]
-        return rank_episodes(preferences, namespace=namespace)[:limit]
+        states = await self._resolve_dynamics_states(preferences)
+        return rank_episodes(preferences, namespace=namespace, states=states)[:limit]
 
     async def get_room_context(
         self,
@@ -999,7 +1028,8 @@ class EpisodicMemoryStore:
             cat_values = {c.value for c in categories}
             episodes = [ep for ep in episodes if ep.category.value in cat_values]
 
-        return rank_episodes(episodes, namespace=namespace)[:limit]
+        states = await self._resolve_dynamics_states(episodes)
+        return rank_episodes(episodes, namespace=namespace, states=states)[:limit]
 
     # ── Maintenance API ──
 

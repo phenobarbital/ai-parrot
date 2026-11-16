@@ -7,6 +7,7 @@ import json
 import logging
 import math
 import struct
+from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -29,6 +30,7 @@ logger = logging.getLogger(__name__)
 
 _SCHEMA_VERSION = 3
 _DEFAULT_VECTOR_CEILING = 5_000
+_STATE_READ_BATCH = 500
 _CITATION_RETENTION_DAYS = 30
 _FILTERABLE_COLUMNS = (
     "tenant_id",
@@ -582,6 +584,41 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
         if row is None:
             return None
         return MemoryCitation.model_validate_json(row[0])
+
+    async def get_memory_states(self, ref_keys: Sequence[str]) -> dict[str, MemoryState]:
+        """Read the earned dynamics state committed for the given memory references.
+
+        A reference key is the ``MemoryRef.canonical_key`` hash of the full
+        namespace, memory id and content version, so a caller can only read
+        the state of a memory whose exact scope it already holds.
+
+        Args:
+            ref_keys: Canonical reference keys to resolve; duplicates are read once.
+
+        Returns:
+            The committed state per reference key. A key with no review, or with a
+            review that recorded no state, is absent.
+
+        Raises:
+            RuntimeError: If the backend has not been configured.
+        """
+        database = self._require_database()
+        unique_keys = list(dict.fromkeys(ref_keys))
+        states: dict[str, MemoryState] = {}
+        for start in range(0, len(unique_keys), _STATE_READ_BATCH):
+            batch = unique_keys[start : start + _STATE_READ_BATCH]
+            cursor = await database.execute(
+                f"SELECT ref_key, state FROM memory_state WHERE ref_key IN ({', '.join('?' * len(batch))})",
+                batch,
+            )
+            for ref_key, payload in await cursor.fetchall():
+                try:
+                    stored_state = json.loads(payload).get("memory_state")
+                    if stored_state is not None:
+                        states[ref_key] = MemoryState.model_validate(stored_state)
+                except (ValueError, AttributeError) as exc:
+                    logger.warning("Ignoring unreadable dynamics state for %s: %s", ref_key, exc)
+        return states
 
     async def list_reviews(self, namespace: MemoryNamespace, *, limit: int | None = None) -> list[dict[str, Any]]:
         """Return committed reviews for one namespace in a deterministic total order.
