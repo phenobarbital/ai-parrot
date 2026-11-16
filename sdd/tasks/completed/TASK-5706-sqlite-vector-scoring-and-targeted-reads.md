@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-892 — Agent Memory — Unified Integration, User Knowledge and Dynamics
 **Spec**: `sdd/specs/agent-memory-mixin.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-5661, TASK-5665, TASK-5679, TASK-5702
@@ -160,7 +160,7 @@ async def get_recent_matching(
     limit: int | None = None,
     categories: Sequence[str] | None = None,
     failures_only: bool = False,
-    before: tuple[datetime, str] | None = None,
+    before_id: str | None = None,
 ) -> list[EpisodicMemory]: ...
 ```
 
@@ -174,7 +174,7 @@ a thread keeps the loop responsive without a process pool.
 get_by_ids = getattr(self._backend, "get_by_ids", None)
 
 # REPLACES the read in `    async def _fallback_lexical_search(` (verified: store.py:355, occurrences: 1)
-#   page through get_recent_matching(limit=_LEXICAL_PAGE_SIZE, failures_only=..., before=cursor) until top_k matches
+#   page through get_recent_matching(limit=_LEXICAL_PAGE_SIZE, failures_only=..., before_id=<last id of the previous page>) until top_k matches
 
 # `count = await self._backend.count(namespace.build_filter())`
 # occurrences: 3 (verified: store.py:988, 1040, 1062)
@@ -223,4 +223,29 @@ get_by_ids = getattr(self._backend, "get_by_ids", None)
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+- Task: TASK-5706
+- Feature: agent-memory-mixin
+- Implementation SHA: 1f03f469a4
+- Closed at (UTC): 2026-11-16T10:01:24+00:00
+- Resolves: `issue:2bb5faf7fe99`
+- Validation: `test_sqlite_backend.py`, `test_store_reviews.py` and `test_recall.py` pass (31 tests), and so do the 404
+  tests under `packages/ai-parrot/tests/memory` plus `tests/test_episodic_memory.py`, in a clean tree of the commit.
+- Measured on this branch at the D6 ceiling (5,000 rows, 1536 dimensions, payloads as `store()` writes them, 40 runs):
+  `search_similar` p50 2,517 ms before, p50 78 ms and p95 81 ms after, against the AC13 contract of p95 ≤ 150 ms.
+  Resolving 64 ids went from 2,416 ms (`get_recent(limit=count)`) to 35 ms (`get_by_ids`).
+- Deviation from the blueprint as filed: the page cursor is `before_id: str` and not `before: tuple[datetime, str]`. The
+  backend compares against the stored `(created_at, episode_id)` of that row, so the page does not depend on a datetime
+  surviving the payload round trip. The blueprint above is corrected.
+- Scores accumulate in float64 directly from the float32 blobs (`einsum(..., dtype=float64)`), which is exact to the old
+  implementation within 1e-15 and avoids a widened copy of the candidates.
+- The latency test measures up to three rounds of 20 searches and passes when one round meets the budget, so a concurrent
+  load on the machine does not fail it. It writes a 190 MB database under `tmp_path` and deletes it when it ends.
+- Not done here, by scope: `get_room_context` without categories still reads the whole scope (there is no predicate to
+  select by); pgvector, Redis and FAISS keep the full-scope read; `dynamics/feedback.py` has the same
+  `count()` + `get_recent(limit=count)` pattern and belongs to TASK-5704.
+- Found while measuring, not fixed: the payload JSON duplicates the embedding as text (about 32 KB per row at 1536
+  dimensions, next to a 6 KB blob). It is about half of the remaining search time, because SQLite walks the payload's
+  overflow pages to reach the blob, and it is why a full-scope read costs 2.4 s. Filed as a separate ledger issue.
+- `started_at` was written together with this note; no separate start commit was made, to keep index conflicts with the
+  two other sessions working on FEAT-892 to a minimum.
+- Implemented by Claude through `/sdd-fix`, by hand (no coder seat).

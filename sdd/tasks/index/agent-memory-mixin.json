@@ -836,7 +836,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -847,11 +847,12 @@
       ],
       "parallel": true,
       "parallelism_notes": "Modifies backends/sqlite.py created by TASK-5661 and the recall routes of episodic/store.py from TASK-5665; TASK-5679 (list_reviews) and TASK-5702 (get_memory_states, _resolve_dynamics_states) modified the same two files and test_sqlite_backend.py.",
-      "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5706-sqlite-vector-scoring-and-targeted-reads.md",
-      "discovered_from": "issue:2bb5faf7fe99"
+      "assigned_to": "claude",
+      "started_at": "2026-11-16T09:51:54+00:00",
+      "completed_at": "2026-11-16T10:01:24+00:00",
+      "file": "sdd/tasks/completed/TASK-5706-sqlite-vector-scoring-and-targeted-reads.md",
+      "discovered_from": "issue:2bb5faf7fe99",
+      "verification": "verified"
     },
     {
       "id": "TASK-5707",
