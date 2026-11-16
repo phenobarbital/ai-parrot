@@ -33,6 +33,7 @@ from parrot.memory.episodic.cache import EpisodeRedisCache
 from parrot.memory.episodic.store import EpisodicMemoryStore, _auto_importance
 from parrot.memory.episodic.tools import EpisodicMemoryToolkit
 from parrot.memory.episodic.mixin import EpisodicMemoryMixin
+from parrot.tools.abstract import ToolResult
 
 
 # ── Helpers ──
@@ -1031,27 +1032,99 @@ class TestStoreIntegration:
         episodic_store: EpisodicMemoryStore,
         sample_namespace: MemoryNamespace,
     ) -> None:
-        """record_tool_episode extracts fields correctly from ToolResult mock."""
-
-        class MockToolResult:
-            success = False
-            error = "File not found: /tmp/data.csv"
-            status = "error"
-            result = None
-
+        """record_tool_episode extracts fields correctly from a failing ToolResult."""
         ep = await episodic_store.record_tool_episode(
             namespace=sample_namespace,
             tool_name="read_file",
             tool_args={"path": "/tmp/data.csv"},
-            tool_result=MockToolResult(),
+            tool_result=ToolResult(
+                success=False,
+                status="error",
+                error="File not found: /tmp/data.csv",
+                result=None,
+            ),
             user_query="Read the data file",
         )
 
         assert ep.outcome == EpisodeOutcome.FAILURE
         assert ep.is_failure is True
+        assert ep.metadata["outcome_verified"] is True
         assert "read_file" in ep.related_tools
         assert ep.error_message is not None
         assert "not found" in ep.error_message.lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("tool_result", "expected_outcome", "expected_verified"),
+        [
+            pytest.param(ToolResult(result="rows"), EpisodeOutcome.PARTIAL, False, id="defaults-only"),
+            pytest.param(ToolResult(success=True, result="rows"), EpisodeOutcome.SUCCESS, True, id="explicit-success"),
+            pytest.param(
+                ToolResult(status="success", result="rows"), EpisodeOutcome.SUCCESS, True, id="status-success"
+            ),
+            pytest.param(ToolResult(success=False, result=None), EpisodeOutcome.FAILURE, True, id="explicit-failure"),
+            pytest.param(ToolResult(status="failed", result=None), EpisodeOutcome.FAILURE, True, id="status-failed"),
+            pytest.param(
+                ToolResult(success=True, status="error", result=None),
+                EpisodeOutcome.FAILURE,
+                True,
+                id="error-status-wins",
+            ),
+            pytest.param(ToolResult(status="timeout", result=None), EpisodeOutcome.TIMEOUT, True, id="status-timeout"),
+            pytest.param(
+                ToolResult(status="partial", result="rows"), EpisodeOutcome.PARTIAL, True, id="status-partial"
+            ),
+            pytest.param(
+                ToolResult(status="completed", result="rows"), EpisodeOutcome.PARTIAL, False, id="status-other"
+            ),
+            pytest.param({"success": False, "status": "error"}, EpisodeOutcome.PARTIAL, False, id="dict-not-evidence"),
+            pytest.param("plain string output", EpisodeOutcome.PARTIAL, False, id="raw-value"),
+        ],
+    )
+    async def test_store_tool_episode_outcome_needs_explicit_evidence(
+        self,
+        episodic_store: EpisodicMemoryStore,
+        sample_namespace: MemoryNamespace,
+        tool_result: Any,
+        expected_outcome: EpisodeOutcome,
+        expected_verified: bool,
+    ) -> None:
+        """Only success/status fields the tool set itself decide the outcome (FEAT-892 E4)."""
+        ep = await episodic_store.record_tool_episode(
+            namespace=sample_namespace,
+            tool_name="query_db",
+            tool_args={"sql": "select 1"},
+            tool_result=tool_result,
+        )
+
+        assert ep.outcome == expected_outcome
+        assert ep.metadata["outcome_verified"] is expected_verified
+
+    @pytest.mark.asyncio
+    async def test_store_tool_episode_duck_typed_failure_is_not_evidence(
+        self,
+        episodic_store: EpisodicMemoryStore,
+        sample_namespace: MemoryNamespace,
+    ) -> None:
+        """A plain object exposing success=False is unverified, but its error text is kept."""
+
+        class DuckResult:
+            success = False
+            status = "error"
+            error = "connection refused"
+            result = None
+
+        ep = await episodic_store.record_tool_episode(
+            namespace=sample_namespace,
+            tool_name="query_db",
+            tool_args={},
+            tool_result=DuckResult(),
+        )
+
+        assert ep.outcome == EpisodeOutcome.PARTIAL
+        assert ep.metadata["outcome_verified"] is False
+        assert ep.error_message == "connection refused"
+        assert ep.error_type == "connection"
 
     @pytest.mark.asyncio
     async def test_store_namespace_isolation(
