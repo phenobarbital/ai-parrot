@@ -20,8 +20,6 @@ EXPORT_FORMAT_VERSION = "v1"
 class ExportError(Exception):
     """Raised when export fails but reviews are preserved."""
 
-    pass
-
 
 class ExportState:
     """Tracks export state for retry and idempotency."""
@@ -214,12 +212,9 @@ async def retry_export(
             last_error = e
             if attempt < max_retries - 1:
                 logger.warning(
-                    f"Export attempt {attempt + 1} failed: {e}. "
-                    f"Retrying... ({attempt + 2}/{max_retries})"
+                    f"Export attempt {attempt + 1} failed: {e}. " f"Retrying... ({attempt + 2}/{max_retries})"
                 )
                 # Note: no sleep here - in real implementation would add backoff
                 # The key point is we don't reapply reviews, just retry the export
 
-    raise ExportError(
-        f"Export failed after {max_retries} attempts: {last_error}"
-    ) from last_error
+    raise ExportError(f"Export failed after {max_retries} attempts: {last_error}") from last_error

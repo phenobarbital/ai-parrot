@@ -204,13 +204,11 @@ def register_memory_commands(group: click.Group) -> None:
             if toolkit._manager and toolkit._manager.episodic is not None:
                 episodic = toolkit._manager.episodic
                 # Get all reviews for this namespace
-                from parrot.memory.dynamics.models import MemoryState
 
                 # Query reviews from the store
                 # The store should have a method to get reviews
                 # For now, we'll build from the available data
                 # This is a placeholder - the actual implementation would query the store
-                pass
 
             # For now, export with empty data - the real implementation
             # would query the episodic store for reviews
