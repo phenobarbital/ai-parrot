@@ -401,6 +401,12 @@ class AttemptRecord(BaseModel):
     duration_s: float = 0.0
     usage: Dict[str, Any] = Field(default_factory=dict)
     error: str = ""
+    development_output: Optional[DevelopmentOutput] = None
+    """Validated coder response, including blockers, retained even when this attempt fails.
+
+    This is coder-reported evidence, not proof of delivery. Older/native attempts
+    and dispatches that fail before producing valid output leave it unset.
+    """
     attempt_uid: str = ""
     """Globally unique id for this attempt, minted by the engine.
 

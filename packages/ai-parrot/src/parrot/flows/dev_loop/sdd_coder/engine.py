@@ -2951,6 +2951,15 @@ class SddCoderEngine:
             f"empty_delivery: seat {seat.label} ({seat.backend}/{rec.resolved_model or rec.model or seat.model}) "
             f"delivered no file change for {task.task_id}"
         )
+        if rec.development_output is not None:
+            # A successful CLI exit can carry an explicit task-contract blocker.
+            # Keep the full response on the attempt; bound only the diagnostic
+            # excerpt and label it as the coder's report, not an engine verdict.
+            reported = rec.development_output
+            if reported.summary.strip():
+                err += f"\nCoder-reported summary: {reported.summary[:4000]}"
+            if reported.incomplete_tasks:
+                err += f"\nCoder-reported incomplete_tasks: {str(reported.incomplete_tasks)[:1000]}"
         self.logger.warning("%s: %s", task.task_id, err)
         return rec.model_copy(update={"error": err, "terminal": "failed", "error_class": "EmptyDelivery"}), err
 
@@ -3904,7 +3913,7 @@ class SddCoderEngine:
             collector.error_class = type(exc).__name__
             self.logger.warning("attempt %d of %s on %s failed: %s", attempt, task.task_id, seat.label, error)
 
-        record = collector.record()
+        record = collector.record().model_copy(update={"development_output": output})
         if record.resolved_model and record.resolved_model != seat.model:
             self._feedback_unknown_exposure.add(attempt_uid)
 
@@ -4479,6 +4488,7 @@ class SddCoderEngine:
                         attempts=attempts,
                         native_retry=native_retry,
                         diagnostics=rec.error,
+                        development_output=out,
                     )
                 # Restricted task, no eligible retry seat left: make the block
                 # explicit rather than silently falling through with attempt
@@ -4567,6 +4577,7 @@ class SddCoderEngine:
                 worktree_path=path,
                 attempts=attempts,
                 diagnostics="\n".join(a.error for a in attempts if a.error),
+                development_output=out,
                 validation=last_red_validation if validation_red else None,
             )
 
