@@ -148,4 +148,6 @@ async def test_extraction_prompt_rejects_task_instructions_and_keeps_language() 
         "Write every value in the language the user used.",
     )
     assert all(sentence in system_prompt for sentence in added_sentences)
-    assert all(system_prompt.index(sentence) < system_prompt.index(empty_result_instruction) for sentence in added_sentences)
+    assert all(
+        system_prompt.index(sentence) < system_prompt.index(empty_result_instruction) for sentence in added_sentences
+    )
