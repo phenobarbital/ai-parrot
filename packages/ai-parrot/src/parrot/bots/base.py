@@ -8,6 +8,7 @@ abstract base class. It implements all required abstract methods.
 from typing import Optional, Union, Type, AsyncIterator, Any, List, NamedTuple
 from collections.abc import Callable
 from contextvars import Token
+from datetime import UTC, datetime
 import functools
 import inspect
 import logging
@@ -25,7 +26,13 @@ from ..utils.helpers import RequestContext, _current_ctx
 from .prompts import OUTPUT_SYSTEM_PROMPT
 from .abstract import AbstractBot
 from ..models.status import AgentStatus
-
+from parrot.memory.agent_memory.models import MemoryEvent, MemoryRequestScope
+from parrot.memory.agent_memory.runtime import (
+    bind_memory_exposure,
+    bind_memory_scope,
+    reset_memory_exposure,
+    reset_memory_scope,
+)
 
 def _get_interactive_result_class() -> Optional[type]:
     """Lazy import of ``InteractiveRenderResult`` (avoids circular deps)."""
@@ -152,6 +159,60 @@ class BaseBot(AbstractBot):
         if call_tenant is None:
             return None
         return current_tenant.set(call_tenant)
+
+    def _memory_request_scope(
+        self,
+        *,
+        user_id: Optional[str],
+        session_id: Optional[str],
+        turn_id: str,
+    ) -> MemoryRequestScope:
+        """Build one immutable memory scope without assigning an anonymous profile."""
+        tenant_id = current_tenant.get() or getattr(self, "tenant_id", None) or "default"
+        scoped_user_id = user_id.strip() if isinstance(user_id, str) and user_id.strip() else None
+        return MemoryRequestScope(
+            tenant_id=str(tenant_id),
+            agent_id=self.name,
+            user_id=scoped_user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            identity_provenance="server_resolved" if current_tenant.get() is not None else "runtime_derived",
+        )
+
+    async def _prepare_agent_memory(self, question: str, scope: MemoryRequestScope) -> tuple[str, Optional[str]]:
+        """Prepare one optional memory context for a public invocation boundary."""
+        prepare_memory = getattr(self, "prepare_memory", None)
+        if not callable(prepare_memory):
+            return "", None
+        try:
+            context = await prepare_memory(question, scope=scope)
+        except Exception as exc:  # noqa: BLE001 - optional memory cannot fail the primary response path
+            self.logger.warning("memory preparation failed: %s", type(exc).__name__)
+            return "", None
+        return context.to_prompt_string(), context.exposure_id
+
+    async def _complete_agent_memory(
+        self,
+        *,
+        scope: MemoryRequestScope,
+        question: str,
+        response_text: Optional[str],
+    ) -> None:
+        """Record the one completed response event owned by an invocation boundary."""
+        complete_memory = getattr(self, "complete_memory", None)
+        if not callable(complete_memory):
+            return
+        event = MemoryEvent(
+            event_id=scope.response_event_id(),
+            kind="response",
+            scope=scope,
+            observed_at=datetime.now(UTC),
+            payload={"query": question, "response": response_text or ""},
+        )
+        try:
+            await complete_memory(event)
+        except Exception as exc:  # noqa: BLE001 - memory failures must not discard a finalized answer
+            self.logger.warning("memory completion failed: %s", type(exc).__name__)
 
     def _bind_call_identity(self, tenant: Optional[str] = None, ctx: Any = None) -> CallIdentityTokens:
         """Bind this bot's agent name and resolved tenant for one call."""
@@ -756,10 +817,13 @@ class BaseBot(AbstractBot):
         _user_token = _session_token = _memkey_token = None
         _tenant_token = None
         _task_turn = None  # FEAT-538: safe for the `finally` even if the try raises early
+        _memory_scope_token = _memory_exposure_token = _memory_context_exposure_token = None
         try:
             if ctx is None:
                 ctx = _current_ctx.get()
             _tenant_token = self._bind_call_tenant(kwargs.get("tenant"), ctx)
+            # Retain transport identity before the history-only anonymous fallback.
+            _memory_user_id = user_id
             # Generate session ID if not provided
             session_id = session_id or str(uuid.uuid4())
             user_id = user_id or "anonymous"
@@ -769,6 +833,13 @@ class BaseBot(AbstractBot):
             # exception or a cancelled stream.
             _task_turn = self._enter_task_turn(user_id, session_id)
             turn_id = kwargs.pop("turn_id", None) or str(uuid.uuid4())
+            _memory_scope = self._memory_request_scope(
+                user_id=_memory_user_id,
+                session_id=session_id,
+                turn_id=turn_id,
+            )
+            _memory_scope_token = bind_memory_scope(_memory_scope)
+            _memory_exposure_token = bind_memory_exposure(None)
             _invoke_started = time.perf_counter()
             # FEAT-525: bind AFTER defaulting (binding-order hazard, spec §7) —
             # user_id/session_id ContextVars: per-user usage attribution in OTEL spans.
@@ -834,8 +905,14 @@ class BaseBot(AbstractBot):
                 # identical to the FEAT-524 plain render otherwise.
                 rendered_history, compaction_result = await self.render_context_history(conversation_history)
 
+            memory_context, memory_exposure_id = await self._prepare_agent_memory(question, _memory_scope)
+            if memory_exposure_id is not None:
+                _memory_context_exposure_token = bind_memory_exposure(memory_exposure_id)
+
             # Create system prompt (no vector context)
             system_prompt = await self.create_system_prompt(user_id=user_id, session_id=session_id, **kwargs)
+            if memory_context:
+                system_prompt = f"{system_prompt}\n\n{memory_context}"
             self._capture_rendered_prompt(system_prompt)
 
             # Configure LLM if needed
@@ -896,12 +973,24 @@ class BaseBot(AbstractBot):
                         compaction_result,
                         self.estimate_prompt_tokens(rendered_history, system_prompt, question),
                     )
+                _stored_text = await self._stored_turn_text(final, _plain_answer)
                 await self._persist_finalized_turn(
-                    final, question=question, user_id=user_id, session_id=session_id, turn_id=turn_id,
+                    final,
+                    question=question,
+                    user_id=user_id,
+                    session_id=session_id,
+                    turn_id=turn_id,
                     use_history=bool(use_conversation_history and memory),
                     context_used=None,  # invoke does not use vector context
-                    compaction=_commit, output_mode=None, started=_invoke_started,
-                    assistant_text=await self._stored_turn_text(final, _plain_answer),
+                    compaction=_commit,
+                    output_mode=None,
+                    started=_invoke_started,
+                    assistant_text=_stored_text,
+                )
+                await self._complete_agent_memory(
+                    scope=_memory_scope,
+                    question=question,
+                    response_text=_stored_text,
                 )
                 return final
 
@@ -916,6 +1005,12 @@ class BaseBot(AbstractBot):
             self._trigger_event(self.EVENT_TASK_FAILED, agent_name=self.name, error=str(e), session_id=session_id)
             raise
         finally:
+            if _memory_context_exposure_token is not None:
+                reset_memory_exposure(_memory_context_exposure_token)
+            if _memory_exposure_token is not None:
+                reset_memory_exposure(_memory_exposure_token)
+            if _memory_scope_token is not None:
+                reset_memory_scope(_memory_scope_token)
             self._exit_task_turn(_task_turn)
             self.status = AgentStatus.IDLE
             if _tenant_token is not None:
@@ -1186,6 +1281,7 @@ class BaseBot(AbstractBot):
         _user_token = _session_token = _memkey_token = None
         _tenant_token = None
         _generic_tenant_token = None
+        _memory_scope_token = _memory_exposure_token = _memory_context_exposure_token = None
         # FEAT-707: a /trigger skill set during this call never outlives it,
         # even when the call fails before create_system_prompt() consumes it.
         from parrot.skills.tenancy import enter_active_skill_scope, exit_active_skill_scope
@@ -1219,6 +1315,8 @@ class BaseBot(AbstractBot):
                     # Agent-level default (constructor output_mode=...) applies
                     # when neither the caller nor the router picked a mode.
                     output_mode = self._apply_default_output_mode(output_mode)
+            # Retain transport identity before the history-only anonymous fallback.
+            _memory_user_id = user_id
             # Generate session ID if not provided
             session_id = session_id or str(uuid.uuid4())
             user_id = user_id or "anonymous"
@@ -1228,6 +1326,13 @@ class BaseBot(AbstractBot):
             # exception or a cancelled stream.
             _task_turn = self._enter_task_turn(user_id, session_id)
             turn_id = kwargs.pop("turn_id", None) or str(uuid.uuid4())
+            _memory_scope = self._memory_request_scope(
+                user_id=_memory_user_id,
+                session_id=session_id,
+                turn_id=turn_id,
+            )
+            _memory_scope_token = bind_memory_scope(_memory_scope)
+            _memory_exposure_token = bind_memory_exposure(None)
             # FEAT-525: bind AFTER defaulting (binding-order hazard, spec §7) —
             # user_id/session_id ContextVars: per-user usage attribution in OTEL spans.
             _user_token = current_user_id.set(user_id)
@@ -1385,15 +1490,11 @@ class BaseBot(AbstractBot):
                 len(kb_context or ""),
             )
 
-            # Pre-LLM: retrieve long-term memory context if mixin is active
-            memory_context = ""
+            # Pre-LLM: retrieve the one scoped supplementary memory context.
             phase_started = time.perf_counter()
-            if hasattr(self, "get_memory_context") and hasattr(self, "_memory_manager") and self._memory_manager:
-                try:
-                    memory_context = await self.get_memory_context(question, user_id, session_id)
-                except Exception as _mem_exc:
-                    self.logger.warning("Failed to get long-term memory context: %s", _mem_exc)
-                    memory_context = ""
+            memory_context, memory_exposure_id = await self._prepare_agent_memory(question, _memory_scope)
+            if memory_exposure_id is not None:
+                _memory_context_exposure_token = bind_memory_exposure(memory_exposure_id)
             self.logger.debug(
                 "[%s] ask timing: long_term_memory_ms=%.1f context_chars=%d",
                 self.name,
@@ -1777,12 +1878,24 @@ class BaseBot(AbstractBot):
                         compaction_result,
                         self.estimate_prompt_tokens(rendered_history, system_prompt, question),
                     )
+                _stored_text = await self._stored_turn_text(response, _plain_answer)
                 await self._persist_finalized_turn(
-                    response, question=question, user_id=user_id, session_id=session_id, turn_id=turn_id,
+                    response,
+                    question=question,
+                    user_id=user_id,
+                    session_id=session_id,
+                    turn_id=turn_id,
                     use_history=bool(use_conversation_history and memory),
                     context_used=vector_context if use_vector_context else None,
-                    compaction=_commit, output_mode=output_mode, started=_ask_started_ms,
-                    assistant_text=await self._stored_turn_text(response, _plain_answer),
+                    compaction=_commit,
+                    output_mode=output_mode,
+                    started=_ask_started_ms,
+                    assistant_text=_stored_text,
+                )
+                await self._complete_agent_memory(
+                    scope=_memory_scope,
+                    question=question,
+                    response_text=_stored_text,
                 )
                 self.logger.debug(
                     "[%s] ask timing: memory_add_turn_ms=%.1f",
@@ -1905,6 +2018,12 @@ class BaseBot(AbstractBot):
             self._trigger_event(self.EVENT_TASK_FAILED, agent_name=self.name, error=str(e), session_id=session_id)
             raise
         finally:
+            if _memory_context_exposure_token is not None:
+                reset_memory_exposure(_memory_context_exposure_token)
+            if _memory_exposure_token is not None:
+                reset_memory_exposure(_memory_exposure_token)
+            if _memory_scope_token is not None:
+                reset_memory_scope(_memory_scope_token)
             # FEAT-707: tenant + active-skill resets run first, so a failing
             # reset below can never leave them bound.
             _exit = getattr(self, "_exit_skill_tenant", None)
@@ -1964,6 +2083,7 @@ class BaseBot(AbstractBot):
         _user_token = _session_token = _memkey_token = None
         _tenant_token = None
         _generic_tenant_token = None
+        _memory_scope_token = _memory_exposure_token = _memory_context_exposure_token = None
         # FEAT-707: a /trigger skill set during this call never outlives it,
         # even when the call fails before create_system_prompt() consumes it.
         from parrot.skills.tenancy import enter_active_skill_scope, exit_active_skill_scope
@@ -1981,6 +2101,7 @@ class BaseBot(AbstractBot):
             # applies when the caller did not specify one. ask_stream has no
             # router pass, so the agent default is the only fallback here.
             output_mode = self._apply_default_output_mode(output_mode)
+            _memory_user_id = user_id
             session_id = session_id or str(uuid.uuid4())
             user_id = user_id or "anonymous"
             # FEAT-538: bracket the whole turn. Inert (returns None) when
@@ -1995,6 +2116,13 @@ class BaseBot(AbstractBot):
             _memkey_token = current_memory_key_id.set(self.memory_key_id)
             # Maintain turn identifier generation for parity with ask()
             _turn_id = kwargs.pop("turn_id", None) or str(uuid.uuid4())
+            _memory_scope = self._memory_request_scope(
+                user_id=_memory_user_id,
+                session_id=session_id,
+                turn_id=_turn_id,
+            )
+            _memory_scope_token = bind_memory_scope(_memory_scope)
+            _memory_exposure_token = bind_memory_exposure(None)
             _trusted_source = kwargs.pop("_trusted_source", False)
             # FEAT-752 rev 0.3: stream trailer — compute chips after the final envelope (handler opt-in).
             _defer_suggestions = bool(kwargs.pop("defer_suggestions", False))
@@ -2064,6 +2192,10 @@ class BaseBot(AbstractBot):
                 # identical to the FEAT-524 plain render otherwise.
                 rendered_history, compaction_result = await self.render_context_history(conversation_history)
 
+            memory_context, memory_exposure_id = await self._prepare_agent_memory(question, _memory_scope)
+            if memory_exposure_id is not None:
+                _memory_context_exposure_token = bind_memory_exposure(memory_exposure_id)
+
             # Build context from different sources
             vector_metadata = {"activated_kbs": []}
 
@@ -2087,6 +2219,8 @@ class BaseBot(AbstractBot):
                 user_id=user_id,
                 session_id=session_id,
             )
+            if memory_context:
+                user_context = f"{user_context}\n\n{memory_context}" if user_context else memory_context
 
             # Get knowledge base context
             kb_context, kb_meta = await self._build_kb_context(
@@ -2307,6 +2441,12 @@ class BaseBot(AbstractBot):
                                 self.estimate_prompt_tokens(rendered_history, system_prompt, question),
                             )
                         await _save_stream_turn(str(stream_error) if stream_error else None, commit)
+                    if full_response and stream_error is None and not _stream_blocked and not _budget_exhausted_stream:
+                        await self._complete_agent_memory(
+                            scope=_memory_scope,
+                            question=question,
+                            response_text=full_response,
+                        )
 
                     if ai_message is None:
                         # Defensive fallback: client did not yield an AIMessage sentinel
@@ -2442,6 +2582,12 @@ class BaseBot(AbstractBot):
             )
             raise
         finally:
+            if _memory_context_exposure_token is not None:
+                reset_memory_exposure(_memory_context_exposure_token)
+            if _memory_exposure_token is not None:
+                reset_memory_exposure(_memory_exposure_token)
+            if _memory_scope_token is not None:
+                reset_memory_scope(_memory_scope_token)
             # FEAT-707: tenant + active-skill resets run first, so a failing
             # reset below can never leave them bound.
             _exit = getattr(self, "_exit_skill_tenant", None)
