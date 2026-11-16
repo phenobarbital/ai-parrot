@@ -119,6 +119,7 @@ Guidelines:
 # Factory
 # ---------------------------------------------------------------------------
 
+
 async def create_advisor_bot() -> GorillaAdvisorBot:
     """Create and configure the full Gorilla Sheds advisor bot.
 
@@ -135,8 +136,7 @@ async def create_advisor_bot() -> GorillaAdvisorBot:
     page_index_path = DATA_DIR / "page_index.json"
     if not page_index_path.exists():
         raise FileNotFoundError(
-            f"PageIndex not found at {page_index_path}. "
-            "Run `python examples/shoply/scraper.py` first."
+            f"PageIndex not found at {page_index_path}. " "Run `python examples/shoply/scraper.py` first."
         )
     tree_data = json.loads(page_index_path.read_text(encoding="utf-8"))
 
@@ -179,21 +179,27 @@ async def create_advisor_bot() -> GorillaAdvisorBot:
 
     # 7. Configure IntentRouterMixin with capability registry
     registry = CapabilityRegistry()
-    registry.register(CapabilityEntry(
-        name="product_catalog",
-        description="Search and browse Gorilla Sheds product catalog with hybrid semantic + filter search.",
-        resource_type=ResourceType.VECTOR_COLLECTION,
-    ))
-    registry.register(CapabilityEntry(
-        name="page_index",
-        description="Navigate company info, FAQ, installation guide, and product details via tree search.",
-        resource_type=ResourceType.PAGEINDEX,
-    ))
-    registry.register(CapabilityEntry(
-        name="advisor_tools",
-        description="Guided product selection wizard: start selection, apply criteria, compare, recommend.",
-        resource_type=ResourceType.TOOL,
-    ))
+    registry.register(
+        CapabilityEntry(
+            name="product_catalog",
+            description="Search and browse Gorilla Sheds product catalog with hybrid semantic + filter search.",
+            resource_type=ResourceType.VECTOR_COLLECTION,
+        )
+    )
+    registry.register(
+        CapabilityEntry(
+            name="page_index",
+            description="Navigate company info, FAQ, installation guide, and product details via tree search.",
+            resource_type=ResourceType.PAGEINDEX,
+        )
+    )
+    registry.register(
+        CapabilityEntry(
+            name="advisor_tools",
+            description="Guided product selection wizard: start selection, apply criteria, compare, recommend.",
+            resource_type=ResourceType.TOOL,
+        )
+    )
 
     router_config = IntentRouterConfig(
         confidence_threshold=0.6,
@@ -259,6 +265,7 @@ async def create_advisor_bot() -> GorillaAdvisorBot:
 # ---------------------------------------------------------------------------
 # Interactive chat loop
 # ---------------------------------------------------------------------------
+
 
 async def chat_session(bot: GorillaAdvisorBot) -> None:
     """Run an interactive chat loop with the advisor bot.
@@ -339,6 +346,7 @@ async def chat_session(bot: GorillaAdvisorBot) -> None:
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
 
 async def main() -> None:
     """Main entry point: create bot and start chat."""

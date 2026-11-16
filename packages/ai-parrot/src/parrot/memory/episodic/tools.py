@@ -4,6 +4,7 @@ Exposes episodic memory operations as agent-callable tools via AbstractToolkit.
 LLM agents can search past experiences, record lessons, and retrieve warnings
 during their reasoning loop.
 """
+
 from __future__ import annotations
 
 import logging
@@ -75,9 +76,7 @@ class EpisodicMemoryToolkit(AbstractToolkit):
 
             lines = []
             for i, ep in enumerate(results, 1):
-                outcome_icon = (
-                    "FAIL" if ep.is_failure else "OK"
-                )
+                outcome_icon = "FAIL" if ep.is_failure else "OK"
                 line = f"{i}. [{outcome_icon}] {ep.situation[:120]}"
                 line += f"\n   Action: {ep.action_taken[:120]}"
                 if ep.lesson_learned:
@@ -142,8 +141,7 @@ class EpisodicMemoryToolkit(AbstractToolkit):
             )
 
             return (
-                f"Lesson recorded (id: {episode.episode_id[:8]}). "
-                f"Category: {cat.value}, importance: {importance}."
+                f"Lesson recorded (id: {episode.episode_id[:8]}). " f"Category: {cat.value}, importance: {importance}."
             )
 
         except Exception as e:

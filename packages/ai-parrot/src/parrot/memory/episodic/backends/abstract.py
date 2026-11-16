@@ -1,4 +1,5 @@
 """Abstract backend protocol for episodic memory storage."""
+
 from __future__ import annotations
 
 from datetime import datetime

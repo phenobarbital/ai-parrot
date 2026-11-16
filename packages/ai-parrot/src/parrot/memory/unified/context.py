@@ -3,6 +3,7 @@
 Assembles context from multiple memory subsystems (episodic, skills,
 conversation) while respecting a configurable token budget.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -74,12 +75,7 @@ class ContextAssembler:
         Returns:
             MemoryContext with filled sections and accurate token accounting.
         """
-        if (
-            not episodic_warnings
-            and not relevant_skills
-            and not conversation
-            and not semantic_knowledge
-        ):
+        if not episodic_warnings and not relevant_skills and not conversation and not semantic_knowledge:
             logger.debug("ContextAssembler: all inputs empty, returning empty context")
             return MemoryContext(tokens_budget=self.config.max_context_tokens)
 
@@ -88,23 +84,17 @@ class ContextAssembler:
 
         # --- Priority 1: episodic warnings ---
         episodic_budget = int(budget * cfg.episodic_weight)
-        filled_episodic, episodic_tokens = self._fill_section(
-            episodic_warnings, episodic_budget
-        )
+        filled_episodic, episodic_tokens = self._fill_section(episodic_warnings, episodic_budget)
         rollover = episodic_budget - episodic_tokens
 
         # --- Priority 2: relevant skills (gets episodic rollover) ---
         skills_budget = int(budget * cfg.skill_weight) + rollover
-        filled_skills, skills_tokens = self._fill_section(
-            relevant_skills, skills_budget
-        )
+        filled_skills, skills_tokens = self._fill_section(relevant_skills, skills_budget)
         rollover = skills_budget - skills_tokens
 
         # --- Priority 3: brain knowledge (gets skills rollover) ---
         brain_budget = int(budget * cfg.brain_weight) + rollover
-        filled_brain, brain_tokens = self._fill_section(
-            semantic_knowledge, brain_budget
-        )
+        filled_brain, brain_tokens = self._fill_section(semantic_knowledge, brain_budget)
 
         # --- Priority 4: conversation (gets whatever's left) ---
         conv_budget = budget - episodic_tokens - skills_tokens - brain_tokens
@@ -113,8 +103,7 @@ class ContextAssembler:
         total_tokens = episodic_tokens + skills_tokens + brain_tokens + conv_tokens
 
         logger.debug(
-            "ContextAssembler: assembled %d tokens "
-            "(episodic=%d, skills=%d, brain=%d, conv=%d, budget=%d)",
+            "ContextAssembler: assembled %d tokens " "(episodic=%d, skills=%d, brain=%d, conv=%d, budget=%d)",
             total_tokens,
             episodic_tokens,
             skills_tokens,

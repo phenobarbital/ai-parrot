@@ -3,6 +3,7 @@
 In-memory FAISS index + dict storage with optional disk persistence.
 Namespace filters are applied post-search since FAISS has no SQL.
 """
+
 from __future__ import annotations
 
 import json
@@ -34,15 +35,10 @@ except ImportError:
 def _ensure_faiss() -> None:
     """Raise ImportError with helpful message if faiss is not installed."""
     if not _FAISS_AVAILABLE:
-        raise ImportError(
-            "faiss-cpu is required for FAISSBackend. "
-            "Install it with: uv pip install faiss-cpu"
-        )
+        raise ImportError("faiss-cpu is required for FAISSBackend. " "Install it with: uv pip install faiss-cpu")
 
 
-def _matches_filter(
-    episode: EpisodicMemory, namespace_filter: dict[str, Any]
-) -> bool:
+def _matches_filter(episode: EpisodicMemory, namespace_filter: dict[str, Any]) -> bool:
     """Check if an episode matches all fields in the namespace filter."""
     for field, value in namespace_filter.items():
         if getattr(episode, field, None) != value:
@@ -132,10 +128,7 @@ class FAISSBackend:
             self._id_order.append(episode.episode_id)
 
         self._store_count += 1
-        if (
-            self._persistence_path
-            and self._store_count % self._auto_save_interval == 0
-        ):
+        if self._persistence_path and self._store_count % self._auto_save_interval == 0:
             await self.save()
 
         return episode.episode_id
@@ -197,8 +190,7 @@ class FAISSBackend:
         matching = [
             ep
             for ep in self._episodes.values()
-            if _matches_filter(ep, namespace_filter)
-            and (since is None or ep.created_at > since)
+            if _matches_filter(ep, namespace_filter) and (since is None or ep.created_at > since)
         ]
         matching.sort(key=lambda ep: ep.created_at, reverse=True)
         return matching[:limit]
@@ -213,9 +205,7 @@ class FAISSBackend:
         failures = [
             ep
             for ep in self._episodes.values()
-            if ep.is_failure
-            and ep.agent_id == agent_id
-            and ep.tenant_id == tenant_id
+            if ep.is_failure and ep.agent_id == agent_id and ep.tenant_id == tenant_id
         ]
         failures.sort(key=lambda ep: ep.created_at, reverse=True)
         return failures[:limit]
@@ -224,9 +214,7 @@ class FAISSBackend:
         """Delete episodes past their expires_at timestamp."""
         now = datetime.now(timezone.utc)
         expired_ids = [
-            ep.episode_id
-            for ep in self._episodes.values()
-            if ep.expires_at is not None and ep.expires_at < now
+            ep.episode_id for ep in self._episodes.values() if ep.expires_at is not None and ep.expires_at < now
         ]
         for eid in expired_ids:
             self._episodes.pop(eid, None)
@@ -239,11 +227,7 @@ class FAISSBackend:
 
     async def count(self, namespace_filter: dict[str, Any]) -> int:
         """Count episodes matching a namespace filter."""
-        return sum(
-            1
-            for ep in self._episodes.values()
-            if _matches_filter(ep, namespace_filter)
-        )
+        return sum(1 for ep in self._episodes.values() if _matches_filter(ep, namespace_filter))
 
     async def update_metadata(
         self,
@@ -301,9 +285,7 @@ class FAISSBackend:
         with open(order_path, "w") as f:
             json.dump(self._id_order, f)
 
-        logger.debug(
-            "Saved %d episodes to %s", len(self._episodes), self._persistence_path
-        )
+        logger.debug("Saved %d episodes to %s", len(self._episodes), self._persistence_path)
 
     async def load(self) -> None:
         """Load FAISS index and episodes from disk."""
@@ -339,13 +321,9 @@ class FAISSBackend:
                 self._id_order = json.load(f)
         else:
             # Reconstruct from episodes that have embeddings
-            self._id_order = [
-                eid for eid, ep in self._episodes.items() if ep.embedding
-            ]
+            self._id_order = [eid for eid, ep in self._episodes.items() if ep.embedding]
 
-        logger.debug(
-            "Loaded %d episodes from %s", len(self._episodes), self._persistence_path
-        )
+        logger.debug("Loaded %d episodes from %s", len(self._episodes), self._persistence_path)
 
     # ── Internal helpers ──
 

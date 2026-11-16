@@ -5,6 +5,7 @@ and RediSearch FT.SEARCH for namespace-filtered vector similarity search.
 
 Requires Redis Stack with the RediSearch module installed.
 """
+
 from __future__ import annotations
 
 import json
@@ -112,11 +113,7 @@ def _hash_to_episode(data: dict[str, Any]) -> EpisodicMemory:
         EpisodicMemory instance.
     """
     expires_ts = float(data.get("expires_at", -1))
-    expires_at = (
-        datetime.fromtimestamp(expires_ts, tz=timezone.utc)
-        if expires_ts > 0
-        else None
-    )
+    expires_at = datetime.fromtimestamp(expires_ts, tz=timezone.utc) if expires_ts > 0 else None
 
     embedding_bytes = data.get("embedding", b"")
     embedding = _bytes_to_embedding(embedding_bytes) if embedding_bytes else None
@@ -217,11 +214,7 @@ class RedisVectorBackend:
         # Verify RediSearch is available
         try:
             modules = await self._redis.execute_command("MODULE LIST")
-            has_search = any(
-                b"search" in (m[1] if isinstance(m, list) else m).lower()
-                for m in (modules or [])
-                if m
-            )
+            has_search = any(b"search" in (m[1] if isinstance(m, list) else m).lower() for m in (modules or []) if m)
             if not has_search:
                 raise RuntimeError(
                     "RediSearch module not found on Redis server. "
@@ -403,13 +396,22 @@ class RedisVectorBackend:
             embedding_bytes = _embedding_to_bytes(embedding)
 
             raw = await self._redis.execute_command(
-                "FT.SEARCH", self._index_name,
+                "FT.SEARCH",
+                self._index_name,
                 query,
-                "PARAMS", "2", "vec", embedding_bytes,
-                "SORTBY", "vector_score",
-                "LIMIT", "0", str(top_k),
-                "RETURN", "0",
-                "DIALECT", "2",
+                "PARAMS",
+                "2",
+                "vec",
+                embedding_bytes,
+                "SORTBY",
+                "vector_score",
+                "LIMIT",
+                "0",
+                str(top_k),
+                "RETURN",
+                "0",
+                "DIALECT",
+                "2",
             )
 
             if not raw or len(raw) < 2:
@@ -499,12 +501,19 @@ class RedisVectorBackend:
             query_filter = " ".join(filter_parts) if filter_parts else "*"
 
             raw = await self._redis.execute_command(
-                "FT.SEARCH", self._index_name,
+                "FT.SEARCH",
+                self._index_name,
                 query_filter,
-                "SORTBY", "created_at", "DESC",
-                "LIMIT", "0", str(limit),
-                "RETURN", "0",
-                "DIALECT", "2",
+                "SORTBY",
+                "created_at",
+                "DESC",
+                "LIMIT",
+                "0",
+                str(limit),
+                "RETURN",
+                "0",
+                "DIALECT",
+                "2",
             )
 
             if not raw or len(raw) < 2:
@@ -577,11 +586,16 @@ class RedisVectorBackend:
             now = datetime.now(timezone.utc).timestamp()
             # Find expired episodes via RediSearch
             raw = await self._redis.execute_command(
-                "FT.SEARCH", self._index_name,
+                "FT.SEARCH",
+                self._index_name,
                 f"@expires_at:[-inf ({now}]",
-                "LIMIT", "0", "1000",
-                "RETURN", "0",
-                "DIALECT", "2",
+                "LIMIT",
+                "0",
+                "1000",
+                "RETURN",
+                "0",
+                "DIALECT",
+                "2",
             )
 
             if not raw or len(raw) < 2:
@@ -626,9 +640,7 @@ class RedisVectorBackend:
             return 0
 
         if self._redis is None:
-            logger.warning(
-                "RedisVectorBackend not configured; update_metadata() returns 0"
-            )
+            logger.warning("RedisVectorBackend not configured; update_metadata() returns 0")
             return 0
 
         updated = 0
@@ -641,11 +653,7 @@ class RedisVectorBackend:
                     if not await self._redis.exists(key):
                         continue
                     raw_metadata = b"{}"
-                current = json.loads(
-                    raw_metadata.decode()
-                    if isinstance(raw_metadata, bytes)
-                    else raw_metadata
-                )
+                current = json.loads(raw_metadata.decode() if isinstance(raw_metadata, bytes) else raw_metadata)
                 current.update(patch)
                 await self._redis.hset(key, "metadata", json.dumps(current))
                 updated += 1
@@ -681,10 +689,14 @@ class RedisVectorBackend:
             query_filter = " ".join(filter_parts) if filter_parts else "*"
 
             raw = await self._redis.execute_command(
-                "FT.SEARCH", self._index_name,
+                "FT.SEARCH",
+                self._index_name,
                 query_filter,
-                "LIMIT", "0", "0",
-                "DIALECT", "2",
+                "LIMIT",
+                "0",
+                "0",
+                "DIALECT",
+                "2",
             )
 
             # FT.SEARCH with LIMIT 0 0 returns [total_count]

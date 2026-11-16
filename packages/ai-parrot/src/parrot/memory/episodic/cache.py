@@ -7,6 +7,7 @@ Caches recent episodes and failures per namespace using Redis data structures:
 
 All operations degrade gracefully when Redis is unavailable.
 """
+
 from __future__ import annotations
 
 import json
@@ -69,9 +70,7 @@ class EpisodeRedisCache:
             parts.append(f"crew:{namespace.crew_id}")
         return ":".join(parts)
 
-    async def cache_episode(
-        self, namespace: MemoryNamespace, episode: EpisodicMemory
-    ) -> None:
+    async def cache_episode(self, namespace: MemoryNamespace, episode: EpisodicMemory) -> None:
         """Cache an episode in Redis.
 
         Stores the episode as a HASH, adds it to the recent ZSET,
@@ -109,9 +108,7 @@ class EpisodeRedisCache:
         except Exception as e:
             logger.warning("Redis cache_episode failed: %s", e)
 
-    async def get_recent(
-        self, namespace: MemoryNamespace, limit: int = 10
-    ) -> list[EpisodicMemory] | None:
+    async def get_recent(self, namespace: MemoryNamespace, limit: int = 10) -> list[EpisodicMemory] | None:
         """Get recent episodes from the cache.
 
         Args:
@@ -133,9 +130,7 @@ class EpisodeRedisCache:
             logger.warning("Redis get_recent failed: %s", e)
             return None
 
-    async def get_failures(
-        self, namespace: MemoryNamespace, limit: int = 5
-    ) -> list[EpisodicMemory] | None:
+    async def get_failures(self, namespace: MemoryNamespace, limit: int = 5) -> list[EpisodicMemory] | None:
         """Get cached failure episodes.
 
         Args:
@@ -156,9 +151,7 @@ class EpisodeRedisCache:
             logger.warning("Redis get_failures failed: %s", e)
             return None
 
-    async def get_episode(
-        self, namespace: MemoryNamespace, episode_id: str
-    ) -> EpisodicMemory | None:
+    async def get_episode(self, namespace: MemoryNamespace, episode_id: str) -> EpisodicMemory | None:
         """Get a single cached episode.
 
         Args:
@@ -199,16 +192,10 @@ class EpisodeRedisCache:
             episode_ids = set()
             zset_ids = await self._redis.zrange(recent_key, 0, -1)
             if zset_ids:
-                episode_ids.update(
-                    eid.decode("utf-8") if isinstance(eid, bytes) else eid
-                    for eid in zset_ids
-                )
+                episode_ids.update(eid.decode("utf-8") if isinstance(eid, bytes) else eid for eid in zset_ids)
             list_ids = await self._redis.lrange(failures_key, 0, -1)
             if list_ids:
-                episode_ids.update(
-                    eid.decode("utf-8") if isinstance(eid, bytes) else eid
-                    for eid in list_ids
-                )
+                episode_ids.update(eid.decode("utf-8") if isinstance(eid, bytes) else eid for eid in list_ids)
 
             # Delete all keys
             keys_to_delete = [recent_key, failures_key]
@@ -220,9 +207,7 @@ class EpisodeRedisCache:
         except Exception as e:
             logger.warning("Redis invalidate failed: %s", e)
 
-    async def _fetch_episodes(
-        self, namespace: MemoryNamespace, episode_ids: list[Any]
-    ) -> list[EpisodicMemory] | None:
+    async def _fetch_episodes(self, namespace: MemoryNamespace, episode_ids: list[Any]) -> list[EpisodicMemory] | None:
         """Fetch multiple episodes by ID from Redis.
 
         Returns None if no episodes could be retrieved.

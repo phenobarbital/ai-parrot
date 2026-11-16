@@ -1,4 +1,5 @@
 """Unit tests for ContextAssembler — priority-based token budgeting."""
+
 import hashlib
 
 import pytest
@@ -58,8 +59,8 @@ class TestContextAssembler:
         assembler = ContextAssembler(MemoryConfig(max_context_tokens=50))
         ctx = assembler.assemble(
             episodic_warnings="A" * 100,  # 25 tokens
-            relevant_skills="B" * 200,   # 50 tokens
-            conversation="C" * 200,      # 50 tokens
+            relevant_skills="B" * 200,  # 50 tokens
+            conversation="C" * 200,  # 50 tokens
         )
         assert len(ctx.episodic_warnings) > 0
         assert ctx.tokens_used <= 50
@@ -118,6 +119,7 @@ class TestContextAssembler:
     def test_import(self):
         """Import path works as specified."""
         from parrot.memory.unified.context import ContextAssembler as CA  # noqa: F401
+
         assert CA is ContextAssembler
 
     def test_whole_block_budget_and_digest(self):

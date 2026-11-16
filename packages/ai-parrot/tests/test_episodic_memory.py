@@ -4,6 +4,7 @@ Covers all modules: models, FAISS backend, embedding, reflection,
 Redis cache, store orchestrator, tools, and mixin.
 All tests use mocked/in-memory components — no real PostgreSQL or Redis required.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -36,8 +37,8 @@ from parrot.memory.episodic.tools import EpisodicMemoryToolkit
 from parrot.memory.unified.models import MemoryContext
 from parrot.tools.abstract import ToolResult
 
-
 # ── Helpers ──
+
 
 def _random_embedding(dim: int = 384) -> list[float]:
     """Generate a random L2-normalized embedding vector."""
@@ -132,7 +133,7 @@ class MockRedis:
             stop = len(sorted_items) + stop
         if stop < 0:
             return 0
-        to_remove = sorted_items[start:stop + 1]
+        to_remove = sorted_items[start : stop + 1]
         for name, _ in to_remove:
             zs.pop(name, None)
         return len(to_remove)
@@ -145,7 +146,7 @@ class MockRedis:
 
     async def ltrim(self, key: str, start: int, stop: int) -> None:
         if key in self._lists:
-            self._lists[key] = self._lists[key][start:stop + 1]
+            self._lists[key] = self._lists[key][start : stop + 1]
 
     async def lrange(self, key: str, start: int, stop: int) -> list[str]:
         lst = self._lists.get(key, [])
@@ -244,6 +245,7 @@ class MockReflectionEngine:
 
 # ── Fixtures ──
 
+
 @pytest.fixture
 def sample_namespace() -> MemoryNamespace:
     """MemoryNamespace for testing."""
@@ -337,8 +339,13 @@ class TestModels:
     def test_episode_category_enum(self) -> None:
         """All EpisodeCategory values are valid strings."""
         expected = {
-            "tool_execution", "query_resolution", "error_recovery",
-            "user_preference", "workflow_pattern", "decision", "handoff",
+            "tool_execution",
+            "query_resolution",
+            "error_recovery",
+            "user_preference",
+            "workflow_pattern",
+            "decision",
+            "handoff",
         }
         actual = {c.value for c in EpisodeCategory}
         assert actual == expected
@@ -370,33 +377,17 @@ class TestModels:
 
     def test_namespace_scope_label(self) -> None:
         """Correct label at each scope level."""
-        assert MemoryNamespace(
-            tenant_id="t", agent_id="a"
-        ).scope_label == "agent:a"
-        assert MemoryNamespace(
-            tenant_id="t", agent_id="a", user_id="u"
-        ).scope_label == "user:u"
-        assert MemoryNamespace(
-            tenant_id="t", agent_id="a", room_id="r"
-        ).scope_label == "room:r"
-        assert MemoryNamespace(
-            tenant_id="t", agent_id="a", session_id="s", user_id="u"
-        ).scope_label == "session:s"
-        assert MemoryNamespace(
-            tenant_id="t", agent_id="a", crew_id="c"
-        ).scope_label == "crew:c"
+        assert MemoryNamespace(tenant_id="t", agent_id="a").scope_label == "agent:a"
+        assert MemoryNamespace(tenant_id="t", agent_id="a", user_id="u").scope_label == "user:u"
+        assert MemoryNamespace(tenant_id="t", agent_id="a", room_id="r").scope_label == "room:r"
+        assert MemoryNamespace(tenant_id="t", agent_id="a", session_id="s", user_id="u").scope_label == "session:s"
+        assert MemoryNamespace(tenant_id="t", agent_id="a", crew_id="c").scope_label == "crew:c"
 
     def test_namespace_redis_prefix(self) -> None:
         """Correct Redis prefix at each scope level."""
-        assert MemoryNamespace(
-            tenant_id="t", agent_id="a"
-        ).redis_prefix == "t:a"
-        assert MemoryNamespace(
-            tenant_id="t", agent_id="a", user_id="u"
-        ).redis_prefix == "t:a:user:u"
-        assert MemoryNamespace(
-            tenant_id="t", agent_id="a", room_id="r"
-        ).redis_prefix == "t:a:room:r"
+        assert MemoryNamespace(tenant_id="t", agent_id="a").redis_prefix == "t:a"
+        assert MemoryNamespace(tenant_id="t", agent_id="a", user_id="u").redis_prefix == "t:a:user:u"
+        assert MemoryNamespace(tenant_id="t", agent_id="a", room_id="r").redis_prefix == "t:a:room:r"
 
     def test_episode_searchable_text(self) -> None:
         """Concatenates situation + action + lesson."""
@@ -486,9 +477,7 @@ class TestFAISSBackend:
             backend2 = FAISSBackend(dimension=384, persistence_path=tmpdir)
             await backend2.load()
 
-            count = await backend2.count(
-                {"tenant_id": "test", "agent_id": "test-agent"}
-            )
+            count = await backend2.count({"tenant_id": "test", "agent_id": "test-agent"})
             assert count == 1
 
             results = await backend2.search_similar(
@@ -516,9 +505,7 @@ class TestFAISSBackend:
             await backend.store(ep)
             episodes.append(ep)
 
-        total = await backend.count(
-            {"tenant_id": "test", "agent_id": "test-agent"}
-        )
+        total = await backend.count({"tenant_id": "test", "agent_id": "test-agent"})
         assert total <= 3
 
     @pytest.mark.asyncio
@@ -540,9 +527,7 @@ class TestFAISSBackend:
         await faiss_backend.store(success_ep)
         await faiss_backend.store(failure_ep)
 
-        failures = await faiss_backend.get_failures(
-            agent_id="test-agent", tenant_id="test"
-        )
+        failures = await faiss_backend.get_failures(agent_id="test-agent", tenant_id="test")
         assert len(failures) == 1
         assert failures[0].is_failure is True
         assert failures[0].episode_id == failure_ep.episode_id
@@ -611,25 +596,25 @@ class TestReflection:
     async def test_reflection_llm_success(self) -> None:
         """Mock LLM returns structured ReflectionResult."""
         mock_client = AsyncMock()
-        mock_client.ask = AsyncMock(return_value={
-            "content": [
-                {
-                    "type": "text",
-                    "text": json.dumps({
-                        "reflection": "The action succeeded well",
-                        "lesson_learned": "Keep doing this",
-                        "suggested_action": "Continue this approach",
-                    }),
-                }
-            ]
-        })
+        mock_client.ask = AsyncMock(
+            return_value={
+                "content": [
+                    {
+                        "type": "text",
+                        "text": json.dumps(
+                            {
+                                "reflection": "The action succeeded well",
+                                "lesson_learned": "Keep doing this",
+                                "suggested_action": "Continue this approach",
+                            }
+                        ),
+                    }
+                ]
+            }
+        )
 
-        engine = ReflectionEngine(
-            llm_client=mock_client, fallback_to_heuristic=True
-        )
-        result = await engine.reflect(
-            "Test situation", "Test action", EpisodeOutcome.SUCCESS
-        )
+        engine = ReflectionEngine(llm_client=mock_client, fallback_to_heuristic=True)
+        result = await engine.reflect("Test situation", "Test action", EpisodeOutcome.SUCCESS)
         assert isinstance(result, ReflectionResult)
         assert result.lesson_learned == "Keep doing this"
 
@@ -661,12 +646,8 @@ class TestReflection:
         mock_client = AsyncMock()
         mock_client.ask = AsyncMock(return_value=_FakeAIMessage(parsed))
 
-        engine = ReflectionEngine(
-            llm_client=mock_client, fallback_to_heuristic=True
-        )
-        result = await engine.reflect(
-            "Test situation", "Test action", EpisodeOutcome.SUCCESS
-        )
+        engine = ReflectionEngine(llm_client=mock_client, fallback_to_heuristic=True)
+        result = await engine.reflect("Test situation", "Test action", EpisodeOutcome.SUCCESS)
         assert isinstance(result, ReflectionResult)
         assert result.lesson_learned == "Keep doing this"
 
@@ -676,9 +657,7 @@ class TestReflection:
         mock_client = AsyncMock()
         mock_client.ask = AsyncMock(side_effect=RuntimeError("LLM unavailable"))
 
-        engine = ReflectionEngine(
-            llm_client=mock_client, fallback_to_heuristic=True
-        )
+        engine = ReflectionEngine(llm_client=mock_client, fallback_to_heuristic=True)
         result = await engine.reflect(
             "Test situation",
             "Test action",
@@ -759,9 +738,7 @@ class TestRedisCache:
         assert recent[0].episode_id == ep.episode_id
 
     @pytest.mark.asyncio
-    async def test_cache_failures(
-        self, redis_cache: EpisodeRedisCache, sample_namespace: MemoryNamespace
-    ) -> None:
+    async def test_cache_failures(self, redis_cache: EpisodeRedisCache, sample_namespace: MemoryNamespace) -> None:
         """Cache failure episode, retrieve via get_failures."""
         ep = _make_episode(
             outcome=EpisodeOutcome.FAILURE,
@@ -776,9 +753,7 @@ class TestRedisCache:
         assert failures[0].is_failure is True
 
     @pytest.mark.asyncio
-    async def test_cache_invalidation(
-        self, redis_cache: EpisodeRedisCache, sample_namespace: MemoryNamespace
-    ) -> None:
+    async def test_cache_invalidation(self, redis_cache: EpisodeRedisCache, sample_namespace: MemoryNamespace) -> None:
         """Invalidate namespace, verify cache miss."""
         ep = _make_episode()
         await redis_cache.cache_episode(sample_namespace, ep)
@@ -795,13 +770,9 @@ class TestRedisCache:
         assert recent_after is None
 
     @pytest.mark.asyncio
-    async def test_cache_max_recent(
-        self, mock_redis: MockRedis, sample_namespace: MemoryNamespace
-    ) -> None:
+    async def test_cache_max_recent(self, mock_redis: MockRedis, sample_namespace: MemoryNamespace) -> None:
         """Exceed max_recent, verify oldest evicted."""
-        cache = EpisodeRedisCache(
-            redis_client=mock_redis, default_ttl=3600, max_recent=3
-        )
+        cache = EpisodeRedisCache(redis_client=mock_redis, default_ttl=3600, max_recent=3)
 
         for i in range(5):
             ep = _make_episode(situation=f"Episode {i}")
@@ -813,9 +784,7 @@ class TestRedisCache:
         assert len(recent) <= 3
 
     @pytest.mark.asyncio
-    async def test_cache_graceful_degradation(
-        self, sample_namespace: MemoryNamespace
-    ) -> None:
+    async def test_cache_graceful_degradation(self, sample_namespace: MemoryNamespace) -> None:
         """Redis unavailable returns None, no exception."""
 
         class BrokenRedis:
@@ -875,9 +844,7 @@ class TestTools:
             outcome=EpisodeOutcome.SUCCESS,
         )
 
-        toolkit = EpisodicMemoryToolkit(
-            store=episodic_store, namespace=sample_namespace
-        )
+        toolkit = EpisodicMemoryToolkit(store=episodic_store, namespace=sample_namespace)
 
         result = await toolkit.search_episodic_memory(query="weather", top_k=5)
         assert isinstance(result, str)
@@ -891,9 +858,7 @@ class TestTools:
         sample_namespace: MemoryNamespace,
     ) -> None:
         """record_lesson stores episode with correct fields."""
-        toolkit = EpisodicMemoryToolkit(
-            store=episodic_store, namespace=sample_namespace
-        )
+        toolkit = EpisodicMemoryToolkit(store=episodic_store, namespace=sample_namespace)
 
         result = await toolkit.record_lesson(
             situation="User prefers markdown tables",
@@ -920,9 +885,7 @@ class TestTools:
             error_message="403 Forbidden",
         )
 
-        toolkit = EpisodicMemoryToolkit(
-            store=episodic_store, namespace=sample_namespace
-        )
+        toolkit = EpisodicMemoryToolkit(store=episodic_store, namespace=sample_namespace)
 
         result = await toolkit.get_warnings(context="accessing API endpoints")
         assert isinstance(result, str)

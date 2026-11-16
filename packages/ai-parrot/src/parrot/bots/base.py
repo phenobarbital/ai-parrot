@@ -40,6 +40,7 @@ from parrot.memory.agent_memory.runtime import (
     reset_memory_scope,
 )
 
+
 def _get_interactive_result_class() -> Optional[type]:
     """Lazy import of ``InteractiveRenderResult`` (avoids circular deps)."""
     try:
@@ -740,10 +741,16 @@ class BaseBot(AbstractBot):
                             self.estimate_prompt_tokens(rendered_history, system_prompt, question),
                         )
                     await self._persist_finalized_turn(
-                        final, question=question, user_id=user_id, session_id=session_id, turn_id=turn_id,
+                        final,
+                        question=question,
+                        user_id=user_id,
+                        session_id=session_id,
+                        turn_id=turn_id,
                         use_history=bool(use_conversation_history and memory),
                         context_used=vector_context if use_vector_context else None,
-                        compaction=_commit, output_mode=output_mode, started=_conv_started_ms,
+                        compaction=_commit,
+                        output_mode=output_mode,
+                        started=_conv_started_ms,
                         assistant_text=await self._stored_turn_text(final, _plain_answer),
                     )
                     return final
@@ -2383,13 +2390,19 @@ class BaseBot(AbstractBot):
                         # unsend chunks the caller already has, so `full_response` stays authoritative
                         # (single shared save+publish unit, FEAT-886).
                         await self._persist_turn_unit(
-                            user_id, session_id, turn, use_history=bool(use_conversation_history and memory),
+                            user_id,
+                            session_id,
+                            turn,
+                            use_history=bool(use_conversation_history and memory),
                             compaction=commit,
                             presentation=self._turn_presentation(
-                                ai_message, output_mode=output_mode, started=_stream_started_ms,
+                                ai_message,
+                                output_mode=output_mode,
+                                started=_stream_started_ms,
                                 fallback_output=full_response,
                             ),
                         )
+
                     # FEAT-550: True only when this ask_stream() ended via the
                     # BudgetExhausted->partial-AIMessage translation below —
                     # NOT whenever `ai_message` merely holds a normal terminal
@@ -2467,7 +2480,9 @@ class BaseBot(AbstractBot):
 
                     # Save conversation turn — also runs on partial/error so the
                     # accumulated text is not lost from memory.
-                    if (use_conversation_history and memory or self._publishes_turns(user_id, session_id)) and full_response:
+                    if (
+                        use_conversation_history and memory or self._publishes_turns(user_id, session_id)
+                    ) and full_response:
                         commit = None
                         if compaction_result is not None and stream_error is None:
                             commit = self.build_compaction_commit(

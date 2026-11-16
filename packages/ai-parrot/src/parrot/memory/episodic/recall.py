@@ -4,6 +4,7 @@ Defines the RecallStrategy protocol and provides two implementations:
 - SemanticOnlyStrategy: delegates directly to backend.search_similar() (default behavior)
 - HybridBM25Strategy: fuses BM25 lexical scores with semantic similarity
 """
+
 from __future__ import annotations
 
 import logging
@@ -392,8 +393,7 @@ class HybridBM25Strategy:
                 self._cache[key] = entry
             except ImportError:
                 logger.warning(
-                    "bm25s not installed; falling back to semantic-only search. "
-                    "Install with: pip install bm25s"
+                    "bm25s not installed; falling back to semantic-only search. " "Install with: pip install bm25s"
                 )
                 return await backend.search_similar(
                     embedding=query_embedding,

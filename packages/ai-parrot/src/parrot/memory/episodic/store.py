@@ -3,6 +3,7 @@
 Coordinates backend storage, embedding, reflection, and caching to provide
 a unified API for recording, recalling, and maintaining agent episodes.
 """
+
 from __future__ import annotations
 
 import json
@@ -247,9 +248,7 @@ class EpisodicMemoryStore:
         suggested_action = None
         if generate_reflection and self._reflection is not None:
             try:
-                result = await self._reflection.reflect(
-                    situation, action_taken, outcome, error_message
-                )
+                result = await self._reflection.reflect(situation, action_taken, outcome, error_message)
                 reflection = result.reflection
                 lesson_learned = result.lesson_learned
                 suggested_action = result.suggested_action
@@ -674,9 +673,7 @@ class EpisodicMemoryStore:
         situation = user_query or f"Tool execution: {tool_name}"
 
         # Summarize args (truncate long values)
-        summarized = {
-            k: str(v)[:100] for k, v in (tool_args or {}).items()
-        }
+        summarized = {k: str(v)[:100] for k, v in (tool_args or {}).items()}
         action_taken = f"Called {tool_name}({json.dumps(summarized)})"
 
         # Map outcome from explicit evidence only (FEAT-892 E4)
@@ -756,9 +753,7 @@ class EpisodicMemoryStore:
             agent_results = getattr(crew_result, "agent_results", None) or {}
             for agent_id, agent_result in agent_results.items():
                 agent_success = getattr(agent_result, "success", True)
-                agent_outcome = (
-                    EpisodeOutcome.SUCCESS if agent_success else EpisodeOutcome.FAILURE
-                )
+                agent_outcome = EpisodeOutcome.SUCCESS if agent_success else EpisodeOutcome.FAILURE
                 agent_ns = MemoryNamespace(
                     tenant_id=namespace.tenant_id,
                     agent_id=agent_id,
@@ -908,13 +903,9 @@ class EpisodicMemoryStore:
         for ep in sorted_failures:
             tool_info = f" (tool: {', '.join(ep.related_tools)})" if ep.related_tools else ""
             if ep.lesson_learned:
-                lines_mistakes.append(
-                    f"- {ep.situation[:100]}{tool_info} — {ep.lesson_learned}"
-                )
+                lines_mistakes.append(f"- {ep.situation[:100]}{tool_info} — {ep.lesson_learned}")
             elif ep.error_message:
-                lines_mistakes.append(
-                    f"- {ep.situation[:100]}{tool_info} — {ep.error_message[:100]}"
-                )
+                lines_mistakes.append(f"- {ep.situation[:100]}{tool_info} — {ep.error_message[:100]}")
             if ep.suggested_action:
                 lines_success.append(f"- {ep.suggested_action}")
 
@@ -968,9 +959,7 @@ class EpisodicMemoryStore:
 
         if categories:
             cat_values = {c.value for c in categories}
-            episodes = [
-                ep for ep in episodes if ep.category.value in cat_values
-            ]
+            episodes = [ep for ep in episodes if ep.category.value in cat_values]
 
         return rank_episodes(episodes, namespace=namespace)[:limit]
 
@@ -997,15 +986,12 @@ class EpisodicMemoryStore:
         """
         if not hasattr(self._backend, "update_metadata"):
             logger.warning(
-                "Backend %s has no update_metadata(); mark_consolidated() "
-                "is a no-op (watermark-only mode)",
+                "Backend %s has no update_metadata(); mark_consolidated() " "is a no-op (watermark-only mode)",
                 type(self._backend).__name__,
             )
             return 0
 
-        return await self._backend.update_metadata(
-            episode_ids, {"consolidated_into": page_id}
-        )
+        return await self._backend.update_metadata(episode_ids, {"consolidated_into": page_id})
 
     async def cleanup_expired(self) -> int:
         """Delete expired episodes from the backend.

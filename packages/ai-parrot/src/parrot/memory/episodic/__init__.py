@@ -3,6 +3,7 @@
 Provides long-term experiential memory: what agents did, what happened,
 and what they learned — scoped per user, per room, per crew, and per agent.
 """
+
 from .cache import EpisodeRedisCache
 from .embedding import EpisodeEmbeddingProvider
 from .models import (

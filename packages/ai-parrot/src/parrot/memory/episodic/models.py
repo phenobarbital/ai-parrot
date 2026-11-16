@@ -7,6 +7,7 @@ This module defines the foundational types for the episodic memory system:
 - EpisodeSearchResult for ranked search returns
 - ReflectionResult for LLM-generated reflections
 """
+
 from __future__ import annotations
 
 import uuid
@@ -16,7 +17,6 @@ from typing import Any
 from urllib.parse import quote
 
 from pydantic import BaseModel, ConfigDict, Field
-
 
 FEEDBACK_IMPORT_NAMESPACE = uuid.UUID("ee9fd516-8b3f-4948-8490-7e2676b58298")
 
@@ -45,15 +45,9 @@ class EpisodeCategory(str, Enum):
 class ReflectionResult(BaseModel):
     """Result of LLM or heuristic reflection on an episode."""
 
-    reflection: str = Field(
-        ..., description="Brief analysis of what happened"
-    )
-    lesson_learned: str = Field(
-        ..., description="Concise actionable lesson (max ~100 chars)"
-    )
-    suggested_action: str = Field(
-        ..., description="What to do differently next time"
-    )
+    reflection: str = Field(..., description="Brief analysis of what happened")
+    lesson_learned: str = Field(..., description="Concise actionable lesson (max ~100 chars)")
+    suggested_action: str = Field(..., description="What to do differently next time")
 
 
 class EpisodicMemory(BaseModel):
@@ -84,60 +78,30 @@ class EpisodicMemory(BaseModel):
     )
 
     # Namespace dimensions
-    tenant_id: str = Field(
-        default="default", description="Multi-tenant isolation"
-    )
-    agent_id: str = Field(
-        ..., description="Agent that generated the episode"
-    )
+    tenant_id: str = Field(default="default", description="Multi-tenant isolation")
+    agent_id: str = Field(..., description="Agent that generated the episode")
     model_id: str | None = Field(
         default=None,
         min_length=1,
         description="Model that generated the episode",
     )
-    user_id: str | None = Field(
-        default=None, description="User the agent interacted with"
-    )
-    session_id: str | None = Field(
-        default=None, description="Conversation session"
-    )
-    room_id: str | None = Field(
-        default=None, description="Matrix/Telegram/Slack room or channel"
-    )
-    crew_id: str | None = Field(
-        default=None, description="Crew this episode belongs to"
-    )
+    user_id: str | None = Field(default=None, description="User the agent interacted with")
+    session_id: str | None = Field(default=None, description="Conversation session")
+    room_id: str | None = Field(default=None, description="Matrix/Telegram/Slack room or channel")
+    crew_id: str | None = Field(default=None, description="Crew this episode belongs to")
 
     # Episode content
-    situation: str = Field(
-        ..., description="What was happening (context)"
-    )
-    action_taken: str = Field(
-        ..., description="What the agent did"
-    )
-    outcome: EpisodeOutcome = Field(
-        ..., description="Result classification"
-    )
-    outcome_details: str | None = Field(
-        default=None, description="Detailed result description"
-    )
-    error_type: str | None = Field(
-        default=None, description="Error type if outcome is failure"
-    )
-    error_message: str | None = Field(
-        default=None, description="Error message if outcome is failure"
-    )
+    situation: str = Field(..., description="What was happening (context)")
+    action_taken: str = Field(..., description="What the agent did")
+    outcome: EpisodeOutcome = Field(..., description="Result classification")
+    outcome_details: str | None = Field(default=None, description="Detailed result description")
+    error_type: str | None = Field(default=None, description="Error type if outcome is failure")
+    error_message: str | None = Field(default=None, description="Error message if outcome is failure")
 
     # Reflection (LLM-generated or heuristic)
-    reflection: str | None = Field(
-        default=None, description="Analysis of what happened"
-    )
-    lesson_learned: str | None = Field(
-        default=None, description="Concise actionable lesson"
-    )
-    suggested_action: str | None = Field(
-        default=None, description="What to do differently next time"
-    )
+    reflection: str | None = Field(default=None, description="Analysis of what happened")
+    lesson_learned: str | None = Field(default=None, description="Concise actionable lesson")
+    suggested_action: str | None = Field(default=None, description="What to do differently next time")
 
     # Classification
     category: EpisodeCategory = Field(
@@ -150,9 +114,7 @@ class EpisodicMemory(BaseModel):
         le=10,
         description="Importance score (1=trivial, 10=critical)",
     )
-    is_failure: bool = Field(
-        default=False, description="Whether this episode is a failure"
-    )
+    is_failure: bool = Field(default=False, description="Whether this episode is a failure")
     related_tools: list[str] = Field(
         default_factory=list,
         description="Tool names involved in this episode",
@@ -258,29 +220,17 @@ class MemoryNamespace(BaseModel):
 
     model_config = ConfigDict(coerce_numbers_to_str=True)
 
-    tenant_id: str = Field(
-        default="default", description="Multi-tenant isolation"
-    )
-    agent_id: str = Field(
-        ..., description="Agent identifier"
-    )
+    tenant_id: str = Field(default="default", description="Multi-tenant isolation")
+    agent_id: str = Field(..., description="Agent identifier")
     model_id: str | None = Field(
         default=None,
         min_length=1,
         description="Model scope",
     )
-    user_id: str | None = Field(
-        default=None, description="User scope"
-    )
-    session_id: str | None = Field(
-        default=None, description="Session scope"
-    )
-    room_id: str | None = Field(
-        default=None, description="Room/channel scope"
-    )
-    crew_id: str | None = Field(
-        default=None, description="Crew scope"
-    )
+    user_id: str | None = Field(default=None, description="User scope")
+    session_id: str | None = Field(default=None, description="Session scope")
+    room_id: str | None = Field(default=None, description="Room/channel scope")
+    crew_id: str | None = Field(default=None, description="Crew scope")
 
     def build_filter(self) -> dict[str, Any]:
         """Generate a filter dict for backend queries.

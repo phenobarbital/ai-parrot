@@ -10,6 +10,7 @@ from parrot.memory.episodic.backends.sqlite import SQLiteEpisodeBackend
 from parrot.memory.dynamics.models import Grade, MemoryParameters, ReviewCommand
 from parrot.memory.episodic.models import EpisodicMemory, MemoryNamespace
 
+
 def _episode(index: int, **overrides: object) -> EpisodicMemory:
     """Create a deterministic episode suitable for an isolated SQLite store."""
     data: dict[str, object] = {

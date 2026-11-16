@@ -1,4 +1,5 @@
 """Tests for parrot.memory.unified.models."""
+
 import pytest
 from pydantic import ValidationError
 
@@ -20,6 +21,7 @@ def _scope(*, user_id: str | None = None) -> MemoryRequestScope:
 # ---------------------------------------------------------------------------
 # MemoryContext
 # ---------------------------------------------------------------------------
+
 
 class TestMemoryContext:
     def test_default_values(self):
@@ -101,6 +103,7 @@ class TestMemoryContext:
 # ---------------------------------------------------------------------------
 # MemoryConfig
 # ---------------------------------------------------------------------------
+
 
 class TestMemoryConfig:
     def test_default_config(self):

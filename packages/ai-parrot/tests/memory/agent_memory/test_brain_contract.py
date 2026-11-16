@@ -12,6 +12,7 @@ from parrot.memory.agent_memory.mixin import AgentMemoryMixin
 from parrot.memory.agent_memory.models import MemoryEvent, MemoryRequestScope
 from parrot.memory.unified.models import MemoryContext
 
+
 class _Host:
     """Provide the cooperative lifecycle contract used by the facade."""
 

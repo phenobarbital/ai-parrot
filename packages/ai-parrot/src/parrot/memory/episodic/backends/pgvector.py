@@ -3,6 +3,7 @@
 Uses asyncpg directly for maximum control over pgvector queries.
 Auto-creates schema, table, and indexes on configure().
 """
+
 from __future__ import annotations
 
 import json
@@ -111,9 +112,7 @@ class PgVectorBackend:
             await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
 
             # Create schema
-            await conn.execute(
-                f"CREATE SCHEMA IF NOT EXISTS {self._schema}"
-            )
+            await conn.execute(f"CREATE SCHEMA IF NOT EXISTS {self._schema}")
 
             # Create table
             await conn.execute(f"""
@@ -213,9 +212,7 @@ class PgVectorBackend:
         # Add tsvector column and GIN index for hybrid search (idempotent)
         await self._add_tsvector_column()
 
-        logger.info(
-            "PgVectorBackend configured: %s.%s", self._schema, self._table
-        )
+        logger.info("PgVectorBackend configured: %s.%s", self._schema, self._table)
 
     async def _add_tsvector_column(self) -> None:
         """Add tsvector column for full-text search (idempotent migration helper).
@@ -273,9 +270,7 @@ class PgVectorBackend:
     def _ensure_pool(self) -> asyncpg.Pool:
         """Raise if pool is not initialized."""
         if self._pool is None:
-            raise RuntimeError(
-                "PgVectorBackend not configured. Call configure() first."
-            )
+            raise RuntimeError("PgVectorBackend not configured. Call configure() first.")
         return self._pool
 
     async def store(self, episode: EpisodicMemory) -> str:
@@ -531,9 +526,7 @@ class PgVectorBackend:
             WHERE episode_id = ANY($2::uuid[])
         """
         async with pool.acquire() as conn:
-            result = await conn.execute(
-                query, json.dumps(patch), episode_ids
-            )
+            result = await conn.execute(query, json.dumps(patch), episode_ids)
 
         # asyncpg returns "UPDATE N"
         return int(result.split()[-1])
@@ -576,8 +569,8 @@ class PgVectorBackend:
 
         conditions = []
         params: list[Any] = [
-            str(embedding),   # $1 = embedding vector
-            query_text,       # $2 = query text for tsquery
+            str(embedding),  # $1 = embedding vector
+            query_text,  # $2 = query text for tsquery
         ]
         param_idx = 3
 

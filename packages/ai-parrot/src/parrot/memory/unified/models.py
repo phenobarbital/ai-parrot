@@ -4,6 +4,7 @@ Provides:
 - MemoryContext: assembled context from all memory subsystems
 - MemoryConfig: configuration for UnifiedMemoryManager
 """
+
 from __future__ import annotations
 
 from typing import Literal
@@ -111,32 +112,16 @@ class MemoryContext(BaseModel):
         sections: list[str] = []
 
         if self.episodic_warnings:
-            sections.append(
-                "<past_failures_to_avoid>\n"
-                f"{self.episodic_warnings}\n"
-                "</past_failures_to_avoid>"
-            )
+            sections.append("<past_failures_to_avoid>\n" f"{self.episodic_warnings}\n" "</past_failures_to_avoid>")
 
         if self.relevant_skills:
-            sections.append(
-                "<relevant_skills>\n"
-                f"{self.relevant_skills}\n"
-                "</relevant_skills>"
-            )
+            sections.append("<relevant_skills>\n" f"{self.relevant_skills}\n" "</relevant_skills>")
 
         if self.conversation_summary:
-            sections.append(
-                "<recent_conversation>\n"
-                f"{self.conversation_summary}\n"
-                "</recent_conversation>"
-            )
+            sections.append("<recent_conversation>\n" f"{self.conversation_summary}\n" "</recent_conversation>")
 
         if self.semantic_knowledge:
-            sections.append(
-                "<brain_knowledge>\n"
-                f"{self.semantic_knowledge}\n"
-                "</brain_knowledge>"
-            )
+            sections.append("<brain_knowledge>\n" f"{self.semantic_knowledge}\n" "</brain_knowledge>")
 
         if self.user_knowledge:
             sections.append("<user_knowledge>\n" f"{self.user_knowledge}\n" "</user_knowledge>")
@@ -268,12 +253,7 @@ class MemoryConfig(BaseModel):
             self.conversation_weight = 0.30
             self.brain_weight = 0.20
 
-        total = (
-            self.episodic_weight
-            + self.skill_weight
-            + self.conversation_weight
-            + self.brain_weight
-        )
+        total = self.episodic_weight + self.skill_weight + self.conversation_weight + self.brain_weight
         if abs(total - 1.0) > 0.01:
             raise ValueError(
                 f"Weights must sum to 1.0, got {total:.3f} "
