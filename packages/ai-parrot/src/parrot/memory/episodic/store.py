@@ -10,6 +10,8 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, TypeVar
 
+from pydantic import BaseModel
+
 from parrot.memory.dynamics.grade import select_grade
 from parrot.memory.dynamics.models import (
     MemoryCitation,
@@ -80,6 +82,48 @@ _Recalled = TypeVar("_Recalled", bound=EpisodicMemory)
 def _exclude_retracted(episodes: list[_Recalled]) -> list[_Recalled]:
     """Drop imported coder-feedback lessons whose ledger entry was retracted (spec C12, AC16)."""
     return [episode for episode in episodes if episode.metadata.get(_RETRACTED_FEEDBACK_KEY) is not True]
+
+
+# Statuses that report failure when the tool set ``status`` itself (FEAT-892 E4).
+_EXPLICIT_FAILURE_STATUSES = frozenset({"error", "failed"})
+
+
+def _tool_outcome(tool_result: Any) -> tuple[EpisodeOutcome, bool]:
+    """Map a tool result to an episode outcome using explicit evidence only.
+
+    Only fields the tool set itself count as evidence (FEAT-892 E4): the
+    ``success`` / ``status`` fields of a Pydantic result (such as
+    ``ToolResult``) listed in its ``model_fields_set``. Field defaults,
+    ``getattr`` fallbacks, dicts and plain objects carrying a ``success``
+    attribute are never read as evidence.
+
+    Args:
+        tool_result: The value the tool execution returned.
+
+    Returns:
+        A ``(outcome, verified)`` pair. ``verified`` is ``False`` when the
+        tool set neither field (or did not return a Pydantic result); the
+        outcome is then ``PARTIAL``, the unverified-outcome marker, never
+        ``SUCCESS``.
+    """
+    if not isinstance(tool_result, BaseModel):
+        return EpisodeOutcome.PARTIAL, False
+    # model_fields_set names only fields the caller passed, so no default is ever read.
+    explicit = {
+        name: getattr(tool_result, name) for name in ("success", "status") if name in tool_result.model_fields_set
+    }
+    success = explicit.get("success")
+    status = explicit.get("status")
+
+    if success is False or status in _EXPLICIT_FAILURE_STATUSES:
+        return EpisodeOutcome.FAILURE, True
+    if status == "timeout":
+        return EpisodeOutcome.TIMEOUT, True
+    if status == "partial":
+        return EpisodeOutcome.PARTIAL, True
+    if success is True or status == "success":
+        return EpisodeOutcome.SUCCESS, True
+    return EpisodeOutcome.PARTIAL, False
 
 
 class EpisodicMemoryStore:
@@ -611,7 +655,10 @@ class EpisodicMemoryStore:
         """Record an episode from a tool execution.
 
         Extracts episode fields from a ToolResult and delegates to
-        record_episode().
+        record_episode(). The outcome comes only from ``success`` /
+        ``status`` fields the tool set explicitly (FEAT-892 E4); a result
+        that sets neither is recorded as ``PARTIAL`` with
+        ``metadata["outcome_verified"] = False`` rather than as a success.
 
         Args:
             namespace: Scoping dimensions.
@@ -632,19 +679,9 @@ class EpisodicMemoryStore:
         }
         action_taken = f"Called {tool_name}({json.dumps(summarized)})"
 
-        # Map outcome
-        success = getattr(tool_result, "success", True)
+        # Map outcome from explicit evidence only (FEAT-892 E4)
+        outcome, outcome_verified = _tool_outcome(tool_result)
         error = getattr(tool_result, "error", None)
-        status = getattr(tool_result, "status", "success")
-
-        if not success:
-            outcome = EpisodeOutcome.FAILURE
-        elif status == "timeout":
-            outcome = EpisodeOutcome.TIMEOUT
-        elif status == "partial":
-            outcome = EpisodeOutcome.PARTIAL
-        else:
-            outcome = EpisodeOutcome.SUCCESS
 
         # Extract error details
         error_type = None
@@ -673,6 +710,7 @@ class EpisodicMemoryStore:
             error_message=error_message,
             category=EpisodeCategory.TOOL_EXECUTION,
             related_tools=[tool_name],
+            metadata={"outcome_verified": outcome_verified},
         )
 
     async def record_crew_episode(

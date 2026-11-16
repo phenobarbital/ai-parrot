@@ -276,10 +276,10 @@ class TestReadWorktreeIndex:
         tasks, base = _read_worktree_index(tmp_path, "bad")
         assert tasks == []
 
-    def test_task_with_invalid_status_is_skipped_not_raised(self, tmp_path):
-        """A task entry whose status is outside the Literal enum must be
-        skipped (pydantic ValidationError), never propagate and crash the
-        whole discovery run (AC9: malformed data must be handled gracefully)."""
+    def test_off_schema_status_is_kept_and_flagged_not_raised(self, tmp_path):
+        """A status string outside the four-value schema ("blocked") must
+        never crash discovery (AC9) — and must not be dropped either: dropping
+        it hid an open task and let the worktree look finished."""
         idx_dir = tmp_path / "sdd" / "tasks" / "index"
         idx_dir.mkdir(parents=True)
         index_data = {
@@ -294,8 +294,27 @@ class TestReadWorktreeIndex:
         (idx_dir / "bad-status.json").write_text(json.dumps(index_data))
         tasks, base = _read_worktree_index(tmp_path, "bad-status")
         assert base == "dev"
-        assert len(tasks) == 1
-        assert tasks[0].id == "TASK-2"
+        assert [(t.id, t.status, t.unknown_status) for t in tasks] == [
+            ("TASK-1", "blocked", True),
+            ("TASK-2", "done", False),
+        ]
+
+    def test_non_string_status_is_skipped_not_raised(self, tmp_path):
+        """A structurally malformed entry (non-string status) is still skipped."""
+        idx_dir = tmp_path / "sdd" / "tasks" / "index"
+        idx_dir.mkdir(parents=True)
+        index_data = {
+            "feature": "bad-status",
+            "base_branch": "dev",
+            "tasks": [
+                {"id": "TASK-1", "status": None},
+                {"id": "TASK-2", "status": 3},
+                {"id": "TASK-3", "status": "done"},
+            ],
+        }
+        (idx_dir / "bad-status.json").write_text(json.dumps(index_data))
+        tasks, _ = _read_worktree_index(tmp_path, "bad-status")
+        assert [t.id for t in tasks] == ["TASK-3"]
 
     @pytest.mark.parametrize(
         "exc",
@@ -449,6 +468,18 @@ class TestReadyForDone:
         """Some tasks pending/in-progress = not ready."""
         reports = _discover_with_fake_worktree(tmp_path, sample_index, status_out="", log_out="")
         assert len(reports) == 1
+        assert reports[0].ready_for_done is False
+
+    def test_not_ready_when_a_task_has_off_schema_status(self, tmp_path, all_done_index):
+        """A "blocked" task is not finished: the worktree must not be ready.
+
+        Before the fix the off-schema entry was dropped, so the remaining
+        all-done tasks made a clean worktree report ready_for_done=True.
+        """
+        all_done_index["tasks"].append({"id": "TASK-3134", "status": "blocked", "completed_at": None})
+        reports = _discover_with_fake_worktree(tmp_path, all_done_index, status_out="", log_out="")
+        assert len(reports) == 1
+        assert [t.status for t in reports[0].tasks] == ["done", "done", "blocked"]
         assert reports[0].ready_for_done is False
 
     def test_not_ready_when_dirty_state_unknown(self, tmp_path, all_done_index):
@@ -877,6 +908,36 @@ class TestReconcileFeature:
         assert feature.feature_id == "FEAT-550"
         assert [t.status for t in feature.tasks] == ["done", "pending"]
 
+    def test_off_schema_dev_status_does_not_crash(self):
+        """FEAT-892 regression: a dev-index "blocked" task with no worktree
+        counterpart raised a pydantic literal_error and killed --reconcile."""
+        feature = reconcile_feature(_dev_index(["pending", "blocked"]), None)
+        assert [t.status for t in feature.tasks] == ["pending", "blocked"]
+        assert [t.unknown_status for t in feature.tasks] == [False, True]
+        assert feature.dev_closed is False
+
+    def test_off_schema_status_on_both_sides_keeps_dev(self):
+        """Both indexes say "blocked" (the real FEAT-892 layout): dev's value
+        is shown, neither ahead nor stale."""
+        feature = reconcile_feature(_dev_index(["blocked"]), _wt_report(["blocked"]))
+        assert [(t.status, t.source, t.unknown_status) for t in feature.tasks] == [("blocked", "dev", True)]
+        assert feature.worktree_ahead is False
+        assert feature.worktree_stale is False
+
+    def test_worktree_advances_an_off_schema_dev_status(self):
+        """An off-schema dev status ranks as not started, so real worktree
+        progress still wins."""
+        feature = reconcile_feature(_dev_index(["blocked"]), _wt_report(["in-progress"]))
+        assert [(t.status, t.source, t.unknown_status) for t in feature.tasks] == [("in-progress", "worktree", False)]
+        assert feature.worktree_ahead is True
+
+    def test_non_string_dev_status_surfaces_as_unknown(self):
+        """A null status in the dev index is shown flagged, never raised."""
+        index = _dev_index(["done"])
+        index["tasks"][0]["status"] = None
+        feature = reconcile_feature(index, None)
+        assert [(t.status, t.unknown_status) for t in feature.tasks] == [("None", True)]
+
 
 class TestReconcileReports:
     def test_pairs_indexes_with_worktrees(self, tmp_path):
@@ -937,3 +998,30 @@ class TestReconcileCli:
         assert data[0]["worktree_ahead"] is True
         assert [t["status"] for t in data[0]["tasks"]] == ["done", "done"]
         assert [t["source"] for t in data[0]["tasks"]] == ["worktree", "dev"]
+        assert [t["unknown_status"] for t in data[0]["tasks"]] == [False, False]
+
+    @pytest.mark.parametrize("as_json", [True, False])
+    def test_reconcile_survives_off_schema_status(self, capsys, monkeypatch, tmp_path, as_json):
+        """--reconcile exits 0 on an index with "blocked" tasks and flags them."""
+        index_dir = tmp_path / "sdd" / "tasks" / "index"
+        index_dir.mkdir(parents=True)
+        (index_dir / "token-budget-bedrock.json").write_text(json.dumps(_dev_index(["done", "blocked"])))
+
+        argv = ["worktree_status.py", "--reconcile", *(["--json"] if as_json else [])]
+        monkeypatch.setattr(sys, "argv", argv)
+        toplevel = _completed(f"{tmp_path}\n")
+
+        with (
+            patch("scripts.sdd.worktree_status._git", return_value=toplevel),
+            patch("scripts.sdd.worktree_status.discover_worktree_reports", return_value=[]),
+        ):
+            exit_code = main()
+
+        assert exit_code == 0
+        out = capsys.readouterr().out
+        if as_json:
+            tasks = json.loads(out)[0]["tasks"]
+            assert [(t["status"], t["unknown_status"]) for t in tasks] == [("done", False), ("blocked", True)]
+        else:
+            assert "1/2" in out
+            assert "off-schema status: blocked" in out
