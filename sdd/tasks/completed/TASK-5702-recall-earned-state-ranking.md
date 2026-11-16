@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-892 - Agent Memory — Unified Integration, User Knowledge and Dynamics
 **Spec**: `sdd/specs/agent-memory-mixin.spec.md`
-**Status**: in-progress
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-5701, TASK-5661, TASK-5664, TASK-5665
@@ -120,3 +120,18 @@ One indexed read per ranked route, batched at 500 keys per statement. No schema 
 
 ## Completion Note
 
+- Task: TASK-5702
+- Feature: agent-memory-mixin
+- Implementation SHA: 6751685349
+- Closed at (UTC): 2026-11-16T09:34:40+00:00
+- Resolves: `issue:c0ed6dfab09e`
+- Validation: `test_sqlite_backend.py`, `test_recall.py` and `test_store_reviews.py` pass in a clean tree of the commit. The
+  state test fails when `rank_episodes` ignores the supplied states.
+- Deviation from the issue text: it suggested asserting that a reviewed memory outranks an unreviewed one. Under the accepted
+  rule (never-reviewed state is neutral at 1.0, reviewed state decays from 1.0) that cannot hold, so the tests assert that a
+  GOOD review outranks a HARD review once time has passed and that the score equals relevance × retrievability × (1 + importance/10).
+- Only the SQLite backend reads state. pgvector, Redis and FAISS have no review capability and keep ranking neutrally.
+- The store routes rank at the wall clock and `days-v1` counts whole days, so a review changes ranking from the next day on.
+- `test_attribution.py::test_structural_recovery_and_citation_channel` already failed on the branch head before this task
+  (`9201044d88`); it is outside this task.
+- Implemented by Claude through `/sdd-fix`, by hand (no coder seat).

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-892 - Agent Memory — Unified Integration, User Knowledge and Dynamics
 **Spec**: `sdd/specs/agent-memory-mixin.spec.md`
-**Status**: in-progress
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (<2h)
 **Depends-on**: TASK-5659, TASK-5665
@@ -104,3 +104,13 @@ pass no `recency` keep the previous `memory_id` order.
 
 ## Completion Note
 
+- Task: TASK-5701
+- Feature: agent-memory-mixin
+- Implementation SHA: ce7693c6bb
+- Closed at (UTC): 2026-11-16T09:34:40+00:00
+- Resolves: `issue:a296823bbc4a`
+- Validation: `test_ranking.py` and `test_recall.py` pass in a clean tree of the commit. The new route test fails when
+  `rank_episodes` passes no recency.
+- The spec ranking paragraph, the `rank_candidates` signature in the spec and `wiki/memory/memory-dynamics.md` state the tie-break
+  (spec revision 0.9).
+- Implemented by Claude through `/sdd-fix`, by hand (no coder seat).
