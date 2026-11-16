@@ -4,10 +4,11 @@ from datetime import datetime
 
 import pytest
 
+from parrot.memory.agent_memory.models import MemoryRequestScope
 from parrot.memory.dynamics import fsrs
 from parrot.memory.dynamics.fsrs import retrievability, transition
-from parrot.memory.dynamics.models import Grade, MemoryParameters, MemoryState
-
+from parrot.memory.dynamics.grade import select_grade
+from parrot.memory.dynamics.models import Grade, MemoryParameters, MemoryState, ReviewSignal
 
 def _parameters(*, time_policy: str = "days-v1", parameter_id: str = "fsrs-6-default") -> MemoryParameters:
     """Return the accepted immutable parameter set."""
@@ -140,3 +141,39 @@ def test_legacy_neutral_and_no_global_clock(monkeypatch: pytest.MonkeyPatch) -> 
     assert 0.0 < after_ninety_days < 1.0
     assert reviewed.reviewed_at == evaluation_at
     assert parameters.time_policy == "days-v1"
+
+
+def test_long_memory_error_signature_matches_runtime_limit() -> None:
+    """Compare AGAIN signatures on their first 200 normalized characters."""
+    observed_at = datetime.fromisoformat("2026-01-02T00:00:00+00:00")
+    scope = MemoryRequestScope(
+        tenant_id="tenant-a",
+        agent_id="agent-a",
+        user_id="user-a",
+        session_id="session-a",
+        turn_id="turn-a",
+        identity_provenance="runtime_derived",
+    )
+    prefix = "x" * 200
+    signal = ReviewSignal(
+        outcome_id="tool-attempt-a",
+        outcome_revision=0,
+        observed_at=observed_at,
+        scope=scope,
+        evidence_ref="chatstorage/v1/tenant-a/agent-a/user-a/session-a/turn-a",
+        source="tool_runtime",
+        outcome="failure",
+        first_attempt=True,
+        correction_count=0,
+        error_signature=prefix,
+    )
+
+    assert (
+        select_grade(
+            signal,
+            attribution="cited",
+            memory_error_signature=f"{prefix}details after the runtime limit",
+            verified_recovery=False,
+        )
+        is Grade.AGAIN
+    )

@@ -22,7 +22,7 @@ def _normalize_signature(value: str | None) -> str | None:
     if value is None:
         return None
     normalized = " ".join(unicodedata.normalize("NFKC", value).lower().split())
-    return normalized or None
+    return normalized[:200] or None
 
 
 def select_grade(

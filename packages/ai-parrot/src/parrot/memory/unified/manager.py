@@ -11,10 +11,13 @@ import asyncio
 import hashlib
 import json
 import logging
+import uuid
 from typing import Any, Optional, Protocol, runtime_checkable
 
 from parrot.memory.abstract import ConversationMemory
+from parrot.memory.agent_memory.attribution import ToolAttempt, build_tool_signal, validate_citation
 from parrot.memory.agent_memory.models import MemoryEvent, MemoryRequestScope, MemoryWriteReceipt
+from parrot.memory.dynamics.models import MemoryExposure, MemoryRef
 from parrot.memory.episodic.models import EpisodeCategory, EpisodeOutcome, MemoryNamespace
 from parrot.memory.episodic.store import EpisodicMemoryStore
 from parrot.memory.unified.models import MemoryCandidate
@@ -109,6 +112,9 @@ class UnifiedMemoryManager:
         self.user_memory_store = user_memory_store
         self.extraction_client = extraction_client
         self.brain_service = brain_service
+        self._memory_exposures: dict[str, MemoryExposure] = {}
+        self._active_memory_exposures: set[str] = set()
+        self._completed_memory_exposures: set[str] = set()
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
     # ------------------------------------------------------------------
@@ -214,6 +220,65 @@ class UnifiedMemoryManager:
             update={"delivered_refs": tuple(ref for ref in context.delivered_refs if not ref.startswith(brain_prefix))}
         )
 
+    def commit_memory_exposure(self, context: MemoryContext, *, scope: MemoryRequestScope) -> MemoryContext:
+        """Mint and retain the complete final-delivery manifest for review admission.
+
+        Only versioned episodic references can be reviewed by this feature. User facts,
+        skills, and the phase-one text-only brain service remain contextual data without
+        dynamics attribution.
+        """
+        if self.episodic is None or context.packed_digest is None:
+            return context
+        refs = tuple(
+            memory_ref
+            for delivered_ref in context.delivered_refs
+            if (memory_ref := self._delivered_memory_ref(delivered_ref, scope)) is not None
+        )
+        if not refs:
+            return context
+
+        exposure_id = f"exposure-{uuid.uuid4().hex}"
+        exposure = MemoryExposure(
+            exposure_id=exposure_id,
+            scope=scope,
+            attempt_id=scope.turn_id,
+            refs=refs,
+            packed_digest=context.packed_digest,
+        )
+        self._memory_exposures[exposure_id] = exposure
+        return context.model_copy(
+            update={
+                "exposure_id": exposure_id,
+                "exposure_metadata": {
+                    "attempt_id": scope.turn_id,
+                    "packed_digest": context.packed_digest,
+                },
+            }
+        )
+
+    def activate_memory_exposure(self, exposure_id: str, scope: MemoryRequestScope) -> bool:
+        """Make a manifest reviewable only after its provider response completed."""
+        exposure = self._memory_exposures.get(exposure_id)
+        if exposure is None or exposure.scope != scope or exposure_id in self._completed_memory_exposures:
+            return False
+        self._active_memory_exposures.add(exposure_id)
+        return True
+
+    def deactivate_memory_exposure(self, exposure_id: str) -> None:
+        """Reject later events for a manifest after its invocation has been admitted."""
+        self._active_memory_exposures.discard(exposure_id)
+        self._completed_memory_exposures.add(exposure_id)
+        if self.episodic is not None:
+            self.episodic._citations.pop(exposure_id, None)
+
+    def discard_memory_exposure(self, exposure_id: str) -> None:
+        """Invalidate a provider-failed or cancelled manifest without revealing its refs."""
+        self._active_memory_exposures.discard(exposure_id)
+        self._completed_memory_exposures.discard(exposure_id)
+        self._memory_exposures.pop(exposure_id, None)
+        if self.episodic is not None:
+            self.episodic._citations.pop(exposure_id, None)
+
     async def record_event(self, event: MemoryEvent) -> MemoryWriteReceipt:
         """Route an observed event to its owning stores without replaying tool attempts.
 
@@ -230,7 +295,7 @@ class UnifiedMemoryManager:
             A receipt describing only durable effects and recorded failures.
         """
         if event.kind == "tool":
-            return MemoryWriteReceipt(event_id=event.event_id, scope=event.scope, status="ignored")
+            return await self._record_tool_event(event)
 
         episode_ids: list[str] = []
         knowledge_ids: list[str] = []
@@ -260,6 +325,87 @@ class UnifiedMemoryManager:
             episode_ids=tuple(episode_ids),
             knowledge_ids=tuple(knowledge_ids),
             failures=tuple(failures),
+        )
+
+    async def _record_tool_event(self, event: MemoryEvent) -> MemoryWriteReceipt:
+        """Apply only cited runtime failures against the active delivered manifest."""
+        ignored = MemoryWriteReceipt(event_id=event.event_id, scope=event.scope, status="ignored")
+        if self.episodic is None or not event.evidence_refs:
+            return ignored
+        exposure_id = event.payload.get("exposure_id")
+        attempt = event.payload.get("attempt")
+        if not isinstance(exposure_id, str) or not isinstance(attempt, ToolAttempt):
+            return ignored
+        if exposure_id not in self._active_memory_exposures:
+            return ignored
+        exposure = self._memory_exposures.get(exposure_id)
+        citation = self.episodic._citations.get(exposure_id)
+        if exposure is None or citation is None:
+            return ignored
+        try:
+            validate_citation(citation, exposure, scope=event.scope)
+            signal = build_tool_signal(attempt, scope=event.scope, evidence_ref=event.evidence_refs[0])
+        except ValueError:
+            return ignored
+        if signal is None or signal.outcome != "failure":
+            return ignored
+
+        try:
+            receipts = await self.episodic.review(
+                [ref.memory_id for ref in citation.refs],
+                signal,
+                namespace=citation.refs[0].namespace,
+                exposure_id=exposure_id,
+            )
+        except ValueError:
+            return ignored
+        statuses = {receipt.status for receipt in receipts}
+        if "applied" in statuses:
+            status = "applied"
+        elif statuses == {"duplicate"}:
+            status = "duplicate"
+        elif "storage_unavailable" in statuses:
+            status = "storage_unavailable"
+        elif statuses & {"conflict", "stale_revision"}:
+            status = "conflict"
+        else:
+            status = "ignored"
+        return MemoryWriteReceipt(
+            event_id=event.event_id,
+            scope=event.scope,
+            status=status,
+            review_ids=tuple(receipt.dedupe_key for receipt in receipts if receipt.status in {"applied", "duplicate"}),
+            failures=tuple(
+                receipt.reason or "review storage is unavailable"
+                for receipt in receipts
+                if receipt.status == "storage_unavailable"
+            ),
+        )
+
+    @staticmethod
+    def _delivered_memory_ref(delivered_ref: str, scope: MemoryRequestScope) -> MemoryRef | None:
+        """Parse one assembler reference into a scoped episodic version."""
+        try:
+            source, identity_and_version = delivered_ref.split(":", 1)
+            memory_id, content_version = identity_and_version.rsplit(":", 1)
+        except ValueError:
+            return None
+        if source != "episodic" or not memory_id or not content_version:
+            return None
+        namespace = MemoryNamespace(
+            tenant_id=scope.tenant_id,
+            agent_id=scope.agent_id,
+            user_id=scope.user_id,
+            session_id=scope.session_id,
+            room_id=scope.room_id,
+            crew_id=scope.crew_id,
+            model_id=scope.model_id,
+        )
+        return MemoryRef(
+            namespace=namespace,
+            kind="episode",
+            memory_id=memory_id,
+            content_version=content_version,
         )
 
     async def record_interaction(
