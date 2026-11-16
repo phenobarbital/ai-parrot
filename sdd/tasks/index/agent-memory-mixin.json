@@ -663,7 +663,7 @@
     {
       "id": "TASK-5681",
       "slug": "agent-memory-docs",
-      "title": "Documentation \u2014 agent-memory, user-memory and memory-dynamics",
+      "title": "Documentation — agent-memory, user-memory and memory-dynamics",
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
@@ -768,6 +768,46 @@
       "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5710-memory-review-contracts.md"
+    },
+    {
+      "id": "TASK-5711",
+      "slug": "sqlite-corrupt-vector-isolation",
+      "title": "Isolate corrupt SQLite vector candidates",
+      "feature_id": "FEAT-892",
+      "feature": "agent-memory-mixin",
+      "spec": "sdd/specs/agent-memory-mixin.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5710"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-5710 modifies packages/ai-parrot/src/parrot/memory/episodic/backends/sqlite.py; serialize writes to that file.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5711-sqlite-corrupt-vector-isolation.md"
+    },
+    {
+      "id": "TASK-5712",
+      "slug": "sqlite-compact-embedding-payload",
+      "title": "Store SQLite embeddings once and hydrate every read",
+      "feature_id": "FEAT-892",
+      "feature": "agent-memory-mixin",
+      "spec": "sdd/specs/agent-memory-mixin.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5711"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-5711 modifies sqlite.py and test_sqlite_backend.py, both modified here; documentation follows the completed TASK-5681 through this dependency chain.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5712-sqlite-compact-embedding-payload.md"
     }
   ]
 }
