@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-892 - Agent Memory — Unified Integration, User Knowledge and Dynamics
 **Spec**: `sdd/specs/agent-memory-mixin.spec.md`
-**Status**: in-progress (reopened — owner decision, scope extended)
+**Status**: in-progress (reopened twice — second extension: persisted ReviewRecord, issue:cef9e1a8c0e6)
 **Priority**: medium
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-5678, TASK-5662
@@ -40,6 +40,33 @@ toolkit manager and passes it. `store=None` raises `ValueError` — it never exp
 memory state and `parameter_id` are NOT persisted, so the archive must not contain or invent them (spec: no invented
 historical per-memory grades). The Completion Note must state exactly what AC12/AC18 coverage this leaves.
 
+## Owner Decision 2 (host-delegated, 2026-11-16) — persist the full review record (issue:cef9e1a8c0e6)
+
+The reworked export is deterministic and replayable but not fit-ready: the SQLite review log persists only the command
+plus `apply_revision`/`recorded_at`. Binding decision — **fix before TASK-5681**:
+
+- **(A) Persist the full ReviewRecord at `apply_review` time** in the SQLite backend, **in the same transaction as the
+  review row** (spec C6): the selected **grade**, the **before** and **after** `MemoryState`, the **parameter_id**, and the
+  **memory error signature the grade was selected against**.
+- **Additive, idempotent migration via `PRAGMA user_version`** (spec D8): new **nullable** columns, **no backfill**; existing
+  rows keep NULL and are listed/exported as **legacy records with those fields absent — never fabricated**.
+- `list_reviews` and the export archive carry the new fields. **Replay must still produce exactly one application and must
+  not depend on them** (replay applies only the archived `command`).
+- Test with a real temporary store **including a database created at the previous schema version**.
+- Close this task as `done` only if AC18 is then met end to end.
+
+Design (resolution notes, recorded so they are not silently decided):
+
+- `EpisodicMemoryStore.review` already selects the grade (`select_grade`, attribution `"cited"`, signature `episode.error_message
+  or episode.error_type`). It now passes `grade`, that signature and the review parameters to the backend; the backend, which
+  alone can read the current memory state inside the transaction, computes `before`/`after` with `fsrs.transition`.
+- Direct `backend.apply_review(command)` calls without a grade keep the legacy behavior (record columns stay NULL), so existing
+  callers and replay are unaffected. Supplying exactly one of `grade`/`parameters` is a `ValueError` raised before any write.
+- The review parameters equal the neutral parameters used at recall time (`parameter_id="episodic-neutral-v1"`, `fsrs-6`,
+  `days-v1`). They are defined once in `store.py` (`recall.py` keeps its own inline literal; it is out of scope — flagged, not changed).
+- A legacy memory (reviewed before this change) has no stored `MemoryState`; its `before` state is the neutral uninitialized
+  `MemoryState()` — documented, not reconstructed.
+
 ## Release Preconditions
 
 No additional owner decision is required beyond completed dependency contracts. Do not bypass a blocked dependency.
@@ -66,13 +93,14 @@ except the separately authorized scoped forget API; unrelated refactoring.
 
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot/src/parrot/memory/episodic/backends/sqlite.py` | MODIFY | Add `SQLiteEpisodeBackend.list_reviews` (scoped before limit, deterministic order) |
-| `packages/ai-parrot/src/parrot/memory/episodic/store.py` | MODIFY | Add `EpisodicMemoryStore.list_reviews`; backend without it fails visibly |
-| `packages/ai-parrot/src/parrot/memory/dynamics/export.py` | MODIFY | Rebuild on real store data: `export_reviews(*, namespace, destination, store=None, clock=None)` |
+| `packages/ai-parrot/src/parrot/memory/episodic/backends/sqlite.py` | MODIFY | `list_reviews`; schema v3 additive migration; `apply_review` persists the full record atomically |
+| `packages/ai-parrot/src/parrot/memory/episodic/store.py` | MODIFY | `list_reviews`; `review` passes grade, error signature and parameters to the backend |
+| `packages/ai-parrot/src/parrot/memory/dynamics/review_log.py` | MODIFY | `ReviewBackend.apply_review` protocol gains the optional record keywords |
+| `packages/ai-parrot/src/parrot/memory/dynamics/export.py` | MODIFY | Archive carries the persisted record; legacy rows carry none |
 | `packages/ai-parrot/src/parrot/memory/dynamics/cli.py` | MODIFY | Export command exports what the configured store holds |
-| `packages/ai-parrot/tests/memory/dynamics/test_export.py` | MODIFY | Real temporary SQLite store, reviews via apply_review, replay of the archive |
-| `packages/ai-parrot/tests/memory/dynamics/test_sqlite_backend.py` | MODIFY | Backend `list_reviews` scope/limit/order/closed-backend tests |
-| `packages/ai-parrot/tests/memory/dynamics/test_store_reviews.py` | MODIFY | Store `list_reviews` delegation and visible failure tests |
+| `packages/ai-parrot/tests/memory/dynamics/test_export.py` | MODIFY | Real store, record carried, legacy absent, replay independent of the record |
+| `packages/ai-parrot/tests/memory/dynamics/test_sqlite_backend.py` | MODIFY | `list_reviews` tests; previous-schema migration; atomic record persistence |
+| `packages/ai-parrot/tests/memory/dynamics/test_store_reviews.py` | MODIFY | Store `list_reviews`; `review` persists the record |
 
 ## Codebase Contract
 
@@ -88,7 +116,8 @@ BrainService TYPE_CHECKING reference is explicitly external/future, never a veri
 from parrot.memory.episodic.models import MemoryNamespace
 from parrot.memory.episodic.store import EpisodicMemoryStore
 from parrot.memory.episodic.backends.sqlite import SQLiteEpisodeBackend
-from parrot.memory.dynamics.models import ReviewCommand
+from parrot.memory.dynamics.models import Grade, MemoryParameters, MemoryState, ReviewCommand
+from parrot.memory.dynamics.fsrs import transition
 from pathlib import Path
 from typing import Any
 import pytest
@@ -102,12 +131,19 @@ import pytest
 - `packages/ai-parrot/src/parrot/memory/episodic/store.py:353` — `async def review(self, memory_ids, signal, *, namespace, exposure_id) -> list[ReviewReceipt]`; `:391` — `apply_review = getattr(self._backend, "apply_review", None)` capability pattern (unavailable backend => visible unavailable receipt).
 - `packages/ai-parrot/src/parrot/memory/episodic/models.py:285` — `MemoryNamespace.build_filter(self) -> dict[str, Any]` (always tenant_id and agent_id, plus each non-None of user_id/session_id/room_id/crew_id/model_id).
 - `packages/ai-parrot/src/parrot/memory/dynamics/models.py:366` — `class ReviewCommand(BaseModel)` (`ref`, `signal`, `exposure_id`, `expected_revision`; `dedupe_key`, `payload_digest`).
+- `packages/ai-parrot/src/parrot/memory/episodic/backends/sqlite.py:22` — `_SCHEMA_VERSION = 2`; `:33` — `_SCHEMA = """..."""` (`CREATE TABLE IF NOT EXISTS reviews (...)` has no grade/state columns); `configure()` runs `executescript(_SCHEMA)` then `PRAGMA user_version=_SCHEMA_VERSION` when lower, and raises `ValueError` when the database version is newer.
+- `sqlite.py` `apply_review`: inside `BEGIN IMMEDIATE` it reads `SELECT apply_revision FROM memory_state WHERE ref_key = ?`, checks revisions, then `INSERT INTO reviews (dedupe_key, outcome_id, outcome_revision, ref_key, payload_digest, payload, apply_revision, recorded_at)` and upserts `memory_state (ref_key, apply_revision, state, updated_at)` with `state = {"apply_revision", "command"}`, then `COMMIT`.
+- `packages/ai-parrot/src/parrot/memory/dynamics/fsrs.py:111` — `def transition(state: MemoryState, grade: Grade, *, reviewed_at: datetime, parameters: MemoryParameters) -> MemoryState` (pure; raises `ValueError` when `state.parameter_id` differs from `parameters.parameter_id`; `reviewed_at` must be aware UTC).
+- `packages/ai-parrot/src/parrot/memory/dynamics/models.py:158` — `MemoryState` (frozen; `MemoryState()` is the neutral uninitialized state; `model_dump(mode="json")`); `:128` — `MemoryParameters(algorithm, time_policy, parameter_id, weights=DEFAULT_PARAMETERS, reference, provenance)`; `:119` — `Grade(IntEnum)` AGAIN=1..EASY=4.
+- `packages/ai-parrot/src/parrot/memory/dynamics/grade.py:28` — `select_grade(signal, *, attribution, memory_error_signature, verified_recovery) -> Grade | None`.
+- `packages/ai-parrot/src/parrot/memory/dynamics/review_log.py:12` — `async def apply_review(self, command: ReviewCommand) -> ReviewReceipt:` (Protocol `ReviewBackend`).
+- `packages/ai-parrot/src/parrot/memory/episodic/store.py:470` — `_apply_review_with_current_revision(self, apply_review, command)` calls `apply_review(current_command)` (up to 3 compare-and-swap retries); `store.py` already imports `select_grade` and `.recall`.
 - Test fixtures to reuse: `tests/memory/dynamics/test_store_reviews.py` (real `SQLiteEpisodeBackend` + `EpisodicMemoryStore` under `tmp_path`) and `test_sqlite_backend.py`.
 
 ### Does NOT Exist
 
 - `SQLiteEpisodeBackend.list_reviews` and `EpisodicMemoryStore.list_reviews` do not exist yet — this task adds them.
-- No persisted per-review grade, before/after `MemoryState` or `parameter_id` exists anywhere in the SQLite backend; never fabricate them.
+- Before this task no grade/state/parameter_id is persisted; rows committed before the migration (or via a direct `apply_review(command)` without a grade) have NO record — never fabricate one, never backfill.
 - `parrot.memory.agent.mixin` does not exist; `memory/agent.py` is the existing AnswerMemory compatibility module.
 - Production `BrainService` is a future FEAT-889 contract, not an existing runtime import; never implement its placeholder here.
 - No production optimizer/fitting module is authorized by this feature.
@@ -124,6 +160,10 @@ import pytest
     },
     {
       "path": "packages/ai-parrot/src/parrot/memory/episodic/store.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/memory/dynamics/review_log.py",
       "action": "MODIFY"
     },
     {
@@ -150,8 +190,12 @@ import pytest
   "contract_symbols": [
     "sym:packages/ai-parrot/src/parrot/memory/episodic/backends/sqlite.py#SQLiteEpisodeBackend",
     "sym:packages/ai-parrot/src/parrot/memory/episodic/backends/sqlite.py#SQLiteEpisodeBackend.apply_review",
+    "sym:packages/ai-parrot/src/parrot/memory/episodic/backends/sqlite.py#SQLiteEpisodeBackend.list_reviews",
     "sym:packages/ai-parrot/src/parrot/memory/episodic/store.py#EpisodicMemoryStore",
-    "sym:packages/ai-parrot/src/parrot/memory/episodic/store.py#EpisodicMemoryStore.review"
+    "sym:packages/ai-parrot/src/parrot/memory/episodic/store.py#EpisodicMemoryStore.review",
+    "sym:packages/ai-parrot/src/parrot/memory/episodic/store.py#EpisodicMemoryStore.list_reviews",
+    "sym:packages/ai-parrot/src/parrot/memory/dynamics/fsrs.py#transition",
+    "sym:packages/ai-parrot/src/parrot/memory/dynamics/grade.py#select_grade"
   ]
 }
 ```
@@ -202,6 +246,46 @@ async def list_reviews(self, namespace: MemoryNamespace, *, limit: int | None = 
 Delegate to `self._backend.list_reviews`. If the backend has no callable `list_reviews`, raise
 `RuntimeError("review listing is unavailable: backend has no list_reviews capability")` — never return an empty list.
 
+### Persisted review record — `sqlite.py`, `store.py`, `review_log.py` (Owner Decision 2)
+
+`sqlite.py`:
+
+```python
+async def apply_review(
+    self,
+    command: ReviewCommand,
+    *,
+    grade: Grade | None = None,
+    memory_error_signature: str | None = None,
+    parameters: MemoryParameters | None = None,
+) -> ReviewReceipt:
+```
+
+- `grade` and `parameters` must be supplied together (exactly one => `ValueError` before any write); neither => legacy behavior,
+  record columns stay NULL, every existing result/receipt is unchanged.
+- With a record: inside the existing `BEGIN IMMEDIATE` transaction, after the duplicate/ignored/stale/CAS checks and before the
+  insert, read the current `memory_state` row (`apply_revision`, `state`); `before = MemoryState.model_validate(state["memory_state"])`
+  when that key is present, otherwise the neutral `MemoryState()`; `after = fsrs.transition(before, grade, reviewed_at=<the same
+  aware-UTC instant written to reviews.recorded_at>, parameters=parameters)`. A `transition` failure (for example a parameter_id
+  mismatch) rolls the transaction back and propagates — nothing is committed.
+- The review `INSERT` also writes `grade` (int), `before_state` / `after_state` (compact `json.dumps(model_dump(mode="json"), sort_keys=True)`),
+  `parameter_id`, and `memory_error_signature` (the argument; at most 2000 characters, longer values truncated) — **same transaction, same
+  commit** as the review row and the `memory_state` upsert. The `memory_state.state` JSON gains `"memory_state": <after json>` only for
+  rows written with a record. `payload_digest`, dedupe, conflict, stale and ignored semantics are unchanged.
+- **Migration (spec D8):** `_SCHEMA_VERSION = 3`. In `configure()`, after `executescript(_SCHEMA)`, add any missing column among
+  `grade INTEGER`, `before_state TEXT`, `after_state TEXT`, `parameter_id TEXT`, `memory_error_signature TEXT` with
+  `ALTER TABLE reviews ADD COLUMN ...` (nullable, no default, **no backfill**), discovering existing ones via `PRAGMA table_info(reviews)`;
+  tolerate a concurrent "duplicate column name" error; then set `user_version` to 3 only when it is lower. Re-opening is a no-op, a
+  half-migrated database is completed, a newer-than-supported version still raises. Leave the `CREATE TABLE IF NOT EXISTS reviews` DDL as is.
+- `list_reviews` rows gain a `"record"` key **only** when `grade IS NOT NULL`: `{"grade": int, "before": dict, "after": dict,
+  "parameter_id": str, "memory_error_signature": str | None}`. Legacy rows (NULL grade) have **no `record` key at all**.
+
+`store.py`: define one module-level neutral review-parameters constant (`MemoryParameters(algorithm="fsrs-6", time_policy="days-v1",
+parameter_id="episodic-neutral-v1", provenance="episodic-review")`); `review()` passes `grade=grade`, `memory_error_signature=episode.error_message or
+episode.error_type`, `parameters=<constant>` through `_apply_review_with_current_revision` (add `**record` keywords; behavior of the retry loop unchanged).
+
+`review_log.py`: extend the `ReviewBackend.apply_review` Protocol signature with the same three optional keywords.
+
 ### `packages/ai-parrot/src/parrot/memory/dynamics/export.py` (MODIFY — rebuild; remove the placeholder-era design)
 
 ```python
@@ -220,8 +304,10 @@ async def export_reviews(
 - `exported_at` = `(clock or utcnow)()` as ISO-8601 UTC — the real time by default, injectable in tests. Do not hard-code a date.
 - Archive (JSON, `sort_keys=True`, compact separators): `format`, `exported_at`, `namespace`, `reviews` (a **list**, backend order, one
   record per committed review keyed by `dedupe_key` — two reviews of the same memory version must both appear), and a
-  `provenance` object naming the source (`backend`, table `reviews`) and listing exactly the persisted fields
-  (`command`, `apply_revision`, `recorded_at`). **Do not** add grades, before/after state or `parameter_id`: they are not persisted.
+  `provenance` object naming the source (`backend`, table `reviews`), the always-present persisted fields (`command`, `apply_revision`,
+  `recorded_at`) and the optional `record` fields (`grade`, `before`, `after`, `parameter_id`, `memory_error_signature`) that exist **only** for
+  reviews committed with a record. Review records are exported exactly as `list_reviews` returns them: legacy rows carry no `record` key; never
+  synthesize one.
 - Identical source evidence + identical injected clock => byte-identical archive and identical `content_hash`.
 - Return metadata: `export_path`, `record_count` (= `len(reviews)` actually written), `content_hash`, `format_version`.
 - Write without blocking the event loop: build bytes, then `await asyncio.to_thread(...)` a helper that writes a unique temp file in the
@@ -250,8 +336,10 @@ If the configured manager has no episodic store, raise `click.ClickException` (v
   6. a store whose backend lacks `list_reviews` -> visible `RuntimeError`, no file written;
   7. `store=None` -> `ValueError`;
   8. CLI `export-reviews` via `click.testing.CliRunner` on a real temp store exports a non-empty archive equal to the library export.
+- Record/migration tests (real temporary SQLite; `tests/memory/dynamics/test_sqlite_backend.py`): (a) a database created by hand at schema version 2 (old `reviews` DDL, `PRAGMA user_version=2`, one legacy review + memory_state row) opens, migrates to version 3, keeps the legacy row without a `record`, a second open is a no-op, and a database with only some of the new columns is completed; (b) `apply_review(command, grade=..., parameters=..., memory_error_signature=...)` commits the review row, the new columns and `memory_state` together — a forced `transition` failure leaves no review row and no state change; a second review of the same memory has `before == the first review's after`; (c) a call without a grade writes NULL record columns and an unchanged receipt; grade without parameters raises `ValueError`.
 - `tests/memory/dynamics/test_sqlite_backend.py`: `list_reviews` applies scope before `limit` (a limit smaller than the other-namespace rows must still return in-scope rows), deterministic order, closed backend fails visibly.
-- `tests/memory/dynamics/test_store_reviews.py`: store delegation and visible failure on a backend without the capability.
+- `tests/memory/dynamics/test_store_reviews.py`: store delegation and visible failure on a backend without the capability; `store.review` persists the record (grade equals `select_grade`'s choice — for example AGAIN for a matching error signature —, `memory_error_signature` equals the episode's error text, `parameter_id == "episodic-neutral-v1"`, `after.status == "reviewed"`).
+- `tests/memory/dynamics/test_export.py` additions: the archive carries `record` for rows committed with one; an archive exported from a previous-schema database contains the legacy rows with no `record`; replaying an archive that carries records (applying only each `command`) yields exactly one `applied` per review, then `duplicate`, and works identically when the `record` keys are stripped from the archive.
 
 ### FILL IN checklist
 
@@ -266,6 +354,7 @@ If the configured manager has no episodic store, raise `click.ClickException` (v
 - [ ] Owner (2): `export_reviews(*, namespace, destination, ...)` exports what the configured store holds; the CLI command exports a non-empty archive from a store that has reviews; no placeholder or empty-data path.
 - [ ] Owner (3): two reviews of the same memory version both survive; `exported_at` is real time (injectable); retry backs off or makes no such claim; no blocking write in an async function; no shared `.tmp` name.
 - [ ] Owner (4): tests use a real temporary SQLite store with reviews applied through `apply_review` and cover replay of the exported archive.
+- [ ] Owner Decision 2: the full review record (grade, before/after state, parameter_id, error signature) is persisted in the same transaction as the review row; the schema migration is additive, idempotent and NULL-only; legacy rows are exported without a `record`; `list_reviews` and the archive carry the record; replay is unaffected; tested including a database created at the previous schema version.
 - [ ] AC18/U4: identical source evidence + clock produces stable mappings/order and a byte-identical archive. AC12/AC18: a failed export neither loses nor re-applies reviews.
 - [ ] AC18: no fit.py, fitting CLI or optimizer/dependency changes are introduced.
 - [ ] Narrow task checks pass; scoped black/ruff pass for touched Python; validation logs identify skipped external coverage explicitly.
@@ -291,33 +380,3 @@ CancelledError. Use subprocesses for crash/multiprocess checks, never shared pro
 5. Run validation, commit scoped implementation, and finalize with `parrot sdd task finalize`
    using real TaskCompletionEvidence and the exact implementation HEAD. Let finalization own
    the completion note and active-to-completed move; do not fabricate completion evidence.
-
-## Completion Note
-
-- Task: TASK-5679
-- Feature: agent-memory-mixin
-- Status: **done-with-issues** (closed by hand; `parrot sdd task finalize` only records `done`)
-- Closed at (UTC): 2026-11-16T01:52:45+00:00
-- Delivery: rework merged as 19d6dae59a (seat gpt-5.6-terra, codex, attempt 1, 617s) + review fix fe3561614b (real-clock assertion tightened). Replaces the first, rejected delivery (438c492521).
-- Validation: merge-tier 99 passed on the delivery; 5 passed on the final HEAD (test_export.py). Artifacts: 3b568f295cde5b177593bd900e5d6d2e0a5c6ecd164cd3d27fe1a3f0a37904a9, 3ab7745f39ad97f7f52e7dba80d2c89e902c2adf7207d0035e9bd54ae597664b. Review: e3769a4fc5a74baa1542f657553e5d21e07d89b0fa4927b394b93f1af7d4e41d. Feedback: coder-feedback:24a316f0bf2e51f75f222f43 (terra, weak assertion), coder-feedback:c8a070acc23bf6bd00971522 (minimax, first attempt placeholder).
-
-### Owner decision — what was done
-
-1. `SQLiteEpisodeBackend.list_reviews(namespace, *, limit=None)`: every `namespace.build_filter()` item applied in SQL against the committed command's namespace before `ORDER BY recorded_at, dedupe_key` and before `LIMIT`; `limit<=0` raises; closed backend fails visibly. `EpisodicMemoryStore.list_reviews` delegates and raises `RuntimeError` when the backend has no such capability (never an empty list).
-2. `export_reviews(*, namespace, destination, store=None, clock=None)` exports what the store holds; `store=None` raises `ValueError`. CLI `export-reviews` resolves the store from the opened toolkit manager and fails visibly (`ClickException`) when episodic memory is not enabled. No placeholder or empty-data path remains.
-3. Smaller issues: reviews are a list keyed by `dedupe_key` (two reviews of one memory version both survive, `record_count` matches); `exported_at` is the real UTC time via an injectable clock; `retry_export` was deleted (a re-run is idempotent; no unbacked backoff claim); the write runs in `asyncio.to_thread` using a unique `mkstemp` file in the destination directory, fsynced, `os.replace`d and removed on failure.
-4. Tests (real temporary SQLite store, reviews committed through `apply_review`): two reviews of one version survive; byte-identical export with an injected clock and a real-time bracket for the default clock; other namespaces excluded; archive replay into a fresh store gives `applied` with the same `apply_revision`, re-applying into the source gives `duplicate` (no double apply) and a re-export has the same review set; write failure leaves no temp file and the store unchanged; missing/incapable store fails with no file written; CLI exports a non-empty archive. Backend tests cover scope-before-limit, deterministic order and closed-backend failure; store tests cover delegation and visible failure.
-
-### Interpretation recorded for the owner
-
-The blueprint signature has no store parameter, but a store cannot be derived from `namespace` and `destination`. `namespace` and `destination` remain the required keyword-only parameters; `store` and `clock` were added as optional keyword-only parameters and the CLI supplies the configured store. Scope uses `MemoryNamespace.build_filter()` semantics (unset dimensions are unconstrained), not literal equality on every dimension.
-
-### AC12 / AC18 — what is met and what is still missing
-
-- **AC12 met:** replay of the exported archive produces one application per review (verified by the duplicate result), and a failed export neither loses nor re-applies reviews.
-- **AC18 met:** no optimizer/fitting code or dependency; the export is deterministic (stable scope, order and bytes for the same evidence and clock).
-- **AC18 NOT fully met — "usable by a later fitting feature":** the SQLite review log persists only the validated `ReviewCommand` plus `apply_revision` and `recorded_at`. The FSRS grade, the before/after `MemoryState` and the `parameter_id` are never stored, so the archive cannot carry them (and must not invent them), and the memory's error signature that `select_grade` compares is not in the archive either. A fitter cannot reconstruct grades from the archive alone. Needs an owner decision: persist grade + before/after state + parameter_id at `apply_review` time (ReviewCommand/apply_review change plus migration), or retain an episode snapshot for reconstruction. Tracked as issue:cef9e1a8c0e6. The previous gap (no read API) is closed (issue:ca240b187f61, resolved by fe3561614b; unpushed, lands with the FEAT-892 PR).
-
-### Also found while verifying (not part of this task)
-
-TASK-5678 registers the memory command group with an eager module-level import in `knowledge/wiki/cli.py`, so every `wikitoolkit` start imports `parrot.memory`; in the worker sandbox that crashes `wikitoolkit` (navconfig log directory). Tracked as issue:76c09075409e.

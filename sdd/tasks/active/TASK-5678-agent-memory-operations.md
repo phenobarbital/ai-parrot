@@ -16,6 +16,19 @@ Implement the bounded M6 slice of FEAT-892 revision 0.2. The owner's accepted
 section 8 decisions govern defaults; earlier proposed wording is not permission to change them.
 These are planning artifacts, not evidence that carried G1–G4 gates passed.
 
+## Rework (host-delegated decision, 2026-11-16) — issue:76c09075409e
+
+The delivery attached the memory command group with a module-level import in `knowledge/wiki/cli.py`
+(`from parrot.memory.dynamics.cli import register_memory_commands` + `register_memory_commands(wiki)`), so every
+`wikitoolkit` command imported `parrot.memory` and navconfig logging at startup. The spec requires the group to be
+attached **lazily**. Measured: with that one import stubbed out, nothing else at `wikitoolkit` startup imports
+`parrot.memory`, so the requirement is achievable.
+
+Required: importing `parrot.knowledge.wiki.cli` and running any non-memory `wikitoolkit` command must NOT import
+`parrot.memory`; `wiki.commands["memory"]` must still exist (so `wikitoolkit --help` lists it) and `wikitoolkit memory ...`
+must behave exactly as before, importing the memory package only when that command is used. Add a regression test that
+runs a wikitoolkit command in a **fresh subprocess** and asserts `parrot.memory` is not in `sys.modules`.
+
 ## Release Preconditions
 
 No additional owner decision is required beyond completed dependency contracts. Do not bypass a blocked dependency.
@@ -45,8 +58,9 @@ except the separately authorized scoped forget API; unrelated refactoring.
 |---|---|---|
 | `packages/ai-parrot/src/parrot/memory/agent_memory/toolkit.py` | CREATE | Core toolkit as explicitly authorized by user |
 | `packages/ai-parrot/src/parrot/memory/dynamics/cli.py` | CREATE | Lazy registration of status/recall/cite/review/forget/sync/import/export |
-| `packages/ai-parrot/src/parrot/knowledge/wiki/cli.py` | MODIFY | Attach the lazy memory command group |
+| `packages/ai-parrot/src/parrot/knowledge/wiki/cli.py` | MODIFY | Attach the memory command group lazily (no import of parrot.memory at startup) |
 | `packages/ai-parrot/tests/memory/agent_memory/test_operations.py` | CREATE | Explicit YAML, lazy resources, CLI scope and stdout purity |
+| `packages/ai-parrot/tests/knowledge/wiki/test_cli_lazy_memory.py` | CREATE | Fresh-subprocess regression: wikitoolkit commands do not import parrot.memory |
 
 ## Codebase Contract
 
@@ -69,7 +83,11 @@ import pytest
 
 ### Existing Signatures and Anchors
 
-- `packages/ai-parrot/src/parrot/knowledge/wiki/cli.py:1503`: `def wiki(ctx: click.Context, verbose: bool) -> None:` (exact-line occurrence count 1).
+- `packages/ai-parrot/src/parrot/knowledge/wiki/cli.py:1504`: `def wiki(ctx: click.Context, verbose: bool) -> None:` (`@click.group(name="wiki")` at :1495).
+- `packages/ai-parrot/src/parrot/knowledge/wiki/cli.py:140`: `from parrot.memory.dynamics.cli import register_memory_commands` (exactly 1 occurrence; remove it) and `:1516`: `register_memory_commands(wiki)` (exactly 1 occurrence; replace it).
+- `packages/ai-parrot/src/parrot/memory/dynamics/cli.py`: `def register_memory_commands(group: click.Group) -> None:` returns early if `"memory" in group.commands`, otherwise builds the `memory` click group and ends with `group.add_command(memory)`; it imports `parrot.memory.agent_memory.toolkit` at module level (fine once only imported lazily).
+- `packages/ai-parrot/tests/memory/agent_memory/test_operations.py:158`: `assert "memory" in wiki.commands` — must keep passing.
+- click is 8.5.x here: `click.Group.make_context(info_name, args, parent=None, **extra)` is what a parent group calls on a subcommand before `invoke`.
 - `packages/ai-parrot/src/parrot/tools/toolkit.py`: 225:class AbstractToolkit(ServerManagedToolkit, ABC):  # noqa: B024 -- deliberately has no required abstract methods; see below.
 - `packages/ai-parrot/src/parrot/mcp/toolkit_config.py`: 21:class ToolkitSection(BaseModel):
 - `packages/ai-parrot/src/parrot/tools/toolkit.py:426` — `AbstractToolkit._open`: `async def _open(self) -> None:`
@@ -106,9 +124,14 @@ import pytest
     {
       "path": "packages/ai-parrot/tests/memory/agent_memory/test_operations.py",
       "action": "CREATE"
+    },
+    {
+      "path": "packages/ai-parrot/tests/knowledge/wiki/test_cli_lazy_memory.py",
+      "action": "CREATE"
     }
   ],
   "contract_symbols": [
+    "sym:packages/ai-parrot/src/parrot/knowledge/wiki/cli.py#wiki",
     "sym:packages/ai-parrot/src/parrot/mcp/toolkit_config.py#ToolkitSection",
     "sym:packages/ai-parrot/src/parrot/tools/toolkit.py#AbstractToolkit",
     "sym:packages/ai-parrot/src/parrot/tools/toolkit.py#AbstractToolkit._close",
@@ -190,16 +213,43 @@ def register_memory_commands(group: click.Group) -> None:
 
 ### `packages/ai-parrot/src/parrot/knowledge/wiki/cli.py` (MODIFY)
 
+Remove the module-level `from parrot.memory.dynamics.cli import register_memory_commands` (line 140) and the eager
+`register_memory_commands(wiki)` call (line 1516). Attach a lightweight placeholder named `memory` instead:
+
 ```python
-# occurrences: 1 (verified: grep -F -x -c -- 'def wiki(ctx: click.Context, verbose: bool) -> None:' packages/ai-parrot/src/parrot/knowledge/wiki/cli.py)
-# MODIFY anchor at packages/ai-parrot/src/parrot/knowledge/wiki/cli.py:1503: def wiki(ctx: click.Context, verbose: bool) -> None:
-# Attach the lazy memory command group.
-# FILL IN: AC17: explicit YAML class_path/kwargs constructs the toolkit synchronously and acquires stores only in _open; close/reopen and partial failure work.
-# FILL IN: AC05/AC17: all operations use runtime/trusted scope and evidence references, not supplied grades; profile operations are not exposed to coder tooling by default.
-# FILL IN: AC17/AC18: stdout stays JSON-RPC clean, no implicit registry, no fitting command/dependency, and shared SDD root is resolved independently of worker CWD.
+class _LazyMemoryGroup(click.Group):
+    """`memory` command that imports parrot.memory only when it is actually used."""
+
+    def __init__(self) -> None:
+        super().__init__(name="memory", help="Operate on one explicitly configured agent-memory store.")
+        self._resolved: click.Group | None = None
+
+    def _real(self) -> click.Group:
+        """Import the real group once (build it on a scratch group; take its `memory` command)."""
+        ...  # import register_memory_commands HERE, call it on a scratch click.Group, return holder.commands["memory"]
+
+    def make_context(self, info_name, args, parent=None, **extra):
+        """Delegate parsing and invocation to the real group."""
+        return self._real().make_context(info_name, args, parent=parent, **extra)
+
+wiki.add_command(_LazyMemoryGroup())
 ```
 
-**Why:** The MCP constructor receives serialized kwargs before any async lifecycle; lazy acquisition and inherited close-state reset make reopen reliable.
+- `wiki.commands["memory"]` exists at import time; its help line is static (no import needed to render `wikitoolkit --help`).
+- `wikitoolkit memory <sub> ...` (options such as `--storage-path`, sub-commands, `--help`) behaves exactly as with the eager
+  registration — the real group handles it. Do not change `dynamics/cli.py` behavior.
+- No other import of `parrot.memory`, `parrot.clients` or the toolkit may be introduced at module level in `wiki/cli.py`.
+
+### `packages/ai-parrot/tests/knowledge/wiki/test_cli_lazy_memory.py` (CREATE)
+
+Fresh-subprocess regression (use `subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=...)`,
+inherit the environment; the child prints one JSON line):
+1. child imports `parrot.knowledge.wiki.cli`, invokes a real wikitoolkit command through `click.testing.CliRunner` (for example
+   `wiki status --help`), and prints `{"exit_code": ..., "memory_loaded": <any module == "parrot.memory" or startswith "parrot.memory.">}` —
+   assert `exit_code == 0` and `memory_loaded is False`;
+2. child invokes `wiki memory --help` and prints the same plus whether the output contains `--storage-path` — assert exit 0, the
+   option listed, and `memory_loaded is True` (the group still resolves on demand);
+3. in-process: `"memory" in wiki.commands`.
 
 ### `packages/ai-parrot/tests/memory/agent_memory/test_operations.py` (CREATE)
 
@@ -243,16 +293,18 @@ def test_jsonrpc_stdout_and_no_optimizer() -> None:
 - [ ] AC05/AC17: all operations use runtime/trusted scope and evidence references, not supplied grades; profile operations are not exposed to coder tooling by default.
 - [ ] AC17/AC18: stdout stays JSON-RPC clean, no implicit registry, no fitting command/dependency, and shared SDD root is resolved independently of worker CWD.
 - [ ] User instruction: AgentMemoryToolkit remains core at parrot.memory.agent_memory; this explicit exception overrides the general concrete-toolkit location convention for this feature.
+- [ ] Rework (issue:76c09075409e): `parrot.memory` is NOT imported when `parrot.knowledge.wiki.cli` is imported or a non-memory wikitoolkit command runs (fresh-subprocess test); `wiki.commands["memory"]` still exists and `wikitoolkit memory ...` behaves as before.
 - [ ] Narrow task checks pass; scoped black/ruff pass for touched Python; validation logs identify skipped external coverage explicitly.
 
 ## Validation Commands
 
-- `pytest packages/ai-parrot/tests/memory/agent_memory/test_operations.py -q`
+- `pytest packages/ai-parrot/tests/memory/agent_memory/test_operations.py packages/ai-parrot/tests/knowledge/wiki/test_cli_lazy_memory.py packages/ai-parrot/tests/knowledge/wiki/test_cli.py -q`
 
 ## Test Specification
 
 - `explicit_yaml_lazy_construct_close_reopen`: AC17: explicit YAML class_path/kwargs constructs the toolkit synchronously and acquires stores only in _open; close/reopen and partial failure work.
 - `cli_scope_and_evidence_validation`: AC05/AC17: all operations use runtime/trusted scope and evidence references, not supplied grades; profile operations are not exposed to coder tooling by default.
+- `wikitoolkit_commands_do_not_import_parrot_memory`, `memory_group_resolves_lazily`: see the regression test above.
 - `jsonrpc_stdout_and_no_optimizer`: AC17/AC18: stdout stays JSON-RPC clean, no implicit registry, no fitting command/dependency, and shared SDD root is resolved independently of worker CWD.
 
 Use deterministic clocks, runtime-derived identities and isolated temporary stores. Preserve
@@ -267,17 +319,3 @@ CancelledError. Use subprocesses for crash/multiprocess checks, never shared pro
 5. Run validation, commit scoped implementation, and finalize with `parrot sdd task finalize`
    using real TaskCompletionEvidence and the exact implementation HEAD. Let finalization own
    the completion note and active-to-completed move; do not fabricate completion evidence.
-
-## Completion Note
-
-- Task: TASK-5678
-- Feature: agent-memory-mixin
-- Implementation SHA: b56029a2cef9b1ada50a6de2f320dfbb943fdb8c
-- Closed at (UTC): 2026-11-16T01:13:47+00:00
-- Fix commits: none
-
-| Metric | Value |
-|---|---|
-| validation_refs | 1 |
-| fix_commits | 0 |
-| seat_summary | Seat: gpt-5.6-sol · Backend: codex · Model: gpt-5.6-sol · Attempts: 1 · Duration: 534s · Tokens: n/a |
