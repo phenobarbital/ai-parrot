@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-903 — Cross-scope episodic citations and reviews
 **Spec**: `sdd/specs/episodic-store-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M
 **Depends-on**: TASK-5720
@@ -182,3 +182,18 @@ Do not add live API calls. Documentation also runs `parrot sdd techwiki check
 Work only in the provisioned FEAT-903 worktree and only on declared files.
 Use worktree source on PYTHONPATH. Commit implementation, record semantic review
 and real validation evidence, then finalize through `parrot sdd task finalize`.
+
+## Completion Note
+
+- Task: TASK-5721
+- Feature: episodic-store-fixes
+- Implementation SHA: 25515ed86288ae58e9692687ce7b0b1a72fe1101
+- Closed at (UTC): 2026-11-16T12:45:14+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| semantic_review | Reviewed typed original refs through complete candidate packing, final delivered-token membership, full-ref equality and requester-scoped mixed reviews. 44 tests passed, including real mixed-scope tool failure; black and ruff passed. Independent feature review pending. |
+| tests | 44 passed |
