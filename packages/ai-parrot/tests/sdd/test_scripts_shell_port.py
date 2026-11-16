@@ -125,6 +125,93 @@ def test_close_removes_orphan_active_copy(repo: Path) -> None:
     assert not (repo / "sdd/tasks/active/TASK-9001-demo.md").exists()
 
 
+BRIEF_INDEX = "sdd/briefs/demo.index.json"
+BRIEF_TASK = "sdd/briefs/demo/tasks/HOTFIX-demo-1-fix.md"
+
+
+@pytest.fixture
+def brief_repo(tmp_path: Path) -> Path:
+    root = tmp_path / "brief"
+    (root / "sdd/briefs/demo/tasks").mkdir(parents=True)
+    _git(root, "init", "-q")
+    _git(root, "config", "user.email", "t@example.com")
+    _git(root, "config", "user.name", "T")
+    (root / BRIEF_TASK).write_text("# HOTFIX-demo-1\n\n**Status**: in-progress\n", encoding="utf-8")
+    index = {"feature": "demo", "type": "brief", "completed_at": None,
+             "tasks": [{"id": "HOTFIX-demo-1", "status": "in-progress", "completed_at": None, "file": BRIEF_TASK}]}
+    (root / BRIEF_INDEX).write_text(json.dumps(index), encoding="utf-8")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "seed")
+    return root
+
+
+@pytest.mark.parametrize("runner", [_module, _wrapper])
+def test_close_brief_task_in_place(brief_repo: Path, runner) -> None:
+    proc = runner("close_task", brief_repo, "HOTFIX-demo-1", "demo", "verified")
+    assert proc.returncode == 0, proc.stderr
+    assert "✅ HOTFIX-demo-1 closed in place (verification=verified)." in proc.stdout
+    assert "**Status**: done" in (brief_repo / BRIEF_TASK).read_text(encoding="utf-8")
+    data = json.loads((brief_repo / BRIEF_INDEX).read_text(encoding="utf-8"))
+    task = data["tasks"][0]
+    assert (task["status"], task["verification"], task["file"]) == ("done", "verified", BRIEF_TASK)
+    assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\+00:00", task["completed_at"])
+    assert data["completed_at"] == task["completed_at"]
+    assert set(_git(brief_repo, "diff", "--cached", "--name-only").split()) == {BRIEF_INDEX, BRIEF_TASK}
+    assert not (brief_repo / "sdd/tasks").exists()
+
+
+def test_close_brief_task_is_idempotent(brief_repo: Path) -> None:
+    assert _module("close_task", brief_repo, "HOTFIX-demo-1", "demo", "partial").returncode == 0
+    index_path = brief_repo / BRIEF_INDEX
+    data = json.loads(index_path.read_text(encoding="utf-8"))
+    data["tasks"][0]["completed_at"] = data["completed_at"] = "2001-01-01T00:00:00+00:00"
+    index_path.write_text(json.dumps(data), encoding="utf-8")
+    second = _module("close_task", brief_repo, "HOTFIX-demo-1", "demo", "verified")
+    assert second.returncode == 0, second.stderr
+    again = json.loads(index_path.read_text(encoding="utf-8"))
+    assert again["completed_at"] == again["tasks"][0]["completed_at"] == "2001-01-01T00:00:00+00:00"
+    assert again["tasks"][0]["verification"] == "partial"
+
+
+def test_close_brief_task_unknown_id_exits_2(brief_repo: Path) -> None:
+    before = (brief_repo / BRIEF_INDEX).read_text(encoding="utf-8")
+    proc = _module("close_task", brief_repo, "HOTFIX-demo-404", "demo")
+    assert proc.returncode == 2
+    assert f"✗ HOTFIX-demo-404: not in {BRIEF_INDEX}." in proc.stderr
+    assert (brief_repo / BRIEF_INDEX).read_text(encoding="utf-8") == before
+
+
+@pytest.mark.parametrize("recorded", ["sdd/briefs/demo/tasks/gone.md", "../outside.md", None])
+def test_close_brief_task_missing_file_exits_2(brief_repo: Path, recorded: str | None) -> None:
+    (brief_repo.parent / "outside.md").write_text("**Status**: in-progress\n", encoding="utf-8")
+    index_path = brief_repo / BRIEF_INDEX
+    data = json.loads(index_path.read_text(encoding="utf-8"))
+    data["tasks"][0]["file"] = recorded
+    index_path.write_text(json.dumps(data), encoding="utf-8")
+    before = index_path.read_text(encoding="utf-8")
+    proc = _module("close_task", brief_repo, "HOTFIX-demo-1", "demo")
+    assert proc.returncode == 2
+    assert "task file not found" in proc.stderr
+    assert index_path.read_text(encoding="utf-8") == before
+    assert "in-progress" in (brief_repo.parent / "outside.md").read_text(encoding="utf-8")
+
+
+def test_close_brief_invalid_index_exits_5(brief_repo: Path) -> None:
+    (brief_repo / BRIEF_INDEX).write_text('{"tasks": null}', encoding="utf-8")
+    assert _module("close_task", brief_repo, "HOTFIX-demo-1", "demo").returncode == 5
+
+
+def test_feature_index_wins_over_brief_index(repo: Path) -> None:
+    (repo / "sdd/briefs").mkdir()
+    brief = {"feature": "demo", "type": "brief", "tasks": [{"id": "TASK-9001", "status": "pending", "file": "x.md"}]}
+    (repo / BRIEF_INDEX).write_text(json.dumps(brief), encoding="utf-8")
+    proc = _module("close_task", repo, "TASK-9001", "demo")
+    assert proc.returncode == 0, proc.stderr
+    assert "active/ is clean." in proc.stdout
+    assert (repo / "sdd/tasks/completed/TASK-9001-demo.md").is_file()
+    assert json.loads((repo / BRIEF_INDEX).read_text(encoding="utf-8")) == brief
+
+
 def test_ports_do_not_shell_out_to_jq_or_bash() -> None:
     for name in ("close_task", "heal_orphans"):
         text = (SRC / "parrot" / "sdd" / "scripts" / f"{name}.py").read_text(encoding="utf-8")

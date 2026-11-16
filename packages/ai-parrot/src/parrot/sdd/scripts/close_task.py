@@ -5,6 +5,10 @@ stages the change, then HARD-VERIFIES that no active copy survives. Usage (ident
 
     python -m parrot.sdd.scripts.close_task <TASK-ID> <feature-slug> [verified|partial|forced]
 
+A slug with ``sdd/briefs/<slug>.index.json`` and no per-spec index is a ``/sdd-brief``: its task is closed IN
+PLACE (header, per-brief index entry, staging) and never moved. There, exit 2 also covers an id absent from the
+brief index and a missing task file.
+
 Exit codes: 0 closed (idempotent) · 1 usage · 2 nothing to close · 3 post-condition failed ·
 5 index not valid JSON / no task list (jq parity) · 128 not a git repository (git parity).
 """
@@ -24,6 +28,7 @@ from pathlib import Path
 ACTIVE_DIR = "sdd/tasks/active"
 COMPLETED_DIR = "sdd/tasks/completed"
 INDEX_DIR = "sdd/tasks/index"
+BRIEFS_DIR = "sdd/briefs"
 USAGE = "usage: {prog} <TASK-ID> <feature-slug> [verified|partial|forced]\n"
 
 
@@ -144,6 +149,57 @@ def _emit_task_closed_inprocess(start_dir: Path, task_id: str, feature_slug: str
     LedgerLog(str(ledger_dir / "events.jsonl")).append(event)
 
 
+def _close_brief_task(
+    repo_root: Path, index_rel: str, task_id: str, feature_slug: str, verification: str, now: str
+) -> int:
+    """Close a ``/sdd-brief`` task in place: header, per-brief index entry and staging, with no file move.
+
+    Args:
+        repo_root: Resolved top level of the checkout.
+        index_rel: Repo-relative path of the per-brief index (``sdd/briefs/<slug>.index.json``).
+        task_id: Brief task id (``HOTFIX-<KEY>-<N>``).
+        feature_slug: Brief slug.
+        verification: Verification label recorded on the index entry.
+        now: Timestamp used for ``completed_at``.
+
+    Returns:
+        0 closed (idempotent), 2 unknown id or missing task file, 5 invalid index, or a failing ``git add`` code.
+    """
+    index = repo_root / index_rel
+    try:
+        data = json.loads(index.read_text(encoding="utf-8"))
+    except (ValueError, OSError) as exc:
+        _err(f"jq: error: invalid index JSON: {exc}")
+        return 5
+    tasks = data.get("tasks") if isinstance(data, dict) else None
+    if not isinstance(tasks, list) or not all(isinstance(t, dict) for t in tasks):
+        _err("jq: error: index has no iterable task list")
+        return 5
+    entry = next((t for t in tasks if t.get("id") == task_id), None)
+    if entry is None:
+        _err(f"✗ {task_id}: not in {index_rel}.")
+        return 2
+    file_rel = entry.get("file")
+    task_file = (repo_root / file_rel).resolve() if isinstance(file_rel, str) and file_rel else None
+    if task_file is None or not task_file.is_relative_to(repo_root) or not task_file.is_file():
+        _err(f"✗ {task_id}: task file not found: {file_rel}")
+        return 2
+    if sync_status_header(task_file):
+        _out(f"✓ {task_id}: header **Status** → done")
+    try:
+        update_index(index, task_id, verification, file_rel, now)
+    except ValueError as exc:
+        _err(f"jq: error: {exc}")
+        return 5
+    added = _git(["add", "--", index_rel, file_rel], repo_root)
+    if added.returncode != 0:
+        sys.stderr.write(added.stderr)
+        return added.returncode
+    _out(f"✅ {task_id} closed in place (verification={verification}).")
+    _emit_task_closed(repo_root, task_id, feature_slug, verification)
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Port of close_task.sh C1–C14 (positional args only; extra args ignored, verification not validated)."""
     args = list(sys.argv[1:] if argv is None else argv)
@@ -166,6 +222,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     completed_dir = repo_root / COMPLETED_DIR
     index_rel = f"{INDEX_DIR}/{feature_slug}.json"
     index = repo_root / index_rel
+    brief_index_rel = f"{BRIEFS_DIR}/{feature_slug}.index.json"
+    if not index.is_file() and (repo_root / brief_index_rel).is_file():
+        return _close_brief_task(repo_root, brief_index_rel, task_id, feature_slug, verification, now)
     completed_dir.mkdir(parents=True, exist_ok=True)
 
     active_matches = sorted(active_dir.glob(f"{task_id}-*.md"))
