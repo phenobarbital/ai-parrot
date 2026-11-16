@@ -12,6 +12,7 @@ import logging
 from parrot.memory.agent_memory.models import MemoryRequestScope
 
 from .models import MemoryCandidate, MemoryConfig, MemoryContext
+from parrot.memory.dynamics.models import MemoryRef
 
 logger = logging.getLogger(__name__)
 
@@ -187,6 +188,7 @@ class ContextAssembler:
         rollover = 0
         packed_sections: dict[str, str] = {}
         delivered_refs: list[str] = []
+        memory_refs: list[MemoryRef] = []
         tokens_used = 0
 
         for section in ("episodic", "skills", "brain", "user_knowledge"):
@@ -201,6 +203,8 @@ class ContextAssembler:
                     continue
                 section_text = proposed
                 delivered_in_section.append(self._candidate_ref(candidate))
+                if candidate.memory_ref is not None:
+                    memory_refs.append(candidate.memory_ref)
 
             section_tokens = self._estimate_tokens(section_text)
             packed_sections[section] = section_text
@@ -216,6 +220,7 @@ class ContextAssembler:
             tokens_used=tokens_used,
             tokens_budget=self.config.max_context_tokens,
             delivered_refs=tuple(delivered_refs),
+            memory_refs=tuple(memory_refs),
         )
         packed_text = context.to_prompt_string()
         if not packed_text:

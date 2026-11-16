@@ -141,7 +141,7 @@ async def test_recall_crosses_sessions_of_the_same_user(recall_manager, store) -
     earlier = await _failure(store, user_id="u1", session_id="s1")
     await _failure(store, user_id="u2", session_id="s9")
 
-    assert await _recalled(recall_manager, _scope("u1", "s2")) == {earlier: "episodic_context"}
+    assert await _recalled(recall_manager, _scope("u1", "s2")) == {earlier: "episodic"}
     assert await _recalled(recall_manager, _scope("u3", "s3")) == {}
 
 
@@ -169,8 +169,8 @@ async def test_set_room_keeps_narrowing_every_recall_scope(recall_manager, store
     assert set(await _recalled(recall_manager, scope)) == {in_room}
 
 
-async def test_only_exact_scope_episodes_enter_the_review_manifest(recall_manager, store) -> None:
-    """Cross-scope episodes are delivered as context; review identity stays the exact namespace."""
+async def test_visible_episodes_enter_the_review_manifest_with_original_identity(recall_manager, store) -> None:
+    """Visible episodes retain their recorded identity regardless of the requesting session."""
     same_session = await _failure(store, user_id="u1", session_id="s1")
     other_session = await _failure(store, user_id="u1", session_id="s0")
     agent_level = await _failure(store)
@@ -179,14 +179,23 @@ async def test_only_exact_scope_episodes_enter_the_review_manifest(recall_manage
     context = await recall_manager.prepare_context(_QUERY, scope=scope)
     assert set(context.delivered_refs) == {
         f"episodic:{same_session}:v1",
-        f"episodic_context:{other_session}:v1",
-        f"episodic_context:{agent_level}:v1",
+        f"episodic:{other_session}:v1",
+        f"episodic:{agent_level}:v1",
     }
 
     committed = recall_manager.commit_memory_exposure(context, scope=scope)
     exposure = recall_manager._memory_exposures[committed.exposure_id]
-    assert [ref.memory_id for ref in exposure.refs] == [same_session]
-    assert exposure.refs[0].namespace == recall_manager._namespace_for_scope(scope)
+    refs = {ref.memory_id: ref for ref in exposure.refs}
+    assert set(refs) == {same_session, other_session, agent_level}
+    assert refs[same_session].namespace == recall_manager._namespace_for_scope(scope)
+    assert refs[other_session].namespace.session_id == "s0"
+    assert refs[agent_level].namespace.user_id is None
+    assert refs[agent_level].namespace.session_id is None
+    later = _scope("u1", "s2")
+    later_context = await recall_manager.prepare_context(_QUERY, scope=later)
+    later_committed = recall_manager.commit_memory_exposure(later_context, scope=later)
+    later_refs = {ref.memory_id: ref for ref in recall_manager._memory_exposures[later_committed.exposure_id].refs}
+    assert refs == later_refs
 
 
 async def test_backend_ignoring_unset_filters_cannot_widen_recall(recall_manager, store, backend) -> None:
