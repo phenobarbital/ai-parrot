@@ -105,7 +105,7 @@ def test_fastpath_is_stdlib_only(tmp_path: Path) -> None:
 
 
 def test_load_triggers_and_resolve_shared_plane(tmp_path: Path) -> None:
-    """Verify malformed indexes fail closed and linked worktrees use a shared plane."""
+    """Verify malformed indexes fail closed."""
     plane = tmp_path / "plane"
     plane.mkdir()
     (plane / fastpath.TRIGGERS_FILE).write_text('{"gh":[{"lesson_id":"pit-1"}]}', encoding="utf-8")
@@ -113,14 +113,36 @@ def test_load_triggers_and_resolve_shared_plane(tmp_path: Path) -> None:
     (plane / fastpath.TRIGGERS_FILE).write_text("{broken", encoding="utf-8")
     assert fastpath.load_triggers(plane, max_bytes=1024) == {}
 
-    primary = tmp_path / "primary"
-    git_dir = primary / ".git"
-    worktree = tmp_path / "linked"
-    git_dir.mkdir(parents=True)
-    linked_git_dir = git_dir / "worktrees" / "linked"
-    linked_git_dir.mkdir(parents=True)
-    (linked_git_dir / "commondir").write_text("../..\n", encoding="utf-8")
-    worktree.mkdir()
-    (worktree / ".git").write_text(f"gitdir: {linked_git_dir}\n", encoding="utf-8")
-    assert fastpath.resolve_plane_dir(worktree) == primary / fastpath.EXPERIENCE_DIR
     assert fastpath.resolve_plane_dir(tmp_path / "outside") is None
+
+
+def test_resolve_plane_dir_rejects_forged_gitdir_marker(tmp_path: Path) -> None:
+    """Verify a marker cannot point the plane at another checkout's Git directory."""
+    foreign = tmp_path / "foreign"
+    (foreign / ".git").mkdir(parents=True)
+    (foreign / ".git" / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+    forged = tmp_path / "forged"
+    forged.mkdir()
+    (forged / ".git").write_text(f"gitdir: {foreign / '.git'}\n", encoding="utf-8")
+
+    assert fastpath.resolve_plane_dir(forged) is None
+
+
+def test_worktree_uses_primary_plane(tmp_path: Path) -> None:
+    """Verify a genuine linked worktree outside the managed tree uses the primary plane."""
+    primary = tmp_path / "primary"
+    primary.mkdir()
+    for command in (
+        ["git", "init", "-q"],
+        ["git", "config", "user.email", "test@example.invalid"],
+        ["git", "config", "user.name", "Test"],
+        ["git", "commit", "--allow-empty", "-qm", "initial"],
+    ):
+        subprocess.run(command, cwd=primary, capture_output=True, check=True)
+
+    worktree = tmp_path / "linked"
+    subprocess.run(
+        ["git", "worktree", "add", "-b", "linked", str(worktree)], cwd=primary, capture_output=True, check=True
+    )
+
+    assert fastpath.resolve_plane_dir(worktree) == primary / fastpath.EXPERIENCE_DIR

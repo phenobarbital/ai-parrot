@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 EXPERIENCE_DIR = Path(".parrot") / "experience"
+ROOTS_ENV = "PARROT_SDD_SANDBOX_ROOTS"
 EVENTS_FILE = "events.jsonl"
 TRIGGERS_FILE = "triggers.json"
 SESSIONS_DIR = "sessions"
@@ -284,12 +285,36 @@ def resolve_plane_dir(cwd: Path) -> Path | None:
             if git_dir is None:
                 return None
             common_dir = _common_git_dir(git_dir)
-            if common_dir is None:
+            if common_dir is None or not _is_valid_linked_worktree(git_marker, git_dir, common_dir):
                 return None
         else:
             return None
         return common_dir.parent / EXPERIENCE_DIR
     return None
+
+
+def frozen_plane_dir(cwd: Path, env: Mapping[str, str]) -> Path | None:
+    """Resolve the launcher-pinned experience plane for a frozen worktree.
+
+    Args:
+        cwd: Directory reported by the hook payload.
+        env: Environment visible to the hook.
+
+    Returns:
+        The frozen shared experience plane, or ``None`` when roots are absent or the cwd is outside the worktree.
+    """
+    raw = env.get(ROOTS_ENV, "")
+    parts = raw.split(os.pathsep) if raw else []
+    if len(parts) != 3 or not all(parts):
+        return None
+    try:
+        root, common_dir, _primary = (Path(part).resolve() for part in parts)
+        current = cwd.resolve()
+    except OSError:
+        return None
+    if current != root and not current.is_relative_to(root):
+        return None
+    return common_dir.parent / EXPERIENCE_DIR
 
 
 def append_event(plane_dir: Path, record: Mapping[str, Any]) -> bool:
@@ -682,3 +707,46 @@ def _common_git_dir(git_dir: Path) -> Path | None:
         return (git_dir / value).resolve() if not Path(value).is_absolute() else Path(value).resolve()
     except OSError:
         return None
+
+
+def _is_valid_linked_worktree(marker: Path, git_dir: Path, common_dir: Path) -> bool:
+    """Return whether Git metadata proves ``marker`` names a linked worktree.
+
+    Args:
+        marker: The linked worktree's ``.git`` marker file.
+        git_dir: The linked worktree administration directory named by the marker.
+        common_dir: The common Git directory named by the administration directory.
+
+    Returns:
+        ``True`` only for Git's linked-worktree metadata layout.
+    """
+    try:
+        if not stat.S_ISDIR(git_dir.lstat().st_mode):
+            return False
+        if git_dir.parent.name != "worktrees" or git_dir.parent.parent != common_dir:
+            return False
+        if not stat.S_ISREG((common_dir / "HEAD").lstat().st_mode):
+            return False
+    except OSError:
+        return False
+
+    backlink = git_dir / "gitdir"
+    descriptor = safe_open(backlink, os.O_RDONLY)
+    if descriptor is None:
+        return False
+    try:
+        value = os.read(descriptor, 8192).decode("utf-8").strip()
+    except (OSError, UnicodeDecodeError):
+        return False
+    finally:
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+    if not value:
+        return False
+    try:
+        linked_marker = (git_dir / value).resolve() if not Path(value).is_absolute() else Path(value).resolve()
+        return linked_marker == marker.resolve()
+    except OSError:
+        return False

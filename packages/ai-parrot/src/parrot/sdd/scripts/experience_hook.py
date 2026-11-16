@@ -12,6 +12,7 @@ from typing import Any
 
 from parrot.knowledge.wiki.experience.fastpath import (
     agy_exit_code,
+    frozen_plane_dir,
     load_triggers,
     resolve_plane_dir,
     safe_open,
@@ -61,7 +62,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         if payload is None:
             return 0
         cwd = payload.get("cwd")
-        plane_dir = resolve_plane_dir(Path(cwd)) if isinstance(cwd, str) and cwd else resolve_plane_dir(Path.cwd())
+        current_dir = Path(cwd) if isinstance(cwd, str) and cwd else Path.cwd()
+        plane_dir = frozen_plane_dir(current_dir, os.environ) or resolve_plane_dir(current_dir)
         if plane_dir is None:
             return 0
 
