@@ -27,6 +27,7 @@ from parrot.knowledge.wiki.ledger.events import (
     LedgerEvent,
 )
 from parrot.knowledge.wiki.ledger.log import LedgerLog
+from parrot.knowledge.wiki.ledger.store import LedgerCursorInvalid
 from parrot.knowledge.wiki.store import WikiPageRecord
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -321,7 +322,7 @@ class LedgerIndex:
             return applied
 
     async def _sync_locked(self, conn: "aiosqlite.Connection") -> tuple[int, int, str | None]:
-        """Read the persisted cursor and apply forward from it to the log tip.
+        """Read this transaction's cursor and explicitly rebuild malformed state.
 
         Returns:
             ``(applied_count, cursor_offset, cursor_event_id)`` reflecting
@@ -330,7 +331,11 @@ class LedgerIndex:
             new was found). The cursor is already persisted for this
             connection's transaction when ``applied_count > 0``.
         """
-        offset, last_event_id = await self.store.read_cursor()
+        try:
+            offset, last_event_id = await self.store.read_cursor_in(conn)
+        except LedgerCursorInvalid:
+            logger.warning("Ledger cursor is invalid; rebuilding the materialized ledger projection.")
+            return await self._rebuild_locked_with_cursor(conn)
         return await self._apply_from(conn, offset, last_event_id)
 
     async def _apply_from(
@@ -340,9 +345,8 @@ class LedgerIndex:
 
         Never re-reads the cursor from storage — callers (like
         :meth:`claim_issue`) that need to continue a scan from a position
-        established earlier IN THE SAME transaction pass it in directly,
-        since ``read_cursor()`` uses a separate connection that cannot see
-        this transaction's own uncommitted cursor advance.
+        established earlier IN THE SAME transaction pass it in directly so
+        the cursor remains visible within the caller's transaction.
 
         Returns:
             ``(applied_count, cursor_offset, cursor_event_id)``. The
@@ -370,10 +374,8 @@ class LedgerIndex:
             if first_event is None or first_event.event_id != last_event_id:
                 # The event the cursor points at is gone or changed — the log
                 # is no longer contiguous with what we last saw. Full rebuild.
-                # `_rebuild_locked` returns its own resulting cursor directly
-                # rather than this reading it back via `read_cursor()`, which
-                # uses a separate connection and cannot see `conn`'s own
-                # still-uncommitted write.
+                # `_rebuild_locked` returns its own resulting cursor directly,
+                # preserving this transaction's uncommitted state.
                 return await self._rebuild_locked_with_cursor(conn)
             # first_event matches what we last applied; it is not reapplied.
         elif offset != 0:
@@ -411,9 +413,8 @@ class LedgerIndex:
         """Do the rebuild work and return the resulting cursor directly.
 
         Used by :meth:`_apply_from` so a caller chaining a second pass in
-        the same transaction (``claim_issue``) never has to read the
-        cursor back through a separate connection, which cannot see this
-        transaction's own still-uncommitted write.
+        the same transaction (``claim_issue``) keeps its resulting cursor
+        without a redundant read.
         """
         await conn.execute("DELETE FROM pages")
         await conn.execute("DELETE FROM edges")
