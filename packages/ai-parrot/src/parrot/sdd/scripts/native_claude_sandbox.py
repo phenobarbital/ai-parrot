@@ -415,12 +415,17 @@ def native_sandbox_available() -> tuple[bool, str]:
 
 
 def _shared_python(primary: Path) -> Path:
-    """Resolve the primary checkout's shared virtual-environment interpreter."""
+    """Locate the primary checkout's shared virtual-environment interpreter.
+
+    The path is made absolute but never resolved: a venv's ``bin/python`` is usually a symlink to the
+    base interpreter, and CPython only finds ``pyvenv.cfg`` (hence the venv's ``site-packages`` and
+    ``parrot``) when started through the link itself.
+    """
     candidates = (primary / ".venv" / "bin" / "python", primary / ".venv" / "bin" / "python3")
     for candidate in candidates:
         try:
             if candidate.is_file():
-                return candidate.resolve()
+                return candidate.absolute()
         except OSError:
             continue
     return Path(sys.executable).absolute()

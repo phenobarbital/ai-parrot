@@ -1015,7 +1015,7 @@ def test_native_settings_experience_hooks(linked: tuple[Path, Path]) -> None:
                     "type": "command",
                     "command": native.shlex.join(
                         [
-                            str(shared_python.resolve()),
+                            str(shared_python),
                             "-I",
                             "-m",
                             "parrot.sdd.scripts.experience_hook",
@@ -1036,6 +1036,40 @@ def test_native_settings_experience_hooks(linked: tuple[Path, Path]) -> None:
     assert "|| exit 2" not in failure_command
     assert all("experience_hook" not in hook.get("command", "") for hook in settings["hooks"]["PreToolUse"][0]["hooks"])
     assert str(feature / ".venv" / "bin" / "python") not in settings["hooks"]["PostToolUse"][0]["hooks"][0]["command"]
+    pre_tool_command = settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+    assert pre_tool_command.startswith(native.shlex.quote(str(shared_python)) + " ")
+    assert str(shared_python.resolve()) not in pre_tool_command
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX venv layout (bin/python symlink)")
+def test_shared_python_keeps_the_venv_symlink_importable(tmp_path: Path) -> None:
+    """The hook interpreter must start through the venv link, or the venv's packages vanish.
+
+    Regression for issue:1315b9a83d8a: resolving ``.venv/bin/python`` lands on the base interpreter,
+    which never reads ``pyvenv.cfg``, so ``import parrot`` failed in the PreToolUse guard (``|| exit 2``).
+    """
+    base = Path(sys.executable).resolve()
+    primary = tmp_path / "primary"
+    venv = primary / ".venv"
+    (venv / "bin").mkdir(parents=True)
+    (venv / "pyvenv.cfg").write_text(f"home = {base.parent}\ninclude-system-site-packages = false\n")
+    (venv / "bin" / "python").symlink_to(base)
+    version = f"python{sys.version_info.major}.{sys.version_info.minor}"
+    site_packages = venv / "lib" / version / "site-packages"
+    site_packages.mkdir(parents=True)
+    (site_packages / "feat887_venv_marker.py").write_text("VALUE = 'venv'\n")
+    probe = ["-I", "-c", "import feat887_venv_marker as m; print(m.VALUE)"]
+
+    python = native._shared_python(primary)
+
+    assert python == venv / "bin" / "python"
+    assert python.is_symlink()
+    ran = subprocess.run([str(python), *probe], capture_output=True, text=True, timeout=30, check=False)
+    assert ran.returncode == 0, ran.stderr
+    assert ran.stdout.strip() == "venv"
+    # The resolved target is the base interpreter: it cannot see the venv (the bug this guards).
+    resolved = subprocess.run([str(python.resolve()), *probe], capture_output=True, text=True, timeout=30, check=False)
+    assert resolved.returncode != 0
 
 
 def test_agent_frontmatter_has_no_experience_hooks() -> None:
