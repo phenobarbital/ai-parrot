@@ -21,6 +21,7 @@ from ..auth.exceptions import AuthorizationRequired
 from ..auth.pending import record_auth_requirement
 from ..auth.retry_safety import current_turn_tracker
 from ..core.exceptions import BudgetError
+from ..memory.agent_memory.attribution import capture_tool_attempt
 
 if TYPE_CHECKING:
     from ..auth.permission import PermissionContext
@@ -1780,20 +1781,34 @@ class ToolManager(MCPToolManagerMixin):
                 tracker.mark_body_started()  # a plain function's call IS its body
 
         observer = self._invocation_observer
-        if observer is None or observation is None:
-            return call() if sync else await call()
-
-        observed = await observer.begin(tool_name)
-        observation.executed = True
+        observed = None
+        if observer is not None and observation is not None:
+            observed = await observer.begin(tool_name)
+            observation.executed = True
         try:
             result = call() if sync else await call()
         except asyncio.CancelledError:
-            await observer.cancelled(observed)
+            if observed is not None:
+                await observer.cancelled(observed)
+            try:
+                await capture_tool_attempt(tool_name, terminal="cancelled")
+            except Exception as exc:  # noqa: BLE001 - memory capture cannot replace cancellation
+                self.logger.warning("tool memory capture failed: %s", type(exc).__name__)
             raise
         except BaseException as exc:  # noqa: BLE001 — classified, then re-raised
-            await observer.finish(observed, exception=exc)
+            if observed is not None:
+                await observer.finish(observed, exception=exc)
+            try:
+                await capture_tool_attempt(tool_name, terminal="raised", exception=exc)
+            except Exception as capture_exc:  # noqa: BLE001 - preserve the execution exception
+                self.logger.warning("tool memory capture failed: %s", type(capture_exc).__name__)
             raise
-        await observer.finish(observed, value=result)
+        if observed is not None:
+            await observer.finish(observed, value=result)
+        try:
+            await capture_tool_attempt(tool_name, terminal="returned", returned=result)
+        except Exception as exc:  # noqa: BLE001 - memory capture cannot replace the tool result
+            self.logger.warning("tool memory capture failed: %s", type(exc).__name__)
         return result
 
     async def execute_tool(

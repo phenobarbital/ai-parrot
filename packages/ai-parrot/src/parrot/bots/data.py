@@ -44,6 +44,13 @@ from ..observability.context import (
     current_session_id,
     current_user_id,
 )
+from ..memory.agent_memory.runtime import (
+    bind_memory_exposure,
+    bind_memory_scope,
+    current_memory_exposure,
+    reset_memory_exposure,
+    reset_memory_scope,
+)
 from ..conf import AGENTS_DIR, STATIC_DIR
 from ..utils.paths import secure_path
 from ..bots.prompts import OUTPUT_SYSTEM_PROMPT
@@ -1515,15 +1522,24 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             AIMessage with the analysis result
         """
         # Generate IDs if not provided
+        _memory_user_id = user_id
         session_id = session_id or str(uuid.uuid4())
         user_id = user_id or "anonymous"
-        turn_id = str(uuid.uuid4())
+        turn_id = kwargs.pop("turn_id", None) or str(uuid.uuid4())
 
         # FEAT-525: bind AFTER defaulting (binding-order hazard, spec §7) so
         # read_omitted_content never observes a partially-scoped session.
         _user_token = current_user_id.set(user_id)
         _session_token = current_session_id.set(session_id)
         _memkey_token = current_memory_key_id.set(self.memory_key_id)
+        _memory_scope = self._memory_request_scope(
+            user_id=_memory_user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+        )
+        _memory_scope_token = bind_memory_scope(_memory_scope)
+        _memory_exposure_token = bind_memory_exposure(None)
+        _memory_context_exposure_token = None
 
         # Use default temperature of 0 if not specified
         if "temperature" not in kwargs:
@@ -1616,6 +1632,12 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             )
             if kb_meta.get("activated_kbs"):
                 vector_metadata["activated_kbs"] = kb_meta["activated_kbs"]
+
+            memory_context, memory_exposure_id = await self._prepare_agent_memory(question, _memory_scope)
+            if memory_exposure_id is not None:
+                _memory_context_exposure_token = bind_memory_exposure(memory_exposure_id)
+            if memory_context:
+                user_context = f"{user_context}\n\n{memory_context}" if user_context else memory_context
 
             # Pre-LLM: episodic / mixin-provided context
             episodic_context = ""
@@ -2375,7 +2397,10 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                         self.estimate_prompt_tokens(rendered_history, system_prompt, question),
                     )
                 try:
-                    _stored_text = str(answer_text) if answer_text else None
+                    _stored_text = await self._stored_turn_text(
+                        response,
+                        str(answer_text) if answer_text else None,
+                    )
                     await self._persist_finalized_turn(
                         response,
                         question=question,
@@ -2385,6 +2410,11 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                         use_history=bool(use_conversation_history and memory),
                         compaction=_commit,
                         assistant_text=_stored_text or "",
+                    )
+                    await self._complete_agent_memory(
+                        scope=_memory_scope,
+                        question=question,
+                        response_text=_stored_text,
                     )
                 except Exception as _save_exc:  # noqa: BLE001 - the answer is returned regardless
                     self.logger.error(
@@ -2417,6 +2447,17 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             # Return error response
             raise
         finally:
+            if _memory_context_exposure_token is not None:
+                # PandasAgent never binds a tool-event capture, so nothing else would release the exposure committed
+                # by _prepare_agent_memory; discard it so the manager registry does not grow per invocation.
+                _exposure_manager = getattr(self, "_memory_manager", None)
+                _discard_exposure = getattr(_exposure_manager, "discard_memory_exposure", None)
+                _exposure_id = current_memory_exposure()
+                if _exposure_id is not None and callable(_discard_exposure):
+                    _discard_exposure(_exposure_id)
+                reset_memory_exposure(_memory_context_exposure_token)
+            reset_memory_exposure(_memory_exposure_token)
+            reset_memory_scope(_memory_scope_token)
             current_memory_key_id.reset(_memkey_token)
             current_session_id.reset(_session_token)
             current_user_id.reset(_user_token)
