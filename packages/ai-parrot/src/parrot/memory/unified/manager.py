@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
+from contextlib import AsyncExitStack
 import hashlib
 import json
 import logging
@@ -747,16 +748,16 @@ class UnifiedMemoryManager:
         try:
             if self.extraction_client_factory is not None:
                 client = self.extraction_client_factory()
-                if hasattr(client, "__aenter__"):
-                    async with client as entered:
-                        candidates = await extract_user_knowledge(event, client=entered)
-                else:
-                    try:
-                        candidates = await extract_user_knowledge(event, client=client)
-                    finally:
-                        close = getattr(client, "close", None)
-                        if callable(close):
-                            await close()
+                async with AsyncExitStack() as resources:
+                    close = getattr(client, "close", None)
+                    if callable(close):
+                        resources.push_async_callback(close)
+                    if hasattr(client, "__aenter__"):
+                        # Register before entry: AbstractClient can open its HTTP session before SDK setup fails.
+                        # Its context exit closes that session; close() additionally drains SDK client pools.
+                        resources.push_async_exit(client)
+                        client = await client.__aenter__()
+                    candidates = await extract_user_knowledge(event, client=client)
             else:
                 # Standalone callers may lend a client; serialize its contexts and never overwrite it per turn.
                 async with self._extraction_lock:

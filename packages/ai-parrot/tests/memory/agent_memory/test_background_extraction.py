@@ -74,6 +74,7 @@ async def test_concurrent_extraction_owns_clients_and_cleanup_drains(tmp_path: P
             """Capture construction so resolved configuration is exercised."""
             self.options = kwargs
             self.closed = False
+            self.exited = False
             clients.append(self)
 
         async def __aenter__(self) -> Client:
@@ -81,7 +82,12 @@ async def test_concurrent_extraction_owns_clients_and_cleanup_drains(tmp_path: P
             return self
 
         async def __aexit__(self, *args: Any) -> None:
-            """Mark the context closed before memory storage closes."""
+            """Context exit alone does not own provider SDK cleanup."""
+            self.exited = True
+
+        async def close(self) -> None:
+            """Close the independently owned SDK resources after context exit."""
+            assert self.exited
             self.closed = True
 
         async def ask(self, prompt: str, **kwargs: Any) -> str:
@@ -136,3 +142,64 @@ async def test_factory_cannot_borrow_response_client(tmp_path: Path) -> None:
     receipt = await manager.record_event(_event("alice"))
     assert receipt.failures == ("user_extraction:ValueError",)
     await host.cleanup()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fail_entry", [False, True])
+async def test_real_abstract_client_closes_sdk_pool_and_partial_session(tmp_path: Path, fail_entry: bool) -> None:
+    """Real AbstractClient keeps SDK pools beyond __aexit__; owned extraction must close both resource layers."""
+    from parrot.clients.base import AbstractClient
+
+    class SDK:
+        """Observe a provider SDK pool closing without network access."""
+
+        closed = False
+
+        async def close(self) -> None:
+            """Close the fake provider transport."""
+            self.closed = True
+
+    sdk = SDK()
+
+    class Client(AbstractClient):
+        """Use real AbstractClient acquisition and teardown with an offline provider."""
+
+        async def get_client(self) -> SDK:
+            """Optionally fail after the base has already opened its aiohttp session."""
+            if fail_entry:
+                raise RuntimeError("provider setup failed")
+            return sdk
+
+        async def ask(self, prompt: str, **kwargs: Any) -> str:
+            """No durable knowledge in this fixture."""
+            return "[]"
+
+        async def ask_stream(self, prompt: str, **kwargs: Any) -> Any:
+            """Provide an unused streaming implementation for the abstract contract."""
+            yield "[]"
+
+        async def invoke(self, *args: Any, **kwargs: Any) -> str:
+            """Provide an unused invocation implementation for the abstract contract."""
+            return "[]"
+
+        async def resume(self, *args: Any, **kwargs: Any) -> str:
+            """Provide an unused resume implementation for the abstract contract."""
+            return "[]"
+
+    client = Client(model="offline", use_session=True)
+    manager = await create_memory_manager(
+        AgentMemoryConfig(enable_user_memory=True, storage_path=str(tmp_path / "sdk.db")),
+        namespace=MemoryNamespace(tenant_id="tenant", agent_id="agent"),
+    )
+    manager.extraction_client_factory = lambda: client
+    try:
+        receipt = await manager.record_event(_event("alice"))
+        assert not client._clients_by_loop
+        assert client.session.closed
+        assert sdk.closed is not fail_entry
+        assert bool(receipt.failures) is fail_entry
+    finally:
+        await client.close()
+        if client.session is not None:
+            await client.session.close()
+        await manager.cleanup()
