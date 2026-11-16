@@ -47,7 +47,7 @@
       "feature_id": "FEAT-903",
       "feature": "episodic-store-fixes",
       "spec": "sdd/specs/episodic-store-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -55,8 +55,9 @@
       "parallelism_notes": "No predecessor: consumes existing visible_to_scope and recall_scopes in episodic/visibility.py.",
       "assigned_to": "agent:sdd-fix:5d23ba57",
       "started_at": "2026-11-16T12:22:33.160505+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5720-visible-episode-review-admission.md"
+      "completed_at": "2026-11-16T12:32:10+00:00",
+      "file": "sdd/tasks/completed/TASK-5720-visible-episode-review-admission.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5721",
