@@ -447,6 +447,163 @@ async def test_get_memory_states_reads_committed_state_by_exact_ref(tmp_path) ->
 _SCOPE = {"tenant_id": "tenant-a", "agent_id": "agent-a"}
 
 
+@pytest.mark.asyncio
+async def test_compact_embeddings_hydrate_every_public_read_path(tmp_path: Path) -> None:
+    """Compact rows hydrate float32 embeddings through every public episode read."""
+    path = tmp_path / "compact.sqlite"
+    backend = SQLiteEpisodeBackend(path)
+    compact_vector = [0.123456789, -0.987654321, 0.5]
+    await backend.configure()
+    try:
+        compact = _episode(1, embedding=compact_vector, situation="needle compact")
+        none_vector = _episode(2, embedding=None, situation="needle none")
+        failure = _episode(3, embedding=[0.0, 1.0, 0.0], is_failure=True, situation="needle failure")
+        await backend.store(compact)
+        await backend.store(none_vector)
+        await backend.store(failure)
+
+        assert compact.embedding == compact_vector
+        assert backend._db is not None
+        cursor = await backend._db.execute(
+            "SELECT payload, embedding, embedding_dim FROM episodes WHERE episode_id = ?", (compact.episode_id,)
+        )
+        compact_payload, compact_blob, compact_dimension = await cursor.fetchone()
+        assert "embedding" not in json.loads(compact_payload)
+        assert isinstance(compact_blob, bytes)
+        assert compact_dimension == len(compact_vector)
+        expected_float32 = list(struct.unpack(f"<{compact_dimension}f", compact_blob))
+
+        cursor = await backend._db.execute(
+            "SELECT payload, embedding, embedding_dim FROM episodes WHERE episode_id = ?", (none_vector.episode_id,)
+        )
+        none_payload, none_blob, none_dimension = await cursor.fetchone()
+        assert "embedding" not in json.loads(none_payload)
+        assert (none_blob, none_dimension) == (None, None)
+
+        vector_results = await backend.search_similar(compact_vector, _SCOPE, top_k=1, score_threshold=0.0)
+        assert vector_results[0].embedding == expected_float32
+
+        fts_results = await backend.search_text("needle", _SCOPE, top_k=3)
+        assert {result.episode_id: result.embedding for result in fts_results} == {
+            compact.episode_id: expected_float32,
+            none_vector.episode_id: None,
+            failure.episode_id: [0.0, 1.0, 0.0],
+        }
+
+        backend._fts_enabled = False
+        like_results = await backend.search_text("needle", _SCOPE, top_k=3)
+        assert {result.episode_id: result.embedding for result in like_results} == {
+            compact.episode_id: expected_float32,
+            none_vector.episode_id: None,
+            failure.episode_id: [0.0, 1.0, 0.0],
+        }
+
+        recent = {episode.episode_id: episode.embedding for episode in await backend.get_recent(_SCOPE)}
+        by_id = {
+            episode.episode_id: episode.embedding
+            for episode in await backend.get_by_ids([compact.episode_id, none_vector.episode_id], _SCOPE)
+        }
+        matching = {episode.episode_id: episode.embedding for episode in await backend.get_recent_matching(_SCOPE)}
+        failures = {
+            episode.episode_id: episode.embedding for episode in await backend.get_failures("agent-a", "tenant-a")
+        }
+        assert recent[compact.episode_id] == expected_float32
+        assert by_id == {compact.episode_id: expected_float32, none_vector.episode_id: None}
+        assert matching[compact.episode_id] == expected_float32
+        assert failures == {failure.episode_id: [0.0, 1.0, 0.0]}
+
+        assert await backend.update_metadata([compact.episode_id], {"source": "test"}) == 1
+        cursor = await backend._db.execute("SELECT payload FROM episodes WHERE episode_id = ?", (compact.episode_id,))
+        updated_payload = json.loads((await cursor.fetchone())[0])
+        assert "embedding" not in updated_payload
+        assert updated_payload["metadata"]["source"] == "test"
+    finally:
+        await backend.close()
+
+    reopened = SQLiteEpisodeBackend(path)
+    await reopened.configure()
+    try:
+        restored = await reopened.get_by_ids([compact.episode_id, none_vector.episode_id], _SCOPE)
+        assert {episode.episode_id: episode.embedding for episode in restored} == {
+            compact.episode_id: expected_float32,
+            none_vector.episode_id: None,
+        }
+    finally:
+        await reopened.close()
+
+
+@pytest.mark.asyncio
+async def test_compact_payload_size_and_legacy_embedding_precedence(tmp_path: Path) -> None:
+    """Compact writes stay size-stable while legacy JSON vectors remain authoritative."""
+    path = tmp_path / "legacy.sqlite"
+    backend = SQLiteEpisodeBackend(path)
+    await backend.configure()
+    try:
+        small = _episode(4, episode_id="small", situation="same", action_taken="same", embedding=[0.1, 0.2])
+        large = _episode(
+            5,
+            episode_id="large",
+            situation="same",
+            action_taken="same",
+            embedding=[0.1] * 256,
+        )
+        legacy_vector = _episode(6, embedding=[0.123456789123, -0.987654321987])
+        legacy_none = _episode(7, embedding=None)
+        for episode in (small, large, legacy_vector, legacy_none):
+            await backend.store(episode)
+
+        assert backend._db is not None
+        cursor = await backend._db.execute(
+            "SELECT episode_id, payload FROM episodes WHERE episode_id IN (?, ?) ORDER BY episode_id",
+            (small.episode_id, large.episode_id),
+        )
+        compact_rows = await cursor.fetchall()
+        assert len(compact_rows[0][1]) == len(compact_rows[1][1])
+        assert all("embedding" not in json.loads(row[1]) for row in compact_rows)
+
+        legacy_payload = json.dumps(legacy_vector.to_dict())
+        legacy_none_data = legacy_none.to_dict()
+        legacy_none_data["embedding"] = None
+        legacy_none_payload = json.dumps(legacy_none_data)
+        await backend._db.execute(
+            "UPDATE episodes SET payload = ?, embedding = ?, embedding_dim = ? WHERE episode_id = ?",
+            (legacy_payload, b"corrupt", 1, legacy_vector.episode_id),
+        )
+        await backend._db.execute(
+            "UPDATE episodes SET payload = ?, embedding = ?, embedding_dim = ? WHERE episode_id = ?",
+            (legacy_none_payload, struct.pack("<2f", 3.0, 4.0), 2, legacy_none.episode_id),
+        )
+        await backend._db.commit()
+
+        await backend.store(_episode(6, embedding=[9.0, 9.0]))
+        restored = await backend.get_by_ids([legacy_vector.episode_id, legacy_none.episode_id], _SCOPE)
+        assert {episode.episode_id: episode.embedding for episode in restored} == {
+            legacy_vector.episode_id: legacy_vector.embedding,
+            legacy_none.episode_id: None,
+        }
+
+        assert await backend.update_metadata([legacy_vector.episode_id], {"checked": True}) == 1
+        cursor = await backend._db.execute(
+            "SELECT payload FROM episodes WHERE episode_id = ?", (legacy_vector.episode_id,)
+        )
+        persisted_legacy = json.loads((await cursor.fetchone())[0])
+        assert persisted_legacy["embedding"] == legacy_vector.embedding
+        assert persisted_legacy["metadata"]["checked"] is True
+    finally:
+        await backend.close()
+
+    reopened = SQLiteEpisodeBackend(path)
+    await reopened.configure()
+    try:
+        restored = await reopened.get_by_ids([legacy_vector.episode_id, legacy_none.episode_id], _SCOPE)
+        assert {episode.episode_id: episode.embedding for episode in restored} == {
+            legacy_vector.episode_id: legacy_vector.embedding,
+            legacy_none.episode_id: None,
+        }
+    finally:
+        await reopened.close()
+
+
 def _reference_cosine(query: list[float], stored: list[float]) -> float:
     """Score one float32-stored vector the way the pre-numpy implementation did."""
     rounded = list(struct.unpack(f"<{len(stored)}f", struct.pack(f"<{len(stored)}f", *stored)))
@@ -607,9 +764,9 @@ _LATENCY_BUDGET_SECONDS = 0.150
 async def test_vector_search_meets_latency_contract_at_ceiling(tmp_path) -> None:
     """D6/AC13: exact search over the 5,000-row ceiling answers within p95 <= 150 ms.
 
-    Rows have the layout ``store()`` writes, where the payload carries the embedding as JSON, at the dimension of a
-    production embedding. The contract is defined on otherwise idle reference hardware, so a round disturbed by
-    concurrent load may be measured again.
+    Rows have the compact layout ``store()`` writes: embeddings live only in the float32 blob at the production
+    dimension. The contract is defined on otherwise idle reference hardware, so a round disturbed by concurrent load
+    may be measured again.
     """
     path = tmp_path / "ceiling.sqlite"
     backend = SQLiteEpisodeBackend(path)
@@ -617,7 +774,9 @@ async def test_vector_search_meets_latency_contract_at_ceiling(tmp_path) -> None
     try:
         generator = np.random.default_rng(892)
         vectors = generator.standard_normal((_CEILING_ROWS, _PRODUCTION_DIMENSION), dtype=np.float32)
-        template = json.dumps(_episode(0, episode_id="EPISODE-ID", embedding=vectors[0].tolist()).to_dict())
+        template = json.dumps(
+            _episode(0, episode_id="EPISODE-ID", embedding=vectors[0].tolist()).model_dump(mode="json")
+        )
         started_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
         assert backend._db is not None
         await backend._db.execute("BEGIN")

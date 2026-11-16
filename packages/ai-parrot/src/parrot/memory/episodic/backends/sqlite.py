@@ -114,6 +114,43 @@ def _pack_embedding(embedding: list[float] | None) -> tuple[bytes | None, int | 
     return struct.pack(f"<{len(embedding)}f", *embedding), len(embedding)
 
 
+def _decode_episode(payload: str, embedding: bytes | None, embedding_dim: int | None) -> dict[str, Any]:
+    """Decode an episode, restoring a compact embedding when necessary.
+
+    Legacy payloads own their ``embedding`` value, including an explicit null.
+    Compact payloads omit that key and reconstruct it from the validated
+    little-endian float32 blob.
+
+    Args:
+        payload: Serialized episode data.
+        embedding: Optional compact float32 blob.
+        embedding_dim: Dimension recorded with the compact blob.
+
+    Returns:
+        Episode data suitable for model construction.
+
+    Raises:
+        ValueError: If serialized data or a compact embedding is malformed.
+    """
+    data = json.loads(payload)
+    if not isinstance(data, dict):
+        raise ValueError("episode payload must decode to an object")
+    if "embedding" in data:
+        return data
+    if embedding is None and embedding_dim is None:
+        data["embedding"] = None
+        return data
+    if type(embedding_dim) is not int or embedding_dim <= 0:
+        raise ValueError("compact embedding dimension must be a positive integer")
+    if not isinstance(embedding, bytes) or len(embedding) != embedding_dim * 4:
+        raise ValueError("compact embedding blob does not match its dimension")
+    values = struct.unpack(f"<{embedding_dim}f", embedding)
+    if not all(math.isfinite(value) for value in values):
+        raise ValueError("compact embedding values must be finite")
+    data["embedding"] = list(values)
+    return data
+
+
 def _rank_candidates(
     embedding: list[float],
     candidates: list[tuple[bytes, int]],
@@ -303,7 +340,7 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
         Returns:
             The supplied episode identifier.
         """
-        payload = json.dumps(episode.to_dict())
+        payload = json.dumps(episode.model_dump(mode="json"))
         embedding, embedding_dim = _pack_embedding(episode.embedding)
         async with self._write_lock:
             database = self._require_database()
@@ -799,7 +836,7 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
             # A row deleted between the two reads is no longer a result.
             payload = payloads.get(rows[index][0])
             if payload is not None:
-                results.append(EpisodeSearchResult(**json.loads(payload), score=min(max(score, 0.0), 1.01)))
+                results.append(EpisodeSearchResult(**payload, score=min(max(score, 0.0), 1.01)))
         return results
 
     async def review_status(self, namespace_filter: dict[str, Any]) -> dict[str, int | str]:
@@ -858,7 +895,7 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
         if self._fts_enabled:
             phrase = '"' + query.replace('"', '""') + '"'
             cursor = await database.execute(
-                "SELECT e.payload, bm25(episodes_fts) AS rank FROM episodes_fts "
+                "SELECT e.payload, e.embedding, e.embedding_dim, bm25(episodes_fts) AS rank FROM episodes_fts "
                 "JOIN episodes e ON e.episode_id = episodes_fts.episode_id "
                 f"WHERE episodes_fts MATCH ? AND {where_sql} ORDER BY rank LIMIT ?",
                 [phrase, *params, top_k],
@@ -866,25 +903,25 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
             rows = await cursor.fetchall()
             if not rows:
                 return []
-            ranks = [float(row[1]) for row in rows]
+            ranks = [float(row[3]) for row in rows]
             highest_rank = max(ranks)
             spread = highest_rank - min(ranks)
             return [
                 EpisodeSearchResult(
-                    **json.loads(payload),
+                    **_decode_episode(payload, embedding, embedding_dim),
                     score=1.0 if spread == 0 else (highest_rank - float(rank)) / spread,
                 )
-                for payload, rank in rows
+                for payload, embedding, embedding_dim, rank in rows
             ]
 
         escaped_query = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         cursor = await database.execute(
-            f"SELECT payload FROM episodes WHERE {where_sql} AND payload LIKE ? ESCAPE '\\' "
+            f"SELECT payload, embedding, embedding_dim FROM episodes WHERE {where_sql} AND payload LIKE ? ESCAPE '\\' "
             "ORDER BY created_at DESC, episode_id DESC LIMIT ?",
             [*params, f"%{escaped_query}%", top_k],
         )
         rows = await cursor.fetchall()
-        return [EpisodeSearchResult(**json.loads(row[0]), score=1.0) for row in rows]
+        return [EpisodeSearchResult(**_decode_episode(*row), score=1.0) for row in rows]
 
     async def get_recent(
         self,
@@ -896,7 +933,7 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
         if limit < 0:
             raise ValueError("limit must be non-negative")
         where_sql, params = self._build_where(namespace_filter)
-        query = f"SELECT payload FROM episodes WHERE {where_sql}"
+        query = f"SELECT payload, embedding, embedding_dim FROM episodes WHERE {where_sql}"
         if since is not None:
             query += " AND created_at > ?"
             params.append(since.isoformat())
@@ -904,7 +941,7 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
         params.append(limit)
         cursor = await self._require_database().execute(query, params)
         rows = await cursor.fetchall()
-        return [EpisodicMemory.from_dict(json.loads(row[0])) for row in rows]
+        return [EpisodicMemory.from_dict(_decode_episode(*row)) for row in rows]
 
     async def get_by_ids(
         self,
@@ -933,13 +970,13 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
             batch = unique_ids[start : start + _ID_READ_BATCH]
             placeholders = ", ".join("?" for _ in batch)
             cursor = await database.execute(
-                f"SELECT created_at, episode_id, payload FROM episodes WHERE {where_sql} "
+                f"SELECT created_at, episode_id, payload, embedding, embedding_dim FROM episodes WHERE {where_sql} "
                 f"AND episode_id IN ({placeholders})",
                 [*params, *batch],
             )
             rows.extend(await cursor.fetchall())
         rows.sort(key=lambda row: (row[0], row[1]), reverse=True)
-        return [EpisodicMemory.from_dict(json.loads(row[2])) for row in rows]
+        return [EpisodicMemory.from_dict(_decode_episode(*row[2:])) for row in rows]
 
     async def get_recent_matching(
         self,
@@ -972,7 +1009,7 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
         if limit == 0 or (categories is not None and not categories):
             return []
         where_sql, params = self._build_where(namespace_filter, failures_only)
-        query = f"SELECT payload FROM episodes WHERE {where_sql}"
+        query = f"SELECT payload, embedding, embedding_dim FROM episodes WHERE {where_sql}"
         if categories is not None:
             placeholders = ", ".join("?" for _ in categories)
             query += f" AND json_extract(payload, '$.category') IN ({placeholders})"
@@ -988,7 +1025,7 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
             params.append(limit)
         cursor = await self._require_database().execute(query, params)
         rows = await cursor.fetchall()
-        return [EpisodicMemory.from_dict(json.loads(row[0])) for row in rows]
+        return [EpisodicMemory.from_dict(_decode_episode(*row)) for row in rows]
 
     async def get_failures(
         self,
@@ -1000,12 +1037,12 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
         if limit < 0:
             raise ValueError("limit must be non-negative")
         cursor = await self._require_database().execute(
-            "SELECT payload FROM episodes WHERE agent_id = ? AND tenant_id = ? AND is_failure = 1 "
+            "SELECT payload, embedding, embedding_dim FROM episodes WHERE agent_id = ? AND tenant_id = ? AND is_failure = 1 "
             "ORDER BY created_at DESC, episode_id DESC LIMIT ?",
             (agent_id, tenant_id, limit),
         )
         rows = await cursor.fetchall()
-        return [EpisodicMemory.from_dict(json.loads(row[0])) for row in rows]
+        return [EpisodicMemory.from_dict(_decode_episode(*row)) for row in rows]
 
     async def delete_expired(self) -> int:
         """Prune permitted episode data without destroying imported feedback history."""
@@ -1112,24 +1149,25 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
             raise RuntimeError("SQLiteEpisodeBackend is not configured")
         return self._db
 
-    async def _payloads_by_id(self, episode_ids: Sequence[str]) -> dict[str, str]:
-        """Read the serialized payload of specific episodes.
+    async def _payloads_by_id(self, episode_ids: Sequence[str]) -> dict[str, dict[str, Any]]:
+        """Read decoded data for specific episodes.
 
         Args:
             episode_ids: Episode ids already admitted by a scoped query.
 
         Returns:
-            Serialized payloads keyed by episode id; a missing id is absent.
+            Decoded episode data keyed by episode id; a missing id is absent.
         """
         database = self._require_database()
-        payloads: dict[str, str] = {}
+        payloads: dict[str, dict[str, Any]] = {}
         for start in range(0, len(episode_ids), _ID_READ_BATCH):
             batch = list(episode_ids[start : start + _ID_READ_BATCH])
             placeholders = ", ".join("?" for _ in batch)
             cursor = await database.execute(
-                f"SELECT episode_id, payload FROM episodes WHERE episode_id IN ({placeholders})", batch
+                f"SELECT episode_id, payload, embedding, embedding_dim FROM episodes WHERE episode_id IN ({placeholders})",
+                batch,
             )
-            payloads.update({row[0]: row[1] for row in await cursor.fetchall()})
+            payloads.update({row[0]: _decode_episode(*row[1:]) for row in await cursor.fetchall()})
         return payloads
 
     async def _rollback(self, database: aiosqlite.Connection) -> None:
