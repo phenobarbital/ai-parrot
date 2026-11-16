@@ -44,6 +44,7 @@ logger = logging.getLogger(__name__)
 
 # Citations kept in process only for backends that cannot persist them; least recently cited go first.
 _MAX_LOCAL_CITATIONS = 1024
+_LEXICAL_PAGE_SIZE = 256
 _EXPLICIT_LESSON_KEY = "_parrot_explicit_lesson"
 _EXPLICIT_REFLECTION_KEY = "_parrot_explicit_reflection"
 _EPISODIC_REVIEW_PARAMETERS = MemoryParameters(
@@ -367,8 +368,53 @@ class EpisodicMemoryStore:
         if not terms or top_k == 0:
             return []
         namespace_filter = namespace.build_filter(null_dimensions=null_dimensions)
-        count = await self._backend.count(namespace_filter)
-        episodes = await self._backend.get_recent(namespace_filter, limit=count)
+        get_recent_matching = getattr(self._backend, "get_recent_matching", None)
+        if not callable(get_recent_matching):
+            count = await self._backend.count(namespace_filter)
+            episodes = await self._backend.get_recent(namespace_filter, limit=count)
+            return self._lexical_matches(
+                episodes, terms, score_threshold=score_threshold, include_failures_only=include_failures_only
+            )[:top_k]
+
+        # Matches are returned newest first, so paging can stop as soon as top_k are found.
+        matches: list[EpisodeSearchResult] = []
+        before_id: str | None = None
+        while len(matches) < top_k:
+            page = await get_recent_matching(
+                namespace_filter,
+                limit=_LEXICAL_PAGE_SIZE,
+                failures_only=include_failures_only,
+                before_id=before_id,
+            )
+            matches.extend(
+                self._lexical_matches(
+                    page, terms, score_threshold=score_threshold, include_failures_only=include_failures_only
+                )
+            )
+            if len(page) < _LEXICAL_PAGE_SIZE:
+                break
+            before_id = page[-1].episode_id
+        return matches[:top_k]
+
+    @staticmethod
+    def _lexical_matches(
+        episodes: Sequence[EpisodicMemory],
+        terms: tuple[str, ...],
+        *,
+        score_threshold: float,
+        include_failures_only: bool,
+    ) -> list[EpisodeSearchResult]:
+        """Score episodes by the share of query terms found in their searchable text.
+
+        Args:
+            episodes: Candidate episodes, in the order the results must keep.
+            terms: Case-folded query terms; never empty.
+            score_threshold: Minimum share of matched terms to keep.
+            include_failures_only: Whether to drop episodes that are not failures.
+
+        Returns:
+            Matching episodes with their lexical score, in candidate order.
+        """
         matches: list[EpisodeSearchResult] = []
         for episode in episodes:
             if include_failures_only and not episode.is_failure:
@@ -377,7 +423,37 @@ class EpisodicMemoryStore:
             score = sum(term in searchable for term in terms) / len(terms)
             if score >= score_threshold:
                 matches.append(EpisodeSearchResult(**episode.model_dump(), embedding=episode.embedding, score=score))
-        return matches[:top_k]
+        return matches
+
+    async def _read_matching(
+        self,
+        namespace: MemoryNamespace,
+        *,
+        categories: Sequence[EpisodeCategory] | None = None,
+        failures_only: bool = False,
+    ) -> list[EpisodicMemory] | None:
+        """Read only the scoped episodes a route needs, when the backend can select them.
+
+        Selecting in the backend is an optional capability. Without it the
+        caller keeps its own full-scope read and filters in Python, so both
+        paths yield the same episodes.
+
+        Args:
+            namespace: Scope of the read.
+            categories: Categories to keep; ``None`` keeps every category.
+            failures_only: Whether to keep only failure episodes.
+
+        Returns:
+            The matching episodes newest first, or ``None`` when the backend cannot select them.
+        """
+        get_recent_matching = getattr(self._backend, "get_recent_matching", None)
+        if not callable(get_recent_matching):
+            return None
+        return await get_recent_matching(
+            namespace.build_filter(),
+            categories=[category.value for category in categories] if categories is not None else None,
+            failures_only=failures_only,
+        )
 
     async def cite(
         self,
@@ -676,8 +752,12 @@ class EpisodicMemoryStore:
     ) -> dict[str, EpisodicMemory]:
         """Resolve exact-scope episodes without distinguishing missing from cross-scope IDs."""
         namespace_filter = namespace.build_filter()
-        count = await self._backend.count(namespace_filter)
-        episodes = await self._backend.get_recent(namespace_filter=namespace_filter, limit=max(1, count))
+        get_by_ids = getattr(self._backend, "get_by_ids", None)
+        if callable(get_by_ids):
+            episodes = await get_by_ids(memory_ids, namespace_filter)
+        else:
+            count = await self._backend.count(namespace_filter)
+            episodes = await self._backend.get_recent(namespace_filter=namespace_filter, limit=max(1, count))
         resolved = {
             episode.episode_id: episode
             for episode in episodes
@@ -990,6 +1070,8 @@ class EpisodicMemoryStore:
             if self._cache is not None:
                 recent_failures = await self._cache.get_failures(namespace, limit=max_warnings)
             if recent_failures is None:
+                recent_failures = await self._read_matching(namespace, failures_only=True)
+            if recent_failures is None:
                 count = await self._backend.count(namespace.build_filter())
                 recent_failures = await self._backend.get_recent(namespace.build_filter(), limit=count)
             for ep in _exclude_retracted(recent_failures):
@@ -1042,8 +1124,11 @@ class EpisodicMemoryStore:
         Returns:
             List of USER_PREFERENCE category episodes.
         """
-        count = await self._backend.count(namespace.build_filter())
-        episodes = _exclude_retracted(await self._get_scoped_recent(namespace, limit=count))
+        episodes = await self._read_matching(namespace, categories=[EpisodeCategory.USER_PREFERENCE])
+        if episodes is None:
+            count = await self._backend.count(namespace.build_filter())
+            episodes = await self._get_scoped_recent(namespace, limit=count)
+        episodes = _exclude_retracted(episodes)
         preferences = [episode for episode in episodes if episode.category == EpisodeCategory.USER_PREFERENCE]
         states = await self._resolve_dynamics_states(preferences)
         return rank_episodes(preferences, namespace=namespace, states=states)[:limit]
@@ -1064,8 +1149,12 @@ class EpisodicMemoryStore:
         Returns:
             List of recent room-scoped episodes.
         """
-        count = await self._backend.count(namespace.build_filter())
-        episodes = _exclude_retracted(await self._get_scoped_recent(namespace, limit=count))
+        # Without categories there is nothing to select in the backend: keep the cache-aware full-scope read.
+        episodes = await self._read_matching(namespace, categories=categories) if categories else None
+        if episodes is None:
+            count = await self._backend.count(namespace.build_filter())
+            episodes = await self._get_scoped_recent(namespace, limit=count)
+        episodes = _exclude_retracted(episodes)
 
         if categories:
             cat_values = {c.value for c in categories}

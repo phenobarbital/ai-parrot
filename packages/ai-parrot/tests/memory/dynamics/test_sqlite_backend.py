@@ -1,9 +1,15 @@
 """Behavioral acceptance tests for SQLite episodic persistence and measured vector ceiling."""
 
+import asyncio
 import json
+import math
 import sqlite3
+import struct
+import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
+import numpy as np
 import pytest
 
 from parrot.memory.episodic.backends.sqlite import SQLiteEpisodeBackend
@@ -420,5 +426,249 @@ async def test_get_memory_states_reads_committed_state_by_exact_ref(tmp_path) ->
 
         many = [f"mref-v1-absent-{index}" for index in range(1_200)] + [reviewed.ref.canonical_key]
         assert list(await backend.get_memory_states(many)) == [reviewed.ref.canonical_key]
+    finally:
+        await backend.close()
+
+
+_SCOPE = {"tenant_id": "tenant-a", "agent_id": "agent-a"}
+
+
+def _reference_cosine(query: list[float], stored: list[float]) -> float:
+    """Score one float32-stored vector the way the pre-numpy implementation did."""
+    rounded = list(struct.unpack(f"<{len(stored)}f", struct.pack(f"<{len(stored)}f", *stored)))
+    if len(query) != len(rounded):
+        return 0.0
+    query_norm = math.sqrt(sum(value * value for value in query))
+    stored_norm = math.sqrt(sum(value * value for value in rounded))
+    if query_norm == 0.0 or stored_norm == 0.0:
+        return 0.0
+    return sum(left * right for left, right in zip(query, rounded, strict=True)) / (query_norm * stored_norm)
+
+
+@pytest.mark.asyncio
+async def test_vector_scoring_matches_reference_semantics(tmp_path) -> None:
+    """Vectorized scoring keeps the scores, the zero cases, the tie order and both limits of exact search."""
+    backend = SQLiteEpisodeBackend(tmp_path / "scoring.sqlite")
+    await backend.configure()
+    query = [0.3, -0.2, 0.9, 0.1, -0.5]
+    vectors = {
+        0: [0.3, -0.2, 0.9, 0.1, -0.5],
+        1: [0.9, 0.4, 0.1, -0.3, 0.2],
+        2: [-0.3, 0.2, -0.9, -0.1, 0.5],
+        3: [0.0, 0.0, 0.0, 0.0, 0.0],
+        4: [1.0, 0.0, 0.0],
+        5: [0.25, -0.1, 0.7, 0.3, -0.6],
+        6: [0.3, -0.2, 0.9, 0.1, -0.5],
+    }
+    try:
+        for index, vector in vectors.items():
+            await backend.store(_episode(index, embedding=vector))
+        expected = {f"episode-{index}": _reference_cosine(query, vector) for index, vector in vectors.items()}
+
+        everything = await backend.search_similar(query, _SCOPE, top_k=10, score_threshold=0.0)
+
+        # The opposite vector scores below zero; equal scores keep the newest episode first.
+        assert [result.episode_id for result in everything] == [
+            "episode-6",
+            "episode-0",
+            "episode-5",
+            "episode-1",
+            "episode-4",
+            "episode-3",
+        ]
+        assert [result.score for result in everything] == pytest.approx(
+            [expected[result.episode_id] for result in everything], abs=1e-12
+        )
+        assert expected["episode-2"] < 0.0
+        assert everything[0].score == everything[1].score
+        assert [result.score for result in everything[-2:]] == [0.0, 0.0]
+
+        above = await backend.search_similar(query, _SCOPE, top_k=10, score_threshold=0.5)
+        assert [result.episode_id for result in above] == ["episode-6", "episode-0", "episode-5"]
+        best = await backend.search_similar(query, _SCOPE, top_k=1, score_threshold=0.0)
+        assert [result.episode_id for result in best] == ["episode-6"]
+        assert await backend.search_similar([0.0] * 5, _SCOPE, top_k=10, score_threshold=0.1) == []
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_vector_scoring_rejects_malformed_and_non_finite_vectors(tmp_path) -> None:
+    """A corrupt stored vector fails the search visibly instead of being scored or skipped."""
+    backend = SQLiteEpisodeBackend(tmp_path / "corrupt.sqlite")
+    await backend.configure()
+    try:
+        await backend.store(_episode(1))
+        await backend.store(_episode(2))
+        assert backend._db is not None
+
+        async def corrupt(blob: bytes, dimension: int) -> None:
+            await backend._db.execute(
+                "UPDATE episodes SET embedding = ?, embedding_dim = ? WHERE episode_id = 'episode-2'",
+                (blob, dimension),
+            )
+
+        await corrupt(b"\x00\x00\x00", 2)
+        with pytest.raises(ValueError, match="stored embedding has an invalid shape"):
+            await backend.search_similar([1.0, 0.0], _SCOPE)
+        await corrupt(struct.pack("<2f", math.inf, 0.0), 2)
+        with pytest.raises(ValueError, match="stored embedding values must be finite"):
+            await backend.search_similar([1.0, 0.0], _SCOPE)
+        await corrupt(struct.pack("<3f", math.nan, 0.0, 0.0), 3)
+        with pytest.raises(ValueError, match="stored embedding values must be finite"):
+            await backend.search_similar([1.0, 0.0], _SCOPE)
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_vector_search_scores_off_the_event_loop_and_reads_winning_payloads_only(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Scoring runs in a worker thread, and a losing candidate never has its payload read."""
+    backend = SQLiteEpisodeBackend(tmp_path / "dispatch.sqlite")
+    await backend.configure()
+    dispatched: list[str] = []
+    statements: list[str] = []
+    to_thread = asyncio.to_thread
+
+    async def recording_to_thread(function, /, *args, **kwargs):
+        dispatched.append(function.__name__)
+        return await to_thread(function, *args, **kwargs)
+
+    try:
+        await backend.store(_episode(1, embedding=[0.0, 1.0]))
+        await backend.store(_episode(2, embedding=[1.0, 0.0]))
+        await backend.store(_episode(3, embedding=[0.6, 0.8]))
+        assert backend._db is not None
+        monkeypatch.setattr(asyncio, "to_thread", recording_to_thread)
+        await backend._db.set_trace_callback(statements.append)
+
+        results = await backend.search_similar([1.0, 0.0], _SCOPE, top_k=1)
+
+        await backend._db.set_trace_callback(None)
+        assert [result.episode_id for result in results] == ["episode-2"]
+        assert dispatched == ["_rank_candidates"]
+        selects = [statement for statement in statements if statement.lstrip().upper().startswith("SELECT")]
+        assert len(selects) == 2
+        assert "payload" not in selects[0]
+        assert "payload" in selects[1] and "episode-2" in selects[1]
+        assert "episode-1" not in selects[1] and "episode-3" not in selects[1]
+    finally:
+        await backend.close()
+
+
+_CEILING_ROWS = 5_000
+_PRODUCTION_DIMENSION = 1_536
+_LATENCY_BUDGET_SECONDS = 0.150
+
+
+@pytest.mark.asyncio
+async def test_vector_search_meets_latency_contract_at_ceiling(tmp_path) -> None:
+    """D6/AC13: exact search over the 5,000-row ceiling answers within p95 <= 150 ms.
+
+    Rows have the layout ``store()`` writes, where the payload carries the embedding as JSON, at the dimension of a
+    production embedding. The contract is defined on otherwise idle reference hardware, so a round disturbed by
+    concurrent load may be measured again.
+    """
+    path = tmp_path / "ceiling.sqlite"
+    backend = SQLiteEpisodeBackend(path)
+    await backend.configure()
+    try:
+        generator = np.random.default_rng(892)
+        vectors = generator.standard_normal((_CEILING_ROWS, _PRODUCTION_DIMENSION), dtype=np.float32)
+        template = json.dumps(_episode(0, episode_id="EPISODE-ID", embedding=vectors[0].tolist()).to_dict())
+        started_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        assert backend._db is not None
+        await backend._db.execute("BEGIN")
+        await backend._db.executemany(
+            "INSERT INTO episodes (episode_id, tenant_id, agent_id, created_at, is_failure, payload, embedding, "
+            "embedding_dim) VALUES (?, 'tenant-a', 'agent-a', ?, 0, ?, ?, ?)",
+            [
+                (
+                    f"episode-{index}",
+                    (started_at + timedelta(seconds=index)).isoformat(),
+                    template.replace("EPISODE-ID", f"episode-{index}"),
+                    vectors[index].tobytes(),
+                    _PRODUCTION_DIMENSION,
+                )
+                for index in range(_CEILING_ROWS)
+            ],
+        )
+        await backend._db.execute("COMMIT")
+        query = generator.standard_normal(_PRODUCTION_DIMENSION)
+        cosines = (vectors @ query) / (np.linalg.norm(vectors.astype(np.float64), axis=1) * np.linalg.norm(query))
+
+        status = await backend.vector_status(_SCOPE)
+        results = await backend.search_similar(query.tolist(), _SCOPE, top_k=5, score_threshold=0.0)
+
+        assert status == {"status": "ok", "candidate_count": _CEILING_ROWS, "vector_ceiling": _CEILING_ROWS}
+        assert results[0].episode_id == f"episode-{int(np.argmax(cosines))}"
+        assert results[0].score == pytest.approx(float(np.max(cosines)), abs=1e-6)
+
+        rounds: list[float] = []
+        for _ in range(3):
+            samples: list[float] = []
+            for _ in range(20):
+                started = time.perf_counter()
+                await backend.search_similar(query.tolist(), _SCOPE, top_k=5, score_threshold=0.0)
+                samples.append(time.perf_counter() - started)
+            rounds.append(sorted(samples)[18])
+            if rounds[-1] <= _LATENCY_BUDGET_SECONDS:
+                break
+        assert min(rounds) <= _LATENCY_BUDGET_SECONDS, f"p95 per round (s): {rounds}"
+    finally:
+        await backend.close()
+        for suffix in ("", "-wal", "-shm"):
+            Path(f"{path}{suffix}").unlink(missing_ok=True)
+
+
+@pytest.mark.asyncio
+async def test_get_by_ids_and_recent_matching_filter_in_sql(tmp_path) -> None:
+    """Targeted reads select by id, category, failure and page without leaving the scope."""
+    backend = SQLiteEpisodeBackend(tmp_path / "targeted.sqlite")
+    await backend.configure()
+    try:
+        await backend.store(_episode(1))
+        await backend.store(_episode(2, outcome="failure", is_failure=True))
+        await backend.store(_episode(3, category="user_preference"))
+        await backend.store(_episode(4, category="decision", outcome="failure", is_failure=True))
+        await backend.store(_episode(5, tenant_id="tenant-b", category="user_preference"))
+
+        def ids(episodes: list[EpisodicMemory]) -> list[str]:
+            return [episode.episode_id for episode in episodes]
+
+        assert await backend.get_by_ids([], _SCOPE) == []
+        assert ids(
+            await backend.get_by_ids(["episode-1", "episode-3", "episode-1", "episode-5", "missing"], _SCOPE)
+        ) == ["episode-3", "episode-1"]
+        many = [f"absent-{index}" for index in range(1_200)] + ["episode-2"]
+        assert ids(await backend.get_by_ids(many, _SCOPE)) == ["episode-2"]
+        assert ids(await backend.get_by_ids(["episode-1"], {**_SCOPE, "user_id": None})) == ["episode-1"]
+        assert await backend.get_by_ids(["episode-1"], {**_SCOPE, "user_id": "user-a"}) == []
+
+        assert ids(await backend.get_recent_matching(_SCOPE)) == ["episode-4", "episode-3", "episode-2", "episode-1"]
+        assert ids(await backend.get_recent_matching(_SCOPE, categories=["user_preference"])) == ["episode-3"]
+        assert ids(await backend.get_recent_matching(_SCOPE, categories=["user_preference", "decision"])) == [
+            "episode-4",
+            "episode-3",
+        ]
+        assert await backend.get_recent_matching(_SCOPE, categories=[]) == []
+        assert ids(await backend.get_recent_matching(_SCOPE, failures_only=True)) == ["episode-4", "episode-2"]
+        assert ids(await backend.get_recent_matching(_SCOPE, categories=["decision"], failures_only=True)) == [
+            "episode-4"
+        ]
+
+        first_page = await backend.get_recent_matching(_SCOPE, limit=2)
+        assert ids(first_page) == ["episode-4", "episode-3"]
+        assert ids(await backend.get_recent_matching(_SCOPE, limit=2, before_id=first_page[-1].episode_id)) == [
+            "episode-2",
+            "episode-1",
+        ]
+        assert await backend.get_recent_matching(_SCOPE, before_id="episode-1") == []
+        assert await backend.get_recent_matching(_SCOPE, before_id="missing") == []
+        assert await backend.get_recent_matching(_SCOPE, limit=0) == []
+        with pytest.raises(ValueError, match="limit must be non-negative"):
+            await backend.get_recent_matching(_SCOPE, limit=-1)
     finally:
         await backend.close()

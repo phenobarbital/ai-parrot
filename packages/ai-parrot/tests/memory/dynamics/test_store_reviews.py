@@ -455,3 +455,129 @@ async def test_released_citation_is_rejected_and_deleted_durably(tmp_path: Path)
     finally:
         await backend.close()
         await other_backend.close()
+
+
+class _BaselineOnlyBackend:
+    """Expose only the baseline protocol of a backend, hiding its optional read capabilities."""
+
+    def __init__(self, backend: SQLiteEpisodeBackend) -> None:
+        self._backend = backend
+        self.store = backend.store
+        self.search_similar = backend.search_similar
+        self.get_recent = backend.get_recent
+        self.get_failures = backend.get_failures
+        self.delete_expired = backend.delete_expired
+        self.count = backend.count
+        self.update_metadata = backend.update_metadata
+
+
+@pytest.mark.asyncio
+async def test_store_routes_use_targeted_reads_and_match_full_scope_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With targeted reads the five routes skip the full-scope scan and answer like a backend without them."""
+    namespace = _namespace()
+    backend = SQLiteEpisodeBackend(tmp_path / "routes.sqlite")
+    await backend.configure()
+    monkeypatch.setattr("parrot.memory.episodic.store._LEXICAL_PAGE_SIZE", 2)
+    full_scope_reads: list[str] = []
+    pages: list[str | None] = []
+
+    async def counted(namespace_filter: dict[str, object]) -> int:
+        full_scope_reads.append("count")
+        return await SQLiteEpisodeBackend.count(backend, namespace_filter)
+
+    async def recent(*args: object, **kwargs: object) -> list[EpisodicMemory]:
+        full_scope_reads.append("get_recent")
+        return await SQLiteEpisodeBackend.get_recent(backend, *args, **kwargs)
+
+    async def matching(namespace_filter: dict[str, object], **kwargs: object) -> list[EpisodicMemory]:
+        if "limit" in kwargs:
+            pages.append(kwargs.get("before_id"))
+        return await SQLiteEpisodeBackend.get_recent_matching(backend, namespace_filter, **kwargs)
+
+    try:
+        for index in range(8):
+            episode = _episode(f"episode-{index}", namespace=namespace)
+            category = EpisodeCategory.USER_PREFERENCE if index in (1, 5) else EpisodeCategory.DECISION
+            failed = index in (2, 6)
+            await backend.store(
+                episode.model_copy(
+                    update={
+                        "created_at": datetime(2026, 1, 1, 0, 0, index, tzinfo=timezone.utc),
+                        "situation": f"Deploy release {index}" if index % 2 else f"Rotate key {index}",
+                        "category": category,
+                        "is_failure": failed,
+                        "outcome": EpisodeOutcome.FAILURE if failed else EpisodeOutcome.SUCCESS,
+                        "error_message": "boom" if failed else None,
+                        "importance": index + 1,
+                        "metadata": {"coder_feedback_retracted": True} if index == 5 else {},
+                    }
+                )
+            )
+        await backend.store(_episode("episode-cross", namespace=_namespace(tenant_id="tenant-b")))
+        fallback = EpisodicMemoryStore(_BaselineOnlyBackend(backend), default_ttl_days=0)
+        expected = {
+            "resolved": sorted(await fallback._resolve_episodes(["episode-1", "episode-6"], namespace=namespace)),
+            "warnings": await fallback.get_failure_warnings(namespace, max_warnings=5),
+            "preferences": [episode.episode_id for episode in await fallback.get_user_preferences(namespace)],
+            "room": [
+                episode.episode_id
+                for episode in await fallback.get_room_context(namespace, categories=[EpisodeCategory.DECISION])
+            ],
+            "room_all": [episode.episode_id for episode in await fallback.get_room_context(namespace, limit=20)],
+            "lexical": [result.episode_id for result in await fallback.recall_similar("deploy release", namespace)],
+            "lexical_failures": [
+                result.episode_id
+                for result in await fallback.recall_similar("rotate", namespace, include_failures_only=True)
+            ],
+        }
+        # episode-5 is a retracted lesson: it matches the read and is dropped by every route afterwards.
+        assert expected["preferences"] == ["episode-1"]
+        assert expected["lexical"] == ["episode-7", "episode-3", "episode-1"]
+        assert expected["lexical_failures"] == ["episode-6", "episode-2"]
+        assert "Rotate key 6" in expected["warnings"] and "Rotate key 2" in expected["warnings"]
+
+        monkeypatch.setattr(backend, "count", counted)
+        monkeypatch.setattr(backend, "get_recent", recent)
+        monkeypatch.setattr(backend, "get_recent_matching", matching)
+        store = EpisodicMemoryStore(backend, default_ttl_days=0)
+
+        assert sorted(await store._resolve_episodes(["episode-1", "episode-6"], namespace=namespace)) == (
+            expected["resolved"]
+        )
+        for unavailable in ("episode-cross", "missing"):
+            with pytest.raises(ValueError, match="references are unavailable"):
+                await store._resolve_episodes(["episode-1", unavailable], namespace=namespace)
+        assert await store.get_failure_warnings(namespace, max_warnings=5) == expected["warnings"]
+        assert [episode.episode_id for episode in await store.get_user_preferences(namespace)] == (
+            expected["preferences"]
+        )
+        assert [
+            episode.episode_id
+            for episode in await store.get_room_context(namespace, categories=[EpisodeCategory.DECISION])
+        ] == expected["room"]
+        assert [result.episode_id for result in await store.recall_similar("deploy release", namespace)] == (
+            expected["lexical"]
+        )
+        assert [
+            result.episode_id for result in await store.recall_similar("rotate", namespace, include_failures_only=True)
+        ] == expected["lexical_failures"]
+        assert full_scope_reads == []
+
+        # Paging stops as soon as the requested matches are found: the two newest pages hold both of them.
+        pages.clear()
+        newest = await store.recall_similar("deploy release", namespace, top_k=2)
+        assert [result.episode_id for result in newest] == [
+            result.episode_id for result in await fallback.recall_similar("deploy release", namespace, top_k=2)
+        ]
+        assert [result.episode_id for result in newest] == ["episode-7"]
+        assert pages == [None, "episode-6"]
+
+        # Without a category there is nothing to select, so the cache-aware full-scope read stays.
+        assert [episode.episode_id for episode in await store.get_room_context(namespace, limit=20)] == (
+            expected["room_all"]
+        )
+        assert full_scope_reads == ["count", "get_recent"]
+    finally:
+        await backend.close()

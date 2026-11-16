@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import aiosqlite
+import numpy as np
 
 from parrot.memory.episodic.backends.abstract import AbstractEpisodeBackend
 from parrot.memory.episodic.models import EpisodeSearchResult, EpisodicMemory, MemoryNamespace
@@ -31,6 +32,8 @@ logger = logging.getLogger(__name__)
 _SCHEMA_VERSION = 3
 _DEFAULT_VECTOR_CEILING = 5_000
 _STATE_READ_BATCH = 500
+_ID_READ_BATCH = 500
+_SCORE_BLOCK_ROWS = 1_024
 _CITATION_RETENTION_DAYS = 30
 _FILTERABLE_COLUMNS = (
     "tenant_id",
@@ -111,45 +114,72 @@ def _pack_embedding(embedding: list[float] | None) -> tuple[bytes | None, int | 
     return struct.pack(f"<{len(embedding)}f", *embedding), len(embedding)
 
 
-def _unpack_embedding(payload: bytes, dimension: int) -> list[float]:
-    """Decode an embedding stored by :func:`_pack_embedding`.
+def _rank_candidates(
+    embedding: list[float],
+    candidates: list[tuple[bytes, int]],
+    score_threshold: float,
+    top_k: int,
+) -> list[tuple[int, float]]:
+    """Score stored vectors against a query and return the best matches.
+
+    The work is CPU-bound and is meant to run in a worker thread. A stored vector
+    whose dimension differs from the query, or whose norm is zero, scores 0.0.
+    Equal scores keep candidate order, so the newest row wins a tie.
 
     Args:
-        payload: Little-endian float32 bytes from SQLite.
-        dimension: Number of stored vector dimensions.
+        embedding: Finite query vector.
+        candidates: Stored ``(little-endian float32 bytes, dimension)`` pairs, as written by :func:`_pack_embedding`.
+        score_threshold: Minimum cosine similarity to keep.
+        top_k: Maximum number of matches.
 
     Returns:
-        The decoded vector.
+        ``(candidate index, cosine similarity)`` pairs, best first.
 
     Raises:
-        ValueError: If a stored vector has an invalid shape or non-finite value.
+        ValueError: If a stored vector has an invalid shape or a non-finite value.
     """
-    if dimension <= 0 or len(payload) != dimension * 4:
-        raise ValueError("stored embedding has an invalid shape")
-    values = list(struct.unpack(f"<{dimension}f", payload))
-    if not all(math.isfinite(value) for value in values):
-        raise ValueError("stored embedding values must be finite")
-    return values
+    query = np.asarray(embedding, dtype=np.float64)
+    dimension = int(query.shape[0])
+    scores = np.zeros(len(candidates), dtype=np.float64)
+    comparable: list[int] = []
+    for index, (payload, stored_dimension) in enumerate(candidates):
+        if stored_dimension <= 0 or len(payload) != stored_dimension * 4:
+            raise ValueError("stored embedding has an invalid shape")
+        if stored_dimension == dimension:
+            comparable.append(index)
+        elif not np.isfinite(np.frombuffer(payload, dtype="<f4")).all():
+            raise ValueError("stored embedding values must be finite")
 
+    # Sums accumulate in float64 straight from the float32 blobs, so no widened copy of the vectors is made.
+    # A query whose norm overflows scores 0.0 or NaN; NaN ranks last and never qualifies.
+    with np.errstate(over="ignore", invalid="ignore"):
+        query_norm = np.sqrt(query @ query)
+        for start in range(0, len(comparable), _SCORE_BLOCK_ROWS):
+            block_rows = comparable[start : start + _SCORE_BLOCK_ROWS]
+            block = np.frombuffer(b"".join(candidates[index][0] for index in block_rows), dtype="<f4").reshape(
+                len(block_rows), dimension
+            )
+            squared_norms = np.einsum("ij,ij->i", block, block, dtype=np.float64)
+            # A finite float32 vector cannot overflow a float64 sum, so a non-finite sum means a non-finite value.
+            if not np.isfinite(squared_norms).all():
+                raise ValueError("stored embedding values must be finite")
+            denominators = np.sqrt(squared_norms) * query_norm
+            scores[block_rows] = np.divide(
+                np.einsum("ij,j->i", block, query, dtype=np.float64),
+                denominators,
+                out=np.zeros(len(block_rows), dtype=np.float64),
+                where=denominators > 0.0,
+            )
 
-def _cosine(left: list[float], right: list[float]) -> float:
-    """Calculate cosine similarity for two same-sized finite vectors.
-
-    Args:
-        left: Query vector.
-        right: Candidate vector.
-
-    Returns:
-        Similarity in the mathematical cosine range, or zero for zero norms.
-    """
-    if len(left) != len(right):
-        return 0.0
-    dot_product = sum(first * second for first, second in zip(left, right, strict=True))
-    left_norm = math.sqrt(sum(value * value for value in left))
-    right_norm = math.sqrt(sum(value * value for value in right))
-    if left_norm == 0.0 or right_norm == 0.0:
-        return 0.0
-    return dot_product / (left_norm * right_norm)
+    ranked: list[tuple[int, float]] = []
+    for index in np.argsort(-scores, kind="stable"):
+        score = float(scores[index])
+        if not score >= score_threshold:
+            break
+        ranked.append((int(index), score))
+        if len(ranked) == top_k:
+            break
+    return ranked
 
 
 class SQLiteEpisodeBackend(AbstractEpisodeBackend):
@@ -720,7 +750,8 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
         """Filter before ranking and expose vector-ceiling degradation explicitly.
 
         The first ``vector_ceiling`` candidates are the most recent scoped rows
-        when the measured exact-search ceiling is exceeded.
+        when the measured exact-search ceiling is exceeded. Candidates are scored
+        in a worker thread, and only the winning rows have their payload read.
         """
         self._validate_search_arguments(embedding, top_k, score_threshold)
         if top_k == 0:
@@ -728,18 +759,28 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
         where_sql, params = self._build_where(namespace_filter, include_failures_only)
         database = self._require_database()
         cursor = await database.execute(
-            f"SELECT payload, embedding, embedding_dim FROM episodes WHERE {where_sql} "
+            f"SELECT episode_id, embedding, embedding_dim FROM episodes WHERE {where_sql} "
             "AND embedding IS NOT NULL ORDER BY created_at DESC, episode_id DESC LIMIT ?",
             [*params, self._vector_ceiling],
         )
-        rows = await cursor.fetchall()
-        scored: list[tuple[float, dict[str, Any]]] = []
-        for payload, stored_embedding, dimension in rows:
-            score = _cosine(embedding, _unpack_embedding(stored_embedding, int(dimension)))
-            if score >= score_threshold:
-                scored.append((score, json.loads(payload)))
-        scored.sort(key=lambda item: item[0], reverse=True)
-        return [EpisodeSearchResult(**data, score=min(max(score, 0.0), 1.01)) for score, data in scored[:top_k]]
+        rows = list(await cursor.fetchall())
+        if not rows:
+            return []
+        ranked = await asyncio.to_thread(
+            _rank_candidates,
+            embedding,
+            [(row[1], int(row[2])) for row in rows],
+            score_threshold,
+            top_k,
+        )
+        payloads = await self._payloads_by_id([rows[index][0] for index, _ in ranked])
+        results: list[EpisodeSearchResult] = []
+        for index, score in ranked:
+            # A row deleted between the two reads is no longer a result.
+            payload = payloads.get(rows[index][0])
+            if payload is not None:
+                results.append(EpisodeSearchResult(**json.loads(payload), score=min(max(score, 0.0), 1.01)))
+        return results
 
     async def vector_status(self, namespace_filter: dict[str, Any]) -> dict[str, int | str]:
         """Report whether a scope exceeded the measured exact-vector ceiling.
@@ -832,6 +873,90 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
             params.append(since.isoformat())
         query += " ORDER BY created_at DESC, episode_id DESC LIMIT ?"
         params.append(limit)
+        cursor = await self._require_database().execute(query, params)
+        rows = await cursor.fetchall()
+        return [EpisodicMemory.from_dict(json.loads(row[0])) for row in rows]
+
+    async def get_by_ids(
+        self,
+        episode_ids: Sequence[str],
+        namespace_filter: dict[str, Any],
+    ) -> list[EpisodicMemory]:
+        """Return the requested episodes that lie inside a scope, newest first.
+
+        An unknown id and an id outside the scope are both simply absent, so a
+        caller cannot tell one from the other.
+
+        Args:
+            episode_ids: Episode ids to read. Duplicates are read once.
+            namespace_filter: Scope dimensions every returned episode must match.
+
+        Returns:
+            The matching episodes, ordered like :meth:`get_recent`.
+        """
+        unique_ids = list(dict.fromkeys(episode_ids))
+        if not unique_ids:
+            return []
+        where_sql, params = self._build_where(namespace_filter)
+        database = self._require_database()
+        rows: list[Any] = []
+        for start in range(0, len(unique_ids), _ID_READ_BATCH):
+            batch = unique_ids[start : start + _ID_READ_BATCH]
+            placeholders = ", ".join("?" for _ in batch)
+            cursor = await database.execute(
+                f"SELECT created_at, episode_id, payload FROM episodes WHERE {where_sql} "
+                f"AND episode_id IN ({placeholders})",
+                [*params, *batch],
+            )
+            rows.extend(await cursor.fetchall())
+        rows.sort(key=lambda row: (row[0], row[1]), reverse=True)
+        return [EpisodicMemory.from_dict(json.loads(row[2])) for row in rows]
+
+    async def get_recent_matching(
+        self,
+        namespace_filter: dict[str, Any],
+        *,
+        limit: int | None = None,
+        categories: Sequence[str] | None = None,
+        failures_only: bool = False,
+        before_id: str | None = None,
+    ) -> list[EpisodicMemory]:
+        """Return scoped episodes newest first, selecting by category, failure and page in SQL.
+
+        Args:
+            namespace_filter: Scope dimensions applied before every other predicate.
+            limit: Maximum number of rows, or ``None`` for every matching row.
+            categories: Category values to keep; ``None`` keeps every category.
+            failures_only: Whether to keep only failure episodes.
+            before_id: Episode id of the last row of the previous page. Only rows
+                ordered after it are returned; if that episode no longer exists
+                the page is empty.
+
+        Returns:
+            The matching episodes, ordered like :meth:`get_recent`.
+
+        Raises:
+            ValueError: If ``limit`` is negative.
+        """
+        if limit is not None and limit < 0:
+            raise ValueError("limit must be non-negative")
+        if limit == 0 or (categories is not None and not categories):
+            return []
+        where_sql, params = self._build_where(namespace_filter, failures_only)
+        query = f"SELECT payload FROM episodes WHERE {where_sql}"
+        if categories is not None:
+            placeholders = ", ".join("?" for _ in categories)
+            query += f" AND json_extract(payload, '$.category') IN ({placeholders})"
+            params.extend(categories)
+        if before_id is not None:
+            query += (
+                " AND (created_at, episode_id) < (SELECT created_at, episode_id FROM episodes WHERE episode_id = ?)"
+            )
+            params.append(before_id)
+        query += " ORDER BY created_at DESC, episode_id DESC"
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(limit)
         cursor = await self._require_database().execute(query, params)
         rows = await cursor.fetchall()
         return [EpisodicMemory.from_dict(json.loads(row[0])) for row in rows]
@@ -957,6 +1082,26 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
         if self._db is None:
             raise RuntimeError("SQLiteEpisodeBackend is not configured")
         return self._db
+
+    async def _payloads_by_id(self, episode_ids: Sequence[str]) -> dict[str, str]:
+        """Read the serialized payload of specific episodes.
+
+        Args:
+            episode_ids: Episode ids already admitted by a scoped query.
+
+        Returns:
+            Serialized payloads keyed by episode id; a missing id is absent.
+        """
+        database = self._require_database()
+        payloads: dict[str, str] = {}
+        for start in range(0, len(episode_ids), _ID_READ_BATCH):
+            batch = list(episode_ids[start : start + _ID_READ_BATCH])
+            placeholders = ", ".join("?" for _ in batch)
+            cursor = await database.execute(
+                f"SELECT episode_id, payload FROM episodes WHERE episode_id IN ({placeholders})", batch
+            )
+            payloads.update({row[0]: row[1] for row in await cursor.fetchall()})
+        return payloads
 
     async def _rollback(self, database: aiosqlite.Connection) -> None:
         """Best-effort rollback preserving the original operation failure."""
