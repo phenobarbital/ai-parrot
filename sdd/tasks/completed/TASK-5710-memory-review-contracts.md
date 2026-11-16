@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-892 — Agent Memory
 **Spec**: `sdd/specs/agent-memory-mixin.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5709
@@ -238,3 +238,18 @@ Use per-test temporary paths. For asynchronous ordering, events signal entry and
 
 Implement in the FEAT-892 worktree; preserve unrelated work. Use parrot sdd task finalize with real validation
 and semantic-review evidence for the exact implementation commit. Never hand-edit completion state.
+
+## Completion Note
+
+- Task: TASK-5710
+- Feature: agent-memory-mixin
+- Implementation SHA: eb466548719265c191865493671c2a935d3f5c58
+- Closed at (UTC): 2026-11-16T10:45:08+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| summary | Memory-aware configuration lookup; escaped recall; trusted evidence resolver injection; backend review status; deterministic cancellation and durable retry regressions. |
+| tests_passed | 66 |

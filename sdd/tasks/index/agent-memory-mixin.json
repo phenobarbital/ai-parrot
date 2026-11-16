@@ -691,7 +691,7 @@
     {
       "id": "TASK-5681",
       "slug": "agent-memory-docs",
-      "title": "Documentation \u2014 agent-memory, user-memory and memory-dynamics",
+      "title": "Documentation — agent-memory, user-memory and memory-dynamics",
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
@@ -809,7 +809,7 @@
     {
       "id": "TASK-5703",
       "slug": "episodic-recall-visibility",
-      "title": "Episodic recall visibility \u2014 same user across sessions plus agent-level episodes",
+      "title": "Episodic recall visibility — same user across sessions plus agent-level episodes",
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
@@ -930,7 +930,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -940,8 +940,9 @@
       "parallelism_notes": "TASK-5709 precedes changes to shared memory implementation and tests",
       "assigned_to": "agent:sdd-fix:6b5223d0",
       "started_at": "2026-11-16T10:41:06.951490+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5710-memory-review-contracts.md"
+      "completed_at": "2026-11-16T10:45:09+00:00",
+      "file": "sdd/tasks/completed/TASK-5710-memory-review-contracts.md",
+      "verification": "verified"
     }
   ]
 }
