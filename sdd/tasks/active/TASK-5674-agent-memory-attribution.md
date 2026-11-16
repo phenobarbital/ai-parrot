@@ -131,9 +131,19 @@ import pytest
     {
       "path": "packages/ai-parrot/tests/memory/dynamics/test_attribution.py",
       "action": "CREATE"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/memory/dynamics/grade.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot/tests/memory/dynamics/test_core.py",
+      "action": "MODIFY"
     }
   ],
   "contract_symbols": [
+    "sym:packages/ai-parrot/src/parrot/memory/dynamics/grade.py#_normalize_signature",
+    "sym:packages/ai-parrot/src/parrot/memory/dynamics/grade.py#select_grade",
     "sym:packages/ai-parrot/src/parrot/bots/base.py#BaseBot",
     "sym:packages/ai-parrot/src/parrot/bots/base.py#BaseBot.ask",
     "sym:packages/ai-parrot/src/parrot/bots/base.py#BaseBot.ask_stream",
