@@ -31,6 +31,7 @@ def _candidate(
     candidate_type: str = "episodic",
     relevance: float = 0.5,
     ranking_score: float | None = None,
+    lane: str = "warning",
 ) -> MemoryCandidate:
     """Build a candidate with explicit identity and version metadata."""
     return MemoryCandidate(
@@ -42,7 +43,158 @@ def _candidate(
         relevance=relevance,
         ranking_score=ranking_score,
         candidate_type=candidate_type,
+        lane=lane,
     )
+
+
+def test_assembler_splits_episodic_lanes_within_one_budget() -> None:
+    """Warnings pack first; recalls use their shared remaining budget."""
+    scope = _scope()
+    assembler = ContextAssembler(
+        MemoryConfig(
+            max_context_tokens=100,
+            enable_skills=False,
+            enable_conversation=False,
+            episodic_weight=1.0,
+            skill_weight=0.0,
+            conversation_weight=0.0,
+        )
+    )
+    candidates = [
+        _candidate(scope, memory_id="warning", text="W" * 200, relevance=0.1),
+        _candidate(scope, memory_id="recall", text="R" * 159, relevance=0.9, lane="recall"),
+        _candidate(scope, memory_id="dropped", text="D" * 4, relevance=0.8, lane="recall"),
+    ]
+
+    context = assembler.assemble_candidates(candidates, scope=scope)
+
+    assert context.episodic_warnings == "W" * 200
+    assert context.episodic_recall == "R" * 159
+    assert context.tokens_used == 90
+    assert context.delivered_refs == ("episodic:warning:v1", "episodic:recall:v1")
+    assert "episodic:dropped:v1" not in context.delivered_refs
+
+
+def test_user_section_cap_applies_after_normalization_and_rollover() -> None:
+    """Normalization and rollover cannot raise the user ceiling."""
+    scope = _scope()
+    assembler = ContextAssembler(
+        MemoryConfig(
+            max_context_tokens=1000,
+            enable_skills=False,
+            enable_conversation=False,
+            enable_user_memory=True,
+            user_context_tokens=600,
+            user_weight=0.2,
+        )
+    )
+    candidate = _candidate(
+        scope,
+        memory_id="oversized-profile",
+        text="U" * 3200,
+        source="user",
+        candidate_type="user",
+    )
+
+    context = assembler.assemble_candidates([candidate], scope=scope)
+
+    assert context.user_knowledge == ""
+    assert context.delivered_refs == ()
+    assert context.tokens_used == 0
+
+
+def test_user_section_cap_zero_and_legacy_none() -> None:
+    """Zero suppresses even tiny records and refs; None adds no user-specific cap."""
+    scope = _scope()
+    candidate = _candidate(scope, memory_id="tiny", text="abc", source="user", candidate_type="user")
+    base_config = dict(
+        enable_episodic=False,
+        enable_skills=False,
+        enable_conversation=False,
+        enable_user_memory=True,
+        episodic_weight=0.0,
+        skill_weight=0.0,
+        conversation_weight=1.0,
+        user_weight=1.0,
+    )
+
+    zero_context = ContextAssembler(MemoryConfig(**base_config, user_context_tokens=0)).assemble_candidates(
+        [candidate], scope=scope
+    )
+    legacy_context = ContextAssembler(MemoryConfig(**base_config, user_context_tokens=None)).assemble_candidates(
+        [candidate], scope=scope
+    )
+
+    assert zero_context.user_knowledge == ""
+    assert zero_context.delivered_refs == ()
+    assert legacy_context.user_knowledge == "abc"
+    assert legacy_context.delivered_refs == ("user:tiny:v1",)
+
+
+def test_user_priority_high_reserves_ceiling_before_weighted_sections() -> None:
+    """At configured 400/effective 360, high admits 125 profile tokens; normal has 108."""
+    scope = _scope()
+    common = dict(
+        max_context_tokens=400,
+        enable_skills=False,
+        enable_conversation=False,
+        enable_user_memory=True,
+        episodic_weight=0.7,
+        skill_weight=0.0,
+        conversation_weight=0.3,
+        user_weight=0.3,
+        user_context_tokens=125,
+    )
+    candidates = [
+        _candidate(scope, memory_id="episode", text="E" * 1004),
+        _candidate(
+            scope, memory_id="large-profile", text="L" * 500, source="user", candidate_type="user", relevance=1.0
+        ),
+        _candidate(
+            scope, memory_id="small-profile", text="S" * 432, source="user", candidate_type="user", relevance=0.5
+        ),
+    ]
+
+    normal = ContextAssembler(MemoryConfig(**common, user_priority="normal")).assemble_candidates(
+        candidates, scope=scope
+    )
+    high = ContextAssembler(MemoryConfig(**common, user_priority="high")).assemble_candidates(candidates, scope=scope)
+
+    assert normal.user_knowledge == "S" * 432
+    assert normal.tokens_used == 359
+    assert high.user_knowledge == "L" * 500
+    assert high.tokens_used == 125
+    assert normal.tokens_used <= 360
+    assert high.tokens_used <= 360
+
+
+def test_user_priority_modes_agree_when_weighted_share_reaches_ceiling() -> None:
+    """Content, refs and digests agree when both allocations admit the same records."""
+    scope = _scope()
+    config = dict(
+        max_context_tokens=2400,
+        enable_skills=False,
+        enable_conversation=False,
+        enable_user_memory=True,
+        episodic_weight=0.7,
+        skill_weight=0.0,
+        conversation_weight=0.3,
+        user_weight=0.3,
+        user_context_tokens=400,
+    )
+    candidates = [
+        _candidate(scope, memory_id="episode", text="E" * 6044),
+        _candidate(scope, memory_id="profile", text="P" * 1600, source="user", candidate_type="user"),
+    ]
+
+    normal = ContextAssembler(MemoryConfig(**config, user_priority="normal")).assemble_candidates(
+        candidates, scope=scope
+    )
+    high = ContextAssembler(MemoryConfig(**config, user_priority="high")).assemble_candidates(candidates, scope=scope)
+
+    assert normal.model_dump() == high.model_dump()
+    assert normal.delivered_refs == ("episodic:episode:v1", "user:profile:v1")
+    assert normal.tokens_used == 1911
 
 
 def test_packed_original_refs_follow_complete_candidate_content() -> None:
