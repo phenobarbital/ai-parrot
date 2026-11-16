@@ -137,7 +137,6 @@ from parrot.knowledge.wiki.ledger.integration import IntegrationError, LedgerInt
 from parrot.knowledge.wiki.ledger.fix_planner import FixPlan, Lane, plan_fix_batch
 from parrot.knowledge.wiki.ledger.events import IssueKind, IssueSeverity, IssueStatus
 from parrot.knowledge.wiki.schema.models import SchemaSourceConfig
-from parrot.memory.dynamics.cli import register_memory_commands
 
 _cli_logger = logging.getLogger("wikitoolkit.cli")
 
@@ -1513,7 +1512,43 @@ def wiki(ctx: click.Context, verbose: bool) -> None:
         logging.getLogger("parrot.knowledge.wiki.sources").setLevel(logging.DEBUG)
 
 
-register_memory_commands(wiki)
+class _LazyMemoryGroup(click.Group):
+    """`memory` command that imports parrot.memory only when it is actually used."""
+
+    def __init__(self) -> None:
+        """Initialize the static command metadata and an unresolved command cache."""
+        super().__init__(name="memory", help="Operate on one explicitly configured agent-memory store.")
+        self._resolved: click.Group | None = None
+
+    def _real(self) -> click.Group:
+        """Import and cache the real memory group on its first invocation."""
+        if self._resolved is None:
+            from parrot.memory.dynamics.cli import register_memory_commands
+
+            holder = click.Group("memory-holder")
+            register_memory_commands(holder)
+            command = holder.commands["memory"]
+            if not isinstance(command, click.Group):
+                raise TypeError("memory command must be a Click group")
+            self._resolved = command
+        return self._resolved
+
+    def make_context(
+        self,
+        info_name: str | None,
+        args: list[str],
+        parent: click.Context | None = None,
+        **extra: Any,
+    ) -> click.Context:
+        """Delegate parsing to the real group after the `memory` command is selected."""
+        return self._real().make_context(info_name, args, parent=parent, **extra)
+
+    def invoke(self, ctx: click.Context) -> Any:
+        """Delegate invocation to the real group after lazy context construction."""
+        return self._real().invoke(ctx)
+
+
+wiki.add_command(_LazyMemoryGroup())
 
 
 @wiki.command()
