@@ -706,6 +706,27 @@
       "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5681-agent-memory-docs.md"
+    },
+    {
+      "id": "TASK-5704",
+      "slug": "feedback-scope-identity",
+      "title": "Scope feedback imports while preserving existing episodes",
+      "feature_id": "FEAT-892",
+      "feature": "agent-memory-mixin",
+      "spec": "sdd/specs/agent-memory-mixin.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5675"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-5675 because it creates feedback.py and test_feedback.py; this repair modifies both.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5704-feedback-scope-identity.md",
+      "discovered_from": "issue:fbc5627878da"
     }
   ]
 }
