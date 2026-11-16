@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-887 — SDD Experience Memory (`experience.pitfall`)
 **Spec**: `sdd/specs/sdd-experience-memory.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5696, TASK-5588, TASK-5589, TASK-5590, TASK-5592, TASK-5598, TASK-5599, TASK-5604
@@ -174,4 +174,16 @@ Follow `docs/sdd/WORKFLOW.md` § "Implementing a task by hand" inside
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+
+- Task: TASK-5697
+- Feature: sdd-experience-memory
+- Implementation SHA: 390de8760496287aba324a870778a2d129c00f4e
+- Closed at (UTC): 2026-11-16T15:43:59+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| deferred | issue:bb025a7bb3e2 (minor): unanchored short -p in fastpath.redact corrupts words like git-pull; fastpath.py is a protected file, fix from host. Spec item 5 (codex replay vs hook identity for quoted commands) was not evidenced by the delivery: unverified. Items 6/7 delivered by TASK-5696. |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 697s · Tokens: n/a |
