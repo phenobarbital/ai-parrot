@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-887 — SDD Experience Memory (`experience.pitfall`)
 **Spec**: `sdd/specs/sdd-experience-memory.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5695, TASK-5588, TASK-5592, TASK-5593, TASK-5595, TASK-5596, TASK-5601, TASK-5603, TASK-5608
@@ -196,4 +196,21 @@ Follow `docs/sdd/WORKFLOW.md` § "Implementing a task by hand" inside
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+
+- Task: TASK-5696
+- Feature: sdd-experience-memory
+- Implementation SHA: 7fdf80b3b842006b5c1ec25467596cd92c5b45ad
+- Closed at (UTC): 2026-11-16T09:31:52+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| baseline_reds | 3 test_installer.py::test_sdd_flow_in_foreign_repo failures come from dev (docs cite an unregistered 'parrot sdd experts triage' verb, TASK-5630) |
+| closed_from | host finalize; the sandboxed worker cannot run finalize (navconfig log directory not writable) |
+| deferred | review suggestions out of scope, not implemented: sync I/O in the interceptor constructor, word-vs-token budget, graduation's private lock API, the codex TypeError shim, symlink-refusing experience_dirs |
+| known_gap | no test asserts that the dev-loop interceptor passes the service config's limits to on_outcome (scope item, not an acceptance criterion) |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Attempts: 2 (engine retry ladder); remainder completed outside the ladder |
+| task_commits | faa78eb63d + ed8543340e (lint) + 0e6d85af59 code deliverable, merged by 57331b59c0; c5ade34a67 untrusted-data sentence in the four sdd-coder copies (host: worker sandbox denies .claude/agents); 7fdf80b3b8 missing spec §4 tests and hook-knob coverage (worker) |
+| validation | merge tier passed at 7fdf80b3b8 (124 passed, 0 failed); host rerun of the task's 8 validation commands: 160 passed; asset sync passes; ruff: 1 E731 in test_transitions.py:247, present before this task |

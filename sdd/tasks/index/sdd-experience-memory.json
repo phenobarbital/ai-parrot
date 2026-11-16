@@ -690,7 +690,7 @@
       "feature_id": "FEAT-887",
       "feature": "sdd-experience-memory",
       "spec": "sdd/specs/sdd-experience-memory.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -708,11 +708,12 @@
       "parallelism_notes": "TASK-5696: exclusive review-fix step; edits index.py, service.py, fastpath.py, transitions.py…; follows TASK-5695 (shared experience modules)",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5696-experience-review-leftovers.md",
+      "completed_at": "2026-11-16T09:31:52+00:00",
+      "file": "sdd/tasks/completed/TASK-5696-experience-review-leftovers.md",
       "discovered_from": [
         "issue:f8f19fc19fa9"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-5697",
