@@ -41,7 +41,7 @@ Key components:
 
 ### CLI Commands
 
-- [`wikitoolkit memory`](ref:parrot.memory.dynamics.cli.register_memory_commands) — Memory operations group (`parrot wiki memory` is the same group); attached lazily, so other `wikitoolkit` commands never import `parrot.memory`
+- [`wikitoolkit memory`](ref:parrot.memory.dynamics.cli.register_memory_commands) — Memory operations group (`parrot wiki memory` is the same group); attached lazily, so other `wikitoolkit` commands never import `parrot.memory`. A failing command exits 1 with one `Error: <Type>: <message>` line, never a traceback
 
 ## Configuration & Parameters
 
@@ -236,10 +236,11 @@ stats = await import_feedback(Path("."), store=episodic_store, namespace=namespa
 ### Reading committed reviews
 
 ```python
-rows = await episodic_store.list_reviews(namespace)  # ordered by recorded_at, dedupe_key
+rows = await episodic_store.list_reviews(namespace)  # in commit order (SQLite rowid)
 ```
 
-Every namespace filter is applied before any `limit`. A backend without `list_reviews` raises `RuntimeError` (never an empty list). The archive is JSON with
+Every namespace filter is applied before any `limit`. Rows come back in commit order, not by `recorded_at`: that field is a wall clock and
+can step back between processes. A backend without `list_reviews` raises `RuntimeError` (never an empty list). The archive is JSON with
 `format`, `exported_at` (real UTC time; injectable `clock` in tests), `namespace`, `provenance` and `reviews`. Each review is a list entry (so two reviews of one
 memory version both survive) with `dedupe_key`, `outcome_id`, `outcome_revision`, `ref_key`, `apply_revision`, `recorded_at`, the full validated `command`, and a
 `record` object only when one was persisted.
@@ -284,6 +285,8 @@ memory version both survive) with `dedupe_key`, `outcome_id`, `outcome_revision`
 - Expected revision must match apply revision
 - Lower outcome revisions are rejected as stale
 - Unknown in-scope references are ignored
+- `apply_review` matches the episode on all seven scope dimensions: a ref that leaves a dimension unset (no `user_id`, say) does not
+  admit an episode that sets it, and answers `ignored` exactly like a missing episode
 - Cross-scope references reveal no content
 
 ### Storage and Durability
@@ -310,8 +313,16 @@ memory version both survive) with `dedupe_key`, `outcome_id`, `outcome_revision`
 ### Performance Limits
 
 - Exact vector search supported up to 5,000 rows
-- p95 latency contract: ≤ 150 ms at ceiling
-- Degradation reported when ceiling exceeded
+- p95 latency contract: ≤ 150 ms at ceiling. `test_vector_search_meets_latency_contract_at_ceiling` checks it at 5,000 rows of 1536
+  dimensions (about 80 ms on the reference hardware)
+- `SQLiteEpisodeBackend.search_similar` scores candidates with `numpy` in a worker thread (`asyncio.to_thread`) and reads the payload
+  only for the rows it returns, so a search does not block the event loop
+- Degradation reported when ceiling exceeded: `vector_status` answers `degraded`, and each truncated search logs a warning that names
+  the scope dimensions (never their values) and scores only the newest `vector_ceiling` candidates
+- `SQLiteEpisodeBackend` has two optional read capabilities, `get_by_ids(episode_ids, namespace_filter)` and
+  `get_recent_matching(namespace_filter, limit=, categories=, failures_only=, before_id=)`. `EpisodicMemoryStore` uses them to resolve
+  cited ids, to read failures or one category, and to page the lexical fallback until `top_k` matches are found. A backend without
+  them, and `get_room_context` without categories, still read the whole scope
 - FTS success never masks vector failure
 - No index dependency added in this feature
 
