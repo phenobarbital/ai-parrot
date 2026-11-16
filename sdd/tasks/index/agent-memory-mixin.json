@@ -605,7 +605,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -614,7 +614,7 @@
       "parallel": true,
       "parallelism_notes": "Consumes DevelopmentOutput.checked_patterns and verified review API from TASK-5676",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-16T01:13:59+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5677-agent-memory-prompts.md"
     },
@@ -649,7 +649,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -659,7 +659,7 @@
       "parallel": true,
       "parallelism_notes": "Consumes lazy command group and overlapping cli.py from TASK-5678; Consumes durable review/archive source from TASK-5662",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-16T01:13:59+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5679-agent-memory-export.md"
     },
@@ -735,3 +735,4 @@
     }
   ]
 }
+
