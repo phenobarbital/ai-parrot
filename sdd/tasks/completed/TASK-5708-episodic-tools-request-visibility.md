@@ -162,8 +162,14 @@ replayed onto the branch (code commit `5ae9049bb9`). The feature's validation co
 321 passed, 2 skipped; `ruff` and `black` clean. Reverting `tools.py` fails the two leak tests
 (`test_search_tool_never_returns_another_users_episode`, `test_warnings_tool_never_returns_another_users_failure`).
 
-The external review (codex) was started but had not returned when the owner asked to commit and integrate, so
-this task carries no external review verdict.
+External review (codex, neutral brief) returned after integration; three findings:
+
+- CONFIRM — a toolkit configured with a session returned nothing for a matching request, because each recall
+  scope was checked against the configured namespace. The request's own identity is now checked once
+  (`_request_allowed`); a request that passes gets its whole visibility, agent level included.
+- CONFIRM — the merged search result was ordered by raw similarity. It now uses the store's `ranking_score`.
+- REJECT for this task, filed as a ledger issue — `EpisodeRedisCache` builds its key from unescaped identifiers,
+  so two different namespaces can share a prefix. It predates this task and lives in `episodic/cache.py`.
 
 Left open, see "NOT in scope": `record_lesson` still writes at the agent level, so a user-specific lesson the
 model records is visible to every user of the agent.
