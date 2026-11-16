@@ -608,7 +608,7 @@
       "feature_id": "FEAT-887",
       "feature": "sdd-experience-memory",
       "spec": "sdd/specs/sdd-experience-memory.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -618,7 +618,7 @@
       "parallel": false,
       "parallelism_notes": "TASK-5693: exclusive review-fix step; edits transitions.py, test_transitions.py, test_experience_hook.py; first review-fix step on top of the completed FEAT-887 tasks",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-16T00:27:03.471988+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5693-experience-hook-bounded-text.md",
       "discovered_from": [
