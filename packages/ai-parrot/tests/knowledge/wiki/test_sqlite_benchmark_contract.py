@@ -11,7 +11,6 @@ from typing import Any
 
 import pytest
 
-
 BENCHMARK_REPORT_SCHEMA = 1
 
 

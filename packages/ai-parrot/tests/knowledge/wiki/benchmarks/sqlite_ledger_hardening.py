@@ -18,7 +18,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-
 logger = logging.getLogger(__name__)
 
 _DRIVER_MODULE = "sqlite_ledger_hardening"
@@ -645,7 +644,7 @@ async def _worker_async(payload: dict[str, Any], barrier: Any) -> dict[str, Any]
         await heartbeat
         await _barrier_wait(barrier)
 
-        phase_timings: dict[str, list[float] | None] = {phase: None for phase in _TIMING_PHASES}
+        phase_timings: dict[str, list[float] | None] = dict.fromkeys(_TIMING_PHASES)
         for record in handler.records:
             phase = record.get("phase")
             duration = record.get("duration_ms")
@@ -655,11 +654,11 @@ async def _worker_async(payload: dict[str, Any], barrier: Any) -> dict[str, Any]
                     current = []
                     phase_timings[phase] = current
                 current.append(float(duration))
-        fast_path_values = [record.get("fast_path") for record in handler.records if record.get("fast_path") is not None]
+        fast_path_values = [
+            record.get("fast_path") for record in handler.records if record.get("fast_path") is not None
+        ]
         replay_values = [
-            int(record["applied_events"])
-            for record in handler.records
-            if isinstance(record.get("applied_events"), int)
+            int(record["applied_events"]) for record in handler.records if isinstance(record.get("applied_events"), int)
         ]
         stale_reads = sum(record.get("event") == "wiki.ledger.stale_read" for record in handler.records)
         busy = sum(sample.outcome == "busy" for sample in samples)
@@ -671,9 +670,11 @@ async def _worker_async(payload: dict[str, Any], barrier: Any) -> dict[str, Any]
             rollbacks=capture.rollbacks,
             fast_paths=sum(bool(value) for value in fast_path_values) if fast_path_values else None,
             replay_events=sum(replay_values) if replay_values else None,
-            stale_read_fallbacks=stale_reads if any(
-                record.get("event") == "wiki.ledger.stale_read" for record in handler.records
-            ) else None,
+            stale_read_fallbacks=(
+                stale_reads
+                if any(record.get("event") == "wiki.ledger.stale_read" for record in handler.records)
+                else None
+            ),
             busy_outcomes=busy,
             errors=errors,
             successful_operations=sum(sample.success for sample in samples),
@@ -778,7 +779,9 @@ async def _verify_trial_async(payload: dict[str, Any]) -> dict[str, Any]:
     for subject in successful_claims:
         claim_counts[subject] = claim_counts.get(subject, 0) + 1
     claimed_rows = {row["issue_id"]: row for row in after if row.get("status") == "claimed"}
-    claims_unique = all(count == 1 and claimed_rows.get(subject, {}).get("claimed_by") for subject, count in claim_counts.items())
+    claims_unique = all(
+        count == 1 and claimed_rows.get(subject, {}).get("claimed_by") for subject, count in claim_counts.items()
+    )
 
     integrity: dict[str, bool] = {}
     for name, database in (
@@ -872,7 +875,7 @@ def _placeholder_worker(worker_id: int, error: str) -> WorkerReport:
         pragmas={},
         samples=[],
         loop_lag_ms=[],
-        phase_timings_ms={phase: None for phase in _TIMING_PHASES},
+        phase_timings_ms=dict.fromkeys(_TIMING_PHASES),
         timing_records=[],
         counts=BenchmarkCounts(
             connection_opens=0,
@@ -1010,11 +1013,7 @@ def _run_trial(config: BenchmarkConfig, trial: int, fixture_scale: int) -> Trial
         outcomes[sample.outcome] = outcomes.get(sample.outcome, 0) + 1
     phase_timings: dict[str, list[float] | None] = {}
     for phase in _TIMING_PHASES:
-        values = [
-            duration
-            for worker in workers
-            for duration in (worker.phase_timings_ms.get(phase) or [])
-        ]
+        values = [duration for worker in workers for duration in (worker.phase_timings_ms.get(phase) or [])]
         phase_timings[phase] = values or None
     wal_before = {
         plane: min((worker.wal_before_bytes.get(plane, 0) for worker in workers), default=0)
