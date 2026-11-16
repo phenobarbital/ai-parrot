@@ -210,9 +210,7 @@ async def test_guarded_mutations_use_durable_append_and_retain_normal_semantics(
 
 
 @pytest.mark.asyncio
-async def test_uncancelled_append_error_propagates(
-    service: LedgerService, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_uncancelled_append_error_propagates(service: LedgerService, monkeypatch: pytest.MonkeyPatch) -> None:
     """An ordinary append failure keeps its existing error semantics."""
 
     def failing_append(event: LedgerEvent) -> tuple[str, int]:
