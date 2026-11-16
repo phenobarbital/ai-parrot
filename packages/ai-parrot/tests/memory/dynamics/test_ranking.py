@@ -122,3 +122,36 @@ def test_anti_patterns_group_first_and_exclusions() -> None:
     assert ranked[4] is skill
     assert user_fact.ranking_score is None
     assert skill.ranking_score is None
+
+
+def test_equal_scores_order_newest_first_then_stable_id() -> None:
+    """Break score ties by creation time, newest first, before falling back to the stable ID."""
+    parameters = _parameters()
+    candidates = [
+        _candidate("a-old"),
+        _candidate("b-new"),
+        _candidate("c-undated"),
+        _candidate("d-new"),
+        _candidate("e-naive-newest"),
+        _candidate("z-strong-oldest", relevance=0.9),
+    ]
+    recency = {
+        "a-old": _REVIEWED_AT,
+        "b-new": _NOW,
+        "d-new": _NOW,
+        "e-naive-newest": (_NOW + timedelta(days=1)).replace(tzinfo=None),
+        "z-strong-oldest": _REVIEWED_AT - timedelta(days=365),
+    }
+
+    ranked = rank_candidates(candidates, now=_NOW, parameters=parameters, states={}, recency=recency)
+
+    assert [candidate.memory_id for candidate in ranked] == [
+        "z-strong-oldest",
+        "e-naive-newest",
+        "b-new",
+        "d-new",
+        "a-old",
+        "c-undated",
+    ]
+    reversed_ranked = rank_candidates(candidates[::-1], now=_NOW, parameters=parameters, states={}, recency=recency)
+    assert [c.memory_id for c in reversed_ranked] == [c.memory_id for c in ranked]

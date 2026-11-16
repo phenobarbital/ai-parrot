@@ -1,6 +1,6 @@
 """Behavioral acceptance tests for scoped episodic recall and cache invalidation."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -153,6 +153,7 @@ def _episode(
     category: EpisodeCategory = EpisodeCategory.TOOL_EXECUTION,
     importance: int = 5,
     outcome: EpisodeOutcome = EpisodeOutcome.SUCCESS,
+    created_at: datetime = datetime(2026, 1, 1, tzinfo=timezone.utc),
 ) -> EpisodicMemory:
     """Create a deterministic scoped episode."""
     return EpisodicMemory(
@@ -171,7 +172,7 @@ def _episode(
         importance=importance,
         is_failure=outcome == EpisodeOutcome.FAILURE,
         lesson_learned=f"Use lesson {episode_id}",
-        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        created_at=created_at,
     )
 
 
@@ -288,5 +289,46 @@ async def test_offline_fallback_no_embedding_provider(tmp_path: Path) -> None:
         assert [result.episode_id for result in results] == ["deployment-match"]
         assert results[0].score == 1.0
         assert results[0].ranking_score == pytest.approx(1.7)
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_equal_importance_routes_keep_the_newest(tmp_path: Path) -> None:
+    """Truncated non-search routes return the newest equal-importance episodes, not an ID-ordered subset."""
+    backend = SQLiteEpisodeBackend(tmp_path / "episodes.sqlite")
+    await backend.configure()
+    namespace = _namespace()
+    store = EpisodicMemoryStore(backend, default_ttl_days=0)
+    first_day = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    try:
+        for offset, episode_id in enumerate(("a-pref-old", "b-pref-mid", "c-pref-new")):
+            await backend.store(
+                _episode(
+                    episode_id,
+                    namespace,
+                    category=EpisodeCategory.USER_PREFERENCE,
+                    created_at=first_day + timedelta(days=offset),
+                )
+            )
+        for offset, episode_id in enumerate(("a-fail-old", "b-fail-mid", "c-fail-new"), start=3):
+            await backend.store(
+                _episode(
+                    episode_id,
+                    namespace,
+                    outcome=EpisodeOutcome.FAILURE,
+                    created_at=first_day + timedelta(days=offset),
+                )
+            )
+
+        preferences = await store.get_user_preferences(namespace, limit=2)
+        room = await store.get_room_context(namespace, limit=3)
+        warnings = await store.get_failure_warnings(namespace, current_query="deployment", max_warnings=2)
+
+        assert [episode.episode_id for episode in preferences] == ["c-pref-new", "b-pref-mid"]
+        assert [episode.episode_id for episode in room] == ["c-fail-new", "b-fail-mid", "a-fail-old"]
+        assert "c-fail-new" in warnings and "b-fail-mid" in warnings
+        assert "a-fail-old" not in warnings
+        assert warnings.index("c-fail-new") < warnings.index("b-fail-mid")
     finally:
         await backend.close()

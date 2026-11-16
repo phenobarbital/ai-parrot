@@ -253,6 +253,20 @@ memory version both survive) with `dedupe_key`, `outcome_id`, `outcome_revision`
 - Time policy is either "days-v1" or "hours-v1"
 - Legacy uninitialized state is neutral, not an earned review
 
+### Recall Ranking
+
+- Episodic recall scores each candidate as relevance × retrievability × (1 + importance/10). Equal scores order newest first (`created_at`),
+  then by `memory_id`, then by `content_version`, so a truncated route (`get_failure_warnings`, `get_user_preferences`, `get_room_context`)
+  keeps the newest equal-importance episodes.
+- Retrievability comes from the earned state a review committed. `EpisodicMemoryStore` reads it through the optional backend capability
+  `get_memory_states(ref_keys)` (implemented by `SQLiteEpisodeBackend`), keyed by the episode's `MemoryRef.canonical_key`.
+- A backend without that capability, a failed state read, or state earned under another `parameter_id` ranks neutrally (retrievability 1.0);
+  recall never fails because state is unavailable.
+- A never-reviewed episode is neutral (1.0) and a reviewed one decays from 1.0 at a rate set by its stability. Between otherwise equal
+  episodes, a stronger review (GOOD) outranks a weaker one (HARD, AGAIN) once time has passed, and a reviewed episode never outranks a
+  never-reviewed one. Under `days-v1` only whole elapsed days count, so a same-day review still has retrievability 1.0.
+- `EpisodeSearchResult.retrievability`, `stability` and `review_count` are set only for an episode with earned state.
+
 ### Review Protocol
 
 - Reviews require delivered version, attribution, and verified outcome

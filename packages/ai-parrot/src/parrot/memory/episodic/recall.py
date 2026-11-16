@@ -85,6 +85,7 @@ def rank_episodes(
         ),
         states={},
         anti_pattern_ids={episode.episode_id for episode in episodes if bool(episode.metadata.get("anti_pattern"))},
+        recency={episode.episode_id: episode.created_at for episode in episodes},
     )
     by_id = {episode.episode_id: episode for episode in episodes}
     ranked_episodes: list[EpisodicMemory | EpisodeSearchResult] = []
