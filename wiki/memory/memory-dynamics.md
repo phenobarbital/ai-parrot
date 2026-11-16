@@ -36,10 +36,12 @@ Key components:
 - [`ReviewSignal`](ref:parrot.memory.dynamics.models.ReviewSignal) — Observed outcome signal
 - [`ReviewCommand`](ref:parrot.memory.dynamics.models.ReviewCommand) — Review operation
 - [`ReviewReceipt`](ref:parrot.memory.dynamics.models.ReviewReceipt) — Review result
+- [`SQLiteEpisodeBackend`](ref:parrot.memory.episodic.backends.sqlite.SQLiteEpisodeBackend) — Durable review log (`apply_review`, `list_reviews`)
+- [`EpisodicMemoryStore`](ref:parrot.memory.episodic.store.EpisodicMemoryStore) — `review`, `list_reviews`
 
 ### CLI Commands
 
-- [`parrot memory`](ref:parrot.memory.dynamics.cli.register_memory_commands) — Memory operations group
+- [`wikitoolkit memory`](ref:parrot.memory.dynamics.cli.register_memory_commands) — Memory operations group (`parrot wiki memory` is the same group); attached lazily, so other `wikitoolkit` commands never import `parrot.memory`
 
 ## Configuration & Parameters
 
@@ -49,8 +51,8 @@ The `MemoryParameters` class defines the FSRS algorithm configuration:
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `algorithm` | `str` | `"fsrs-6"` | Algorithm identifier (must be "fsrs-6") |
-| `time_policy` | `str` | `"days-v1"` | Time policy ("days-v1" or "hours-v1") |
+| `algorithm` | `str` | Required | Algorithm identifier (must be "fsrs-6") |
+| `time_policy` | `str` | Required | Time policy ("days-v1" or "hours-v1") |
 | `parameter_id` | `str` | Required | Parameter set identifier |
 | `weights` | `tuple[float, ...]` | DEFAULT_PARAMETERS | 21 FSRS parameters |
 | `reference` | `str` | FSRS6_REFERENCE | Pinned reference version |
@@ -144,92 +146,103 @@ new_state = transition(state, Grade.GOOD, reviewed_at=datetime.now(timezone.utc)
 
 ### Review Application
 
+Reviews are normally applied through `EpisodicMemoryStore.review(...)` after `cite(...)`: the store selects the grade from the verified signal and
+passes it, the memory's error signature and the review parameters to the backend. The backend call below is the low-level path (it is what the store uses):
+
 ```python
-from parrot.memory.dynamics.models import ReviewCommand, ReviewSignal, MemoryRef
+from datetime import datetime, timezone
+from pathlib import Path
+
+from parrot.memory.dynamics.models import Grade, MemoryParameters, ReviewCommand
+from parrot.memory.episodic.backends.sqlite import SQLiteEpisodeBackend
 from parrot.memory.episodic.models import MemoryNamespace
 
-# Create a review command
-namespace = MemoryNamespace(
-    tenant_id="default",
-    agent_id="my-agent",
-    user_id="user123",
-    session_id="session456"
+namespace = MemoryNamespace(tenant_id="default", agent_id="my-agent", user_id="user123", session_id="session456")
+
+command = ReviewCommand.model_validate(
+    {
+        "ref": {
+            "namespace": namespace.model_dump(mode="json"),
+            "kind": "episode",
+            "memory_id": "episode789",
+            "content_version": "v1",
+        },
+        "signal": {
+            "outcome_id": "outcome123",
+            "outcome_revision": 0,
+            "observed_at": datetime.now(timezone.utc),
+            "scope": {**namespace.model_dump(mode="json"), "turn_id": "turn789", "identity_provenance": "runtime_derived"},
+            "evidence_ref": "coder-review/v1/execution/task/outcome123",
+            "source": "coder_engine",
+            "outcome": "success",
+            "first_attempt": True,
+            "correction_count": 0,
+            "passed_check_ids": ("unit-tests",),
+        },
+        "exposure_id": "exposure456",
+        "expected_revision": 0,
+    }
+)
+parameters = MemoryParameters(
+    algorithm="fsrs-6", time_policy="days-v1", parameter_id="episodic-neutral-v1", provenance="docs-example"
 )
 
-ref = MemoryRef(
-    namespace=namespace,
-    kind="episode",
-    memory_id="episode789",
-    content_version="v1"
-)
-
-signal = ReviewSignal(
-    outcome_id="outcome123",
-    outcome_revision=0,
-    observed_at=datetime.now(timezone.utc),
-    scope=scope,
-    evidence_ref="chatstorage/v1/default/my-agent/user123/session456/turn789",
-    source="tool_runtime",
-    outcome="failure",
-    first_attempt=True,
-    correction_count=0,
-    error_signature="normalized_error",
-    recovery_refs=(),
-    passed_check_ids=()
-)
-
-command = ReviewCommand(
-    ref=ref,
-    signal=signal,
-    exposure_id="exposure456",
-    expected_revision=0
-)
-
-# Apply the review through the store
-receipt = await store.apply_review(command)
+backend = SQLiteEpisodeBackend(Path("memory.db"))
+await backend.configure()
+# The episode "episode789" must already be stored in this namespace.
+receipt = await backend.apply_review(command, grade=Grade.GOOD, memory_error_signature=None, parameters=parameters)
 ```
+
+`receipt.status` is `applied` only after the transaction commits. Calling `backend.apply_review(command)` without a grade still commits the review,
+but stores no review record (see "Persisted review record" below).
 
 ### CLI Usage
 
 ```bash
 # Check memory status
-parrot memory --storage-path memory.db --agent-id my-agent status
+wikitoolkit memory --storage-path memory.db --agent-id my-agent status
 
 # Recall memory
-parrot memory --storage-path memory.db --agent-id my-agent --user-id user123 recall "recent interactions"
+wikitoolkit memory --storage-path memory.db --agent-id my-agent --user-id user123 recall "recent interactions"
 
-# Export reviews
-parrot memory --storage-path memory.db --agent-id my-agent export-reviews --output reviews.json
+# Export committed reviews
+wikitoolkit memory --storage-path memory.db --agent-id my-agent export-reviews --output reviews.json
 ```
+
+The group options (`--storage-path`, `--tenant-id`, `--agent-id`, `--user-id`, `--session-id`, `--room-id`, `--crew-id`, `--model-id`, `--episodic/--no-episodic`,
+`--user-memory/--no-user-memory`, `--dynamics/--no-dynamics`) select one explicitly configured store and scope. Sub-commands: `status`, `recall`, `cite`,
+`review`, `forget`, `sync`, `import-feedback`, `export-reviews`. `parrot wiki memory ...` is the same group. The group is registered lazily: importing
+`parrot.memory` happens only when a `memory` command runs.
 
 ### Export and Import
 
 ```python
+from pathlib import Path
+
 from parrot.memory.dynamics.export import export_reviews
+from parrot.memory.dynamics.feedback import import_feedback
 from parrot.memory.episodic.models import MemoryNamespace
 
-# Export reviews
-namespace = MemoryNamespace(
-    tenant_id="default",
-    agent_id="my-agent",
-    user_id="user123"
-)
+namespace = MemoryNamespace(tenant_id="default", agent_id="my-agent", user_id="user123")
 
-result = await export_reviews(
-    namespace=namespace,
-    destination=Path("reviews.json"),
-    store=episodic_store
-)
+# `episodic_store` is the configured EpisodicMemoryStore; store=None raises ValueError (never an empty archive).
+result = await export_reviews(namespace=namespace, destination=Path("reviews.json"), store=episodic_store)
+# -> {"export_path": ..., "record_count": ..., "content_hash": ..., "format_version": "v1"}
 
-# Import feedback
-from parrot.memory.dynamics.feedback import import_feedback
-
-stats = await import_feedback(
-    root=Path("."),
-    store=episodic_store,
-    namespace=namespace
-)
+# Import legacy coder feedback (idempotent, stable IDs)
+stats = await import_feedback(Path("."), store=episodic_store, namespace=namespace)
 ```
+
+### Reading committed reviews
+
+```python
+rows = await episodic_store.list_reviews(namespace)  # ordered by recorded_at, dedupe_key
+```
+
+Every namespace filter is applied before any `limit`. A backend without `list_reviews` raises `RuntimeError` (never an empty list). The archive is JSON with
+`format`, `exported_at` (real UTC time; injectable `clock` in tests), `namespace`, `provenance` and `reviews`. Each review is a list entry (so two reviews of one
+memory version both survive) with `dedupe_key`, `outcome_id`, `outcome_revision`, `ref_key`, `apply_revision`, `recorded_at`, the full validated `command`, and a
+`record` object only when one was persisted.
 
 ## Gotchas
 
@@ -245,10 +258,11 @@ stats = await import_feedback(
 - Reviews require delivered version, attribution, and verified outcome
 - Reading/citing alone doesn't reinforce memory
 - Synthetic evidence is rejected; only verified outcomes produce reviews
-- Same normalized error signature on repeated failure → AGAIN grade
-- Verified structural recovery → EASY grade (capped to GOOD)
+- Failure whose normalized error signature (first 200 characters) equals the memory's → AGAIN grade; any other failure selects no grade and no review
+- Verified structural recovery (recovery references present) on a cited memory → EASY grade
 - Success with corrections → HARD grade
 - Verified first-attempt success → GOOD grade
+- Anything else selects no grade
 
 ### Deduplication and Revision
 
@@ -262,10 +276,22 @@ stats = await import_feedback(
 
 - SQLite backend uses WAL mode with busy timeout
 - Writes use BEGIN IMMEDIATE transactions
-- Schema is versioned with PRAGMA user_version
-- Migrations are idempotent, no backfill
-- Export is atomic, off the event loop
-- No retry_export (re-running is idempotent)
+- Schema is versioned with `PRAGMA user_version` (currently 3); migrations are additive and idempotent, with no backfill
+- Export is atomic (unique temp file, fsync, replace), runs off the event loop and cleans up on failure
+- There is no `retry_export`: re-running the export is idempotent
+
+### Persisted review record (schema v3)
+
+- A review committed through `EpisodicMemoryStore.review` stores, in the same `BEGIN IMMEDIATE` transaction as the review row and the `memory_state` upsert:
+  the selected `grade`, the `before` and `after` `MemoryState`, the `parameter_id` (`episodic-neutral-v1`) and the `memory_error_signature` the grade was
+  selected against (at most 2000 characters). `list_reviews` and the archive return them under `record`.
+- Schema v3 only adds five nullable `reviews` columns (`grade`, `before_state`, `after_state`, `parameter_id`, `memory_error_signature`). Opening an older
+  database migrates it in place, re-opening is a no-op, and a half-migrated database is completed. Nothing is backfilled.
+- Reviews committed before the migration, or by a direct `apply_review(command)` without a grade, have no record and are exported without a `record` key —
+  one is never fabricated. For a memory with no stored state, `before` is the neutral uninitialized state.
+- Replay applies only the archived `command` and never depends on `record`: one application per review, then `duplicate`.
+- The review parameters live in `episodic/store.py`; `episodic/recall.py` keeps its own inline literal with the same `parameter_id`, so there are two
+  definitions that must stay in step.
 
 ### Performance Limits
 
@@ -303,9 +329,9 @@ stats = await import_feedback(
 
 ### External References
 
-- [FEAT-892 Specification](../../specs/agent-memory-mixin.spec.md) — Full feature specification
-- [FEAT-889 Agent Brain](../../specs/agent-brain.spec.md) — Brain service and versioned exposure
-- [FEAT-571 Memory Dynamics](../../specs/memory-dynamics.spec.md) — Historical dynamics specification
+- [FEAT-892 Specification](../../sdd/specs/agent-memory-mixin.spec.md) — Full feature specification
+- [FEAT-889 Agent Brain](../../sdd/specs/agent-brain.spec.md) — Brain service and versioned exposure
+- [FEAT-571 Memory Dynamics](../../sdd/specs/memory-dynamics.spec.md) — Historical dynamics specification
 - [FSRS Reference](https://github.com/open-spaced-repetition/fsrs4anki) — Original FSRS algorithm
 
 ### Ownership

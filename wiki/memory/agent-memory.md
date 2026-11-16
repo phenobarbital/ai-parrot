@@ -42,7 +42,7 @@ The `AgentMemoryConfig` class controls all memory capabilities with the followin
 |---|---|---|---|
 | `enable_episodic_memory` | `bool` | `False` | Enable episodic memory storage and retrieval |
 | `enable_user_memory` | `bool` | `False` | Enable user knowledge storage and retrieval |
-| `enable_brain` | `bool` | `False` | Enable BrainService integration (implies episodic memory) |
+| `enable_brain` | `bool` | `False` | Enable BrainService integration (requires `enable_episodic_memory`; without an episodic store `configure` raises `invalid_configuration`) |
 | `memory_dynamics` | `bool` | `False` | Enable dynamics (reviews, state tracking) |
 | `max_context_tokens` | `int` | `2000` | Maximum tokens for memory context (ge=0) |
 | `episodic_context_tokens` | `int` | `600` | Tokens budget for episodic memory |
@@ -75,11 +75,14 @@ The old `enable_long_term_memory` flag has been removed. Use the new independent
 
 ### Basic Agent Configuration
 
+`BasicAgent` already inherits `AgentMemoryMixin`, so the flags are set directly on it. Listing the mixin again as a base
+(`class MyAgent(AgentMemoryMixin, BasicAgent)`) raises `TypeError: Cannot create a consistent method resolution order`.
+Use the mixin as an explicit base only for a host class that does not already include it.
+
 ```python
 from parrot.bots import BasicAgent
-from parrot.memory.agent_memory import AgentMemoryMixin
 
-class MyAgent(AgentMemoryMixin, BasicAgent):
+class MyAgent(BasicAgent):
     enable_episodic_memory = True
     enable_user_memory = True
     agent_memory_config = {
@@ -94,6 +97,8 @@ agent = MyAgent(name="my-agent")
 ### Using the Mixin
 
 ```python
+from datetime import datetime, timezone
+
 from parrot.memory.agent_memory.models import MemoryRequestScope
 
 # Prepare memory context
@@ -126,12 +131,12 @@ await agent.complete_memory(event)
 ### Brain Service Integration
 
 ```python
-class MyAgent(AgentMemoryMixin, BasicAgent):
+class MyAgent(BasicAgent):
     enable_episodic_memory = True
-    enable_brain = True  # Implies episodic memory
+    enable_brain = True  # requires enable_episodic_memory
 
-# The brain service is automatically constructed and started
-# Access it through agent.brain_service
+# The brain service is constructed lazily from the sibling FEAT-889 module and started on configure().
+# Access it through agent.brain_service; if that module is unavailable, configure() raises invalid_configuration.
 ```
 
 ## Gotchas
@@ -144,7 +149,7 @@ class MyAgent(AgentMemoryMixin, BasicAgent):
 
 ### Brain Service Limitations
 
-- `enable_brain=True` implies `enable_episodic_memory=True`
+- `enable_brain=True` requires `enable_episodic_memory=True`: the config does not switch episodic memory on for you, and `configure()` raises `invalid_configuration` when the brain has no episodic store
 - The brain service is constructed lazily and requires an episodic store
 - Brain operations are tenant-bound and use the server-resolved request tenant
 - No agent-side `BrainAdminToolkit` is registered; administrative operations go through the HTTP handler
@@ -179,9 +184,9 @@ class MyAgent(AgentMemoryMixin, BasicAgent):
 
 ### External References
 
-- [FEAT-892 Specification](../../specs/agent-memory-mixin.spec.md) — Full feature specification
-- [FEAT-889 Agent Brain](../../specs/agent-brain.spec.md) — Brain service and administrative interfaces (phase 2)
-- [FEAT-571 Memory Dynamics](../../specs/memory-dynamics.spec.md) — Historical dynamics specification
+- [FEAT-892 Specification](../../sdd/specs/agent-memory-mixin.spec.md) — Full feature specification
+- [FEAT-889 Agent Brain](../../sdd/specs/agent-brain.spec.md) — Brain service and administrative interfaces (phase 2)
+- [FEAT-571 Memory Dynamics](../../sdd/specs/memory-dynamics.spec.md) — Historical dynamics specification
 
 ### Ownership
 

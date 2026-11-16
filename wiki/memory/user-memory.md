@@ -46,22 +46,19 @@ The `UserKnowledge` model includes the following fields:
 | Field | Type | Description |
 |---|---|---|
 | `knowledge_id` | `str` | Stable unique identifier |
-| `tenant_id` | `str` | Tenant identifier |
-| `agent_id` | `str` | Agent identifier |
-| `user_id` | `str` | User identifier |
+| `tenant_id` / `agent_id` / `user_id` | `str` | Scope the knowledge belongs to |
 | `kind` | `Literal["fact", "preference", "goal", "constraint"]` | Knowledge type |
 | `normalized_key` | `str | None` | Normalized key for lookup |
-| `context_key` | `str` | Context-specific key |
-| `provenance` | `str` | Provenance information |
+| `value` | `Any` | The stored value |
+| `context` | `dict[str, str]` | Context qualifiers (for example a project) |
+| `provenance` | `Literal["explicit", "inferred"]` | Whether the user said it directly or it was inferred |
+| `evidence_refs` | `tuple[str, ...]` | Evidence references backing the knowledge |
 | `status` | `Literal["active", "pending", "superseded", "invalidated"]` | Current status |
-| `created_at` | `datetime` | Creation timestamp |
-| `updated_at` | `datetime` | Last update timestamp |
+| `created_at` / `updated_at` | `datetime` | Timestamps |
 | `confirmed_at` | `datetime | None` | Confirmation timestamp |
-| `valid_from` | `datetime | None` | Valid from timestamp |
-| `expires_at` | `datetime | None` | Expiration timestamp |
-| `revision` | `int` | Revision number |
-| `supersedes_id` | `str | None` | ID of superseded knowledge |
-| `payload` | `dict[str, Any]` | Additional data |
+| `valid_from` / `expires_at` | `datetime | None` | Validity window |
+| `revision` | `int` | Revision number (compare-and-swap) |
+| `supersedes_id` | `str | None` | ID of the superseded knowledge |
 
 ### UserKnowledgeCandidate Model
 
@@ -70,12 +67,25 @@ The `UserKnowledgeCandidate` model includes:
 | Field | Type | Description |
 |---|---|---|
 | `kind` | `Literal["fact", "preference", "goal", "constraint"]` | Knowledge type |
+| `value` | `Any` | Knowledge value |
+| `provenance` | `Literal["explicit", "inferred"]` | How the claim was obtained |
+| `evidence_refs` | `tuple[str, ...]` | Evidence references (required) |
+| `context` | `dict[str, str]` | Context qualifiers |
 | `normalized_key` | `str | None` | Normalized key |
-| `context_key` | `str` | Context-specific key |
-| `value` | `str` | Knowledge value |
-| `provenance` | `str` | Provenance information |
+| `valid_from` / `expires_at` | `datetime | None` | Optional validity window |
+
+### UserKnowledgeCommand Model
+
+| Field | Type | Description |
+|---|---|---|
+| `event_id` | `str` | Idempotency identity of the originating event |
+| `knowledge_id` | `str | None` | Existing knowledge to act on |
+| `expected_revision` | `int | None` | Revision the caller saw (compare-and-swap) |
+| `candidate` | `UserKnowledgeCandidate | None` | The claim for `upsert` / `correct` |
+| `operation` | `Literal["upsert", "correct", "forget"]` | Defaults to `upsert` |
 | `evidence_refs` | `tuple[str, ...]` | Evidence references |
-| `metadata` | `dict[str, Any]` | Additional metadata |
+
+`UserMemoryReceipt` reports `knowledge_id`, `revision` and a `status` of `applied`, `duplicate`, `conflict`, `ignored` or `storage_unavailable`.
 
 ### Store Configuration
 
@@ -84,7 +94,7 @@ The `UserMemoryStore` is configured with:
 | Parameter | Type | Description |
 |---|---|---|
 | `path` | `Path` | Path to SQLite database |
-| `evidence_tenant_resolver` | `Callable | None` | Optional evidence tenant resolver |
+| `evidence_tenant_resolver` | `Callable | None` | Optional metadata-only ChatStorage tenant resolver; required for `chatstorage/...` evidence to be accepted |
 
 ## Usage Examples
 
@@ -119,16 +129,13 @@ await store.close()
 ### Knowledge Extraction
 
 ```python
+from datetime import datetime, timezone
+
 from parrot.memory.user.extraction import extract_user_knowledge
 from parrot.memory.agent_memory.models import MemoryEvent
-from parrot.clients.base import AbstractClient
 
-# Create a mock client
-class MockClient(AbstractClient):
-    async def complete(self, prompt: str, **kwargs: Any) -> str:
-        return "Extracted knowledge"
-
-client = MockClient()
+# `client` is the agent's configured AbstractClient (any provider client works);
+# extract_user_knowledge makes one bounded extraction call through it.
 
 event = MemoryEvent(
     event_id="event123",
@@ -139,36 +146,45 @@ event = MemoryEvent(
     payload={"text": "User mentioned they prefer dark mode"}
 )
 
-candidates = await extract_user_knowledge(event, client=client)
+candidates = await extract_user_knowledge(event, client=client)  # -> list[UserKnowledgeCandidate]
 ```
+
+Extraction only proposes candidates; it never selects the scope and never persists anything.
 
 ### Managing User Knowledge
 
 ```python
-from parrot.memory.user.models import UserKnowledgeCommand
+from parrot.memory.user.models import UserKnowledgeCandidate, UserKnowledgeCommand
 
-# Correct user knowledge
-command = UserKnowledgeCommand(
+existing = (await store.recall("theme", scope=scope, limit=1))[0]
+
+# Correct user knowledge (compare-and-swap on the revision you read; the correction must be explicit and keep the same
+# kind/key/context, otherwise the receipt is `conflict`)
+candidate = UserKnowledgeCandidate(
     kind="preference",
     normalized_key="theme",
-    context_key="general",
     value="light",
-    provenance="user_correction",
-    expected_revision=1
+    provenance="explicit",
+    evidence_refs=existing.evidence_refs,
+    context=existing.context,  # a correction keeps the same claim: kind, key and context
 )
-
+command = UserKnowledgeCommand(
+    event_id="event-correct-1",
+    knowledge_id=existing.knowledge_id,
+    expected_revision=existing.revision,
+    candidate=candidate,
+    operation="correct",
+    evidence_refs=candidate.evidence_refs,
+)
 receipt = await store.correct(command, scope=scope)
 
-# Forget user knowledge
+# Forget user knowledge (writes a suppression marker)
 forget_command = UserKnowledgeCommand(
-    kind="preference",
-    normalized_key="theme",
-    context_key="general",
-    value="",
-    provenance="user_request",
-    expected_revision=2
+    event_id="event-forget-1",
+    knowledge_id=receipt.knowledge_id,  # the corrected record; the old one is now superseded
+    expected_revision=receipt.revision,
+    operation="forget",
 )
-
 forget_receipt = await store.forget(forget_command, scope=scope)
 ```
 
@@ -203,6 +219,7 @@ forget_receipt = await store.forget(forget_command, scope=scope)
 - Evidence references are validated before persistence
 - Provenance distinguishes caller-supplied identity from anonymous defaults
 - Cross-scope evidence references are rejected
+- `chatstorage/...` evidence references fail closed: a command carrying one is `ignored` unless the store was built with an `evidence_tenant_resolver` that confirms the stored tenant matches the scope (malformed, cross-scope and tombstoned references are ignored too); other reference schemes are not resolved
 
 ### Physical Erasure
 
@@ -220,9 +237,9 @@ forget_receipt = await store.forget(forget_command, scope=scope)
 
 ### External References
 
-- [FEAT-892 Specification](../../specs/agent-memory-mixin.spec.md) — Full feature specification
-- [FEAT-889 Agent Brain](../../specs/agent-brain.spec.md) — Brain service and knowledge promotion
-- [FEAT-571 Memory Dynamics](../../specs/memory-dynamics.spec.md) — Historical dynamics policies
+- [FEAT-892 Specification](../../sdd/specs/agent-memory-mixin.spec.md) — Full feature specification
+- [FEAT-889 Agent Brain](../../sdd/specs/agent-brain.spec.md) — Brain service and knowledge promotion
+- [FEAT-571 Memory Dynamics](../../sdd/specs/memory-dynamics.spec.md) — Historical dynamics policies
 
 ### Ownership
 
