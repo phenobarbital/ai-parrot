@@ -82,8 +82,7 @@ _BASIC_AUTH_RE = re.compile(
     re.IGNORECASE,
 )
 _JSON_SECRET_RE = re.compile(
-    r"(\"(?:api[-_]?key|token|secret|password|pass|auth(?:orization)?|credential)\"\s*:\s*)"
-    r"\"(?:[^\"\\]|\\.)*\"",
+    r"(\"(?:api[-_]?key|token|secret|password|pass|auth(?:orization)?|credential)\"\s*:\s*)" r"\"(?:[^\"\\]|\\.)*\"",
     re.IGNORECASE,
 )
 _TOKEN_RE = re.compile(
