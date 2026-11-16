@@ -175,15 +175,10 @@ def register_memory_commands(group: click.Group) -> None:
     )
     @click.pass_obj
     def export_reviews_command(settings: dict[str, Any], output: Path) -> None:
-        """Export reviews with stable mappings and parameter provenance.
-
-        Produces a deterministic export suitable for deferred fitting.
-        No optimizer, fitter, or training dependencies are added.
-        """
+        """Export the configured store's committed reviews as a replayable archive."""
         from parrot.memory.dynamics.export import export_reviews as do_export
 
         async def run_export(toolkit: AgentMemoryToolkit) -> dict[str, Any]:
-            # Get namespace from settings
             namespace_dict = settings["namespace"]
             from parrot.memory.episodic.models import MemoryNamespace
 
@@ -196,27 +191,13 @@ def register_memory_commands(group: click.Group) -> None:
                 crew_id=namespace_dict.get("crew_id"),
                 model_id=namespace_dict.get("model_id"),
             )
-
-            # Get reviews from the episodic store
-            reviews = []
-            parameters = {}
-
-            if toolkit._manager and toolkit._manager.episodic is not None:
-                episodic = toolkit._manager.episodic
-                # Get all reviews for this namespace
-
-                # Query reviews from the store
-                # The store should have a method to get reviews
-                # For now, we'll build from the available data
-                # This is a placeholder - the actual implementation would query the store
-
-            # For now, export with empty data - the real implementation
-            # would query the episodic store for reviews
+            manager = await toolkit._opened_manager()
+            if manager.episodic is None:
+                raise click.ClickException("episodic memory is not enabled")
             return await do_export(
                 namespace=namespace,
                 destination=output,
-                reviews=reviews,
-                parameters=parameters,
+                store=manager.episodic,
             )
 
         _execute(settings, run_export)

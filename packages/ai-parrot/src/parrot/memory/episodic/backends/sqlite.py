@@ -14,7 +14,7 @@ from typing import Any
 import aiosqlite
 
 from parrot.memory.episodic.backends.abstract import AbstractEpisodeBackend
-from parrot.memory.episodic.models import EpisodeSearchResult, EpisodicMemory
+from parrot.memory.episodic.models import EpisodeSearchResult, EpisodicMemory, MemoryNamespace
 from parrot.memory.dynamics.models import ReviewCommand, ReviewReceipt
 
 logger = logging.getLogger(__name__)
@@ -417,6 +417,54 @@ class SQLiteEpisodeBackend(AbstractEpisodeBackend):
             ref_key=ref_key,
             apply_revision=new_revision,
         )
+
+    async def list_reviews(self, namespace: MemoryNamespace, *, limit: int | None = None) -> list[dict[str, Any]]:
+        """Return committed reviews for one namespace in a deterministic total order.
+
+        Args:
+            namespace: Exact scope of committed review commands to return.
+            limit: Optional maximum row count after scope filtering and ordering.
+
+        Returns:
+            Serialized committed review rows in durable total order.
+
+        Raises:
+            ValueError: If ``limit`` is non-positive.
+            RuntimeError: If the backend has not been configured.
+        """
+        if limit is not None and limit <= 0:
+            raise ValueError("limit must be positive")
+
+        clauses: list[str] = []
+        parameters: list[Any] = []
+        for field, value in namespace.build_filter().items():
+            clauses.append(f"json_extract(payload, '$.ref.namespace.{field}') = ?")
+            parameters.append(value)
+
+        query = (
+            "SELECT dedupe_key, outcome_id, outcome_revision, ref_key, apply_revision, recorded_at, payload "
+            f"FROM reviews WHERE {' AND '.join(clauses)} "
+            "ORDER BY recorded_at ASC, dedupe_key ASC"
+        )
+        if limit is not None:
+            query += " LIMIT ?"
+            parameters.append(limit)
+
+        database = self._require_database()
+        cursor = await database.execute(query, parameters)
+        rows = await cursor.fetchall()
+        return [
+            {
+                "dedupe_key": row[0],
+                "outcome_id": row[1],
+                "outcome_revision": row[2],
+                "ref_key": row[3],
+                "apply_revision": row[4],
+                "recorded_at": row[5],
+                "command": json.loads(row[6]),
+            }
+            for row in rows
+        ]
 
     async def search_similar(
         self,

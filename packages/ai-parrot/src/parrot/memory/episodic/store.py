@@ -449,6 +449,24 @@ class EpisodicMemoryStore:
             await self._invalidate_scope_cache(namespace)
         return receipts
 
+    async def list_reviews(self, namespace: MemoryNamespace, *, limit: int | None = None) -> list[dict[str, Any]]:
+        """List committed reviews for one namespace; fails visibly when the backend cannot.
+
+        Args:
+            namespace: Exact scope of committed review commands to return.
+            limit: Optional maximum row count after scope filtering and ordering.
+
+        Returns:
+            Committed review rows supplied by the configured backend.
+
+        Raises:
+            RuntimeError: If the configured backend cannot list committed reviews.
+        """
+        list_reviews = getattr(self._backend, "list_reviews", None)
+        if not callable(list_reviews):
+            raise RuntimeError("review listing is unavailable: backend has no list_reviews capability")
+        return await list_reviews(namespace, limit=limit)
+
     async def _apply_review_with_current_revision(
         self,
         apply_review: Any,
