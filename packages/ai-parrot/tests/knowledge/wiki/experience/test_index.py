@@ -91,7 +91,8 @@ async def test_index_rebuild_generation_publish(plane: Path) -> None:
     marker = json.loads((plane / "index.json").read_text(encoding="utf-8"))
     assert (plane / "generations" / marker["generation"] / "wiki.db").is_file()
     assert "gh" in json.loads((plane / "triggers.json").read_text(encoding="utf-8"))
-    assert (plane / "fastpath.json").is_file()
+    fastpath = json.loads((plane / "fastpath.json").read_text(encoding="utf-8"))
+    assert fastpath["inject_min_score"] == pytest.approx(0.35)
     assert (plane / "generations" / "interrupted").mkdir() is None
     assert [hit["concept_id"] for hit in await index.search("repository token")] == ["pit-index"]
 
@@ -125,8 +126,10 @@ async def test_index_sources_union_dedup(plane: Path) -> None:
         "fix_subcommand",
         "advice",
         "recording_session",
+        "tier",
     }
     assert stub["recording_session"] == "recording-session"
+    assert stub["tier"] == "repo"
     assert "metadata" not in triggers
 
 

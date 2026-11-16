@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from parrot.knowledge.wiki.experience.fastpath import normalize_error
+from parrot.knowledge.wiki.experience.fastpath import signature_similarity
 from parrot.knowledge.wiki.experience.models import ExperienceConfig, ExperienceEvent, Lesson
 
 
@@ -53,17 +53,7 @@ def match_score(lesson: Lesson, executable: str, subcommand: str, error: str) ->
     if (trigger.executable, trigger.subcommand) != (executable, subcommand):
         return 0.0
 
-    expected = normalize_error(trigger.error_signature)
-    observed = normalize_error(error)
-    if expected == observed:
-        return 1.0
-
-    expected_tokens = set(expected.split())
-    observed_tokens = set(observed.split())
-    union = expected_tokens | observed_tokens
-    if not union:
-        return 0.0
-    return len(expected_tokens & observed_tokens) / len(union)
+    return signature_similarity(trigger.error_signature, error)
 
 
 def _deduplicate_events(events: Iterable[ExperienceEvent]) -> dict[str, ExperienceEvent]:

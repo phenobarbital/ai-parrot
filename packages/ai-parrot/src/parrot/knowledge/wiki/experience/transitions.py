@@ -430,6 +430,7 @@ def _valid_stub(stub: Mapping[str, Any] | None) -> bool:
         and isinstance(stub.get("error_tokens"), list)
         and all(isinstance(token, str) for token in stub["error_tokens"])
         and stub["state"] in {"candidate", "confirmed"}
+        and ("tier" not in stub or stub["tier"] in {"repo", "global"})
     )
 
 

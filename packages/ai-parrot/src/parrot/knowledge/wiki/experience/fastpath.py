@@ -208,6 +208,83 @@ def normalize_error(text: str) -> str:
     return " ".join(normalized.split())[:300]
 
 
+def signature_similarity(expected_signature: str, error: str) -> float:
+    """Return the normalized Jaccard similarity of two error signatures.
+
+    Args:
+        expected_signature: The signature recorded by a lesson trigger.
+        error: The observed command failure.
+
+    Returns:
+        One for equal normalized signatures, otherwise their token Jaccard
+        similarity, or zero when neither signature supplies tokens.
+    """
+    expected = normalize_error(expected_signature)
+    observed = normalize_error(error)
+    if expected == observed:
+        return 1.0
+    expected_tokens = set(expected.split())
+    observed_tokens = set(observed.split())
+    union = expected_tokens | observed_tokens
+    if not union:
+        return 0.0
+    return len(expected_tokens & observed_tokens) / len(union)
+
+
+def best_trigger(
+    stubs: list[Mapping[str, Any]] | tuple[Mapping[str, Any], ...],
+    executable: str,
+    subcommand: str,
+    error: str,
+    *,
+    min_score: float,
+) -> Mapping[str, Any] | None:
+    """Return the highest-ranked matching published trigger stub.
+
+    Args:
+        stubs: Candidate stubs for an executable family.
+        executable: Observed executable basename.
+        subcommand: Observed command family.
+        error: Observed command failure.
+        min_score: Minimum accepted normalized-signature similarity.
+
+    Returns:
+        The best matching stub, or ``None`` for malformed or nonmatching input.
+    """
+    if isinstance(min_score, bool) or not isinstance(min_score, (int, float)):
+        return None
+    candidates: list[tuple[float, int, int, str, Mapping[str, Any]]] = []
+    for stub in stubs:
+        if not isinstance(stub, Mapping):
+            continue
+        lesson_id = stub.get("lesson_id")
+        state = stub.get("state")
+        tier = stub.get("tier", "global")
+        tokens = stub.get("error_tokens")
+        if (
+            stub.get("executable") != executable
+            or stub.get("subcommand") != subcommand
+            or not isinstance(lesson_id, str)
+            or state not in {"candidate", "confirmed"}
+            or tier not in {"repo", "global"}
+            or not isinstance(tokens, list)
+            or not all(isinstance(token, str) for token in tokens)
+        ):
+            continue
+        expected_signature = normalize_error(" ".join(tokens))
+        if not expected_signature:
+            continue
+        score = signature_similarity(expected_signature, error)
+        if score < min_score:
+            continue
+        tier_rank = 0 if tier == "repo" else 1
+        state_rank = 0 if state == "confirmed" else 1
+        candidates.append((score, tier_rank, state_rank, lesson_id, stub))
+    if not candidates:
+        return None
+    return min(candidates, key=lambda candidate: (-candidate[0], candidate[1], candidate[2], candidate[3]))[4]
+
+
 def redact(text: str) -> str:
     """Mask common secret-bearing values before persistence.
 
