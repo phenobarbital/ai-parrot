@@ -137,6 +137,7 @@ from parrot.knowledge.wiki.ledger.integration import IntegrationError, LedgerInt
 from parrot.knowledge.wiki.ledger.fix_planner import FixPlan, Lane, plan_fix_batch
 from parrot.knowledge.wiki.ledger.events import IssueKind, IssueSeverity, IssueStatus
 from parrot.knowledge.wiki.schema.models import SchemaSourceConfig
+from parrot.memory.dynamics.cli import register_memory_commands
 
 _cli_logger = logging.getLogger("wikitoolkit.cli")
 
@@ -1510,6 +1511,9 @@ def wiki(ctx: click.Context, verbose: bool) -> None:
     if verbose:
         logging.getLogger("parrot.knowledge.wiki.store").setLevel(logging.DEBUG)
         logging.getLogger("parrot.knowledge.wiki.sources").setLevel(logging.DEBUG)
+
+
+register_memory_commands(wiki)
 
 
 @wiki.command()
