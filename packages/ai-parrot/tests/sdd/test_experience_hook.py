@@ -172,3 +172,31 @@ def test_hook_budget_overflow_is_noop(tmp_path: Path) -> None:
 
     assert experience_hook.handle_post(payload, host="claude", event="post-failure", plane_dir=plane) is None
     assert not (plane / "events.jsonl").exists()
+
+
+def test_hook_post_failure_redacts_token_and_truncates_large_error(tmp_path: Path) -> None:
+    """Verify the hook persists only redacted, bounded command failure data."""
+    plane = _plane(tmp_path)
+    secret = "ghp_thisisasecretvaluethatmustnotpersist"
+    command = f"gh pr edit 12 -H 'Authorization: Bearer {secret}' GH_TOKEN={secret} " + "x" * 600
+    error = f"Authorization: Bearer {secret} TOKEN={secret} " + "failure " * 1000
+    payload = {
+        "session_id": "safe-session",
+        "tool_name": "Bash",
+        "tool_input": {"command": command},
+        "tool_use_id": "call-1",
+        "error": error,
+    }
+
+    assert experience_hook.handle_post(payload, host="claude", event="post-failure", plane_dir=plane) is None
+
+    event = json.loads((plane / "events.jsonl").read_text(encoding="utf-8"))
+    session = next((plane / "sessions").glob("*.json"))
+    stored = session.read_text(encoding="utf-8")
+    assert secret not in json.dumps(event)
+    assert secret not in stored
+    assert len(event["payload"]["error_signature"]) <= 300
+    assert len(event["payload"]["error_excerpt"]) <= 400
+    pending = json.loads(stored)["pending"][0]
+    assert len(pending["command"]) <= 300
+    assert len(pending["error"]) <= 400

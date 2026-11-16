@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from contextvars import ContextVar
 from datetime import datetime, timezone
 import hashlib
 import html
@@ -15,6 +16,8 @@ from parrot.knowledge.wiki.experience.fastpath import (
     failure_signature,
     leading_command,
     lesson_id_for,
+    normalize_error,
+    redact,
     update_session,
 )
 
@@ -24,6 +27,14 @@ if TYPE_CHECKING:
 
 _ADVICE_COOLDOWN_SECONDS = 600
 _MAX_PENDING = 32
+_COMMAND_LIMIT = 300
+_EXCERPT_LIMIT = 400
+_MAX_SEEN_OBSERVATIONS = 128
+_MAX_OBSERVATION_ALIASES = 256
+_MAX_COMMAND_OCCURRENCES = 128
+_MAX_ADVICE_COOLDOWNS = 128
+_MAX_INJECTIONS = 32
+_EVENT_BUFFER: ContextVar[list[dict[str, Any]] | None] = ContextVar("experience_event_buffer", default=None)
 _PAIRING_EXCLUDED_EXECUTABLES = frozenset(
     {
         "pytest",
@@ -77,97 +88,119 @@ def on_outcome(
     if type(ok) is not bool or not isinstance(error, str) or not isinstance(observation_id, str):
         return None
 
+    safe_command = _bounded(command, _COMMAND_LIMIT)
+    safe_error = _bounded(error, _EXCERPT_LIMIT)
+    signature = normalize_error(error)
     executable, subcommand = leading_command(command)
     if not executable:
         return None
 
     result: dict[str, str | None] = {"advice": None}
+    events: list[dict[str, Any]] = []
 
     def mutate(state: dict) -> dict:
-        canonical_observation, duplicate = _observation_identity(state, command, observation_id)
-        if duplicate:
-            return state
+        try:
+            canonical_observation, duplicate = _observation_identity(state, safe_command, observation_id)
+            if duplicate:
+                return state
 
-        if ok:
+            if ok:
+                injection = _matching_injection(state, executable, subcommand)
+                if injection is not None:
+                    _append_evidence(
+                        plane_dir,
+                        injection,
+                        "lesson.validated",
+                        session,
+                        canonical_observation,
+                        seat,
+                        (
+                            "trigger_family"
+                            if _same_family(injection, executable, subcommand, "executable", "subcommand")
+                            else "fix_family"
+                        ),
+                    )
+                    _remove_injection(state, injection)
+                    return state
+
+                pending = _pop_pending(state, executable, subcommand)
+                if pending is not None:
+                    _append_paired_lesson(plane_dir, pending, safe_command, session, canonical_observation, seat)
+                return state
+
             injection = _matching_injection(state, executable, subcommand)
-            if injection is not None:
+            if injection is not None and _same_family(injection, executable, subcommand, "executable", "subcommand"):
                 _append_evidence(
                     plane_dir,
                     injection,
-                    "lesson.validated",
+                    "lesson.refuted",
                     session,
                     canonical_observation,
                     seat,
-                    (
-                        "trigger_family"
-                        if _same_family(injection, executable, subcommand, "executable", "subcommand")
-                        else "fix_family"
-                    ),
+                    "trigger_family",
                 )
                 _remove_injection(state, injection)
                 return state
 
-            pending = _pop_pending(state, executable, subcommand)
-            if pending is not None:
-                _append_paired_lesson(plane_dir, pending, command, session, canonical_observation, seat)
-            return state
+            if executable in _PAIRING_EXCLUDED_EXECUTABLES:
+                return state
 
-        injection = _matching_injection(state, executable, subcommand)
-        if injection is not None and _same_family(injection, executable, subcommand, "executable", "subcommand"):
-            _append_evidence(
+            _append_event(
                 plane_dir,
-                injection,
-                "lesson.refuted",
+                "failure.observed",
+                "",
                 session,
                 canonical_observation,
                 seat,
-                "trigger_family",
+                {
+                    "executable": executable,
+                    "subcommand": subcommand,
+                    "error_signature": signature,
+                    "error_excerpt": safe_error,
+                },
             )
-            _remove_injection(state, injection)
+            _add_pending(
+                state,
+                executable,
+                subcommand,
+                safe_command,
+                safe_error,
+                signature,
+                canonical_observation,
+            )
+
+            try:
+                stub = matcher(executable, subcommand, signature)
+            except Exception:
+                return state
+            if not _valid_stub(stub):
+                return state
+
+            injection = dict(stub)
+            _add_injection(state, injection)
+            _append_event(
+                plane_dir,
+                "lesson.injected",
+                injection["lesson_id"],
+                session,
+                canonical_observation,
+                seat,
+                {"solution_rev": injection["solution_rev"], "state_at_injection": injection["state"]},
+            )
+            if _cooldown_elapsed(state, injection["lesson_id"]):
+                result["advice"] = _render_advice(injection)
             return state
+        finally:
+            _bound_state(state)
 
-        if executable in _PAIRING_EXCLUDED_EXECUTABLES:
-            return state
-
-        _append_event(
-            plane_dir,
-            "failure.observed",
-            "",
-            session,
-            canonical_observation,
-            seat,
-            {
-                "executable": executable,
-                "subcommand": subcommand,
-                "error_signature": error,
-                "error_excerpt": error,
-            },
-        )
-        _add_pending(state, executable, subcommand, command, error, canonical_observation)
-
-        try:
-            stub = matcher(executable, subcommand, error)
-        except Exception:
-            return state
-        if not _valid_stub(stub):
-            return state
-
-        injection = dict(stub)
-        _add_injection(state, injection)
-        _append_event(
-            plane_dir,
-            "lesson.injected",
-            injection["lesson_id"],
-            session,
-            canonical_observation,
-            seat,
-            {"solution_rev": injection["solution_rev"], "state_at_injection": injection["state"]},
-        )
-        if _cooldown_elapsed(state, injection["lesson_id"]):
-            result["advice"] = _render_advice(injection)
-        return state
-
-    updated = update_session(plane_dir, session, mutate)
+    buffer_token = _EVENT_BUFFER.set(events)
+    try:
+        updated = update_session(plane_dir, session, mutate)
+    finally:
+        _EVENT_BUFFER.reset(buffer_token)
+    if updated is not None:
+        for event in events:
+            append_event(plane_dir, event)
     return result["advice"] if updated is not None else None
 
 
@@ -236,7 +269,15 @@ def _remove_injection(state: dict, injection: Mapping[str, str]) -> None:
         state["injections"] = [candidate for candidate in injections if candidate != injection]
 
 
-def _add_pending(state: dict, executable: str, subcommand: str, command: str, error: str, observation_id: str) -> None:
+def _add_pending(
+    state: dict,
+    executable: str,
+    subcommand: str,
+    command: str,
+    error: str,
+    error_signature: str,
+    observation_id: str,
+) -> None:
     """Record one eligible failure, keeping the session state bounded."""
     pending = state.setdefault("pending", [])
     if not isinstance(pending, list):
@@ -248,6 +289,7 @@ def _add_pending(state: dict, executable: str, subcommand: str, command: str, er
             "subcommand": subcommand,
             "command": command,
             "error": error,
+            "error_signature": error_signature,
             "observation_id": observation_id,
         }
     )
@@ -283,6 +325,75 @@ def _add_injection(state: dict, injection: dict[str, str]) -> None:
         for candidate in injections
     ):
         injections.append(injection)
+
+
+def _bound_state(state: dict) -> None:
+    """Trim and normalize mutable session state before it is serialized."""
+    pending = state.get("pending")
+    if isinstance(pending, list):
+        bounded_pending: list[dict[str, str]] = []
+        for candidate in pending[-_MAX_PENDING:]:
+            if not isinstance(candidate, Mapping):
+                continue
+            executable = candidate.get("executable")
+            subcommand = candidate.get("subcommand")
+            command = candidate.get("command")
+            error = candidate.get("error")
+            observation_id = candidate.get("observation_id")
+            if not all(isinstance(value, str) for value in (executable, subcommand, command, error, observation_id)):
+                continue
+            error_signature = candidate.get("error_signature")
+            bounded_pending.append(
+                {
+                    "executable": executable,
+                    "subcommand": subcommand,
+                    "command": _bounded(command, _COMMAND_LIMIT),
+                    "error": _bounded(error, _EXCERPT_LIMIT),
+                    "error_signature": (
+                        normalize_error(error_signature) if isinstance(error_signature, str) else normalize_error(error)
+                    ),
+                    "observation_id": observation_id[:_COMMAND_LIMIT],
+                }
+            )
+        state["pending"] = bounded_pending
+
+    seen = state.get("seen_observations")
+    if isinstance(seen, list):
+        state["seen_observations"] = [item[:_COMMAND_LIMIT] for item in seen if isinstance(item, str)][
+            -_MAX_SEEN_OBSERVATIONS:
+        ]
+
+    aliases = state.get("observation_aliases")
+    if isinstance(aliases, dict):
+        state["observation_aliases"] = {
+            key[:_COMMAND_LIMIT]: value[:_COMMAND_LIMIT]
+            for key, value in list(aliases.items())[-_MAX_OBSERVATION_ALIASES:]
+            if isinstance(key, str) and isinstance(value, str)
+        }
+
+    occurrences = state.get("command_occurrences")
+    if isinstance(occurrences, dict):
+        state["command_occurrences"] = {
+            key: value
+            for key, value in list(occurrences.items())[-_MAX_COMMAND_OCCURRENCES:]
+            if isinstance(key, str) and isinstance(value, int) and not isinstance(value, bool) and value >= 0
+        }
+
+    cooldowns = state.get("advice_cooldowns")
+    if isinstance(cooldowns, dict):
+        now = time.time()
+        state["advice_cooldowns"] = {
+            lesson_id: recorded_at
+            for lesson_id, recorded_at in list(cooldowns.items())[-_MAX_ADVICE_COOLDOWNS:]
+            if isinstance(lesson_id, str)
+            and isinstance(recorded_at, (int, float))
+            and not isinstance(recorded_at, bool)
+            and now - recorded_at < _ADVICE_COOLDOWN_SECONDS
+        }
+
+    injections = state.get("injections")
+    if isinstance(injections, list):
+        state["injections"] = [candidate for candidate in injections if isinstance(candidate, dict)][-_MAX_INJECTIONS:]
 
 
 def _cooldown_elapsed(state: dict, lesson_id: str) -> bool:
@@ -329,8 +440,9 @@ def _append_paired_lesson(
     executable = pending["executable"]
     subcommand = pending["subcommand"]
     error = pending["error"]
+    error_signature = pending.get("error_signature", normalize_error(error))
     solution = "Retry the command after correcting the failure."
-    lesson_id = _lesson_id(executable, subcommand, error)
+    lesson_id = lesson_id_for(f"{executable}|{subcommand}|{error_signature}")
     fix_executable, fix_subcommand = leading_command(fix_command)
     solution_rev = hashlib.sha1(  # noqa: S324 - compatibility with the documented revision identity
         f"{solution}|{fix_executable}|{fix_subcommand}".encode("utf-8")
@@ -347,7 +459,7 @@ def _append_paired_lesson(
                 "trigger": {
                     "executable": executable,
                     "subcommand": subcommand,
-                    "error_signature": error,
+                    "error_signature": error_signature,
                     "error_excerpt": error,
                     "command_example": pending["command"],
                 },
@@ -396,21 +508,23 @@ def _append_event(
     """Build and append one schema-compatible, deterministic event envelope."""
     timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     event_id = _event_id(kind, lesson_id, session, observation_id, timestamp, payload)
-    append_event(
-        plane_dir,
-        {
-            "schema_version": 1,
-            "event_id": event_id,
-            "kind": kind,
-            "lesson_id": lesson_id,
-            "session": session,
-            "observation_id": observation_id,
-            "actor": seat or "experience",
-            "seat": seat,
-            "ts": timestamp,
-            "payload": dict(payload),
-        },
-    )
+    event = {
+        "schema_version": 1,
+        "event_id": event_id,
+        "kind": kind,
+        "lesson_id": lesson_id,
+        "session": session,
+        "observation_id": observation_id,
+        "actor": seat or "experience",
+        "seat": seat,
+        "ts": timestamp,
+        "payload": dict(payload),
+    }
+    buffer = _EVENT_BUFFER.get()
+    if buffer is None:
+        append_event(plane_dir, event)
+    else:
+        buffer.append(event)
 
 
 def _event_id(
@@ -428,6 +542,11 @@ def _event_id(
 def _lesson_id(executable: str, subcommand: str, error: str) -> str:
     """Return the deterministic identity shared with ``ExperienceService.record``."""
     return lesson_id_for(failure_signature(executable, subcommand, error))
+
+
+def _bounded(text: str, limit: int) -> str:
+    """Redact, collapse whitespace, and cap host-provided text before persistence."""
+    return " ".join(redact(text).split())[:limit]
 
 
 def _render_advice(stub: Mapping[str, str]) -> str:
