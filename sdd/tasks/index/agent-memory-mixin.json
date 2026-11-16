@@ -533,7 +533,7 @@
       "feature_id": "FEAT-892",
       "feature": "agent-memory-mixin",
       "spec": "sdd/specs/agent-memory-mixin.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -547,9 +547,10 @@
       "parallelism_notes": "Consumes single invocation lifecycle and overlapping BaseBot from TASK-5673; Consumes whole-block delivered refs/digest from TASK-5669; Consumes cite/review from TASK-5664; Consumes accepted evidence models from TASK-5656; Consumes overlapping manager event routing from TASK-5670",
       "assigned_to": null,
       "started_at": "2026-11-16T00:19:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5674-agent-memory-attribution.md",
-      "blocked_reason": null
+      "completed_at": "2026-11-16T00:41:13+00:00",
+      "file": "sdd/tasks/completed/TASK-5674-agent-memory-attribution.md",
+      "blocked_reason": null,
+      "verification": "verified"
     },
     {
       "id": "TASK-5675",
@@ -730,4 +731,3 @@
     }
   ]
 }
-
