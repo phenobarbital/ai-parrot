@@ -305,7 +305,7 @@ class LedgerIndex:
         )
 
     async def sync(self, conn: "aiosqlite.Connection | None" = None) -> int:
-        """Apply events after the persisted cursor up to the log tip; advance the cursor.
+        """Skip writer acquisition only for a validated standalone no-op.
 
         Args:
             conn: An already-open write connection (reused by ``claim_issue``);
@@ -317,6 +317,20 @@ class LedgerIndex:
         if conn is not None:
             applied, _offset, _event_id = await self._sync_locked(conn)
             return applied
+
+        try:
+            first_cursor = await self.store.read_cursor()
+        except LedgerCursorInvalid:
+            pass
+        else:
+            probe_result = await asyncio.to_thread(self.log.probe_cursor, *first_cursor)
+            if probe_result == "current":
+                try:
+                    if first_cursor == await self.store.read_cursor():
+                        return 0
+                except LedgerCursorInvalid:
+                    pass
+
         async with self.store.ledger_transaction("ledger.sync") as new_conn:
             applied, _offset, _event_id = await self._sync_locked(new_conn)
             return applied

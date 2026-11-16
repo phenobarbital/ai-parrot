@@ -1,7 +1,7 @@
 import os
 import json
 import logging
-from typing import Iterator
+from typing import Iterator, Literal
 from parrot.knowledge.wiki.ledger.events import LedgerEvent
 
 logger = logging.getLogger(__name__)
@@ -107,6 +107,99 @@ class LedgerLog:
             os.close(fd)
 
         return start_offset
+
+    def probe_cursor(self, offset: int, last_event_id: str | None) -> Literal["current", "replay", "uncertain"]:
+        """Validate the exact cursor anchor and EOF with bounded read-only I/O.
+
+        The result is only an observation for ``LedgerIndex.sync``.  It never
+        grants ownership of the log: a caller must still re-read its cursor
+        before treating ``"current"`` as a no-op.
+
+        Args:
+            offset: Byte offset of the last applied event's line.
+            last_event_id: Identifier of the event at ``offset``, or ``None``
+                for an empty cursor.
+
+        Returns:
+            ``"current"`` for a stable exact anchor at EOF, ``"replay"``
+            when a stable suffix exists, or ``"uncertain"`` when the cursor
+            or file identity cannot be safely validated.
+
+        Raises:
+            OSError: For real file I/O failures other than a missing log race.
+        """
+        if last_event_id is None:
+            if offset != 0:
+                return "uncertain"
+            try:
+                before_path = os.stat(self.path)
+            except FileNotFoundError:
+                try:
+                    os.stat(self.path)
+                except FileNotFoundError:
+                    return "current"
+                return "uncertain"
+            if before_path.st_size != 0:
+                return "replay"
+
+        try:
+            fd = os.open(self.path, os.O_RDONLY)
+        except FileNotFoundError:
+            return "uncertain"
+
+        try:
+            before = os.fstat(fd)
+            before_metadata = (
+                before.st_dev,
+                before.st_ino,
+                before.st_size,
+                before.st_mtime_ns,
+                before.st_ctime_ns,
+            )
+
+            if last_event_id is None:
+                result: Literal["current", "replay", "uncertain"] = "current"
+            else:
+                if offset < 0:
+                    return "uncertain"
+                os.lseek(fd, offset, os.SEEK_SET)
+                anchor_bytes = os.read(fd, 4097)
+                newline = anchor_bytes.find(b"\n")
+                if newline < 0 or newline >= 4096:
+                    return "uncertain"
+                try:
+                    anchor = LedgerEvent(**json.loads(anchor_bytes[: newline + 1].decode("utf-8")))
+                except (UnicodeDecodeError, json.JSONDecodeError, ValueError, TypeError):
+                    return "uncertain"
+                if anchor.event_id != last_event_id:
+                    return "uncertain"
+                os.lseek(fd, offset + newline + 1, os.SEEK_SET)
+                result = "current" if os.read(fd, 1) == b"" else "replay"
+
+            after = os.fstat(fd)
+            after_metadata = (
+                after.st_dev,
+                after.st_ino,
+                after.st_size,
+                after.st_mtime_ns,
+                after.st_ctime_ns,
+            )
+            try:
+                pathname = os.stat(self.path)
+            except FileNotFoundError:
+                return "uncertain"
+            pathname_metadata = (
+                pathname.st_dev,
+                pathname.st_ino,
+                pathname.st_size,
+                pathname.st_mtime_ns,
+                pathname.st_ctime_ns,
+            )
+            if before_metadata != after_metadata or pathname_metadata != after_metadata:
+                return "uncertain"
+            return result
+        finally:
+            os.close(fd)
 
     def iter_events(self, from_offset: int = 0) -> Iterator[tuple[LedgerEvent, int]]:
         """Stream events from the log starting at a given byte offset.
