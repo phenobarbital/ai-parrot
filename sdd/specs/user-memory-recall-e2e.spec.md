@@ -56,6 +56,8 @@ Spanish statements into English values.
 
 - A user's active, currently valid knowledge reaches the prompt on **every** request of that user,
   within the user-knowledge token budget, whatever the question says.
+- `user_memory_priority` stops being a setting without effect: `"high"` reserves the user-knowledge
+  budget ahead of the other sections, `"normal"` shares the budget by weight.
 - Relevant non-failure episodes from the same user's **earlier sessions** reach the prompt
   automatically, next to the existing failure warnings.
 - Lexical matching (episodic fallback and user-knowledge ranking) uses normalized terms instead of raw
@@ -83,7 +85,7 @@ Spanish statements into English values.
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:27155200f9e7750c5d1638e733f6121dc2767e0f618c9b2232abfe4841ecd6bb evaluation_digest=sha256:953d2bc71e824d55686b419357d4c0ce00d39693ea8952eda1aea0d6e74a34b8 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:ccdecf003465c78b568fb6abcd6b371ac7de9ed232247462111af86680059ed2 evaluation_digest=sha256:49f9b9180ee4abdd3cb9508a1cc3fe748d9d93c7b0500b81b9457aa2969e639f rules_version=1 status=pass -->
 
 ## 2. Architectural Design
 
@@ -100,6 +102,23 @@ mapped from `AgentMemoryConfig.user_context_tokens`; weights and rollover may re
 budget but never raise that ceiling. A record that does not fit is skipped, never truncated.
 The ceiling uses the existing `len(text) // 4` estimate on packed section content, including newlines;
 it is not a provider-token guarantee or a new accounting rule for section wrappers.
+
+**`user_memory_priority` decides whether that ceiling is also a guarantee.** The agent setting exists
+today but nothing reads it. It is wired here:
+
+- `"high"` (the agent default): the user section is packed **first** with a budget of
+  `min(user_context_tokens, max_context_tokens)`, independent of the other sections' weights. The other
+  sections then keep their existing weighted allocation and rollover chain, each clamped to what is
+  left of `max_context_tokens`; when the total does not fit, the sections packed last yield. Budget
+  the user section does not use is not redistributed.
+- `"normal"`: the user section is packed last with its weighted allocation plus rollover, clamped to
+  the ceiling. This is the allocation described above and the only one for direct `MemoryConfig`
+  callers that do not set the new field.
+
+The two modes pack the same context whenever the weighted allocation already reaches the ceiling
+(true for the default budgets). They differ when `max_context_tokens` is smaller than the sum of the
+per-source budgets: `"normal"` shrinks the profile with every other section, `"high"` keeps it whole.
+The rendered section order and the order of `delivered_refs` / `memory_refs` do not depend on the mode.
 
 `recall()` keeps its signature for explicit lookups (`AgentMemoryToolkit.memory_recall`, tests) but
 matches on normalized terms: a record matches when it contains at least one query term, ranked by
@@ -159,8 +178,9 @@ parrot.memory.lexical.query_terms ──→ UserMemoryStore.{profile, recall}
 | `UnifiedMemoryManager._get_user_candidates` | modifies | calls `profile()`, relevance encodes order |
 | `UnifiedMemoryManager._get_episodic_candidates` | modifies | adds the non-failure lane |
 | `MemoryCandidate`, `MemoryContext`, `MemoryConfig` | extends | `lane`, `episodic_recall`, two result limits and an optional user token ceiling |
-| `ContextAssembler.assemble_candidates` | modifies | splits episodic lanes; clamps user allocation after rollover |
-| `AgentMemoryConfig`, `_manager_config` | extends | `max_episodic_recall`, `max_user_records`; maps existing `user_context_tokens` as a ceiling |
+| `ContextAssembler.assemble_candidates` | modifies | splits episodic lanes; clamps user allocation after rollover; packs the user section first under `user_priority="high"` |
+| `AgentMemoryConfig`, `_manager_config` | extends | `max_episodic_recall`, `max_user_records`; maps existing `user_context_tokens` as a ceiling and existing `user_memory_priority` as `user_priority` |
+| `_warn_unsupported_knobs` | modifies | `user_memory_priority` leaves the no-effect list |
 | `EpisodicMemoryStore._fallback_lexical_search` | modifies | uses `query_terms()` |
 | `EpisodicMemoryStore.recall_interactions` | creates | lexical-only non-failure/session exclusions before result limits; independent of vector/strategy candidate caps |
 | `extract_user_knowledge` | modifies | prompt text only |
@@ -179,8 +199,10 @@ class MemoryConfig(BaseModel):
     episodic_max_recall: int = Field(default=3, ge=0)   # 0 disables the non-failure lane
     user_max_records: int = Field(default=20, ge=0, le=100)
     user_context_tokens: int | None = Field(default=None, ge=0)  # None preserves legacy direct callers
+    user_priority: Literal["high", "normal"] = "normal"          # "normal" preserves legacy direct callers
 
 # parrot/memory/agent_memory/models.py
+# (existing, unchanged) user_memory_priority: Literal["high", "normal"] = "high"
 class AgentMemoryConfig(BaseModel):
     max_episodic_recall: int = Field(default=3, ge=0)
     max_user_records: int = Field(default=20, ge=0, le=100)
@@ -323,6 +345,7 @@ class EpisodicMemoryStore:
       episodic_max_recall: int = Field(default=3, ge=0)
       user_max_records: int = Field(default=20, ge=0, le=100)
       user_context_tokens: int | None = Field(default=None, ge=0)
+      user_priority: Literal["high", "normal"] = "normal"
 
   # unified/context.py  (modifies assemble_candidates, verified: context.py:125)
   #   The "episodic" section keeps ONE budget. Candidates are ordered warnings first, then recall,
@@ -334,6 +357,16 @@ class EpisodicMemoryStore:
   #   even if the token estimator rounds a short record to zero. None keeps legacy packing.
   #   Use the same packed-text estimate for the fit test and tokens_used; do not truncate records.
   #   Neither disabled sections nor empty earlier sections may raise the user ceiling.
+  #   The paragraph above is config.user_priority == "normal". With "high" and the user section
+  #   enabled: pack user_knowledge BEFORE the loop with
+  #       user_budget = min(cap, budget)
+  #       cap = config.user_context_tokens if not None else int(budget * weights["user_knowledge"])
+  #   then run the existing loop over ("episodic", "skills", "brain") only, with the unchanged
+  #   formula int(budget * weights[section]) + rollover (weights still normalized across ALL enabled
+  #   sections, user included; rollover starts at 0 and never receives unused user budget), and clamp
+  #   each section_budget to budget - tokens_used. tokens_used never exceeds budget.
+  #   In both modes build delivered_refs / memory_refs in the fixed section order
+  #   episodic, skills, brain, user_knowledge, whatever the packing order was.
 
   # unified/manager.py  (modifies _get_episodic_candidates, verified: manager.py:594)
   class UnifiedMemoryManager:
@@ -358,7 +391,11 @@ class EpisodicMemoryStore:
   # agent_memory/factory.py  (modifies _manager_config, verified: factory.py:86-103)
   #   MemoryConfig(..., episodic_max_recall=config.max_episodic_recall,
   #                user_max_records=config.max_user_records,
-  #                user_context_tokens=config.user_context_tokens)
+  #                user_context_tokens=config.user_context_tokens,
+  #                user_priority=config.user_memory_priority)
+  #
+  # agent_memory/factory.py  (modifies _warn_unsupported_knobs, verified: factory.py:77)
+  #   Drop "user_memory_priority" from the tuple of names without a consumer; the other three stay.
   ```
 - **Store eligibility contract** (`recall_interactions` in §2):
   - This new method always retrieves lexically, even when the store has an embedding provider or
@@ -390,6 +427,11 @@ class EpisodicMemoryStore:
   for direct manager callers. The agent factory always supplies the existing agent setting
   (600 by default); it remains a relative weight as well as becoming a hard ceiling. The final
   user allocation is the smaller of that ceiling and the normal allocation after rollover.
+- **Priority compatibility**: `MemoryConfig.user_priority` defaults to `"normal"`, so direct manager
+  callers keep today's packing order. The agent factory always forwards
+  `AgentMemoryConfig.user_memory_priority`, whose existing default is `"high"`: agents built through
+  `create_memory_manager` therefore reserve the profile budget by default. With a `None` ceiling
+  `"high"` still packs the user section first, using its weighted allocation as the budget.
 
 ### Module 4: Extraction prompt
 - **Path**: `packages/ai-parrot/src/parrot/memory/user/extraction.py`
@@ -482,6 +524,9 @@ class EpisodicMemoryStore:
 | `test_agent_config_maps_new_limits` | M3 | `max_episodic_recall` / `max_user_records` reach `MemoryConfig` |
 | `test_user_section_cap_applies_after_normalization_and_rollover` | M3 | only-user config and empty earlier sections cannot exceed 600 estimated tokens; an 800-token record is omitted whole |
 | `test_user_section_cap_zero_and_legacy_none` | M3 | zero emits no user content/refs, including sub-four-character records; None preserves direct-manager packing; factory maps the ceiling |
+| `test_user_priority_high_reserves_ceiling_before_weighted_sections` | M3 | `max_context_tokens=400`, four sections enabled with default shares and the three earlier sections filled to their allocation (no rollover): a 125-token record is omitted under `"normal"` (weighted share 120) and delivered under `"high"`; `tokens_used <= 400`; later sections are clamped to the remainder; refs keep the fixed section order |
+| `test_user_priority_modes_agree_when_weighted_share_reaches_ceiling` | M3 | default budgets: `"high"` and `"normal"` produce the same packed context and digest; `"high"` with a `None` ceiling packs first on the weighted share; zero ceiling emits nothing in both modes |
+| `test_agent_config_maps_user_memory_priority` | M3 | factory forwards `"high"` (default) and `"normal"`; `MemoryConfig()` defaults to `"normal"`; setting `user_memory_priority="normal"` no longer logs the no-effect warning, the other three knobs still do |
 | `test_optional_live_plan_requires_successful_proof` | M6 | optional plan with required live node validates; runner and verifier reject failed/skipped/missing and bad-phase evidence, accepting only successful execution |
 | `test_extraction_prompt_rejects_task_instructions_and_keeps_language` | M4 | prompt text contains both rules |
 
@@ -562,6 +607,11 @@ python examples/memory/agent_memory_e2e.py
       enabled and at least one selected whole record fits. Packed user content never exceeds the
       `user_context_tokens` estimate ceiling after normalization/rollover. Zero suppresses it;
       `MemoryConfig.user_context_tokens=None` preserves legacy direct-manager allocation.
+- [ ] `AgentMemoryConfig.user_memory_priority` has an effect and is no longer reported as unused:
+      `"high"` (default) packs the user section first with `min(user_context_tokens,
+      max_context_tokens)` even when the weighted share is smaller; `"normal"` keeps the weighted
+      allocation. `tokens_used` never exceeds `max_context_tokens` in either mode, both modes pack the
+      same context under the default budgets, and `MemoryConfig.user_priority` defaults to `"normal"`.
 - [ ] `recall()` finds a record from a multi-word natural-language query that contains one of its
       terms even beyond the first 100 eligible rows; blank and short literal queries behave as before.
 - [ ] A non-failure episode recorded in an earlier session of the same user is delivered under
@@ -705,7 +755,10 @@ class AgentMemoryMixin:                                                        #
 - ~~`packages/ai-parrot/tests/e2e/`~~ — the directory does not exist yet; Module 6 creates it.
 - ~~`AgentMemoryMixin.drain_memory_writes()`~~ — only the private `_drain_memory_writes`; public code
   waits through `cleanup()`.
-- ~~`user_memory_priority` having an effect~~ — `_warn_unsupported_knobs` reports it as unused; do not wire it.
+- ~~`user_memory_priority` having an effect today~~ — `_warn_unsupported_knobs` reports it as unused
+  (`factory.py:77`) and nothing reads it; Module 3 wires it. ~~`MemoryConfig.user_priority`~~ is created here.
+- ~~A consumer for `enable_reflection`, `suppress_trivial_tools`, `flush_on_startup`~~ — still unused
+  and still reported; out of scope.
 
 ### Edit Sites (Blueprint Anchors)
 
@@ -727,6 +780,9 @@ Verified against: `9f42c6960a`
 | `packages/ai-parrot/src/parrot/memory/unified/models.py` | MODIFY | `episodic_max_warnings: int = Field(` | `models.py:201` | 1 |
 | `packages/ai-parrot/src/parrot/memory/unified/context.py` | MODIFY | `episodic_warnings=packed_sections.get("episodic", ""),` | `context.py:216` | 1 |
 | `packages/ai-parrot/src/parrot/memory/unified/context.py` | MODIFY | `            section_budget = int(budget * weights[section]) + rollover` | `context.py:196` | 1 |
+| `packages/ai-parrot/src/parrot/memory/unified/context.py` | MODIFY | `        for section in ("episodic", "skills", "brain", "user_knowledge"):` | `context.py:194` | 1 |
+| `packages/ai-parrot/src/parrot/memory/unified/models.py` | MODIFY | `    user_weight: float = Field(` | `models.py:237`; add `user_priority` next to it | 1 |
+| `packages/ai-parrot/src/parrot/memory/agent_memory/factory.py` | MODIFY | `        for name in ("enable_reflection", "suppress_trivial_tools", "flush_on_startup", "user_memory_priority")` | `factory.py:77` | 1 |
 | `packages/ai-parrot/src/parrot/memory/agent_memory/models.py` | MODIFY | `max_episodic_warnings: int = Field(default=3, ge=0)` | `models.py:34` | 1 |
 | `packages/ai-parrot/src/parrot/memory/agent_memory/factory.py` | MODIFY | `episodic_max_warnings=config.max_episodic_warnings,` | `factory.py:102` | 1 |
 | `packages/ai-parrot/src/parrot/memory/user/extraction.py` | MODIFY | `_SYSTEM_PROMPT = (` | `extraction.py:25` | 1 |
@@ -761,6 +817,10 @@ Verified against: `9f42c6960a`
 ### Known Risks / Gotchas
 - **Prompt growth.** Every request of an identified user now carries the profile. It is bounded by
   `user_context_tokens` (600 by default) and `max_user_records`.
+- **Priority changes a default.** `user_memory_priority` already defaults to `"high"`, so wiring it
+  changes agents that never set it: with a `max_context_tokens` smaller than the sum of the per-source
+  budgets, the profile now keeps its full ceiling and the sections packed last (brain, then skills)
+  lose budget. Under the default budgets nothing changes. `"normal"` restores the weighted split.
 - **Compatibility.** Zero disables only the new episodic lane; it does not roll back the tokenizer
   or profile changes. With identical candidates and no eligible recall, enabled/disabled lane
   prompts are equal. Direct `MemoryConfig` callers retain prior packing through a `None` user cap.
@@ -795,7 +855,7 @@ None. `re` from the standard library only.
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:27155200f9e7750c5d1638e733f6121dc2767e0f618c9b2232abfe4841ecd6bb evaluation_digest=sha256:953d2bc71e824d55686b419357d4c0ce00d39693ea8952eda1aea0d6e74a34b8 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:ccdecf003465c78b568fb6abcd6b371ac7de9ed232247462111af86680059ed2 evaluation_digest=sha256:49f9b9180ee4abdd3cb9508a1cc3fe748d9d93c7b0500b81b9457aa2969e639f rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -848,10 +908,10 @@ Coverage:
       "path": "/home/jesuslara/proyectos/ai-parrot/sdd/specs/user-memory-recall-e2e.spec.md"
     }
   ],
-  "evaluation_digest": "sha256:953d2bc71e824d55686b419357d4c0ce00d39693ea8952eda1aea0d6e74a34b8",
+  "evaluation_digest": "sha256:49f9b9180ee4abdd3cb9508a1cc3fe748d9d93c7b0500b81b9457aa2969e639f",
   "exit_code": 0,
   "findings": [],
-  "input_digest": "sha256:27155200f9e7750c5d1638e733f6121dc2767e0f618c9b2232abfe4841ecd6bb",
+  "input_digest": "sha256:ccdecf003465c78b568fb6abcd6b371ac7de9ed232247462111af86680059ed2",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
@@ -888,8 +948,10 @@ Coverage:
       `build_live_client` passes an explicit `GenerationBudget` to the client factory; the plan alone
       does not instrument arbitrary clients. M6 must share one budget across both agent instances
       and every extraction client, using the helpers in `parrot.e2e.live` (§3, M6).
-- [ ] Should `user_memory_priority` (declared, unused) be removed or wired now that the profile is
-      always delivered? Left untouched here. — *Owner: Jesus Lara*
+- [x] Should `user_memory_priority` (declared, unused) be removed or wired now that the profile is
+      always delivered? — *Resolved by Jesus Lara, 2026-11-16*: wire it in this feature. `"high"`
+      packs the user section first with `min(user_context_tokens, max_context_tokens)`; `"normal"`
+      keeps the weighted allocation (§2, M3). Removing the field and leaving it unused were rejected.
 
 ---
 
@@ -922,10 +984,11 @@ implementation and live evidence are still required before feature acceptance.
 - **Policy**: `required`
 - **Pages**:
   - `wiki/memory/user-memory.md` — update: profile delivery, term-based `recall()`, `max_user_records`,
-    bounded-memory full-population ranking, hard `user_context_tokens` ceiling, extraction rules;
-    replace the literal-match description.
+    bounded-memory full-population ranking, hard `user_context_tokens` ceiling, the two
+    `user_memory_priority` modes, extraction rules; replace the literal-match description.
   - `wiki/memory/agent-memory.md` — update: the recall lane, `<relevant_past_interactions>`,
-    `max_episodic_recall`, exclusions before result limits, optional-plan/required-proof semantics,
+    `max_episodic_recall`, exclusions before result limits, what `user_memory_priority` now does
+    (the `AgentMemoryConfig` table row), optional-plan/required-proof semantics,
     and a pointer to `examples/memory/agent_memory_e2e.py`.
 - **API modules**:
   - `parrot.memory.user.store`
@@ -959,3 +1022,4 @@ implementation and live evidence are still required before feature acceptance.
 | 0.1 | 2026-11-16 | Jesus Lara / Claude | Initial draft |
 | 0.2 | 2026-11-16 | Codex | Resolve all four review findings: pre-limit episodic eligibility, full-population user ranking, hard user token ceiling and required proof within an optional live plan; align regression tests and acceptance |
 | 0.3 | 2026-11-16 | Jesus Lara / Codex | User approved the reviewed specification for task decomposition and implementation |
+| 0.4 | 2026-11-16 | Jesus Lara / Claude | Close the last open question: wire `user_memory_priority` (M3 assembler packing order, `MemoryConfig.user_priority`, factory mapping, three tests, one acceptance criterion). Not re-reviewed by Codex |
