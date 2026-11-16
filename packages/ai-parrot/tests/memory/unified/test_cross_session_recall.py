@@ -123,9 +123,7 @@ async def test_episode_from_earlier_session_is_recalled(tmp_path: Path) -> None:
 
     second_manager = await _manager(database, "acme")
     try:
-        context = await second_manager.prepare_context(
-            query, scope=_scope("acme", "alice", "session-b", "turn-b")
-        )
+        context = await second_manager.prepare_context(query, scope=_scope("acme", "alice", "session-b", "turn-b"))
         assert query in context.episodic_recall
         assert f"episodic:{episode_id}:v1" in context.delivered_refs
         assert any(ref.memory_id == episode_id for ref in context.memory_refs)
