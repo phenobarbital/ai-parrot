@@ -187,3 +187,18 @@ Follow `docs/sdd/WORKFLOW.md` § "Implementing a task by hand" inside
 | fix_commits | 0 |
 | deferred | issue:bb025a7bb3e2 (minor): unanchored short -p in fastpath.redact corrupts words like git-pull; fastpath.py is a protected file, fix from host. Spec item 5 (codex replay vs hook identity for quoted commands) was not evidenced by the delivery: unverified. Items 6/7 delivered by TASK-5696. |
 | seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 697s · Tokens: n/a |
+
+### Host follow-up (2026-11-16)
+
+- `issue:a3f0df5e0acf` fixed in `94f8071dde`. Rotation now splits over-cap segments at line boundaries
+  instead of only sealing them, and also repairs segments sealed earlier without being split. The original is
+  removed only after its parts are durable. `append_event` takes the log lock and follows a rotated log.
+  `sync_global` rotates too, and each `export_shared` batch stays within the cap. The new tests record past
+  the cap, then export and rebuild successfully.
+- `issue:bb025a7bb3e2` fixed in `94f8071dde`. The short `-p` rule needs a token boundary. The unquoted Basic
+  credential no longer swallows the header's closing quote.
+- Item 5 verified: the identities **did** diverge. `_normalize_codex_command` re-quoted the inner command through
+  `shlex.join`, and the replay id hashed the unbounded command. As a result, quoted, `&&`/pipe, redacted and
+  300+ character commands were observed twice, and hits were inflated. Fixed in `dc44b3ca74`: the inner command
+  is now kept verbatim, and both replay paths use `transitions.observation_digest()`. Regression test:
+  `test_codex_replay_matches_the_hook_observation_of_the_same_command`.
