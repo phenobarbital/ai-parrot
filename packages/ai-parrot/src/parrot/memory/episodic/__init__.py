@@ -5,7 +5,6 @@ and what they learned — scoped per user, per room, per crew, and per agent.
 """
 from .cache import EpisodeRedisCache
 from .embedding import EpisodeEmbeddingProvider
-from .mixin import EpisodicMemoryMixin
 from .models import (
     EpisodeCategory,
     EpisodeOutcome,
@@ -27,7 +26,6 @@ __all__ = [
     "EpisodeSearchResult",
     "EpisodeEmbeddingProvider",
     "EpisodicMemory",
-    "EpisodicMemoryMixin",
     "EpisodicMemoryStore",
     "EpisodicMemoryToolkit",
     "HeuristicScorer",

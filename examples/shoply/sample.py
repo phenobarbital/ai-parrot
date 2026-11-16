@@ -7,11 +7,11 @@ interactive product advisor agent:
 
 - ProductAdvisorMixin  — guided product selection (start, filter, compare, recommend)
 - OntologyRAGMixin     — ontology-enriched retrieval (vector-only degradation)
-- EpisodicMemoryMixin  — cross-session conversational memory
+- AgentMemoryMixin     — BasicAgent's built-in cross-session memory
 - IntentRouterMixin    — pre-RAG query routing
 - WorkingMemoryToolkit — intermediate analytics store
 - PageIndexRetriever   — tree-structured navigation of company/product info
-- BaseBot              — LLM conversation engine
+- BasicAgent           — LLM conversation engine with persistent-memory integration
 
 Usage:
     python examples/shoply/sample.py
@@ -21,6 +21,7 @@ Requires:
     - Redis for state/session management
     - examples/shoply/data/page_index.json (run scraper.py first)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -28,10 +29,9 @@ import json
 import logging
 import uuid
 from navconfig import BASE_DIR
-from parrot.bots.base import BaseBot
+from parrot.bots.agent import BasicAgent
 from parrot.bots.mixins.intent_router import IntentRouterMixin
 from parrot.advisors import ProductAdvisorMixin, ProductCatalog
-from parrot.memory.episodic.mixin import EpisodicMemoryMixin
 from parrot.knowledge.ontology.mixin import OntologyRAGMixin
 from parrot.knowledge.pageindex.retriever import PageIndexRetriever
 from parrot.knowledge.pageindex.llm_adapter import PageIndexLLMAdapter
@@ -72,20 +72,19 @@ async def get_catalog() -> ProductCatalog:
 # Bot class — mixin order matters for MRO
 # ---------------------------------------------------------------------------
 
+
 class GorillaAdvisorBot(
     IntentRouterMixin,
     OntologyRAGMixin,
-    EpisodicMemoryMixin,
     ProductAdvisorMixin,
-    BaseBot,
+    BasicAgent,
 ):
     """Multi-mixin advisor bot for Gorilla Sheds.
 
     Inherits from all required mixins with IntentRouterMixin first
-    (intercepts ``conversation()`` calls) and BaseBot last (provides
+    (intercepts ``conversation()`` calls) and BasicAgent last (provides
     the concrete LLM conversation implementation).
     """
-    pass
 
 
 # ---------------------------------------------------------------------------
@@ -151,9 +150,9 @@ async def create_advisor_bot() -> GorillaAdvisorBot:
         auto_register_tools=True,
         max_tokens=4096,
         temperature=0.3,
-        # EpisodicMemoryMixin config
+        # BasicAgent's built-in AgentMemoryMixin config
         enable_episodic_memory=True,
-        episodic_backend="faiss",  # use faiss for simplicity
+        agent_memory_config={"storage_path": str(DATA_DIR / "shoply-memory.sqlite3")},
     )
 
     # 4. Configure base bot (LLM client, tool manager, etc.)
@@ -162,10 +161,7 @@ async def create_advisor_bot() -> GorillaAdvisorBot:
     # 5. Configure ProductAdvisorMixin
     await bot.configure_advisor(catalog=catalog)
 
-    # 6. Configure EpisodicMemoryMixin
-    await bot._configure_episodic_memory()
-
-    # 7. Set up PageIndexRetriever
+    # 6. Set up PageIndexRetriever
     llm_client = getattr(bot, "_llm", None)
     if llm_client:
         adapter = PageIndexLLMAdapter(client=llm_client)
@@ -181,7 +177,7 @@ async def create_advisor_bot() -> GorillaAdvisorBot:
         # Expose retriever on bot for IntentRouterMixin discovery
         bot._pageindex_retriever = retriever
 
-    # 8. Configure IntentRouterMixin with capability registry
+    # 7. Configure IntentRouterMixin with capability registry
     registry = CapabilityRegistry()
     registry.register(CapabilityEntry(
         name="product_catalog",
