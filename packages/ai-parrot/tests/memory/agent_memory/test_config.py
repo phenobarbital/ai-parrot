@@ -13,6 +13,23 @@ from parrot.memory.agent_memory import (
 )
 
 
+def test_agent_recall_limits_validate() -> None:
+    """New agent limits reject invalid values and preserve defaults."""
+    config = AgentMemoryConfig()
+    assert config.max_episodic_recall == 3
+    assert config.max_user_records == 20
+    assert AgentMemoryConfig(max_episodic_recall=0, max_user_records=0).max_user_records == 0
+    assert AgentMemoryConfig(max_user_records=100).max_user_records == 100
+
+    for values in (
+        {"max_episodic_recall": -1},
+        {"max_user_records": -1},
+        {"max_user_records": 101},
+    ):
+        with pytest.raises(ValueError):
+            AgentMemoryConfig(**values)
+
+
 def test_capability_matrix_and_brain_implication() -> None:
     """Verify independent capability combinations and brain's episodic implication."""
     matrix = {
