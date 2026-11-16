@@ -66,8 +66,8 @@ Repeat `--set NAME` to pick several sets, or pass `--all` to select every instal
 
 ### DSN precedence and roles
 
-- **Mutating commands** (`upgrade`, `baseline`): explicit `--dsn`, then `PARROT_ADMIN_DSN`, then the runtime
-  `default_dsn`. Falling back to the runtime DSN logs a credential-free warning.
+- **Mutating commands** (`upgrade`, `baseline`): explicit `--dsn`, then `PARROT_ADMIN_DSN`. When
+  `PARROT_ADMIN_DSN` is not configured it defaults to the runtime `default_dsn`, which is already read/write.
 - **Read-only commands** (`status`, startup probe, doctor): explicit `--dsn`, then the runtime `default_dsn`.
   They never elevate to the admin DSN.
 - A missing DSN is exit `3`.
