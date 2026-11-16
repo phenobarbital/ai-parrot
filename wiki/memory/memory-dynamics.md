@@ -291,6 +291,9 @@ memory version both survive) with `dedupe_key`, `outcome_id`, `outcome_revision`
 
 ### Storage and Durability
 
+- SQLite stores new episode embeddings only in its little-endian float32 blob. Reads restore that vector into the
+  episode model. Legacy JSON embeddings remain readable at their original precision; existing IDs are never rewritten
+  by store retries. Existing rows retain their storage overhead until a separate explicit migration is performed.
 - SQLite backend uses WAL mode with busy timeout
 - Writes use BEGIN IMMEDIATE transactions
 - Schema is versioned with `PRAGMA user_version` (currently 3); migrations are additive and idempotent, with no backfill
