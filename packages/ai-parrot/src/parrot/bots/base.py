@@ -27,6 +27,12 @@ from .prompts import OUTPUT_SYSTEM_PROMPT
 from .abstract import AbstractBot
 from ..models.status import AgentStatus
 from parrot.memory.agent_memory.models import MemoryEvent, MemoryRequestScope
+from parrot.memory.agent_memory.attribution import (
+    bind_tool_event_capture,
+    flush_tool_events,
+    note_memory_exposure,
+    reset_tool_event_capture,
+)
 from parrot.memory.agent_memory.runtime import (
     bind_memory_exposure,
     bind_memory_scope,
@@ -189,6 +195,14 @@ class BaseBot(AbstractBot):
         except Exception as exc:  # noqa: BLE001 - optional memory cannot fail the primary response path
             self.logger.warning("memory preparation failed: %s", type(exc).__name__)
             return "", None
+        manager = getattr(self, "_memory_manager", None)
+        commit_exposure = getattr(manager, "commit_memory_exposure", None)
+        if callable(commit_exposure):
+            try:
+                context = commit_exposure(context, scope=scope)
+            except Exception as exc:  # noqa: BLE001 - context remains useful without review admission
+                self.logger.warning("memory exposure commit failed: %s", type(exc).__name__)
+        note_memory_exposure(context.exposure_id)
         return context.to_prompt_string(), context.exposure_id
 
     async def _complete_agent_memory(
@@ -199,6 +213,7 @@ class BaseBot(AbstractBot):
         response_text: Optional[str],
     ) -> None:
         """Record the one completed response event owned by an invocation boundary."""
+        await flush_tool_events()
         complete_memory = getattr(self, "complete_memory", None)
         if not callable(complete_memory):
             return
@@ -818,6 +833,7 @@ class BaseBot(AbstractBot):
         _tenant_token = None
         _task_turn = None  # FEAT-538: safe for the `finally` even if the try raises early
         _memory_scope_token = _memory_exposure_token = _memory_context_exposure_token = None
+        _memory_tool_capture_token = None
         try:
             if ctx is None:
                 ctx = _current_ctx.get()
@@ -840,6 +856,10 @@ class BaseBot(AbstractBot):
             )
             _memory_scope_token = bind_memory_scope(_memory_scope)
             _memory_exposure_token = bind_memory_exposure(None)
+            _memory_tool_capture_token = bind_tool_event_capture(
+                _memory_scope,
+                getattr(self, "_memory_manager", None),
+            )
             _invoke_started = time.perf_counter()
             # FEAT-525: bind AFTER defaulting (binding-order hazard, spec §7) —
             # user_id/session_id ContextVars: per-user usage attribution in OTEL spans.
@@ -1005,6 +1025,8 @@ class BaseBot(AbstractBot):
             self._trigger_event(self.EVENT_TASK_FAILED, agent_name=self.name, error=str(e), session_id=session_id)
             raise
         finally:
+            if _memory_tool_capture_token is not None:
+                reset_tool_event_capture(_memory_tool_capture_token)
             if _memory_context_exposure_token is not None:
                 reset_memory_exposure(_memory_context_exposure_token)
             if _memory_exposure_token is not None:
@@ -1282,6 +1304,7 @@ class BaseBot(AbstractBot):
         _tenant_token = None
         _generic_tenant_token = None
         _memory_scope_token = _memory_exposure_token = _memory_context_exposure_token = None
+        _memory_tool_capture_token = None
         # FEAT-707: a /trigger skill set during this call never outlives it,
         # even when the call fails before create_system_prompt() consumes it.
         from parrot.skills.tenancy import enter_active_skill_scope, exit_active_skill_scope
@@ -1333,6 +1356,10 @@ class BaseBot(AbstractBot):
             )
             _memory_scope_token = bind_memory_scope(_memory_scope)
             _memory_exposure_token = bind_memory_exposure(None)
+            _memory_tool_capture_token = bind_tool_event_capture(
+                _memory_scope,
+                getattr(self, "_memory_manager", None),
+            )
             # FEAT-525: bind AFTER defaulting (binding-order hazard, spec §7) —
             # user_id/session_id ContextVars: per-user usage attribution in OTEL spans.
             _user_token = current_user_id.set(user_id)
@@ -2018,6 +2045,8 @@ class BaseBot(AbstractBot):
             self._trigger_event(self.EVENT_TASK_FAILED, agent_name=self.name, error=str(e), session_id=session_id)
             raise
         finally:
+            if _memory_tool_capture_token is not None:
+                reset_tool_event_capture(_memory_tool_capture_token)
             if _memory_context_exposure_token is not None:
                 reset_memory_exposure(_memory_context_exposure_token)
             if _memory_exposure_token is not None:
@@ -2084,6 +2113,7 @@ class BaseBot(AbstractBot):
         _tenant_token = None
         _generic_tenant_token = None
         _memory_scope_token = _memory_exposure_token = _memory_context_exposure_token = None
+        _memory_tool_capture_token = None
         # FEAT-707: a /trigger skill set during this call never outlives it,
         # even when the call fails before create_system_prompt() consumes it.
         from parrot.skills.tenancy import enter_active_skill_scope, exit_active_skill_scope
@@ -2123,6 +2153,10 @@ class BaseBot(AbstractBot):
             )
             _memory_scope_token = bind_memory_scope(_memory_scope)
             _memory_exposure_token = bind_memory_exposure(None)
+            _memory_tool_capture_token = bind_tool_event_capture(
+                _memory_scope,
+                getattr(self, "_memory_manager", None),
+            )
             _trusted_source = kwargs.pop("_trusted_source", False)
             # FEAT-752 rev 0.3: stream trailer — compute chips after the final envelope (handler opt-in).
             _defer_suggestions = bool(kwargs.pop("defer_suggestions", False))
@@ -2582,6 +2616,8 @@ class BaseBot(AbstractBot):
             )
             raise
         finally:
+            if _memory_tool_capture_token is not None:
+                reset_tool_event_capture(_memory_tool_capture_token)
             if _memory_context_exposure_token is not None:
                 reset_memory_exposure(_memory_context_exposure_token)
             if _memory_exposure_token is not None:
