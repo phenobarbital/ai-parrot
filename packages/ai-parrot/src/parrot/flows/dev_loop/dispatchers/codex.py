@@ -17,7 +17,6 @@ import shlex
 import tempfile
 import time
 from collections.abc import Mapping
-from hashlib import sha1
 from typing import Any, Callable, Dict, List, Optional, Sequence, Type
 from uuid import uuid4
 
@@ -53,6 +52,7 @@ from parrot.flows.dev_loop.models import (
 from parrot.flows.dev_loop.session_state import SessionHost
 from parrot.knowledge.wiki.experience.fastpath import redact
 from parrot.knowledge.wiki.experience.models import CommandOutcome
+from parrot.knowledge.wiki.experience.transitions import observation_digest
 from parrot.observability.context import usage_attribution
 
 _NULL_SCHEMA: Dict[str, Any] = {"type": "null"}
@@ -62,20 +62,19 @@ def _normalize_codex_command(command: str) -> str:
     """Return the command represented by Codex's shell wrapper.
 
     Codex reports shell invocations such as ``/bin/bash -lc 'git status'``
-    while the experience hook observes the inner argv. Normalize both forms
-    to the same shell-quoted command before deriving observation identity.
+    while the experience hook observes the inner command string verbatim.
+    Unwrap the shell wrapper and return the inner command unchanged: shell
+    re-quoting would rewrite ``"a b"`` as ``'a b'`` and ``&&`` as ``'&&'``,
+    and the replay would no longer match the hook observation of the same
+    command.
     """
     try:
         tokens = shlex.split(command, posix=True)
     except ValueError:
         return command
     if len(tokens) >= 3 and os.path.basename(tokens[0]) in {"bash", "sh"} and tokens[1] in {"-c", "-lc"}:
-        command = tokens[2]
-        try:
-            return shlex.join(shlex.split(command, posix=True))
-        except ValueError:
-            return command
-    return shlex.join(tokens)
+        return tokens[2]
+    return command
 
 
 def _experience_outcome(item: Mapping[str, Any], *, occurrence: int) -> CommandOutcome | None:
@@ -88,7 +87,7 @@ def _experience_outcome(item: Mapping[str, Any], *, occurrence: int) -> CommandO
         command=command,
         ok=code == 0 if type(code) is int else None,
         error=redact(str(item.get("aggregated_output") or ""))[:400],
-        observation_id=f"{sha1(command.encode('utf-8')).hexdigest()}#{occurrence}",  # noqa: S324 - stable identity
+        observation_id=f"{observation_digest(command)}#{occurrence}",
     )
 
 
@@ -776,7 +775,7 @@ class CodexCodeDispatcher:
                                 seen_ids.add(completion_id)
                         if item is not None and isinstance(item.get("command"), str):
                             normalized = _normalize_codex_command(item["command"])
-                            digest = sha1(normalized.encode("utf-8")).hexdigest()  # noqa: S324 - stable identity
+                            digest = observation_digest(normalized)
                             occurrence = occurrences.get(digest, 0) + 1
                             occurrences[digest] = occurrence
                             outcome = _experience_outcome(item, occurrence=occurrence)

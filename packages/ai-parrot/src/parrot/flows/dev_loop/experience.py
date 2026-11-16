@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import logging
 import shlex
 from collections.abc import Mapping, Sequence
@@ -13,7 +12,7 @@ from typing import Any, Callable
 from parrot.knowledge.wiki.experience.fastpath import best_trigger, load_triggers
 from parrot.knowledge.wiki.experience.models import CommandOutcome
 from parrot.knowledge.wiki.experience.service import ExperienceService
-from parrot.knowledge.wiki.experience.transitions import on_outcome
+from parrot.knowledge.wiki.experience.transitions import observation_digest, on_outcome
 
 
 class ExperienceInterceptor:
@@ -175,7 +174,7 @@ class ExperienceInterceptor:
         if not isinstance(observation_id, str) or not observation_id:
             observation_id = tool_args.get("observation_id")
         if not isinstance(observation_id, str) or not observation_id:
-            digest = hashlib.sha1(command.encode("utf-8")).hexdigest()  # noqa: S324 - stable occurrence identity
+            digest = observation_digest(command)
             occurrence = self._observations.get(digest, 0) + 1
             self._observations[digest] = occurrence
             observation_id = f"{digest}#{occurrence}"

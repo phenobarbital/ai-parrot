@@ -226,6 +226,7 @@ def _observation_identity(state: dict, command: str, observation_id: str) -> tup
     if canonical in seen:
         return canonical, True
 
+    # ``command`` is already bounded here, so this equals ``observation_digest`` of the raw command.
     digest = hashlib.sha1(command.encode("utf-8")).hexdigest()  # noqa: S324 - stable occurrence identity
     occurrence_key = f"{digest}#"
     if observation_id.startswith(occurrence_key) and observation_id[len(occurrence_key) :].isdigit():
@@ -581,6 +582,22 @@ def _lesson_id(executable: str, subcommand: str, error: str) -> str:
 def _bounded(text: str, limit: int) -> str:
     """Redact, collapse whitespace, and cap host-provided text before persistence."""
     return " ".join(redact(text).split())[:limit]
+
+
+def observation_digest(command: str) -> str:
+    """Return the occurrence digest a replay uses to build an ``<digest>#<n>`` observation id.
+
+    It hashes the same bounded command that :func:`on_outcome` links hook
+    observations under, so a dispatcher replay of a command lines up with the
+    hook observation of that command regardless of its length or secrets.
+
+    Args:
+        command: Raw command text, exactly as the host reported it.
+
+    Returns:
+        Hex SHA-1 digest of the redacted, whitespace-collapsed, capped command.
+    """
+    return hashlib.sha1(_bounded(command, _COMMAND_LIMIT).encode("utf-8")).hexdigest()  # noqa: S324 - stable identity
 
 
 def _render_advice(stub: Mapping[str, str]) -> str:

@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import os
+import shlex
 import subprocess
 import sys
 from collections.abc import Mapping
@@ -25,6 +26,8 @@ from parrot.flows.dev_loop import (
     ResearchOutput,
 )
 import parrot.flows.dev_loop.dispatchers.codex as codex_dispatcher_module
+from parrot.knowledge.wiki.experience.models import CommandOutcome
+from parrot.knowledge.wiki.experience.transitions import observation_digest, on_outcome
 
 
 class _AsyncBytesStream:
@@ -266,6 +269,40 @@ async def test_codex_review_replays(tmp_path: Path, dispatcher, brief, monkeypat
     assert captured["env"]["PARROT_EXPERIENCE_SESSION"]
     events = [json.loads(line) for line in (plane / "events.jsonl").read_text(encoding="utf-8").splitlines()]
     assert [event["kind"] for event in events] == ["failure.observed"]
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "gh pr create --title \"fix: a b\" --body 'x y'",
+        'git commit -m "msg with spaces"',
+        "cd /tmp && git status",
+        "gh pr list --json number 2>&1 | head -5",
+        "gh pr list " + " ".join(["--label", "bug"] * 40),
+    ],
+)
+def test_codex_replay_matches_the_hook_observation_of_the_same_command(tmp_path: Path, raw: str) -> None:
+    """Replaying a Codex command never counts the hook's observation of that command a second time."""
+    plane = tmp_path / "plane"
+    wrapper = "/bin/bash -lc " + shlex.quote(raw)
+    assert codex_dispatcher_module._normalize_codex_command(wrapper) == raw
+    assert codex_dispatcher_module._normalize_codex_command(raw) == raw
+
+    def no_trigger(executable: str, subcommand: str, error: str) -> None:
+        return None
+
+    hook = CommandOutcome(command=raw, ok=False, error="permission denied", observation_id="call_1")
+    on_outcome(plane, session="s", command=raw, outcome=hook, seat="codex", matcher=no_trigger)
+    replay = codex_dispatcher_module._experience_outcome(
+        {"type": "command_execution", "command": wrapper, "exit_code": 1, "aggregated_output": "permission denied"},
+        occurrence=1,
+    )
+    assert replay is not None
+    assert replay.observation_id == f"{observation_digest(raw)}#1"
+    on_outcome(plane, session="s", command=replay.command, outcome=replay, seat="codex", matcher=no_trigger)
+
+    events = [json.loads(line) for line in (plane / "events.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert [event["observation_id"] for event in events if event["kind"] == "failure.observed"] == ["call_1"]
 
 
 @pytest.mark.asyncio
