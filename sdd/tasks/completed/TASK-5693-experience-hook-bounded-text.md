@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-887 — SDD Experience Memory (`experience.pitfall`)
 **Spec**: `sdd/specs/sdd-experience-memory.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5595, TASK-5596
@@ -191,4 +191,20 @@ Follow `docs/sdd/WORKFLOW.md` § "Implementing a task by hand" inside
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+- Task: TASK-5693
+- Feature: sdd-experience-memory
+- Implementation SHA: 8fbbf8d7661db058f984667432b04a6d065f0919 (coder deliverable), merged by 6771e8cb84698040f9a3b9ff399faf417985658f
+- Closed at (UTC): 2026-11-16T00:50:21+00:00
+- Fix commits: 20aa1d5441f4afbe2c88598d5a9d627ae4218bce (engine lint autofix)
+- Closed by hand on the host with `scripts/sdd/close_task.sh` (verified), not `parrot sdd task finalize`: the sandboxed
+  worker could not run finalize (navconfig log directory not writable), and from the host finalize's fidelity check
+  rejected the evidence because worktree HEAD was adabc67fe0, an unrelated host fix for issue:7993840a23a1 committed
+  after this task's merge. The task's own commits touch exactly the three declared files.
+
+| Metric | Value |
+|---|---|
+| validation_refs | 2 (task tier passed; merge tier passed with baseline-only reds) |
+| review_evidence | task_review b670ff89cd056cdfb01d696cb22bbcfede75b24ce6d1f380591483846497d1f2 (codex/gpt-5.6-terra, head 6771e8cb84) |
+| fix_commits | 1 |
+| tests | test_transitions.py 11 passed, test_experience_hook.py 5 passed (coder-reported, merge-tier validated) |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 590s · Tokens: n/a |
