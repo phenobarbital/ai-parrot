@@ -48,14 +48,14 @@
       "feature_id": "FEAT-902",
       "feature": "wiki-ledger-sqlite-hardening",
       "spec": "sdd/specs/wiki-ledger-sqlite-hardening.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No predecessor; creates LedgerCursorInvalid/read_cursor_in and modifies ledger/store.py plus ledger/index.py. The independent benchmark driver uses existing public APIs and writes different files.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-16T21:11:01+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5713-ledger-cursor-consistency.md"
     },
@@ -66,7 +66,7 @@
       "feature_id": "FEAT-902",
       "feature": "wiki-ledger-sqlite-hardening",
       "spec": "sdd/specs/wiki-ledger-sqlite-hardening.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -75,7 +75,7 @@
       "parallel": true,
       "parallelism_notes": "Depends on TASK-5713 for LedgerCursorInvalid/read_cursor_in and serializes the shared ledger/index.py writer. Modifies ledger/log.py and creates its own fast-path test file.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-16T21:11:01+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5714-ledger-sync-fast-path.md"
     },
@@ -86,7 +86,7 @@
       "feature_id": "FEAT-902",
       "feature": "wiki-ledger-sqlite-hardening",
       "spec": "sdd/specs/wiki-ledger-sqlite-hardening.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -95,7 +95,7 @@
       "parallel": true,
       "parallelism_notes": "Depends on TASK-5714 solely to serialize modifications of ledger/index.py after its sync changes (which transitively include TASK-5713). Uses existing LedgerLog.append and LedgerStore.ledger_transaction.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-16T21:11:01+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5715-ledger-append-cancellation.md"
     },
@@ -106,7 +106,7 @@
       "feature_id": "FEAT-902",
       "feature": "wiki-ledger-sqlite-hardening",
       "spec": "sdd/specs/wiki-ledger-sqlite-hardening.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -115,7 +115,7 @@
       "parallel": true,
       "parallelism_notes": "Depends on TASK-5715 for _append_durably and shared ledger/index.py serialization; TASK-5714's probe and ledger/log.py edits are transitively available. Adds timings to store.py and service.py without changing resource lifetime.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-16T21:11:01+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5716-sqlite-ledger-phase-timings.md"
     },
@@ -126,14 +126,14 @@
       "feature_id": "FEAT-902",
       "feature": "wiki-ledger-sqlite-hardening",
       "spec": "sdd/specs/wiki-ledger-sqlite-hardening.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No predecessor: creates only the benchmark driver and its contract tests, using existing LedgerService/SQLiteWikiStore APIs. New phase records are optional inputs and missing baseline phases remain unavailable, so driver preparation can run beside the cursor implementation.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-16T21:11:01+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5717-sqlite-ledger-benchmark-driver.md"
     },
@@ -144,7 +144,7 @@
       "feature_id": "FEAT-902",
       "feature": "wiki-ledger-sqlite-hardening",
       "spec": "sdd/specs/wiki-ledger-sqlite-hardening.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -154,7 +154,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on TASK-5716 for candidate phase instrumentation and TASK-5717 for the executable benchmark/report schema and test file. Exclusive: owns the measurement host I/O/CPU window and isolated baseline snapshot during comparable trials.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-16T21:11:01+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5718-sqlite-ledger-measurement-followup.md"
     },
@@ -165,7 +165,7 @@
       "feature_id": "FEAT-902",
       "feature": "wiki-ledger-sqlite-hardening",
       "spec": "sdd/specs/wiki-ledger-sqlite-hardening.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -179,9 +179,10 @@
       "parallel": true,
       "parallelism_notes": "Consumes TASK-5713's read_cursor_in/LedgerCursorInvalid, TASK-5714's probe_cursor/sync behavior, TASK-5715's durable cancellation helper, TASK-5716's timing events, TASK-5717's benchmark CLI/schema and TASK-5718's measured report/follow-up. Writes only its page and documentation example smoke test.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-16T21:11:01+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5719-sqlite-ledger-documentation.md"
     }
   ]
 }
+
