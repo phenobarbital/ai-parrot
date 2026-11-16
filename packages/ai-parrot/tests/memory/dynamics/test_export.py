@@ -89,8 +89,12 @@ async def _seed_store(path: Path, namespace: MemoryNamespace) -> tuple[SQLiteEpi
     backend = SQLiteEpisodeBackend(path)
     await backend.configure()
     await backend.store(_episode(namespace))
-    assert (await backend.apply_review(_command(namespace, outcome_id="outcome-a", expected_revision=0))).status == "applied"
-    assert (await backend.apply_review(_command(namespace, outcome_id="outcome-b", expected_revision=1))).status == "applied"
+    assert (
+        await backend.apply_review(_command(namespace, outcome_id="outcome-a", expected_revision=0))
+    ).status == "applied"
+    assert (
+        await backend.apply_review(_command(namespace, outcome_id="outcome-b", expected_revision=1))
+    ).status == "applied"
     return backend, EpisodicMemoryStore(backend, default_ttl_days=0)
 
 
@@ -123,7 +127,10 @@ async def test_two_reviews_same_version_survive_and_export_is_deterministic(tmp_
 
         real_clock_path = tmp_path / "real-clock.json"
         await export_reviews(namespace=namespace, destination=real_clock_path, store=store)
-        assert datetime.fromisoformat(json.loads(real_clock_path.read_text(encoding="utf-8"))["exported_at"]).tzinfo is not None
+        assert (
+            datetime.fromisoformat(json.loads(real_clock_path.read_text(encoding="utf-8"))["exported_at"]).tzinfo
+            is not None
+        )
     finally:
         await backend.close()
 
@@ -154,10 +161,7 @@ async def test_scope_excludes_other_namespace_and_archive_replays_without_double
             receipts = [await replay_backend.apply_review(command) for command in commands]
             assert [receipt.status for receipt in receipts] == ["applied", "applied"]
             assert [receipt.apply_revision for receipt in receipts] == [1, 2]
-            assert [
-                (await backend.apply_review(command)).status
-                for command in commands
-            ] == ["duplicate", "duplicate"]
+            assert [(await backend.apply_review(command)).status for command in commands] == ["duplicate", "duplicate"]
             replay_export = await export_reviews(
                 namespace=namespace,
                 destination=tmp_path / "replay.json",

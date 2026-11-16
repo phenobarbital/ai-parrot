@@ -204,7 +204,9 @@ async def test_store_list_reviews_delegates_and_fails_visibly(tmp_path: Path) ->
         store = EpisodicMemoryStore(backend, default_ttl_days=0)
         await backend.store(_episode("episode-a", namespace=namespace))
         await store.cite(["episode-a"], namespace=namespace, exposure_id="exposure-a")
-        assert (await store.review(["episode-a"], _signal(), namespace=namespace, exposure_id="exposure-a"))[0].status == "applied"
+        assert (await store.review(["episode-a"], _signal(), namespace=namespace, exposure_id="exposure-a"))[
+            0
+        ].status == "applied"
         rows = await store.list_reviews(namespace)
         assert len(rows) == 1
         assert rows[0]["command"]["ref"]["memory_id"] == "episode-a"

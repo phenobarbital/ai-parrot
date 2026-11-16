@@ -9,7 +9,6 @@ from parrot.memory.episodic.backends.sqlite import SQLiteEpisodeBackend
 from parrot.memory.dynamics.models import ReviewCommand
 from parrot.memory.episodic.models import EpisodicMemory, MemoryNamespace
 
-
 def _episode(index: int, **overrides: object) -> EpisodicMemory:
     """Create a deterministic episode suitable for an isolated SQLite store."""
     data: dict[str, object] = {
@@ -144,17 +143,45 @@ async def test_list_reviews_scope_before_limit_and_deterministic_order(tmp_path)
     scoped = MemoryNamespace(tenant_id="tenant-a", agent_id="agent-a", user_id="user-a", session_id="session-a")
     other = MemoryNamespace(tenant_id="tenant-b", agent_id="agent-a", user_id="user-a", session_id="session-a")
     try:
-        await backend.store(_episode(10, episode_id="other-episode", tenant_id=other.tenant_id, user_id=other.user_id, session_id=other.session_id))
-        assert (await backend.apply_review(_review_command(other, episode_id="other-episode", outcome_id="other"))).status == "applied"
-        await backend.store(_episode(11, episode_id="review-episode", tenant_id=scoped.tenant_id, user_id=scoped.user_id, session_id=scoped.session_id))
-        assert (await backend.apply_review(_review_command(scoped, episode_id="review-episode", outcome_id="first"))).status == "applied"
-        assert (await backend.apply_review(_review_command(scoped, episode_id="review-episode", outcome_id="second", expected_revision=1))).status == "applied"
+        await backend.store(
+            _episode(
+                10,
+                episode_id="other-episode",
+                tenant_id=other.tenant_id,
+                user_id=other.user_id,
+                session_id=other.session_id,
+            )
+        )
+        assert (
+            await backend.apply_review(_review_command(other, episode_id="other-episode", outcome_id="other"))
+        ).status == "applied"
+        await backend.store(
+            _episode(
+                11,
+                episode_id="review-episode",
+                tenant_id=scoped.tenant_id,
+                user_id=scoped.user_id,
+                session_id=scoped.session_id,
+            )
+        )
+        assert (
+            await backend.apply_review(_review_command(scoped, episode_id="review-episode", outcome_id="first"))
+        ).status == "applied"
+        assert (
+            await backend.apply_review(
+                _review_command(scoped, episode_id="review-episode", outcome_id="second", expected_revision=1)
+            )
+        ).status == "applied"
 
         limited = await backend.list_reviews(scoped, limit=1)
         listed = await backend.list_reviews(scoped)
         assert [row["command"]["signal"]["outcome_id"] for row in limited] == ["first"]
         assert [row["command"]["signal"]["outcome_id"] for row in listed] == ["first", "second"]
-        assert all(set(row) == {"dedupe_key", "outcome_id", "outcome_revision", "ref_key", "apply_revision", "recorded_at", "command"} for row in listed)
+        assert all(
+            set(row)
+            == {"dedupe_key", "outcome_id", "outcome_revision", "ref_key", "apply_revision", "recorded_at", "command"}
+            for row in listed
+        )
         with pytest.raises(ValueError, match="limit must be positive"):
             await backend.list_reviews(scoped, limit=0)
     finally:
