@@ -35,7 +35,6 @@ from parrot.memory.episodic.store import EpisodicMemoryStore, _auto_importance
 from parrot.memory.episodic.tools import EpisodicMemoryToolkit
 from parrot.memory.unified.models import MemoryContext
 
-
 # ── Helpers ──
 
 def _random_embedding(dim: int = 384) -> list[float]:

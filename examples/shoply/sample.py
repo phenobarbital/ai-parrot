@@ -21,6 +21,7 @@ Requires:
     - Redis for state/session management
     - examples/shoply/data/page_index.json (run scraper.py first)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -71,6 +72,7 @@ async def get_catalog() -> ProductCatalog:
 # Bot class — mixin order matters for MRO
 # ---------------------------------------------------------------------------
 
+
 class GorillaAdvisorBot(
     IntentRouterMixin,
     OntologyRAGMixin,
@@ -83,7 +85,6 @@ class GorillaAdvisorBot(
     (intercepts ``conversation()`` calls) and BasicAgent last (provides
     the concrete LLM conversation implementation).
     """
-    pass
 
 
 # ---------------------------------------------------------------------------

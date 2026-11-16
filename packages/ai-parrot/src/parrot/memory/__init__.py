@@ -71,9 +71,8 @@ if TYPE_CHECKING:
 # Post-review fix: this block used to be a plain eager `from .dream import
 # (...)`, which broke the "enable_brain=False is byte-identical to today"
 # requirement at import time, not just at runtime.
-_DREAM_EXPORTS: dict[str, str] = {
-    name: "parrot.memory.dream"
-    for name in (
+_DREAM_EXPORTS: dict[str, str] = dict.fromkeys(
+    (
         "BrainStore",
         "DistilledKnowledge",
         "DreamConfig",
@@ -83,8 +82,9 @@ _DREAM_EXPORTS: dict[str, str] = {
         "DreamState",
         "load_state",
         "save_state",
-    )
-}
+    ),
+    "parrot.memory.dream",
+)
 
 
 def __getattr__(name: str):
