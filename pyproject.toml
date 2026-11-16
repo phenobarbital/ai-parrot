@@ -300,6 +300,10 @@ warn_unused_configs = true
 # Read from the PRIMARY checkout only. See wiki/sdd-tooling/dev_loop/claude-native-sandbox.md.
 sandbox_allowed_domains = ["api.github.com"]
 gh_token = true
+# Extra writable directories for the sandbox (native allowWrite + legacy bind). navconfig's rotating file
+# handler logs to /tmp/navigator/log (etc/navigator.ini); without this the `parrot` CLI fails in a worker.
+# Never a top-level directory such as /tmp, and nothing under the checkout, a shared venv or $HOME.
+sandbox_extra_write_paths = ["/tmp/navigator"]
 
 [tool.parrot.worktree]
 # Native build artifacts a fresh `git worktree add` cannot carry, because every

@@ -18,6 +18,17 @@ Bubblewrap: nested bwrap is not used, and the policy is compiled by
   scratchpad (`/tmp/claude-<uid>`). Everything else, including the primary checkout, `$HOME`, the
   shared `.venv` (and any symlink alias to it), RTK's data directory, Git `config`/`hooks`/
   `config.worktree`, is read-only. Network egress is denied unless a host is explicitly allowed.
+- Extra writable directories: a tool that writes outside the checkout (navconfig logs to
+  `/tmp/navigator/log`, so every `parrot …` command needs it) is declared by the operator as
+  `sandbox_extra_write_paths = ["/tmp/navigator"]` in `[tool.parrot.sdd]` of the **primary checkout's**
+  `pyproject.toml`. Each directory is created if missing, added to the native `allowWrite`, and bound
+  back through the legacy backend's private `/tmp`, so its files reach the host. Entries must be absolute
+  and normalized; symlinks are resolved and the target is what is granted. Refused: `/` and top-level
+  directories (`/tmp` itself can never be granted — in the native backend it is the real host `/tmp`),
+  and anything equal to, inside, or containing the primary checkout, `$HOME` or a shared environment. A
+  refused or malformed value stops the launcher with exit 2; the per-command hook, which must never
+  raise, grants nothing from it. The key is ignored in a worktree's own `pyproject.toml` and when the
+  session runs in the primary checkout, because the session can write those files.
 - File tools (`Write`/`Edit`/`MultiEdit`/`NotebookEdit`) are checked by the retained hook against the
   same allow/deny lists and the policy/hook control files.
 - **Trusted surfaces that run outside the sandbox**: hooks themselves, MCP servers, plugins and LSP
