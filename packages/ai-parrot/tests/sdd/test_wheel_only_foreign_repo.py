@@ -538,7 +538,10 @@ SCENARIOS: dict[str, Scenario] = {
     "procedure": Scenario(
         prepare=_seed_feature,
         expect_exit=_ANY_CLEAN,
-        placeholders={"<task.md>": "sdd/tasks/active/TASK-001-demo-task.md"},
+        placeholders={
+            "<task.md>": "sdd/tasks/active/TASK-001-demo-task.md",
+            "<task-file>": "sdd/tasks/active/TASK-001-demo-task.md",
+        },
     ),
 }
 
