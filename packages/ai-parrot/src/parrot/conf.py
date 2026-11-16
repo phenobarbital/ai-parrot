@@ -61,7 +61,6 @@ if not OUTPUT_DIR.exists():
 
 
 # Main Database:
-PARROT_ADMIN_DSN = config.get("PARROT_ADMIN_DSN")
 # DB Default (database used for interaction (rw))
 DBHOST = config.get("DBHOST", fallback="localhost")
 DBUSER = config.get("DBUSER")
@@ -77,6 +76,9 @@ else:
     default_dsn = None
     async_default_dsn = None
     sqlalchemy_url = None
+
+# Admin DSN for schema migrations; defaults to the runtime DSN, which is already read/write.
+PARROT_ADMIN_DSN = config.get("PARROT_ADMIN_DSN", fallback=default_dsn)
 
 # Redis:
 CACHE_HOST = config.get("CACHE_HOST", fallback="localhost")
