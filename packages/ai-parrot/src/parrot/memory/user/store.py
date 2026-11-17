@@ -655,7 +655,7 @@ class UserMemoryStore:
         )
         rows = await cursor.fetchall()
         knowledge = [UserKnowledge.model_validate_json(row[0]) for row in rows]
-        return knowledge
+        return [item for item in knowledge if self._knowledge_claim_key(item) == claim_key]
 
     async def _event_replay(
         self,
