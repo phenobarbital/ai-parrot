@@ -61,7 +61,7 @@
       "feature_id": "FEAT-906",
       "feature": "telegram-browser-login-fixes",
       "spec": "sdd/specs/telegram-browser-login-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -69,15 +69,15 @@
       ],
       "parallel": true,
       "parallelism_notes": "Consumes TASK-5736 pending_confirmation, confirmation_code and redirect_url response fields.",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "agent:sdd-fix:23dd9ec1",
+      "started_at": "2026-11-17T13:16:53.806850+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5737-browser-confirmation-pages.md"
     },
     {
       "id": "TASK-5738",
       "slug": "browser-confirmation-documentation",
-      "title": "Documentation — Telegram browser login confirmation",
+      "title": "Documentation \u2014 Telegram browser login confirmation",
       "feature_id": "FEAT-906",
       "feature": "telegram-browser-login-fixes",
       "spec": "sdd/specs/telegram-browser-login-fixes.spec.md",
