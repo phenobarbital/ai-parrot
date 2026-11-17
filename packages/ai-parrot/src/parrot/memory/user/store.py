@@ -221,7 +221,6 @@ class UserMemoryStore:
         if command.operation != "upsert" or command.candidate is None:
             raise ValueError("invalid_parameters: upsert requires an upsert command")
         command_payload = self._command_payload(command)
-        evidence_available = await self._evidence_available(command, scope)
         async with self._lock:
             database = await self._configure_locked()
             await database.execute("BEGIN IMMEDIATE")
@@ -231,7 +230,8 @@ class UserMemoryStore:
                     await database.execute("COMMIT")
                     return replay
 
-                if not evidence_available:
+                # Checked inside BEGIN IMMEDIATE so a tombstone landing after the transaction opened is seen.
+                if not await self._evidence_available(command, scope):
                     receipt = UserMemoryReceipt(status="ignored")
                     await self._record_event(database, identity, command, command_payload, receipt)
                     await database.execute("COMMIT")
@@ -313,7 +313,6 @@ class UserMemoryStore:
         if command.operation != "correct" or command.candidate is None:
             raise ValueError("invalid_parameters: correct requires a correction command")
         command_payload = self._command_payload(command)
-        evidence_available = await self._evidence_available(command, scope)
         async with self._lock:
             database = await self._configure_locked()
             await database.execute("BEGIN IMMEDIATE")
@@ -324,7 +323,7 @@ class UserMemoryStore:
                     return replay
 
                 current = await self._knowledge_by_id(database, identity, command.knowledge_id or "")
-                if not evidence_available:
+                if not await self._evidence_available(command, scope):
                     receipt = UserMemoryReceipt(status="ignored")
                 elif current is None:
                     receipt = UserMemoryReceipt(status="ignored")
@@ -406,7 +405,7 @@ class UserMemoryStore:
                 else:
                     now = datetime.now(timezone.utc)
                     claim_key = self._knowledge_claim_key(current)
-                    related = await self._knowledge_for_claim(database, identity, claim_key)
+                    related = await self._knowledge_for_claim(database, identity, current)
                     evidence_refs = tuple(
                         dict.fromkeys(ref for knowledge in related for ref in knowledge.evidence_refs)
                     )
@@ -640,12 +639,19 @@ class UserMemoryStore:
         self,
         database: aiosqlite.Connection,
         identity: tuple[str, str, str],
-        claim_key: str,
+        current: UserKnowledge,
     ) -> list[UserKnowledge]:
-        """Load scoped history rows matching a claim before their physical erasure."""
+        """Load scoped history rows of ``current``'s claim before their physical erasure.
+
+        Narrows in SQL on the indexed kind / normalized_key / context_key columns instead of
+        loading every row of the user; the exact claim-key comparison stays in Python so unkeyed
+        claims (which are identified by value) still match precisely.
+        """
+        claim_key = self._knowledge_claim_key(current)
         cursor = await database.execute(
-            "SELECT payload FROM user_knowledge WHERE tenant_id = ? AND agent_id = ? AND user_id = ?",
-            identity,
+            "SELECT payload FROM user_knowledge WHERE tenant_id = ? AND agent_id = ? AND user_id = ? "
+            "AND kind = ? AND normalized_key IS ? AND context_key = ?",
+            (*identity, current.kind, current.normalized_key, self._context_key(current.context)),
         )
         rows = await cursor.fetchall()
         knowledge = [UserKnowledge.model_validate_json(row[0]) for row in rows]

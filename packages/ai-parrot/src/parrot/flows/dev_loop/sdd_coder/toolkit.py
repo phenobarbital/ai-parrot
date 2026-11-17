@@ -390,7 +390,8 @@ class SddCoderToolkit(AbstractToolkit):
         ``review.checked_patterns`` may carry delivery claims, but the engine
         accepts them only when their attempt/exposure and evidence references
         match its own passed validation receipt; callers cannot supply grades
-        or passed-check identifiers. A zero-fix delivery remains reviewable
+        or passed-check identifiers. The claim's ref/content_version is NOT
+        verified as delivered (the engine keeps no delivery record). A zero-fix delivery remains reviewable
         when that engine-owned receipt exists. The public method arguments and
         execution_id binding remain unchanged.
         The result's review_ref is the EvidenceRef to pass as
