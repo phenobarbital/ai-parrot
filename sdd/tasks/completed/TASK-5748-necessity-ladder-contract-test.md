@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-908 — Necessity Ladder — least-new-code gate in the SDD flow
 **Spec**: `sdd/specs/ponytail-like-stairway.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5741, TASK-5742, TASK-5743, TASK-5744, TASK-5745, TASK-5746, TASK-5747
@@ -244,10 +244,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: host Claude Code session (Opus 5.5), applied by hand after the sdd-worker seats were blocked
+**Date**: 2026-11-17
+**Notes**: Created `tests/sdd_scripts/test_necessity_ladder_contract.py` from the blueprint, filling each of the six methods from the checklist (plus two small local helpers, `_assert_contains`/`_assert_order`, so failures name the file and marker). Six passed on the feature branch. Run against the same files taken from `origin/dev`, all six fail, so the test is a real contract. `check_asset_sync.py --check` exits 0, and `test_check_asset_sync.py` passes. `ruff check` and `black --check -l 120` are clean (ruff B905 fixed with `zip(..., strict=True)`). Done from a host session after TASK-5742..5744 were unblocked. Closed via `scripts/sdd/close_task.sh`.
+Seat: host · Backend: manual · Attempts: 1
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
