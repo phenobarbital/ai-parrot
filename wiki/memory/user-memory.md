@@ -37,6 +37,12 @@ Key features:
 
 - [`extract_user_knowledge`](ref:parrot.memory.user.extraction) — Extract knowledge from events
 
+### Automatic Recall Collaborators
+
+- [`UnifiedMemoryManager`](ref:parrot.memory.unified.manager) — Delivers a scoped user profile to an agent prompt
+- [`query_terms`](ref:parrot.memory.lexical) — Normalizes Unicode-aware lexical query terms
+- [`EpisodicMemoryStore`](ref:parrot.memory.episodic.store) — Supplies the separate earlier-interaction recall lane
+
 ## Configuration & Parameters
 
 ### UserKnowledge Model
@@ -96,19 +102,47 @@ The `UserMemoryStore` is configured with:
 | `path` | `Path` | Path to SQLite database |
 | `evidence_tenant_resolver` | `Callable | None` | Optional metadata-only ChatStorage tenant resolver; required for `chatstorage/...` evidence to be accepted |
 
+### Automatic Profile Delivery
+
+For every identified-user request, `UnifiedMemoryManager.prepare_context()` calls
+`UserMemoryStore.profile()` when user memory is enabled. `profile()` returns active, currently valid knowledge for
+the trusted `(tenant_id, agent_id, user_id)` scope; it does not require episodic memory to be enabled. A missing
+`user_id`, a disabled user-memory capability, or a `max_user_records` value of `0` yields no profile candidates.
+
+| Setting or argument | Default | Bounds / behavior |
+|---|---:|---|
+| `UserMemoryStore.profile(..., limit=...)` | `20` | `0..100`; `0` returns no records |
+| `AgentMemoryConfig.max_user_records` | `20` | `0..100`; passed to automatic profile delivery |
+| profile / recall query | — | At most 2,048 characters; automatic manager delivery truncates its query to that limit |
+
+The store scans every eligible row in bounded batches while retaining only the requested top results. It ranks profile
+records by kind group (constraints and preferences before goals and facts), then lexical overlap, recency, and stable
+knowledge ID. This is full-population ranking, not a database-prefix or first-page result.
+
+`query_terms()` case-folds Unicode word terms, removes duplicates in first-seen order, and retains terms of at least
+three characters. `recall()` matches any normalized term against a key or value and ranks its matches globally. Blank
+queries and queries with no retained terms intentionally keep the prior literal-substring behavior; callers should not
+treat a whole question as one required literal phrase.
+
+### Context Ceiling and Priority
+
+The context assembler uses `effective_budget = int(max_context_tokens * 0.9)`, reserving 10% headroom. User knowledge
+is packed as complete records, never truncated mid-record. `user_context_tokens` is a hard ceiling when configured.
+With `user_memory_priority="high"`, the assembler reserves the user ceiling inside the effective budget before packing
+episodic, skills, and brain sections; a `None` ceiling uses the normalized user allocation. With
+`user_memory_priority="normal"`, user knowledge follows the other sections and their rollover, while the same explicit
+ceiling still applies. The two modes can produce equal output only when their allocations admit the same complete
+records; the defaults do not guarantee identical output.
+
 ## Usage Examples
 
-### Basic Store Usage
+### Scoped Profile Usage
 
 ```python
 from pathlib import Path
 from parrot.memory.user.store import UserMemoryStore
 from parrot.memory.agent_memory.models import MemoryRequestScope
 
-store = UserMemoryStore(Path("/path/to/memory.db"))
-await store.configure()
-
-# Recall user knowledge
 scope = MemoryRequestScope(
     tenant_id="default",
     agent_id="my-agent",
@@ -118,13 +152,13 @@ scope = MemoryRequestScope(
     identity_provenance="server_resolved"
 )
 
-knowledge = await store.recall("user preferences", scope=scope, limit=5)
-
-# List all user knowledge
-all_knowledge = await store.list(scope=scope, limit=100)
-
-await store.close()
+async with UserMemoryStore(Path("/path/to/memory.db")) as store:
+    # `profile()` ranks every active, valid record for this identified user.
+    knowledge = await store.profile(scope=scope, query="How should I answer?", limit=20)
 ```
+
+The asynchronous context manager configures the owned SQLite connection and closes it even if profile handling raises.
+For an explicitly managed store, call `await store.close()` in a `finally` block.
 
 ### Knowledge Extraction
 
@@ -149,7 +183,12 @@ event = MemoryEvent(
 candidates = await extract_user_knowledge(event, client=client)  # -> list[UserKnowledgeCandidate]
 ```
 
-Extraction only proposes candidates; it never selects the scope and never persists anything.
+Extraction only proposes candidates; it never selects the scope and never persists anything. It reads one of the
+user-authored text fields, rejects anonymous, partial, and streaming events, bounds input to 4,000 characters, and
+makes one tool-free extraction call with `temperature=0`. It accepts at most eight validated candidates from a bounded
+JSON response. The prompt excludes task-local requests and instructions, accepts only lasting statements about the
+user, preserves the user's language, and rejects identity fields. Model provenance and candidate selection remain
+model output, not deterministic extraction behavior or verified user authority.
 
 ### Managing User Knowledge
 
