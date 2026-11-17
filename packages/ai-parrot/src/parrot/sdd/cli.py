@@ -415,9 +415,11 @@ from parrot.sdd.launch_cli import launch as _launch  # noqa: E402  light: click 
 
 sdd.add_command(_launch)
 
-from parrot.sdd.experts_cli import experts as _experts  # noqa: E402
-
-sdd.add_command(_experts)
+# Lazy: parrot.sdd.experts_cli pulls in parrot.experts -> parrot.bots -> navconfig, whose bootstrap raises in a
+# repository without an env/ directory. Every other `parrot sdd` command must stay import-light.
+sdd.add_command(
+    _LazyProxyGroup("experts", "parrot.sdd.experts_cli:experts", help="Expert delegation helpers."),
+)
 
 for _noun, _verbs in VERBS.items():
     _group = sdd.group(name=_noun, help=f"SDD {_noun} helpers.")(lambda: None)
