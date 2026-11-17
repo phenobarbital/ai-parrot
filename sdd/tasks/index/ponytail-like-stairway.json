@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-17T16:01:14+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-17T17:28:24+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -213,7 +213,7 @@
       "feature_id": "FEAT-908",
       "feature": "ponytail-like-stairway",
       "spec": "sdd/specs/ponytail-like-stairway.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -223,8 +223,9 @@
       "parallelism_notes": "modifies tests/sdd_scripts/test_necessity_ladder_contract.py created by TASK-5748 (adds the wiki test method); documents TASK-5741..5747 transitively through it",
       "assigned_to": null,
       "started_at": "2026-11-17T16:26:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5749-docs-necessity-ladder-page.md"
+      "completed_at": "2026-11-17T17:28:24+00:00",
+      "file": "sdd/tasks/completed/TASK-5749-docs-necessity-ladder-page.md",
+      "verification": "verified"
     }
   ]
 }

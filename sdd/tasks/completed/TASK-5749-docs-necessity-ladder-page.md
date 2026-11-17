@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-908 — Necessity Ladder — least-new-code gate in the SDD flow
 **Spec**: `sdd/specs/ponytail-like-stairway.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5748
@@ -219,10 +219,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: host Claude Code session (Opus 5.5), applied by hand after the sdd-worker seats were blocked
+**Date**: 2026-11-17
+**Notes**: Created `wiki/sdd-tooling/sdd/necessity-ladder.md` from the blueprint with the six techwiki sections. FILL IN items: Usage Examples has a three-row example table (R2 reuse, R5 dependency, R7 new module with its Does NOT Exist query) and its Totals line. The example is a hypothetical feature with `NN` line numbers, and the page says so, so no unverified location reads as verified. Related links the two existing sibling pages. Appended `test_wiki_page_documents_the_ladder`: 1 passed, whole contract file 7 passed, ruff and black clean. `parrot sdd techwiki check --spec sdd/specs/ponytail-like-stairway.spec.md --root .` → "Docs: required — ok". Closed via `scripts/sdd/close_task.sh`.
+Seat: host · Backend: manual · Attempts: 1
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
