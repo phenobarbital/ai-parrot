@@ -140,7 +140,7 @@ pytest tests/nextstop/test_pdf.py::test_generate_pdf -s
 
 ### What's New
 
-- **<New module / function / endpoint>** — <one-line role>
+- **<New module / function / endpoint>** — <one-line role>. *If not built*: <requirement left unmet>
 
 ### What Changes
 
@@ -151,6 +151,7 @@ pytest tests/nextstop/test_pdf.py::test_generate_pdf -s
 Explicitly out of scope, to prevent later scope creep:
 - <thing 1>
 - <thing 2>
+- Deferred: <capability considered and not proposed> — <what would justify building it>
 
 ### Patterns to Follow
 

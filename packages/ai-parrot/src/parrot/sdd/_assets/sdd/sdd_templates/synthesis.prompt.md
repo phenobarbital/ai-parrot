@@ -123,7 +123,10 @@ Generate 1-3 ranked hypotheses about the root cause. Each hypothesis has:
 
 For **enrichment**:
 Describe the probable scope. Include:
-- what would be NEW (modules, functions, endpoints)
+- what would be NEW (modules, functions, endpoints) — each item with an `if_not_built`
+  clause: the requirement of the source it serves and what breaks or stays manual without it
+- what is DEFERRED — any NEW candidate whose honest `if_not_built` is "nothing the source asks
+  for": list it with what would justify building it later, and leave it out of NEW
 - what would be MODIFIED (with citations)
 - what would be UNTOUCHED (explicitly — Non-Goals)
 - which existing patterns to follow (cite findings)

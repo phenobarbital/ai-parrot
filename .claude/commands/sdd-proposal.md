@@ -437,6 +437,8 @@ Validate `synthesis.json` against the rules:
 4. If `truncated: true`, `overall_confidence` ≤ `medium` and
    `recommended_next_command` ≠ `sdd-task`.
 5. `unknowns.length ≤ 5`.
+6. In enrichment mode, every NEW item has a non-empty `if_not_built`; an item without one is
+   moved to the deferred list, never kept as NEW.
 
 If any rule fails, **re-prompt the synthesis once** with the violations
 appended as a corrective addendum. If it still fails, surface the error to
@@ -649,6 +651,7 @@ brainstorm or a free-form proposal in the existing pipeline. Mappings:
 | §2.2 Constraints              | Spec §5 Acceptance Criteria + §7 Patterns |
 | §2.3 Recent History           | Spec §6 Codebase Contract (Recent Activity) |
 | §3 Hypothesis / Scope         | Spec §2 Architectural Design           |
+| §3 What's Untouched — `Deferred:` lines | Spec §1 Non-Goals (`Deferred:` lines, verbatim) |
 | §4 Confidence Map             | Spec §8 Open Questions (low-confidence items) |
 | §5 Open Questions (resolved)  | Spec §8 Open Questions (`[x]`)         |
 | §5 Open Questions (unresolved)| Spec §8 Open Questions (`[ ]`)         |

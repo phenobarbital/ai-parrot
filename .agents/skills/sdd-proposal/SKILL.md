@@ -116,6 +116,8 @@ forks (Claude Code). Codex has no forks: research always runs sequentially and
 6. Synthesize:
    - Use source, plan, findings, and budget status.
    - Produce `sdd/state/<FEAT-ID>/synthesis.json`.
+   - Enrichment scope: every new item states what happens if it is not built; items without that
+     justification are listed as `Deferred:` under Non-Goals.
    - Lint the synthesis:
      - every path/symbol is backed by a finding
      - every evidence ID exists
