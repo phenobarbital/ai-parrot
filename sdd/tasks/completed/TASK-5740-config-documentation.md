@@ -3,7 +3,7 @@
 **Feature**: FEAT-907 — Agent Memory Configuration Contracts
 **Spec**: `sdd/specs/agent-memory-factory-fixes.spec.md`
 **Discovered-from**: `issue:8861056e6f3c`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5739
@@ -100,3 +100,19 @@ Use the spec section 4 matrix. Tests use temporary SQLite storage and registry d
 ## Agent Instructions
 
 Implement only in the FEAT-907 worktree. Verify the task contract, run validation, commit scoped files, record review evidence and finalize using parrot sdd task finalize with the exact implementation HEAD.
+
+## Completion Note
+
+- Task: TASK-5740
+- Feature: agent-memory-factory-fixes
+- Implementation SHA: 6e812bdd31d503bc62e5cf76092b5e5a84fb3eb0
+- Closed at (UTC): 2026-11-17T14:20:00+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| scope | Configuration reference, limitations, allocations and skill lifecycle |
+| techwiki | required - ok |
+| tests | 11 passed |
