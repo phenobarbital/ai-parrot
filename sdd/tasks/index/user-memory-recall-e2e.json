@@ -236,7 +236,7 @@
       "feature_id": "FEAT-904",
       "feature": "user-memory-recall-e2e",
       "spec": "sdd/specs/user-memory-recall-e2e.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -247,8 +247,9 @@
       "parallelism_notes": "Consumes TASK-5730's cross-session test file and TASK-5731's offline proof contracts. Exclusive: real Redis DB15, provider calls and shared parrot e2e state.",
       "assigned_to": null,
       "started_at": "2026-11-16T21:33:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5732-memory-live-e2e-proof.md"
+      "completed_at": "2026-11-17T10:03:56+00:00",
+      "file": "sdd/tasks/completed/TASK-5732-memory-live-e2e-proof.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-5733",
