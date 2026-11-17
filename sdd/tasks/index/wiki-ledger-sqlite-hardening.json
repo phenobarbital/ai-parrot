@@ -149,7 +149,7 @@
       "feature_id": "FEAT-902",
       "feature": "wiki-ledger-sqlite-hardening",
       "spec": "sdd/specs/wiki-ledger-sqlite-hardening.spec.md",
-      "status": "pending",
+      "status": "done-with-issues",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -160,8 +160,9 @@
       "parallelism_notes": "Depends on TASK-5716 for candidate phase instrumentation and TASK-5717 for the executable benchmark/report schema and test file. Exclusive: owns the measurement host I/O/CPU window and isolated baseline snapshot during comparable trials.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5718-sqlite-ledger-measurement-followup.md"
+      "completed_at": "2026-11-17T12:40:00+00:00",
+      "file": "sdd/tasks/completed/TASK-5718-sqlite-ledger-measurement-followup.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-5719",
@@ -190,4 +191,3 @@
     }
   ]
 }
-

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-902 - Wiki and ledger SQLite hardening
 **Spec**: `sdd/specs/wiki-ledger-sqlite-hardening.spec.md`
-**Status**: pending
+**Status**: done-with-issues
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5716, TASK-5717
@@ -255,7 +255,16 @@ approved sample sizes. No strict speedup is required, but all candidate invarian
 3. Implement only the declared files, preserve other agents' changes, and complete every acceptance gate. Store execution logs under `artifacts/logs/`.
 4. Use `parrot sdd task finalize` with real TaskCompletionEvidence and the exact implementation HEAD. The finalizer owns the completion note and active-to-completed move; do not hand-edit them.
 
-## Completion Note (BLOCKED — not closed)
+## Completion Note (done-with-issues)
+
+- Measurement executed on the host: full 48-cell matrix (3 process counts × 2 lifecycles × 4 workloads × 2 arms), 3 trials, 100 warmup, 1000 operations, seed 902. All 48 runs exited 0 and every cell has a complete JSON report with all invariants true. Baseline `e5f3f7534876`, candidate `01bbdd2ff0`.
+- Artifacts: `sdd/state/FEAT-902/benchmarks/report.md`, `manifest.json` (97 raw-file SHA-256 hashes), `persistent-connections-followup.md` (disposition: **defer**). Raw logs under `artifacts/logs/FEAT-902/sqlite-hardening/` (gitignored, hashed in the manifest).
+- Issue (why done-with-issues): the DEBUG-off overhead pass required by the spec was NOT run. The driver always attaches its own DEBUG handler and has no switch to disable it, so instrumentation overhead is unmeasured. Recorded in `manifest.json` `missing[]` (`complete: false`) and as a strict xfail `test_debug_off_overhead_pass_recorded`.
+- Evidence tests: `test_committed_measurement_evidence`, `test_committed_raw_file_hashes`, `test_measurement_report_is_filled_and_defers_reuse` pass; the contract file has 14 passing tests plus the expected xfail. Anchor `BENCHMARK_REPORT_SCHEMA = 1` count is 1.
+- Results are mixed, with no uniform speedup, and trial variance is large in several cells. Connection setup is small relative to writer wait under contention (claim-race begin_wait p50 34–54 ms vs connection_setup ~6 ms), so the follow-up defers persistent-connection reuse.
+- Host was not exclusive: a concurrent feat-904 worker was running at low CPU. Absolute numbers are indicative.
+
+## Completion Note (BLOCKED — superseded)
 
 - Contract conflict resolved: `test_smoke_workloads_and_counts` asserted `phase_timings_ms["connection_open"] is None`, which predates TASK-5716. It now asserts candidate sources report non-negative `connection_open` samples while unavailable phases stay `None` (never zero). All 11 tests in `test_sqlite_benchmark_contract.py` pass; no test was dropped.
 - Anchor `BENCHMARK_REPORT_SCHEMA = 1` is unique (commit 8bf548039a).
