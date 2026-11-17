@@ -159,4 +159,6 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)* — NOTE: a first implementation was reverted from this branch because the spec forbids merging before 2026-12-11. Re-apply on or after that date.
+Implemented on separate branch `feat-FEAT-719-o3-nano-cleanup` (re-applied from the reverted seat delivery, with out-of-scope ruff edits removed). `RESPONSES_ONLY_MODELS` and the `OpenAIClient._is_responses_model` override are removed (the base always returns False); the gpt-5-nano max_tokens exception is removed. test_deprecations.py: 41 passed.
+
+**DO NOT MERGE BEFORE 2026-12-11** (spec AC-10): o3/o3-pro/gpt-5-nano snapshots stay live until then. Residue left deliberately out of scope: stale comment in tests/unit/test_openai_multiround_usage.py mentioning RESPONSES_ONLY_MODELS; dead `if use_responses:` branches in client.py.
