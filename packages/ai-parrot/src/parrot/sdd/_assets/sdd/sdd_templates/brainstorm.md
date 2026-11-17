@@ -137,11 +137,16 @@ tags: []
 <!-- Capabilities being introduced.
      Use kebab-case identifiers (e.g., user-auth, data-export).
      Each accepted capability maps to a spec file at docs/sdd/specs/<name>.spec.md -->
-- `<name>`: <brief description>
+- `<name>`: <brief description>. *If not built*: <requirement left unmet>
 
 ### Modified Capabilities
 <!-- Existing capabilities whose requirements change.
      Use existing spec names from docs/sdd/specs/. Leave empty if none. -->
+
+### Deferred Capabilities
+<!-- Capabilities considered and not proposed because nothing in the Problem Statement or the
+     Constraints needs them. `/sdd-spec` carries each line into the spec's §1 Non-Goals. -->
+- Deferred: `<name>` — <what would justify building it>
 
 ---
 

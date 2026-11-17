@@ -40,6 +40,8 @@ $sdd-brainstorm -> review -> $sdd-spec -> $sdd-task -> $sdd-start
   numbers.
 - Verify packages in project dependency files before recommending them.
 - Commit only the brainstorm file unless the user explicitly asks otherwise.
+- Every new capability states what happens if it is not built; capabilities without that
+  justification are listed under "Deferred Capabilities", not proposed.
 - Fill frontmatter `projects` (parts of the codebase, vocabulary: the project areas in `sdd/CONVENTIONS.md` (§ Project areas), or the `projects` list in `sdd/config.json` when set; unknown values warn) and `tags` (2–6 kebab-case keywords) — FEAT-576.
 
 ## Flow Type

@@ -185,7 +185,9 @@ Write a detailed feature description based on the recommended option:
 
 ### 8. Map to SDD Structures
 Fill in the remaining template sections:
-- **Capabilities**: new and modified (kebab-case identifiers).
+- **Capabilities**: new and modified (kebab-case identifiers). Every new capability states what
+  happens if it is not built; one that nothing in the Problem Statement or the Constraints needs
+  goes under "Deferred Capabilities" instead.
 - **Impact & Integration**: affected components table.
 - **Open Questions**: unresolved items with owners.
 
@@ -263,6 +265,7 @@ When `/sdd-spec` is invoked with a feature name that has a `.brainstorm.md` in `
 - **Libraries / Tools** → Spec Section 7 (External Dependencies)
 - **Feature Description** → Spec Section 2 (Overview + Integration Points)
 - **Capabilities** → Spec Section 3 (Module Breakdown)
+- **Deferred Capabilities** → Spec Section 1 (Non-Goals, `Deferred:` lines)
 - **Impact & Integration** → Spec Section 2 (Integration Points)
 - **Code Context** → Spec Section 6 (Codebase Contract) — **carries forward verified code**
 - **Parallelism Assessment** → Spec Worktree Strategy section
