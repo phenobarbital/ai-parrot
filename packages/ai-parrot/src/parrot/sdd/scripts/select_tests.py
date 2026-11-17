@@ -72,7 +72,8 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="SECONDS",
         help=(
-            "Per-test timeout (pytest-timeout) applied to every planned invocation. "
+            "Per-test timeout (pytest-timeout) applied to every planned pytest invocation; "
+            "other runners (parrot e2e, vitest, ...) do not take the flag and run without it. "
             "FEAT-617: bounds a hung test so the sweep names it instead of stalling. "
             "Opt-in -- deliberately NOT a shared pytest config default, so slow suites "
             "do not flake for developers."
@@ -545,9 +546,11 @@ def main(argv: list[str] | None = None) -> int:
     for ordinal, invocation in enumerate(plan.invocations):
         # FEAT-617: bound each test so a hang fails loudly, named, instead of stalling
         # the whole merge gate. Build a local argv -- invocation.argv is read elsewhere
-        # (the printed plan) and must stay unmodified.
+        # (the printed plan) and must stay unmodified. `--timeout` is a pytest-timeout flag:
+        # other runners reject it (`parrot e2e run` exits "No such option --timeout"
+        # before starting), so only pytest invocations receive it (issue:ff5038630b3b).
         argv = list(invocation.argv)
-        if args.timeout is not None:
+        if args.timeout is not None and invocation.runner == "pytest":
             argv.append(f"--timeout={args.timeout}")
         junit = None
         if recording and report_mod is not None:

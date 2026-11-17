@@ -452,6 +452,59 @@ def test_run_with_timeout_appends_flag_to_every_invocation(fixture_monorepo, mon
         assert argv[-1] == "--timeout=60", argv
 
 
+def test_run_with_timeout_skips_non_pytest_runners(fixture_monorepo, monkeypatch):
+    """--timeout is a pytest-timeout flag: a parrot-e2e invocation must run without it (issue:ff5038630b3b).
+
+    `parrot e2e run` rejects an unknown `--timeout` option before starting, so appending it
+    turned every E2E row of a merge-gate report into a false "non-pytest runner failed".
+    """
+    from scripts.sdd.select_tests import _load_kernel
+
+    kernel = _load_kernel()
+    import scripts.sdd.select_tests as select_tests_mod
+    from test_scope.datatypes import Invocation, ScopePlan, TestTarget
+
+    pytest_target = "packages/a/tests/test_x.py"
+    e2e_plan = "sdd/state/FEAT-904/e2e-plan.md"
+    plan = ScopePlan(
+        tier="merge",
+        invocations=(
+            Invocation(
+                distribution="a",
+                argv=("pytest", pytest_target),
+                targets=(TestTarget(path=pytest_target, distribution="a", reason="declared"),),
+            ),
+            Invocation(
+                distribution="e2e",
+                argv=("parrot", "e2e", "run", "--plan", e2e_plan, "--owner-id", "sdd-coder"),
+                targets=(TestTarget(path=e2e_plan, distribution="e2e", reason="declared", runner="parrot-e2e"),),
+                runner="parrot-e2e",
+            ),
+        ),
+        escalated=(),
+        core_hits=(),
+        skipped_escalations=(),
+        notes=(),
+    )
+    monkeypatch.setattr(kernel, "plan_tests", lambda **_: plan)
+    monkeypatch.setattr(kernel, "changed_files", lambda *_: [])
+    seen: list[list[str]] = []
+
+    def _run(argv, **kwargs):
+        seen.append(list(argv))
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(select_tests_mod.subprocess, "run", _run)
+
+    rc = main(["--tier", "merge", "--base", "HEAD", "--worktree", str(fixture_monorepo), "--run", "--timeout", "300"])
+
+    assert rc == 0
+    by_runner = {argv[0]: argv for argv in seen}
+    assert set(by_runner) == {"pytest", "parrot"}, seen
+    assert by_runner["pytest"][-1] == "--timeout=300", by_runner["pytest"]
+    assert by_runner["parrot"] == ["parrot", "e2e", "run", "--plan", e2e_plan, "--owner-id", "sdd-coder"]
+
+
 def test_select_tests_flags_absent_is_identical(fixture_monorepo, monkeypatch):
     """The report flags leave the original pytest argv untouched when absent."""
     seen = _captured_argvs(monkeypatch)
