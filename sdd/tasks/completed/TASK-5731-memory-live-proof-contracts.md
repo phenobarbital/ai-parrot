@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-904 - Working automatic recall for user and episodic memory, proven end to end
 **Spec**: `sdd/specs/user-memory-recall-e2e.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: none
@@ -203,3 +203,8 @@ Use named blueprint cases as the acceptance matrix. Cover the adversarial bounda
 ## Completion Note
 
 Pending; the task finalizer generates this after implementation and validation.
+
+
+## Completion Note
+
+Implemented by native sonnet seat, 1 attempt. Tests only. Task-tier validation first failed on a wrong "missing" expectation in test_runner.py (coder fixed it; engine re-committed on second merge). Merge-tier: 82 passed. Deferred finding: issue:23db163eea94 (runner._verdict_status lacks check_phases=True).
