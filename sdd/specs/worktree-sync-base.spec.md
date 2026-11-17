@@ -426,8 +426,9 @@ VERBS: dict[str, dict[str, tuple[str, tuple[str, ...], str]]]  # line 237; workt
 - **Race with a live worker** is why there is no override; the guard is checked immediately before integrating.
 - **Sandbox needs `GH_TOKEN` + `api.github.com`** — provided by the gh-only brief (PRs #1946/#1947); without
   them the command exits 5 with the host hint.
-- Native sandbox policy denies common `config`, `config.lock` and the worktree's `config.worktree`
-  (`native_claude_sandbox._denied_write_paths`). Host setup must complete before launch; sync only reads
+- Native sandbox policy denies common `config` and the worktree's `config.worktree`
+  (`native_claude_sandbox._denied_write_paths`); `config.lock` is deliberately not listed — `config` is ro-bound so
+  renaming a lock onto it fails EBUSY, and denying the nonexistent lock leaves a 0444 host stub that blocks git config writes. Host setup must complete before launch; sync only reads
   protection settings. Enabling `extensions.worktreeConfig` requires preserving existing Git configuration semantics.
 
 ### External Dependencies
