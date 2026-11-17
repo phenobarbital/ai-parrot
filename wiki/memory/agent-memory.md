@@ -49,22 +49,38 @@ The `AgentMemoryConfig` class controls all memory capabilities with the followin
 | `enable_episodic_memory` | `bool` | `False` | Enable episodic memory storage and retrieval |
 | `enable_user_memory` | `bool` | `False` | Enable user knowledge storage and retrieval |
 | `enable_brain` | `bool` | `False` | Enable BrainService integration (requires `enable_episodic_memory`; without an episodic store `configure` raises `invalid_configuration`) |
-| `memory_dynamics` | `bool` | `False` | Enable dynamics (reviews, state tracking) |
+| `memory_dynamics` | `bool` | `False` | Allow explicit operator reviews through the toolkit/CLI; does not toggle store dynamics |
 | `max_context_tokens` | `int` | `2000` | Maximum tokens for memory context (ge=0) |
-| `episodic_context_tokens` | `int` | `600` | Tokens budget for episodic memory |
-| `user_context_tokens` | `int` | `600` | Tokens budget for user knowledge |
+| `episodic_context_tokens` | `int` | `600` | Relative allocation for episodic memory |
+| `user_context_tokens` | `int` | `600` | Relative allocation and hard token ceiling for user knowledge |
 | `user_memory_priority` | `Literal["high", "normal"]` | `"high"` | Priority for user memory in context |
-| `brain_context_tokens` | `int` | `400` | Tokens budget for brain recall |
-| `skills_context_tokens` | `int` | `400` | Tokens budget for skills context |
-| `include_relevant_skills` | `bool` | `False` | Include relevant skills in context |
+| `brain_context_tokens` | `int` | `400` | Relative allocation for brain recall |
+| `skills_context_tokens` | `int` | `400` | Relative allocation for skills context |
+| `include_relevant_skills` | `bool` | `False` | Recall relevant skills from an injected registry or the host's configured registry |
 | `episodic_backend` | `Literal["sqlite"]` | `"sqlite"` | Backend for episodic storage |
 | `storage_path` | `str | None` | `None` | Path to SQLite database |
-| `enable_reflection` | `bool` | `True` | Enable automatic reflection generation |
+| `enable_reflection` | `bool` | `True` | Unsupported compatibility setting; non-default values warn and have no effect |
 | `max_episodic_warnings` | `int` | `3` | Maximum warnings to include (ge=0) |
 | `max_episodic_recall` | `int` | `3` | Maximum earlier-session nonfailure interactions; zero disables this lane |
 | `max_user_records` | `int` | `20` | Maximum profile result count (`0..100`) |
-| `suppress_trivial_tools` | `bool` | `True` | Suppress trivial tool calls |
-| `flush_on_startup` | `bool` | `False` | Flush memory on startup |
+| `suppress_trivial_tools` | `bool` | `True` | Unsupported compatibility setting; non-default values warn and have no effect |
+| `flush_on_startup` | `bool` | `False` | Unsupported compatibility setting; non-default values warn and have no effect |
+
+### Configuration limitations and skill wiring
+
+`enable_reflection`, `suppress_trivial_tools`, and `flush_on_startup` remain accepted for configuration compatibility.
+Neither their default nor non-default values enable these behaviors in the unified memory path. The factory logs
+a warning when a value differs from its default. In particular, `flush_on_startup=True` does not delete stored memory.
+
+`memory_dynamics` gates explicit operator review operations exposed by the toolkit and CLI. Stores retain ownership
+of dynamics and persistence; this flag does not enable or disable their algorithms or automatically create reviews.
+
+With `include_relevant_skills=True`, `AgentMemoryMixin.prepare_memory()` binds the host's configured `_skill_registry`
+before retrieving first-turn context. It preserves any registry already supplied to the manager. Standalone callers
+can pass `skill_registry=` to [`create_memory_manager`](ref:parrot.memory.agent_memory.factory.create_memory_manager),
+including when no persistent store is enabled. The returned manager runs an injected registry's available
+`configure()` and `cleanup()` hooks through its existing lifecycle; the factory does not create a registry.
+Disabled skills ignore the injected registry, and an absent registry produces no skill context.
 
 ### Automatic Recall and Packing
 
@@ -84,6 +100,12 @@ records participate after episodic, skills, and brain packing and receive rollov
 ceiling remains hard in both modes. Results are identical only if both allocations admit the same complete records.
 The defaults (`user_memory_priority="high"` and `user_context_tokens=600`) do not promise identical output to normal
 priority.
+
+The four per-source `*_context_tokens` values determine relative weights normalized across enabled sections.
+Unused allocations can roll forward, so episodic, brain and skill values are not independent hard ceilings;
+`user_context_tokens` additionally supplies the user ceiling described above. To disable a capability, use its
+enable flag. Setting all four allocations to zero produces no supplementary memory content and does not restore
+default allocations.
 
 ### Configuration Precedence
 
