@@ -56,11 +56,11 @@
     {
       "id": "TASK-5740",
       "slug": "config-documentation",
-      "title": "Documentation — agent memory option contracts",
+      "title": "Documentation \u2014 agent memory option contracts",
       "feature_id": "FEAT-907",
       "feature": "agent-memory-factory-fixes",
       "spec": "sdd/specs/agent-memory-factory-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -68,8 +68,8 @@
       ],
       "parallel": true,
       "parallelism_notes": "Depends on TASK-5739 for the new create_memory_manager skill_registry argument and first-turn preparation behavior documented by this page.",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "codex",
+      "started_at": "2026-11-17T14:18:01.480328+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5740-config-documentation.md"
     }
