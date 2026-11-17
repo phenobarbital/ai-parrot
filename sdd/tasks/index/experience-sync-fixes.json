@@ -1,0 +1,73 @@
+{
+  "feature": "experience-sync-fixes",
+  "feature_id": "FEAT-905",
+  "spec": "sdd/specs/experience-sync-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-17T11:26:48.672814+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/sdd/test_experience_cli.py",
+          "packages/ai-parrot/tests/knowledge/wiki/experience/test_models.py",
+          "packages/ai-parrot/tests/knowledge/wiki/experience/test_sync.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:ef489fd792d58a4852d8af8de6c40dc9cb8192301c7dd28a52774e86b0b42f1e"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5734",
+      "slug": "export-into-invoking-checkout",
+      "title": "parrot sdd experience export writes into the checkout it runs in",
+      "feature_id": "FEAT-905",
+      "feature": "experience-sync-fixes",
+      "spec": "sdd/specs/experience-sync-fixes.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "assigned_to": null,
+      "discovered_from": "issue:ebd9db5806f2",
+      "started_at": null,
+      "completed_at": null,
+      "parallelism_notes": "Independent: files sdd/scripts/experience_cli.py, tests/sdd/test_experience_cli.py; disjoint from TASK-5735.",
+      "file": "sdd/tasks/active/TASK-5734-export-into-invoking-checkout.md"
+    },
+    {
+      "id": "TASK-5735",
+      "slug": "strip-home-paths-before-identity",
+      "title": "Canonical experience events drop home-directory prefixes before identity",
+      "feature_id": "FEAT-905",
+      "feature": "experience-sync-fixes",
+      "spec": "sdd/specs/experience-sync-fixes.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "assigned_to": null,
+      "discovered_from": "issue:ebd9db5806f2",
+      "started_at": null,
+      "completed_at": null,
+      "parallelism_notes": "Independent: files knowledge/wiki/experience/models.py, tests test_models.py and test_sync.py; disjoint from TASK-5734.",
+      "file": "sdd/tasks/active/TASK-5735-strip-home-paths-before-identity.md"
+    }
+  ]
+}
