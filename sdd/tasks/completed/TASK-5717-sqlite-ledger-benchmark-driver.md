@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-902 - Wiki and ledger SQLite hardening
 **Spec**: `sdd/specs/wiki-ledger-sqlite-hardening.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -269,3 +269,10 @@ Run the task-specific commands above. The feature-wide regression contract is ca
 2. Verify predecessors are done in `sdd/tasks/index/wiki-ledger-sqlite-hardening.json` and recheck this task's contracts.
 3. Implement only the declared files, preserve other agents' changes, and complete every acceptance gate. Store execution logs under `artifacts/logs/`.
 4. Use `parrot sdd task finalize` with real TaskCompletionEvidence and the exact implementation HEAD. The finalizer owns the completion note and active-to-completed move; do not hand-edit them.
+
+## Completion Note
+
+- Implementation SHA: fffb02bb676bc6754cc5c91ebf018287b09afc90 (merge of TASK-5717 branch)
+- Seat: gpt-5.6-sol · Backend: codex · Model: gpt-5.6-sol · Attempts: 1 · Duration: 1400s · Tokens: n/a
+- Merge-tier validation green (tests/knowledge/wiki: 20 + 75 passed); review recorded via coder_record_review (zero fixes), review_ref 7dd38bf7e6aa….
+- Closed with scripts/sdd/close_task.sh because `parrot sdd task finalize` fidelity check rejected the preceding TASK-5713 SDD commit at HEAD.

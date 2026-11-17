@@ -21,6 +21,10 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 logger = logging.getLogger(__name__)
 
 
+class LedgerCursorInvalid(ValueError):
+    """Persisted cursor fields are incomplete or invalid."""
+
+
 class LedgerStore(SQLiteWikiStore):
     """SQLiteWikiStore specialisation for ledger.db: ledger_state table + composable write transactions."""
 
@@ -73,36 +77,53 @@ class LedgerStore(SQLiteWikiStore):
             yield conn
 
     async def read_cursor(self) -> tuple[int, str | None]:
-        """Read (offset, last_event_id) through `_read()`; a missing ledger_state table reads as (0, None).
+        """Return one coherent cursor; propagate real database and I/O failures.
 
         Returns:
             Tuple of (byte_offset, last_event_id) where byte_offset is the cursor position
             and last_event_id is the ID of the last processed event, or None if no state exists.
         """
         async with self._read() as conn:
-            try:
-                # Check if ledger_state table exists
-                async with conn.execute(
-                    "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'ledger_state'"
-                ) as cur:
-                    row = await cur.fetchone()
-                    if not row or row[0] == 0:
-                        return (0, None)
+            return await self.read_cursor_in(conn)
 
-                # Read cursor state
-                async with conn.execute("SELECT value FROM ledger_state WHERE key = 'cursor_offset'") as cur:
-                    offset_row = await cur.fetchone()
+    async def read_cursor_in(self, conn: aiosqlite.Connection) -> tuple[int, str | None]:
+        """Read the supplied transaction without owning its lifecycle.
 
-                async with conn.execute("SELECT value FROM ledger_state WHERE key = 'last_event_id'") as cur:
-                    event_id_row = await cur.fetchone()
+        Args:
+            conn: An open SQLite connection, optionally inside a write transaction.
 
-                offset = int(offset_row[0]) if offset_row else 0
-                event_id = event_id_row[0] if event_id_row else None
+        Returns:
+            The persisted byte offset and last event identifier, or the empty cursor.
 
-                return (offset, event_id)
-            except Exception:
-                # If anything fails, return default state
-                return (0, None)
+        Raises:
+            LedgerCursorInvalid: The persisted cursor is partial or has invalid values.
+            sqlite3.Error: The schema or storage could not be read.
+        """
+        async with conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'ledger_state'") as cursor:
+            if await cursor.fetchone() is None:
+                return 0, None
+
+        async with conn.execute(
+            "SELECT key, value FROM ledger_state WHERE key IN ('cursor_offset', 'last_event_id')"
+        ) as cursor:
+            values = {row[0]: row[1] for row in await cursor.fetchall()}
+
+        offset_value = values.get("cursor_offset")
+        event_id_value = values.get("last_event_id")
+        if offset_value is None and event_id_value is None:
+            return 0, None
+        if offset_value is None or event_id_value is None:
+            raise LedgerCursorInvalid("Persisted ledger cursor is incomplete.")
+
+        try:
+            offset = int(offset_value)
+        except (TypeError, ValueError) as exc:
+            raise LedgerCursorInvalid("Persisted ledger cursor offset is not an integer.") from exc
+        if offset < 0:
+            raise LedgerCursorInvalid("Persisted ledger cursor offset is negative.")
+        if not isinstance(event_id_value, str) or not event_id_value.strip():
+            raise LedgerCursorInvalid("Persisted ledger cursor event ID is empty.")
+        return offset, event_id_value
 
     async def upsert_pages_in(self, conn: aiosqlite.Connection, pages: list[WikiPageRecord]) -> None:
         """Delegate to _upsert_pages_conn on the caller's transaction.

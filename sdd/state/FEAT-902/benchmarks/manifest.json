@@ -1,0 +1,5871 @@
+{
+  "schema_version": 1,
+  "feature_id": "FEAT-902",
+  "baseline_revision": "e5f3f7534876f9b4f56ad1cedc7b4e56176ee568",
+  "candidate_revision": "01bbdd2ff060b529fb6450dcdcede7c261974295",
+  "baseline_source_root": ".parrot/worktrees/baseline-e5f3f7534876",
+  "candidate_source_root": ".parrot/worktrees/feat-FEAT-902-wiki-ledger-sqlite-hardening",
+  "environment_observed": [
+    {
+      "arm": "baseline",
+      "revision": "e5f3f7534876f9b4f56ad1cedc7b4e56176ee568",
+      "dirty": false,
+      "sqlite": "3.45.1",
+      "aiosqlite": "0.22.1",
+      "python": "3.12.3 (main, Jul 15 2026, 23:46:41) [GCC 13.3.0]"
+    },
+    {
+      "arm": "candidate",
+      "revision": "01bbdd2ff060b529fb6450dcdcede7c261974295",
+      "dirty": false,
+      "sqlite": "3.45.1",
+      "aiosqlite": "0.22.1",
+      "python": "3.12.3 (main, Jul 15 2026, 23:46:41) [GCC 13.3.0]"
+    }
+  ],
+  "host": {
+    "cpu_count": 12,
+    "os_release": "7.0.0-31-generic",
+    "note": "concurrent feat-904 sdd-worker session was running (light CPU)"
+  },
+  "commands": [
+    "python packages/ai-parrot/tests/knowledge/wiki/benchmarks/sqlite_ledger_hardening.py --arm <arm> --revision <rev> --source-root <baseline-worktree|feature-worktree> --processes <1|4|8> --workload <wl> --lifecycle <lc> --trials 3 --warmup 100 --operations 1000 --seed 902 --output-dir artifacts/logs/FEAT-902/sqlite-hardening/<arm>-<p>p-<wl>-<lc> --run-timeout-s 1800",
+    "timing probe (not evidence): candidate 8p mixed-ledger ephemeral, output artifacts/logs/FEAT-902/sqlite-hardening/timing-probe-candidate-8-mixed-ephemeral"
+  ],
+  "alternation": "arm order alternates per cell (even cell index: baseline first)",
+  "matrix": {
+    "processes": [
+      1,
+      4,
+      8
+    ],
+    "lifecycles": [
+      "resident",
+      "ephemeral"
+    ],
+    "workloads": [
+      "idle-ledger",
+      "mixed-ledger",
+      "claim-race",
+      "wiki"
+    ],
+    "arms": [
+      "baseline",
+      "candidate"
+    ],
+    "cells_expected": 48,
+    "cells_run": 48
+  },
+  "complete": false,
+  "missing": [
+    {
+      "item": "debug_off_pass",
+      "reason": "driver always captures DEBUG via _MemoryLogHandler and sets parrot.knowledge.wiki to DEBUG; no switch exists, so instrumentation overhead cannot be measured"
+    }
+  ],
+  "cells": [
+    {
+      "arm": "candidate",
+      "revision": "01bbdd2ff060b529fb6450dcdcede7c261974295",
+      "processes": 1,
+      "workload": "idle-ledger",
+      "lifecycle": "resident",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 122,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-1p-idle-ledger-resident/candidate-idle-ledger-1p-resident.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-1p-idle-ledger-resident.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 3000,
+          "begin_attempts": 0,
+          "fast_paths": 1000,
+          "throughput_ops_s": 100.806,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 3000,
+          "begin_attempts": 0,
+          "fast_paths": 1000,
+          "throughput_ops_s": 90.65,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 3000,
+          "begin_attempts": 0,
+          "fast_paths": 1000,
+          "throughput_ops_s": 72.679,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "baseline",
+      "revision": "e5f3f7534876f9b4f56ad1cedc7b4e56176ee568",
+      "processes": 1,
+      "workload": "idle-ledger",
+      "lifecycle": "resident",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 119,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-1p-idle-ledger-resident/baseline-idle-ledger-1p-resident.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-1p-idle-ledger-resident.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 3000,
+          "begin_attempts": 1000,
+          "fast_paths": null,
+          "throughput_ops_s": 105.18,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 3000,
+          "begin_attempts": 1000,
+          "fast_paths": null,
+          "throughput_ops_s": 80.964,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 3000,
+          "begin_attempts": 1000,
+          "fast_paths": null,
+          "throughput_ops_s": 75.139,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "baseline",
+      "revision": "e5f3f7534876f9b4f56ad1cedc7b4e56176ee568",
+      "processes": 1,
+      "workload": "mixed-ledger",
+      "lifecycle": "resident",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 133,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-1p-mixed-ledger-resident/baseline-mixed-ledger-1p-resident.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-1p-mixed-ledger-resident.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 2800,
+          "begin_attempts": 1000,
+          "fast_paths": null,
+          "throughput_ops_s": 68.813,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 2800,
+          "begin_attempts": 1000,
+          "fast_paths": null,
+          "throughput_ops_s": 72.772,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 2800,
+          "begin_attempts": 1000,
+          "fast_paths": null,
+          "throughput_ops_s": 68.411,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "candidate",
+      "revision": "01bbdd2ff060b529fb6450dcdcede7c261974295",
+      "processes": 1,
+      "workload": "mixed-ledger",
+      "lifecycle": "resident",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 144,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-1p-mixed-ledger-resident/candidate-mixed-ledger-1p-resident.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-1p-mixed-ledger-resident.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 2800,
+          "begin_attempts": 200,
+          "fast_paths": 800,
+          "throughput_ops_s": 87.994,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 2800,
+          "begin_attempts": 200,
+          "fast_paths": 800,
+          "throughput_ops_s": 54.15,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 2800,
+          "begin_attempts": 200,
+          "fast_paths": 800,
+          "throughput_ops_s": 49.936,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "candidate",
+      "revision": "01bbdd2ff060b529fb6450dcdcede7c261974295",
+      "processes": 1,
+      "workload": "claim-race",
+      "lifecycle": "resident",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 309,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-1p-claim-race-resident/candidate-claim-race-1p-resident.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-1p-claim-race-resident.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 1000,
+          "begin_attempts": 1000,
+          "fast_paths": null,
+          "throughput_ops_s": 38.959,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 1000,
+          "begin_attempts": 1000,
+          "fast_paths": null,
+          "throughput_ops_s": 37.105,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 1000,
+          "begin_attempts": 1000,
+          "fast_paths": null,
+          "throughput_ops_s": 23.008,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "baseline",
+      "revision": "e5f3f7534876f9b4f56ad1cedc7b4e56176ee568",
+      "processes": 1,
+      "workload": "claim-race",
+      "lifecycle": "resident",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 470,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-1p-claim-race-resident/baseline-claim-race-1p-resident.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-1p-claim-race-resident.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 2000,
+          "begin_attempts": 1000,
+          "fast_paths": null,
+          "throughput_ops_s": 22.05,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 2000,
+          "begin_attempts": 1000,
+          "fast_paths": null,
+          "throughput_ops_s": 14.376,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 2000,
+          "begin_attempts": 1000,
+          "fast_paths": null,
+          "throughput_ops_s": 19.422,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "baseline",
+      "revision": "e5f3f7534876f9b4f56ad1cedc7b4e56176ee568",
+      "processes": 1,
+      "workload": "wiki",
+      "lifecycle": "resident",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 209,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-1p-wiki-resident/baseline-wiki-1p-resident.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-1p-wiki-resident.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 1000,
+          "begin_attempts": 200,
+          "fast_paths": null,
+          "throughput_ops_s": 71.124,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 1000,
+          "begin_attempts": 200,
+          "fast_paths": null,
+          "throughput_ops_s": 49.413,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 1000,
+          "begin_attempts": 200,
+          "fast_paths": null,
+          "throughput_ops_s": 58.706,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "candidate",
+      "revision": "01bbdd2ff060b529fb6450dcdcede7c261974295",
+      "processes": 1,
+      "workload": "wiki",
+      "lifecycle": "resident",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 203,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-1p-wiki-resident/candidate-wiki-1p-resident.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-1p-wiki-resident.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 1000,
+          "begin_attempts": 200,
+          "fast_paths": null,
+          "throughput_ops_s": 57.717,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 1000,
+          "begin_attempts": 200,
+          "fast_paths": null,
+          "throughput_ops_s": 70.38,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 1000,
+          "begin_attempts": 200,
+          "fast_paths": null,
+          "throughput_ops_s": 57.678,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "candidate",
+      "revision": "01bbdd2ff060b529fb6450dcdcede7c261974295",
+      "processes": 1,
+      "workload": "idle-ledger",
+      "lifecycle": "ephemeral",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 231,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-1p-idle-ledger-ephemeral/candidate-idle-ledger-1p-ephemeral.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-1p-idle-ledger-ephemeral.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 3000,
+          "begin_attempts": 0,
+          "fast_paths": 1000,
+          "throughput_ops_s": 26.327,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 3000,
+          "begin_attempts": 0,
+          "fast_paths": 1000,
+          "throughput_ops_s": 43.797,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 3000,
+          "begin_attempts": 0,
+          "fast_paths": 1000,
+          "throughput_ops_s": 69.794,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "baseline",
+      "revision": "e5f3f7534876f9b4f56ad1cedc7b4e56176ee568",
+      "processes": 1,
+      "workload": "idle-ledger",
+      "lifecycle": "ephemeral",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 171,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-1p-idle-ledger-ephemeral/baseline-idle-ledger-1p-ephemeral.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-1p-idle-ledger-ephemeral.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 3000,
+          "begin_attempts": 1000,
+          "fast_paths": null,
+          "throughput_ops_s": 91.302,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 3000,
+          "begin_attempts": 1000,
+          "fast_paths": null,
+          "throughput_ops_s": 46.752,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 3000,
+          "begin_attempts": 1000,
+          "fast_paths": null,
+          "throughput_ops_s": 95.104,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "baseline",
+      "revision": "e5f3f7534876f9b4f56ad1cedc7b4e56176ee568",
+      "processes": 1,
+      "workload": "mixed-ledger",
+      "lifecycle": "ephemeral",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 233,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-1p-mixed-ledger-ephemeral/baseline-mixed-ledger-1p-ephemeral.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-1p-mixed-ledger-ephemeral.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 2800,
+          "begin_attempts": 1000,
+          "fast_paths": null,
+          "throughput_ops_s": 34.782,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 2800,
+          "begin_attempts": 1000,
+          "fast_paths": null,
+          "throughput_ops_s": 25.13,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 2800,
+          "begin_attempts": 1000,
+          "fast_paths": null,
+          "throughput_ops_s": 51.404,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "candidate",
+      "revision": "01bbdd2ff060b529fb6450dcdcede7c261974295",
+      "processes": 1,
+      "workload": "mixed-ledger",
+      "lifecycle": "ephemeral",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 237,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-1p-mixed-ledger-ephemeral/candidate-mixed-ledger-1p-ephemeral.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-1p-mixed-ledger-ephemeral.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 2800,
+          "begin_attempts": 200,
+          "fast_paths": 800,
+          "throughput_ops_s": 50.152,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 2800,
+          "begin_attempts": 200,
+          "fast_paths": 800,
+          "throughput_ops_s": 28.171,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 2800,
+          "begin_attempts": 200,
+          "fast_paths": 800,
+          "throughput_ops_s": 36.019,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "candidate",
+      "revision": "01bbdd2ff060b529fb6450dcdcede7c261974295",
+      "processes": 1,
+      "workload": "claim-race",
+      "lifecycle": "ephemeral",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 504,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-1p-claim-race-ephemeral/candidate-claim-race-1p-ephemeral.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-1p-claim-race-ephemeral.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 1000,
+          "begin_attempts": 1000,
+          "fast_paths": null,
+          "throughput_ops_s": 16.986,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 1000,
+          "begin_attempts": 1000,
+          "fast_paths": null,
+          "throughput_ops_s": 16.655,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 1000,
+          "begin_attempts": 1000,
+          "fast_paths": null,
+          "throughput_ops_s": 17.37,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "baseline",
+      "revision": "e5f3f7534876f9b4f56ad1cedc7b4e56176ee568",
+      "processes": 1,
+      "workload": "claim-race",
+      "lifecycle": "ephemeral",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 488,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-1p-claim-race-ephemeral/baseline-claim-race-1p-ephemeral.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-1p-claim-race-ephemeral.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 2000,
+          "begin_attempts": 1000,
+          "fast_paths": null,
+          "throughput_ops_s": 15.861,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 2000,
+          "begin_attempts": 1000,
+          "fast_paths": null,
+          "throughput_ops_s": 15.596,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 2000,
+          "begin_attempts": 1000,
+          "fast_paths": null,
+          "throughput_ops_s": 15.884,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "baseline",
+      "revision": "e5f3f7534876f9b4f56ad1cedc7b4e56176ee568",
+      "processes": 1,
+      "workload": "wiki",
+      "lifecycle": "ephemeral",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 213,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-1p-wiki-ephemeral/baseline-wiki-1p-ephemeral.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-1p-wiki-ephemeral.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 1000,
+          "begin_attempts": 200,
+          "fast_paths": null,
+          "throughput_ops_s": 43.918,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 1000,
+          "begin_attempts": 200,
+          "fast_paths": null,
+          "throughput_ops_s": 42.09,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 1000,
+          "begin_attempts": 200,
+          "fast_paths": null,
+          "throughput_ops_s": 38.4,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "candidate",
+      "revision": "01bbdd2ff060b529fb6450dcdcede7c261974295",
+      "processes": 1,
+      "workload": "wiki",
+      "lifecycle": "ephemeral",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 175,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-1p-wiki-ephemeral/candidate-wiki-1p-ephemeral.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-1p-wiki-ephemeral.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 1000,
+          "begin_attempts": 200,
+          "fast_paths": null,
+          "throughput_ops_s": 85.299,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 1000,
+          "begin_attempts": 200,
+          "fast_paths": null,
+          "throughput_ops_s": 55.035,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 1000,
+          "begin_attempts": 200,
+          "fast_paths": null,
+          "throughput_ops_s": 40.002,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "candidate",
+      "revision": "01bbdd2ff060b529fb6450dcdcede7c261974295",
+      "processes": 4,
+      "workload": "idle-ledger",
+      "lifecycle": "resident",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 159,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-4p-idle-ledger-resident/candidate-idle-ledger-4p-resident.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-4p-idle-ledger-resident.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 4000
+          },
+          "successful_operations": 4000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 12000,
+          "begin_attempts": 0,
+          "fast_paths": 4000,
+          "throughput_ops_s": 363.21,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 4000
+          },
+          "successful_operations": 4000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 12000,
+          "begin_attempts": 0,
+          "fast_paths": 4000,
+          "throughput_ops_s": 352.469,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 4000
+          },
+          "successful_operations": 4000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 12000,
+          "begin_attempts": 0,
+          "fast_paths": 4000,
+          "throughput_ops_s": 323.924,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "baseline",
+      "revision": "e5f3f7534876f9b4f56ad1cedc7b4e56176ee568",
+      "processes": 4,
+      "workload": "idle-ledger",
+      "lifecycle": "resident",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 165,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-4p-idle-ledger-resident/baseline-idle-ledger-4p-resident.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-4p-idle-ledger-resident.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 4000
+          },
+          "successful_operations": 4000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 12000,
+          "begin_attempts": 4000,
+          "fast_paths": null,
+          "throughput_ops_s": 296.748,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 4000
+          },
+          "successful_operations": 4000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 12000,
+          "begin_attempts": 4000,
+          "fast_paths": null,
+          "throughput_ops_s": 329.611,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 4000
+          },
+          "successful_operations": 4000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 12000,
+          "begin_attempts": 4000,
+          "fast_paths": null,
+          "throughput_ops_s": 328.186,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "baseline",
+      "revision": "e5f3f7534876f9b4f56ad1cedc7b4e56176ee568",
+      "processes": 4,
+      "workload": "mixed-ledger",
+      "lifecycle": "resident",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 144,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-4p-mixed-ledger-resident/baseline-mixed-ledger-4p-resident.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-4p-mixed-ledger-resident.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 4000
+          },
+          "successful_operations": 4000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 11200,
+          "begin_attempts": 4000,
+          "fast_paths": null,
+          "throughput_ops_s": 257.838,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 86552,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 4000
+          },
+          "successful_operations": 4000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 11200,
+          "begin_attempts": 4000,
+          "fast_paths": null,
+          "throughput_ops_s": 259.881,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 214272,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 4000
+          },
+          "successful_operations": 4000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 11200,
+          "begin_attempts": 4000,
+          "fast_paths": null,
+          "throughput_ops_s": 224.659,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 86552,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "candidate",
+      "revision": "01bbdd2ff060b529fb6450dcdcede7c261974295",
+      "processes": 4,
+      "workload": "mixed-ledger",
+      "lifecycle": "resident",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 220,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-4p-mixed-ledger-resident/candidate-mixed-ledger-4p-resident.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-4p-mixed-ledger-resident.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 4000
+          },
+          "successful_operations": 4000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 11200,
+          "begin_attempts": 1645,
+          "fast_paths": 2355,
+          "throughput_ops_s": 149.874,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 4000
+          },
+          "successful_operations": 4000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 11204,
+          "begin_attempts": 1610,
+          "fast_paths": 2390,
+          "throughput_ops_s": 154.026,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 4000
+          },
+          "successful_operations": 4000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 11214,
+          "begin_attempts": 1568,
+          "fast_paths": 2432,
+          "throughput_ops_s": 216.942,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 251352,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "candidate",
+      "revision": "01bbdd2ff060b529fb6450dcdcede7c261974295",
+      "processes": 4,
+      "workload": "claim-race",
+      "lifecycle": "resident",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 660,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-4p-claim-race-resident/candidate-claim-race-4p-resident.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-4p-claim-race-resident.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "rejected": 3000,
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 3000,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 4000,
+          "begin_attempts": 4000,
+          "fast_paths": null,
+          "throughput_ops_s": 37.641,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 164832,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "rejected": 3000,
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 3000,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 4000,
+          "begin_attempts": 4000,
+          "fast_paths": null,
+          "throughput_ops_s": 38.616,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 152472,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "rejected": 3000,
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 3000,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 4000,
+          "begin_attempts": 4000,
+          "fast_paths": null,
+          "throughput_ops_s": 38.469,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 152472,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "baseline",
+      "revision": "e5f3f7534876f9b4f56ad1cedc7b4e56176ee568",
+      "processes": 4,
+      "workload": "claim-race",
+      "lifecycle": "resident",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 655,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-4p-claim-race-resident/baseline-claim-race-4p-resident.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-4p-claim-race-resident.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "rejected": 3000,
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 3000,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 8000,
+          "begin_attempts": 4000,
+          "fast_paths": null,
+          "throughput_ops_s": 36.333,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 152472,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000,
+            "rejected": 3000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 3000,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 8000,
+          "begin_attempts": 4000,
+          "fast_paths": null,
+          "throughput_ops_s": 35.099,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 152472,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000,
+            "rejected": 3000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 3000,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 8000,
+          "begin_attempts": 4000,
+          "fast_paths": null,
+          "throughput_ops_s": 35.339,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 152472,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "baseline",
+      "revision": "e5f3f7534876f9b4f56ad1cedc7b4e56176ee568",
+      "processes": 4,
+      "workload": "wiki",
+      "lifecycle": "resident",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 137,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-4p-wiki-resident/baseline-wiki-4p-resident.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-4p-wiki-resident.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 4000
+          },
+          "successful_operations": 4000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 4000,
+          "begin_attempts": 800,
+          "fast_paths": null,
+          "throughput_ops_s": 487.982,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 828152
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 4000
+          },
+          "successful_operations": 4000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 4000,
+          "begin_attempts": 800,
+          "fast_paths": null,
+          "throughput_ops_s": 1528.541,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 4935792
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 4000
+          },
+          "successful_operations": 4000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 4000,
+          "begin_attempts": 800,
+          "fast_paths": null,
+          "throughput_ops_s": 796.31,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 350232
+          }
+        }
+      ]
+    },
+    {
+      "arm": "candidate",
+      "revision": "01bbdd2ff060b529fb6450dcdcede7c261974295",
+      "processes": 4,
+      "workload": "wiki",
+      "lifecycle": "resident",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 109,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-4p-wiki-resident/candidate-wiki-4p-resident.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-4p-wiki-resident.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 4000
+          },
+          "successful_operations": 4000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 4000,
+          "begin_attempts": 800,
+          "fast_paths": null,
+          "throughput_ops_s": 1374.435,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 2101232
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 4000
+          },
+          "successful_operations": 4000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 4000,
+          "begin_attempts": 800,
+          "fast_paths": null,
+          "throughput_ops_s": 1384.154,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 8689112
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 4000
+          },
+          "successful_operations": 4000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 4000,
+          "begin_attempts": 800,
+          "fast_paths": null,
+          "throughput_ops_s": 1405.255,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 111272
+          }
+        }
+      ]
+    },
+    {
+      "arm": "candidate",
+      "revision": "01bbdd2ff060b529fb6450dcdcede7c261974295",
+      "processes": 4,
+      "workload": "idle-ledger",
+      "lifecycle": "ephemeral",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 138,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-4p-idle-ledger-ephemeral/candidate-idle-ledger-4p-ephemeral.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-4p-idle-ledger-ephemeral.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 4000
+          },
+          "successful_operations": 4000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 12000,
+          "begin_attempts": 0,
+          "fast_paths": 4000,
+          "throughput_ops_s": 306.103,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 4000
+          },
+          "successful_operations": 4000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 12000,
+          "begin_attempts": 0,
+          "fast_paths": 4000,
+          "throughput_ops_s": 311.092,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 4000
+          },
+          "successful_operations": 4000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 12000,
+          "begin_attempts": 0,
+          "fast_paths": 4000,
+          "throughput_ops_s": 312.642,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "baseline",
+      "revision": "e5f3f7534876f9b4f56ad1cedc7b4e56176ee568",
+      "processes": 4,
+      "workload": "idle-ledger",
+      "lifecycle": "ephemeral",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 136,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-4p-idle-ledger-ephemeral/baseline-idle-ledger-4p-ephemeral.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-4p-idle-ledger-ephemeral.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 4000
+          },
+          "successful_operations": 4000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 12000,
+          "begin_attempts": 4000,
+          "fast_paths": null,
+          "throughput_ops_s": 295.02,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 4000
+          },
+          "successful_operations": 4000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 12000,
+          "begin_attempts": 4000,
+          "fast_paths": null,
+          "throughput_ops_s": 296.904,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 4000
+          },
+          "successful_operations": 4000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 12000,
+          "begin_attempts": 4000,
+          "fast_paths": null,
+          "throughput_ops_s": 284.873,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "baseline",
+      "revision": "e5f3f7534876f9b4f56ad1cedc7b4e56176ee568",
+      "processes": 4,
+      "workload": "mixed-ledger",
+      "lifecycle": "ephemeral",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 146,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-4p-mixed-ledger-ephemeral/baseline-mixed-ledger-4p-ephemeral.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-4p-mixed-ledger-ephemeral.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 4000
+          },
+          "successful_operations": 4000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 11200,
+          "begin_attempts": 4000,
+          "fast_paths": null,
+          "throughput_ops_s": 230.35,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 201912,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 4000
+          },
+          "successful_operations": 4000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 11200,
+          "begin_attempts": 4000,
+          "fast_paths": null,
+          "throughput_ops_s": 241.907,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 4000
+          },
+          "successful_operations": 4000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 11200,
+          "begin_attempts": 4000,
+          "fast_paths": null,
+          "throughput_ops_s": 238.414,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 247232,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "candidate",
+      "revision": "01bbdd2ff060b529fb6450dcdcede7c261974295",
+      "processes": 4,
+      "workload": "mixed-ledger",
+      "lifecycle": "ephemeral",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 126,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-4p-mixed-ledger-ephemeral/candidate-mixed-ledger-4p-ephemeral.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-4p-mixed-ledger-ephemeral.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 4000
+          },
+          "successful_operations": 4000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 11200,
+          "begin_attempts": 1477,
+          "fast_paths": 2523,
+          "throughput_ops_s": 206.797,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 4000
+          },
+          "successful_operations": 4000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 11201,
+          "begin_attempts": 1476,
+          "fast_paths": 2524,
+          "throughput_ops_s": 236.822,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 111272,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 4000
+          },
+          "successful_operations": 4000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 11201,
+          "begin_attempts": 1441,
+          "fast_paths": 2559,
+          "throughput_ops_s": 222.167,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 86552,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "candidate",
+      "revision": "01bbdd2ff060b529fb6450dcdcede7c261974295",
+      "processes": 4,
+      "workload": "claim-race",
+      "lifecycle": "ephemeral",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 353,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-4p-claim-race-ephemeral/candidate-claim-race-4p-ephemeral.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-4p-claim-race-ephemeral.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "rejected": 3000,
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 3000,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 4000,
+          "begin_attempts": 4000,
+          "fast_paths": null,
+          "throughput_ops_s": 61.879,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 152472,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 1000,
+            "rejected": 3000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 3000,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 4000,
+          "begin_attempts": 4000,
+          "fast_paths": null,
+          "throughput_ops_s": 54.424,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 164832,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "rejected": 3000,
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 3000,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 4000,
+          "begin_attempts": 4000,
+          "fast_paths": null,
+          "throughput_ops_s": 60.297,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 152472,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "baseline",
+      "revision": "e5f3f7534876f9b4f56ad1cedc7b4e56176ee568",
+      "processes": 4,
+      "workload": "claim-race",
+      "lifecycle": "ephemeral",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 623,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-4p-claim-race-ephemeral/baseline-claim-race-4p-ephemeral.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-4p-claim-race-ephemeral.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "rejected": 3000,
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 3000,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 8000,
+          "begin_attempts": 4000,
+          "fast_paths": null,
+          "throughput_ops_s": 36.856,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 152472,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "rejected": 3000,
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 3000,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 8000,
+          "begin_attempts": 4000,
+          "fast_paths": null,
+          "throughput_ops_s": 32.589,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 152472,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "rejected": 3000,
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 3000,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 8000,
+          "begin_attempts": 4000,
+          "fast_paths": null,
+          "throughput_ops_s": 33.359,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 152472,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "baseline",
+      "revision": "e5f3f7534876f9b4f56ad1cedc7b4e56176ee568",
+      "processes": 4,
+      "workload": "wiki",
+      "lifecycle": "ephemeral",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 109,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-4p-wiki-ephemeral/baseline-wiki-4p-ephemeral.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-4p-wiki-ephemeral.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 4000
+          },
+          "successful_operations": 4000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 4000,
+          "begin_attempts": 800,
+          "fast_paths": null,
+          "throughput_ops_s": 855.237,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 1314312
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 4000
+          },
+          "successful_operations": 4000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 4000,
+          "begin_attempts": 800,
+          "fast_paths": null,
+          "throughput_ops_s": 847.904,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 197792
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 4000
+          },
+          "successful_operations": 4000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 4000,
+          "begin_attempts": 800,
+          "fast_paths": null,
+          "throughput_ops_s": 839.986,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 263712
+          }
+        }
+      ]
+    },
+    {
+      "arm": "candidate",
+      "revision": "01bbdd2ff060b529fb6450dcdcede7c261974295",
+      "processes": 4,
+      "workload": "wiki",
+      "lifecycle": "ephemeral",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 105,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-4p-wiki-ephemeral/candidate-wiki-4p-ephemeral.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-4p-wiki-ephemeral.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 4000
+          },
+          "successful_operations": 4000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 4000,
+          "begin_attempts": 800,
+          "fast_paths": null,
+          "throughput_ops_s": 610.524,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 959992
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 4000
+          },
+          "successful_operations": 4000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 4000,
+          "begin_attempts": 800,
+          "fast_paths": null,
+          "throughput_ops_s": 603.512,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 2422592
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 4000
+          },
+          "successful_operations": 4000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 4000,
+          "begin_attempts": 800,
+          "fast_paths": null,
+          "throughput_ops_s": 828.969,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 2665672
+          }
+        }
+      ]
+    },
+    {
+      "arm": "candidate",
+      "revision": "01bbdd2ff060b529fb6450dcdcede7c261974295",
+      "processes": 8,
+      "workload": "idle-ledger",
+      "lifecycle": "resident",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 105,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-8p-idle-ledger-resident/candidate-idle-ledger-8p-resident.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-8p-idle-ledger-resident.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 8000
+          },
+          "successful_operations": 8000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 24000,
+          "begin_attempts": 0,
+          "fast_paths": 8000,
+          "throughput_ops_s": 489.976,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 8000
+          },
+          "successful_operations": 8000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 24000,
+          "begin_attempts": 0,
+          "fast_paths": 8000,
+          "throughput_ops_s": 471.796,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 8000
+          },
+          "successful_operations": 8000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 24000,
+          "begin_attempts": 0,
+          "fast_paths": 8000,
+          "throughput_ops_s": 456.182,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "baseline",
+      "revision": "e5f3f7534876f9b4f56ad1cedc7b4e56176ee568",
+      "processes": 8,
+      "workload": "idle-ledger",
+      "lifecycle": "resident",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 118,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-8p-idle-ledger-resident/baseline-idle-ledger-8p-resident.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-8p-idle-ledger-resident.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 8000
+          },
+          "successful_operations": 8000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 24000,
+          "begin_attempts": 8000,
+          "fast_paths": null,
+          "throughput_ops_s": 342.577,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 8000
+          },
+          "successful_operations": 8000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 24000,
+          "begin_attempts": 8000,
+          "fast_paths": null,
+          "throughput_ops_s": 319.216,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 8000
+          },
+          "successful_operations": 8000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 24000,
+          "begin_attempts": 8000,
+          "fast_paths": null,
+          "throughput_ops_s": 331.83,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "baseline",
+      "revision": "e5f3f7534876f9b4f56ad1cedc7b4e56176ee568",
+      "processes": 8,
+      "workload": "mixed-ledger",
+      "lifecycle": "resident",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 139,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-8p-mixed-ledger-resident/baseline-mixed-ledger-8p-resident.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-8p-mixed-ledger-resident.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 8000
+          },
+          "successful_operations": 8000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 22400,
+          "begin_attempts": 8000,
+          "fast_paths": null,
+          "throughput_ops_s": 269.16,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 1932312,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 8000
+          },
+          "successful_operations": 8000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 22400,
+          "begin_attempts": 8000,
+          "fast_paths": null,
+          "throughput_ops_s": 260.286,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 1330792,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 8000
+          },
+          "successful_operations": 8000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 22400,
+          "begin_attempts": 8000,
+          "fast_paths": null,
+          "throughput_ops_s": 256.616,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 1128912,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "candidate",
+      "revision": "01bbdd2ff060b529fb6450dcdcede7c261974295",
+      "processes": 8,
+      "workload": "mixed-ledger",
+      "lifecycle": "resident",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 145,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-8p-mixed-ledger-resident/candidate-mixed-ledger-8p-resident.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-8p-mixed-ledger-resident.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 8000
+          },
+          "successful_operations": 8000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 22402,
+          "begin_attempts": 3480,
+          "fast_paths": 4520,
+          "throughput_ops_s": 334.827,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 238992,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 8000
+          },
+          "successful_operations": 8000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 22400,
+          "begin_attempts": 3364,
+          "fast_paths": 4636,
+          "throughput_ops_s": 348.63,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 284312,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 8000
+          },
+          "successful_operations": 8000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 22401,
+          "begin_attempts": 3341,
+          "fast_paths": 4659,
+          "throughput_ops_s": 351.468,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 309032,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "candidate",
+      "revision": "01bbdd2ff060b529fb6450dcdcede7c261974295",
+      "processes": 8,
+      "workload": "claim-race",
+      "lifecycle": "resident",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 784,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-8p-claim-race-resident/candidate-claim-race-8p-resident.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-8p-claim-race-resident.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "rejected": 7000,
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 7000,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 8000,
+          "begin_attempts": 8000,
+          "fast_paths": null,
+          "throughput_ops_s": 47.656,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 152472,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "rejected": 7000,
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 7000,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 8000,
+          "begin_attempts": 8000,
+          "fast_paths": null,
+          "throughput_ops_s": 41.268,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 152472,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "rejected": 7000,
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 7000,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 8000,
+          "begin_attempts": 8000,
+          "fast_paths": null,
+          "throughput_ops_s": 40.505,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 152472,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "baseline",
+      "revision": "e5f3f7534876f9b4f56ad1cedc7b4e56176ee568",
+      "processes": 8,
+      "workload": "claim-race",
+      "lifecycle": "resident",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 1035,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-8p-claim-race-resident/baseline-claim-race-8p-resident.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-8p-claim-race-resident.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "rejected": 7000,
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 7000,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 16000,
+          "begin_attempts": 8000,
+          "fast_paths": null,
+          "throughput_ops_s": 30.178,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 152472,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "rejected": 7000,
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 7000,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 16000,
+          "begin_attempts": 8000,
+          "fast_paths": null,
+          "throughput_ops_s": 29.925,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 152472,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "rejected": 7000,
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 7000,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 16000,
+          "begin_attempts": 8000,
+          "fast_paths": null,
+          "throughput_ops_s": 33.285,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 152472,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "baseline",
+      "revision": "e5f3f7534876f9b4f56ad1cedc7b4e56176ee568",
+      "processes": 8,
+      "workload": "wiki",
+      "lifecycle": "resident",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 105,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-8p-wiki-resident/baseline-wiki-8p-resident.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-8p-wiki-resident.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 8000
+          },
+          "successful_operations": 8000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 8000,
+          "begin_attempts": 1600,
+          "fast_paths": null,
+          "throughput_ops_s": 1677.893,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 74876912
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 8000
+          },
+          "successful_operations": 8000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 8000,
+          "begin_attempts": 1600,
+          "fast_paths": null,
+          "throughput_ops_s": 1760.759,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 77171752
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 8000
+          },
+          "successful_operations": 8000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 8000,
+          "begin_attempts": 1600,
+          "fast_paths": null,
+          "throughput_ops_s": 1837.867,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 77521952
+          }
+        }
+      ]
+    },
+    {
+      "arm": "candidate",
+      "revision": "01bbdd2ff060b529fb6450dcdcede7c261974295",
+      "processes": 8,
+      "workload": "wiki",
+      "lifecycle": "resident",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 113,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-8p-wiki-resident/candidate-wiki-8p-resident.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-8p-wiki-resident.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 8000
+          },
+          "successful_operations": 8000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 8000,
+          "begin_attempts": 1600,
+          "fast_paths": null,
+          "throughput_ops_s": 1807.346,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 73636792
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 8000
+          },
+          "successful_operations": 8000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 8000,
+          "begin_attempts": 1600,
+          "fast_paths": null,
+          "throughput_ops_s": 1579.844,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 76475472
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 8000
+          },
+          "successful_operations": 8000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 8000,
+          "begin_attempts": 1600,
+          "fast_paths": null,
+          "throughput_ops_s": 1627.304,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 77204712
+          }
+        }
+      ]
+    },
+    {
+      "arm": "candidate",
+      "revision": "01bbdd2ff060b529fb6450dcdcede7c261974295",
+      "processes": 8,
+      "workload": "idle-ledger",
+      "lifecycle": "ephemeral",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 152,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-8p-idle-ledger-ephemeral/candidate-idle-ledger-8p-ephemeral.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-8p-idle-ledger-ephemeral.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 8000
+          },
+          "successful_operations": 8000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 24000,
+          "begin_attempts": 0,
+          "fast_paths": 8000,
+          "throughput_ops_s": 461.414,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 8000
+          },
+          "successful_operations": 8000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 24000,
+          "begin_attempts": 0,
+          "fast_paths": 8000,
+          "throughput_ops_s": 455.839,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 8000
+          },
+          "successful_operations": 8000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 24000,
+          "begin_attempts": 0,
+          "fast_paths": 8000,
+          "throughput_ops_s": 456.108,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "baseline",
+      "revision": "e5f3f7534876f9b4f56ad1cedc7b4e56176ee568",
+      "processes": 8,
+      "workload": "idle-ledger",
+      "lifecycle": "ephemeral",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 164,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-8p-idle-ledger-ephemeral/baseline-idle-ledger-8p-ephemeral.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-8p-idle-ledger-ephemeral.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 8000
+          },
+          "successful_operations": 8000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 24000,
+          "begin_attempts": 8000,
+          "fast_paths": null,
+          "throughput_ops_s": 338.82,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 8000
+          },
+          "successful_operations": 8000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 24000,
+          "begin_attempts": 8000,
+          "fast_paths": null,
+          "throughput_ops_s": 346.302,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 8000
+          },
+          "successful_operations": 8000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 24000,
+          "begin_attempts": 8000,
+          "fast_paths": null,
+          "throughput_ops_s": 337.293,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "baseline",
+      "revision": "e5f3f7534876f9b4f56ad1cedc7b4e56176ee568",
+      "processes": 8,
+      "workload": "mixed-ledger",
+      "lifecycle": "ephemeral",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 187,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-8p-mixed-ledger-ephemeral/baseline-mixed-ledger-8p-ephemeral.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-8p-mixed-ledger-ephemeral.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 8000
+          },
+          "successful_operations": 8000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 22400,
+          "begin_attempts": 8000,
+          "fast_paths": null,
+          "throughput_ops_s": 280.997,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 679832,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 8000
+          },
+          "successful_operations": 8000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 22400,
+          "begin_attempts": 8000,
+          "fast_paths": null,
+          "throughput_ops_s": 278.57,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 914672,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 8000
+          },
+          "successful_operations": 8000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 22400,
+          "begin_attempts": 8000,
+          "fast_paths": null,
+          "throughput_ops_s": 283.419,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 931152,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "candidate",
+      "revision": "01bbdd2ff060b529fb6450dcdcede7c261974295",
+      "processes": 8,
+      "workload": "mixed-ledger",
+      "lifecycle": "ephemeral",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 146,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-8p-mixed-ledger-ephemeral/candidate-mixed-ledger-8p-ephemeral.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-8p-mixed-ledger-ephemeral.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 8000
+          },
+          "successful_operations": 8000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 22402,
+          "begin_attempts": 3199,
+          "fast_paths": 4801,
+          "throughput_ops_s": 294.201,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 201912,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 8000
+          },
+          "successful_operations": 8000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 22403,
+          "begin_attempts": 3177,
+          "fast_paths": 4823,
+          "throughput_ops_s": 289.407,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 210152,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 8000
+          },
+          "successful_operations": 8000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 22404,
+          "begin_attempts": 3294,
+          "fast_paths": 4706,
+          "throughput_ops_s": 294.083,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 210152,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "candidate",
+      "revision": "01bbdd2ff060b529fb6450dcdcede7c261974295",
+      "processes": 8,
+      "workload": "claim-race",
+      "lifecycle": "ephemeral",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 680,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-8p-claim-race-ephemeral/candidate-claim-race-8p-ephemeral.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-8p-claim-race-ephemeral.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "rejected": 7000,
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 7000,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 8000,
+          "begin_attempts": 8000,
+          "fast_paths": null,
+          "throughput_ops_s": 47.493,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 152472,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "rejected": 7000,
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 7000,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 8000,
+          "begin_attempts": 8000,
+          "fast_paths": null,
+          "throughput_ops_s": 38.281,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 152472,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "rejected": 7000,
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 7000,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 8000,
+          "begin_attempts": 8000,
+          "fast_paths": null,
+          "throughput_ops_s": 51.447,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 152472,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "baseline",
+      "revision": "e5f3f7534876f9b4f56ad1cedc7b4e56176ee568",
+      "processes": 8,
+      "workload": "claim-race",
+      "lifecycle": "ephemeral",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 676,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-8p-claim-race-ephemeral/baseline-claim-race-8p-ephemeral.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-8p-claim-race-ephemeral.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "rejected": 7000,
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 7000,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 16000,
+          "begin_attempts": 8000,
+          "fast_paths": null,
+          "throughput_ops_s": 50.572,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 152472,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "rejected": 7000,
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 7000,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 16000,
+          "begin_attempts": 8000,
+          "fast_paths": null,
+          "throughput_ops_s": 45.495,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 168952,
+            "wiki": 0
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "rejected": 7000,
+            "ok": 1000
+          },
+          "successful_operations": 1000,
+          "unsuccessful_operations": 7000,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 16000,
+          "begin_attempts": 8000,
+          "fast_paths": null,
+          "throughput_ops_s": 45.559,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 152472,
+            "wiki": 0
+          }
+        }
+      ]
+    },
+    {
+      "arm": "baseline",
+      "revision": "e5f3f7534876f9b4f56ad1cedc7b4e56176ee568",
+      "processes": 8,
+      "workload": "wiki",
+      "lifecycle": "ephemeral",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 78,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-8p-wiki-ephemeral/baseline-wiki-8p-ephemeral.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-8p-wiki-ephemeral.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 8000
+          },
+          "successful_operations": 8000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 8000,
+          "begin_attempts": 1600,
+          "fast_paths": null,
+          "throughput_ops_s": 1019.874,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 38501432
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 8000
+          },
+          "successful_operations": 8000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 8000,
+          "begin_attempts": 1600,
+          "fast_paths": null,
+          "throughput_ops_s": 998.891,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 53329312
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 8000
+          },
+          "successful_operations": 8000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 8000,
+          "begin_attempts": 1600,
+          "fast_paths": null,
+          "throughput_ops_s": 1020.316,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 68890552
+          }
+        }
+      ]
+    },
+    {
+      "arm": "candidate",
+      "revision": "01bbdd2ff060b529fb6450dcdcede7c261974295",
+      "processes": 8,
+      "workload": "wiki",
+      "lifecycle": "ephemeral",
+      "settings": {
+        "trials": 3,
+        "warmup": 100,
+        "operations": 1000,
+        "seed": 902
+      },
+      "debug": "on",
+      "exit_code": 0,
+      "seconds": 87,
+      "complete": true,
+      "invariants": {
+        "all_trials_complete": true,
+        "source_revision_consistent": true,
+        "separate_databases": true
+      },
+      "report": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-8p-wiki-ephemeral/candidate-wiki-8p-ephemeral.json",
+      "log": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-8p-wiki-ephemeral.log",
+      "trials": [
+        {
+          "trial": 0,
+          "complete": true,
+          "outcomes": {
+            "ok": 8000
+          },
+          "successful_operations": 8000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 8000,
+          "begin_attempts": 1600,
+          "fast_paths": null,
+          "throughput_ops_s": 903.94,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 26413352
+          }
+        },
+        {
+          "trial": 1,
+          "complete": true,
+          "outcomes": {
+            "ok": 8000
+          },
+          "successful_operations": 8000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 8000,
+          "begin_attempts": 1600,
+          "fast_paths": null,
+          "throughput_ops_s": 972.103,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 30759952
+          }
+        },
+        {
+          "trial": 2,
+          "complete": true,
+          "outcomes": {
+            "ok": 8000
+          },
+          "successful_operations": 8000,
+          "unsuccessful_operations": 0,
+          "errors": 0,
+          "busy_outcomes": 0,
+          "connection_opens": 8000,
+          "begin_attempts": 1600,
+          "fast_paths": null,
+          "throughput_ops_s": 889.727,
+          "invariants": {
+            "worker_cleanup": true,
+            "worker_count": true,
+            "operation_count": true,
+            "projection_matches_rebuild": true,
+            "accepted_events_preserved": true,
+            "claim_owner_unique": true,
+            "integrity_ok": true
+          },
+          "wal_after_bytes": {
+            "ledger": 0,
+            "wiki": 38180072
+          }
+        }
+      ]
+    }
+  ],
+  "raw_files": [
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/matrix-exit-codes.tsv",
+      "sha256": "cdd03e8c7f77b1577a4e653f15b9d87bbdb608df22d90f1ebca4733288f3eeca",
+      "size_bytes": 2318
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-1p-idle-ledger-resident/candidate-idle-ledger-1p-resident.json",
+      "sha256": "0472e041882788bb772c56451fa9b114b3ac63af5130a70b6f9043b7d3ac3f56",
+      "size_bytes": 11326990
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-1p-idle-ledger-resident.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-1p-idle-ledger-resident/baseline-idle-ledger-1p-resident.json",
+      "sha256": "381c9afa07ec86f18c279b184684bffae3f1868d688dcd23def99225387e7768",
+      "size_bytes": 1881330
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-1p-idle-ledger-resident.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-1p-mixed-ledger-resident/baseline-mixed-ledger-1p-resident.json",
+      "sha256": "b23bd3d5bad496d6718757c1468024e88d5112fe025c897138a5366ef4fc66a6",
+      "size_bytes": 1919173
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-1p-mixed-ledger-resident.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-1p-mixed-ledger-resident/candidate-mixed-ledger-1p-resident.json",
+      "sha256": "03418e17e6967826c75d1242bc6966a15c34abd2841618847e6dd7af13d83aab",
+      "size_bytes": 12424119
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-1p-mixed-ledger-resident.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-1p-claim-race-resident/candidate-claim-race-1p-resident.json",
+      "sha256": "2f965d7a0605bb214001248adb94f8868e0a414b8e89c08a200215e58e8446f2",
+      "size_bytes": 12754132
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-1p-claim-race-resident.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-1p-claim-race-resident/baseline-claim-race-1p-resident.json",
+      "sha256": "505bbd6c2575f01c9f85d293c8efd75e8f2c697b6590cf303c5e6a5cd09602c1",
+      "size_bytes": 2370073
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-1p-claim-race-resident.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-1p-wiki-resident/baseline-wiki-1p-resident.json",
+      "sha256": "5ecbf69e5fe3bf879fd0efd94fd66cc19f8879bbd838124d27723edfc2495f4e",
+      "size_bytes": 1955193
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-1p-wiki-resident.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-1p-wiki-resident/candidate-wiki-1p-resident.json",
+      "sha256": "5d3c437b2f04779e9fcdb269e7130453598417cce486e68584899cef81ea3416",
+      "size_bytes": 5426286
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-1p-wiki-resident.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-1p-idle-ledger-ephemeral/candidate-idle-ledger-1p-ephemeral.json",
+      "sha256": "38d097ecca9f0efbcd2066fa603f3a2a282bd9f855b0c989789cacc742a5a180",
+      "size_bytes": 11443423
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-1p-idle-ledger-ephemeral.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-1p-idle-ledger-ephemeral/baseline-idle-ledger-1p-ephemeral.json",
+      "sha256": "17dc54e223492ec5e2ecd5fd17176adf903076abbdb28f740747ab2f65ea8ebc",
+      "size_bytes": 1906509
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-1p-idle-ledger-ephemeral.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-1p-mixed-ledger-ephemeral/baseline-mixed-ledger-1p-ephemeral.json",
+      "sha256": "ff6ac81fa402a12f7fe4def4a159ace403d245412004b2870d24d856c4f3ec08",
+      "size_bytes": 2064619
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-1p-mixed-ledger-ephemeral.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-1p-mixed-ledger-ephemeral/candidate-mixed-ledger-1p-ephemeral.json",
+      "sha256": "b6b83b23e3b3d368dedfabe929b67ff873dcf1610c5f006c7cb97d507a22e4b6",
+      "size_bytes": 12522219
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-1p-mixed-ledger-ephemeral.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-1p-claim-race-ephemeral/candidate-claim-race-1p-ephemeral.json",
+      "sha256": "07704a285490fd885c133d7e40b755ed1e84f3cef2b85d056397c824690d583d",
+      "size_bytes": 12996136
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-1p-claim-race-ephemeral.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-1p-claim-race-ephemeral/baseline-claim-race-1p-ephemeral.json",
+      "sha256": "f1aec37a9b35a9877318a4537963cd5c6a43cdb50a5f0180958c39baa3de4633",
+      "size_bytes": 2447850
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-1p-claim-race-ephemeral.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-1p-wiki-ephemeral/baseline-wiki-1p-ephemeral.json",
+      "sha256": "ebc55fafdb9feff32f8d55d217af0bff4429b212ea7b71039b245721198c52c5",
+      "size_bytes": 2023911
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-1p-wiki-ephemeral.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-1p-wiki-ephemeral/candidate-wiki-1p-ephemeral.json",
+      "sha256": "07f3800da2cc8625c23d7671e8d6565b8246b18f240aa6ae5ab0286318ea9213",
+      "size_bytes": 5450454
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-1p-wiki-ephemeral.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-4p-idle-ledger-resident/candidate-idle-ledger-4p-resident.json",
+      "sha256": "58bbe04ca1e6463395d7339f92407545c9bfaa100b3654c0e45ef1587d917130",
+      "size_bytes": 45299896
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-4p-idle-ledger-resident.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-4p-idle-ledger-resident/baseline-idle-ledger-4p-resident.json",
+      "sha256": "b5213595a2a2c105902d76bf94d387d8bd2af5ad424937f1df9e3ac18d47fb54",
+      "size_bytes": 7517861
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-4p-idle-ledger-resident.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-4p-mixed-ledger-resident/baseline-mixed-ledger-4p-resident.json",
+      "sha256": "a823bc005c0fa81e4a0932e783988e27e1e77c97ee216484a5c941c586a77036",
+      "size_bytes": 7700991
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-4p-mixed-ledger-resident.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-4p-mixed-ledger-resident/candidate-mixed-ledger-4p-resident.json",
+      "sha256": "03d6a9200bfd1d32722f4c74453065a7db9f938e93f12c4e209a6633d98eade9",
+      "size_bytes": 54215089
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-4p-mixed-ledger-resident.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-4p-claim-race-resident/candidate-claim-race-4p-resident.json",
+      "sha256": "c378d2e2562a8d523a5739e69fa9e420e4961bc9ebc8326f41a18520293ecfd6",
+      "size_bytes": 45914285
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-4p-claim-race-resident.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-4p-claim-race-resident/baseline-claim-race-4p-resident.json",
+      "sha256": "ab854e332d5286f86c15a1afdf3d98c95cb2ee17c1e721bc4c0a5c347a6e3b6e",
+      "size_bytes": 11754462
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-4p-claim-race-resident.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-4p-wiki-resident/baseline-wiki-4p-resident.json",
+      "sha256": "160f9db71c46c2f874cdb4298ba3ad876de03084b840f9f235bf0fccd6004d26",
+      "size_bytes": 7318498
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-4p-wiki-resident.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-4p-wiki-resident/candidate-wiki-4p-resident.json",
+      "sha256": "0823760f96ab915b5b184aa24d05dbd293565a59adeb4f1732b2037422bca38e",
+      "size_bytes": 21230352
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-4p-wiki-resident.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-4p-idle-ledger-ephemeral/candidate-idle-ledger-4p-ephemeral.json",
+      "sha256": "ac0101db6586f36f8a0e0f9544aa11ecee1dc23363b2f2edfe564df99a34ebb1",
+      "size_bytes": 45342962
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-4p-idle-ledger-ephemeral.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-4p-idle-ledger-ephemeral/baseline-idle-ledger-4p-ephemeral.json",
+      "sha256": "35c6809f032cc2ec64352d894f402754c348ea62d547950daedd951b243bbe46",
+      "size_bytes": 7567204
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-4p-idle-ledger-ephemeral.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-4p-mixed-ledger-ephemeral/baseline-mixed-ledger-4p-ephemeral.json",
+      "sha256": "3589b1122f54cc04f66a7f8865e160eb3fa59d07dffcf70250071c5f3600707d",
+      "size_bytes": 7731304
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-4p-mixed-ledger-ephemeral.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-4p-mixed-ledger-ephemeral/candidate-mixed-ledger-4p-ephemeral.json",
+      "sha256": "0165d2fef04c2c10605b0328fd786e369478288a671ac3daa3c1d3fcb99939c2",
+      "size_bytes": 53254497
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-4p-mixed-ledger-ephemeral.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-4p-claim-race-ephemeral/candidate-claim-race-4p-ephemeral.json",
+      "sha256": "1ca253f657302416fd35888b889db439f4357277f0272a0e40ac0ae00433cbe6",
+      "size_bytes": 44606519
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-4p-claim-race-ephemeral.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-4p-claim-race-ephemeral/baseline-claim-race-4p-ephemeral.json",
+      "sha256": "3c712f29481efaa93979efb06508b22179e39347e3506d08dd36fc14e4798c49",
+      "size_bytes": 11938658
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-4p-claim-race-ephemeral.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-4p-wiki-ephemeral/baseline-wiki-4p-ephemeral.json",
+      "sha256": "009069ad4242a4cae4fa93056ec55aaa51f2c6d1652cd1079ab5b955d8e687f4",
+      "size_bytes": 7309907
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-4p-wiki-ephemeral.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-4p-wiki-ephemeral/candidate-wiki-4p-ephemeral.json",
+      "sha256": "9bee4c0527daeebb8374e8cb6fc0be568692eb0e14007e480590cf42c92bb8f8",
+      "size_bytes": 21338197
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-4p-wiki-ephemeral.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-8p-idle-ledger-resident/candidate-idle-ledger-8p-resident.json",
+      "sha256": "eca022a8cd95e94e81681d8231ed26f2cc2f32c89d71d0c0cbb819fce2d9e3f9",
+      "size_bytes": 90902083
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-8p-idle-ledger-resident.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-8p-idle-ledger-resident/baseline-idle-ledger-8p-resident.json",
+      "sha256": "37e0fbcc77499700cfc373a92bf5fa4e5c5a518675914c4a32d865dd9592f993",
+      "size_bytes": 15845244
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-8p-idle-ledger-resident.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-8p-mixed-ledger-resident/baseline-mixed-ledger-8p-resident.json",
+      "sha256": "9983e045b3e5bba42345a4baaf8e9f22eb8d7c960edba5765fd8c0962c4bae66",
+      "size_bytes": 16370166
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-8p-mixed-ledger-resident.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-8p-mixed-ledger-resident/candidate-mixed-ledger-8p-resident.json",
+      "sha256": "0ecbe39bdd2c1d2fa5b725ddb69c6374577a0593623ebf91bb6d8b914adcdd8c",
+      "size_bytes": 109297402
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-8p-mixed-ledger-resident.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-8p-claim-race-resident/candidate-claim-race-8p-resident.json",
+      "sha256": "7913976f885a955b858f00567b36dfce2df629a62f5d8e152514da30a0f5bf44",
+      "size_bytes": 95547039
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-8p-claim-race-resident.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-8p-claim-race-resident/baseline-claim-race-8p-resident.json",
+      "sha256": "389b8ca7603d7a6692a05c5b6e587b96364d0634b324bbea6f107c3b0ed3880e",
+      "size_bytes": 34634098
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-8p-claim-race-resident.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-8p-wiki-resident/baseline-wiki-8p-resident.json",
+      "sha256": "74170198bf5d5a35cb4da880c2463ddd4b3c738410db49f48ee54c46118d79f3",
+      "size_bytes": 14581409
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-8p-wiki-resident.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-8p-wiki-resident/candidate-wiki-8p-resident.json",
+      "sha256": "2970fd455bdfe38bdea2da1df3bf217e68d7780e5fd6303517fab2f2651e0f09",
+      "size_bytes": 42544150
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-8p-wiki-resident.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-8p-idle-ledger-ephemeral/candidate-idle-ledger-8p-ephemeral.json",
+      "sha256": "114e7b791bb28cc9a1b4b7bcdbc2f65d0b265f78efbed9e9598719eabf0daef0",
+      "size_bytes": 90965349
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-8p-idle-ledger-ephemeral.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-8p-idle-ledger-ephemeral/baseline-idle-ledger-8p-ephemeral.json",
+      "sha256": "5a2490e49106ce977e877da33eb55153a7a1ab8141917cc5c3bd7cf2902e47c5",
+      "size_bytes": 15798713
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-8p-idle-ledger-ephemeral.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-8p-mixed-ledger-ephemeral/baseline-mixed-ledger-8p-ephemeral.json",
+      "sha256": "bbde982cfcf12906701d04c149f51013e4fd176c6b2b3fe8c13f0dde0ca49c5c",
+      "size_bytes": 16257998
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-8p-mixed-ledger-ephemeral.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-8p-mixed-ledger-ephemeral/candidate-mixed-ledger-8p-ephemeral.json",
+      "sha256": "83b566b915f29632869cd464f55c9d83c3cb8ef14e1d489b0211c4d0e282e9cf",
+      "size_bytes": 108691834
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-8p-mixed-ledger-ephemeral.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-8p-claim-race-ephemeral/candidate-claim-race-8p-ephemeral.json",
+      "sha256": "2ea843545c52d543aa0013bd21a368096b6e1fe5ea05c0b4b3025f7766b58ae0",
+      "size_bytes": 94935933
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-8p-claim-race-ephemeral.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-8p-claim-race-ephemeral/baseline-claim-race-8p-ephemeral.json",
+      "sha256": "4a80d10ce9ef2c3d4833a597ba5761582fed59c06de793141be1d9d74e995679",
+      "size_bytes": 27949645
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-8p-claim-race-ephemeral.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-8p-wiki-ephemeral/baseline-wiki-8p-ephemeral.json",
+      "sha256": "f93ea8f968ad28a7248a3bded2d63d18c29af065bdd466264f17094587781e18",
+      "size_bytes": 14846592
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/baseline-8p-wiki-ephemeral.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-8p-wiki-ephemeral/candidate-wiki-8p-ephemeral.json",
+      "sha256": "d8d7f90d744701455814205da608f6a74987a1e6e4eec8d72c99d32045e864e9",
+      "size_bytes": 42848596
+    },
+    {
+      "path": "artifacts/logs/FEAT-902/sqlite-hardening/candidate-8p-wiki-ephemeral.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    }
+  ],
+  "excluded_raw": {
+    "reason": "database and WAL working files are regenerated per trial; 294 .db/-wal files, ~1.8 GB, gitignored artifacts/"
+  },
+  "candidate_invariants": {
+    "all_cells_complete": true,
+    "all_invariants_true": true,
+    "all_trials_invariants": true
+  },
+  "instrumentation_overhead": {
+    "status": "not_measured",
+    "reason": "see missing[]"
+  }
+}
