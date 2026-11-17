@@ -20,22 +20,35 @@ class AgentMemoryConfig(BaseModel):
     enable_episodic_memory: bool = False
     enable_user_memory: bool = False
     enable_brain: bool = False
-    memory_dynamics: bool = False
+    memory_dynamics: bool = Field(
+        default=False,
+        description="Enable explicit operator reviews through the toolkit/CLI; does not toggle store dynamics",
+    )
     max_context_tokens: int = Field(default=2000, ge=0)
-    episodic_context_tokens: int = Field(default=600, ge=0)
-    user_context_tokens: int = Field(default=600, ge=0)
+    episodic_context_tokens: int = Field(default=600, ge=0, description="Relative allocation for episodic context")
+    user_context_tokens: int = Field(
+        default=600, ge=0, description="Relative allocation and hard token ceiling for user knowledge"
+    )
     user_memory_priority: Literal["high", "normal"] = "high"
-    brain_context_tokens: int = Field(default=400, ge=0)
-    skills_context_tokens: int = Field(default=400, ge=0)
-    include_relevant_skills: bool = False
+    brain_context_tokens: int = Field(default=400, ge=0, description="Relative allocation for brain context")
+    skills_context_tokens: int = Field(default=400, ge=0, description="Relative allocation for skill context")
+    include_relevant_skills: bool = Field(
+        default=False, description="Recall skills from an injected registry or the host's configured skill registry"
+    )
     episodic_backend: Literal["sqlite"] = "sqlite"
     storage_path: str | None = None
-    enable_reflection: bool = True
+    enable_reflection: bool = Field(
+        default=True, description="Unsupported compatibility setting; non-default values warn and have no effect"
+    )
     max_episodic_warnings: int = Field(default=3, ge=0)
     max_episodic_recall: int = Field(default=3, ge=0)
     max_user_records: int = Field(default=20, ge=0, le=100)
-    suppress_trivial_tools: bool = True
-    flush_on_startup: bool = False
+    suppress_trivial_tools: bool = Field(
+        default=True, description="Unsupported compatibility setting; non-default values warn and have no effect"
+    )
+    flush_on_startup: bool = Field(
+        default=False, description="Unsupported compatibility setting; non-default values warn and have no effect"
+    )
 
     def __init__(self, **data: Any) -> None:
         """Reject removed flags with their explicit capability replacements."""

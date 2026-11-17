@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-17T13:17:45.433709+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-17T14:20:00+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -41,16 +41,17 @@
       "feature_id": "FEAT-907",
       "feature": "agent-memory-factory-fixes",
       "spec": "sdd/specs/agent-memory-factory-fixes.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No task dependencies; owns the factory, facade, configuration schema and new regression tests.",
-      "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5739-config-contract.md"
+      "assigned_to": "codex",
+      "started_at": "2026-11-17T14:14:41.528137+00:00",
+      "completed_at": "2026-11-17T14:17:42+00:00",
+      "file": "sdd/tasks/completed/TASK-5739-config-contract.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5740",
@@ -59,7 +60,7 @@
       "feature_id": "FEAT-907",
       "feature": "agent-memory-factory-fixes",
       "spec": "sdd/specs/agent-memory-factory-fixes.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -67,10 +68,11 @@
       ],
       "parallel": true,
       "parallelism_notes": "Depends on TASK-5739 for the new create_memory_manager skill_registry argument and first-turn preparation behavior documented by this page.",
-      "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5740-config-documentation.md"
+      "assigned_to": "codex",
+      "started_at": "2026-11-17T14:18:01.480328+00:00",
+      "completed_at": "2026-11-17T14:20:00+00:00",
+      "file": "sdd/tasks/completed/TASK-5740-config-documentation.md",
+      "verification": "verified"
     }
   ]
 }
