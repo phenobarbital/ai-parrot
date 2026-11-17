@@ -41,7 +41,7 @@
       "feature_id": "FEAT-907",
       "feature": "agent-memory-factory-fixes",
       "spec": "sdd/specs/agent-memory-factory-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -49,13 +49,14 @@
       "parallelism_notes": "No task dependencies; owns the factory, facade, configuration schema and new regression tests.",
       "assigned_to": "codex",
       "started_at": "2026-11-17T14:14:41.528137+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5739-config-contract.md"
+      "completed_at": "2026-11-17T14:17:42+00:00",
+      "file": "sdd/tasks/completed/TASK-5739-config-contract.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5740",
       "slug": "config-documentation",
-      "title": "Documentation \u2014 agent memory option contracts",
+      "title": "Documentation — agent memory option contracts",
       "feature_id": "FEAT-907",
       "feature": "agent-memory-factory-fixes",
       "spec": "sdd/specs/agent-memory-factory-fixes.spec.md",
