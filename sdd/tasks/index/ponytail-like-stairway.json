@@ -126,7 +126,7 @@
       "feature_id": "FEAT-908",
       "feature": "ponytail-like-stairway",
       "spec": "sdd/specs/ponytail-like-stairway.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -134,8 +134,9 @@
       "parallelism_notes": "independent: edits only the sdd-task twins and sdd/templates/task.md (+ packaged copies)",
       "assigned_to": null,
       "started_at": "2026-11-17T16:26:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5745-sdd-task-ladder-binding.md"
+      "completed_at": "2026-11-17T16:41:48+00:00",
+      "file": "sdd/tasks/completed/TASK-5745-sdd-task-ladder-binding.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5746",
