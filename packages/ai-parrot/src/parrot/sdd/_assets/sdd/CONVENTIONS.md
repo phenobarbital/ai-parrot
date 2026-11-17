@@ -26,5 +26,10 @@
 ## Forbidden libraries and patterns
 <!-- What must never be imported or done, and what to use instead. -->
 
+## Reuse first
+<!-- In-house and preferred packages to check BEFORE writing new code or adding a dependency,
+     one line each with what it covers (for example `<package>: database access`). `/sdd-spec`
+     reads this list when it builds a spec's Necessity Ladder. -->
+
 ## Style
 <!-- Naming, docstrings, line length, logging, error handling. -->

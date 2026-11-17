@@ -27,6 +27,17 @@ report — never pick one silently.
 
 `ruff check` enforces the import bans (rule TID251); a banned import fails the task at the merge gate.
 
+## Reuse first — check these before writing new code
+| Need | Already in the stack |
+|---|---|
+| Database access and drivers | `asyncdb` |
+| Settings, environment and configuration | `navconfig` |
+| Authentication, authorization and sessions | `navigator-auth` |
+| Events and pub/sub between components | `navigator-eventbus` |
+
+Then the repository's own helpers, the standard library and any other declared dependency. A new
+package is added only when none of these covers the need and the code it replaces is substantial.
+
 ## Repository layout
 - uv **workspace**: every distribution lives under `packages/<dist>/src/`. There is **no** `parrot/` directory at the repo root.
 - Core source root: `packages/ai-parrot/src/parrot/`. Satellite packages merge into the same `parrot.*` namespace (PEP 420).
