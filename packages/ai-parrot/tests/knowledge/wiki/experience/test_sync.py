@@ -110,9 +110,9 @@ def _checkout(tmp_path: Path, name: str) -> tuple[Path, Path]:
 
 
 def test_sync_global_moves_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Copy each global definition and its evidence once without changing IDs."""
+    """Copy only the shared-attested global definition once without changing IDs."""
     monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
-    _, plane = _checkout(tmp_path, "primary")
+    root, plane = _checkout(tmp_path, "primary")
     global_definition = _record("pit-global", "rev-global", sequence=1, tier="global")
     global_evidence = _event(
         "lesson.validated",
@@ -128,15 +128,61 @@ def test_sync_global_moves_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
         sequence=4,
     )
     _append(plane, global_definition, global_evidence, repo_definition, repo_evidence)
+    _write_shared(root / sync.SHARED_DIR / "a.jsonl", global_definition)
 
-    assert sync.sync_global(plane) == 2
+    assert sync.sync_global(plane) == 1
     assert sync.sync_global(plane) == 0
 
     copied = _read_events(sync.global_plane_dir() / "events.jsonl")
-    assert [event["event_id"] for event in copied] == [
-        global_definition["event_id"],
-        global_evidence["event_id"],
+    assert [event["event_id"] for event in copied] == [global_definition["event_id"]]
+
+
+def test_sync_global_withholds_unattested_global_lesson(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A worker-written global-tier lesson with no shared attestation never crosses repos."""
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
+    _, plane = _checkout(tmp_path, "primary")
+    definition = _record("pit-forged", "rev-forged", sequence=1, tier="global")
+    validated = _event(
+        "lesson.validated", "pit-forged", {"solution_rev": "rev-forged", "via": "trigger_family"}, sequence=2
+    )
+    _append(plane, definition, validated)
+
+    with caplog.at_level("WARNING", logger=sync.logger.name):
+        assert sync.sync_global(plane) == 0
+
+    assert not (sync.global_plane_dir() / "events.jsonl").exists()
+    assert "withheld 2 global-tier event(s)" in caplog.text
+
+
+def test_sync_global_forged_evidence_for_attested_lesson_stays_local(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Forged validated/retired events for an attested lesson cannot change global state."""
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
+    root, plane = _checkout(tmp_path, "primary")
+    definition = _record("pit-attested", "rev-a", sequence=1, tier="global")
+    attestation = _event("lesson.quarantined", "pit-attested", {"solution_rev": "rev-a"}, sequence=2)
+    forged_validations = [
+        _event("lesson.validated", "pit-attested", {"solution_rev": "rev-a", "via": "trigger_family"}, sequence=10 + n)
+        for n in range(3)
     ]
+    forged_retired = _event("lesson.retired", "pit-attested", {"reason": "forged"}, sequence=20)
+    _append(plane, definition, attestation, *forged_validations, forged_retired)
+    _write_shared(root / sync.SHARED_DIR / "a.jsonl", definition, attestation)
+
+    assert sync.sync_global(plane) == 2
+
+    copied = _read_events(sync.global_plane_dir() / "events.jsonl")
+    assert {event["event_id"] for event in copied} == {definition["event_id"], attestation["event_id"]}
+    from parrot.knowledge.wiki.experience.models import ExperienceConfig
+    from parrot.knowledge.wiki.experience.reducer import reduce_events
+
+    global_events, _ = sync._read_events(sync.global_plane_dir() / "events.jsonl")
+    lesson = reduce_events(global_events, ExperienceConfig())["pit-attested"]
+    assert lesson.state == "candidate"
+    assert lesson.validations == 0
 
 
 def test_export_shared_redacted_definitions_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -43,7 +43,23 @@ def global_plane_dir() -> Path:
 
 
 def sync_global(repo_plane: Path) -> int:
-    """Copy globally routed repository events into the user-global log.
+    """Copy shared-attested, globally routed repository events into the user-global log.
+
+    Only events backed by a shared attestation cross into ``$PARROT_HOME`` and
+    therefore into other repositories: an event travels when it is tier
+    ``global`` (resolved through its lesson definition) **and** its
+    ``event_id`` appears in the primary checkout's reviewed
+    ``sdd/experience/lessons`` files (:func:`shared_event_ids`). In practice
+    that is an attested lesson's definition (``lesson.recorded``) and its
+    reviewed lifecycle attestations (``lesson.confirmed`` / ``quarantined`` /
+    ``retired`` / ``graduated``). Evidence events (``lesson.validated`` /
+    ``refuted`` / ``injected``) are never exported to the shared directory and
+    so never cross: the sandbox-writable repository log can forge them, and
+    letting them travel would let a worker confirm or kill a lesson in every
+    other repository. For an attested lesson the shared attestation is what
+    carries its confirmed / quarantined / retired state globally; forged
+    evidence stays in its own repository plane. Unattested events keep working
+    locally. When no shared root can be resolved nothing crosses (fail closed).
 
     Evidence events do not carry their tier. Their tier is resolved from the
     matching lesson definition, including its solution revision when present.
@@ -61,16 +77,29 @@ def sync_global(repo_plane: Path) -> int:
     if not repo_complete or not global_complete:
         return 0
 
+    try:
+        shared_root = find_shared_root(Path(repo_plane))
+    except Exception:
+        logger.debug("experience sync shared-root lookup failed", exc_info=True)
+        shared_root = None
+    attested = shared_event_ids(shared_root) if shared_root is not None else set()
+
     tiers = _definition_tiers(repo_events)
     known = {event.event_id for event in global_events}
     copied = 0
+    withheld = 0
     for event in repo_events:
         if event.event_id in known or _event_tier(event, tiers) != "global":
+            continue
+        if event.event_id not in attested:
+            withheld += 1
             continue
         if not append_event(global_plane_dir(), event.model_dump(mode="json")):
             continue
         known.add(event.event_id)
         copied += 1
+    if withheld:
+        logger.warning("experience sync withheld %d global-tier event(s) lacking a shared attestation", withheld)
     return copied
 
 
