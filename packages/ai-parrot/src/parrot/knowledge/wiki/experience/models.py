@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Mapping
 from typing import Any, Literal
 
@@ -15,6 +16,13 @@ LessonCategory = Literal["pitfall"]
 LessonState = Literal["candidate", "confirmed", "quarantined", "retired"]
 LessonTier = Literal["repo", "global"]
 LessonSource = Literal["paired", "authored", "mined"]
+
+# A user home-directory prefix: /home/<user>, /var/home/<user>, /Users/<user> or
+# <drive>:/Users/<user>. The drive-letter form cannot start right after "/" or ":",
+# so a PATH-style list such as "/home/a/p:/home/a/q" keeps its separators.
+_HOME_PATH_RE = re.compile(
+    r"(?<![\w.~-])(?:/var)?/(?:home|Users)/[^/\s'\"`:;,)\]}>]+|(?<![\w.~/:-])[A-Za-z]:/Users/[^/\s'\"`:;,)\]}>]+"
+)
 
 
 class LessonTrigger(BaseModel):
@@ -251,8 +259,8 @@ def validate_event(line: Mapping[str, Any]) -> ExperienceEvent | None:
     except ValidationError:
         return None
 
-    canonical_payload = _normalize_payload(envelope.kind, payload)
-    canonical_envelope = _redact_text(envelope.model_dump(mode="json"))
+    canonical_payload = _strip_home(_normalize_payload(envelope.kind, payload))
+    canonical_envelope = _strip_home(_redact_text(envelope.model_dump(mode="json")))
     canonical_envelope["payload"] = canonical_payload
     canonical_envelope["event_id"] = _event_id_for(canonical_envelope)
 
@@ -322,4 +330,26 @@ def _redact_text(value: Any) -> Any:
         return [_redact_text(item) for item in value]
     if isinstance(value, dict):
         return {key: _redact_text(item) for key, item in value.items()}
+    return value
+
+
+def _strip_home(value: Any) -> Any:
+    """Recursively replace user home-directory prefixes with ``~``.
+
+    Runs after redaction and error normalization, so failure signatures keep
+    their inputs; the stored text and the event identity see ``~``. Only
+    values are rewritten: dict keys are schema names.
+
+    Args:
+        value: An already schema-validated JSON value.
+
+    Returns:
+        The value with every home-directory prefix replaced by ``~``.
+    """
+    if isinstance(value, str):
+        return _HOME_PATH_RE.sub("~", value)
+    if isinstance(value, list):
+        return [_strip_home(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _strip_home(item) for key, item in value.items()}
     return value

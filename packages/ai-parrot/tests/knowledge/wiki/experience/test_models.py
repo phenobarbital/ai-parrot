@@ -1,10 +1,12 @@
 """Deterministic experience-memory regression tests."""
 
+import json
 from pathlib import Path
 
 import pytest
 
 from parrot.knowledge.wiki.experience import models
+from parrot.knowledge.wiki.experience.fastpath import normalize_error
 
 
 def _lesson(
@@ -230,6 +232,53 @@ def test_event_redaction_before_identity(tmp_path: Path) -> None:
     assert event.event_id != "untrusted-input"
     assert models.validate_event(event.model_dump(mode="json")) == event
     assert models.validate_event({**event.model_dump(mode="json"), "_shared_attestation": True}) is None
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("/home/alice/repo/x.py", "~/repo/x.py"),
+        ("PYTHONPATH=/home/alice/p:/home/alice/q", "PYTHONPATH=~/p:~/q"),
+        ("/Users/bob", "~"),
+        ("/var/home/carol/.cache", "~/.cache"),
+        ("C:/Users/dave/src", "~/src"),
+        ("(/home/alice)", "(~)"),
+        ("src/home/alice/x", "src/home/alice/x"),
+        ("/srv/home/alice", "/srv/home/alice"),
+        ("/tmp/project", "/tmp/project"),
+        ("~/x", "~/x"),
+    ],
+)
+def test_strip_home_normalizes_home_prefixes(raw: str, expected: str) -> None:
+    """Replace home-directory prefixes with ``~`` idempotently, leaving other paths alone."""
+    assert models._strip_home(raw) == expected
+    assert models._strip_home(expected) == expected
+    assert models._strip_home({"k": [raw]}) == {"k": [expected]}
+
+
+def test_event_strips_home_paths_before_identity() -> None:
+    """Drop home prefixes from stored text without changing the failure signature or identity."""
+    error = "No such file: /home/alice/repo/missing.py"
+    payload = _recorded_payload()
+    draft = payload["draft"]
+    assert isinstance(draft, dict)
+    trigger = draft["trigger"]
+    assert isinstance(trigger, dict)
+    trigger["error_signature"] = error
+    trigger["error_excerpt"] = error
+    trigger["command_example"] = "/home/alice/repo/.venv/bin/python -m pytest"
+    draft["solution"] = "Run the shared interpreter at /home/alice/repo/.venv/bin/python."
+    draft["fix_example"] = "PYTHONPATH=/home/alice/repo/src pytest"
+    draft["scope_paths"] = ["/home/alice/repo/src/app.py"]
+
+    event = models.validate_event(_event("lesson.recorded", payload))
+
+    assert event is not None
+    rendered = json.dumps(event.model_dump(mode="json"))
+    assert "/home/alice" not in rendered
+    assert "~/repo/.venv/bin/python" in rendered
+    assert event.payload["draft"]["trigger"]["error_signature"] == normalize_error(error)
+    assert models.validate_event(event.model_dump(mode="json")) == event
 
 
 def test_solution_revision_identity(tmp_path: Path) -> None:
