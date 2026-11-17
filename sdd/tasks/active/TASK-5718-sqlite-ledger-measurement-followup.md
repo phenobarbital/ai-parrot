@@ -254,3 +254,10 @@ approved sample sizes. No strict speedup is required, but all candidate invarian
 2. Verify predecessors are done in `sdd/tasks/index/wiki-ledger-sqlite-hardening.json` and recheck this task's contracts.
 3. Implement only the declared files, preserve other agents' changes, and complete every acceptance gate. Store execution logs under `artifacts/logs/`.
 4. Use `parrot sdd task finalize` with real TaskCompletionEvidence and the exact implementation HEAD. The finalizer owns the completion note and active-to-completed move; do not hand-edit them.
+
+## Completion Note (BLOCKED — not closed)
+
+- Contract conflict resolved: `test_smoke_workloads_and_counts` asserted `phase_timings_ms["connection_open"] is None`, which predates TASK-5716. It now asserts candidate sources report non-negative `connection_open` samples while unavailable phases stay `None` (never zero). All 11 tests in `test_sqlite_benchmark_contract.py` pass; no test was dropped.
+- Anchor `BENCHMARK_REPORT_SCHEMA = 1` is unique (commit 8bf548039a).
+- Measurement NOT performed: the baseline arm needs an isolated snapshot at e5f3f7534876f9b4f56ad1cedc7b4e56176ee568, but `parrot sdd worktree baseline create` fails inside the worker sandbox (`.git/worktrees` is read-only), and improvising one (git archive) is prohibited. The full 48-cell matrix (+ DEBUG-off pass) also requires an isolated host window.
+- Required next step (host operator): create the baseline worktree and run the matrix per "Measurement Execution Gate", then write report.md / manifest.json / persistent-connections-followup.md and add `test_committed_measurement_evidence`. TASK-5719 stays blocked on this.

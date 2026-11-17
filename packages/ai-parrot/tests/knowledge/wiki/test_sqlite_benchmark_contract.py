@@ -138,7 +138,13 @@ def test_smoke_workloads_and_counts(tmp_path: Path, workload: str, lifecycle: st
     assert len(trial.samples) == config.operations
     assert trial.counts.connection_opens > 0
     assert trial.counts.successful_operations + trial.counts.unsuccessful_operations == config.operations
-    assert trial.phase_timings_ms["connection_open"] is None
+    # The imported checkout includes the TASK-5716 timing hooks, so observed phases are
+    # reported as measured samples; a phase that was not emitted stays None (unavailable),
+    # never a numeric zero. Baseline sources without hooks keep reporting None.
+    connection_open = trial.phase_timings_ms["connection_open"]
+    assert connection_open, "candidate source must report connection_open timings"
+    assert all(isinstance(value, (int, float)) and value >= 0 for value in connection_open)
+    assert all(value is None or value for value in trial.phase_timings_ms.values())
     assert all(trial.invariants.values())
     assert trial.wal_after_bytes.keys() == {"ledger", "wiki"}
 
