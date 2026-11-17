@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-905 — `parrot sdd experience export` writes into the checkout it runs in, without home paths
 **Spec**: `sdd/specs/experience-sync-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -248,7 +248,17 @@ Spec §4, M2 rows.
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**:
+**Completed by**: Claude Code (`/sdd-fix` session, actor `agent:sdd-fix:d1ad40b1`)
+**Date**: 2026-11-17
+**Notes**: code commit `2cb5d8fd2a`. `models._HOME_PATH_RE` and the recursive `models._strip_home` replace
+`/home/<user>`, `/var/home/<user>`, `/Users/<user>` and `<drive>:/Users/<user>` with `~`. `validate_event`
+applies it to the result of `_normalize_payload` and to the redacted envelope, before `_event_id_for`.
+`redact`, `normalize_error`, `failure_signature`, `lesson_id_for` and `solution_rev_for` are untouched.
+Validation: `PYTHONPATH=packages/ai-parrot/src pytest .../test_models.py .../test_sync.py -q` → 29 passed;
+wider experience suites (`tests/knowledge/wiki/experience`, `test_experience_cli.py`, `test_experience_hook.py`,
+`test_launcher_experience_fast_path.py`) → 123 passed; `tests/flows/dev_loop/test_experience_interceptor.py`
+→ 4 passed; `ruff check` and `black --check -l 120` clean. Mutation check: with `origin/dev`'s `models.py`,
+`test_event_strips_home_paths_before_identity` and `test_export_strips_home_paths_without_reexport` fail;
+restored → pass.
+**Deviations from spec**: the pattern is written as one raw string instead of two adjacent literals, because
+`black` would join the two literals on one line. The regex itself is the one in spec §2.

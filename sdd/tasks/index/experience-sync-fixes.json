@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-17T11:26:48.672814+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-17T11:30:13+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -38,7 +38,7 @@
       "feature_id": "FEAT-905",
       "feature": "experience-sync-fixes",
       "spec": "sdd/specs/experience-sync-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -46,9 +46,10 @@
       "assigned_to": null,
       "discovered_from": "issue:ebd9db5806f2",
       "started_at": "2026-11-17T11:27:17.846721+00:00",
-      "completed_at": null,
+      "completed_at": "2026-11-17T11:30:12+00:00",
       "parallelism_notes": "Independent: files sdd/scripts/experience_cli.py, tests/sdd/test_experience_cli.py; disjoint from TASK-5735.",
-      "file": "sdd/tasks/active/TASK-5734-export-into-invoking-checkout.md"
+      "file": "sdd/tasks/completed/TASK-5734-export-into-invoking-checkout.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5735",
@@ -57,7 +58,7 @@
       "feature_id": "FEAT-905",
       "feature": "experience-sync-fixes",
       "spec": "sdd/specs/experience-sync-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -65,9 +66,10 @@
       "assigned_to": null,
       "discovered_from": "issue:ebd9db5806f2",
       "started_at": "2026-11-17T11:27:17.846721+00:00",
-      "completed_at": null,
+      "completed_at": "2026-11-17T11:30:13+00:00",
       "parallelism_notes": "Independent: files knowledge/wiki/experience/models.py, tests test_models.py and test_sync.py; disjoint from TASK-5734.",
-      "file": "sdd/tasks/active/TASK-5735-strip-home-paths-before-identity.md"
+      "file": "sdd/tasks/completed/TASK-5735-strip-home-paths-before-identity.md",
+      "verification": "verified"
     }
   ]
 }
