@@ -4125,11 +4125,14 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
         # FEAT-176: lifecycle event — AfterClientCallEvent
         _lc_google_usage = getattr(ai_message, "usage", None)
+        _lc_google_duration_ms = (time.perf_counter() - ask_started) * 1000
+        if ai_message.response_time is None:
+            ai_message.response_time = _lc_google_duration_ms / 1000
         await self._emit_after_call(
             _lc_tc_google,
             client_name="google",
             model=str(model) if model else "",
-            duration_ms=(time.perf_counter() - ask_started) * 1000,
+            duration_ms=_lc_google_duration_ms,
             input_tokens=getattr(_lc_google_usage, "prompt_tokens", None) if _lc_google_usage else None,
             output_tokens=getattr(_lc_google_usage, "completion_tokens", None) if _lc_google_usage else None,
             finish_reason=None,

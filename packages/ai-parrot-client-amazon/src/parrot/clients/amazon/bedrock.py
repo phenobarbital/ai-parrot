@@ -1493,11 +1493,14 @@ class BedrockConverseBase(AbstractClient):
             ai_message.metadata["token_budget"] = (await _bq_scope.ledger.report()).model_dump()
 
         _lc_usage = ai_message.usage
+        _lc_duration_ms = (time.perf_counter() - _lc_t0) * 1000
+        if ai_message.response_time is None:
+            ai_message.response_time = _lc_duration_ms / 1000
         await self._emit_after_call(
             _lc_tc,
             client_name=self.client_name,
             model=resolved_model,
-            duration_ms=(time.perf_counter() - _lc_t0) * 1000,
+            duration_ms=_lc_duration_ms,
             input_tokens=getattr(_lc_usage, "input_tokens", None) if _lc_usage else None,
             output_tokens=getattr(_lc_usage, "output_tokens", None) if _lc_usage else None,
             finish_reason=ai_message.stop_reason,

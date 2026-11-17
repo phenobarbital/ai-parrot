@@ -725,11 +725,14 @@ class GroqClient(OpenAIBaseClient):
 
         # FEAT-176: lifecycle event — AfterClientCallEvent
         _lc_groq_usage = getattr(ai_message, "usage", None)
+        _lc_groq_duration_ms = (_lc_time_groq.perf_counter() - _lc_t0_groq) * 1000
+        if ai_message.response_time is None:
+            ai_message.response_time = _lc_groq_duration_ms / 1000
         await self._emit_after_call(
             _lc_tc_groq,
             client_name="groq",
             model=model,
-            duration_ms=(_lc_time_groq.perf_counter() - _lc_t0_groq) * 1000,
+            duration_ms=_lc_groq_duration_ms,
             input_tokens=getattr(_lc_groq_usage, "prompt_tokens", None) if _lc_groq_usage else None,
             output_tokens=getattr(_lc_groq_usage, "completion_tokens", None) if _lc_groq_usage else None,
             finish_reason=None,
