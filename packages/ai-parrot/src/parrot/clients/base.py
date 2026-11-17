@@ -86,7 +86,7 @@ from parrot.observability.context import (
     current_tenant,
     current_user_id,
 )
-from parrot.observability.cost import get_shared_cost_calculator, last_call_cost
+from parrot.observability.cost import ensure_shared_cost_calculator, get_shared_cost_calculator, last_call_cost
 
 # FEAT-550: the four public text methods __init_subclass__ wraps with the budget entry adapter.
 _BUDGETED_METHODS: tuple[str, ...] = ("ask", "ask_stream", "resume", "invoke")
@@ -863,9 +863,10 @@ $backstory
     ) -> "Optional[float]":
         """FEAT-710: one cost computation per call, with the shared calculator. Never raises."""
         calc = get_shared_cost_calculator()
-        if calc is None:
-            return None
         try:
+            if calc is None:
+                calc = ensure_shared_cost_calculator()
+
             from parrot.observability.attributes import resolve_gen_ai_system  # noqa: PLC0415
 
             return calc.cost_usd(
