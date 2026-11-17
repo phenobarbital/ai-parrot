@@ -78,11 +78,11 @@
     {
       "id": "TASK-5738",
       "slug": "browser-confirmation-documentation",
-      "title": "Documentation — Telegram browser login confirmation",
+      "title": "Documentation \u2014 Telegram browser login confirmation",
       "feature_id": "FEAT-906",
       "feature": "telegram-browser-login-fixes",
       "spec": "sdd/specs/telegram-browser-login-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -91,8 +91,8 @@
       ],
       "parallel": true,
       "parallelism_notes": "Documents TASK-5736 registry/wrapper/callback interfaces and TASK-5737 shipped-page confirmation UI.",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "agent:sdd-fix:23dd9ec1",
+      "started_at": "2026-11-17T14:19:57.055783+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5738-browser-confirmation-documentation.md"
     }
