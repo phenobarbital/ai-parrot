@@ -705,6 +705,30 @@ class TestOAuth2BrowserBranch:
         assert wrapper._user_sessions == {}
 
     @pytest.mark.asyncio
+    async def test_oauth2_cancelled_while_exchange_awaits(self):
+        """An in-flight provider exchange cannot resurrect an invalidated login."""
+        app, wrapper = self._build_browser_app()
+        strategy = self._mock_provider_success(wrapper)
+        state = await self._start_login(wrapper)
+        entered, resume = asyncio.Event(), asyncio.Event()
+
+        async def exchange(*_args, **_kwargs):
+            entered.set()
+            await resume.wait()
+            return MOCK_GOOGLE_TOKEN_RESPONSE
+
+        strategy.exchange_code.side_effect = exchange
+        callback = asyncio.create_task(self._request(app, f"code=auth-code&state={state}"))
+        await entered.wait()
+        await wrapper.handle_login(_make_message(chat_id=54321, text="/login"))
+        resume.set()
+
+        assert (await callback).status == 401
+        assert not wrapper._user_sessions[12345].authenticated
+        wrapper._persist_principal_link.assert_not_awaited()
+        wrapper._initialize_user_context.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_browser_mode_full_flow_oauth2(self):
         """The /login-to-callback flow authenticates the session and proactively notifies Telegram."""
         app, wrapper = self._build_browser_app()

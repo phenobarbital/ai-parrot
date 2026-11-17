@@ -40,10 +40,10 @@ def _message(text: str, *, user_id: int = 11, chat_id: int = 11) -> Any:
     )
 
 
-def _wrapper(*, post_auth: bool = False) -> TelegramAgentWrapper:
+def _wrapper(*, post_auth: bool = False, method: str = "basic") -> TelegramAgentWrapper:
     wrapper = TelegramAgentWrapper.__new__(TelegramAgentWrapper)
     wrapper.config = SimpleNamespace(
-        auth_open_mode="browser", tenant=None, post_auth_actions=[object()] if post_auth else [], auth_methods=["basic"]
+        auth_open_mode="browser", tenant=None, post_auth_actions=[object()] if post_auth else [], auth_methods=[method]
     )
     wrapper.app = web.Application()
     wrapper.app[TELEGRAM_WRAPPERS_APP_KEY] = {"7001": wrapper}
@@ -61,18 +61,20 @@ def _wrapper(*, post_auth: bool = False) -> TelegramAgentWrapper:
     wrapper._get_bot_username = AsyncMock(return_value="test_bot")
     wrapper._identity_service = MagicMock(return_value=None)
     wrapper._auth_strategy = SimpleNamespace(
-        name="basic", handle_callback=AsyncMock(), build_login_keyboard=AsyncMock(return_value=None)
+        name=method, handle_callback=AsyncMock(), build_login_keyboard=AsyncMock(return_value=None)
     )
     verifier = SimpleNamespace(
         verify=AsyncMock(return_value=VerifiedBrowserIdentity(user_id="victim-42", display_name="Victim"))
     )
-    register_browser_identity_verifier(wrapper.app, bot_id="7001", auth_method="basic", verifier=verifier)
+    register_browser_identity_verifier(wrapper.app, bot_id="7001", auth_method=method, verifier=verifier)
     return wrapper
 
 
 async def _post(wrapper: TelegramAgentWrapper, entry: BrowserLoginEntry) -> web.Response:
     request = make_mocked_request("POST", "/api/auth/telegram/browser-complete", app=wrapper.app)
-    request.json = AsyncMock(return_value={"state": entry.state, "auth_method": "basic", "token": "victim-credential"})
+    request.json = AsyncMock(
+        return_value={"state": entry.state, "auth_method": wrapper._auth_strategy.name, "token": "victim-credential"}
+    )
     return await browser_complete_handler(request)
 
 
@@ -91,8 +93,9 @@ async def _prepare(wrapper: TelegramAgentWrapper) -> tuple[BrowserLoginEntry, st
 
 
 @pytest.mark.asyncio
-async def test_forwarded_link_does_not_authenticate_initiator() -> None:
-    wrapper = _wrapper()
+@pytest.mark.parametrize("method", ["basic", "azure", "google"])
+async def test_forwarded_link_does_not_authenticate_initiator(method: str) -> None:
+    wrapper = _wrapper(method=method)
     entry, code = await _prepare(wrapper)
     assert wrapper._user_sessions == {}
     wrapper.bot.send_message.assert_not_awaited()
@@ -268,7 +271,7 @@ async def test_legacy_completion_cannot_bypass_browser_confirmation() -> None:
     wrapper = _wrapper()
     with pytest.raises(BrowserVerificationError, match="confirmation"):
         await wrapper._complete_auth_payload(
-            {"auth_method": "basic", "token": "victim-credential"},
+            {"auth_method": wrapper._auth_strategy.name, "token": "victim-credential"},
             telegram_id=11,
             chat_id=11,
             browser_entry=_entry(),
