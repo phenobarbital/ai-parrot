@@ -273,3 +273,20 @@ def identity_capture_time():
     from datetime import datetime, timezone
 
     return datetime.now(timezone.utc)
+
+
+def test_collected_node_ids_use_plan_relative_form_for_nested_rootdir() -> None:
+    """A node pytest reports relative to a nested package rootdir is recorded under its plan ID."""
+    plan_node = "packages/ai-parrot/tests/e2e/test_live.py::test_recall"
+    scenario = _scenario(id="scenario-live", tier="live", node_ids=[plan_node])
+
+    assert runner._plan_relative_node_ids(scenario, ["tests/e2e/test_live.py::test_recall"]) == [plan_node]
+    assert runner._plan_relative_node_ids(scenario, [plan_node]) == [plan_node]
+
+
+def test_collected_node_ids_keep_unplanned_nodes_as_reported() -> None:
+    """A collected node that is no path-boundary suffix of a plan node stays visible to evidence validation."""
+    scenario = _scenario(node_ids=["packages/ai-parrot/tests/e2e/test_live.py::test_recall"])
+    unplanned = ["tests/e2e/test_live.py::test_other", "e2e/other_tests/e2e/test_live.py::test_recall", ""]
+
+    assert runner._plan_relative_node_ids(scenario, unplanned) == unplanned
