@@ -96,6 +96,7 @@ class AgentMemoryMixin:
                 else AgentMemoryConfig().max_context_tokens
             )
             return MemoryContext(tokens_budget=budget)
+        self._bind_skill_registry(manager)
         return await manager.prepare_context(query, scope=scope)
 
     async def complete_memory(self, event: MemoryEvent) -> None:

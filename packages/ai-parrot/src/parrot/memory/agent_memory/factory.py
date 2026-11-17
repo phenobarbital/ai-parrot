@@ -12,7 +12,7 @@ from typing import Any
 from parrot.memory.episodic.backends.sqlite import SQLiteEpisodeBackend
 from parrot.memory.episodic.models import MemoryNamespace
 from parrot.memory.episodic.store import EpisodicMemoryStore
-from parrot.memory.unified.manager import UnifiedMemoryManager
+from parrot.memory.unified.manager import SkillRegistry, UnifiedMemoryManager
 from parrot.memory.unified.models import MemoryConfig
 from parrot.memory.user.store import EvidenceTenantResolver, UserMemoryStore
 
@@ -114,9 +114,8 @@ def _manager_config(config: AgentMemoryConfig) -> MemoryConfig:
         "user_weight": config.user_context_tokens,
     }
     total = sum(shares.values())
-    if total > 0:
-        for name, tokens in shares.items():
-            setattr(manager_config, name, tokens / total)
+    for name, tokens in shares.items():
+        setattr(manager_config, name, tokens / total if total else 0.0)
     return manager_config
 
 
@@ -150,6 +149,7 @@ async def create_memory_manager(
     *,
     namespace: MemoryNamespace,
     evidence_tenant_resolver: EvidenceTenantResolver | None = None,
+    skill_registry: SkillRegistry | None = None,
 ) -> UnifiedMemoryManager:
     """Build enabled resources and unwind any partial acquisition before propagating failure.
 
@@ -157,6 +157,8 @@ async def create_memory_manager(
         config: Explicit memory capability and persistent-storage configuration.
         namespace: Stable agent namespace used by episodic storage.
         evidence_tenant_resolver: Trusted metadata lookup for live ChatStorage evidence; missing lookup fails closed.
+        skill_registry: Optional registry used when relevant skills are enabled. Its
+            configure/cleanup hooks follow the returned manager's lifecycle.
 
     Returns:
         A manager containing only the configured memory capabilities.
@@ -168,7 +170,11 @@ async def create_memory_manager(
     """
     _warn_unsupported_knobs(config)
     if not config.effective_episodic_memory and not config.enable_user_memory:
-        return UnifiedMemoryManager(namespace=namespace, config=_manager_config(config))
+        return UnifiedMemoryManager(
+            namespace=namespace,
+            skill_registry=skill_registry if config.include_relevant_skills else None,
+            config=_manager_config(config),
+        )
 
     path = _configured_path(config)
     resources: list[_ManagedResource] = []
@@ -197,5 +203,6 @@ async def create_memory_manager(
         namespace=namespace,
         episodic_store=episodic_store,
         user_memory_store=user_memory_store,
+        skill_registry=skill_registry if config.include_relevant_skills else None,
         config=_manager_config(config),
     )
