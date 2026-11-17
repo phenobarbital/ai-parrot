@@ -12,10 +12,60 @@ from parrot.memory.agent_memory.factory import (
     _ManagedResource,
     _OwnedEpisodicMemoryStore,
     _close_owned_resources,
+    _manager_config,
+    _warn_unsupported_knobs,
     create_memory_manager,
 )
 from parrot.memory.agent_memory.models import AgentMemoryConfig
 from parrot.memory.episodic.models import MemoryNamespace
+
+
+@pytest.mark.asyncio
+async def test_agent_config_maps_new_limits(tmp_path: Path) -> None:
+    """Factory forwards both limits and the explicit user token cap."""
+    manager = await create_memory_manager(
+        AgentMemoryConfig(
+            enable_episodic_memory=True,
+            storage_path=str(tmp_path / "limits.sqlite3"),
+            max_episodic_recall=7,
+            max_user_records=42,
+            user_context_tokens=321,
+        ),
+        namespace=_namespace(),
+    )
+    try:
+        assert manager.config.episodic_max_recall == 7
+        assert manager.config.user_max_records == 42
+        assert manager.config.user_context_tokens == 321
+    finally:
+        await manager.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_agent_config_maps_user_memory_priority(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """Both priority values map and only the remaining unsupported knobs warn."""
+    configs = (
+        (AgentMemoryConfig(enable_reflection=False, suppress_trivial_tools=False, flush_on_startup=True), "high"),
+        (
+            AgentMemoryConfig(
+                user_memory_priority="normal",
+                enable_reflection=False,
+                suppress_trivial_tools=False,
+                flush_on_startup=True,
+            ),
+            "normal",
+        ),
+    )
+    for config, expected_priority in configs:
+        assert _manager_config(config).user_priority == expected_priority
+
+        caplog.clear()
+        with caplog.at_level("WARNING", logger="parrot.memory.agent_memory.factory"):
+            _warn_unsupported_knobs(config)
+        assert "enable_reflection" in caplog.text
+        assert "suppress_trivial_tools" in caplog.text
+        assert "flush_on_startup" in caplog.text
+        assert "user_memory_priority" not in caplog.text
 
 
 def _namespace() -> MemoryNamespace:

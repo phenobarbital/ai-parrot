@@ -134,3 +134,22 @@ async def test_extracts_from_runtime_response_event_payload() -> None:
     result = await extract_user_knowledge(event, client=client)
     assert [c.value for c in result] == ["metric"]
     assert len(client.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_extraction_prompt_rejects_task_instructions_and_keeps_language() -> None:
+    """Verify the actual extraction call receives both rules without changing parsing."""
+    client = FakeClient("[]")
+    await extract_user_knowledge(_event(), client=client)
+
+    system_prompt = client.calls[0]["system_prompt"]
+    empty_result_instruction = "Return [] when nothing qualifies."
+    added_sentences = (
+        "Record only lasting statements about the user as a person.",
+        "A request or instruction for the current task (store this, name it that, do this now) is not user knowledge.",
+        "Write every value in the language the user used.",
+    )
+    assert all(sentence in system_prompt for sentence in added_sentences)
+    assert all(
+        system_prompt.index(sentence) < system_prompt.index(empty_result_instruction) for sentence in added_sentences
+    )

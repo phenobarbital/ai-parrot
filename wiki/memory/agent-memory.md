@@ -32,6 +32,12 @@ Key responsibilities:
 
 - [`AgentMemoryToolkit`](ref:parrot.memory.agent_memory.toolkit) — Exposes scoped memory operations
 
+### Automatic Recall Dependencies
+
+- [`UserMemoryStore`](ref:parrot.memory.user.store) — Ranks an identified user's active profile
+- [`query_terms`](ref:parrot.memory.lexical) — Produces the lexical terms used by memory recall
+- [`EpisodicMemoryStore`](ref:parrot.memory.episodic.store) — Retrieves earlier nonfailure interactions
+
 ## Configuration & Parameters
 
 ### AgentMemoryConfig
@@ -55,8 +61,29 @@ The `AgentMemoryConfig` class controls all memory capabilities with the followin
 | `storage_path` | `str | None` | `None` | Path to SQLite database |
 | `enable_reflection` | `bool` | `True` | Enable automatic reflection generation |
 | `max_episodic_warnings` | `int` | `3` | Maximum warnings to include (ge=0) |
+| `max_episodic_recall` | `int` | `3` | Maximum earlier-session nonfailure interactions; zero disables this lane |
+| `max_user_records` | `int` | `20` | Maximum profile result count (`0..100`) |
 | `suppress_trivial_tools` | `bool` | `True` | Suppress trivial tool calls |
 | `flush_on_startup` | `bool` | `False` | Flush memory on startup |
+
+### Automatic Recall and Packing
+
+`prepare_memory()` retrieves enabled lanes under one immutable request scope. The user lane calls
+`UserMemoryStore.profile()` rather than question-literal recall. The episodic lane separates failure warnings from
+`max_episodic_recall` earlier interactions. Interaction eligibility is applied before result limits: failures, the
+current session, and episodes already selected as warnings are excluded. Thus a populated current session never fills
+the earlier-interaction quota.
+
+The prompt renders the second lane as `<relevant_past_interactions>`. Its contents are contextual data, not
+instructions. Warnings pack first within their shared episodic budget, preserving the warnings lane's existing
+filtering order; eligible interactions then use what remains.
+
+The shared generation budget is `int(max_context_tokens * 0.9)`, preserving 10% headroom. In `high` user-memory
+priority, the `user_context_tokens` ceiling is reserved first within that effective budget. In `normal` priority, user
+records participate after episodic, skills, and brain packing and receive rollover in that order; an explicit user
+ceiling remains hard in both modes. Results are identical only if both allocations admit the same complete records.
+The defaults (`user_memory_priority="high"` and `user_context_tokens=600`) do not promise identical output to normal
+priority.
 
 ### Configuration Precedence
 
@@ -162,6 +189,16 @@ class MyAgent(BasicAgent):
 # The brain service is constructed lazily from the sibling FEAT-889 module and started on configure().
 # Access it through agent.brain_service; if that module is unavailable, configure() raises invalid_configuration.
 ```
+
+### End-to-End Example and Host Proof
+
+The committed [two-session example](../../examples/memory/agent_memory_e2e.py) closes one agent, creates a fresh
+agent/session, and logs the delivered profile and earlier interaction. The host-only
+[live proof](../../packages/ai-parrot/tests/e2e/test_agent_memory_live.py) and its
+[optional plan](../../sdd/state/FEAT-904/e2e-plan.md) require the named node to pass setup, call, and teardown. An
+optional plan controls whether the proof is invoked; it does not make a skipped or failing required node successful.
+The proof checks durable retrieval after extraction, but does not claim that an LLM will deterministically extract any
+particular user statement.
 
 ## Gotchas
 

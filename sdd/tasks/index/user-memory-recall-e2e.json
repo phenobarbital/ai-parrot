@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-16T21:24:30.264672+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-17T10:11:33+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -52,16 +52,17 @@
       "feature_id": "FEAT-904",
       "feature": "user-memory-recall-e2e",
       "spec": "sdd/specs/user-memory-recall-e2e.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Independent: creates lexical.py/test_lexical.py; later interaction-store task serializes its episodic/store.py modification.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5723-memory-lexical-terms.md"
+      "started_at": "2026-11-16T21:33:37+00:00",
+      "completed_at": "2026-11-16T21:44:30+00:00",
+      "file": "sdd/tasks/completed/TASK-5723-memory-lexical-terms.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5724",
@@ -70,16 +71,17 @@
       "feature_id": "FEAT-904",
       "feature": "user-memory-recall-e2e",
       "spec": "sdd/specs/user-memory-recall-e2e.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Independent model/factory writer; consumes no new retrieval helper.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5724-memory-recall-models-config.md"
+      "started_at": "2026-11-16T21:33:37+00:00",
+      "completed_at": "2026-11-16T21:44:44+00:00",
+      "file": "sdd/tasks/completed/TASK-5724-memory-recall-models-config.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5725",
@@ -88,7 +90,7 @@
       "feature_id": "FEAT-904",
       "feature": "user-memory-recall-e2e",
       "spec": "sdd/specs/user-memory-recall-e2e.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -97,9 +99,10 @@
       "parallel": true,
       "parallelism_notes": "Imports query_terms created by TASK-5723 in memory/lexical.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5725-user-memory-profile-store.md"
+      "started_at": "2026-11-16T21:33:37+00:00",
+      "completed_at": "2026-11-16T21:57:53+00:00",
+      "file": "sdd/tasks/completed/TASK-5725-user-memory-profile-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5726",
@@ -108,7 +111,7 @@
       "feature_id": "FEAT-904",
       "feature": "user-memory-recall-e2e",
       "spec": "sdd/specs/user-memory-recall-e2e.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -117,9 +120,10 @@
       "parallel": true,
       "parallelism_notes": "Consumes query_terms and serializes episodic/store.py after its TASK-5723 writer.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5726-episodic-interaction-recall.md"
+      "started_at": "2026-11-16T21:33:37+00:00",
+      "completed_at": "2026-11-16T21:57:53+00:00",
+      "file": "sdd/tasks/completed/TASK-5726-episodic-interaction-recall.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5727",
@@ -128,7 +132,7 @@
       "feature_id": "FEAT-904",
       "feature": "user-memory-recall-e2e",
       "spec": "sdd/specs/user-memory-recall-e2e.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -137,9 +141,10 @@
       "parallel": true,
       "parallelism_notes": "Consumes MemoryCandidate.lane, MemoryContext.episodic_recall and MemoryConfig cap/priority fields from TASK-5724.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5727-memory-context-lanes-priority.md"
+      "started_at": "2026-11-16T21:33:37+00:00",
+      "completed_at": "2026-11-16T21:57:54+00:00",
+      "file": "sdd/tasks/completed/TASK-5727-memory-context-lanes-priority.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5728",
@@ -148,7 +153,7 @@
       "feature_id": "FEAT-904",
       "feature": "user-memory-recall-e2e",
       "spec": "sdd/specs/user-memory-recall-e2e.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -159,9 +164,10 @@
       "parallel": true,
       "parallelism_notes": "Consumes profile from TASK-5725 and recall_interactions from TASK-5726; tests consume TASK-5727's split packed sections and references.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5728-memory-manager-automatic-recall.md"
+      "started_at": "2026-11-16T21:33:37+00:00",
+      "completed_at": "2026-11-16T22:07:18+00:00",
+      "file": "sdd/tasks/completed/TASK-5728-memory-manager-automatic-recall.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5729",
@@ -170,16 +176,17 @@
       "feature_id": "FEAT-904",
       "feature": "user-memory-recall-e2e",
       "spec": "sdd/specs/user-memory-recall-e2e.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Independent writer of user/extraction.py and its own test module.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5729-user-memory-extraction-prompt.md"
+      "started_at": "2026-11-16T21:33:37+00:00",
+      "completed_at": "2026-11-16T21:44:45+00:00",
+      "file": "sdd/tasks/completed/TASK-5729-user-memory-extraction-prompt.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5730",
@@ -188,7 +195,7 @@
       "feature_id": "FEAT-904",
       "feature": "user-memory-recall-e2e",
       "spec": "sdd/specs/user-memory-recall-e2e.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -198,9 +205,10 @@
       "parallel": true,
       "parallelism_notes": "Tests TASK-5728's automatic profile/recall output and consumes TASK-5729's extraction prompt through recorded fake-client calls.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5730-memory-cross-session-integration.md"
+      "started_at": "2026-11-16T21:33:37+00:00",
+      "completed_at": "2026-11-16T22:15:06+00:00",
+      "file": "sdd/tasks/completed/TASK-5730-memory-cross-session-integration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5731",
@@ -209,16 +217,17 @@
       "feature_id": "FEAT-904",
       "feature": "user-memory-recall-e2e",
       "spec": "sdd/specs/user-memory-recall-e2e.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Independent test-only work against existing E2EPlan, ScenarioSpec and live helpers.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5731-memory-live-proof-contracts.md"
+      "started_at": "2026-11-16T21:33:37+00:00",
+      "completed_at": "2026-11-17T07:05:24+00:00",
+      "file": "sdd/tasks/completed/TASK-5731-memory-live-proof-contracts.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5732",
@@ -227,7 +236,7 @@
       "feature_id": "FEAT-904",
       "feature": "user-memory-recall-e2e",
       "spec": "sdd/specs/user-memory-recall-e2e.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -237,9 +246,10 @@
       "parallel": false,
       "parallelism_notes": "Consumes TASK-5730's cross-session test file and TASK-5731's offline proof contracts. Exclusive: real Redis DB15, provider calls and shared parrot e2e state.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5732-memory-live-e2e-proof.md"
+      "started_at": "2026-11-16T21:33:37+00:00",
+      "completed_at": "2026-11-17T10:03:56+00:00",
+      "file": "sdd/tasks/completed/TASK-5732-memory-live-e2e-proof.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-5733",
@@ -248,7 +258,7 @@
       "feature_id": "FEAT-904",
       "feature": "user-memory-recall-e2e",
       "spec": "sdd/specs/user-memory-recall-e2e.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -264,9 +274,10 @@
       "parallel": true,
       "parallelism_notes": "Documents query_terms from TASK-5723; fields from TASK-5724; profile from TASK-5725; recall_interactions from TASK-5726; packing from TASK-5727; manager from TASK-5728; extraction from TASK-5729; consumes example/plan from TASK-5732.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5733-memory-recall-documentation.md"
+      "started_at": "2026-11-16T21:33:37+00:00",
+      "completed_at": "2026-11-17T10:11:33+00:00",
+      "file": "sdd/tasks/completed/TASK-5733-memory-recall-documentation.md",
+      "verification": "verified"
     }
   ]
 }

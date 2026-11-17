@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-904 - Working automatic recall for user and episodic memory, proven end to end
 **Spec**: `sdd/specs/user-memory-recall-e2e.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (1–2h)
 **Depends-on**: none
@@ -204,4 +204,15 @@ Use named blueprint cases as the acceptance matrix. Cover the adversarial bounda
 
 ## Completion Note
 
-Pending; the task finalizer generates this after implementation and validation.
+
+- Task: TASK-5723
+- Feature: user-memory-recall-e2e
+- Implementation SHA: 75ae5d8c101d4bc4fa40551496b7c7f3dc464ad7
+- Closed at (UTC): 2026-11-16T21:44:30+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 288.6s · Tokens: n/a |

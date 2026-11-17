@@ -2,6 +2,7 @@
 
 import asyncio
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, create_autospec
@@ -12,8 +13,7 @@ from parrot.memory.episodic.store import EpisodicMemoryStore
 from parrot.memory.unified.manager import UnifiedMemoryManager
 from parrot.memory.unified.models import MemoryConfig
 from parrot.memory.user.models import UserKnowledgeCandidate, UserKnowledgeCommand
-from parrot.memory.user.store import UserMemoryStore
-
+from parrot.memory.user.store import _MAX_QUERY_CHARS, UserMemoryStore
 
 @pytest.fixture
 def namespace() -> MemoryNamespace:
@@ -48,6 +48,152 @@ def mock_conversation() -> AsyncMock:
     memory.configure = AsyncMock()
     memory.cleanup = AsyncMock()
     return memory
+
+
+def _episode(
+    episode_id: str,
+    *,
+    user_id: str | None = "user1",
+    session_id: str | None = "earlier-session",
+    is_failure: bool = False,
+    score: float = 0.8,
+) -> MagicMock:
+    """Build a concrete-shaped episodic result for manager retrieval tests."""
+    episode = MagicMock()
+    episode.episode_id = episode_id
+    episode.tenant_id = "test"
+    episode.agent_id = "test-agent"
+    episode.model_id = None
+    episode.user_id = user_id
+    episode.session_id = session_id
+    episode.room_id = None
+    episode.crew_id = None
+    episode.is_failure = is_failure
+    episode.score = score
+    episode.ranking_score = score
+    episode.importance = 5
+    episode.searchable_text.return_value = f"interaction {episode_id}"
+    return episode
+
+
+@pytest.mark.asyncio
+async def test_user_candidates_keep_profile_order_through_assembler(tmp_path: Path) -> None:
+    """Profile ordering survives candidate sorting and packing."""
+    store = UserMemoryStore(tmp_path / "user-memory.sqlite")
+    scope = TestUnifiedMemoryManager._scope()
+    try:
+        for index, (kind, value) in enumerate((("preference", "tea"), ("fact", "Barcelona"))):
+            await store.upsert(
+                UserKnowledgeCommand(
+                    event_id=f"profile-{index}",
+                    candidate=UserKnowledgeCandidate(
+                        kind=kind,
+                        value=value,
+                        provenance="explicit",
+                        evidence_refs=(f"event:{index}",),
+                    ),
+                ),
+                scope=scope,
+            )
+        profile = AsyncMock(wraps=store.profile)
+        store.profile = profile
+        manager = UnifiedMemoryManager(
+            namespace=MemoryNamespace(tenant_id="test", agent_id="test-agent"),
+            user_memory_store=store,
+            config=MemoryConfig(
+                enable_episodic=False,
+                enable_skills=False,
+                enable_conversation=False,
+                enable_user_memory=True,
+                user_context_tokens=1_000,
+                user_priority="high",
+                user_max_records=2,
+            ),
+        )
+        query = "profile " * (_MAX_QUERY_CHARS + 1)
+        context = await manager.prepare_context(query, scope=scope)
+
+        profile.assert_awaited_once_with(
+            scope=scope,
+            query=query[:_MAX_QUERY_CHARS],
+            limit=2,
+        )
+        assert context.user_knowledge.index('preference: "tea"') < context.user_knowledge.index('fact: "Barcelona"')
+    finally:
+        await store.close()
+
+
+@pytest.mark.asyncio
+async def test_episodic_recall_lane_excludes_current_session_and_failures(tmp_path: Path) -> None:
+    """Only visible earlier-session nonfailures enter recall."""
+    del tmp_path
+    scope = TestUnifiedMemoryManager._scope()
+    store = create_autospec(EpisodicMemoryStore, instance=True)
+    store.recall_similar = AsyncMock(return_value=[])
+    eligible = _episode("eligible")
+    store.recall_interactions = AsyncMock(
+        side_effect=[
+            [eligible, _episode("current", session_id="session-1"), _episode("failure", is_failure=True)],
+            RuntimeError("agent lane unavailable"),
+        ]
+    )
+    manager = UnifiedMemoryManager(
+        namespace=MemoryNamespace(tenant_id="test", agent_id="test-agent"),
+        episodic_store=store,
+        config=MemoryConfig(episodic_max_recall=1),
+    )
+
+    candidates = await manager._get_episodic_candidates("find interaction", scope)
+
+    assert [(candidate.memory_id, candidate.lane) for candidate in candidates] == [("eligible", "recall")]
+    assert store.recall_interactions.await_count == 2
+    for call in store.recall_interactions.await_args_list:
+        assert call.kwargs["exclude_session_id"] == "session-1"
+        assert call.kwargs["top_k"] == 1
+
+
+@pytest.mark.asyncio
+async def test_episodic_recall_lane_disabled_at_zero(tmp_path: Path) -> None:
+    """Zero prevents recall calls and refs while warnings remain unchanged."""
+    del tmp_path
+    scope = TestUnifiedMemoryManager._scope()
+    store = create_autospec(EpisodicMemoryStore, instance=True)
+    store.recall_similar = AsyncMock(return_value=[_episode("warning", is_failure=True)])
+    store.recall_interactions = AsyncMock(return_value=[])
+    manager = UnifiedMemoryManager(
+        namespace=MemoryNamespace(tenant_id="test", agent_id="test-agent"),
+        episodic_store=store,
+        config=MemoryConfig(episodic_max_recall=0),
+    )
+
+    candidates = await manager._get_episodic_candidates("find warning", scope)
+
+    assert [(candidate.memory_id, candidate.lane) for candidate in candidates] == [("warning", "warning")]
+    store.recall_interactions.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_recall_lane_refs_enter_delivered_exposure(tmp_path: Path) -> None:
+    """Only packed original recall refs enter delivered exposure."""
+    del tmp_path
+    scope = TestUnifiedMemoryManager._scope()
+    store = create_autospec(EpisodicMemoryStore, instance=True)
+    store.recall_similar = AsyncMock(return_value=[])
+    recalled = _episode("earlier", session_id="earlier-session")
+    store.recall_interactions = AsyncMock(return_value=[recalled])
+    manager = UnifiedMemoryManager(
+        namespace=MemoryNamespace(tenant_id="test", agent_id="test-agent"),
+        episodic_store=store,
+        config=MemoryConfig(episodic_max_warnings=0, episodic_max_recall=1, max_context_tokens=1_000),
+    )
+
+    context = await manager.prepare_context("find interaction", scope=scope)
+    committed = manager.commit_memory_exposure(context, scope=scope)
+
+    assert context.delivered_refs == ("episodic:earlier:v1",)
+    assert context.memory_refs[0].namespace.session_id == "earlier-session"
+    exposure = manager._memory_exposures[committed.exposure_id]
+    assert exposure.refs == context.memory_refs
 
 
 class TestUnifiedMemoryManager:

@@ -209,7 +209,8 @@ async def _run_scenario(
             return _results_for_nodes(scenario, "failed", "scenario_timeout", target_run_ids), [], {}
         bridge = _load_bridge(bridge_path)
         hashes = {bridge_path.name: _sha256(bridge_path)}
-        return _bridge_results(scenario, bridge, target_run_ids), list(bridge.get("collected_node_ids", [])), hashes
+        collected = _plan_relative_node_ids(scenario, list(bridge.get("collected_node_ids", [])))
+        return _bridge_results(scenario, bridge, target_run_ids), collected, hashes
     except E2EPrerequisiteError as exc:
         return (
             _results_for_nodes(scenario, "blocked", exc.reason_code or "prerequisite_missing", target_run_ids),
@@ -305,6 +306,35 @@ def _bridge_results(scenario: ScenarioSpec, bridge: dict[str, Any], target_run_i
             )
         )
     return results
+
+
+def _plan_relative_node_ids(scenario: ScenarioSpec, collected: list[str]) -> list[str]:
+    """Report collected node IDs in the plan's worktree-relative form.
+
+    pytest reports a node relative to its own ``rootdir``, which can be a nested
+    package. The verdict's selection uses the plan's worktree-relative IDs, so a
+    collected ID that is a path-boundary suffix of a plan ID is the same test and
+    is recorded under the plan ID. An ID that matches no plan node is kept as
+    reported, so evidence validation still rejects it.
+
+    Args:
+        scenario: The scenario whose plan node IDs were selected.
+        collected: Node IDs as pytest reported them.
+
+    Returns:
+        The collected node IDs, rewritten to plan IDs where they denote the same test.
+    """
+    normalized: list[str] = []
+    for observed_node_id in collected:
+        matches = [
+            node_id
+            for node_id in scenario.node_ids
+            if observed_node_id
+            and (node_id == observed_node_id or node_id.endswith("/" + observed_node_id.lstrip("/")))
+        ]
+        # An ambiguous suffix must not silently pick one plan node: keep the observed ID.
+        normalized.append(matches[0] if len(matches) == 1 else observed_node_id)
+    return normalized
 
 
 def _find_by_rootdir_suffix(node_id: str, observed: dict[str, Any]) -> dict[str, Any] | None:

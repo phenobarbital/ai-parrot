@@ -15,6 +15,7 @@ from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
+from parrot.memory.lexical import query_terms
 from parrot.memory.dynamics.grade import select_grade
 from parrot.memory.dynamics.models import (
     MemoryCitation,
@@ -363,9 +364,11 @@ class EpisodicMemoryStore:
         score_threshold: float,
         include_failures_only: bool,
         null_dimensions: tuple[str, ...] = (),
+        interaction_mode: bool = False,
+        exclude_session_id: str | None = None,
     ) -> list[EpisodeSearchResult]:
-        """Provide bounded local recall when no embedding provider is configured."""
-        terms = tuple(term for term in query.casefold().split() if term)
+        """Page lexical matches with interaction-only exclusions applied before the result limit."""
+        terms = query_terms(query)
         if not terms or top_k == 0:
             return []
         namespace_filter = namespace.build_filter(null_dimensions=null_dimensions)
@@ -373,8 +376,18 @@ class EpisodicMemoryStore:
         if not callable(get_recent_matching):
             count = await self._backend.count(namespace_filter)
             episodes = await self._backend.get_recent(namespace_filter, limit=count)
+            if interaction_mode:
+                episodes = [
+                    episode
+                    for episode in _exclude_retracted(episodes)
+                    if not episode.is_failure
+                    and (exclude_session_id is None or episode.session_id != exclude_session_id)
+                ]
             return self._lexical_matches(
-                episodes, terms, score_threshold=score_threshold, include_failures_only=include_failures_only
+                episodes,
+                terms,
+                score_threshold=score_threshold,
+                include_failures_only=include_failures_only and not interaction_mode,
             )[:top_k]
 
         # Matches are returned newest first, so paging can stop as soon as top_k are found.
@@ -384,12 +397,23 @@ class EpisodicMemoryStore:
             page = await get_recent_matching(
                 namespace_filter,
                 limit=_LEXICAL_PAGE_SIZE,
-                failures_only=include_failures_only,
+                failures_only=include_failures_only and not interaction_mode,
                 before_id=before_id,
             )
+            eligible_page = page
+            if interaction_mode:
+                eligible_page = [
+                    episode
+                    for episode in _exclude_retracted(page)
+                    if not episode.is_failure
+                    and (exclude_session_id is None or episode.session_id != exclude_session_id)
+                ]
             matches.extend(
                 self._lexical_matches(
-                    page, terms, score_threshold=score_threshold, include_failures_only=include_failures_only
+                    eligible_page,
+                    terms,
+                    score_threshold=score_threshold,
+                    include_failures_only=include_failures_only and not interaction_mode,
                 )
             )
             if len(page) < _LEXICAL_PAGE_SIZE:
@@ -971,6 +995,52 @@ class EpisodicMemoryStore:
         return episodes
 
     # ── Recall API ──
+
+    async def recall_interactions(
+        self,
+        query: str,
+        namespace: MemoryNamespace,
+        *,
+        top_k: int = 3,
+        score_threshold: float = 0.3,
+        exclude_session_id: str | None = None,
+        null_dimensions: tuple[str, ...] = (),
+    ) -> list[EpisodeSearchResult]:
+        """Recall nonfailure interactions lexically, independent of vector/index candidate limits.
+
+        Args:
+            query: Natural language query to search for.
+            namespace: Scoping dimensions for filtering.
+            top_k: Maximum results after interaction eligibility is applied.
+            score_threshold: Minimum lexical term-overlap score from zero to one.
+            exclude_session_id: Exact non-null session to reject, or ``None`` to reject no session.
+            null_dimensions: Unset namespace dimensions that must match only unset values.
+
+        Returns:
+            Eligible episodes ranked by the shared episodic dynamics policy.
+
+        Raises:
+            ValueError: If ``top_k`` is negative or ``score_threshold`` is outside zero to one.
+        """
+        if top_k < 0:
+            raise ValueError("top_k must be non-negative")
+        if not 0.0 <= score_threshold <= 1.0:
+            raise ValueError("score_threshold must be between 0 and 1")
+        if top_k == 0:
+            return []
+
+        results = await self._fallback_lexical_search(
+            query,
+            namespace,
+            top_k=top_k,
+            score_threshold=score_threshold,
+            include_failures_only=False,
+            null_dimensions=null_dimensions,
+            interaction_mode=True,
+            exclude_session_id=exclude_session_id,
+        )
+        ranked = rank_episodes(results, namespace=namespace, states=await self._resolve_dynamics_states(results))
+        return [result for result in ranked if isinstance(result, EpisodeSearchResult)][:top_k]
 
     async def recall_similar(
         self,
