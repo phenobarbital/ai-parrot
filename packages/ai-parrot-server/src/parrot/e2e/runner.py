@@ -326,16 +326,14 @@ def _plan_relative_node_ids(scenario: ScenarioSpec, collected: list[str]) -> lis
     """
     normalized: list[str] = []
     for observed_node_id in collected:
-        match = next(
-            (
-                node_id
-                for node_id in scenario.node_ids
-                if observed_node_id
-                and (node_id == observed_node_id or node_id.endswith("/" + observed_node_id.lstrip("/")))
-            ),
-            observed_node_id,
-        )
-        normalized.append(match)
+        matches = [
+            node_id
+            for node_id in scenario.node_ids
+            if observed_node_id
+            and (node_id == observed_node_id or node_id.endswith("/" + observed_node_id.lstrip("/")))
+        ]
+        # An ambiguous suffix must not silently pick one plan node: keep the observed ID.
+        normalized.append(matches[0] if len(matches) == 1 else observed_node_id)
     return normalized
 
 
