@@ -15,6 +15,7 @@ from parrot.knowledge.wiki.experience.models import Lesson, LessonDraft, LessonT
 from parrot.knowledge.wiki.experience.service import ExperienceService
 from parrot.knowledge.wiki.experience.sync import export_shared, register_namespace, sync_global
 from parrot.knowledge.wiki.ledger.service import LedgerService
+from parrot.knowledge.wiki.project import find_shared_root
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ def _parser() -> argparse.ArgumentParser:
     retire.add_argument("--reason", required=True)
 
     verbs.add_parser("sync", help="Sync global experience events.")
-    verbs.add_parser("export", help="Export shared lesson definitions.")
+    verbs.add_parser("export", help="Export shared lesson definitions into the current checkout.")
     verbs.add_parser("rebuild", help="Rebuild experience indexes.")
     return parser
 
@@ -108,6 +109,36 @@ def _lesson_text(lesson: Lesson) -> str:
     trigger = lesson.draft.trigger
     command = " ".join(part for part in (trigger.executable, trigger.subcommand) if part)
     return "\t".join((lesson.lesson_id, lesson.state, lesson.tier, command, lesson.draft.solution))
+
+
+def _export_checkout(shared_root: Path) -> Path:
+    """Return the checkout ``export`` writes into.
+
+    The nearest directory above the working directory with a ``.git`` entry is
+    the invoking checkout: the primary checkout (a ``.git`` directory) or a
+    linked worktree (a ``.git`` file). It is used only when its shared root is
+    ``shared_root``; a nested foreign repository, a submodule, or no ``.git``
+    entry at all falls back to ``shared_root``.
+
+    Args:
+        shared_root: Primary checkout resolved by the experience service.
+
+    Returns:
+        The checkout whose ``sdd/experience/lessons/`` receives the export.
+    """
+    try:
+        expected = shared_root.resolve()
+        current = Path.cwd().resolve()
+    except OSError:
+        return shared_root
+    for candidate in (current, *current.parents):
+        if not (candidate / ".git").exists():
+            continue
+        found = find_shared_root(candidate)
+        if candidate == expected or found is None or found.resolve() != expected:
+            return shared_root
+        return candidate
+    return shared_root
 
 
 def _available(service: ExperienceService) -> bool:
@@ -195,7 +226,7 @@ async def _dispatch(args: argparse.Namespace) -> int:
             await service.refresh()
             ledger = LedgerService.from_root(service.root)
             await graduate(service, ledger, ledger_name=service.root.name)
-            exported = export_shared(service.plane_dir, service.root)
+            exported = export_shared(service.plane_dir, _export_checkout(service.root))
             if exported is not None:
                 _write(str(exported))
     elif args.verb == "rebuild" and service.index is not None:

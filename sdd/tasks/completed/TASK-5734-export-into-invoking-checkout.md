@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-905 — `parrot sdd experience export` writes into the checkout it runs in, without home paths
 **Spec**: `sdd/specs/experience-sync-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -235,7 +235,17 @@ Spec §4, M1 rows.
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**:
+**Completed by**: Claude Code (`/sdd-fix` session, actor `agent:sdd-fix:d1ad40b1`)
+**Date**: 2026-11-17
+**Notes**: code commit `4d8e615b63`. `_export_checkout(shared_root)` walks up from the resolved cwd to the first
+directory with a `.git` entry. It returns that directory only when it is not the shared root itself and
+`find_shared_root(candidate)` resolves to the shared root; every other case (primary checkout, nested foreign
+repository, submodule, no `.git`, `OSError`) returns the `shared_root` object unchanged. The `export` branch
+passes it to `export_shared`; plane, graduation and ledger stay on the shared root. Help text updated.
+Validation: `PYTHONPATH=packages/ai-parrot/src pytest packages/ai-parrot/tests/sdd/test_experience_cli.py -q`
+→ 10 passed; `ruff check` and `black --check -l 120` clean on both files. Mutation check: with
+`origin/dev`'s `experience_cli.py` restored, `test_cli_export_from_linked_worktree_writes_into_worktree` fails
+with the export landing in `primary/sdd/experience/lessons` (the reported bug); restored → passes.
+**Deviations from spec**: none. As the task's Acceptance Criteria state, `test_cli_export_ignores_nested_foreign_repository`
+also passes on `origin/dev`; it guards the fallback rule, so spec §5's "the new tests fail on `origin/dev`"
+applies to the worktree test only.

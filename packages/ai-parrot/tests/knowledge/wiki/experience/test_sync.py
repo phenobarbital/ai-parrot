@@ -282,6 +282,29 @@ async def test_export_carries_quarantine(tmp_path: Path, monkeypatch: pytest.Mon
     assert triggers["gh"][0]["state"] == "quarantined"
 
 
+def test_export_strips_home_paths_without_reexport(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Export a legacy home-path line once, without the home prefix, and never again."""
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
+    root, plane = _checkout(tmp_path, "primary")
+    legacy = _record("pit-home", "rev-home", sequence=1)
+    payload = legacy["payload"]
+    assert isinstance(payload, dict)
+    draft = payload["draft"]
+    assert isinstance(draft, dict)
+    draft["fix_example"] = "PYTHONPATH=/home/alice/repo/src pytest"
+    draft["scope_paths"] = ["/home/alice/repo/src/app.py"]
+    _append(plane, legacy)
+
+    exported = sync.export_shared(plane, root)
+
+    assert exported is not None
+    text = exported.read_text(encoding="utf-8")
+    assert "/home/alice" not in text
+    assert "~/repo/src" in text
+    assert sync.shared_event_ids(root) == {event["event_id"] for event in _read_events(exported)}
+    assert sync.export_shared(plane, root) is None
+
+
 def test_export_creates_new_file_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Create immutable incremental files and no file when no data remains."""
     monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))

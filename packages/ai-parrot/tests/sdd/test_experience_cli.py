@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import json
 import logging
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+from parrot.knowledge.wiki.experience.fastpath import append_event
+from parrot.knowledge.wiki.experience.models import validate_event
 from parrot.sdd.scripts import experience_cli
 from parrot.sdd.scripts.experience_cli import main
 
@@ -130,6 +133,117 @@ def test_cli_export_writes_under_checkout_root(tmp_path: Path, monkeypatch: pyte
     monkeypatch.setattr(experience_cli, "export_shared", export_shared)
 
     assert main(["export"]) == 0
+
+
+def _git(cwd: Path, *args: str) -> None:
+    """Run one git command for a fixture repository."""
+    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
+
+
+def _recorded_lesson(lesson_id: str) -> dict[str, object]:
+    """Build one canonical recorded-lesson event mapping."""
+    event = validate_event(
+        {
+            "schema_version": 1,
+            "event_id": "",
+            "kind": "lesson.recorded",
+            "lesson_id": lesson_id,
+            "session": f"record-{lesson_id}",
+            "actor": "agent:test",
+            "ts": "2026-11-17T12:00:00Z",
+            "payload": {
+                "draft": {
+                    "trigger": {
+                        "executable": "gh",
+                        "subcommand": "pr edit",
+                        "error_signature": "project cards unsupported",
+                        "error_excerpt": "project cards unsupported",
+                        "command_example": "gh pr edit 12 --base dev",
+                    },
+                    "symptom": "The command rejects project-card fields.",
+                    "solution": "Use the REST API instead.",
+                    "fix_example": "gh api -X PATCH repos/example/pulls/12",
+                    "scope_paths": [],
+                },
+                "solution_rev": "rev-cli",
+                "tier": "repo",
+                "source": "authored",
+            },
+        }
+    )
+    assert event is not None
+    return event.model_dump(mode="json")
+
+
+def test_cli_export_from_linked_worktree_writes_into_worktree(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Write the export into the linked worktree the command runs in, never the primary checkout."""
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
+    primary = tmp_path / "primary"
+    primary.mkdir()
+    _git(primary, "init", "-q")
+    _git(primary, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "init")
+    worktree = tmp_path / "linked"
+    _git(primary, "worktree", "add", "-q", "-b", "linked", str(worktree))
+    plane = primary / ".parrot" / "experience"
+    plane.mkdir(parents=True)
+    assert append_event(plane, _recorded_lesson("pit-worktree"))
+    nested = worktree / "nested"
+    nested.mkdir()
+    monkeypatch.chdir(nested)
+
+    assert main(["export"]) == 0
+    exported = Path(capsys.readouterr().out.strip())
+
+    assert exported.parent == (worktree / "sdd" / "experience" / "lessons").resolve()
+    assert exported.is_file()
+    assert not (primary / "sdd" / "experience").exists()
+
+    assert main(["export"]) == 0
+    assert capsys.readouterr().out == ""
+
+
+def test_cli_export_ignores_nested_foreign_repository(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fall back to the service root when the nearest repository has another shared root."""
+    root = _checkout(tmp_path, monkeypatch)
+    plane = root / ".parrot" / "experience"
+    plane.mkdir(parents=True)
+    foreign = root / "vendor" / "foreign"
+    (foreign / ".git").mkdir(parents=True)
+    monkeypatch.chdir(foreign)
+
+    class Service:
+        """Minimal export service rooted at the primary checkout."""
+
+        def __init__(self) -> None:
+            self.config = SimpleNamespace(enabled=True)
+            self.index = object()
+            self.plane_dir = plane
+            self.root = root
+
+        async def refresh(self) -> None:
+            return None
+
+    monkeypatch.setattr(experience_cli.ExperienceService, "from_root", lambda: Service())
+    monkeypatch.setattr(experience_cli.LedgerService, "from_root", lambda path: object())
+
+    async def graduate(*args: object, **kwargs: object) -> list[str]:
+        return []
+
+    received: list[Path] = []
+
+    def export_shared(repo_plane: Path, checkout: Path) -> None:
+        assert repo_plane == plane
+        received.append(checkout)
+
+    monkeypatch.setattr(experience_cli, "graduate", graduate)
+    monkeypatch.setattr(experience_cli, "export_shared", export_shared)
+
+    assert main(["export"]) == 0
+    assert received == [root]
 
 
 def test_cli_brief_missing_task_file_is_usage_error(
