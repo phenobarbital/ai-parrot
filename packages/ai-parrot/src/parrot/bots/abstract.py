@@ -72,7 +72,7 @@ from ..memory.compaction.models import (
 )
 from ..memory.compaction.budget import build_default_budget, compaction_disabled_by_env, resolve_window
 from ..memory.compaction.compact import compact_history
-from ..memory.compaction.tokens import get_default_counter
+from ..memory.compaction.tokens import count_turn, get_default_counter
 from ..memory.compaction.recover import (
     READ_OMITTED_CONTENT_NAME,
     READ_OMITTED_CONTENT_DESCRIPTION,
@@ -3002,6 +3002,13 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
             await self._stamp_turn_ordering(user_id, session_id, turn)
             # Raw, pre-normalization snapshot: MUST precede add_turn (spec §7 "Raw turn snapshot").
             snapshot = copy.deepcopy(turn.to_dict()) if self.turn_publisher is not None else None
+            if snapshot is not None and snapshot["token_count"] is None:
+                try:
+                    snapshot["token_count"] = count_turn(turn, self.conversation_memory.token_counter).to_dict()
+                except Exception:  # noqa: BLE001 - a counter failure must not lose the turn
+                    self.logger.warning(
+                        "token counting failed for raw turn snapshot turn_id=%s", turn.turn_id, exc_info=True
+                    )
 
             # FEAT-525: read the PERSISTED stage2_needed flag before the write,
             # so the event fires exactly once, on the first False -> True flip.
