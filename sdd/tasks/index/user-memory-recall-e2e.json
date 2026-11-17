@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-16T21:24:30.264672+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-17T10:11:33+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -258,7 +258,7 @@
       "feature_id": "FEAT-904",
       "feature": "user-memory-recall-e2e",
       "spec": "sdd/specs/user-memory-recall-e2e.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -275,8 +275,9 @@
       "parallelism_notes": "Documents query_terms from TASK-5723; fields from TASK-5724; profile from TASK-5725; recall_interactions from TASK-5726; packing from TASK-5727; manager from TASK-5728; extraction from TASK-5729; consumes example/plan from TASK-5732.",
       "assigned_to": null,
       "started_at": "2026-11-16T21:33:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5733-memory-recall-documentation.md"
+      "completed_at": "2026-11-17T10:11:33+00:00",
+      "file": "sdd/tasks/completed/TASK-5733-memory-recall-documentation.md",
+      "verification": "verified"
     }
   ]
 }
