@@ -54,6 +54,67 @@ def _forbid_client_construction(monkeypatch: pytest.MonkeyPatch) -> list[tuple[s
     return calls
 
 
+@_skip_no_google_budget
+def test_shared_budget_covers_sessions_and_extraction(monkeypatch: pytest.MonkeyPatch) -> None:
+    """All answer and extraction clients receive the same generation budget."""
+    opt_in = e2e_live.require_live_opt_in(env=_FULL_OPT_IN_ENV)
+    budget = e2e_live.build_live_generation_budget(opt_in)
+
+    created: list[tuple[str, dict]] = []
+
+    def _fake_create(llm: str, **kwargs):
+        client = object()
+        created.append((llm, kwargs))
+        return client
+
+    from parrot.clients.factory import LLMFactory
+
+    monkeypatch.setattr(LLMFactory, "create", staticmethod(_fake_create))
+
+    # Two answer sessions (write + recall) and several fresh extraction clients.
+    answer_clients = [e2e_live.build_live_client(opt_in, budget) for _ in range(2)]
+    extraction_clients = [e2e_live.build_live_client(opt_in, budget) for _ in range(3)]
+
+    clients = answer_clients + extraction_clients
+    assert len({id(client) for client in clients}) == len(clients)
+    assert len(created) == 5
+    assert all(llm == opt_in.model for llm, _ in created)
+    assert all(set(kwargs) == {"generation_budget"} for _, kwargs in created)
+    assert all(kwargs["generation_budget"] is budget for _, kwargs in created)
+    assert len({id(kwargs["generation_budget"]) for _, kwargs in created}) == 1
+
+
+@pytest.mark.parametrize(
+    ("env", "reason_code"),
+    [
+        ({}, "live_opt_in_missing"),
+        ({**_FULL_OPT_IN_ENV, e2e_live.PARROT_TEST_E2E_ENV: "0"}, "live_opt_in_missing"),
+        ({**_FULL_OPT_IN_ENV, e2e_live.PARROT_TEST_REAL_LLM_ENV: "0"}, "live_opt_in_missing"),
+        (
+            {e2e_live.PARROT_TEST_E2E_ENV: "1", e2e_live.PARROT_TEST_REAL_LLM_ENV: "1"},
+            "live_credential_missing",
+        ),
+        ({**_FULL_OPT_IN_ENV, e2e_live.E2E_MODEL_ENV: "openai:gpt-4o"}, "unsupported_provider"),
+        ({**_FULL_OPT_IN_ENV, e2e_live.E2E_MAX_LLM_CALLS_ENV: "0"}, "invalid_override"),
+    ],
+)
+def test_missing_prerequisites_prevent_all_client_construction(
+    monkeypatch: pytest.MonkeyPatch, env: dict[str, str], reason_code: str
+) -> None:
+    """Opt-in validation fails before any real client construction."""
+    calls = _forbid_client_construction(monkeypatch)
+    clients: list[object] = []
+
+    with pytest.raises((E2EPrerequisiteError, E2EConfigError)) as excinfo:
+        opt_in = e2e_live.require_live_opt_in(env=env)
+        # Only reachable when opt-in validation wrongly succeeded.
+        clients.append(e2e_live.build_live_client(opt_in, e2e_live.build_live_generation_budget(opt_in)))
+
+    assert excinfo.value.reason_code == reason_code
+    assert calls == []
+    assert clients == []
+
+
 class TestRequireLiveOptIn:
     """``require_live_opt_in`` gating -- Scope: "Require E2E and real-LLM flags plus
     GOOGLE_API_KEY before constructing client"."""
