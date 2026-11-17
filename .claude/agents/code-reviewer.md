@@ -87,6 +87,9 @@ Any changed covered revision invalidates the checkpoint and previous approval.
 | `// TODO` or `# FIXME` in PR | Incomplete work, tech debt shipped to production |
 | SQL string interpolation | SQL injection vulnerability |
 | Unsanitized user input in templates | XSS vulnerability |
+| Public symbol, file or dependency the spec's Necessity Ladder does not declare | Scope grew during implementation — it goes back to the spec |
+| New non-test lines around twice the task's `**Ladder**` estimate | More code than the spec justified — ask for the explanation (a finding, not a failure) |
+| `# shortcut:` comment without a Known Shortcuts row in the spec, or the reverse | Untracked debt |
 
 ## Review Checklist (Generic — augment with project-specific items from the project instructions file)
 
