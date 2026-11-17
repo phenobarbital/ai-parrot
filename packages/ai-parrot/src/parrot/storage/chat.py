@@ -406,33 +406,7 @@ class ChatStorage:
                         return await self._load_cold(user_id, session_id, agent_id, limit)
                     visible = live[-limit:]
                     for turn in visible:
-                        messages.append(
-                            {
-                                "role": MessageRole.USER.value,
-                                "content": turn.user_message,
-                                "timestamp": (
-                                    turn.timestamp.isoformat()
-                                    if isinstance(turn.timestamp, datetime)
-                                    else str(turn.timestamp)
-                                ),
-                                "turn_id": turn.turn_id,
-                                "metadata": turn.metadata,
-                            }
-                        )
-                        messages.append(
-                            {
-                                "role": MessageRole.ASSISTANT.value,
-                                "content": turn.assistant_response,
-                                "timestamp": (
-                                    turn.timestamp.isoformat()
-                                    if isinstance(turn.timestamp, datetime)
-                                    else str(turn.timestamp)
-                                ),
-                                "turn_id": turn.turn_id,
-                                "tools_used": turn.tools_used,
-                                "metadata": turn.metadata,
-                            }
-                        )
+                        messages.extend(self._hot_turn_messages(turn))
                     return messages
             except Exception as exc:
                 self.logger.warning(
@@ -442,6 +416,53 @@ class ChatStorage:
                 )
 
         return await self._load_cold(user_id, session_id, agent_id, limit)
+
+    @staticmethod
+    def _hot_turn_messages(turn: "ConversationTurn") -> List[Dict[str, Any]]:
+        """Map a hot-tier turn onto the message shape returned by cold storage."""
+        timestamp = turn.timestamp.isoformat() if isinstance(turn.timestamp, datetime) else str(turn.timestamp)
+        tool_invocations = [invocation.to_dict() for invocation in turn.tool_invocations]
+        tool_calls = [
+            {
+                "name": invocation.get("tool_name"),
+                "status": invocation.get("status", "completed"),
+                "output": invocation.get("output"),
+                "arguments": invocation.get("input"),
+            }
+            for invocation in tool_invocations
+        ]
+        return [
+            {
+                "role": MessageRole.USER.value,
+                "content": turn.user_message,
+                "timestamp": timestamp,
+                "turn_id": turn.turn_id,
+            },
+            {
+                "role": MessageRole.ASSISTANT.value,
+                "content": turn.assistant_response,
+                "timestamp": timestamp,
+                "turn_id": turn.turn_id,
+                "output": None,
+                "output_mode": turn.metadata.get("output_mode"),
+                "data": None,
+                "code": None,
+                "model": turn.metadata.get("model"),
+                "provider": turn.metadata.get("provider"),
+                "response_time_ms": turn.metadata.get("response_time_ms"),
+                "tool_calls": tool_calls,
+                "sources": [],
+                "metadata": dict(turn.metadata),
+                "tools_used": list(turn.tools_used),
+                "tool_invocations": tool_invocations,
+                "usage": turn.metadata.get("usage"),
+                "cost_usd": turn.metadata.get("cost_usd"),
+                "tenant": turn.metadata.get("tenant"),
+                "error": turn.error,
+                "sequence": turn.sequence or 0,
+                "schema_version": turn.schema_version,
+            },
+        ]
 
     @staticmethod
     def _hot_holds_too_few(history: Any, live_turns: int, wanted: int) -> bool:
