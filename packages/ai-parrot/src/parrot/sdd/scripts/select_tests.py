@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import replace
 import json
+import os
 import shlex
 import subprocess
 import sys
@@ -198,6 +199,28 @@ def _report_suffix(report_format: str) -> str:
     }.get(report_format, ".report")
 
 
+def _worktree_env(worktree: Path) -> dict[str, str]:
+    """Build the child environment so tests import the worktree's code, not the main checkout's.
+
+    The shared venv is editable-installed against the main checkout, so a runner launched in a
+    worktree would otherwise import the wrong tree (false reds, or worse, false greens). Every
+    ``<worktree>/packages/*/src`` directory is prepended to ``PYTHONPATH``; a repo without that
+    layout gets the inherited environment unchanged.
+
+    Args:
+        worktree: Root of the tree the tests run in.
+
+    Returns:
+        A copy of ``os.environ`` with ``PYTHONPATH`` extended.
+    """
+    env = dict(os.environ)
+    sources = sorted(str(src) for src in (worktree / "packages").glob("*/src") if src.is_dir())
+    if sources:
+        inherited = env.get("PYTHONPATH")
+        env["PYTHONPATH"] = os.pathsep.join([*sources, inherited] if inherited else sources)
+    return env
+
+
 def _safe_report_name(value: str) -> str:
     """Make a runner or suite label safe for a report filename."""
     return "".join(character if character.isalnum() or character in {"-", "_"} else "-" for character in value)
@@ -288,6 +311,7 @@ def _run_verdict_mode(
             result = subprocess.run(
                 argv,
                 cwd=run_cwd,
+                env=_worktree_env(worktree),
                 capture_output=True,
                 text=True,
                 check=False,
@@ -529,7 +553,7 @@ def main(argv: list[str] | None = None) -> int:
                 junit = None
         started = time.monotonic()
         try:
-            result = subprocess.run(argv, cwd=worktree)
+            result = subprocess.run(argv, cwd=worktree, env=_worktree_env(worktree))
         except OSError as exc:
             # A repo without the planned runner (no pytest in a foreign repo's environment) must
             # stop with one line per runner, never a traceback (FEAT-633 rev 0.5 D2 / C21).
