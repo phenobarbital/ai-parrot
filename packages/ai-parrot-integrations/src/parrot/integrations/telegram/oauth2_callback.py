@@ -16,7 +16,7 @@ from parrot.integrations.telegram.browser_login import (
     BrowserVerifierUnavailableError,
     is_browser_state,
     render_browser_error,
-    render_browser_success,
+    render_browser_confirmation,
 )
 
 logger = logging.getLogger(__name__)
@@ -134,23 +134,24 @@ def _json_escape(value: str) -> str:
         JSON-safe quoted string.
     """
     import json as json_mod
+
     # Replace HTML-special chars with unicode escapes to prevent XSS.
     # Order matters: replace < and > first (they won't produce &), then &.
-    return (
-        json_mod.dumps(value)
-        .replace("<", "\\u003c")
-        .replace(">", "\\u003e")
-        .replace("&", "\\u0026")
-    )
+    return json_mod.dumps(value).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
 
 
 def _browser_html(page: str, status: int) -> web.Response:
     """Return a browser-mode HTML response with the requested status."""
-    return web.Response(text=page, content_type="text/html", status=status)
+    return web.Response(
+        text=page,
+        content_type="text/html",
+        status=status,
+        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+    )
 
 
 async def _browser_oauth2_callback(request: web.Request, state: str) -> web.Response:
-    """Complete a browser-mode OAuth2 login server-side (FEAT-854). No sendData involved."""
+    """Verify OAuth2 into a pending browser confirmation; never authenticate the chat here."""
     registry = request.app.get(BROWSER_LOGIN_APP_KEY)
     entry = registry.consume(state) if registry is not None else None
     if entry is None:
@@ -180,10 +181,8 @@ async def _browser_oauth2_callback(request: web.Request, state: str) -> web.Resp
         )
 
     try:
-        completed = await wrapper._complete_auth_payload(
+        confirmation_code = await wrapper._prepare_browser_login(
             {"auth_method": "oauth2", "code": code, "state": state},
-            telegram_id=entry.telegram_id,
-            chat_id=entry.chat_id,
             browser_entry=entry,
         )
     except BrowserVerificationError:
@@ -199,15 +198,7 @@ async def _browser_oauth2_callback(request: web.Request, state: str) -> web.Resp
             503,
         )
 
-    if not completed:
-        return _browser_html(
-            render_browser_error("Sign-in could not be verified. Send /login in Telegram to try again."),
-            401,
-        )
-
-    session = wrapper._user_sessions.get(entry.telegram_id)
-    display_name = session.display_name if session is not None and session.authenticated else ""
-    return _browser_html(render_browser_success(entry.bot_username, display_name), 200)
+    return _browser_html(render_browser_confirmation(entry.bot_username, confirmation_code), 200)
 
 
 async def oauth2_callback_handler(request: web.Request) -> web.Response:
@@ -238,23 +229,17 @@ async def oauth2_callback_handler(request: web.Request) -> web.Response:
         error_desc = request.query.get("error_description", error)
         logger.warning("OAuth2 callback error: %s — %s", error, error_desc)
         safe_desc = html_mod.escape(error_desc)
-        html = _ERROR_HTML_TEMPLATE.format(
-            error_message=f"Authentication failed: {safe_desc}"
-        )
+        html = _ERROR_HTML_TEMPLATE.format(error_message=f"Authentication failed: {safe_desc}")
         return web.Response(text=html, content_type="text/html", status=200)
 
     if not code:
         logger.warning("OAuth2 callback missing 'code' parameter")
-        html = _ERROR_HTML_TEMPLATE.format(
-            error_message="Authentication failed: missing authorization code."
-        )
+        html = _ERROR_HTML_TEMPLATE.format(error_message="Authentication failed: missing authorization code.")
         return web.Response(text=html, content_type="text/html", status=400)
 
     if not state:
         logger.warning("OAuth2 callback missing 'state' parameter")
-        html = _ERROR_HTML_TEMPLATE.format(
-            error_message="Authentication failed: missing state parameter."
-        )
+        html = _ERROR_HTML_TEMPLATE.format(error_message="Authentication failed: missing state parameter.")
         return web.Response(text=html, content_type="text/html", status=400)
 
     logger.info(

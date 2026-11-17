@@ -1,6 +1,7 @@
 """FEAT-854 M6: executable round-trip checks for the dual-mode Telegram login pages."""
 
 from pathlib import Path
+from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -88,8 +89,13 @@ async def browser_page():
                     }
                 )
             await route.fulfill(
-                json={"ok": True, "redirect_url": "https://t.me/TestBot"},
-                status=200,
+                json={
+                    "ok": True,
+                    "pending_confirmation": True,
+                    "confirmation_code": "a" * 22,
+                    "redirect_url": "https://t.me/TestBot",
+                },
+                status=202,
             )
 
         await page.route(f"{PAGE_ORIGIN}{BROWSER_COMPLETE_PATH}", route_complete)
@@ -139,7 +145,9 @@ async def test_basic_browser_mode_posts_payload_not_senddata(browser_page):
 
     # Should show success panel with t.me link
     content = await page.content()
-    assert "Success" in content
+    assert "Confirm your login in Telegram" in content
+    assert "/login " + "a" * 22 in content
+    assert "Do not share this code" in content
     assert "https://t.me/TestBot" in content
 
 
@@ -309,3 +317,54 @@ async def test_browser_mode_sso_context_failure(browser_page):
     assert len(page.complete_posts) == 0
     send_data = await page.evaluate("window.__sendData")
     assert send_data == []
+
+
+async def _complete_browser_credentials(page: Any, filename: str) -> None:
+    """Exercise the credentials form or the public SSO token callback."""
+    url = (
+        f"{PAGE_ORIGIN}/static/{filename}?return_mode=browser&state={new_browser_state()}"
+        f"&complete_url={PAGE_ORIGIN}{BROWSER_COMPLETE_PATH}"
+    )
+    if filename == "login.html":
+        await page.goto(f"{url}&auth_url={NAV_ORIGIN}/api/v1/login")
+        await _fill_credentials(page)
+        await page.click("#submit-btn")
+    else:
+        await page.goto(f"{url}&token=test.jwt.token")
+
+
+@pytest.mark.parametrize("filename", ["login.html", "azure_login.html", "login_multi.html"])
+async def test_all_pages_display_pending_command(browser_page: Any, filename: str) -> None:
+    """All completion adapters render the command as text without Telegram auto-delivery."""
+    await _complete_browser_credentials(browser_page, filename)
+    await browser_page.get_by_text("/login " + "a" * 22, exact=False).wait_for(state="visible")
+    assert "Confirm your login in Telegram" in await browser_page.inner_text("body")
+    assert "Do not share this code" in await browser_page.inner_text("body")
+    assert await browser_page.evaluate("window.__sendData") == []
+    assert "a" * 22 not in browser_page.url
+    assert (
+        await browser_page.evaluate("JSON.stringify({...sessionStorage, ...localStorage}).includes('a'.repeat(22))")
+        is False
+    )
+
+
+@pytest.mark.parametrize("filename", ["login.html", "azure_login.html", "login_multi.html"])
+@pytest.mark.parametrize(
+    "response",
+    [
+        {"ok": True},
+        {"ok": True, "pending_confirmation": True, "confirmation_code": "<img src=x onerror=alert(1)>"},
+    ],
+)
+async def test_pages_reject_malformed_confirmation(browser_page: Any, filename: str, response: dict[str, Any]) -> None:
+    """A missing or invalid confirmation cannot be presented as successful login."""
+
+    async def complete(route: Any) -> None:
+        await route.fulfill(json=response, status=202)
+
+    await browser_page.route(f"{PAGE_ORIGIN}{BROWSER_COMPLETE_PATH}", complete)
+    await _complete_browser_credentials(browser_page, filename)
+    await browser_page.get_by_text("Authentication failed.", exact=True).wait_for(state="visible")
+    assert "Confirm your login in Telegram" not in await browser_page.inner_text("body")
+    assert await browser_page.locator("img[onerror]").count() == 0
+    assert await browser_page.evaluate("window.__sendData") == []

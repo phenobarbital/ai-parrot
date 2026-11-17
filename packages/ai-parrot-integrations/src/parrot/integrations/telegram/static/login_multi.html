@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <meta http-equiv="Content-Security-Policy"
-          content="default-src 'self' https://telegram.org; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline';">
+          content="default-src 'self' https://telegram.org; script-src 'self' https://telegram.org 'sha256-Ura83UZjsNbVJgk4KVlYwduXBytCDnS26Ek8ON56vNc='; style-src 'self' 'unsafe-inline';">
     <meta name="parrot-browser-complete-origins" content="">
     <title>Sign In</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -329,8 +329,11 @@
             }).then(function(resp) {
                 if (resp.ok) {
                     return resp.json().then(function(data) {
-                        if (data.ok) {
-                            showBrowserResult(true, 'Authentication complete.', data.redirect_url);
+                        if (data.ok && data.pending_confirmation === true &&
+                            typeof data.confirmation_code === 'string' && /^[A-Za-z0-9_-]{22}$/.test(data.confirmation_code)) {
+                            showBrowserResult(true, 'To finish signing in, send /login ' + data.confirmation_code +
+                                ' in the Telegram chat where you started login. Only use a login you started yourself. ' +
+                                'Do not share this code. If someone sent you the login link, close this page.', data.redirect_url);
                         } else {
                             showBrowserResult(false, data.message || 'Authentication failed.');
                         }
@@ -358,7 +361,7 @@
             if (!card) { return; }
             card.innerHTML = '';
             var h1 = document.createElement('h1');
-            h1.textContent = ok ? 'Success' : 'Error';
+            h1.textContent = ok ? 'Confirm your login in Telegram' : 'Error';
             h1.style.textAlign = 'center';
             h1.style.marginBottom = '1rem';
             card.appendChild(h1);

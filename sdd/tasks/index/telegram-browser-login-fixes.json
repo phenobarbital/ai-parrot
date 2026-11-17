@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-17T12:24:50.792658+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-17T14:38:26+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -42,16 +42,17 @@
       "feature_id": "FEAT-906",
       "feature": "telegram-browser-login-fixes",
       "spec": "sdd/specs/telegram-browser-login-fixes.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Independent security implementation; owns registry, wrapper and callback files plus their regression tests.",
-      "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5736-browser-confirmation-security.md"
+      "assigned_to": "agent:sdd-fix:23dd9ec1",
+      "started_at": "2026-11-17T12:26:09.432477+00:00",
+      "completed_at": "2026-11-17T13:16:17+00:00",
+      "file": "sdd/tasks/completed/TASK-5736-browser-confirmation-security.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5737",
@@ -60,7 +61,7 @@
       "feature_id": "FEAT-906",
       "feature": "telegram-browser-login-fixes",
       "spec": "sdd/specs/telegram-browser-login-fixes.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -68,10 +69,11 @@
       ],
       "parallel": true,
       "parallelism_notes": "Consumes TASK-5736 pending_confirmation, confirmation_code and redirect_url response fields.",
-      "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5737-browser-confirmation-pages.md"
+      "assigned_to": "agent:sdd-fix:23dd9ec1",
+      "started_at": "2026-11-17T13:16:53.806850+00:00",
+      "completed_at": "2026-11-17T14:18:49+00:00",
+      "file": "sdd/tasks/completed/TASK-5737-browser-confirmation-pages.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5738",
@@ -80,7 +82,7 @@
       "feature_id": "FEAT-906",
       "feature": "telegram-browser-login-fixes",
       "spec": "sdd/specs/telegram-browser-login-fixes.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -89,10 +91,11 @@
       ],
       "parallel": true,
       "parallelism_notes": "Documents TASK-5736 registry/wrapper/callback interfaces and TASK-5737 shipped-page confirmation UI.",
-      "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5738-browser-confirmation-documentation.md"
+      "assigned_to": "agent:sdd-fix:23dd9ec1",
+      "started_at": "2026-11-17T14:19:57.055783+00:00",
+      "completed_at": "2026-11-17T14:38:26+00:00",
+      "file": "sdd/tasks/completed/TASK-5738-browser-confirmation-documentation.md",
+      "verification": "verified"
     }
   ]
 }

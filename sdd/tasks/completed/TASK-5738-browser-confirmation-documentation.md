@@ -1,11 +1,11 @@
-# TASK-5737: Display pending confirmation commands in all login pages
+# TASK-5738: Documentation — Telegram browser login confirmation
 
 **Feature**: FEAT-906 — Telegram browser login confirmation
 **Spec**: `sdd/specs/telegram-browser-login-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
-**Depends-on**: TASK-5736
+**Depends-on**: TASK-5736, TASK-5737
 **Assigned-to**: unassigned
 **Discovered-from**: `issue:21146a531a96`
 
@@ -15,7 +15,7 @@ The owner approved browser-only code confirmation to prevent forwarded login lin
 
 ## Scope
 
-Consume the pending_confirmation response introduced by TASK-5736. Render /login CODE with textContent and clear instructions; use a pending heading rather than Success. Reject malformed pending responses. Preserve legacy sendData and completion-origin validation. Exercise all three pages with the browser runner.
+Update operator flow, public API, HTTP statuses, expiry/cancellation and security limitations. Document that browser authentication is pending until /login CODE reaches the initiating bot/user/chat; update both Mermaid and OAuth2 prose.
 
 **NOT in scope**: distributed persistence, provider rewrites, unrelated authentication flows or new dependencies.
 
@@ -23,10 +23,7 @@ Consume the pending_confirmation response introduced by TASK-5736. Render /login
 
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot-integrations/src/parrot/integrations/telegram/static/login.html` | MODIFY | Confirmation flow |
-| `packages/ai-parrot-integrations/src/parrot/integrations/telegram/static/azure_login.html` | MODIFY | Confirmation flow |
-| `packages/ai-parrot-integrations/src/parrot/integrations/telegram/static/login_multi.html` | MODIFY | Confirmation flow |
-| `packages/ai-parrot-integrations/tests/integrations/telegram/test_login_pages_browser_mode.py` | MODIFY | Confirmation flow |
+| `wiki/integrations/telegram-auth-open-mode.md` | MODIFY | Confirmation flow |
 
 ## Codebase Contract
 
@@ -56,19 +53,7 @@ No existing confirmation code registry or redemption endpoint. No runtime-safe a
   "schema_version": 1,
   "targets": [
     {
-      "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/static/login.html",
-      "action": "MODIFY"
-    },
-    {
-      "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/static/azure_login.html",
-      "action": "MODIFY"
-    },
-    {
-      "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/static/login_multi.html",
-      "action": "MODIFY"
-    },
-    {
-      "path": "packages/ai-parrot-integrations/tests/integrations/telegram/test_login_pages_browser_mode.py",
+      "path": "wiki/integrations/telegram-auth-open-mode.md",
       "action": "MODIFY"
     }
   ],
@@ -84,28 +69,10 @@ No existing confirmation code registry or redemption endpoint. No runtime-safe a
 2. Implement only the declared files and the scope above — keep the change reviewable.
 3. Run the explicit validation commands against worktree sources — shared editable installs otherwise test the main checkout.
 
-### `packages/ai-parrot-integrations/src/parrot/integrations/telegram/static/login.html` (MODIFY)
+### `wiki/integrations/telegram-auth-open-mode.md` (MODIFY)
 ```text
-# occurrences: 1; verified packages/ai-parrot-integrations/src/parrot/integrations/telegram/static/login.html:234
-  function completeLogin(payload, legacySend) {
-```
-FILL IN: implement this file’s scoped changes using the spec interfaces and AC1-AC7. Preserve adjacent behavior. Why: this verified anchor identifies the current flow under test.
-### `packages/ai-parrot-integrations/src/parrot/integrations/telegram/static/azure_login.html` (MODIFY)
-```text
-# occurrences: 1; verified packages/ai-parrot-integrations/src/parrot/integrations/telegram/static/azure_login.html:217
-        function completeLogin(payload, legacySend) {
-```
-FILL IN: implement this file’s scoped changes using the spec interfaces and AC1-AC7. Preserve adjacent behavior. Why: this verified anchor identifies the current flow under test.
-### `packages/ai-parrot-integrations/src/parrot/integrations/telegram/static/login_multi.html` (MODIFY)
-```text
-# occurrences: 1; verified packages/ai-parrot-integrations/src/parrot/integrations/telegram/static/login_multi.html:317
-        function completeLogin(payload, legacySend) {
-```
-FILL IN: implement this file’s scoped changes using the spec interfaces and AC1-AC7. Preserve adjacent behavior. Why: this verified anchor identifies the current flow under test.
-### `packages/ai-parrot-integrations/tests/integrations/telegram/test_login_pages_browser_mode.py` (MODIFY)
-```text
-# occurrences: 1; verified packages/ai-parrot-integrations/tests/integrations/telegram/test_login_pages_browser_mode.py:101
-async def test_basic_browser_mode_posts_payload_not_senddata(browser_page):
+# occurrences: 1; verified wiki/integrations/telegram-auth-open-mode.md:6
+# Telegram Auth Open Mode (webview | browser)
 ```
 FILL IN: implement this file’s scoped changes using the spec interfaces and AC1-AC7. Preserve adjacent behavior. Why: this verified anchor identifies the current flow under test.
 
@@ -123,7 +90,7 @@ FILL IN: implement this file’s scoped changes using the spec interfaces and AC
 
 ## Validation Commands
 
-- `pytest packages/ai-parrot-integrations/tests/integrations/telegram/test_login_pages_browser_mode.py -q`
+- `pytest packages/ai-parrot-integrations/tests/integrations/telegram/test_browser_login.py::test_wiki_page_documents_browser_mode -q`
 
 ## Test Specification
 
@@ -135,4 +102,18 @@ Work only in the FEAT-906 worktree. Preserve other edits. Commit this task's fil
 
 ## Completion Note
 
-Recorded by task finalization after implementation and validation.
+
+- Task: TASK-5738
+- Feature: telegram-browser-login-fixes
+- Implementation SHA: 7a6c9f01253481e696b1fd7b0452aebd94754906
+- Closed at (UTC): 2026-11-17T14:38:26+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 3 |
+| fix_commits | 0 |
+| checkpoint | unsupported_host: native manual implementation has no engine settlement |
+| compaction | unsupported_host: no verified Codex adapter |
+| review | Independent review and primary evidence cross-check recorded |
+| validation | See immutable validation_refs |

@@ -1,6 +1,6 @@
 ---
 title: Telegram Auth Open Mode (webview | browser)
-summary: Open Telegram bot logins in the system browser and complete them server-side.
+summary: Sign in through the system browser, then confirm with a one-time code in Telegram.
 ---
 
 # Telegram Auth Open Mode (webview | browser)
@@ -18,8 +18,10 @@ PassKey logins.
   returns its result with `Telegram.WebApp.sendData()`. This is the behaviour
   that existed before FEAT-854, and it is unchanged.
 - `browser` — the login button is an inline URL that opens the system browser.
-  The browser completes the login against the server, and the bot confirms the
-  result in the chat.
+  The server verifies the browser identity into a private pending candidate. The
+  browser displays `/login CODE`; send it in the same bot/chat where you started
+  login to activate the session. Opening a forwarded link cannot activate the
+  sender’s Telegram session by itself.
 
 Use `browser` for bots whose users sign in from Linux/Wayland desktops or who
 need PassKey. The feature is specified in `sdd/specs/telegram-auth-open-mode.spec.md`.
@@ -32,7 +34,15 @@ Module `parrot.integrations.telegram.browser_login`:
 
 - `BrowserLoginRegistry` and `BrowserLoginEntry` — in-process map from a
   `browser.` state to the Telegram chat that started the login. Entries expire
-  after 600 seconds and are single-use.
+  after 600 seconds and are single-use. `consume()` starts verification; `stage()`
+  stores a private candidate and returns a confirmation code; `confirm()` checks
+  bot/user/chat before consuming it. `cancel()` invalidates all attempts for a
+  bot and Telegram sender.
+- `PendingBrowserConfirmation` — frozen Pydantic result containing the entry,
+  candidate and post-auth flag. Entry and candidate are excluded from repr and
+  serialization. It is never returned in an HTTP response.
+- `render_browser_confirmation()` — escapes the browser-only command and renders
+  the warning and safe bot link.
 - `BrowserIdentityVerifier` — the `Protocol` a server-side identity verifier implements.
 - `VerifiedBrowserIdentity` — Pydantic v2 model with `user_id`, `display_name` and
   `email`. It is frozen and forbids extra fields.
@@ -58,15 +68,21 @@ Module `parrot.integrations.telegram.browser_verifiers`:
 Module `parrot.integrations.telegram.oauth2_callback`:
 
 - `oauth2_callback_handler` — the GET handler for the OAuth2 provider redirect.
-  It sends `browser.` states to server-side completion and keeps the legacy page for every other state.
+  It sends `browser.` states to candidate preparation and displays the confirmation
+  page; every other state keeps the legacy page.
 
 Class `TelegramAgentWrapper` (`parrot.integrations.telegram.wrapper`):
 
 - `_setup_browser_mode()` — startup validation. It runs when the wrapper is built.
 - `handle_login()` — builds the login keyboard for the active mode.
 - `handle_web_app_data()` — the webview `sendData()` entry point.
-- `_complete_auth_payload()` — the shared completion pipeline used by webview, the
-  browser POST endpoint and the browser OAuth2 callback.
+- `_prepare_browser_login()` — verifies browser credentials into an unpublished
+  candidate and returns a one-time code; used by browser POST and OAuth2 callbacks.
+- `_complete_auth_payload()` — the webview pipeline; rejects a `browser_entry` so
+  browser callbacks cannot bypass confirmation.
+- `_finish_authentication()` — publishes the session or starts required post-auth
+  actions after a valid Telegram redemption. Browser `/login` and `/logout`
+  handlers share a lock to serialize redemption with cancellation and persistence.
 
 Config model `TelegramAgentConfig` (`parrot.integrations.telegram.models`): fields
 `auth_open_mode`, `public_base_url` and `login_page_url`.
@@ -151,7 +167,21 @@ name or email unless the token has those claims.
 
 - A state is `browser.` followed by 32 random bytes encoded as URL-safe base64
   (43 characters).
-- Each state is single-use and expires after 600 seconds.
+- Each state is single-use and expires after 600 seconds. The attempt remains
+  tracked while the verifier runs and while confirmation is pending.
+- After verification, the browser receives a separate 128-bit random code (22
+  URL-safe characters). The registry stores its SHA-256 digest, never the raw code.
+  The code shares the original state deadline; verification does not extend it.
+- Only `/login CODE` from the initiating bot, Telegram sender and chat can redeem
+  it. A wrong sender or chat cannot consume it; replay is rejected.
+- A fresh `/login` or `/logout` cancels pending callbacks, in-flight verification
+  and staged codes for that sender and bot, even before authentication. A late
+  verifier result cannot revive an invalidated attempt. Restart loses all attempts.
+- Before redemption, no authenticated session, persistent identity link, user
+  context or required post-auth action is published. The code is displayed only
+  in the browser, never automatically sent to Telegram or stored in a URL or
+  browser storage. Completion responses use `Cache-Control: no-store` and
+  `Referrer-Policy: no-referrer`.
 - The completion endpoint never accepts a state without the `browser.` prefix.
   Such a state gets 410.
 
@@ -209,10 +239,13 @@ sequenceDiagram
   U->>S: open the link
   S->>S: Navigator / Azure / Google SSO round trip
   S->>P: POST completion endpoint with payload and state
-  P->>P: consume state, verify credential, _complete_auth_payload
-  P-->>S: 200 with ok true and deep-link redirect_url
-  P-->>U: proactive chat message (Authenticated as ...)
-  U->>U: tap the t.me deep link for the bot
+  P->>P: consume state, verify credential, stage private candidate
+  P-->>S: 202 pending_confirmation with browser-only code and bot link
+  S-->>U: display /login CODE and warning against sharing
+  U->>B: /login CODE in the initiating chat
+  B->>B: check bot, sender, chat and atomically consume code
+  B->>B: publish session or begin required post-auth actions
+  B-->>U: authentication result
 ```
 
 ### Flow: browser, OAuth2
@@ -222,9 +255,11 @@ provider redirects to `oauth2_redirect_uri`, and that URL must reach
 `oauth2_callback_handler` over GET. Nothing in this repository mounts that
 handler: `setup_oauth2_routes` in `parrot.integrations.telegram.oauth2_callback`
 adds it at `/oauth2/callback` by default, but no caller in the repo invokes it, so
-the deployment mounts it. The handler then exchanges the code server-side through
-`_complete_auth_payload` and shows the success page. The chat confirmation follows
-the same path as the page-based flow. Routing is by state: a `browser.` state takes
+the deployment mounts it. The handler then exchanges the provider code server-side
+through `_prepare_browser_login` into a private candidate and returns HTTP 200
+with the pending confirmation page. The user must send the displayed `/login CODE`
+in the initiating Telegram chat before authentication can finish, exactly as in
+the page-based flow. Routing is by state: a `browser.` state takes
 the server-side branch, and any other state keeps the legacy page.
 
 ### Browser state routing and status codes
@@ -233,9 +268,9 @@ Completion endpoint (`POST /api/auth/telegram/browser-complete`, JSON body):
 
 | Status | `error` | When |
 |---|---|---|
-| 200 | — | Success. Body `{"ok": true, "redirect_url": "https://t.me/<bot>"}`. `redirect_url` is `null` when the bot has no valid username. |
+| 202 | — | Pending confirmation. Body `{"ok": true, "pending_confirmation": true, "confirmation_code": "<22-character code>", "redirect_url": "https://t.me/<bot>"}`. The session is not authenticated. `redirect_url` is `null` when the bot has no valid username. |
 | 400 | `bad_request` | Malformed JSON, a non-object body, or a missing `state`. |
-| 401 | `rejected` | Unknown `auth_method` value, a missing or invalid credential, an identity mismatch, a method the bot does not enable, or a completion that returns false. |
+| 401 | `rejected` | Unknown `auth_method` value, a missing or invalid credential, an identity mismatch, a method the bot does not enable, or a rejected candidate preparation. |
 | 410 | `expired` | Unknown, expired or already-used state, or a state without the `browser.` prefix. |
 | 503 | `unavailable` | The verifier is unavailable, or no wrapper is registered for the state's bot. |
 
@@ -243,14 +278,15 @@ OAuth2 provider redirect (`GET /oauth2/callback` with a `browser.` state). The r
 
 | Status | When |
 |---|---|
-| 200 | Success page with a `https://t.me/<bot>` deep link. |
+| 200 | Pending confirmation page with `/login CODE`, a sharing warning and an optional `https://t.me/<bot>` link. |
 | 400 | The provider reported an error or cancelled, or sent no `code`. The state is consumed. |
 | 401 | The verifier or code exchange rejected the sign-in. |
 | 410 | Unknown, expired or already-used state. |
 | 503 | The bot or its verifier is unavailable. |
 
 A state without the `browser.` prefix on the GET callback keeps the legacy page.
-No token or claim is echoed back in any response body.
+No provider token or identity claim is echoed back in a completion response. The
+confirmation code is intentionally returned only to the browser and must be kept secret.
 
 ### Login pages and return context
 
@@ -266,6 +302,12 @@ The pages keep this context across the Azure or Google SSO round trip. They stor
 a marker in `sessionStorage` under `tg_browser_login_ctx`, and they restore it
 before they handle the returning `?token=`. When the context is present, the page
 POSTs `{...payload, state}` to `complete_url` instead of calling `sendData()`.
+A valid pending response displays the command as plain text and a bot link.
+Missing or malformed confirmation codes produce an error, never a success panel.
+
+Only complete a login you personally started. Do not share the code. If someone
+sent you the login link, close the page. This prevents activation from a forwarded
+link alone; it does not prevent social engineering where a victim shares the code.
 
 The pages fail closed. A `return_mode` other than `browser`, a malformed state, a
 state that differs from the stored marker, or a `complete_url` that is not on
@@ -279,6 +321,10 @@ A `complete_url` on another origin must be listed by the deployer in the
 space-separated list of origins, for example
 `content="https://api.example.com"`, when the pages are hosted on a different origin
 from the completion endpoint. The page's own origin is always allowed.
+The multi-provider page also has a Content Security Policy: deployments that
+use another API origin must allow it in `connect-src`. Its inline script is
+allowed by an exact SHA-256 hash in `script-src`; regenerate that hash whenever
+you customize the script rather than enabling arbitrary inline scripts.
 
 ## Gotchas
 
@@ -303,9 +349,10 @@ from the completion endpoint. The page's own origin is always allowed.
   navigator-auth is fixed.
 - **No display name or email on basic logins.** A basic browser login has no display
   name or email unless the verified token carries `name` or `email` claims. The
-  success page then renders an empty name.
+  browser confirmation page does not display the candidate identity.
 - **The inline button stays in the chat history.** Browser mode does not remove
-  the login button. The success message is a new chat message.
+  the login button. The result message follows code redemption; old links and
+  codes cannot be reused.
 - **Keep `complete_url` and `redirect_url` server-derived.** Both are built from
   `public_base_url` and fixed paths. Never take them from client input. The pages
   validate `complete_url` for this reason.
@@ -315,7 +362,8 @@ from the completion endpoint. The page's own origin is always allowed.
 - [Google OAuth 2.0 integration](google-oauth2.md) — the OAuth2 provider setup that `auth_method: oauth2` uses.
 - [Telegram connections](telegram-connections.md) — the delegated connections a linked Telegram user can use after login.
 - [Telegram Bot Integration Guide](telegram_integration.md) — the bot YAML and setup that these keys sit in.
-- Specification: `sdd/specs/telegram-auth-open-mode.spec.md` (FEAT-854).
+- Specifications: `sdd/specs/telegram-auth-open-mode.spec.md` (FEAT-854) and
+  `sdd/specs/telegram-browser-login-fixes.spec.md` (FEAT-906).
 - Follow-ups from the spec: PassKey / WebAuthn login through navigator-auth; OAuth2
   for MCP tools; Redis-backed browser-login state; profile enrichment through
   navigator-auth's `GET /api/v1/user/session`, which exists in navigator-auth and is not yet used by parrot.

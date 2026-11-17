@@ -12,6 +12,7 @@ from aiogram.types import InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboa
 from parrot.integrations.telegram.browser_login import (
     BROWSER_LOGIN_APP_KEY,
     BrowserLoginEntry,
+    new_browser_state,
     BrowserVerificationError,
     BrowserVerifierUnavailableError,
     VerifiedBrowserIdentity,
@@ -203,16 +204,20 @@ def _wrapper(*, post_auth: bool = False) -> TelegramAgentWrapper:
     return wrapper
 
 
-def _entry() -> BrowserLoginEntry:
+def _entry(wrapper: TelegramAgentWrapper) -> BrowserLoginEntry:
     """Return browser correlation state owned by the server."""
-    return BrowserLoginEntry(
-        state="browser." + "a" * 43,
+    entry = BrowserLoginEntry(
+        state=new_browser_state(),
         telegram_id=88123,
         chat_id=88124,
         bot_id="7001",
         bot_username="bot",
         created_at=time.monotonic(),
     )
+    registry = get_or_create_browser_login_registry(wrapper.app)
+    registry.register(entry)
+    registry.consume(entry.state)
+    return entry
 
 
 def _browser_config(*, methods: list[str], **kwargs: Any) -> TelegramAgentConfig:
@@ -322,11 +327,9 @@ async def test_browser_basic_rejects_forged_identity() -> None:
     wrapper = _wrapper()
 
     with pytest.raises(BrowserVerificationError):
-        await wrapper._complete_auth_payload(
+        await wrapper._prepare_browser_login(
             {"auth_method": "basic", "user_id": "admin", "token": ""},
-            telegram_id=88123,
-            chat_id=88124,
-            browser_entry=_entry(),
+            browser_entry=_entry(wrapper),
         )
 
     wrapper._auth_strategy.handle_callback.assert_not_awaited()
@@ -344,28 +347,30 @@ async def test_browser_identity_uses_verified_claims() -> None:
     register_browser_identity_verifier(wrapper.app, bot_id="7001", auth_method="basic", verifier=verifier)
 
     with pytest.raises(BrowserVerificationError):
-        await wrapper._complete_auth_payload(
+        await wrapper._prepare_browser_login(
             {"auth_method": "basic", "user_id": "43", "token": "verified-token"},
-            telegram_id=88123,
-            chat_id=88124,
-            browser_entry=_entry(),
+            browser_entry=_entry(wrapper),
         )
-    assert await wrapper._complete_auth_payload(
+    code = await wrapper._prepare_browser_login(
         {"auth_method": "basic", "token": "verified-token"},
+        browser_entry=_entry(wrapper),
+    )
+    assert wrapper._user_sessions == {}
+    pending = get_or_create_browser_login_registry(wrapper.app).confirm(
+        code,
+        bot_id="7001",
         telegram_id=88123,
         chat_id=88124,
-        browser_entry=_entry(),
     )
-    assert wrapper._user_sessions[88123].nav_user_id == "42"
+    assert pending.candidate.nav_user_id == "42"
+    wrapper._persist_principal_link.assert_not_awaited()
 
     composite = CompositeAuthStrategy({"basic": wrapper._auth_strategy}, "https://example.test/login")
     wrapper._auth_strategy = composite
     with pytest.raises(BrowserVerificationError):
-        await wrapper._complete_auth_payload(
+        await wrapper._prepare_browser_login(
             {"auth_method": "unknown", "token": "verified-token"},
-            telegram_id=88123,
-            chat_id=88124,
-            browser_entry=_entry(),
+            browser_entry=_entry(wrapper),
         )
 
 
@@ -374,22 +379,18 @@ async def test_browser_verifier_unavailable_fails_closed() -> None:
     """Missing or unavailable verifiers propagate typed errors without legacy fallback."""
     wrapper = _wrapper()
     with pytest.raises(BrowserVerifierUnavailableError):
-        await wrapper._complete_auth_payload(
+        await wrapper._prepare_browser_login(
             {"auth_method": "basic", "token": "token"},
-            telegram_id=88123,
-            chat_id=88124,
-            browser_entry=_entry(),
+            browser_entry=_entry(wrapper),
         )
 
     verifier = MagicMock()
     verifier.verify = AsyncMock(side_effect=BrowserVerifierUnavailableError("offline"))
     register_browser_identity_verifier(wrapper.app, bot_id="7001", auth_method="basic", verifier=verifier)
     with pytest.raises(BrowserVerifierUnavailableError):
-        await wrapper._complete_auth_payload(
+        await wrapper._prepare_browser_login(
             {"auth_method": "basic", "token": "token"},
-            telegram_id=88123,
-            chat_id=88124,
-            browser_entry=_entry(),
+            browser_entry=_entry(wrapper),
         )
     wrapper._auth_strategy.handle_callback.assert_not_awaited()
     assert wrapper._user_sessions == {}
@@ -403,16 +404,20 @@ async def test_browser_mode_combined_post_auth() -> None:
     verifier.verify = AsyncMock(return_value=VerifiedBrowserIdentity(user_id="42", display_name="Alice"))
     register_browser_identity_verifier(wrapper.app, bot_id="7001", auth_method="basic", verifier=verifier)
 
-    assert await wrapper._complete_auth_payload(
+    code = await wrapper._prepare_browser_login(
         {"auth_method": "basic", "token": "verified-token"},
-        telegram_id=88123,
-        chat_id=88124,
-        browser_entry=_entry(),
+        browser_entry=_entry(wrapper),
     )
 
-    candidate = wrapper._begin_login_attempt.await_args.args[0]
-    assert candidate.nav_user_id == "42"
-    assert wrapper._begin_login_attempt.await_args.kwargs["chat_id"] == 88124
+    wrapper._begin_login_attempt.assert_not_awaited()
+    pending = get_or_create_browser_login_registry(wrapper.app).confirm(
+        code,
+        bot_id="7001",
+        telegram_id=88123,
+        chat_id=88124,
+    )
+    assert pending.candidate.nav_user_id == "42"
+    assert pending.requires_post_auth is True
     assert wrapper._user_sessions == {}
 
 

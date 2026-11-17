@@ -30,6 +30,7 @@ from parrot.integrations.telegram.browser_login import (
     telegram_deep_link,
 )
 
+
 def _entry(state: str, created_at: float | None = None) -> BrowserLoginEntry:
     return BrowserLoginEntry(
         state=state,
@@ -153,10 +154,10 @@ def _register(app: web.Application, *, created_at: float | None = None) -> Brows
     return entry
 
 
-def _wrapper(*, result: object = True) -> object:
+def _wrapper(*, result: object = "a" * 22) -> object:
     """Return a minimal wrapper double for endpoint delegation assertions."""
     wrapper = type("BrowserWrapper", (), {})()
-    wrapper._complete_auth_payload = AsyncMock(return_value=result)
+    wrapper._prepare_browser_login = AsyncMock(return_value=result)
     return wrapper
 
 
@@ -171,7 +172,7 @@ async def test_browser_complete_handler_unknown_state_410(browser_client) -> Non
         response = await client.post(BROWSER_COMPLETE_PATH, json={"state": state, "token": "secret"})
         assert response.status == 410
         assert await response.json() == {"ok": False, "error": "expired"}
-    wrapper._complete_auth_payload.assert_not_awaited()
+    wrapper._prepare_browser_login.assert_not_awaited()
 
 
 async def test_browser_complete_handler_success(browser_client) -> None:
@@ -195,12 +196,15 @@ async def test_browser_complete_handler_success(browser_client) -> None:
         },
     )
 
-    assert response.status == 200
-    assert await response.json() == {"ok": True, "redirect_url": "https://t.me/parrot_test_bot"}
-    wrapper._complete_auth_payload.assert_awaited_once_with(
+    assert response.status == 202
+    assert await response.json() == {
+        "ok": True,
+        "pending_confirmation": True,
+        "confirmation_code": "a" * 22,
+        "redirect_url": "https://t.me/parrot_test_bot",
+    }
+    wrapper._prepare_browser_login.assert_awaited_once_with(
         {"auth_method": "basic", "token": "secret-token"},
-        telegram_id=entry.telegram_id,
-        chat_id=entry.chat_id,
         browser_entry=entry,
     )
     replay = await client.post(BROWSER_COMPLETE_PATH, json={"state": entry.state, "token": "secret-token"})
@@ -219,7 +223,7 @@ async def test_browser_complete_handler_error_mapping(browser_client) -> None:
         assert await response.json() == {"ok": False, "error": "bad_request"}
 
     rejected = _register(app)
-    wrapper._complete_auth_payload.side_effect = BrowserVerificationError("bad token")
+    wrapper._prepare_browser_login.side_effect = BrowserVerificationError("bad token")
     response = await client.post(
         BROWSER_COMPLETE_PATH, json={"state": rejected.state, "auth_method": "basic", "token": "secret-token"}
     )
@@ -227,8 +231,7 @@ async def test_browser_complete_handler_error_mapping(browser_client) -> None:
     assert "secret-token" not in await response.text()
 
     false_result = _register(app)
-    wrapper._complete_auth_payload.side_effect = None
-    wrapper._complete_auth_payload.return_value = False
+    wrapper._prepare_browser_login.side_effect = BrowserVerificationError("invalid identity")
     response = await client.post(BROWSER_COMPLETE_PATH, json={"state": false_result.state, "token": "secret-token"})
     assert response.status == 401
 
@@ -246,7 +249,7 @@ async def test_browser_complete_handler_error_mapping(browser_client) -> None:
     assert response.status == 401
 
     unavailable = _register(app)
-    wrapper._complete_auth_payload.side_effect = BrowserVerifierUnavailableError("down")
+    wrapper._prepare_browser_login.side_effect = BrowserVerifierUnavailableError("down")
     response = await client.post(BROWSER_COMPLETE_PATH, json={"state": unavailable.state, "token": "secret-token"})
     assert response.status == 503
 
@@ -272,7 +275,7 @@ async def test_browser_mode_full_flow_basic(browser_client) -> None:
     """The endpoint passes a basic browser payload through one successful completion call."""
     app, client = browser_client
     entry = _register(app)
-    wrapper = _wrapper(result=True)
+    wrapper = _wrapper()
     app[TELEGRAM_WRAPPERS_APP_KEY] = {entry.bot_id: wrapper}
 
     response = await client.post(
@@ -280,16 +283,14 @@ async def test_browser_mode_full_flow_basic(browser_client) -> None:
         json={"state": entry.state, "auth_method": "basic", "token": "verified-token"},
     )
 
-    assert response.status == 200
-    wrapper._complete_auth_payload.assert_awaited_once_with(
+    assert response.status == 202
+    wrapper._prepare_browser_login.assert_awaited_once_with(
         {"auth_method": "basic", "token": "verified-token"},
-        telegram_id=entry.telegram_id,
-        chat_id=entry.chat_id,
         browser_entry=entry,
     )
 
 
-_WIKI_PAGE =Path(__file__).resolve().parents[5] / "wiki/integrations/telegram-auth-open-mode.md"
+_WIKI_PAGE = Path(__file__).resolve().parents[5] / "wiki/integrations/telegram-auth-open-mode.md"
 
 
 def test_wiki_page_documents_browser_mode():
