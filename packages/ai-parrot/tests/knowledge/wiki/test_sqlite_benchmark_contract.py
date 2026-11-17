@@ -164,4 +164,4 @@ def test_minimal_spawned_claim_race(tmp_path: Path) -> None:
 
 
 # Later measurement task appends test_committed_measurement_evidence here.
-# Preserve the unique BENCHMARK_REPORT_SCHEMA = 1 attachment anchor.
+# Preserve the unique benchmark report schema attachment anchor.
