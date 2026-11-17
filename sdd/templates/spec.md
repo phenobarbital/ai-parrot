@@ -50,6 +50,8 @@ tags: []
 
 ### Non-Goals (explicitly out of scope)
 - Non-goal 1
+- Deferred: <thing not built> — <what would justify building it>
+  <!-- one `Deferred:` line per item the Necessity Ladder (§3) cut at R1 -->
 
 ---
 
@@ -103,6 +105,29 @@ class NewComponent:
 > Define the discrete modules that will be implemented.
 > These directly map to Task Artifacts in Phase 2.
 
+#### Necessity Ladder
+
+<!-- One row per module below. Built by `/sdd-spec` §4c, checked by §5a.
+     Rungs: R2 already in this repo · R3 standard library · R4 platform feature
+     already in the stack · R5 installed dependency · R6 single change at an
+     existing site · R7 new code. Things cut at R1 are not rows: they are
+     `Deferred:` lines in §1 Non-Goals. The row's rung is that of the code that
+     is actually NEW; what it leans on goes in "Reuses". -->
+
+| Module | Rung | Reuses (evidence) | Serves | New code | Est. LOC |
+|---|---|---|---|---|---|
+| M1: <name> | R2 | `ExistingClass.method` — verified: `path/file.py:NN` | Goal 1, AC 2 | call site only | ~5 |
+| M2: <name> | R5 | `package.symbol` — `pyproject.toml:NN` | AC 3 | one adapter function | ~15 |
+| M3: <name> | R7 | `ExistingBase` — verified: `path/base.py:NN`. Nothing covers <gap>: Does NOT Exist `pkg.module.Thing` (query: `grep -rn "class .*Thing" <src>/`) | AC 4 | 1 class, 2 methods | ~80 |
+
+Totals: <M> modules — reuse <a> · stdlib/platform <b> · dependency <c> · single change <d> · new <e> · deferred <k> · est. new LOC <n>
+
+- This table is binding downstream. A task that needs a public symbol, a file
+  or a dependency that is not here goes back to the spec; it is not added
+  during implementation.
+- "Est. LOC" is new non-test lines, rough. An implementation well above it
+  (around twice) is a review finding to explain, not a failure.
+
 #### Delegation-eligible modules
 
 Mark which modules can be implemented by the targeted writer from an
@@ -150,6 +175,9 @@ writing the code is mechanical".
 |---|---|---|
 | `test_component_init` | Module 1 | Validates initialization with valid config |
 | `test_component_error` | Module 1 | Handles invalid input gracefully |
+
+> One row per behaviour with logic in NEW code (ladder R7): a branch, a loop, a parser,
+> money, security. Reused code (R2–R5) is tested where it lives — no rows for it here.
 
 ### Integration Tests
 | Test | Description |
@@ -248,6 +276,8 @@ parrot e2e verify --plan <path-to-generated>/e2e-plan.md
 - [ ] All integration tests pass (`pytest tests/integration/ -v`)
 - [ ] Documentation pages declared in §10 exist under `wiki/` (`parrot sdd techwiki check`)
 - [ ] No breaking changes to existing public API
+- [ ] No public symbol, file or dependency beyond §3 Interface Skeletons, §6 Edit Sites
+      and §7 External Dependencies (the §3 Necessity Ladder holds)
 - [ ] Performance benchmark: <metric> within <threshold>
 - [ ] Criterion N
 
@@ -334,6 +364,16 @@ class ExistingClass(BaseClass):
 | Package | Version | Reason |
 |---|---|---|
 | `package` | `>=x.y` | why needed |
+
+### Known Shortcuts
+
+<!-- OPTIONAL. One row per deliberately limited solution (`/sdd-spec` §4c rule 8).
+     The implementation carries the same text as a code comment:
+     `# shortcut: <limit>, <when to upgrade>`. Omit the section when there are none. -->
+
+| Module | Shortcut | Limit | Upgrade when |
+|---|---|---|---|
+| M3 | in-memory lookup instead of an index | fine up to ~10k entries | the collection outgrows that, or lookups show up in profiling |
 
 ---
 
