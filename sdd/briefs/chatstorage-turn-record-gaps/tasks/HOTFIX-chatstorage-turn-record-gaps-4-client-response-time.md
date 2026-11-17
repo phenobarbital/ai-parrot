@@ -2,7 +2,7 @@
 
 **Feature**: chatstorage-turn-record-gaps — close the turn-record gaps between conversation history and ChatStorage
 **Spec**: `sdd/briefs/chatstorage-turn-record-gaps.brief.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -102,4 +102,8 @@ returns, using the same elapsed time the method passes as `duration_ms` to `_emi
 
 ## Completion Note
 
-Pending.
+Seat: sonnet (native) · Attempts: 1 · Review: orchestrator diff review, 0 fix commits.
+
+Six ask() methods set response_time from the same duration used for duration_ms. Each has one return path; none uncovered. Tests are structural (regex over ask() source + from_ai_message metadata), so AC-1/AC-2 are not behavioural; offline driving needs live SDK objects. Task Files table was amended to list the six paths explicitly because the fidelity gate rejected the prose reference.
+
+Validation: task Validation Commands green (281 passed, 69 skipped across the task test files). The merge-tier sweep timed out twice at the engine cap; the only failures seen (telegram, slack, voice browser, pageindex, computer-use, flows storage factory, openai multiround usage) are in code these tasks did not touch (openai failure raises in _chat_completion before the edited lines). Not confirmed against a baseline tree: baseline creation is blocked in this sandbox.

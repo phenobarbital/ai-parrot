@@ -2,7 +2,7 @@
 
 **Feature**: chatstorage-turn-record-gaps — close the turn-record gaps between conversation history and ChatStorage
 **Spec**: `sdd/briefs/chatstorage-turn-record-gaps.brief.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (1-2h)
 **Depends-on**: none
@@ -84,4 +84,8 @@ In `packages/ai-parrot/src/parrot/clients/base.py`:
 
 ## Completion Note
 
-Pending.
+Seat: gpt-5.6-luna (codex) · Attempts: 1 · Review: orchestrator diff review, 0 fix commits.
+
+_compute_call_cost lazily calls ensure_shared_cost_calculator() inside the existing try; never raises.
+
+Validation: task Validation Commands green (281 passed, 69 skipped across the task test files). The merge-tier sweep timed out twice at the engine cap; the only failures seen (telegram, slack, voice browser, pageindex, computer-use, flows storage factory, openai multiround usage) are in code these tasks did not touch (openai failure raises in _chat_completion before the edited lines). Not confirmed against a baseline tree: baseline creation is blocked in this sandbox.
