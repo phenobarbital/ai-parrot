@@ -220,7 +220,10 @@ human-reviewed feature PR; (3) the reducer re-validates every line against the p
 and re-redacts every text field on ingestion, from any source, and drops what fails; (4) lesson
 text reaches a model only inside the fixed template, explicitly labelled as unverified data
 recorded by another agent, never as an instruction; (5) the briefing carries confirmed lessons
-only. Host-authoritative provenance is a non-goal for v1.
+only. Host-authoritative provenance is a non-goal for v1. Cross-repository propagation is narrower than the in-repo trust
+model (decision 2026-11-16, issue:8a57d1b3aaa1): `sync_global` copies into `$PARROT_HOME` only events whose
+`event_id` is in the reviewed `sdd/experience/lessons/` files (a lesson's definition and its shared attestations),
+so unattested worker-written events, and any forged evidence for an attested lesson, never leave their own repository.
 
 **Sharing.** `export` writes the not-yet-exported definition events — `lesson.recorded`, and the
 attestations `lesson.confirmed`, `lesson.quarantined`, `lesson.retired`, `lesson.graduated` for
@@ -924,7 +927,7 @@ parrot sdd experience rebuild                    # re-reduce all sources into th
       """parrot_home() / 'experience' (parrot_home verified: launcher.py:26)."""
   def sync_global(repo_plane: Path) -> int:
       """Copy tier='global' events absent from the global log into it, same event_id; return the
-      count. Host only; idempotent."""
+      count; only events in shared_event_ids() cross (FEAT-887 trust model). Host only; idempotent."""
   def shared_event_ids(checkout: Path) -> set[str]:
       """event_ids already present in any checkout/SHARED_DIR/*.jsonl file (safe_open, bounded)."""
   def export_shared(repo_plane: Path, checkout: Path) -> Path | None:
