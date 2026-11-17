@@ -41,6 +41,42 @@ def _scenario(**changes: object) -> ScenarioSpec:
     return ScenarioSpec(**values)
 
 
+@pytest.mark.parametrize(
+    ("outcome", "expected"),
+    [
+        ("passed", ("PASS", 0, True)),
+        ("failed", ("FAIL", 1, False)),
+        ("xfailed", ("FAIL", 1, False)),
+        ("xpassed", ("FAIL", 1, False)),
+        ("skipped", ("FAIL", 1, False)),
+        ("blocked", ("BLOCKED", 3, False)),
+        ("missing", ("FAIL", 1, False)),
+        (None, ("BLOCKED", 3, False)),
+    ],
+)
+def test_optional_live_plan_requires_successful_proof(outcome: str | None, expected: tuple[str, int, bool]) -> None:
+    """Optional plans reject missing/skipped/failed required live nodes."""
+    scenario = _scenario(id="scenario-live", tier="live", node_ids=["tests/e2e/test_live.py::test_recall"])
+    plan = _plan(scenario).model_copy(update={"policy": "optional"})
+    results = [] if outcome is None else runner._results_for_nodes(scenario, outcome, "")
+
+    status, exit_code, gate_satisfied = runner._verdict_status(plan, results, {}, True, None)
+
+    assert (status, exit_code, gate_satisfied) == expected
+    assert gate_satisfied is (status == "PASS")
+
+
+def test_optional_live_plan_unsatisfied_cleanup_never_passes() -> None:
+    """A fully passed required live node still fails when target cleanup was incomplete."""
+    scenario = _scenario(id="scenario-live", tier="live", node_ids=["tests/e2e/test_live.py::test_recall"])
+    plan = _plan(scenario).model_copy(update={"policy": "optional"})
+    passed = runner._results_for_nodes(scenario, "passed", "")
+
+    status, _exit_code, gate_satisfied = runner._verdict_status(plan, passed, {"run-a": False}, True, None)
+
+    assert (status, gate_satisfied) == ("FAIL", False)
+
+
 def test_required_missing_or_blocked_coverage_is_blocked() -> None:
     """Required nodes that never execute must map to the documented blocked exit."""
     scenario = _scenario()
