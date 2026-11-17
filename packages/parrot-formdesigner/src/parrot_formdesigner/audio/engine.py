@@ -15,7 +15,12 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
-from ..core.llm_validation import LLMValidationConfig, PlausibilityReport, llm_validation_enabled
+from ..core.llm_validation import (
+    NOT_EXAMINED_MAX_FIELDS,
+    LLMValidationConfig,
+    PlausibilityReport,
+    llm_validation_enabled,
+)
 from ..core.schema import FormField, FormSchema
 from ..core.types import FieldType
 from ..core.voice import FieldVoiceMeta, VoiceFormConfig, field_voice_meta, is_sensitive
@@ -946,10 +951,20 @@ class AudioFormSession:
             # Retryable and never stored: stay in REVIEW; review_confirm re-runs the check (AC13).
             out = [Error(code="PLAUSIBILITY_UNAVAILABLE", message=report.reason or "plausibility unavailable")]
             return out + self._start_review(report=None)
-        self._pl_unchecked -= requested or set()
+        asked = requested or set()
+        # Only fields the model actually judged (or that can never be judged) leave the pending set:
+        # capped fields were NOT checked and stay pending so a later batch re-submits them, while
+        # unrenderable ones can never be checked and must not loop; they are flagged in not_examined.
+        capped = {fid for fid in asked if report.not_examined.get(fid) == NOT_EXAMINED_MAX_FIELDS}
+        self._pl_unchecked -= asked - capped
+        self._pl_unchecked |= capped
         current = self.state.plausibility
+        # Merge rule: the new report wins for the fields it requested; entries for fields not requested
+        # this time are kept (while still answered); a field now examined drops out.
+        previous = {} if current is None else {f: r for f, r in current.not_examined.items() if f not in asked}
+        merged_not_examined = {f: r for f, r in {**previous, **report.not_examined}.items() if f in self.state.answers}
         if current is None:
-            merged = report.model_copy(update={"items": {}})
+            merged = report.model_copy(update={"items": {}, "not_examined": merged_not_examined})
         else:
             merged = current.model_copy(
                 update={
@@ -959,6 +974,7 @@ class AudioFormSession:
                     "threshold": report.threshold,
                     "latency_ms": report.latency_ms,
                     "items": dict(current.items),
+                    "not_examined": merged_not_examined,
                 }
             )
         for fid in requested or set():
