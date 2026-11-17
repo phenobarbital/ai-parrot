@@ -35,6 +35,10 @@ feature. Hotfixes are not specs: use `$sdd-brief <source>` (FEAT-698).
 - Build a verified Codebase Contract with file paths and line numbers.
 - Identify delegation-eligible modules (see the workflow note below).
 - Commit only the spec and this run's promoted design-research/intake artifacts.
+- Least new code: every §3 module passes the Necessity Ladder (R1–R7) and has one row in the
+  spec's `#### Necessity Ladder` table; a module is new code only when a recorded search shows
+  nothing existing covers it. Never cut validation at trust boundaries, error handling that
+  prevents data loss, security, accessibility or anything explicitly requested.
 
 ## Workflow
 
@@ -106,6 +110,8 @@ stay with the thinking model — eligibility never delegates a design choice.
    - read every file before citing imports, methods, classes, signatures, or
      paths
    - record plausible things that do not exist
+   - Build the Necessity Ladder (full procedure §4c): walk each candidate module R1–R7 and stop
+     at the first rung that fully covers it.
 8b. Optional independent design research, before drafting the spec:
    - when prior exploration is accepted or intake reached `rounds_complete`,
      follow the full procedure's collaborative research step using
@@ -169,6 +175,8 @@ stay with the thinking model — eligibility never delegates a design choice.
      `e2e-plan.md` frontmatter is generated later, at task decomposition,
      once pytest node IDs are frozen
    - Open Questions with resolved/unresolved state preserved
+   - Run the Lean Review (full procedure §5a, checks L1–L10) before the consequence gate; never
+     set `**Status**: approved` while a check fails. Print the `Ladder:` line in the output.
 10b. Consequence gate (FEAT-784):
    - `parrot sdd spec consequences <spec> --render`, then the same without `--render`
    - exit 0 pass/skipped · 1 conflict · 2 invalid · 3 incomplete/stale/missing

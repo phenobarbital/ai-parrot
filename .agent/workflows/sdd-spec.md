@@ -26,6 +26,9 @@ These intake flags are ignored (with a notice) on the carry-forward path.
 - Do NOT write implementation bodies in the spec — but every §3 module MUST
   carry an **Interface Skeleton** (signatures, docstrings, `verified:` anchors;
   see §4 item 6). Bodies belong to task Implementation Blueprints (`/sdd-task`).
+- **Least new code**: every §3 module must pass the Necessity Ladder (§4c) —
+  it is new code only when a recorded search shows nothing existing covers
+  it. The ladder never cuts what §4c lists under "Never cut".
 - **Feature IDs are unique by construction**: new `FEAT-<NNN>` numbers are
   reserved via `parrot.sdd.scripts.reserve_ids` (FEAT-387) — a git-native
   compare-and-swap ledger, not a manual "check existing specs" scan — so
@@ -91,6 +94,7 @@ optional — every non-empty brainstorm section below has a target in the spec:
 | Feature Description → Internal Behavior | §2 Component Diagram + Integration Points |
 | Feature Description → Edge Cases & Error Handling | §7 Known Risks / Gotchas |
 | Capabilities (New + Modified) | §3 Module Breakdown (one module per capability as a starting point) |
+| Deferred Capabilities | §1 Non-Goals (`Deferred:` lines, verbatim) |
 | Impact & Integration table | §2 Integration Points |
 | Code Context (entire section) | §6 Codebase Contract (re-verify every reference — code may have shifted) |
 | Libraries / Tools table | §7 External Dependencies |
@@ -415,7 +419,8 @@ before drafting the spec. The command writes findings to `sdd/state/.contributio
 Before writing the spec:
 - Read existing specs in `sdd/specs/` directory.
 - Identify related existing components (AbstractClient, AgentCrew, BaseLoader, etc.).
-- Note what can be reused vs. what must be created.
+- Note what can be reused vs. what must be created — §4c turns this note
+  into the spec's Necessity Ladder table.
 
 **CRITICAL — Codebase Contract Construction:**
 This step prevents AI hallucinations during implementation. You MUST:
@@ -471,6 +476,67 @@ Read every listed decision (rationale, consequences, supersession, freshness) an
 them. A spec that changes a governing decision must say so in `## Decisions` with `supersedes:` or
 `contradicts:` — never silently. When the command prints `decision audit not configured in this
 repository`, skip this step.
+
+### 4c. Necessity Ladder (least-new-code gate)
+
+Run after §4/§4b and before §5, over every candidate module: the brainstorm's
+Capabilities, the intake synthesis scope, and every `CONFIRM` from §3b/§3c.
+The amount of code a feature produces is fixed by its spec — `/sdd-task` and the
+coders can only build what the Interface Skeletons name — so the cut happens here.
+
+For each candidate, walk the rungs in order and **stop at the first one that
+fully covers it**. Record the result as one row of the spec's
+`#### Necessity Ladder` table (§3 of the template).
+
+| Rung | Question | If it holds | Evidence the row must carry |
+|---|---|---|---|
+| R1 | Does a §1 Goal or §5 criterion need it? | No → do not build it | A `Deferred:` line in §1 Non-Goals (no table row) |
+| R2 | Is it already in this repository (helper, base class, service, toolkit, pattern)? | Reuse it the way the neighbouring code does | `verified: path:NN`, also present in §6 |
+| R3 | Does the standard library do it? | Use it | The symbol (`asyncio.TaskGroup`) |
+| R4 | Is it a feature of the platform already in the stack (framework, database, runtime, browser)? | Use it — unless the repo has its own component for it, then R2 wins | The symbol + one `path:NN` where the stack already uses it |
+| R5 | Does a dependency already declared in the repo's manifests do it? | Use it | The manifest line (`pyproject.toml:NN`) + the symbol |
+| R6 | Can it be a single change at an existing site (one line, one argument, one config key)? | Do that | Its MODIFY row in §6 Edit Sites |
+| R7 | None of the above | Write the minimum that satisfies the criteria | The search that came back empty: at least one §6 "Does NOT Exist" entry + the query used |
+
+**Rules**
+
+1. **Search before you claim.** R2–R5 are claimed only with evidence read in
+   this run; R7 only after the R2–R5 searches are recorded. Use whatever the
+   repo offers (`grep`, ast-grep, the wiki), and check the in-house and
+   preferred packages your repository's conventions name (`sdd/CONVENTIONS.md`
+   § Reuse first) before any other dependency. A reuse you cannot verify does
+   not hold the rung — move down.
+2. **What R1 may cut without asking**: options, parameters, config keys,
+   abstraction layers, base classes with a single implementation,
+   compatibility shims and "for later" hooks that no Goal or criterion
+   requires. **What it may not**: a capability the accepted
+   brainstorm/proposal/intake requires, or a `[x]` resolved answer. Those are
+   kept; if you believe one is unnecessary, add a `[ ]` question to §8
+   (§2b rule 4) — never drop it silently, never ask in an unattended run.
+3. **Partial coverage.** When existing code covers part of a module, the row's
+   rung is that of the *remaining* new code, "Reuses" lists what is reused, and
+   the size estimate counts only the remainder.
+4. **The skeleton follows the ladder.** An R2–R6 row has no CREATE row in §6
+   Edit Sites and adds no public symbol beyond its call site. An R7 skeleton
+   holds only symbols a Goal or criterion needs. Existing layers, interfaces
+   and conventions stay as they are — the spec does not refactor neighbours.
+5. **Dependencies.** A package not yet in the manifests is allowed only when
+   the row shows R2–R5 failed and the code it replaces is substantial. Never
+   add one to save a few lines.
+6. **Never cut**, at any rung: validation at trust boundaries (request
+   handlers, tool arguments, parsed LLM output, external payloads); error
+   handling that prevents data loss; security (auth, secrets, sandboxing);
+   accessibility in UI; anything a governing decision (§4b) requires; hard
+   constraints from the exploration doc; the Validation Contract; anything the
+   user explicitly asked for.
+7. **Tests follow the new code.** Every R7 row with logic (a branch, a loop, a
+   parser, money, security) gets at least one §4 Unit Tests row. Reused code is
+   tested where it lives; do not add tests for it.
+8. **Shortcuts are written down.** A deliberately limited solution gets a row
+   in §7 Known Shortcuts, and its Interface Skeleton docstring says the
+   implementation carries `# shortcut: <limit>, <when to upgrade>`.
+9. **Size.** Each row carries a rough estimate of new non-test lines. It is a
+   reference for review, not a quota.
 
 ### 5. Scaffold the Spec
 1. Read the template at `sdd/templates/spec.md`. The template already contains
@@ -613,6 +679,33 @@ optional `api_modules`) and `## 10. Documentation` listing the wiki pages this f
 For `type: hotfix` and `/sdd-brief`, set `policy: none` (or omit the key). The chapter is informational
 and never blocks closeout.
 
+### 5a. Lean Review (checks the Necessity Ladder — never asks)
+
+Run over the scaffolded spec before §5b. Every check is mechanical. A failing
+check is fixed in the spec and the review re-run; anything that needs a human
+becomes a `[ ]` item in §8. **Do not set `**Status**: approved` while a check
+fails.**
+
+| # | Check | How | On failure |
+|---|---|---|---|
+| L1 | Coverage | Every `### Module N` has exactly one ladder row, and every row names a module | Add the row, or move the module to Non-Goals as `Deferred:` |
+| L2 | Reuse evidence | For each R2/R4/R5 `path:NN`: `sed -n 'NNp' <path>` shows the cited symbol; every R2 anchor also appears in §6 | Re-verify, or move the row down a rung |
+| L3 | New-code proof | Each R7 row names at least one §6 "Does NOT Exist" entry and the query that came back empty | Run the search; if it finds something, the row becomes R2–R5 |
+| L4 | Files | Every CREATE row in §6 Edit Sites belongs to an R7 module | Turn it into a MODIFY of an existing file, or correct the rung |
+| L5 | Dependencies | For each §7 External Dependencies package, `grep -n '<package>'` in the repo's manifests; a package that is absent needs an R7 row naming it and why R2–R5 failed | Remove the package, or record the justification |
+| L6 | Traceability | Every public symbol in the Interface Skeletons is reachable from a "Serves" entry (a Goal or criterion) | Remove the symbol |
+| L7 | Speculation | Run the L7 scan below this table — each hit is in Non-Goals or backed by a criterion; an abstract base or Protocol with one implementation exists only when §7 Patterns to Follow requires it | Remove it, or cite the criterion |
+| L8 | Never cut | Every module that touches a trust boundary, persistence or auth still states its validation, error handling and security in the skeleton docstrings | Restore what was cut |
+| L9 | Tests | Every R7 row with logic has a §4 Unit Tests row; no test row targets reused code | Add or remove the test row |
+| L10 | Fidelity | No capability the exploration doc requires is missing from both §3 and §8 (pairs with §5 item 4) | Restore it, or open the §8 question |
+
+```bash
+# L7 — speculation scan (kept outside the table: a `|` inside a table cell needs escaping)
+grep -niE 'future|later|extensib|pluggable|generic|just in case' sdd/specs/<feature-name>.spec.md
+```
+
+Fill the table's `Totals` line once the checks pass; §7 prints it.
+
 ### 5b. Consequence Gate
 
 Render, then check (read-only):
@@ -716,6 +809,7 @@ If the pull or the push fails, do not force anything. Stop and print:
 
    Feature ID: FEAT-<ID>
    Module graph: <M> modules, <E> dependency edges, exclusive: <modules or "none">
+   Ladder: reuse <a> · stdlib/platform <b> · dependency <c> · single change <d> · new <e> · deferred <k> · est. new LOC <n>
    Design research: <N> suggestions — <C> confirmed / <R> rejected / <E> escalated   (model <MODEL>)
    # or:  Design research: skipped (<SKIP_REASON>)
    Intake: research <depth> (confidence <c> | degraded | skipped), rounds <n>, open questions <m>, Jira <KEY | created KEY | none>
