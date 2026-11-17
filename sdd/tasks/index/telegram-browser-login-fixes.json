@@ -42,7 +42,7 @@
       "feature_id": "FEAT-906",
       "feature": "telegram-browser-login-fixes",
       "spec": "sdd/specs/telegram-browser-login-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -50,8 +50,9 @@
       "parallelism_notes": "Independent security implementation; owns registry, wrapper and callback files plus their regression tests.",
       "assigned_to": "agent:sdd-fix:23dd9ec1",
       "started_at": "2026-11-17T12:26:09.432477+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5736-browser-confirmation-security.md"
+      "completed_at": "2026-11-17T13:16:17+00:00",
+      "file": "sdd/tasks/completed/TASK-5736-browser-confirmation-security.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5737",
@@ -76,7 +77,7 @@
     {
       "id": "TASK-5738",
       "slug": "browser-confirmation-documentation",
-      "title": "Documentation \u2014 Telegram browser login confirmation",
+      "title": "Documentation — Telegram browser login confirmation",
       "feature_id": "FEAT-906",
       "feature": "telegram-browser-login-fixes",
       "spec": "sdd/specs/telegram-browser-login-fixes.spec.md",

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-906 — Telegram browser login confirmation
 **Spec**: `sdd/specs/telegram-browser-login-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -177,4 +177,18 @@ Work only in the FEAT-906 worktree. Preserve other edits. Commit this task's fil
 
 ## Completion Note
 
-Recorded by task finalization after implementation and validation.
+
+- Task: TASK-5736
+- Feature: telegram-browser-login-fixes
+- Implementation SHA: 7e61031e6efc28d5b334efd30f7ae64a4941f8f7
+- Closed at (UTC): 2026-11-17T13:16:17+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| checkpoint | unsupported_host: native manual implementation has no engine settlement |
+| compaction | unsupported_host: no verified Codex adapter |
+| review | Independent review and primary evidence cross-check recorded |
+| validation | See immutable validation_refs |
