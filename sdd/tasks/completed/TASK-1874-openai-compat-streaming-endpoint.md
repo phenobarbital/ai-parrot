@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-247 — LiveAvatar FULL Mode Custom LLM
 **Spec**: `sdd/specs/liveavatar-full-mode-custom-llm.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

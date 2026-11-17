@@ -16,13 +16,19 @@ import yaml
 from pydantic import BaseModel, Field
 
 from parrot.mcp.hosts import HostEntryState, HostKind, detect_hosts, get_adapter
-from parrot.mcp.toolkit_config import load_toolkits_config
+from parrot.mcp.toolkit_config import (
+    AGENT_TOOLKIT_CLASS_PATH,
+    agent_section_name,
+    is_agent_section,
+    load_toolkits_config,
+)
 from parrot.mcp.toolkit_seed import (
     REPO_ROOT_PLACEHOLDER,
     available_templates,
     load_template,
     preflight_seed,
     remove_section,
+    seed_agent_sections,
     seed_toolkit_sections,
     set_section_enabled,
     template_drift,
@@ -45,6 +51,9 @@ class ToolkitRow(BaseModel):
     requires_llm: bool = False
     requires_dist: tuple[str, ...] = ()
     dist_available: bool = True
+    requires_pip: tuple[str, ...] = ()
+    post_install: tuple[str, ...] = ()
+    requires_env: tuple[str, ...] = ()
     drift: list[str] = Field(default_factory=list)
     hosts: list[HostEntryState] = Field(default_factory=list)
 
@@ -129,6 +138,9 @@ def inventory(root: Path, hosts: Sequence[HostKind] | None = None) -> list[Toolk
                 requires_llm=template.requires_llm,
                 requires_dist=template.requires_dist,
                 dist_available=dist_available(template.requires_dist),
+                requires_pip=template.requires_pip,
+                post_install=template.post_install,
+                requires_env=template.requires_env,
                 drift=drift,
                 hosts=row_hosts,
             )
@@ -136,21 +148,28 @@ def inventory(root: Path, hosts: Sequence[HostKind] | None = None) -> list[Toolk
     return rows
 
 
-def _reconcile_all(root: Path, hosts: Sequence[HostKind], report: ActionReport) -> None:
-    """Reconcile every host, collecting per-host failures instead of raising."""
+def _reconcile_all(
+    root: Path, hosts: Sequence[HostKind], report: ActionReport, *, portable: bool | None = None
+) -> None:
+    """Collect reconciler results with explicit command form and existing failure isolation."""
     for kind in hosts:
         adapter = get_adapter(kind)
         try:
-            actions, warnings = adapter.reconcile(root)
+            actions, warnings = adapter.reconcile(root, portable=portable)
         except (OSError, ValueError) as exc:
             report.failed_hosts[kind] = str(exc)
             continue
-        report.actions.extend(actions)
+        for action in actions:
+            is_fallback_note = action.startswith("note: host config baked to absolute paths ")
+            if not (is_fallback_note and action in report.actions):
+                report.actions.append(action)
         report.warnings.extend(warnings)
 
 
-def install_toolkits(root: Path, names: Sequence[str], hosts: Sequence[HostKind]) -> ActionReport:
-    """Seed `names` and register them with each host.
+def install_toolkits(
+    root: Path, names: Sequence[str], hosts: Sequence[HostKind], *, portable: bool | None = None
+) -> ActionReport:
+    """Seed and register toolkits with the caller's explicit or inferred form.
 
     Order: preflight -> seed -> reconcile -> approvals. Preflight raises BEFORE any
     write, so an unknown name leaves the config byte-identical (AC8).
@@ -168,7 +187,7 @@ def install_toolkits(root: Path, names: Sequence[str], hosts: Sequence[HostKind]
     report.warnings.extend(f"{name} — template drift: {', '.join(keys)}" for name, keys in seed_result.drift.items())
 
     resolved_hosts = list(hosts)
-    _reconcile_all(root, resolved_hosts, report)
+    _reconcile_all(root, resolved_hosts, report, portable=portable)
 
     if HostKind.CLAUDE in resolved_hosts:
         message = get_adapter(HostKind.CLAUDE).sync_approvals(root)
@@ -176,6 +195,112 @@ def install_toolkits(root: Path, names: Sequence[str], hosts: Sequence[HostKind]
             report.actions.append(message)
 
     return report
+
+
+def install_agent_toolkits(
+    root: Path, agents: Sequence[str], hosts: Sequence[HostKind], *, portable: bool | None = None
+) -> ActionReport:
+    """Resolve, seed, reconcile, and approve agent sections atomically before the first write.
+
+    Raises:
+        ValueError: An agent cannot be exposed, two agents share a section name, or the config is malformed.
+    """
+    from parrot.mcp.agent_toolkit import AgentExposureError, _tool_names, resolve_exposable_agent  # noqa: PLC0415
+
+    root = Path(root)
+    resolved = []
+    errors: list[str] = []
+    for name in dict.fromkeys(agents):
+        try:
+            resolved.append(resolve_exposable_agent(name))
+        except AgentExposureError as exc:
+            errors.append(str(exc))
+    if errors:
+        raise ValueError("; ".join(errors))
+
+    sections: dict[str, str] = {}
+    for agent in resolved:
+        section = agent_section_name(agent.name)
+        if section in sections:
+            raise ValueError(f"Agents {sections[section]!r} and {agent.name!r} share section {section!r}")
+        sections[section] = agent.name
+
+    load_toolkits_config(root)
+    report = ActionReport()
+    seed_result = seed_agent_sections(root, sections)
+    tools = {agent_section_name(agent.name): ", ".join(_tool_names(agent.methods, agent.name)) for agent in resolved}
+    report.actions.extend(
+        f"{sections[section]} — seeded as {section} (tools: {tools[section]})" for section in seed_result.added
+    )
+    report.warnings.extend(f"{sections[section]} — already installed as {section}" for section in seed_result.skipped)
+    resolved_hosts = list(hosts)
+    _reconcile_all(root, resolved_hosts, report, portable=portable)
+
+    if HostKind.CLAUDE in resolved_hosts:
+        message = get_adapter(HostKind.CLAUDE).sync_approvals(root)
+        if message:
+            report.actions.append(message)
+
+    return report
+
+
+def agent_inventory(root: Path, hosts: Sequence[HostKind] | None = None) -> list[ToolkitRow]:
+    """Return one row per exposable agent and per orphaned installed agent section."""
+    from parrot.mcp.agent_toolkit import (  # noqa: PLC0415
+        AgentExposureError,
+        list_exposable_agents,
+        resolve_exposable_agent,
+    )
+
+    root = Path(root)
+    resolved_hosts = _resolve_hosts(root, hosts)
+    declared = load_toolkits_config(root)
+    exposable = list_exposable_agents()
+    installed = {name: section for name, section in declared.toolkits.items() if is_agent_section(section)}
+    names = sorted({agent.section_name for agent in exposable} | set(installed))
+    host_states = {kind: get_adapter(kind).inspect(root, names) for kind in resolved_hosts}
+
+    def _state(section_name: str) -> ToolkitState:
+        section = declared.toolkits.get(section_name)
+        if section is None:
+            return ToolkitState.NOT_INSTALLED
+        return ToolkitState.ENABLED if section.enabled else ToolkitState.DISABLED
+
+    def _hosts(section_name: str) -> list[HostEntryState]:
+        return [host_states[kind][section_name] for kind in resolved_hosts if section_name in host_states[kind]]
+
+    rows = [
+        ToolkitRow(
+            name=agent.section_name,
+            summary=f"agent {agent.name}: {', '.join(agent.tools)}",
+            class_path=AGENT_TOOLKIT_CLASS_PATH,
+            state=_state(agent.section_name),
+            hosts=_hosts(agent.section_name),
+        )
+        for agent in exposable
+    ]
+    listed = {agent.section_name for agent in exposable}
+    for section_name, section in installed.items():
+        if section_name in listed:
+            continue
+        agent = str(section.kwargs.get("agent", ""))
+        try:
+            resolve_exposable_agent(agent)
+        except AgentExposureError as exc:
+            reason = str(exc)
+        else:
+            reason = f"installed as {section_name}, expected {agent_section_name(agent)}"
+        rows.append(
+            ToolkitRow(
+                name=section_name,
+                summary=f"agent {agent}",
+                class_path=AGENT_TOOLKIT_CLASS_PATH,
+                state=_state(section_name),
+                drift=[f"agent not exposable: {reason}"],
+                hosts=_hosts(section_name),
+            )
+        )
+    return rows
 
 
 def uninstall_toolkits(root: Path, names: Sequence[str], hosts: Sequence[HostKind]) -> ActionReport:
@@ -213,8 +338,10 @@ def uninstall_toolkits(root: Path, names: Sequence[str], hosts: Sequence[HostKin
     return report
 
 
-def set_toolkits_enabled(root: Path, names: Sequence[str], enabled: bool, hosts: Sequence[HostKind]) -> ActionReport:
-    """Flip `enabled:` for `names` and reconcile; the section and its kwargs survive."""
+def set_toolkits_enabled(
+    root: Path, names: Sequence[str], enabled: bool, hosts: Sequence[HostKind], *, portable: bool | None = None
+) -> ActionReport:
+    """Toggle sections and reconcile while retaining all existing approval semantics."""
     root = Path(root)
     report = ActionReport()
     resolved_hosts = list(hosts)
@@ -235,7 +362,7 @@ def set_toolkits_enabled(root: Path, names: Sequence[str], enabled: bool, hosts:
         else:
             report.warnings.append(f"{name} — not installed")
 
-    _reconcile_all(root, resolved_hosts, report)
+    _reconcile_all(root, resolved_hosts, report, portable=portable)
 
     if HostKind.CLAUDE in resolved_hosts:
         if enabled:

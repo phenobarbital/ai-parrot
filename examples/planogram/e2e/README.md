@@ -39,7 +39,7 @@ directory block accidental commits of common private-asset patterns.
 
 3. **Migrated configs**: Planogram configuration rows must be exported from
    `troc.planogram_configurations` and migrated to the new JSON format. See
-   `docs/pipelines/planogram-cycle-migration.md` for migration instructions.
+   `wiki/flows/pipelines/planogram-cycle-migration.md` for migration instructions.
 
 4. **Private assets**: You need:
    - A manifest JSON file describing the cases.

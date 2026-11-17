@@ -2,7 +2,7 @@
 
 **Feature**: Planogram Compliance Modular
 **Spec**: `sdd/specs/planogram-compliance-modular.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (0.5-1h)
 **Depends-on**: —

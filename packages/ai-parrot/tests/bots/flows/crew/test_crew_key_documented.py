@@ -8,7 +8,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[6]
 
 
-@pytest.mark.parametrize("doc", ["docs/crew_handler.md", "docs/config.md"])
+@pytest.mark.parametrize("doc", ["wiki/bots/crew_handler.md", "docs/config.md"])
 def test_crew_ai_key_is_documented(doc):
     # Skip the test when the file is missing (a wheel checkout has no docs/ tree)
     doc_path = REPO_ROOT / doc

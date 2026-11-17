@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_validator, ConfigDict
 
 # ---------------------------------------------------------------------------
 # Clock_Event_Type constraint
@@ -100,8 +100,9 @@ class ClockEvent(BaseModel):
             )
         return self
 
-    class Config:
-        extra = "allow"
+    model_config = ConfigDict(
+        extra="allow",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -132,8 +133,9 @@ class ReportedTimeBlock(BaseModel):
     comment: str | None = None
     override_rate: float | None = Field(default=None, ge=0)
 
-    class Config:
-        extra = "allow"
+    model_config = ConfigDict(
+        extra="allow",
+    )
 
 
 # ---------------------------------------------------------------------------

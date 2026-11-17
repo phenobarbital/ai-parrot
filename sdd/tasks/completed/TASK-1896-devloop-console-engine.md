@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-374 — `parrot devloop`: Interactive CLI Console for Dev-Loop Flows
 **Spec**: `sdd/specs/devloop-cli-console.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1893, TASK-1894, TASK-1895

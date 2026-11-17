@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-185 — Refactor FormRegistry
 **Spec**: `sdd/specs/refactor-formregistry.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

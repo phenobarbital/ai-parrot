@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-10T01:28:05+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-24T01:18:19+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,16 +16,17 @@
       "feature_id": "FEAT-650",
       "feature": "a2ui-dialect-formbuilder",
       "spec": "sdd/specs/a2ui-dialect-formbuilder.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Opener: touches only core/schema.py + core/__init__.py; no other task edits those files.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4191-form-dialect-field.md"
+      "started_at": "2026-10-24T00:06:38+00:00",
+      "completed_at": "2026-10-24T00:20:43+00:00",
+      "file": "sdd/tasks/completed/TASK-4191-form-dialect-field.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4192",
@@ -34,16 +35,19 @@
       "feature_id": "FEAT-650",
       "feature": "a2ui-dialect-formbuilder",
       "spec": "sdd/specs/a2ui-dialect-formbuilder.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-4191"],
+      "depends_on": [
+        "TASK-4191"
+      ],
       "parallel": true,
       "parallelism_notes": "imports FormDialect from TASK-4191 (core/__init__.py) — resolve_dialect returns it and reads form.dialect.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4192-dialect-negotiation.md"
+      "started_at": "2026-10-24T00:06:38+00:00",
+      "completed_at": "2026-10-24T00:26:26+00:00",
+      "file": "sdd/tasks/completed/TASK-4192-dialect-negotiation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4193",
@@ -52,16 +56,19 @@
       "feature_id": "FEAT-650",
       "feature": "a2ui-dialect-formbuilder",
       "spec": "sdd/specs/a2ui-dialect-formbuilder.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-4192"],
+      "depends_on": [
+        "TASK-4192"
+      ],
       "parallel": true,
       "parallelism_notes": "replaces the baseline body of overrides_to_envelopes that TASK-4192 creates in api/dialect.py (same file).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4193-dialect-overrides-translation.md"
+      "started_at": "2026-10-24T00:06:38+00:00",
+      "completed_at": "2026-10-24T00:43:15+00:00",
+      "file": "sdd/tasks/completed/TASK-4193-dialect-overrides-translation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4194",
@@ -70,16 +77,19 @@
       "feature_id": "FEAT-650",
       "feature": "a2ui-dialect-formbuilder",
       "spec": "sdd/specs/a2ui-dialect-formbuilder.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-4193"],
+      "depends_on": [
+        "TASK-4193"
+      ],
       "parallel": true,
       "parallelism_notes": "calls render_a2ui_schema/resolve_dialect from TASK-4192 and needs the final overrides translation from TASK-4193 (api/dialect.py) for the messages-framing test.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4194-get-schema-a2ui-branch.md"
+      "started_at": "2026-10-24T00:06:38+00:00",
+      "completed_at": "2026-10-24T00:48:09+00:00",
+      "file": "sdd/tasks/completed/TASK-4194-get-schema-a2ui-branch.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4195",
@@ -88,16 +98,19 @@
       "feature_id": "FEAT-650",
       "feature": "a2ui-dialect-formbuilder",
       "spec": "sdd/specs/a2ui-dialect-formbuilder.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-4194"],
+      "depends_on": [
+        "TASK-4194"
+      ],
       "parallel": true,
       "parallelism_notes": "modifies api/handlers.py (list_forms) — same file TASK-4194 edits (get_schema), so serialized after it; reuses the dialect import line TASK-4194 adds.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4195-list-forms-dialect.md"
+      "started_at": "2026-10-24T00:06:38+00:00",
+      "completed_at": "2026-10-24T00:56:48+00:00",
+      "file": "sdd/tasks/completed/TASK-4195-list-forms-dialect.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4196",
@@ -106,16 +119,17 @@
       "feature_id": "FEAT-650",
       "feature": "a2ui-dialect-formbuilder",
       "spec": "sdd/specs/a2ui-dialect-formbuilder.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "new module over FormRegistry + the FEAT-544 renderer only; no edge to M1/M2 — runs concurrently with TASK-4191..4195.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4196-a2ui-export-service.md"
+      "started_at": "2026-10-24T00:06:38+00:00",
+      "completed_at": "2026-10-24T00:20:43+00:00",
+      "file": "sdd/tasks/completed/TASK-4196-a2ui-export-service.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4197",
@@ -124,16 +138,20 @@
       "feature_id": "FEAT-650",
       "feature": "a2ui-dialect-formbuilder",
       "spec": "sdd/specs/a2ui-dialect-formbuilder.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-4196", "TASK-4195"],
+      "depends_on": [
+        "TASK-4196",
+        "TASK-4195"
+      ],
       "parallel": true,
       "parallelism_notes": "calls A2UIExportService.export_tenant from TASK-4196 (services/a2ui_export.py); modifies api/handlers.py after TASK-4195 (same file) and api/routes.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4197-export-forms-endpoint.md"
+      "started_at": "2026-10-24T00:06:38+00:00",
+      "completed_at": "2026-10-24T01:05:38+00:00",
+      "file": "sdd/tasks/completed/TASK-4197-export-forms-endpoint.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4198",
@@ -142,16 +160,17 @@
       "feature_id": "FEAT-650",
       "feature": "a2ui-dialect-formbuilder",
       "spec": "sdd/specs/a2ui-dialect-formbuilder.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "edits only extractors/jsonschema.py (read-only use of renderers/jsonschema.py); no other task touches that file.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4198-jsonschema-extractor-fidelity.md"
+      "started_at": "2026-10-24T00:06:38+00:00",
+      "completed_at": "2026-10-24T00:20:43+00:00",
+      "file": "sdd/tasks/completed/TASK-4198-jsonschema-extractor-fidelity.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4199",
@@ -160,16 +179,19 @@
       "feature_id": "FEAT-650",
       "feature": "a2ui-dialect-formbuilder",
       "spec": "sdd/specs/a2ui-dialect-formbuilder.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-4198"],
+      "depends_on": [
+        "TASK-4198"
+      ],
       "parallel": true,
       "parallelism_notes": "composes JsonSchemaExtractor.extract — its section-tree fidelity from TASK-4198 (extractors/jsonschema.py) is what the composition test asserts.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4199-jsonschema-to-a2ui-translate.md"
+      "started_at": "2026-10-24T00:06:38+00:00",
+      "completed_at": "2026-10-24T00:26:27+00:00",
+      "file": "sdd/tasks/completed/TASK-4199-jsonschema-to-a2ui-translate.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4200",
@@ -178,16 +200,20 @@
       "feature_id": "FEAT-650",
       "feature": "a2ui-dialect-formbuilder",
       "spec": "sdd/specs/a2ui-dialect-formbuilder.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-4199", "TASK-4197"],
+      "depends_on": [
+        "TASK-4199",
+        "TASK-4197"
+      ],
       "parallel": true,
       "parallelism_notes": "calls translate_jsonschema_to_a2ui from TASK-4199 (services/a2ui_translate.py); modifies api/handlers.py and api/routes.py after TASK-4197 (same files; its route anchor is the export route TASK-4197 adds).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4200-translate-form-endpoint.md"
+      "started_at": "2026-10-24T00:06:38+00:00",
+      "completed_at": "2026-10-24T01:10:29+00:00",
+      "file": "sdd/tasks/completed/TASK-4200-translate-form-endpoint.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4201",
@@ -196,16 +222,17 @@
       "feature_id": "FEAT-650",
       "feature": "a2ui-dialect-formbuilder",
       "spec": "sdd/specs/a2ui-dialect-formbuilder.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "new module extractors/a2ui.py + lazy export in extractors/__init__.py; reads the frozen FEAT-544 renderer vocabulary only — no edge to M1–M4.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4201-a2ui-extractor-strict.md"
+      "started_at": "2026-10-24T00:06:38+00:00",
+      "completed_at": "2026-10-24T00:20:44+00:00",
+      "file": "sdd/tasks/completed/TASK-4201-a2ui-extractor-strict.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4202",
@@ -214,16 +241,19 @@
       "feature_id": "FEAT-650",
       "feature": "a2ui-dialect-formbuilder",
       "spec": "sdd/specs/a2ui-dialect-formbuilder.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-4201"],
+      "depends_on": [
+        "TASK-4201"
+      ],
       "parallel": true,
       "parallelism_notes": "fills the _heuristic_field hook and the extract() dispatch TASK-4201 creates in extractors/a2ui.py (same file).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4202-a2ui-extractor-heuristic.md"
+      "started_at": "2026-10-24T00:06:38+00:00",
+      "completed_at": "2026-10-24T00:26:27+00:00",
+      "file": "sdd/tasks/completed/TASK-4202-a2ui-extractor-heuristic.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4203",
@@ -232,16 +262,20 @@
       "feature_id": "FEAT-650",
       "feature": "a2ui-dialect-formbuilder",
       "spec": "sdd/specs/a2ui-dialect-formbuilder.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-4202", "TASK-4200"],
+      "depends_on": [
+        "TASK-4202",
+        "TASK-4200"
+      ],
       "parallel": true,
       "parallelism_notes": "calls A2UIExtractor.extract (strict+heuristic) from TASK-4202 (extractors/a2ui.py); modifies api/handlers.py after TASK-4200 (same file) and api/a2ui_wire.py (no other task edits a2ui_wire.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4203-a2ui-surface-import.md"
+      "started_at": "2026-10-24T00:06:38+00:00",
+      "completed_at": "2026-10-24T01:14:41+00:00",
+      "file": "sdd/tasks/completed/TASK-4203-a2ui-surface-import.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4204",
@@ -250,16 +284,21 @@
       "feature_id": "FEAT-650",
       "feature": "a2ui-dialect-formbuilder",
       "spec": "sdd/specs/a2ui-dialect-formbuilder.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
-      "depends_on": ["TASK-4196", "TASK-4199", "TASK-4202"],
+      "depends_on": [
+        "TASK-4196",
+        "TASK-4199",
+        "TASK-4202"
+      ],
       "parallel": false,
       "parallelism_notes": "EXCLUSIVE: edits the dependency manifest packages/parrot-formdesigner/pyproject.toml (adds click). Needs A2UIExportService (TASK-4196, services/a2ui_export.py), translate_jsonschema_to_a2ui (TASK-4199, services/a2ui_translate.py) and A2UIExtractor heuristic mode (TASK-4202, extractors/a2ui.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4204-formdesigner-cli.md"
+      "started_at": "2026-10-24T00:06:38+00:00",
+      "completed_at": "2026-10-24T00:33:25+00:00",
+      "file": "sdd/tasks/completed/TASK-4204-formdesigner-cli.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4205",
@@ -268,16 +307,23 @@
       "feature_id": "FEAT-650",
       "feature": "a2ui-dialect-formbuilder",
       "spec": "sdd/specs/a2ui-dialect-formbuilder.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-4195", "TASK-4197", "TASK-4200", "TASK-4203", "TASK-4204"],
+      "depends_on": [
+        "TASK-4195",
+        "TASK-4197",
+        "TASK-4200",
+        "TASK-4203",
+        "TASK-4204"
+      ],
       "parallel": true,
       "parallelism_notes": "integration round-trips drive get_schema/list_forms (TASK-4194/4195), export (TASK-4197), translate (TASK-4200), import (TASK-4203) and the CLI/hygiene set (TASK-4204, cli.py); the golden fixture comes from TASK-4194 via TASK-4195's chain.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4205-docs-and-roundtrips.md"
+      "started_at": "2026-10-24T00:06:38+00:00",
+      "completed_at": "2026-10-24T01:18:19+00:00",
+      "file": "sdd/tasks/completed/TASK-4205-docs-and-roundtrips.md",
+      "verification": "verified"
     }
   ]
 }

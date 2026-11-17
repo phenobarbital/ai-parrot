@@ -1,5 +1,5 @@
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class WorkdayReference(BaseModel):
@@ -11,5 +11,6 @@ class WorkdayReference(BaseModel):
     wid: Optional[str] = None
     descriptor: Optional[str] = None
 
-    class Config:
-        extra = "allow"
+    model_config = ConfigDict(
+        extra="allow",
+    )

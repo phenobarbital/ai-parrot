@@ -16,6 +16,8 @@ from parrot.knowledge.wiki.project import (
     load_effective_config,
     save_project_config,
 )
+from parrot.launcher import shared_state_root
+from parrot.mcp.portability import resolve_portable_mode
 
 _TABLE_HEADER = re.compile(r"^\s*\[([^]]+)]\s*(?:#.*)?$")
 
@@ -141,6 +143,94 @@ def _extract_toml_table(text: str, table: str) -> Optional[str]:
     return "".join(lines[start:end])
 
 
+def _wikitoolkit_table_is_portable(table_text: Optional[str]) -> bool:
+    """Whether a preserved ``[mcp_servers.wikitoolkit]`` table uses the bare portable command."""
+    if not table_text:
+        return False
+    try:
+        doc = tomllib.loads(table_text)
+    except tomllib.TOMLDecodeError:
+        return False
+    entry = doc.get("mcp_servers", {}).get("wikitoolkit", {})
+    return isinstance(entry, dict) and entry.get("command") == "wikitoolkit"
+
+
+def _toolkit_tables_are_portable(block_body: Optional[str]) -> bool:
+    """Portable iff ANY managed ``parrot-*`` table uses the relative config (sticky).
+
+    Used only when the wikitoolkit table cannot decide (http, url-only, absent or foreign).
+    """
+    if not block_body:
+        return False
+    try:
+        servers = tomllib.loads(block_body).get("mcp_servers", {})
+    except tomllib.TOMLDecodeError:
+        return False
+    tables = [entry for key, entry in servers.items() if key.startswith("parrot-") and isinstance(entry, dict)]
+    return any(
+        isinstance(t.get("args"), list)
+        and len(t["args"]) >= 4
+        and t["args"][2] == "--config"
+        and t["args"][3] == assets.PORTABLE_TOOLKIT_CONFIG
+        for t in tables
+    )
+
+
+def _has_toolkit_tables(block_body: Optional[str]) -> bool:
+    """Whether the managed block body declares any ``[mcp_servers.parrot-*]`` table."""
+    if not block_body:
+        return False
+    try:
+        servers = tomllib.loads(block_body).get("mcp_servers", {})
+    except tomllib.TOMLDecodeError:
+        return False
+    return any(key.startswith("parrot-") for key in servers)
+
+
+def _current_portable_mode(root: Path) -> bool | None:
+    """Infer the current mode from the managed block (FEAT-633, sticky).
+
+    A stdio wikitoolkit table (one with a ``command``) decides it via
+    :func:`_wikitoolkit_table_is_portable`. When that table is http, url-only, absent or foreign
+    (``--remote`` decides only that table), the mode is inferred from the managed ``parrot-*``
+    tables via :func:`_toolkit_tables_are_portable`. Never raises: any read or parse failure
+    means no managed form is available.
+
+    Args:
+        root: Project root.
+
+    Returns:
+        True when the managed block is portable, False when it is baked,
+        or None when no managed form is available.
+    """
+    path = root / ".codex" / "config.toml"
+    try:
+        text = path.read_text(encoding="utf-8") if path.exists() else ""
+    except OSError:
+        return None
+    if assets.MCP_BEGIN not in text:
+        return None
+    _, _, rest = text.partition(assets.MCP_BEGIN)
+    block_body = rest.partition(assets.MCP_END)[0] if assets.MCP_END in rest else rest
+    wikitoolkit_text = _extract_toml_table(block_body, assets.MCP_TABLE)
+    if wikitoolkit_text:
+        try:
+            entry = tomllib.loads(wikitoolkit_text).get("mcp_servers", {}).get("wikitoolkit", {})
+        except tomllib.TOMLDecodeError:
+            return None
+        if isinstance(entry, dict) and "command" in entry:
+            if not _wikitoolkit_table_is_portable(wikitoolkit_text):
+                return False
+            # A baked install falls back to the bare name when no venv binary resolves, so a bare
+            # command is ambiguous: managed parrot-* tables (absolute vs relative --config) break the tie.
+            if _has_toolkit_tables(block_body):
+                return _toolkit_tables_are_portable(block_body)
+            return True
+    if _has_toolkit_tables(block_body):
+        return _toolkit_tables_are_portable(block_body)
+    return None
+
+
 def _toolkit_sections(cfg: Any, existing_tables: set[str]) -> tuple[dict[str, Any], list[str]]:
     """Enabled toolkit sections that do not collide with a foreign table.
 
@@ -175,7 +265,7 @@ def _toolkit_sections(cfg: Any, existing_tables: set[str]) -> tuple[dict[str, An
     return sections, warnings
 
 
-def reconcile_toolkit_tables(root: Path) -> tuple[list[str], list[str]]:
+def reconcile_toolkit_tables(root: Path, *, portable: Optional[bool] = None) -> tuple[list[str], list[str]]:
     """Regenerate ONLY the `[mcp_servers.parrot-<name>]` tables in .codex/config.toml.
 
     The managed marker block also carries the wikitoolkit table; this function
@@ -185,6 +275,11 @@ def reconcile_toolkit_tables(root: Path) -> tuple[list[str], list[str]]:
 
     Codex has no per-entry managed-shape check (unlike Claude and Google) —
     ownership is structural: inside the marker block means ours.
+
+    Args:
+        root: Project root.
+        portable: None infers via :func:`_current_portable_mode` (sticky — the
+            ``parrot toolkits`` path via ``mcp/hosts.py::CodexAdapter.reconcile``).
 
     Returns:
         (actions, warnings) — human-readable strings.
@@ -201,7 +296,9 @@ def reconcile_toolkit_tables(root: Path) -> tuple[list[str], list[str]]:
 
     cfg = load_toolkits_config(root)
     sections, warnings = _toolkit_sections(cfg, existing_tables)
-    toolkit_block = assets.toolkit_mcp_block(root, sections)
+    decision = resolve_portable_mode(portable, current=_current_portable_mode(root))
+    portable = decision.portable
+    toolkit_block = assets.toolkit_mcp_block(root, sections, portable=portable)
 
     wikitoolkit_text: Optional[str] = None
     if assets.MCP_BEGIN in before:
@@ -224,6 +321,8 @@ def reconcile_toolkit_tables(root: Path) -> tuple[list[str], list[str]]:
     _validate_toml(path, after)
 
     actions: list[str] = []
+    if decision.note:
+        actions.append(decision.note)
     if after == before:
         actions.append(".codex/config.toml — toolkit tables already current")
         return actions, warnings
@@ -238,7 +337,7 @@ def reconcile_toolkit_tables(root: Path) -> tuple[list[str], list[str]]:
     return actions, warnings
 
 
-def _install_mcp(root: Path, *, remote: Optional[WikiRemoteConfig] = None) -> str:
+def _install_mcp(root: Path, *, remote: Optional[WikiRemoteConfig] = None, portable: bool = False) -> str:
     """Write/refresh the managed MCP block: wikitoolkit table plus one
     ``[mcp_servers.parrot-<name>]`` table per enabled toolkit section
     (FEAT-485). Re-running regenerates the whole managed block from
@@ -249,6 +348,11 @@ def _install_mcp(root: Path, *, remote: Optional[WikiRemoteConfig] = None) -> st
     managed marker block is never overwritten: it is reported as a
     warning on stderr and omitted from our managed block instead (mirrors
     the Claude Code installer's warn-and-skip semantics for `.mcp.json`).
+
+    Args:
+        root: Project root.
+        remote: Register wikitoolkit as a native HTTP MCP instead of stdio.
+        portable: Emit bare launcher commands and the relative toolkit config.
     """
     from parrot.mcp.toolkit_config import load_toolkits_config
 
@@ -265,12 +369,12 @@ def _install_mcp(root: Path, *, remote: Optional[WikiRemoteConfig] = None) -> st
     for warning in warnings:
         print(warning, file=sys.stderr)
 
-    toolkit_block = assets.toolkit_mcp_block(root, sections)
+    toolkit_block = assets.toolkit_mcp_block(root, sections, portable=portable)
     after = _upsert_marker_block(
         # Replace an existing block in place: removing and appending it would
         # reorder adjacent managed integrations (such as Bookstore) on rerun.
         before if assets.MCP_BEGIN in before else without_existing,
-        assets.mcp_block(root, toolkit_block, remote=remote),
+        assets.mcp_block(root, toolkit_block, remote=remote, portable=portable),
         assets.MCP_BEGIN,
         assets.MCP_END,
     )
@@ -288,12 +392,13 @@ def _install_mcp(root: Path, *, remote: Optional[WikiRemoteConfig] = None) -> st
     return ".codex/config.toml — wikitoolkit MCP installed with automatic tool approval"
 
 
-def _install_rules(root: Path) -> str:
+def _install_rules(root: Path, *, portable: bool = False) -> str:
+    """Write/refresh the managed Codex rules block (``portable``: bare-name patterns only)."""
     path = root / assets.RULES_PATH
     before = path.read_text(encoding="utf-8") if path.exists() else ""
     after = _upsert_marker_block(
         before,
-        assets.rules_block(root),
+        assets.rules_block(root, portable=portable),
         assets.RULES_BEGIN,
         assets.RULES_END,
     )
@@ -325,6 +430,7 @@ def install_codex_integration(
     gitignore: bool = True,
     bookstore: bool = True,
     remote: Optional[WikiRemoteConfig] = None,
+    portable: Optional[bool] = None,
 ) -> list[str]:
     """Install project-scoped Codex instructions, skill, MCP, and rules.
 
@@ -334,6 +440,11 @@ def install_codex_integration(
         gitignore: Add `.parrot/` to .gitignore.
         bookstore: Install the Bookstore MCP server and skill when an
             indexed library exists (no indexing performed).
+        remote: Register wikitoolkit as a native HTTP MCP (FEAT-569).
+        portable: True: bare launcher commands, False: baked absolute paths,
+            None: keep the current form (inferred from the managed block —
+            the stdio wikitoolkit table, else the managed ``parrot-*`` tables),
+            or follow the managed launcher on a fresh host.
 
     Returns:
         Human-readable list of actions performed.
@@ -344,9 +455,12 @@ def install_codex_integration(
         only reconciles whatever the toolkit config already declares.
     """
     root = root.resolve()
-    config = config or load_effective_config(root).config
-    existed = config_path(root).exists()
-    save_project_config(root, config)
+    state_root = shared_state_root(root)
+    config = config or load_effective_config(state_root).config
+    existed = config_path(state_root).exists()
+    save_project_config(state_root, config)
+    decision = resolve_portable_mode(portable, current=_current_portable_mode(root))
+    portable = decision.portable
     actions = [
         (
             ".parrot/wiki.json — config already present"
@@ -356,15 +470,17 @@ def install_codex_integration(
         _install_agents(root),
         _install_skill(root),
     ]
+    if decision.note:
+        actions.append(decision.note)
 
-    actions.append(_install_mcp(root, remote=remote))
-    actions.append(_install_rules(root))
+    actions.append(_install_mcp(root, remote=remote, portable=portable))
+    actions.append(_install_rules(root, portable=portable))
     if gitignore:
         actions.append(_install_gitignore(root))
     if bookstore:
         from .bookstore import install_bookstore
 
-        actions.extend(install_bookstore(root))
+        actions.extend(install_bookstore(root, portable=portable))
 
     from parrot.mcp.toolkit_config import load_toolkits_config
 

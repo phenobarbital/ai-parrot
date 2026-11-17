@@ -1,7 +1,7 @@
 """FEAT-473 TASK-2566 — every A2UI v1.0 envelope example in the frontend guide validates.
 
 Extracts fenced ```json a2ui-envelope``` blocks from
-``docs/frontend/structured-artifacts-frontend-guide.md`` (Appendix B) and
+``wiki/server/frontend/structured-artifacts-frontend-guide.md`` (Appendix B) and
 runs the same two-layer conformance check the rest of this codebase uses
 (:func:`~parrot.outputs.a2ui.catalog.validate_envelope` on the raw Parrot
 component tree, :func:`~parrot.outputs.a2ui.catalog.validate_message` on its
@@ -20,11 +20,11 @@ import pytest
 import parrot.outputs.a2ui.catalog.parrot  # noqa: F401 — ensure Chart/DataTable/Map registration
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
-_GUIDE_PATH = _REPO_ROOT / "docs" / "frontend" / "structured-artifacts-frontend-guide.md"
+_GUIDE_PATH = _REPO_ROOT / "wiki" / "server" / "frontend" / "structured-artifacts-frontend-guide.md"
 #: FEAT-529 Module 8: the AgentDashboard/navigator-frontend-next TECHNICAL
 #: reference (a separate doc from the guide above) gains its own Graph
 #: example, §5.4 — same ```json a2ui-envelope``` fence convention.
-_REFERENCE_GUIDE_PATH = _REPO_ROOT / "docs" / "frontend" / "agentdashboard-a2ui-reference.md"
+_REFERENCE_GUIDE_PATH = _REPO_ROOT / "wiki" / "bots" / "frontend" / "agentdashboard-a2ui-reference.md"
 _FENCE_RE = re.compile(r"```json a2ui-envelope\n(.*?)```", re.DOTALL)
 
 
@@ -74,7 +74,7 @@ def test_frontend_guide_examples_validate(index):
 
 def test_frontend_guide_graph_example_validates():
     """FEAT-529 Module 8: the Graph example added to
-    docs/frontend/agentdashboard-a2ui-reference.md §5.4 validates — same
+    wiki/bots/frontend/agentdashboard-a2ui-reference.md §5.4 validates — same
     two-layer conformance check as the guide's own examples above, just
     against a different (frontend TECHNICAL reference) document."""
     import parrot.outputs.a2ui.catalog.viz_core  # noqa: F401 — ensure Graph registration

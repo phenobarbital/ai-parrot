@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-09T01:44:13.354357+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-05T03:03:38.993834+00:00",
   "tasks": [
     {
       "id": "TASK-3025",
@@ -744,7 +744,7 @@
       "feature_id": "FEAT-539",
       "feature": "contracts-card-ontology",
       "spec": "sdd/specs/contracts-card-ontology.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -757,8 +757,9 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-09T01:49:58+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3056-contracts-pilot-signoff.md"
+      "completed_at": "2026-11-05T03:03:14+00:00",
+      "file": "sdd/tasks/completed/TASK-3056-contracts-pilot-signoff.md",
+      "verification": "forced"
     }
   ]
 }

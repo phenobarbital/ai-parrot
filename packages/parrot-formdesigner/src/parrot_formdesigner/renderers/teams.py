@@ -1,7 +1,7 @@
 """MS Teams renderer for FormSchema — Adaptive Card + ``_formdesigner`` submit envelope (FEAT-551).
 
 The renderer returns JSON only. The Teams bot (ai-parrot-integrations) unwraps the envelope and
-POSTs the answers to ``submit_url``; see docs/formdesigner-msteams-renderer.md.
+POSTs the answers to ``submit_url``; see wiki/integrations/formdesigner-msteams-renderer.md.
 """
 
 from __future__ import annotations

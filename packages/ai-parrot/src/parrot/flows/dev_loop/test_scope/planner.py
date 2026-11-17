@@ -4,14 +4,20 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .datatypes import CoreHit, Invocation, ScopePlan, TestContract, TestTarget
 from .mirror import prune_nested
 from .policy import AGENT_FLAGS, TIERS, ScopePolicy
 from .runners.registry import RunnerRegistry, load_registry
 
+if TYPE_CHECKING:
+    from .runners.base import RunnerAdapter
+
 # Decision from spike S2 (artifacts/logs/feat-563-s2-conftest-rootdir.md). Placeholders: {worktree}, {dist_root}.
-PER_DIST_EXTRA_ARGS: tuple[str, ...] = ("--confcutdir", "{worktree}")
+# Match the baseline runner's repository-relative JUnit node IDs while retaining
+# automatic discovery of the distribution's pytest configuration.
+PER_DIST_EXTRA_ARGS: tuple[str, ...] = ("--confcutdir", "{worktree}", "--rootdir", "{worktree}")
 
 # Preference order when the same path is selected under two different reasons
 # (lower index wins). Bounded by AC11.
@@ -65,6 +71,38 @@ def _invocation(
     return Invocation(distribution=distribution, argv=argv, targets=kept)
 
 
+def _runner_settings(
+    registry: RunnerRegistry,
+    contract: TestContract | None,
+    *,
+    runner: str,
+    distribution: str,
+    adapter: RunnerAdapter,
+) -> dict[str, str]:
+    """Registry settings for ``runner`` with the matching contract block's settings merged on top.
+
+    ``plan_tests`` classifies contract targets with the block's own settings (a ``parrot-e2e``
+    block's ``plan``), so the invocation must see the same keys: registry
+    (``.parrot/test_runners.toml``) first, contract block second — the precedence
+    ``_normalize_runner`` already validates against (issue:a3aebc40ef48). The block is the first
+    of that kind whose merged settings name this group's distribution, else the first block of
+    the kind; without a contract, or a block of the kind, the registry settings come back as is.
+    """
+    base = dict(registry.settings_for(runner))
+    candidates = [block for block in contract.runners if block.kind == runner] if contract is not None else []
+    if not candidates:
+        return base
+    chosen = candidates[0]
+    for block in candidates:
+        try:
+            if adapter.distribution_of("", settings={**base, **block.settings}) == distribution:
+                chosen = block
+                break
+        except (KeyError, ValueError):
+            continue
+    return {**base, **chosen.settings}
+
+
 def build_plan(
     targets: Sequence[TestTarget],
     *,
@@ -97,7 +135,7 @@ def build_plan(
     for runner, distribution in sorted(groups):
         group = groups[(runner, distribution)]
         adapter = registry.adapter_for_kind(runner)
-        settings = registry.settings_for(runner)
+        settings = _runner_settings(registry, contract, runner=runner, distribution=distribution, adapter=adapter)
         if runner != "pytest":
             invocations.append(
                 adapter.invocation(
@@ -111,9 +149,19 @@ def build_plan(
             )
             continue
 
+        # Declared targets are the files the task itself names in its Validation Commands, so
+        # they run under the permissive marker exactly like contract targets: the agent marker
+        # would deselect a task's own tests/integration files and pytest would exit 5
+        # (issue:8c423c5612c2). One permissive invocation per distribution keeps suite_name()
+        # keys unique; a declared copy of a contract path is dropped so the contract reason wins.
         contract_paths = {target.path for target in group if target.reason == "contract"}
-        default_targets = [target for target in group if target.path not in contract_paths]
-        contract_targets = [target for target in group if target.reason == "contract"]
+        permissive_targets = [
+            target
+            for target in group
+            if target.reason == "contract" or (target.reason == "declared" and target.path not in contract_paths)
+        ]
+        permissive_paths = {target.path for target in permissive_targets}
+        default_targets = [target for target in group if target.path not in permissive_paths]
 
         if default_targets:
             invocations.append(
@@ -126,16 +174,22 @@ def build_plan(
                     report_path="",
                 )
             )
-        if contract_targets:
+        if permissive_targets:
+            has_declared = any(target.reason == "declared" for target in permissive_targets)
             invocations.append(
                 _invocation(
                     distribution,
-                    contract_targets,
+                    permissive_targets,
                     worktree=worktree,
                     policy=policy,
-                    marker_expression=marker_expression_for(contract_targets, contract=contract, policy=policy),
+                    marker_expression=(
+                        OVERRIDE_MARKER_EXPRESSION
+                        if has_declared
+                        else marker_expression_for(permissive_targets, contract=contract, policy=policy)
+                    ),
                 )
             )
+        if contract_paths:
             markers = _contract_markers(contract)
             if markers:
                 tests_root = "tests" if distribution == "root" else f"packages/{distribution}/tests"

@@ -141,7 +141,7 @@ class TestHostPyprojectUpdates:
     def test_parrot_cli_remains(self, host_pyproject_text):
         """parrot console_script must still be in host."""
         assert (
-            'parrot = "parrot.cli:cli"' in host_pyproject_text
+            'parrot = "parrot.launcher:main_parrot"' in host_pyproject_text
         ), "parrot CLI entry point must remain in host pyproject.toml"
 
 

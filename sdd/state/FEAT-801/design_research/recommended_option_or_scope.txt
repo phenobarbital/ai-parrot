@@ -1,0 +1,99 @@
+**Option B** is recommended because:
+
+- Static loading is the decisive property. The project has already seen that importing
+  `parrot` boots Navigator settings and observability; a generator that imports 30
+  distributions in CI would be fragile and slow (Option A/pdoc). griffe reads the AST.
+- The renderer being ours is a cost we accept in exchange for GitHub-wiki-specific output
+  (flat page names, `_Sidebar.md`, `[[links]]`), cross-links between authored and generated
+  pages, and per-release source links. Off-the-shelf markdown generators (Option A) cannot
+  produce that without post-processing that would be as large as the renderer.
+- Shipping the pipeline as `parrot sdd techwiki` keeps it inside the SDD product: the
+  Documentation chapter, the derived task, the `/sdd-done` warning and the publishing
+  pipeline travel together to every repository that installs the SDD assets.
+- Option C is the right long-term answer for multi-language reference but would block this
+  feature on a wiki schema change. It is recorded as a follow-up.
+
+What we trade off: a Python ≥ 3.11 optional extra, and ownership of a renderer with tests.
+
+---
+
+`griffe` (the engine underneath `mkdocstrings-python`) loads Python packages **statically**
+(AST, no import) from search paths and exposes modules, classes, functions, parameters,
+return annotations, docstring sections (Google style parsed into Parameters / Returns /
+Raises / Examples). parrot ships a small renderer that walks the griffe tree and writes
+one markdown page per public module (classes and functions as `##` sections, parameter
+tables, source links to the tagged release on GitHub).
+
+The feature adds a noun to the shipped SDD CLI, `parrot sdd techwiki`, with four verbs:
+
+| Verb | Does |
+|---|---|
+| `api` | Generate the API reference pages for the configured packages into an output dir. |
+| `bundle` | Assemble the publishable bundle: authored `wiki/**` + generated API + `Home.md` + `_Sidebar.md`, with wiki page naming and link rewriting. Fails on page-name collisions. |
+| `check` | Read a spec's `docs:` frontmatter and report which declared pages exist/are missing in a worktree, as JSON. Exit 0 always with policy `required` (warning lane), 0 with `none`. |
+| `sidebar` | Render only `_Sidebar.md`/`Home.md` from the bundle index (used by `bundle`, exposed for debugging). |
+
+A new workflow `.github/workflows/techwiki.yml` runs on push to `main` (paths:
+`wiki/**`, `packages/*/src/**`, `sdd/config.json`, the workflow itself) and on
+`workflow_dispatch`: installs the workspace, runs `parrot sdd techwiki bundle --out
+build/techwiki`, clones `ai-parrot.wiki.git` with the job's `GITHUB_TOKEN`
+(`permissions: contents: write`), replaces its content with the bundle, commits
+`techwiki: sync <sha>` and pushes. A concurrency group serialises runs.
+
+The SDD flow gains a Documentation chapter: a `docs:` frontmatter key in
+`sdd/templates/spec.md` (mirrors the `e2e:` precedent) plus a `## 10. Documentation`
+section; `/sdd-task` derives one documentation task from it; `/sdd-done` runs
+`techwiki check` in a new Step 4.6b and prints a warning line in the report.
+
+✅ **Pros:**
+- Static analysis: no imports, no side effects, no optional dependencies needed in CI.
+  Works on every workspace package from `packages/*/src` search paths alone.
+- Same docstring parser family the project already relies on (`mkdocstrings-python`
+  uses griffe), so existing docstrings render identically.
+- The renderer is ours: GitHub-wiki page naming, `_Sidebar.md`, cross-links from authored
+  pages to generated reference pages (`[[Reference: parrot.memory.compaction]]`),
+  per-release source links.
+- The CLI noun ships with the SDD assets, so any repository using `parrot sdd` can adopt
+  the same wiki pipeline (repo-neutral configuration in `sdd/config.json`).
+- The gate (`techwiki check`) is a tiny, testable script in the same style as
+  `check_e2e_closeout.py`.
+
+❌ **Cons:**
+- We own a renderer (~300–400 lines plus tests) and its edge cases (overloads,
+  properties, dataclass/Pydantic fields, re-exports).
+- `griffe` 2.4.1 requires Python ≥ 3.11 while the project floor is 3.10.1. It must be an
+  optional extra (`ai-parrot[techwiki]`), never a core dependency.
+- Running `parrot` in CI still imports the parrot package (CLI entry), so the job
+  installs the core distribution like `docs.yml` already does.
+
+📊 **Effort:** High
+
+📦 **Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| `griffe` 2.4.1 | static Python API loader + Google docstring parser | `requires_python >=3.11`; optional extra `techwiki` |
+| `jinja2` | page templates for the renderer | already in the environment (aiohttp-jinja2 / navigator); verify at spec time |
+| `pyyaml` | spec frontmatter (`docs:` key) | already used by `sdd_meta` |
+| GitHub Actions `GITHUB_TOKEN` | push to `<repo>.wiki.git` | `permissions: contents: write`; the wiki repo must already exist (it does) |
+
+🔗 **Existing Code to Reuse:**
+- `packages/ai-parrot/src/parrot/sdd/cli.py` — `VERBS` map + `_mount` add the `techwiki`
+  noun exactly like `tests`/`closeout`.
+- `packages/ai-parrot/src/parrot/sdd/scripts/check_e2e_closeout.py` — shape of a closeout
+  gate (`resolve_policy`, JSON report, exit code contract) to mirror for `techwiki check`.
+- `packages/ai-parrot/src/parrot/knowledge/wiki/ledger/sdd_meta.py` — frontmatter parser
+  already used by `parrot sdd docs parse`; `techwiki check` reads the `docs:` key through it.
+- `sdd/templates/spec.md` — the `e2e:` frontmatter block and `### E2E Scenarios` are the
+  pattern for `docs:` + `## 10. Documentation`.
+- `.claude/commands/sdd-done.md` Step 4.6 (E2E gate) and Step 4.8 (closeout hooks) — insertion
+  point and report style for Step 4.6b.
+- `.claude/commands/sdd-task.md` §3 "Plan Task Decomposition" — where the derived
+  documentation task is specified.
+- `scripts/sdd/check_asset_sync.py` — `ASSET_SOURCES` already covers the files we change;
+  run `--write` after editing commands/templates.
+- `.github/workflows/docs.yml` — job skeleton (checkout, python, install) and the
+  `paths:` filter idea.
+- `mkdocs.yml` nav + `docs/index.md` "Browse the API" button + `requirements-docs.txt` —
+  the cut-over task edits exactly these.
+
+---

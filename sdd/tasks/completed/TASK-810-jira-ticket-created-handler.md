@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-110 — jiraspecialist-webhook-ticket-creation
 **Spec**: `sdd/specs/FEAT-110-jiraspecialist-webhook-ticket-creation.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-808, TASK-809

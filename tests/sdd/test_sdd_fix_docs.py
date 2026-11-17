@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]  # tests/sdd/ → repo root; never the CWD
-_TABLES = ("docs/sdd/WORKFLOW.md", "docs/sdd/PLATFORM.md", "sdd/WORKFLOW.md")
+_TABLES = ("docs/sdd/WORKFLOW.md", "wiki/sdd-tooling/sdd/PLATFORM.md", "sdd/WORKFLOW.md")
 
 
 @pytest.mark.parametrize("rel", _TABLES)

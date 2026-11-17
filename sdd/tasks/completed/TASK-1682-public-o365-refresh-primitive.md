@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-266 — O365 Auth Homologation
 **Spec**: `sdd/specs/o365-auth-homologation.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

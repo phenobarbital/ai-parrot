@@ -16,7 +16,7 @@ import pytest
 from click.testing import CliRunner
 
 from parrot.knowledge.wiki.cli import ledger, wiki
-from parrot.knowledge.wiki.ledger.index import LedgerIndex
+from parrot.knowledge.wiki.ledger.index import ClaimHeldByOther, LedgerIndex
 from parrot.knowledge.wiki.ledger.log import LedgerLog
 from parrot.knowledge.wiki.ledger.service import LedgerService
 from parrot.knowledge.wiki.ledger.store import LedgerStore
@@ -291,6 +291,41 @@ def test_ledger_close_command(runner: CliRunner, mock_ledger_service: MagicMock)
         )
     assert result.exit_code == 0
     assert "Closed" in result.output
+
+
+def test_ledger_close_force_is_passed_through(runner: CliRunner, mock_ledger_service: MagicMock) -> None:
+    """`--force` reaches the service; without it the service is called with force=False."""
+    with patch("parrot.knowledge.wiki.cli.LedgerService.from_root", return_value=mock_ledger_service):
+        runner.invoke(ledger, ["close", "issue:abc123", "--reason", "fixed"])
+        assert mock_ledger_service.close_issue.call_args.kwargs["force"] is False
+        result = runner.invoke(ledger, ["close", "issue:abc123", "--reason", "fixed", "--force"])
+    assert result.exit_code == 0
+    assert mock_ledger_service.close_issue.call_args.kwargs["force"] is True
+
+
+def test_ledger_close_refuses_a_foreign_claim(runner: CliRunner, mock_ledger_service: MagicMock) -> None:
+    """A claim held by another actor exits 1 and names the claimant (issue:5439a91953a4)."""
+    service = mock_ledger_service
+    service.close_issue = AsyncMock(side_effect=ClaimHeldByOther("issue:abc123", "agent:sdd-fix:other", "agent:cli"))
+    with patch("parrot.knowledge.wiki.cli.LedgerService.from_root", return_value=service):
+        result = runner.invoke(ledger, ["close", "issue:abc123", "--reason", "fixed"])
+    assert result.exit_code == 1
+    assert "agent:sdd-fix:other" in result.output
+    assert "--force" in result.output
+
+
+def test_ledger_unclaim_refuses_a_foreign_claim(runner: CliRunner, mock_ledger_service: MagicMock) -> None:
+    """unclaim of another actor's claim exits 1; --force reaches the service."""
+    service = mock_ledger_service
+    service.unclaim = AsyncMock(side_effect=ClaimHeldByOther("issue:abc123", "agent:sdd-fix:other", "agent:cli"))
+    with patch("parrot.knowledge.wiki.cli.LedgerService.from_root", return_value=service):
+        result = runner.invoke(ledger, ["unclaim", "issue:abc123", "--reason", "x"])
+        assert result.exit_code == 1
+        assert "agent:sdd-fix:other" in result.output
+        service.unclaim = AsyncMock(return_value=True)
+        result = runner.invoke(ledger, ["unclaim", "issue:abc123", "--reason", "x", "--force"])
+    assert result.exit_code == 0
+    assert service.unclaim.call_args.kwargs["force"] is True
 
 
 def test_ledger_close_busy_soft_success(runner: CliRunner, mock_ledger_service: MagicMock) -> None:

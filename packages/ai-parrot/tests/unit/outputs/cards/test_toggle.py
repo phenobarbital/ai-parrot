@@ -31,7 +31,7 @@ class TestAutoCollapsePolicy:
         from parrot.outputs.cards.toggle import AutoCollapsePolicy
         p = AutoCollapsePolicy()
         assert p.enabled is True
-        assert p.table_row_threshold == 5
+        assert p.table_row_threshold == 15
         assert p.text_char_threshold == 500
         assert p.code_line_threshold == 10
         assert p.image_count_threshold == 2

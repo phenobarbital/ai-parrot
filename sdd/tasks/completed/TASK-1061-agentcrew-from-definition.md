@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-156 — AgentCrew.from_definition classmethod
 **Spec**: `sdd/proposals/agentcrew-from-definition.proposal.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1060

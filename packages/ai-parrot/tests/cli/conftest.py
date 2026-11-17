@@ -55,6 +55,19 @@ def _make_ai_message(output: str = "Test response") -> MagicMock:
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _isolated_login_file(tmp_path_factory, monkeypatch):
+    """Point ``PARROT_LOGIN_FILE`` at a per-test path that does not exist.
+
+    ``parrot agent`` / ``connect`` read the CLI login by default; without this every test
+    would read the developer's real ``~/.parrot/login.json``. Tests that need a login
+    write one here or set their own ``PARROT_LOGIN_FILE``.
+    """
+    path = tmp_path_factory.mktemp("parrot-login") / "login.json"
+    monkeypatch.setenv("PARROT_LOGIN_FILE", str(path))
+    return path
+
+
 @pytest.fixture
 def mock_agent():
     """A minimal AsyncMock bot for REPL testing.

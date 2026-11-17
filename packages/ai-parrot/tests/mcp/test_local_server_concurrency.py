@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import sys
 import time
 from typing import Any, Iterator
@@ -133,3 +134,35 @@ async def test_stop_cancels_inflight_calls() -> None:
     await server.stop()
     assert server._running is False
     assert not server._inflight
+
+
+class _RecordSink(logging.Handler):
+    """Collect the server's own records: it sets `propagate = False` and
+    defaults to WARNING, so `caplog` never sees them."""
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.INFO)
+        self.messages: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.messages.append(record.getMessage())
+
+
+@pytest.mark.asyncio
+async def test_eof_log_reports_handlers_still_in_flight(monkeypatch):
+    """A channel that dies UNDER a running tool call is the issue:995ad869e502
+    signature; a non-zero in-flight count is what separates it in the log from
+    an orderly host shutdown."""
+    server = StdioMCPServer(LocalServerConfig(name="test"))
+    server.register_tool(SleepTool())
+    sink = _RecordSink()
+    server.logger.addHandler(sink)
+    server.logger.setLevel(logging.INFO)
+    monkeypatch.setattr(sys, "stdin", _FakeStdin([_call(1, seconds=0.2, label="a")]))
+
+    await asyncio.wait_for(server.start(), timeout=10)
+
+    eof_lines = [m for m in sink.messages if "stdin reached EOF" in m]
+    assert len(eof_lines) == 1, sink.messages
+    assert "1 request handler(s) in flight" in eof_lines[0], eof_lines[0]
+

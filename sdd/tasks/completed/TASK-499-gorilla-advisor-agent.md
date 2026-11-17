@@ -2,7 +2,7 @@
 
 **Feature**: advisor-ontologic-rag-agent (FEAT-071)
 **Spec**: `sdd/specs/advisor-ontologic-rag-agent.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: XL (> 8h)
 **Depends-on**: TASK-497, TASK-498

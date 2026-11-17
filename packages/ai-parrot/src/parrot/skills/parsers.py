@@ -121,6 +121,16 @@ def parse_skill_file(file_path: Path) -> SkillDefinition:
     category = metadata.get("category", None)
     priority = int(metadata.get("priority", 90))
     global_only = _parse_bool(metadata.get("global_only", False))
+    raw_suggestions = metadata.get("suggestions", None)
+    if raw_suggestions is None:
+        suggestions: list = []
+    elif isinstance(raw_suggestions, list):
+        suggestions = raw_suggestions
+    else:
+        raise ValueError(f"Skill file 'suggestions' must be a list: {file_path}")
+    raw_procedure = metadata.get("procedure", None)
+    if raw_procedure is not None and not isinstance(raw_procedure, dict):
+        raise ValueError(f"Skill file 'procedure' must be a mapping: {file_path}")
 
     # Count tokens
     token_count = _count_tokens(template_body)
@@ -134,6 +144,8 @@ def parse_skill_file(file_path: Path) -> SkillDefinition:
         version=version,
         category=category,
         global_only=global_only,
+        suggestions=suggestions,
+        procedure=raw_procedure,
         template_body=template_body,
         token_count=token_count,
         file_path=file_path,

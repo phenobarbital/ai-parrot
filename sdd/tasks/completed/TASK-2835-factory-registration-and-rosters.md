@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-526 — Meta Model API (Muse Spark) LLM Client
 **Spec**: `sdd/specs/meta-llm-client.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-2834

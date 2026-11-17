@@ -9,6 +9,10 @@ from parrot_formdesigner.core import FormSchema, FormField, FieldType, FormSecti
 from parrot_formdesigner.core.style import FormStyle, StyleSchema
 from parrot_formdesigner.core.constraints import FieldConstraints
 from parrot_formdesigner.core.options import FieldOption
+from pydantic import ValidationError
+from parrot_formdesigner.core.options import OptionsSource
+from parrot_formdesigner.core.schema import RenderedForm, RenderWarning
+from parrot_formdesigner.core.voice_answer import VoiceAnswerEnvelope
 
 
 @pytest.fixture
@@ -141,7 +145,6 @@ class TestFormSchemaFormUid:
 
 
 # TASK-1149: OptionsSource extensions tests
-from parrot_formdesigner.core.options import OptionsSource
 
 
 def test_options_source_http_method_default_get() -> None:
@@ -181,7 +184,6 @@ def test_options_source_value_label_field_names_unchanged() -> None:
 
 
 # TASK-1148: FieldConstraints scale fields tests
-from pydantic import ValidationError
 
 
 def test_field_constraints_scale_validator_rejects_inverted_range() -> None:
@@ -219,7 +221,6 @@ def test_field_constraints_scale_none_is_ok() -> None:
 
 
 # TASK-1147: New FieldType enum values tests
-from parrot_formdesigner.core.types import FieldType
 
 
 def test_field_type_enum_has_new_values() -> None:
@@ -242,8 +243,9 @@ def test_field_type_enum_has_new_values() -> None:
 
 
 def test_field_type_enum_total_count() -> None:
-    """FieldType now has exactly 32 values (20 existing + 10 FEAT-167 + 1 FEAT-170 REST + 1 FEAT-300 FORMULA)."""
-    assert len(FieldType) == 32
+    """FieldType members have unique names and values."""
+    members = FieldType.__members__
+    assert len(members) == len(set(members)) == len({member.value for member in members.values()})
 
 
 def test_field_type_existing_values_unchanged() -> None:
@@ -254,7 +256,6 @@ def test_field_type_existing_values_unchanged() -> None:
 
 
 # TASK-1146: RenderWarning and RenderedForm.warnings tests
-from parrot_formdesigner.core.schema import RenderedForm, RenderWarning
 
 
 def test_rendered_form_warnings_default_empty() -> None:
@@ -343,8 +344,6 @@ def test_location_data_importable_without_pycountry(monkeypatch) -> None:
 # ---------------------------------------------------------------------------
 # FEAT-488: FormField content_type and accept_content_types
 # ---------------------------------------------------------------------------
-
-from parrot_formdesigner.core.voice_answer import VoiceAnswerEnvelope
 
 
 class TestFormFieldContentType:

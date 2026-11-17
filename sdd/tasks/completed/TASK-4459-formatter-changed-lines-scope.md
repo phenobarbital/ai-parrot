@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-702 — Scope the engine formatter to the task's changed lines
 **Spec**: `sdd/specs/fixgroup-370ac5dae9cc.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: none

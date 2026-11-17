@@ -11,6 +11,7 @@ Each layer is an immutable, composable unit with:
 
 See spec: sdd/specs/composable-prompt-layer.spec.md (Sections 3.1, 3.2)
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -21,7 +22,9 @@ from typing import Optional, Dict, Any, Callable
 
 class LayerPriority(IntEnum):
     """Execution order. Lower = rendered first in the prompt."""
+
     IDENTITY = 10
+    RULES = 12  # FEAT-778: expert governance rules, after identity, before pre-instructions
     PRE_INSTRUCTIONS = 15
     SECURITY = 20
     KNOWLEDGE = 30
@@ -43,6 +46,7 @@ class RenderPhase(str, Enum):
                like context, user_context, chat_history that change per
                request.
     """
+
     CONFIGURE = "configure"
     REQUEST = "request"
 
@@ -67,6 +71,7 @@ class PromptLayer:
             layers built from untrusted or user-authored text (e.g. skill
             descriptions) where a ``$name`` must not expand (FEAT-707).
     """
+
     name: str
     priority: LayerPriority | int
     template: str
@@ -80,9 +85,7 @@ class PromptLayer:
     def __post_init__(self) -> None:
         """Derive cacheable default from phase when not explicitly set."""
         if self.cacheable is None:
-            object.__setattr__(
-                self, "cacheable", self.phase == RenderPhase.CONFIGURE
-            )
+            object.__setattr__(self, "cacheable", self.phase == RenderPhase.CONFIGURE)
 
     def render(self, context: Dict[str, Any]) -> Optional[str]:
         """Render this layer with the given context.
@@ -196,6 +199,23 @@ KNOWLEDGE_LAYER = PromptLayer(
 $knowledge_content
 </knowledge_context>""",
     condition=lambda ctx: bool(ctx.get("knowledge_content", "").strip()),
+)
+
+# ── EXPERT LAYERS (FEAT-778) ────────────────────────────────────
+# Literal: authored bundle text is never template-substituted (AC17).
+EXPERT_RULES_LAYER = PromptLayer(
+    name="expert_rules",
+    priority=LayerPriority.RULES,
+    phase=RenderPhase.CONFIGURE,
+    template="",
+    literal=True,
+)
+EXPERT_KNOWLEDGE_LAYER = PromptLayer(
+    name="expert_knowledge",
+    priority=LayerPriority.KNOWLEDGE,
+    phase=RenderPhase.CONFIGURE,
+    template="",
+    literal=True,
 )
 
 # ── USER SESSION LAYER ──────────────────────────────────────────

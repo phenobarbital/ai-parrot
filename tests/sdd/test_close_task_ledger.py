@@ -122,6 +122,60 @@ class TestTaskClosedEmission:
         assert not (repo / "sdd" / "tasks" / "active" / "TASK-9001-demo.md").exists()
         assert (repo / "sdd" / "tasks" / "completed" / "TASK-9001-demo.md").exists()
 
+    def test_rerun_on_closed_task_does_not_move_completed_at(self, tmp_path):
+        """issue:732f350600d1 — the idempotent path must not rewrite history."""
+        repo = _init_repo(tmp_path)
+        index_path = repo / "sdd" / "tasks" / "index" / "demo-feature.json"
+        assert _run_close_task(repo, "TASK-9001", "demo-feature", "partial").returncode == 0
+        first = json.loads(index_path.read_text(encoding="utf-8"))
+        task_first = first["tasks"][0]
+        assert task_first["completed_at"] is not None
+        assert task_first["verification"] == "partial"
+        assert first["completed_at"] == task_first["completed_at"]
+
+        # Pin the recorded timestamps to a clearly older instant so a rewrite
+        # would be visible even when both runs land in the same second.
+        task_first["completed_at"] = first["completed_at"] = "2026-01-01T00:00:00+00:00"
+        index_path.write_text(json.dumps(first), encoding="utf-8")
+
+        second = _run_close_task(repo, "TASK-9001", "demo-feature", "verified")
+
+        assert second.returncode == 0, second.stderr
+        after = json.loads(index_path.read_text(encoding="utf-8"))
+        assert after["tasks"][0]["completed_at"] == "2026-01-01T00:00:00+00:00"
+        assert after["completed_at"] == "2026-01-01T00:00:00+00:00"
+        assert after["tasks"][0]["verification"] == "partial"
+        assert after["tasks"][0]["status"] == "done"
+
+    def test_close_rewrites_the_status_header_to_done(self, tmp_path):
+        """dev e72348060, ported to parrot.sdd.scripts.close_task: the first pending/in-progress
+        **Status** header becomes `done`; a hand-set `done-with-issues` header is left alone."""
+        repo = _init_repo(tmp_path)
+        task = repo / "sdd" / "tasks" / "active" / "TASK-9001-demo.md"
+        task.write_text("# TASK-9001: Demo\n\n**Status**: in-progress\n\nBody **Status**: pending\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=repo, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-qm", "task"], cwd=repo, check=True, capture_output=True)
+
+        result = _run_close_task(repo, "TASK-9001", "demo-feature", "verified")
+
+        assert result.returncode == 0, result.stderr
+        assert "header **Status** → done" in result.stdout
+        done = (repo / "sdd" / "tasks" / "completed" / "TASK-9001-demo.md").read_text(encoding="utf-8")
+        assert "\n**Status**: done\n" in done and "Body **Status**: pending" in done
+
+    def test_close_keeps_a_done_with_issues_header(self, tmp_path):
+        repo = _init_repo(tmp_path)
+        task = repo / "sdd" / "tasks" / "active" / "TASK-9001-demo.md"
+        task.write_text("# TASK-9001: Demo\n\n**Status**: done-with-issues\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=repo, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-qm", "task"], cwd=repo, check=True, capture_output=True)
+
+        result = _run_close_task(repo, "TASK-9001", "demo-feature", "partial")
+
+        assert result.returncode == 0, result.stderr
+        done = (repo / "sdd" / "tasks" / "completed" / "TASK-9001-demo.md").read_text(encoding="utf-8")
+        assert "**Status**: done-with-issues" in done and "header **Status**" not in result.stdout
+
     def test_verification_status_is_recorded_in_the_event_payload(self, tmp_path):
         repo = _init_repo(tmp_path)
 

@@ -25,6 +25,14 @@ ROW_Y = (400, 800, 1200)
 PITCH = 220
 
 
+@pytest.mark.parametrize("shape", [(2, 1, 4), (2, 4)])
+def test_shelf_edges_accept_opencv_line_array_shapes(monkeypatch: pytest.MonkeyPatch, shape: tuple[int, ...]) -> None:
+    """OpenCV 4 and 5 expose the same line segments with different array ranks."""
+    lines = np.array([[10, 20, 190, 20], [10, 70, 190, 70]], dtype=np.int32).reshape(shape)
+    monkeypatch.setattr(cv2, "HoughLinesP", lambda *args, **kwargs: lines)
+    assert detect_shelf_edges(np.zeros((100, 200), dtype=np.uint8)) == [20, 70]
+
+
 def _tag(x: int, y: int, w: int = 120, h: int = 50) -> ShapeCandidate:
     return ShapeCandidate(profile="price_tag", kind="price_tag", x1=x, y1=y, x2=x + w, y2=y + h, score=0.9)
 

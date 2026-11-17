@@ -3,6 +3,7 @@ Unit tests for OpenAI Whisper Backend.
 
 Tests for TASK-019 / FEAT-008: MS Teams Voice Note Support.
 """
+
 import pytest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -79,9 +80,7 @@ class TestOpenAIWhisperBackendTranscribe:
         mock_session = MagicMock()
         mock_session.closed = False
         mock_session.post = MagicMock(return_value=AsyncMock())
-        mock_session.post.return_value.__aenter__.return_value = (
-            mock_successful_response
-        )
+        mock_session.post.return_value.__aenter__.return_value = mock_successful_response
 
         backend = OpenAIWhisperBackend(api_key="sk-test")
         backend._session = mock_session
@@ -104,9 +103,7 @@ class TestOpenAIWhisperBackendTranscribe:
         mock_session = MagicMock()
         mock_session.closed = False
         mock_session.post = MagicMock(return_value=AsyncMock())
-        mock_session.post.return_value.__aenter__.return_value = (
-            mock_successful_response
-        )
+        mock_session.post.return_value.__aenter__.return_value = mock_successful_response
 
         backend = OpenAIWhisperBackend(api_key="sk-test")
         backend._session = mock_session
@@ -328,9 +325,7 @@ class TestOpenAIWhisperBackendSession:
         backend = OpenAIWhisperBackend(api_key="sk-test")
         assert backend._session is None
 
-        with patch.object(
-            aiohttp, "ClientSession", return_value=MagicMock()
-        ) as mock_cls:
+        with patch.object(aiohttp, "ClientSession", return_value=MagicMock()) as mock_cls:
             session = await backend._get_session()
             mock_cls.assert_called_once()
             assert session is not None
@@ -355,9 +350,7 @@ class TestOpenAIWhisperBackendSession:
         mock_closed_session.closed = True
         backend._session = mock_closed_session
 
-        with patch.object(
-            aiohttp, "ClientSession", return_value=MagicMock()
-        ) as mock_cls:
+        with patch.object(aiohttp, "ClientSession", return_value=MagicMock()) as mock_cls:
             session = await backend._get_session()
             mock_cls.assert_called_once()
             assert session is not mock_closed_session
@@ -392,10 +385,7 @@ class TestOpenAIWhisperBackendAPIURL:
 
     def test_api_url_is_correct(self):
         """API URL points to OpenAI transcription endpoint."""
-        assert (
-            OpenAIWhisperBackend.API_URL
-            == "https://api.openai.com/v1/audio/transcriptions"
-        )
+        assert OpenAIWhisperBackend.API_URL == "https://api.openai.com/v1/audio/transcriptions"
 
 
 GPT_TRANSCRIBE_JSON = {

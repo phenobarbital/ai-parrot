@@ -128,7 +128,7 @@ off (`OBSERVABILITY_TRACES=false`) because that endpoint is Prometheus, which
 serves no `/v1/traces`. Metrics export every 60 s by default; set
 `OBSERVABILITY_METRIC_EXPORT_INTERVAL_MS` lower to see them sooner. Before
 adding `OTLP_TARGETS`, read the migration note in
-`docs/architecture/10-observability.md`: explicit targets replace this endpoint
+`wiki/architecture/10-observability.md`: explicit targets replace this endpoint
 for both signals.
 
 The dashboard is provisioned from a **sibling** mount,

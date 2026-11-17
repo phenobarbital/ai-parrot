@@ -1280,8 +1280,8 @@ CREATE INDEX IF NOT EXISTS ai_user_toolkit_overrides_agent_idx ON navigator.ai_u
 - v1 (before phase 2): hosts may leave `/keys` unmounted (testing and the assistant fall back to
   the org/server key, `testing.py:288-305`); toolkit/MCP secrets need the DocumentDB vault, and
   a host without it can store secret-free tooling only (a secret write answers 503).
-- `STUDIO_SCHEMA_REQUIRED` is 8 with the `database` backend (phase 2 ships in the same release, whatever
-  the store switches say); `parrot-studio-migrate --verify` covers versions 1-8, checked by the same probe.
+- `STUDIO_SCHEMA_REQUIRED` is 9 with the `database` backend (phase 2 ships in the same release, whatever
+  the store switches say; 0009 is FEAT-794); `parrot-studio-migrate --verify` covers versions 1-9, checked by the same probe.
 
 ### 2.11 Non-tenant host behaviour (plain ai-parrot-server)
 
@@ -1336,7 +1336,7 @@ CREATE INDEX IF NOT EXISTS ai_user_toolkit_overrides_agent_idx ON navigator.ai_u
   each in one transaction. Because each file records itself through its trailer, parrot's probe
   sees the same ledger, with the same checksums, whichever runner applied it
   (`test_host_runner_records_same_checksums`).
-- **Required version**: `STUDIO_SCHEMA_REQUIRED = 8` (phase 2 is in the release),
+- **Required version**: `STUDIO_SCHEMA_REQUIRED = 9` (phase 2 is in the release; FEAT-794 adds 0009),
   constant in `storage/migrate.py` equal to the manifest's `required`, checked
   by the §2.2 probe as "every version up to it present, checksums matching".
 
@@ -1369,7 +1369,7 @@ CREATE INDEX IF NOT EXISTS ai_user_toolkit_overrides_agent_idx ON navigator.ai_u
 - **Interface Skeleton**:
   ```python
   # parrot/handlers/studio/storage/migrate.py  (new)
-  STUDIO_SCHEMA_REQUIRED: int = 8
+  STUDIO_SCHEMA_REQUIRED: int = 9
   STUDIO_MIGRATION_LOCK_KEY: int = 4715391001
   STUDIO_MIN_SERVER_VERSION_NUM: int = 140000
   LEDGER_MARKER: str = "-- @studio-ledger"
@@ -1949,7 +1949,7 @@ were appended in the v0.2.1 reconciliation; X1–X16 keep their numbers so exist
 
 | # | Item (exact names) | Provided by | Consumed by | Contract |
 |---|---|---|---|---|
-| X1 | Tables `navigator.ai_agents`, `navigator.ai_agent_assets`, `navigator.ai_agent_tooling`, `navigator.ai_agent_drafts` (with its own `version`), `navigator.ai_studio_migrations`; the **existing** `navigator.ai_skills_catalog` extended in place (content column `body`; adds `tenant`, `visibility`, `allowed_groups text[]`); phase 2: `navigator.ai_user_llm_keys`, `navigator.ai_user_credentials`, `navigator.ai_user_toolkit_overrides` | STORAGE W0 (migrations 0001–0005, M1); P2 (migrations 0006–0008, M11/M12) | FEAT-605, TOOLKITS (only through STORAGE services / `AgentToolingStore`) | `tenant text NULL`; agents, drafts **and** catalogue each carry the visibility-domain CHECK (`private`/`tenant`/`groups`), the tenant-format CHECK and the `tenant IS NULL ⇒ visibility = 'private'` CHECK; `allowed_groups text[]`; `UNIQUE(tenant, name)` + partial unique `(name) WHERE tenant IS NULL`; `ai_agents.version` and `ai_agent_drafts.version` bumped by trigger. Each migration file = body + one `-- @studio-ledger` trailer; the checksum is sha256 over the body only (never the trailer) and equals the trailer hex and `migrations/MANIFEST.json`; every body first takes `pg_advisory_xact_lock(4715391001)`; one transaction per file; PostgreSQL ≥ 14; required versions 1..8 for the `database` backend (phase 2 ships in the same release; `parrot-studio-migrate --verify` covers 1..8), a gap or drift ⇒ backend `unavailable`. Literal schema `navigator` (`search_path` cannot redirect qualified names). No DDL outside the migration files, never at startup |
+| X1 | Tables `navigator.ai_agents`, `navigator.ai_agent_assets`, `navigator.ai_agent_tooling`, `navigator.ai_agent_drafts` (with its own `version`), `navigator.ai_studio_migrations`; the **existing** `navigator.ai_skills_catalog` extended in place (content column `body`; adds `tenant`, `visibility`, `allowed_groups text[]`); the **existing** `navigator.prompt_library` (not Studio-owned) extended in place by 0009 (adds `agent_id`, `sort_order`); phase 2: `navigator.ai_user_llm_keys`, `navigator.ai_user_credentials`, `navigator.ai_user_toolkit_overrides` | STORAGE W0 (migrations 0001–0005, M1); P2 (migrations 0006–0008, M11/M12); FEAT-794 (migration 0009) | FEAT-605, TOOLKITS (only through STORAGE services / `AgentToolingStore`) | `tenant text NULL`; agents, drafts **and** catalogue each carry the visibility-domain CHECK (`private`/`tenant`/`groups`), the tenant-format CHECK and the `tenant IS NULL ⇒ visibility = 'private'` CHECK; `allowed_groups text[]`; `UNIQUE(tenant, name)` + partial unique `(name) WHERE tenant IS NULL`; `ai_agents.version` and `ai_agent_drafts.version` bumped by trigger. Each migration file = body + one `-- @studio-ledger` trailer; the checksum is sha256 over the body only (never the trailer) and equals the trailer hex and `migrations/MANIFEST.json`; every body first takes `pg_advisory_xact_lock(4715391001)`; one transaction per file; PostgreSQL ≥ 14; required versions 1..9 for the `database` backend (phase 2 ships in the same release; `parrot-studio-migrate --verify` covers 1..9), a gap or drift ⇒ backend `unavailable`. Literal schema `navigator` (`search_path` cannot redirect qualified names). No DDL outside the migration files, never at startup |
 | X2 | Tenant-less rows (`tenant IS NULL`) | STORAGE | FEAT-605, TOOLKITS | They form the GLOBAL partition of hosts with **no** resolver; there is no sentinel tenant. No resolver may return a NULL or empty tenant as valid; a NULL row never satisfies FEAT-605 `in_tenant`; a tenant-bound tool on such an agent refuses `agent_tenant_unset` |
 | X3 | `ai_agent_tooling(agent_id, kind, slug, position, config, secret_refs, vault_owner, updated_at)`, PK `(agent_id, kind, slug)` | STORAGE W0 (table), W1 (M13 identity plumbing), W2/W3 (`StudioToolingService`, `AgentToolingStore` `source="studio"`) | TOOLKITS (M2, M4, M7, M9) | `position` = list order of `ToolkitSpec`/MCP specs; `config` = secret-free spec dump, never contains a TOOLKITS server-managed key; `secret_refs` = `{dotted.path: vault_name}`, every vault name derived from `record.tooling_ref` (X17), never from the URL name; `vault_owner` = the row owner. Secret **values** and per-user `/toolkits/{slug}/me` overrides stay in DocumentDB (`user_credentials`, `user_toolkit_configs`) until STORAGE M12 moves them to Postgres under the same names; override documents are keyed `{user_id, agent_id: <tooling_ref>, slug}`. Agent delete purges, best-effort after commit, the deleted id's owner-vault names, its override documents (`ToolkitConfigService.purge_agent(ref)`) and their `…_user` vault entries; isolation never depends on the purge |
 | X4 | `StudioPartition(tenant)`, `StudioPartition.GLOBAL`, `StudioPartition.from_scope(scope)` (duck-typed `.tenant`) | STORAGE W0 | FEAT-605 W2.1 | Storage addresses rows by tenant only; it never sees groups, superuser or visibility policy |

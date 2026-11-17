@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-600 — SQL Schema Plane
 **Spec**: `sdd/specs/sql-schema-plane.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

@@ -20,5 +20,6 @@ raises ``ImportError``.
 # imports from ``api/routes.py``.
 from ..controls import builtin  # noqa: F401
 from .routes import setup_form_api
+from .submission_events import SubmittedCallback, SubmittedEvent
 
-__all__ = ["setup_form_api"]
+__all__ = ["setup_form_api", "SubmittedEvent", "SubmittedCallback"]

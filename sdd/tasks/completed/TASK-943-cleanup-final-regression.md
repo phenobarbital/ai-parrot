@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-137 — AgentCrew Primitives Migration
 **Spec**: `sdd/specs/agentcrew-primitives.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-942

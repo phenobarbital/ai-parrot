@@ -1,0 +1,14 @@
+packages/ai-parrot/src/parrot/bots/guardrails/base.py
+packages/ai-parrot/src/parrot/bots/guardrails/pipeline.py
+packages/ai-parrot/src/parrot/bots/guardrails/registry.py
+packages/ai-parrot/src/parrot/bots/guardrails/builtin/prompt_injection.py
+packages/ai-parrot/src/parrot/bots/guardrails/builtin/moderation.py
+packages/ai-parrot/src/parrot/bots/guardrails/builtin/secrets.py
+packages/ai-parrot/src/parrot/security/prompt_injection.py
+packages/ai-parrot/src/parrot/bots/abstract.py
+packages/ai-parrot/src/parrot/tools/abstract.py
+packages/ai-parrot/pyproject.toml
+benchmarks/injection_guardrail_latency/compare_models.py
+benchmarks/injection_guardrail_latency/corpus.py
+benchmarks/injection_guardrail_latency/detectors.py
+benchmarks/injection_guardrail_latency/export.py

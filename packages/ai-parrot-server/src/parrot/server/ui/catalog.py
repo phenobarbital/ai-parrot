@@ -120,7 +120,7 @@ def build_catalog() -> AdminCatalog:
         # (handlers/models/bots.py:307-314) — keep in sync if those enums
         # change.
         operation_modes=["conversational", "agentic", "adaptive"],
-        memory_types=["memory", "file", "redis"],
+        memory_types=["auto", "memory", "file", "redis"],
         knowledge_bases=_knowledge_base_options(),
         bot_class_default="BasicBot",
     )

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-116 — Pluggable Storage Backends for Conversations & Artifacts
 **Spec**: `sdd/specs/dynamodb-fallback-redis.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-822, TASK-824, TASK-826, TASK-827, TASK-828

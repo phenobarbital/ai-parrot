@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-535 — Tenant-aware, permission-based visibility for UI surfaces
 **Spec**: `sdd/specs/ui-surfaces-tenant-visibility.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2934

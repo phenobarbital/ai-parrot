@@ -3,7 +3,7 @@
 **Feature**: FEAT-621 — Agent Studio — Database-Backed Storage
 **Spec**: `sdd/specs/agentstudio-db-storage.spec.md`
 **Spec wave**: W0 — Repositories (M3, part 1: studio_transaction + _exec — pulled forward because M1 apply uses it)
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-3922

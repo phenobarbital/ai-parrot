@@ -4,9 +4,14 @@ FEAT-525 — Per-Turn Conversation Compaction.
 
 Covers: the deterministic (Stage 0/0.5/1) retention pipeline signaling
 that it can no longer fit a session's history within its budget.
+
+FEAT-886 adds :class:`TurnCompletedEvent`, the raw saved-turn payload that is
+published to the turn bus only (never to ``EventRegistry``).
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any, Dict
+
 from navigator_eventbus.lifecycle.base import LifecycleEvent
 
 
@@ -36,3 +41,28 @@ class Stage2CompactionNeededEvent(LifecycleEvent):
     history_estimate: int = 0
     available: int = 0
     dropped_turns: int = 0
+
+
+@dataclass(frozen=True)
+class TurnCompletedEvent(LifecycleEvent):
+    """One saved conversation turn, raw and pre-normalization (FEAT-886).
+
+    Published to the turn bus only; never passed to ``EventRegistry.emit()`` —
+    the payload contains conversation content and must not reach the
+    observability fan-out.
+
+    Attributes:
+        agent_name: The agent NAME — the ChatStorage key.
+        chatbot_id: The bot's ``memory_key_id`` (explicit ``chatbot_id`` or the name).
+        user_id: Owner of the conversation.
+        session_id: Conversation session.
+        turn: ``ConversationTurn.to_dict()`` taken BEFORE ``add_turn`` normalization.
+        presentation: ``TurnPresentation.model_dump()`` (output, usage, tenant, ...).
+    """
+
+    agent_name: str = ""
+    chatbot_id: str = ""
+    user_id: str = ""
+    session_id: str = ""
+    turn: Dict[str, Any] = field(default_factory=dict)
+    presentation: Dict[str, Any] = field(default_factory=dict)

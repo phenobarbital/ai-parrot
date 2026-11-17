@@ -7,10 +7,30 @@ import pytest
 from parrot.bots.abstract import AbstractBot
 
 
+class _ConfigureTestBot(AbstractBot):
+    """Concrete shell used to exercise AbstractBot lifecycle behavior."""
+
+    async def ask(self, *args, **kwargs):
+        """Satisfy the AbstractBot contract for a lifecycle-only test."""
+        return None
+
+    async def ask_stream(self, *args, **kwargs):
+        """Satisfy the AbstractBot contract for a lifecycle-only test."""
+        return None
+
+    async def conversation(self, *args, **kwargs):
+        """Satisfy the AbstractBot contract for a lifecycle-only test."""
+        return None
+
+    async def invoke(self, *args, **kwargs):
+        """Satisfy the AbstractBot contract for a lifecycle-only test."""
+        return None
+
+
 @pytest.mark.asyncio
 async def test_configure_calls_apply_tooling_specs_once() -> None:
     """Configure applies deferred tooling immediately after conversation memory."""
-    bot = AbstractBot.__new__(AbstractBot)
+    bot = object.__new__(_ConfigureTestBot)
     sequence = MagicMock()
     bot.logger = MagicMock()
     sequence.memory = MagicMock()
@@ -26,7 +46,8 @@ async def test_configure_calls_apply_tooling_specs_once() -> None:
     bot._llm_model = None
     bot._resolve_llm_config = MagicMock(return_value=MagicMock(model=None))
     bot._create_llm_client = MagicMock(return_value=MagicMock())
-    bot.tool_manager = None
+    bot.tool_manager = MagicMock(_server_param_source=None)
+    bot.sync_tools = MagicMock()
     bot.get_tools_summary = MagicMock(
         return_value={
             "tools_enabled": False,
@@ -48,7 +69,7 @@ async def test_configure_calls_apply_tooling_specs_once() -> None:
     bot._credentials = []
     bot.post_configure = AsyncMock()
     bot._llm_config = None
-    bot.events = MagicMock()
+    bot._events_registry = MagicMock()
     bot.name = "test-bot"
 
     await bot.configure()

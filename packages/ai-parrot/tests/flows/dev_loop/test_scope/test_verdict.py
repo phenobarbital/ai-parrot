@@ -92,3 +92,25 @@ def test_verdict_json_roundtrip_and_prompt_rendering() -> None:
     assert restored == verdict
     assert restored.runners[0].cached == 1
     assert render_for_prompt(restored).startswith("## Validation verdict\n")
+
+
+def _no_tests_report(suite: str = "ai-parrot[contract]") -> RunReport:
+    return RunReport("pytest", suite, 0, 0, 0, 0, 0, 0.5, 5, "no_tests")
+
+
+def test_only_no_tests_reports_are_unavailable_with_notes() -> None:
+    """Nothing collected anywhere: no signal, fail closed as unavailable -- never failed (issue:8c423c5612c2)."""
+    verdict = build_verdict(tier="task", reports=(_no_tests_report(), _no_tests_report("ai-parrot")))
+
+    assert verdict.status == "unavailable"
+    assert verdict.failures == ()
+    assert "ai-parrot[contract]: pytest collected no tests (exit 5)" in verdict.notes
+    assert "no runner collected any test; the gate has no signal" in verdict.notes
+
+
+def test_no_tests_report_beside_passing_report_passes() -> None:
+    passing = RunReport("pytest", "ai-parrot[contract]", 3, 3, 0, 0, 0, 0.5, 0, "ok")
+    verdict = build_verdict(tier="task", reports=(passing, _no_tests_report("ai-parrot")))
+
+    assert verdict.status == "passed"
+    assert verdict.notes == ("ai-parrot: pytest collected no tests (exit 5)",)

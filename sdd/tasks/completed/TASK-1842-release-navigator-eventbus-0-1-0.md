@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-319 — EventBus Consolidation
 **Spec**: `sdd/specs/eventbus-consolidation.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-1839, TASK-1840, TASK-1841

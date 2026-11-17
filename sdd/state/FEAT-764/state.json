@@ -1,0 +1,1 @@
+{"feat_id":"FEAT-764","feat_id_status":"provisional","phase":"committed","mode":"enrichment","budget":"tight","parallel":{"enabled":false,"fallback_reason":"low-effort run; tight budget"},"consumed":{"files_read":6,"grep_calls":4,"git_calls":0},"truncated":false,"phases":{"qa":{"status":"skipped","reason":"unknowns surfaced to user in final message"}}}

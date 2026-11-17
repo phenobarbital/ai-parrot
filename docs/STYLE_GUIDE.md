@@ -1,6 +1,6 @@
 # AI Parrot Code Style Guide
 
-[Back to README](../README.md)
+[Back to README](https://github.com/phenobarbital/ai-parrot/blob/main/README.md)
 
 This guide defines conventions for Python code in the `ai-parrot` project. It complements PEP 8 and focuses on clarity, correctness, and maintainability across bots, tools, clients, stores, handlers, and models.
 

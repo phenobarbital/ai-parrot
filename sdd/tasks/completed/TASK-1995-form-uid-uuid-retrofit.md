@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-393 — Stable UUID-Based Field Identity (field_uid)
 **Spec**: `sdd/specs/formdesigner-field-uid.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none — but HARD GATE: FEAT-389 (form-uid-stable-identity) must be merged to `dev` before starting

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-194 — HITL Multi-Tier Escalation Policy
 **Spec**: `sdd/specs/hitl-escalation-tier.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

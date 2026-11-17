@@ -133,6 +133,9 @@ async def test_check_slugs_warns_and_never_raises(
         async def _close(self) -> None:
             return None
 
+    # Installed through monkeypatch.setitem, so the fixture teardown restores the real
+    # module — never a session-wide stub (audited under issue:aaa24154d0c2; the guard is
+    # tests/test_stub_isolation.py).
     fake_tools = types.ModuleType("parrot_tools.querysource.toolkit")
     fake_tools.QuerysourceToolkit = Toolkit
     monkeypatch.setitem(sys.modules, "parrot_tools.querysource.toolkit", fake_tools)

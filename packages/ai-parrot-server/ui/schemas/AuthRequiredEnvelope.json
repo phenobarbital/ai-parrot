@@ -1,0 +1,109 @@
+{
+  "description": "Single-body response returned by ``AgentTalk`` when a tool raises\n``AuthorizationRequired``.\n\nThe frontend detects ``type == \"auth_required\"`` and renders a\n``ConnectIntegrationPill`` inline in the chat.\n\nAttributes:\n    type: Discriminator literal \u2014 always ``\"auth_required\"``.\n    provider: Provider identifier, e.g. ``\"jira\"``.\n    tool_name: Name of the tool that triggered the exception.\n    auth_url: Authorization URL to open in the popup (may be absent if the\n        provider could not generate one at exception time).\n    scopes: Scopes needed by the provider.\n    message: Human-readable explanation surfaced in the chat UI.\n    auth_kind: Authentication flow used by the provider.\n    user_code: Device-code flow code for the user to enter.\n    verification_uri: Device-code flow verification URL.\n    expires_in: Seconds until the device code expires.\n    retry_safe: Server-authored; True only when the server proved no tool\n        body began. Absent/False means no automatic resend.",
+  "properties": {
+    "auth_kind": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Auth Kind"
+    },
+    "auth_url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Auth Url"
+    },
+    "expires_in": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Expires In"
+    },
+    "message": {
+      "title": "Message",
+      "type": "string"
+    },
+    "provider": {
+      "title": "Provider",
+      "type": "string"
+    },
+    "retry_safe": {
+      "default": false,
+      "title": "Retry Safe",
+      "type": "boolean"
+    },
+    "scopes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Scopes",
+      "type": "array"
+    },
+    "tool_name": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Tool Name"
+    },
+    "type": {
+      "const": "auth_required",
+      "default": "auth_required",
+      "title": "Type",
+      "type": "string"
+    },
+    "user_code": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "User Code"
+    },
+    "verification_uri": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Verification Uri"
+    }
+  },
+  "required": [
+    "provider",
+    "message"
+  ],
+  "title": "AuthRequiredEnvelope",
+  "type": "object"
+}

@@ -2,7 +2,7 @@
 
 **Feature**: get-infographic-handler
 **Spec**: `sdd/specs/get-infographic-handler.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-650

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-052 — jiratoolkit-defaults
 **Spec**: sdd/specs/jiratoolkit-defaults.spec.md
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Effort**: M
 **Depends on**: TASK-352

@@ -31,6 +31,16 @@ from parrot.security.audit_ledger import AuditLedger, LocalHMACSigner
 # ---------------------------------------------------------------------------
 
 
+class _IdentityPrincipalResolver:
+    """Bind every channel identity to a principal with the same id (test double)."""
+
+    async def resolve(self, channel: str, channel_user_id: str):
+        from parrot.auth.principal import Principal
+
+        return Principal(user_id=channel_user_id, channel=channel, channel_user_id=channel_user_id)
+
+
+
 class FakeJiraOAuthManager:
     """Minimal JiraOAuthManager double for bridge tests."""
 
@@ -87,7 +97,7 @@ def _make_jira_server(
     agent.tool_manager = None
     agent.tools = [FakeJiraTool()]
 
-    resolver = OAuthCredentialResolver(jira_manager)
+    resolver = OAuthCredentialResolver(jira_manager, principal_resolver=_IdentityPrincipalResolver())
     broker = CredentialBroker(audit_ledger=ledger)
     broker.register("jira", resolver)
 
@@ -196,13 +206,13 @@ class TestJiraVertical:
     async def test_jira_broker_registers_provider(self):
         """CredentialBroker correctly holds the registered jira resolver."""
         manager = FakeJiraOAuthManager()
-        resolver = OAuthCredentialResolver(manager)
+        resolver = OAuthCredentialResolver(manager, principal_resolver=_IdentityPrincipalResolver())
 
         broker = CredentialBroker()
         broker.register("jira", resolver)
 
         assert "jira" in broker._resolvers
-        assert isinstance(broker._resolvers["jira"], OAuthCredentialResolver)
+        assert isinstance(broker._resolvers["jira"][0], OAuthCredentialResolver)
 
         # A2AServer built with the broker uses it for gating.
         agent = MagicMock()

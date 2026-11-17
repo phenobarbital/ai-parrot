@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-406 — PBAC Guardrails
 **Spec**: `sdd/specs/pbac-guardrails.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2111, TASK-2113

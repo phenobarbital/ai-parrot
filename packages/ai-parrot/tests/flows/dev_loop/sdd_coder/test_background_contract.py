@@ -235,3 +235,18 @@ async def test_index_path_none_preserves_fallback(tmp_path: Path, monkeypatch: p
     await supervisor._plan_selection(worktree=worktree, tier="merge")
     assert "declared" not in captured
     assert "contract" not in captured
+
+
+def test_run_validation_digest_matches_namespace_for_without_contract(tmp_path: Path) -> None:
+    """Both supervisor sites and the CLI agree on the namespace of a contract-less index (FEAT-830)."""
+    index_path = tmp_path / "index.json"
+    index_path.write_text(
+        json.dumps({"feature": "demo", "feature_id": "FEAT-699", "base_branch": "dev", "tasks": []}),
+        encoding="utf-8",
+    )
+    base_ref, digest = ValidationSupervisor._index_runtime_metadata(index_path)
+    assert digest == ""
+    green_cache = background_module.green_cache
+    assert green_cache.cache_namespace(
+        feature_id="FEAT-699", base_ref=base_ref, contract_digest=digest
+    ) == green_cache.namespace_for(feature_id="FEAT-699", base_ref=base_ref, contract=None)

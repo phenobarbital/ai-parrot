@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-224 — Structured Config Homologation (`artifacts[]` envelope)
 **Spec**: `sdd/specs/structured-config-homologation.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1459, TASK-1461

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-542 — Local LanceDB Vector, Full-Text and Hybrid Search
 **Spec**: `sdd/specs/lancedb-vector-store.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h) — target 1.5 hours
 **Depends-on**: TASK-3057

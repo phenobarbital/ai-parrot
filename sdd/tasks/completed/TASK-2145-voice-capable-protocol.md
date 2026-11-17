@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-416 — Voice Agent Framework
 **Spec**: `sdd/specs/voice-agent-framework.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

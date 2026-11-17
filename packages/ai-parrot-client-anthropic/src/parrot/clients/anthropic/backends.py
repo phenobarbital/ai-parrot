@@ -103,6 +103,11 @@ class BedrockBackend:
     AWS credentials are optional — pass ``None`` to fall through to the
     standard AWS credential chain (``~/.aws/credentials`` / IAM role / IMDS).
 
+    Requires Claude 4.7 or later: anthropic SDK 2.x sends API version
+    ``2026-10-21``, which Bedrock accepts only for Claude 4.7+ models.
+    Opus/Sonnet 4.6, Haiku 4.5 and older fail on this backend; call them
+    through :class:`~parrot.clients.amazon.bedrock.BedrockConverseClient`.
+
     Args:
         aws_region: AWS region (e.g. ``"us-east-1"``).
         aws_access_key: AWS access key ID.  ``None`` → SDK chain.

@@ -3,8 +3,8 @@
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
-FM_DOC = ROOT / "docs/interfaces/gdrive-filemanager.md"
-AUTH_DOC = ROOT / "docs/integrations/google-oauth2.md"
+FM_DOC = ROOT / "wiki/server/interfaces/gdrive-filemanager.md"
+AUTH_DOC = ROOT / "wiki/integrations/google-oauth2.md"
 SECTIONS = (
     "Install",
     "Quick start",

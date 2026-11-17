@@ -5,10 +5,11 @@ description: Convert a brainstorm, proposal, or direct feature request into a fo
 
 # SDD Spec
 
-## Full procedure and Codex adaptations
+## Full procedure and host adaptations
 
 Before executing, read the [full sdd-spec procedure](../../../.claude/commands/sdd-spec.md)
-and the [Codex adaptation contract](../../../docs/sdd/CODEX.md#codex-adaptation-contract).
+and your host's adaptation contract: the [Codex adaptation contract](../../../docs/sdd/CODEX.md#codex-adaptation-contract)
+on Codex, or the [Antigravity adaptation contract](../../../docs/sdd/AGY.md#antigravity-adaptation-contract) on Google Antigravity (`agy`).
 Follow the full procedure for details omitted from this summary. The adaptation
 contract and the Codex-specific instructions below override Claude runtime syntax
 and legacy shell examples; retain all workflow gates and evidence requirements.
@@ -67,16 +68,16 @@ stay with the thinking model — eligibility never delegates a design choice.
    - Libraries -> External Dependencies
    - Parallelism Assessment -> Worktree Strategy
    - Open Questions -> preserve `[x]` and `[ ]`
-4. Resolve flow metadata with `scripts.sdd.sdd_meta.resolve_flow()`:
+4. Resolve flow metadata with `parrot.sdd.scripts.sdd_meta.resolve_flow()`:
    - explicit flags win
    - exploration frontmatter is next
-   - default is `type: feature`, `base_branch: dev`
+   - default is `type: feature` with the `base_branch` from `sdd/config.json`
 5. Validate:
    - `--type hotfix` or `type: hotfix` exploration frontmatter: abort with
      `⚠️  /sdd-spec no longer scaffolds hotfixes — use /sdd-brief <source> (FEAT-698).`
    - feature must not use `main`
 6. Sync base branch:
-   - refuse if inside `.claude/worktrees/`
+   - refuse if `git rev-parse --git-dir` differs from `--git-common-dir` (a linked worktree)
    - refuse dirty worktree
    - `git checkout <base_branch>`
    - `git pull --ff-only origin <base_branch>`
@@ -84,6 +85,20 @@ stay with the thinking model — eligibility never delegates a design choice.
    - missing target version/status/author preferences
    - unresolved questions that block design
    - contradictions discovered during codebase research
+7b. Consult experts (optional, advisory — FEAT-890):
+   - Run `parrot sdd experts consult --doc <source-doc> [--feature <FEAT-ID>]`, where `<source-doc>` is the brainstorm or proposal the spec derives from (the spec itself does not exist yet).
+   - This is optional and non-blocking — it gathers advisory contributions from domain experts
+     before drafting the spec. The command writes findings to `sdd/state/.contributions/<doc-slug>/`.
+   - List findings: read each `<expert>.json` in the contributions directory.
+   - Record each decision with `parrot sdd experts triage <contribution> <finding-id> confirm|reject|escalate --reason "..."`;
+     a confirmed finding can later become an unreviewed decision with `parrot sdd experts promote <contribution> <finding-id>`.
+   - Triage each finding as CONFIRM, REJECT, or ESCALATE:
+     - CONFIRM: fold the finding into the spec with a reference to the contribution file.
+     - REJECT: note the rejection reason in a brief comment; do not include in spec.
+     - ESCALATE: move the finding to Open Questions — it requires human clarification.
+   - Promote contributions (if FEAT-ID is known): after triage, promote
+     `sdd/state/.contributions/<doc-slug>/` to `sdd/state/<FEAT-ID>/contributions/`
+     like design research.
 8. Research codebase:
    - run `wikitoolkit query "<focused question>"` before source scans
    - inspect at least one wiki result when available
@@ -110,12 +125,20 @@ stay with the thinking model — eligibility never delegates a design choice.
    - If frontmatter has `reuse_feature_id`, use it only for an intentional
      multi-spec split, document the reuse, and skip reservation.
    - Only for a new feature without an existing or explicitly reused ID, call:
-     `python -m scripts.sdd.reserve_ids --kind feature --count 1 --base-branch <base_branch> --label <feature-slug>`.
+     `parrot sdd ids reserve --kind feature --count 1 --base-branch <base_branch> --label <feature-slug>`.
    - Use the returned `FEAT-NNN` verbatim.
    - Do not fall back to hand-computed IDs.
+9b. Retrieve governing decisions (FEAT-784), before drafting §2:
+   - write the draft spec with frontmatter (`projects`, `tags`) and §1 first
+   - run `wikitoolkit spec governing <spec>` and design within the listed decisions
+   - changing one requires an explicit `supersedes:` / `contradicts:` entry in `## Decisions`
+   - skip when it prints `decision audit not configured in this repository`
 10. Write the spec:
    - frontmatter `type` and `base_branch`
    - frontmatter `projects` and `tags`, carried from the exploration doc (FEAT-576)
+   - Documentation chapter (FEAT-801): for `type: feature` write the `docs:` frontmatter (`policy: required`,
+     `pages: [wiki/...]`, optional `api_modules`) and `## 10. Documentation`; for hotfix/`/sdd-brief` use
+     `policy: none`. Informational — never blocks closeout.
    - Feature ID
    - date
    - architecture and module breakdown
@@ -130,7 +153,7 @@ stay with the thinking model — eligibility never delegates a design choice.
    - tests and acceptance criteria
    - mandatory Codebase Contract
    - Worktree Strategy
-   - `### Validation Contract` in §4 (FEAT-699): explicit pytest operands or `none — fallback`
+   - `### Validation Contract` in §4 (FEAT-699): explicit pytest operands or `none — fallback` (repos with `test_command` set in `sdd/config.json`: write `none — fallback`)
      — or the FEAT-709 `runners:` form (pytest/vitest/cargo/parrot-e2e blocks; kinds, tiers and settings from
      `.parrot/test_runners.toml`; `parrot-e2e` never at task tier). The flat form is lifted on read to one pytest runner.
    - optional `e2e` frontmatter and `### E2E Scenarios` subsection (FEAT-581)
@@ -146,6 +169,10 @@ stay with the thinking model — eligibility never delegates a design choice.
      `e2e-plan.md` frontmatter is generated later, at task decomposition,
      once pytest node IDs are frozen
    - Open Questions with resolved/unresolved state preserved
+10b. Consequence gate (FEAT-784):
+   - `parrot sdd spec consequences <spec> --render`, then the same without `--render`
+   - exit 0 pass/skipped · 1 conflict · 2 invalid · 3 incomplete/stale/missing
+   - refuse `**Status**: approved` on any non-zero exit; `skipped` proceeds
 11. Commit:
    - preserve unrelated staging; stop before committing if it is outside this run's scope
    - stage `sdd/specs/<feature-slug>.spec.md` and only this run's promoted artifacts
@@ -156,6 +183,9 @@ stay with the thinking model — eligibility never delegates a design choice.
      the collision for inspection; preserve source artifacts until copying succeeds
    - verify cached names
    - commit `sdd: add spec for FEAT-NNN - <feature-slug>`
+   - publish the base branch: `git pull --no-rebase --no-edit origin <base_branch> && git push origin <base_branch>`
+     — worktrees are created from `origin/<base_branch>`, so an unpushed spec is invisible to the
+     next implementation run; on failure never force, stop and print that exact command
 
 ## Output
 
@@ -170,5 +200,5 @@ Next: review, mark approved, run $sdd-task sdd/specs/<feature-slug>.spec.md
 
 - `sdd/templates/spec.md`
 - `sdd/WORKFLOW.md`
-- `scripts/sdd/sdd_meta.py`
-- `scripts/sdd/reserve_ids.py`
+- `parrot.sdd.scripts.sdd_meta`
+- `parrot.sdd.scripts.reserve_ids`

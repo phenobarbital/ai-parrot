@@ -149,15 +149,32 @@ def test_failed_client_frozen_mutation_raises(tc: TraceContext) -> None:
 def test_agent_name_is_not_pii_field(tc: TraceContext) -> None:
     """agent_name stores AbstractBot.name only (not user_id/session_id/prompt).
 
-    This is a documentation/contract test: the field name is 'agent_name'
-    and its value is a short bot identifier, not user-sourced PII.
-    We verify the field exists and has the right name (not user_id etc.).
+    This is a documentation/contract test: 'agent_name' is the only attribution
+    field carried as a metric label, and its value is a short bot identifier.
+    user_id/session_id are separate, span-only fields on the event (their
+    exclusion from metric labels is guarded by
+    tests/unit/observability/test_dashboard_contract.py::test_no_span_only_labels).
+    We verify agent_name never carries them and they stay unset unless given.
     """
     ev = AfterClientCallEvent(
         trace_context=tc, client_name="openai", model="gpt-4o", agent_name="my-bot"
     )
-    # Confirm no PII field names leaked in
     d = ev.to_dict()
-    for key in d:
-        assert key not in {"user_id", "session_id"}, f"PII field found: {key}"
     assert d.get("agent_name") == "my-bot"
+    # PII lives in its own span-only fields, unset unless the caller provides it.
+    assert d.get("user_id") is None
+    assert d.get("session_id") is None
+
+    ev_with_ids = AfterClientCallEvent(
+        trace_context=tc,
+        client_name="openai",
+        model="gpt-4o",
+        agent_name="my-bot",
+        user_id="u-123",
+        session_id="s-456",
+    )
+    d_with_ids = ev_with_ids.to_dict()
+    # Providing user/session ids never changes the agent_name attribution.
+    assert d_with_ids["agent_name"] == "my-bot"
+    assert d_with_ids["user_id"] == "u-123"
+    assert d_with_ids["session_id"] == "s-456"

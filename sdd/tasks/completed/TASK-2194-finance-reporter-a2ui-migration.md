@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-420 — FinanceReporter Tier-2 + Narrative Skill
 **Spec**: `sdd/specs/finance-reporter-tier2-narrative.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2186, TASK-2189, TASK-2192, TASK-2193

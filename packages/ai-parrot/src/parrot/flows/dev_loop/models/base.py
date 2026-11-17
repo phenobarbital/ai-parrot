@@ -38,6 +38,8 @@ from parrot.flows.dev_loop.session_state import (  # noqa: F401 - re-exported
     ChangeSet,
     SeatUsageSummary,
 )
+from parrot.knowledge.wiki.experience.models import LessonDraft
+from parrot.memory.dynamics.models import CheckedPattern
 
 # ─────────────────────────────────────────────────────────────────────
 # Acceptance criteria (discriminated union)
@@ -495,6 +497,7 @@ class TaskScopedBrief(BaseModel):
             "repair); empty on a first attempt."
         ),
     )
+    experience_briefing: str = Field("", description="Known pitfalls for this task.")
     task_file: str = Field(
         default="",
         description=(
@@ -543,6 +546,14 @@ class DevelopmentOutput(BaseModel):
     )
     commit_shas: List[str]
     summary: str
+    checked_patterns: list[CheckedPattern] = Field(
+        default_factory=list,
+        description=(
+            "Untrusted checked-pattern claims from this delivery. The coder engine "
+            "must match them to its own attempt, exposure, and validation evidence "
+            "before using them for a memory review."
+        ),
+    )
     incomplete_tasks: List[str] = Field(
         default_factory=list,
         description=(
@@ -572,6 +583,10 @@ class DevelopmentOutput(BaseModel):
             "``SynthesisNode`` to decide whether post-merge reconciliation "
             "has anything to reconcile at all."
         ),
+    )
+    lessons: List[LessonDraft] = Field(
+        default_factory=list,
+        description="Candidate lessons learned during this attempt.",
     )
 
 

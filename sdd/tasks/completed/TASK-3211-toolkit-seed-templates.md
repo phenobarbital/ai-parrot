@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-556 — `parrot claude install` seeds and authorizes the Parrot MCP servers
 **Spec**: `sdd/specs/claude-install-mcp-autoenable.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

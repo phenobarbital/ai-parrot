@@ -99,7 +99,7 @@ def test_docs_show_actual_controls() -> None:
     root = _repo_root()
 
     # Read the cheatsheet
-    cheatsheet_path = root / "docs/wiki/cheatsheet.md"
+    cheatsheet_path = root / "wiki/wiki/cheatsheet.md"
     cheatsheet = _read_file(cheatsheet_path)
 
     # Verify cheatsheet covers standup controls
@@ -136,7 +136,7 @@ def test_docs_show_actual_controls() -> None:
     assert "wiki standup runbook" in guide.lower()
 
     # Read the runbook
-    runbook_path = root / "docs/runbooks/wiki-standup.md"
+    runbook_path = root / "wiki/operations/runbooks/wiki-standup.md"
     runbook = _read_file(runbook_path)
 
     # Verify runbook has key sections

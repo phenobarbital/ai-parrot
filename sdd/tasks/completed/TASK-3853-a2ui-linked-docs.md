@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-610 — A2UI Linked Surfaces E2E example
 **Spec**: `sdd/specs/a2ui-linked-e2e-test.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-3841, TASK-3847, TASK-3844

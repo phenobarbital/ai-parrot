@@ -96,3 +96,35 @@ def test_fallback_metadata_is_recorded_separately():
         ev.fallback_metadata == {"used_fallback_model": True, "original_model": "a", "fallback_model": "fb"}
         and ev.actual_model == "fb"
     )
+
+
+def test_google_preflight_uses_google_credentials() -> None:
+    """Google evaluation must not depend on an Anthropic credential."""
+    config = _cfg(
+        live=True,
+        provider="google",
+        primary_api_model="gemini-3.5-flash",
+        cheap_api_model="gemini-3.1-flash-lite",
+        max_live_calls=16,
+    )
+    preflight_live(config, env={"GOOGLE_API_KEY": "test"})
+    with pytest.raises(LivePreflightError, match="GOOGLE_API_KEY"):
+        preflight_live(config, env={"ANTHROPIC_API_KEY": "test"})
+
+
+@pytest.mark.parametrize("key", ["model_version", "modelVersion"])
+@pytest.mark.parametrize("provider", ["google_genai", "google", "gemini", "vertex_ai"])
+def test_google_model_version_is_provider_evidence(key: str, provider: str) -> None:
+    """Preserve a different returned version instead of echoing the requested model."""
+    message = _msg(model="gemini-3.5-flash", raw={key: "gemini-3.6-flash"})
+    message.provider = provider
+    evidence = extract_model_evidence(message, "gemini-3.5-flash")
+    assert evidence.verified and evidence.mismatch
+    assert evidence.actual_model == "gemini-3.6-flash"
+
+
+def test_google_requested_model_alone_is_not_evidence() -> None:
+    """A model field without Google's model_version cannot verify execution."""
+    message = _msg(raw={"model": "gemini-3.5-flash"})
+    message.provider = "gemini"
+    assert not extract_model_evidence(message, "gemini-3.5-flash").verified

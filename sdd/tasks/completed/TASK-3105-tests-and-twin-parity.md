@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-546 — Design Research Hardening
 **Spec**: `sdd/specs/design-research-hardening.spec.md` (§3 Module 6, §4 Test Specification, AC-9)
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3100, TASK-3101, TASK-3102, TASK-3103, TASK-3104

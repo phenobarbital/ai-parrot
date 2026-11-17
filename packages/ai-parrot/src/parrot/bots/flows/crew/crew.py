@@ -32,6 +32,7 @@ from typing import (
 )
 from datetime import datetime
 from pathlib import Path
+import functools
 
 if TYPE_CHECKING:
     from ....models.crew_definition import CrewDefinition
@@ -58,6 +59,8 @@ from ...agent import BasicAgent
 from ...abstract import AbstractBot, _resolve_supported_client
 from ....clients import AbstractClient
 from ....clients.factory import SUPPORTED_CLIENTS
+from ....llm_defaults import resolve_component_api_key, resolve_component_llm
+from ....observability.context import usage_component
 from .credentials import GOOGLE_PROVIDER_KEYS, apply_google_api_key, has_explicit_google_credential
 from ....tools.manager import ToolManager
 from ....tools.agent import AgentTool
@@ -114,6 +117,45 @@ AgentNode = CrewAgentNode
 # These must NOT be forwarded to agent calls (agent.ask / .conversation / .invoke)
 # because they contain non-serialisable internal objects (ExecutionMemory, dicts, …).
 _INTERNAL_SHARED_KEYS: frozenset = frozenset({"execution_memory", "shared_state", "crew_execution_id"})
+
+_CREW_BUILTIN_LLM = "google:gemini-4-argon"
+
+
+def _build_crew_client(google_api_key: Optional[str], kwargs: Dict[str, Any], **extra: Any):
+    """Build the crew's orchestration client from ``CREW_LLM`` -> ``DEFAULT_LLM`` -> builtin (FEAT-796).
+
+    With nothing configured (source ``builtin``) this is the legacy behavior: a Google client built
+    from ``kwargs`` (+ the crew Google key). A configured ``provider:model`` selects that provider's
+    client and model; an explicit credential in ``kwargs`` always wins, then the crew Google key
+    (Google family only), then ``CREW_<PROVIDER>_API_KEY`` and the legacy ``CREW_AI_KEY``.
+
+    Returns:
+        The client instance, or ``None`` when the provider's client is not installed.
+    """
+    resolved = resolve_component_llm("CREW", builtin=_CREW_BUILTIN_LLM)
+    is_google = resolved.provider.lower() in GOOGLE_PROVIDER_KEYS
+    client_cls = _resolve_supported_client(SUPPORTED_CLIENTS.get(resolved.provider.lower()))
+    client_kwargs = {**kwargs, **extra}
+    if resolved.source != "builtin":
+        client_kwargs.setdefault("model", resolved.model)
+    if not has_explicit_google_credential(client_kwargs):
+        api_key = (google_api_key if is_google else None) or resolve_component_api_key(
+            ("CREW",), resolved.provider, legacy=("CREW_AI_KEY",)
+        )
+        if api_key:
+            client_kwargs["api_key"] = api_key
+    return client_cls(**client_kwargs) if client_cls else None
+
+
+def _crew_usage_scope(func):
+    """Tag every client call made inside a crew entry point as component ``CREW`` (FEAT-796)."""
+
+    @functools.wraps(func)
+    async def wrapper(*args, **kwargs):
+        with usage_component("CREW"):
+            return await func(*args, **kwargs)
+
+    return wrapper
 
 
 class AgentCrew(PersistenceMixin, SynthesisMixin):
@@ -241,11 +283,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         elif isinstance(llm, AbstractClient):
             self._llm = llm  # Optional LLM for orchestration tasks
         else:
-            client_cls = _resolve_supported_client(SUPPORTED_CLIENTS.get("google"))
-            client_kwargs = kwargs
-            if google_api_key and not has_explicit_google_credential(kwargs):
-                client_kwargs = {**kwargs, "api_key": google_api_key}
-            self._llm = client_cls(**client_kwargs) if client_cls else None
+            self._llm = _build_crew_client(google_api_key, kwargs)
         self.truncation_length = (
             truncation_length if truncation_length is not None else self.__class__.default_truncation_length
         )
@@ -1741,6 +1779,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
     # Execution Methods (run_parallel, sequential, loop, flow)
     # -------------------------------
 
+    @_crew_usage_scope
     async def run_sequential(
         self,
         query: str,
@@ -1752,7 +1791,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         agent_sequence: List[str] = None,
         max_tokens: int = 8192,
         temperature: float = 0.1,
-        model: Optional[str] = "gemini-2.5-pro",
+        model: Optional[str] = None,
         **kwargs,
     ) -> FlowResult:
         """
@@ -1789,6 +1828,11 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                 - agent_results: Dictionary mapping agent_id to its result
                 - success: Whether all agents executed successfully
         """
+        if model is None:
+            # Agents default to Google: forward the CREW model only when it is a Google-family
+            # model; otherwise each agent keeps its own model (a foreign model name would break it).
+            _crew = resolve_component_llm("CREW", builtin=_CREW_BUILTIN_LLM)
+            model = _crew.model if _crew.provider.lower() in GOOGLE_PROVIDER_KEYS else None
         if not self.agents:
             return FlowResult(
                 output="No agents in crew",
@@ -2087,6 +2131,7 @@ Current task: {current_input}"""
 
         return result
 
+    @_crew_usage_scope
     async def run_loop(
         self,
         initial_task: str,
@@ -2144,16 +2189,9 @@ Current task: {current_input}"""
             )
 
         if not self._llm:
-            # Let's create an LLM session if none is provided:
-            # FEAT-523 (TASK-2852): lazy import — core must not import a
-            # provider module at module scope (AC-3); "google" now ships
-            # from the ai-parrot-client-google satellite.
-            from ....clients.google import GoogleGenAIClient
-
-            if self._google_api_key:
-                self._llm = GoogleGenAIClient(model="gemini-2.5-pro", max_tokens=8192, api_key=self._google_api_key)
-            else:
-                self._llm = GoogleGenAIClient(model="gemini-2.5-pro", max_tokens=8192)
+            self._llm = _build_crew_client(self._google_api_key, {}, max_tokens=8192)
+            if self._llm is None:
+                raise RuntimeError("No client available for the configured CREW_LLM provider")
 
         agent_sequence = agent_sequence or list(self.agents.keys())
         if not agent_sequence:
@@ -2584,6 +2622,7 @@ Current task: {current_input}"""
 
         return result
 
+    @_crew_usage_scope
     async def run_parallel(
         self,
         tasks: List[Dict[str, Any]],
@@ -2930,6 +2969,7 @@ Current task: {current_input}"""
 
         return result
 
+    @_crew_usage_scope
     async def run_flow(
         self,
         initial_task: str,
@@ -3829,6 +3869,7 @@ analyze, and present information in the most helpful way for the user.
 
         return context
 
+    @_crew_usage_scope
     async def ask(
         self,
         question: str,
@@ -4403,11 +4444,9 @@ above. Ensure the summary:
             try:
                 # Default to Google GenAI if no LLM provided
                 self.logger.warning("No LLM provided for executive summary. Defaulting to Google GenAI.")
-                client_cls = _resolve_supported_client(SUPPORTED_CLIENTS["google"])
-                if self._google_api_key:
-                    self._llm = client_cls(api_key=self._google_api_key)
-                else:
-                    self._llm = client_cls()
+                self._llm = _build_crew_client(self._google_api_key, {})
+                if self._llm is None:
+                    raise RuntimeError("No client available for the configured CREW_LLM provider")
             except Exception as ex:
                 self.logger.error(f"Failed to initialize default LLM: {ex}")
                 raise ValueError(

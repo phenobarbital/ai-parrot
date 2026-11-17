@@ -1,0 +1,155 @@
+## 3. Probable Scope
+
+Four phases. Each is shippable on its own; the spec should cut them into separate features.
+
+### Phase 1 — Configuration out of `pyproject.toml`, runners reachable
+
+#### What's New
+
+- **Repository settings in `sdd/config.json`** — `SddConfig` gains three optional blocks: `sandbox`
+  (mode, allowed domains, `gh_token`), `worktree` (the existing native-group manifest, plus the setup
+  command of phase 2) and runner settings. One resolver gives every consumer the same precedence:
+  CLI flag or environment variable → `sdd/config.json` → `pyproject.toml` `[tool.parrot.*]` → default.
+- **A foreign-repository end-to-end fixture** — a minimal Node + vitest repository exercised from
+  install through `select_tests`, the guard and worktree creation. Today's foreign-repo tests stop at
+  install, uninstall and "fails without a traceback" (F017).
+
+#### What Changes
+
+- **`…/parrot/sdd/config.py`::`SddConfig`** — new optional blocks; defaults unchanged. *Evidence*: F004
+- **`…/parrot/sdd/scripts/native_claude_sandbox.py`::`resolve_sandbox_mode`** — the new precedence;
+  `off` / `legacy` stay flag-or-environment only. *Evidence*: F001
+- **`…/parrot/sdd/scripts/native_claude_sandbox.py`::`load_launch_config`** — the new precedence, primary
+  checkout only. *Evidence*: F002
+- **`…/parrot/flows/dev_loop/native_artifacts.py`::`load_manifest`** — the new precedence; `NativeGroup`
+  unchanged. *Evidence*: F003
+- **`…/parrot/knowledge/wiki/claude_code/welcome.py`::`_set_pyproject_sandbox`** — write `sdd/config.json`
+  when the repository has no `[tool.parrot.sdd]` table to edit. *Evidence*: F005
+- **`…/parrot/flows/dev_loop/test_scope/runners/vitest.py`::`ADAPTER`** — default `cwd`, no ai-parrot
+  default label, wider source suffixes. *Evidence*: F007
+- **`…/parrot/flows/dev_loop/test_scope/guard.py`::`VERDICT_ARGV`** — rewrite to the packaged entry
+  point instead of a monorepo path and a bare `python`. *Evidence*: F008
+- **`…/parrot/sdd/scripts/select_tests.py`::`main`** — honour `invocation.cwd` in `--run`; append
+  `--timeout` only for pytest. *Evidence*: F009
+- **`…/parrot/sdd/installer.py`::`GITIGNORE_BLOCK`** — only if runner settings stay in `.parrot/`
+  (see §5, Unresolved 1). *Evidence*: F006
+
+### Phase 2 — Toolchain profiles and worktree setup
+
+#### What's New
+
+- **Toolchain profile detection** — one module that maps marker files to a profile: the format, lint,
+  type-check and test commands and the file suffixes they apply to. Initial profiles: Python
+  (`pyproject.toml`: today's ruff / black / mypy behaviour, unchanged), Node (`package.json`: package
+  manager from `packageManager` or the lockfile; commands from its `scripts`, e.g. `format`, `lint`,
+  `check`, `test`) and Rust (`Cargo.toml`). A single CLI verb prints the detected profile as JSON, so a
+  prompt asks for it instead of naming a tool. *Evidence*: F010, F014, F015, F017
+- **Worktree setup command** — a `worktree` setting holding the command `ensure_worktree` runs on the
+  host after creating a worktree (e.g. `pnpm install --frozen-lockfile`), with a timeout, a
+  `--no-setup` opt-out and its outcome in the JSON report. *Evidence*: F003, F011
+
+#### What Changes
+
+- **`…/parrot/flows/dev_loop/sdd_coder/lint.py`::`detect_formatter`, `_existing_python_files`** — the
+  engine pass fixes and formats the changed files of the profile's suffixes with the profile's commands.
+  *Evidence*: F010
+- **`…/parrot/sdd/scripts/ensure_worktree.py`::`main`** — run the setup command after the native sync.
+  *Evidence*: F003, F011
+- **`…/parrot/flows/dev_loop/test_scope/runners/vitest.py`::`ADAPTER`** — package manager from the
+  profile instead of a fixed `pnpm`. *Evidence*: F007
+- **`…/parrot/sdd/audit.py`::`EXTERNAL_TOOLS`** — tool list per detected profile. *Evidence*: F017
+- **`…/parrot/sdd/_assets/claude/agents/sdd-qa.md`**, **`qa-runner.md`**, **`commands/sdd-done.md`**,
+  **`hooks/sdd-worker-format.sh`** — take lint / format / type-check from the profile; report
+  "not configured" and do not gate when the profile has none. *Evidence*: F012, F014
+
+### Phase 3 — Language-neutral prompts, templates and contract probe
+
+#### What Changes
+
+- **`…/parrot/sdd/_assets/claude/agents/sdd-contract-probe.md`** — language-aware probe commands, so a
+  TypeScript symbol is found and an "absent" claim is checked in the right files. *Evidence*: F013
+- **`…/parrot/sdd/_assets/sdd/sdd_templates/task.md`**, **`brief.md`** and the spec template — neutral
+  Codebase Contract, Validation Commands and Test Specification sections; no `from parrot…`, no pytest
+  skeleton as the only example. *Evidence*: F014
+- **`…/parrot/sdd/_assets/sdd/sdd_templates/design_research.prompt.md`** — project identity from the
+  repository's `sdd/CONVENTIONS.md`, not a hard-coded ai-parrot description. *Evidence*: F014
+- **Worker and coder prompts** — the `.venv` / `uv` shared-environment policy and the ai-parrot
+  specifics (`parrot.utils.types`, Cython `.so`, maturin) become profile-conditional or move to
+  ai-parrot's own `sdd/CONVENTIONS.md`. *Evidence*: F014 (audit-lane inventory, medium confidence)
+
+### Phase 4 — Migrate `navigator-frontend-next` (acceptance)
+
+- Run `parrot sdd install` there, fill `sdd/config.json`, retire `scripts/sdd/*.mjs` and the forked
+  commands, and take one feature through spec → tasks → worktree → `/sdd-done` with a vitest contract.
+  Its ID ledger and per-spec indexes are already schema-compatible. *Evidence*: F015
+
+### What's Untouched (Non-Goals)
+
+- The parrot tooling stays Python. A target repository still needs `python3`, `jq` and the `parrot` CLI
+  on the host (F017); nothing is re-implemented in JavaScript.
+- Baseline classification and the green cache stay pytest-scoped (F010). The shipped prompts already
+  report them as `n/a` for other runners.
+- The scopes of FEAT-802 (worktree root) and FEAT-804 (portable rule, install root).
+- New test-runner kinds beyond pytest, vitest, cargo and parrot-e2e.
+- Profiles for languages other than Python, Node (JS / TS / Svelte) and Rust.
+
+### Patterns to Follow
+
+- Guarded, self-skipping steps that print one line ("lint: ruff not configured"). *Evidence*: F014
+- A loader that falls back to defaults and raises a typed error for a malformed file. *Evidence*: F004
+- Primary-checkout-only reads for anything a sandboxed session could tamper with. *Evidence*: F002
+- Per-launch CLI flags override file configuration. *Evidence*: F002
+
+### Integration Risks
+
+- **Config version skew**: a `sdd/config.json` written by a newer parrot is rejected by an older one
+  (`extra="forbid"`). Mitigation: ship the model change before any writer, and say so in the error.
+  *Evidence*: F004
+- **Host-side command execution**: the setup command is arbitrary code run outside the sandbox.
+  Mitigation: read it from the primary checkout only, print it before running, honour `--no-setup`.
+  *Evidence*: F002, F011
+- **Ambiguous detection in mixed repositories**: ai-parrot itself is Python plus a Svelte UI under
+  `packages/ai-parrot-server/ui`. Mitigation: decide path scoping and override in the spec (§5).
+  *Evidence*: F010, F015
+- **Reference repository has a live worktree under `.claude/worktrees`**, which FEAT-802 makes the
+  installer refuse. Mitigation: finish or move that worktree before phase 4. *Evidence*: F015, F016
+- **Second-hand inventory**: phase 3's file list beyond the re-read lines comes from an audit lane.
+  Mitigation: the spec re-verifies each location before it enters a Codebase Contract. *Evidence*: F014
+
+---
+
+Decisions already taken by the project owner:
+
+### Resolved (during proposal phase)
+
+- [x] **Where must the configuration that today lives only in `pyproject.toml` live for a repository
+  without one?** — *Resolved*: "sdd/config.json (Recomendado)" — extend `SddConfig`; `pyproject.toml`
+  stays as a fallback.
+  *Resolves claims*: C1, C2, C3
+- [x] **What scope should the proposal cover?** — *Resolved*: "Todo, por fases (Recomendado)" — config and
+  runners; lint / format and worktree dependencies; neutral prompts, templates and contract probe;
+  migrate `navigator-frontend-next` as the acceptance test.
+  *Resolves claims*: C15, C16
+- [x] **How does a non-Python repository declare lint, format and type-check?** — *Resolved*: "Perfiles
+  autodetectados" — detect `package.json`, `Cargo.toml`, … and pick the tools.
+  *Resolves claims*: C11, C15
+- [x] **How does a new worktree get its dependencies?** — *Resolved*: "Comando de setup declarado
+  (Recomendado)" — a declared command `ensure_worktree` runs on the host at worktree creation.
+  *Resolves claims*: C12
+
+### Resolved (during `/sdd-spec`, 2026-11-05)
+
+- [x] **Where do runner settings live?** — *Resolved*: "Bloque runners en sdd/config.json
+  (Recomendado)" — committed with the rest of the configuration; the TOML stays as a fallback and for the
+  Python extensions, so ai-parrot does not change.
+  *Resolves claims*: C6
+- [x] **Can a detected profile be overridden or scoped by path?** — *Resolved*: "Detección + override
+  opcional (Recomendado)" — detection at the repository root and at each configured runner `cwd`; an
+  optional `toolchain` block in `sdd/config.json` adds roots or replaces a command.
+  *Resolves claims*: C11
+- [x] **When does the setup command re-run, and does its failure block?** — *Resolved*: "Al crear y si
+  cambia el lockfile; el fallo bloquea (Recomendado)" — it re-runs on reuse only when the declared input
+  files changed; a failure ends `ensure` with an error and the command's output; `--no-setup` skips it.
+  *Resolves claims*: C12
+- [x] **Is the proposal accepted?** — *Resolved*: "Aceptar y ejecutar codex (Recomendado)" — status set
+  to `accepted`; the independent design review runs over this document.

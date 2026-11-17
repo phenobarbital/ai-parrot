@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-138 — jira_analyst_systemprompt_hardening
 **Spec**: `sdd/specs/jira_analyst_systemprompt_hardening.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-947, TASK-949

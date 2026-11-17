@@ -1,5 +1,5 @@
 {
-  "required": 8,
+  "required": 9,
   "migrations": [
     {
       "version": 1,
@@ -40,6 +40,11 @@
       "version": 8,
       "name": "0008_ai_user_toolkit_overrides",
       "sha256": "fe20c8ff3d59821d21cb26fd8169afc12f330819f5be67817d230d974039048a"
+    },
+    {
+      "version": 9,
+      "name": "0009_prompt_library_agent_id_sort_order",
+      "sha256": "484ca7331a8b7474f53c11e9e0177ab0a09fdbb367812884b770ec30d3f90ee9"
     }
   ]
 }

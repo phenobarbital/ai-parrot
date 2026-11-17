@@ -2,7 +2,8 @@
 # Timeouts are placeholders until measured (spec §8 Q4; evidence in artifacts/logs/).
 
 [runners.pytest]
-timeout_s = 60
+# Measured 2026-11-15 (FEAT-887): a 24-file merge-tier group takes ~130 s; 60 s cut it mid-run as timed_out.
+timeout_s = 600
 
 [runners.vitest]
 cwd = "packages/ai-parrot-server/ui"

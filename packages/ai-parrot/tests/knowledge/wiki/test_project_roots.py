@@ -17,9 +17,9 @@ from parrot.knowledge.wiki.project import (
     WikiProjectConfig,
     find_project_root,
     find_shared_root,
+    load_effective_config,
     save_project_config,
 )
-
 
 @pytest.fixture
 def temp_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -55,6 +55,41 @@ def test_project_below_temp_root_still_resolves(temp_root: Path) -> None:
 
     assert find_project_root(project / "sub") == project
     assert find_shared_root(project / "sub") == project
+
+
+@pytest.mark.parametrize("host", ["claude", "codex", "google"])
+def test_host_install_keeps_wiki_config_on_primary_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, host: str
+) -> None:
+    """An explicit worktree install preserves its primary checkout's wiki discovery state."""
+    primary = tmp_path / "primary"
+    admin = primary / ".git" / "worktrees" / "portable"
+    admin.mkdir(parents=True)
+    (admin / "commondir").write_text("../..\n", encoding="utf-8")
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+    (worktree / ".git").write_text(f"gitdir: {admin}\n", encoding="utf-8")
+    save_project_config(primary, WikiProjectConfig(wiki_name="primary-wiki", backend="sqlite"))
+
+    if host == "claude":
+        from parrot.knowledge.wiki.claude_code.installer import install_claude_integration
+
+        install_claude_integration(worktree, git_hook=False, gitignore=False, bookstore=False)
+    elif host == "codex":
+        from parrot.knowledge.wiki.codex.installer import install_codex_integration
+
+        install_codex_integration(worktree, gitignore=False, bookstore=False)
+    else:
+        from parrot.knowledge.wiki.google import assets
+        from parrot.knowledge.wiki.google.installer import install_google_integration
+
+        global_config = tmp_path / "home" / "mcp_config.json"
+        monkeypatch.setattr(assets, "default_mcp_config_path", lambda: global_config)
+        install_google_integration(worktree, gitignore=False, bookstore=False, mcp_config_path=global_config)
+
+    assert find_project_root(primary / "nested") == primary
+    assert load_effective_config(primary).config.wiki_name == "primary-wiki"
+    assert not (worktree / ".parrot" / "wiki.json").exists()
 
 
 def test_configured_project_below_temp_root_wins_over_git_fallback(temp_root: Path) -> None:

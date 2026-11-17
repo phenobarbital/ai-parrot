@@ -183,8 +183,13 @@ async def test_submit_a2ui_oversized_413(form, monkeypatch):
     storage = MagicMock(spec=FormSubmissionStorage)
     storage.store = AsyncMock()
     handler = _make_handler(form, submission_storage=storage)
-    resp = await handler.submit_data(_make_request(_action_body(answers={"name": "Ada"})))
+    # FEAT-822: the cap fires inside aiohttp's read, before the body exists, so
+    # the A2UI shape is chosen from the content type alone.
+    request = _make_request(_action_body(answers={"name": "Ada"}), content_type="application/a2ui+json")
+    request.json = AsyncMock(side_effect=web.HTTPRequestEntityTooLarge(10, actual_size=11))
+    resp = await handler.submit_data(request)
     assert resp.status == 413
+    assert f"form-{_FORM_UID}" in resp.body.decode()
     storage.store.assert_not_called()
 
 

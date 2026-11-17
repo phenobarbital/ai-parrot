@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-170 — FormDesigner `FieldType.REST`
 **Spec**: `sdd/specs/new-formdesigner-field-rest.spec.md` (Module 6)
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-1163

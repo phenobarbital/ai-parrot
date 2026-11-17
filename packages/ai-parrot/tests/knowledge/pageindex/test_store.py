@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -60,6 +61,44 @@ def test_atomic_write_cleans_temp_on_failure(store: JSONTreeStore, tmp_path: Pat
             store.save("docs", {"structure": []})
     leftover = [p.name for p in tmp_path.iterdir()]
     assert all(not name.endswith(".tmp") for name in leftover), leftover
+
+
+def test_store_save_fsyncs_before_replace(store: JSONTreeStore) -> None:
+    manager = Mock()
+    with (
+        patch("parrot.knowledge.pageindex.store.os.fsync", wraps=os.fsync) as fsync,
+        patch("parrot.knowledge.pageindex.store.os.replace", wraps=os.replace) as replace,
+    ):
+        manager.attach_mock(fsync, "fsync")
+        manager.attach_mock(replace, "replace")
+        store.save("docs", {"structure": []})
+
+    call_names = [mock_call[0] for mock_call in manager.mock_calls]
+    assert call_names.index("fsync") < call_names.index("replace")
+
+
+def test_save_returns_signature(store: JSONTreeStore) -> None:
+    signature = store.save("docs", {"structure": []})
+    assert signature == store.signature("docs")
+
+
+def test_signature_missing_is_none(store: JSONTreeStore) -> None:
+    assert store.signature("absent") is None
+
+
+def test_read_generation(store: JSONTreeStore) -> None:
+    store.save("generated", {"structure": [], "generation": {"id": 3, "published_at": "x", "parent": 2}})
+    store.save("legacy", {"structure": []})
+    store.save("malformed", {"structure": [], "generation": "x"})
+    store.save("boolean", {"structure": [], "generation": {"id": True}})
+    store.save("zero", {"structure": [], "generation": {"id": 0}})
+
+    assert store.read_generation("generated") == 3
+    assert store.read_generation("legacy") is None
+    assert store.read_generation("malformed") is None
+    assert store.read_generation("boolean") is None
+    assert store.read_generation("zero") is None
+    assert store.read_generation("absent") is None
 
 
 def test_store_strips_node_markdown_on_save(store: JSONTreeStore, tmp_path: Path):

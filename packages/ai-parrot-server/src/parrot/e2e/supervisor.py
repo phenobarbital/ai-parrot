@@ -855,7 +855,7 @@ class E2ESupervisor:
         (``run_directory / "control.sock"``, the spec-literal choice) — but
         Linux's ``sun_path`` buffer is only 108 bytes including the NUL
         terminator, and this project's own worktree convention
-        (``.claude/worktrees/<feature>--TASK-<id>-<uuid>/``) routinely
+        (``.parrot/worktrees/<feature>--TASK-<id>-<uuid>/``) routinely
         produces a ``run_directory`` alone longer than that, before any
         run/target ID is even appended (verified directly against this
         checkout's own worktree path). When the spec-literal path would not
@@ -988,8 +988,14 @@ class E2ESupervisor:
         """
         if live.heartbeat_task is not None:
             live.heartbeat_task.cancel()
-            with contextlib.suppress(Exception):
-                await live.heartbeat_task
+            # A task cancelled before its first step never enters its own
+            # ``suppress(CancelledError)`` block, so awaiting it directly would
+            # raise CancelledError (a BaseException) into the caller.
+            # ``asyncio.wait`` waits without re-raising the task's outcome, yet
+            # still propagates a cancellation of *this* coroutine.
+            await asyncio.wait({live.heartbeat_task})
+            if not live.heartbeat_task.cancelled():
+                live.heartbeat_task.exception()  # mark retrieved; best-effort
         if live.watchdog is not None:
             await self._stop_watchdog(live.watchdog)
         with contextlib.suppress(Exception):

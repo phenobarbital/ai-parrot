@@ -59,6 +59,21 @@ def _is_missing_execution_id(exc: ValidationError) -> bool:
     return any(err["type"] == "missing" and err["loc"] == ("execution_id",) for err in exc.errors())
 
 
+def _summarize_errors(exc: ValidationError, limit: int = 5) -> str:
+    """Bounded ``loc: msg`` summary of pydantic errors (input values are never echoed)."""
+    parts = []
+    for err in exc.errors()[:limit]:
+        loc = ".".join(str(p) for p in err["loc"]) or "<root>"
+        msg = str(err["msg"])
+        if len(msg) > 160:
+            msg = msg[:157] + "..."
+        parts.append(f"{loc}: {msg}")
+    more = len(exc.errors()) - limit
+    if more > 0:
+        parts.append(f"(+{more} more)")
+    return "; ".join(parts)
+
+
 #: How long a state-changing tool waits for `_exclusive` before reporting ``engine_busy``.
 EXCLUSIVE_WAIT_S: float = 300.0
 
@@ -164,7 +179,17 @@ class SddCoderToolkit(AbstractToolkit):
         except ValidationError as exc:
             if _is_missing_execution_id(exc):
                 raise CoderFailure("execution_required", "execution_id is required for this tool") from exc
-            raise CoderFailure("invalid_arguments", "invalid tool arguments", errors=exc.errors()) from exc
+            raise CoderFailure(
+                "invalid_arguments", f"invalid tool arguments: {_summarize_errors(exc)}", errors=exc.errors()
+            ) from exc
+
+    def _create_tool_from_method(self, name: str, bound_method: Any) -> Any:
+        """Advertise the validating `arg_models` schema (UUID pattern/description) to MCP clients."""
+        tool = super()._create_tool_from_method(name, bound_method)
+        model = self.arg_models.get(name)
+        if model is not None:
+            tool.args_schema = model
+        return tool
 
     async def _post_execute(self, tool_name: str, result: Any, /, **kwargs: Any) -> Any:
         """adapter.py's 'direct result' branch does `str(result)` (a Python repr, NOT JSON) for
@@ -187,6 +212,10 @@ class SddCoderToolkit(AbstractToolkit):
         Nothing in `parrot/mcp/` calls this today (S12 — no server shutdown
         hook exists); it only runs if a future host wires it up (spec §8 Q4).
         """
+        try:
+            await self._engine.aclose()  # FEAT-783: release the usage sink subscription
+        except Exception:  # noqa: BLE001 — shutdown is best-effort
+            self.logger.warning("engine aclose failed", exc_info=True)
         jobs = getattr(self._engine, "_jobs", None)
         if jobs is None:
             return
@@ -324,7 +353,7 @@ class SddCoderToolkit(AbstractToolkit):
         )
 
     async def coder_record_feedback(
-        self, feature: str, worktree: str, feedback: Dict[str, Any], execution_id: str
+        self, feature: str, worktree: str, feedback: Union[Dict[str, Any], BaseModel], execution_id: str
     ) -> CoderResult:
         """Record a confirmed defect corrected by the worker in one coder delivery.
 
@@ -339,14 +368,18 @@ class SddCoderToolkit(AbstractToolkit):
         """
         from parrot.knowledge.wiki.ledger.coder_feedback import CoderFeedback
 
+        # The MCP path validates against `CoderRecordFeedbackArgs` first and hands over
+        # a `CoderFeedback`; a direct caller still passes the raw dict.
         return await self._run(
             "coder_record_feedback",
-            self._engine.record_feedback(feature, worktree, CoderFeedback(**feedback), execution_id=execution_id),
+            self._engine.record_feedback(
+                feature, worktree, CoderFeedback.model_validate(feedback), execution_id=execution_id
+            ),
             exclusive=True,
         )
 
     async def coder_record_review(
-        self, feature: str, worktree: str, review: Dict[str, Any], execution_id: str
+        self, feature: str, worktree: str, review: Union[Dict[str, Any], BaseModel], execution_id: str
     ) -> CoderResult:
         """Record EVERY completed coder handoff review, including zero corrections.
 
@@ -354,12 +387,24 @@ class SddCoderToolkit(AbstractToolkit):
         SHAs of all fix(...) TASK-N review fixes commits, [] when none), and
         review_evidence. Exclude engine lint commits. The engine attaches actual
         feedback exposure so before/after rates include clean deliveries too.
+        ``review.checked_patterns`` may carry delivery claims, but the engine
+        accepts them only when their attempt/exposure and evidence references
+        match its own passed validation receipt; callers cannot supply grades
+        or passed-check identifiers. The claim's ref/content_version is NOT
+        verified as delivered (the engine keeps no delivery record). A zero-fix delivery remains reviewable
+        when that engine-owned receipt exists. The public method arguments and
+        execution_id binding remain unchanged.
+        The result's review_ref is the EvidenceRef to pass as
+        TaskCompletionEvidence.review_evidence to `parrot sdd task finalize`.
         """
         from parrot.knowledge.wiki.ledger.coder_reviews import CoderReview
 
+        # Same as `coder_record_feedback`: a `CoderReview` over MCP, a dict otherwise.
         return await self._run(
             "coder_record_review",
-            self._engine.record_review(feature, worktree, CoderReview(**review), execution_id=execution_id),
+            self._engine.record_review(
+                feature, worktree, CoderReview.model_validate(review), execution_id=execution_id
+            ),
             exclusive=True,
         )
 
@@ -440,7 +485,8 @@ class SddCoderToolkit(AbstractToolkit):
 
         Refuses (`execution_busy`) while known attempts/native reservations/jobs
         are still in flight -- an error report alone never unlocks this; only
-        explicit settlement (a real `coder_merge`) does.
+        explicit settlement (a real `coder_merge`) does. The error names each
+        task still holding the execution and lists them in `details.in_flight`.
         """
         return await self._run("coder_end_execution", self._engine.end_execution(execution_id), exclusive=True)
 

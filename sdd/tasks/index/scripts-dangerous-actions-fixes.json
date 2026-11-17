@@ -1,0 +1,53 @@
+{
+  "feature": "scripts-dangerous-actions-fixes",
+  "feature_id": "FEAT-792",
+  "spec": "sdd/specs/scripts-dangerous-actions-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-03T03:00:00+00:00",
+  "completed_at": "2026-11-03T02:54:19+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/sdd/test_dangerous_actions.py",
+          "packages/ai-parrot/tests/sdd/test_installer_dangerous_guard.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:f585f81e942d434798cb0ed0bd7ad7bcd6acd757855246552dbfcaf91fc5ea59"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5121",
+      "slug": "refspec-force-push-and-protected-set",
+      "title": "Deny `+refspec` force-push to protected branches; document the protected-branch set",
+      "feature_id": "FEAT-792",
+      "feature": "scripts-dangerous-actions-fixes",
+      "spec": "sdd/specs/scripts-dangerous-actions-fixes.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "single task; owns dangerous_actions.py, the repo bash hook, its test file and the two doc sentences",
+      "assigned_to": "agent:sdd-fix:98973fa0",
+      "started_at": "2026-11-03T02:50:24.172361+00:00",
+      "completed_at": "2026-11-03T02:54:19+00:00",
+      "file": "sdd/tasks/completed/TASK-5121-refspec-force-push-and-protected-set.md",
+      "verification": "verified"
+    }
+  ]
+}

@@ -397,6 +397,9 @@ corpus/compliance_soc2_hipaa/trees/
 
 #MCP Custom Local configs
 .mcp.json
+# Antigravity workspace MCP config: written by `parrot sdd install --host google` with this machine's
+# absolute venv paths (like .mcp.json and .codex/config.toml) — never commit it
+.agents/plugins/parrot/mcp_config.json
 .sdd-coder/
 
 # Matrix dev stack — generated secrets / homeserver state (FEAT-463)
@@ -476,3 +479,19 @@ examples/planogram/e2e/*
 examples/clients/bestbuy_catalog/
 examples/planogram/pipelines/
 sdd/state/FEAT-585/
+
+# >>> parrot sdd (managed) >>>
+# SDD feature worktrees (parrot sdd worktree ensure)
+/.parrot/worktrees/
+# parrot's local state (ledger index, wiki store), ignored as parrot claude|codex|google install do
+.parrot/
+# Claude Code per-user settings (personal permissions written by parrot claude install)
+.claude/settings.local.json
+# navconfig environment files hold credentials (env/.env, env/<ENV>/.env); env/.env.example stays tracked
+/.env
+env/**/.env
+# navconfig runtime log directory (LOG_DIR at the project root only)
+/logs/
+# parrot runtime output (OUTPUT_DIR at the project root: generated charts, files)
+/outputs/
+# <<< parrot sdd (managed) <<<

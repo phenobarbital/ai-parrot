@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-700 — Hermetic, current expectations for the package-tree wiki tests
 **Spec**: `sdd/specs/fixgroup-09687c688868.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 1h)
 **Depends-on**: none

@@ -3,7 +3,7 @@
 **Feature**: FEAT-217 — Generic Agent Evaluation Harness
 **Spec**: `sdd/specs/generic-evaluation-harness.spec.md`
 **Spec section**: §3 Module 12, §4 Integration Tests (brainstorm §13.6–§13.7)
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1419, TASK-1420, TASK-1422, TASK-1424, TASK-1425

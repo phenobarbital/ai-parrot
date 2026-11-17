@@ -10,12 +10,15 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import List, Optional, TYPE_CHECKING
+from typing import Any, List, Optional, TYPE_CHECKING
 
 from ..events import ParrotEventType, ResultEventContent, TaskEventContent
 from . import context as ctx
 
 if TYPE_CHECKING:
+    from parrot.roost.gating import Dispatch
+    from parrot.roost.messages import RoostMessage
+
     from ..appservice import MatrixAppService
     from .config import MatrixCrewAgentEntry
     from .coordinator import MatrixCoordinator
@@ -230,9 +233,112 @@ class MatrixCrewAgentWrapper:
             self._agent_name, room_id, ParrotEventType.RESULT, result.model_dump()
         )
 
+    async def handle_roost_wake(self, msg: "RoostMessage", dispatch: "Dispatch") -> Optional["RoostMessage"]:
+        """Serve an inbound Roost ``query`` addressed to this agent (FEAT-827).
+
+        A ``parrot.roost.endpoint.WakeCallback``: pass it as ``wake=`` when building this agent's
+        ``RoostEndpoint``. It is the Roost counterpart of :meth:`handle_task` — it seeds the swarm
+        request context with the inbound chain depth, so the agent's own ``ask_agent`` calls continue
+        the chain instead of restarting it at depth 0 and an A→B→A loop is cut by the hop limit.
+
+        Never raises: a failed or timed-out turn is answered with a typed ``failure``.
+
+        Args:
+            msg: The inbound Roost message.
+            dispatch: The gating decision that led to this wake (unused; part of the callback contract).
+
+        Returns:
+            An ``inform`` reply carrying the agent's answer text and the tokens it spent, a ``failure``
+            reply (``TIMEOUT`` / ``INTERNAL``), or ``None`` when the message is not an addressed
+            ``query`` (nothing is run and no reply is sent).
+        """
+        from parrot.roost.messages import FailureInfo
+        from parrot.roost.performatives import FailureCode, Performative
+
+        if msg.performative is not Performative.QUERY or not msg.receivers:
+            self.logger.debug(
+                "Roost wake for %s ignored: %s on conversation %s is not an addressed query",
+                self._agent_name,
+                msg.performative.value,
+                msg.conversation_id,
+            )
+            return None
+
+        question = msg.content if isinstance(msg.content, str) else json.dumps(msg.content, default=str)
+        budget_ms = getattr(msg.envelope, "budget_ms", None)
+        timeout = budget_ms / 1000 if budget_ms else self._ROOST_WAKE_TIMEOUT
+
+        # Swarm request context: the inbound depth becomes this turn's depth (see handle_task).
+        hops_token = ctx.current_hops.set(msg.hops)
+        try:
+            await self._registry.update_status(self._agent_name, "busy", question[:50])
+            from parrot.manager import BotManager  # type: ignore
+
+            agent = await BotManager.get_bot(self._config.chatbot_id)
+            if agent is None:
+                raise RuntimeError(f"Agent '{self._config.chatbot_id}' not found in BotManager")
+            prompt = f"A peer agent ({msg.sender.name}) asks you: {question}"
+            response_obj = await asyncio.wait_for(agent.ask(prompt), timeout)
+            return msg.reply(
+                Performative.INFORM,
+                content=self._response_text(response_obj),
+                tokens=self._response_tokens(response_obj),
+            )
+        except asyncio.TimeoutError:
+            self.logger.warning("Roost wake for %s timed out after %.1fs", self._agent_name, timeout)
+            return msg.reply(
+                Performative.FAILURE,
+                failure=FailureInfo(code=FailureCode.TIMEOUT, detail="agent turn timed out"),
+            )
+        except Exception as exc:  # noqa: BLE001 — never propagate into the carrier's delivery loop
+            self.logger.error("Roost wake failed for %s: %s", self._agent_name, exc)
+            # Only the exception class crosses agents; the message may carry internal detail.
+            return msg.reply(
+                Performative.FAILURE,
+                failure=FailureInfo(code=FailureCode.INTERNAL, detail=type(exc).__name__),
+            )
+        finally:
+            ctx.current_hops.reset(hops_token)
+            try:
+                await self._registry.update_status(self._agent_name, "ready")
+            except Exception as exc:  # noqa: BLE001 — a status-board hiccup must not lose the reply
+                self.logger.warning("Could not mark %s ready after a Roost wake: %s", self._agent_name, exc)
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    #: Seconds a Roost-woken turn may run when the inbound envelope declares no ``budget_ms``.
+    _ROOST_WAKE_TIMEOUT = 120.0
+
+    @staticmethod
+    def _response_text(response_obj: Any) -> str:
+        """Extract the answer text from a bot response (an ``AIMessage`` or a plain value).
+
+        Args:
+            response_obj: What ``AbstractBot.ask()`` returned.
+
+        Returns:
+            The response text.
+        """
+        if hasattr(response_obj, "to_text"):
+            return response_obj.to_text
+        if hasattr(response_obj, "content"):
+            return str(response_obj.content)
+        return str(response_obj)
+
+    @staticmethod
+    def _response_tokens(response_obj: Any) -> int:
+        """Return the tokens a bot response reports having spent, or 0 when it reports none.
+
+        Args:
+            response_obj: What ``AbstractBot.ask()`` returned.
+
+        Returns:
+            ``usage.total_tokens`` when it is a positive integer, else 0.
+        """
+        tokens = getattr(getattr(response_obj, "usage", None), "total_tokens", 0)
+        return tokens if isinstance(tokens, int) and not isinstance(tokens, bool) and tokens > 0 else 0
 
     _JSON_INSTRUCTION = (
         "Reply ONLY with a JSON object: " '{"answer": <your answer>, "confidence": <0..1>, "sources": [<strings>]}.'

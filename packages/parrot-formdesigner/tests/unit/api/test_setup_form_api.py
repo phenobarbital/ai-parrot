@@ -56,3 +56,44 @@ def test_setup_with_custom_base_path():
     paths = {r.resource.canonical for r in app.router.routes()}
     assert "/custom/v2/{tenant}/forms" in paths
     assert "/custom/v2/form-controls" in paths
+
+
+class TestTeamsSigningSecret:
+    """FEAT-733 — the producing side must be able to sign through the documented entry point."""
+
+    def test_setup_form_api_forwards_signing_secret(self, monkeypatch):
+        """setup_form_api(teams_signing_secret=...) -> the registered renderer carries it."""
+        monkeypatch.setenv("FORMDESIGNER_TEAMS_SIGNING_SECRET", "from-env")
+        app = web.Application()
+        registry = FormRegistry()
+        setup_form_api(
+            app,
+            registry,
+            public_base_url="https://forms.test",
+            teams_signing_secret="s3cret",
+        )
+
+        assert _RENDERERS["teams"].signing_secret == "s3cret"
+
+    def test_setup_form_api_signing_secret_from_env(self, monkeypatch):
+        """FORMDESIGNER_TEAMS_SIGNING_SECRET is used when the argument is omitted."""
+        monkeypatch.setenv("FORMDESIGNER_TEAMS_SIGNING_SECRET", "from-env")
+        app = web.Application()
+        registry = FormRegistry()
+        setup_form_api(app, registry, public_base_url="https://forms.test")
+
+        assert _RENDERERS["teams"].signing_secret == "from-env"
+
+    def test_setup_form_api_explicit_renderer_still_wins(self):
+        """An explicit teams_renderer= is registered as-is; the secret argument does not replace it."""
+        sentinel_renderer = object()
+        app = web.Application()
+        registry = FormRegistry()
+        setup_form_api(
+            app,
+            registry,
+            teams_renderer=sentinel_renderer,
+            teams_signing_secret="ignored",
+        )
+
+        assert _RENDERERS["teams"] is sentinel_renderer

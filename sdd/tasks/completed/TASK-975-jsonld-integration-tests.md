@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-142 — WebScrapingLoader JSON-LD Multi-Type Support
 **Spec**: `sdd/specs/webscrapingloader-jsonld-support.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-973, TASK-974

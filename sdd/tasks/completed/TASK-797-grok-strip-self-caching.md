@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-112 — Per-Loop LLM Client Cache
 **Spec**: `sdd/specs/per-loop-llm-client-cache.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-795

@@ -1,0 +1,185 @@
+{
+  "feature_id": "FEAT-803",
+  "title": "GitHub Pages Informative Site Redesign",
+  "mode": "investigation",
+  "overall_confidence": "high",
+
+  "localization": [
+    {
+      "path": "landing/index.html",
+      "description": "Existing standalone HTML landing page at site root — redesign hero, features, providers, and CTA sections",
+      "evidence": ["F010"],
+      "confidence": "high"
+    },
+    {
+      "path": "landing/css/style.css",
+      "description": "Landing page styles — refresh for unified brand identity",
+      "evidence": ["F010"],
+      "confidence": "high"
+    },
+    {
+      "path": "landing/js/main.js",
+      "description": "Landing page JS — minimal updates for new sections",
+      "evidence": ["F010"],
+      "confidence": "high"
+    },
+    {
+      "path": "mkdocs.yml",
+      "description": "Collapse 14-section nav to ~6 sections; update theme palette and logo; remove mkdocstrings plugin (M9); add custom_dir for overrides",
+      "evidence": ["F003", "F011"],
+      "confidence": "high"
+    },
+    {
+      "path": "docs/index.md",
+      "description": "Rewrite mkdocs landing as concept-oriented hub with chapter cards pointing to wiki for deep dives",
+      "evidence": ["F002", "F004"],
+      "confidence": "high"
+    },
+    {
+      "path": "docs/chapters/*.md",
+      "description": "Rewrite 7 chapter overviews as concept introductions (what/why) with 'deep dive in the Wiki →' CTAs; possibly consolidate from 7 to 5",
+      "evidence": ["F004", "F002"],
+      "confidence": "medium"
+    },
+    {
+      "path": "docs/getting-started.md",
+      "description": "Already exists and is well-written; add to mkdocs nav prominently, minor edits for flow",
+      "evidence": ["F002"],
+      "confidence": "high"
+    },
+    {
+      "path": "docs/config.md",
+      "description": "Add 'minimal config' section at top; collapse advanced env vars into expandable sections",
+      "evidence": ["F005"],
+      "confidence": "medium"
+    },
+    {
+      "path": "docs/tools_quick.md",
+      "description": "Curate to 3-4 showcase tools for informative site; full catalog → wiki link",
+      "evidence": ["F006"],
+      "confidence": "medium"
+    },
+    {
+      "path": "docs/branding/",
+      "description": "Existing assets; add favicon.ico, social-card.png for OG tags",
+      "evidence": ["F001"],
+      "confidence": "high"
+    },
+    {
+      "path": "docs/overrides/",
+      "description": "New: custom CSS for hero sections, social cards; custom partials for footer/header",
+      "evidence": ["F003"],
+      "confidence": "high"
+    },
+    {
+      "path": ".github/workflows/docs.yml",
+      "description": "Update: remove mkdocstrings install step (M9); possibly add social card generation",
+      "evidence": ["F010", "F009"],
+      "confidence": "high"
+    },
+    {
+      "path": "requirements-docs.txt",
+      "description": "Create: declare mkdocs-material + extensions as docs build dependencies",
+      "evidence": ["F009", "F010"],
+      "confidence": "high"
+    }
+  ],
+
+  "hypotheses": [
+    {
+      "id": "H1",
+      "statement": "A two-tier architecture (landing HTML at root + streamlined mkdocs at /docs/) is the right structure, and it already exists — the redesign is a content/theme refresh, not a platform migration",
+      "confidence": "high",
+      "supporting": ["F010", "F011"],
+      "contradicting": []
+    },
+    {
+      "id": "H2",
+      "statement": "The post-FEAT-801 Pages inventory (~30-40 pages) is small enough that the nav can collapse from 14 sections to 5-6 without losing content — the bulk of the 175 entries move to wiki",
+      "confidence": "high",
+      "supporting": ["F003", "F011", "F004"],
+      "contradicting": []
+    },
+    {
+      "id": "H3",
+      "statement": "The biggest content gap is beginner tutorials ('build your first chatbot/agent/tool') — getting-started.md covers installation but there are no code walkthroughs",
+      "confidence": "high",
+      "supporting": ["F008", "F002", "F006"],
+      "contradicting": []
+    },
+    {
+      "id": "H4",
+      "statement": "Brand identity unification (logo, favicon, social card, consistent icon usage) is a distinct workstream from nav/content restructuring and can run in parallel",
+      "confidence": "high",
+      "supporting": ["F001", "F003"],
+      "contradicting": []
+    }
+  ],
+
+  "constraints": [
+    {
+      "description": "Must wait for FEAT-801 (all 8 tasks) + M9 cut-over before merging to dev — TASK-5172 mass-moves ~100+ docs/ files",
+      "source": "spec",
+      "evidence": ["F011"]
+    },
+    {
+      "description": "mkdocs Material stack stays — no platform migration (per source.md)",
+      "source": "spec",
+      "evidence": ["F003"]
+    },
+    {
+      "description": "Two-surface doctrine: Pages = informative, Wiki = technical reference — never copy, always cross-link",
+      "source": "spec",
+      "evidence": ["F011"]
+    },
+    {
+      "description": "Existing guides, examples, branding, postman collections must be preserved (per source.md)",
+      "source": "spec",
+      "evidence": ["F007", "F008", "F001"]
+    },
+    {
+      "description": "No testable Python code — this is content and design work only",
+      "source": "spec",
+      "evidence": []
+    },
+    {
+      "description": "The landing page overlay pattern (cp -R landing/. site/) must be preserved — it is the deployment mechanism",
+      "source": "codebase",
+      "evidence": ["F010"]
+    }
+  ],
+
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Should the landing page (landing/index.html) be redesigned from scratch or iteratively updated? It already has Hero/Features/Install/QuickStart/Architecture/Providers sections.",
+      "impact": "medium",
+      "who_can_answer": "user"
+    },
+    {
+      "id": "U2",
+      "question": "How many beginner tutorials should be created as part of this feature vs. deferred? (First chatbot, first agent, first tool, RAG pipeline, deployment)",
+      "impact": "high",
+      "who_can_answer": "user"
+    },
+    {
+      "id": "U3",
+      "question": "Should the chapter overview pages be consolidated (7 → 5) or kept 1:1 with wiki sections?",
+      "impact": "low",
+      "who_can_answer": "user"
+    }
+  ],
+
+  "scope_summary": "Redesign the GitHub Pages mkdocs site as a product landing/informative site after FEAT-801 migrates technical docs to the wiki. Three workstreams: (1) Landing page refresh — update hero, value prop, provider showcase, getting-started CTA; unify brand identity (logo, favicon, social card). (2) Mkdocs restructuring — collapse 14-section nav to ~6 newcomer-friendly sections; rewrite chapter overviews as concept pages with wiki cross-links; surface getting-started.md; create requirements-docs.txt. (3) Content creation — beginner tutorials (first chatbot, first agent), curated tools showcase, 'minimal config' quick-start block. Preserves the existing two-tier deployment (landing HTML at root, mkdocs at /docs/) and the Material theme.",
+
+  "recommended_next_command": "sdd-spec",
+  "budget_status": {
+    "consumed": {
+      "files_read": 23,
+      "grep_calls": 3,
+      "git_calls": 4,
+      "wiki_queries": 10
+    },
+    "truncated": false
+  }
+}

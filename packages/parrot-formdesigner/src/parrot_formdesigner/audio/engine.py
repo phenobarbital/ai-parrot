@@ -15,7 +15,12 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
-from ..core.llm_validation import LLMValidationConfig, PlausibilityReport, llm_validation_enabled
+from ..core.llm_validation import (
+    NOT_EXAMINED_MAX_FIELDS,
+    LLMValidationConfig,
+    PlausibilityReport,
+    llm_validation_enabled,
+)
 from ..core.schema import FormField, FormSchema
 from ..core.types import FieldType
 from ..core.voice import FieldVoiceMeta, VoiceFormConfig, field_voice_meta, is_sensitive
@@ -147,7 +152,7 @@ class AudioFormSession:
         self._last_audio: tuple[str, bytes, str | None] | None = None  # (field_id, bytes, mime) — never snapshotted
         self._skipped: set[str] = set()  # optional fields the user skipped (persisted via answer_meta)
         self._pl_requested: set[str] | None = None  # fields of the in-flight plausibility batch
-        self._pl_unchecked: set[str] = set()  # fields whose last plausibility batch was blocked (on_error=block)
+        self._pl_unchecked: set[str] = set()  # fields whose last plausibility batch was blocked or capped
         self._stop_prev_phase: Phase | None = None  # set while a spoken STOP awaits yes/no confirmation
         self._resume_snap: AudioSnapshot | None = None
         self._refining: _PendingRefine | None = None
@@ -946,10 +951,20 @@ class AudioFormSession:
             # Retryable and never stored: stay in REVIEW; review_confirm re-runs the check (AC13).
             out = [Error(code="PLAUSIBILITY_UNAVAILABLE", message=report.reason or "plausibility unavailable")]
             return out + self._start_review(report=None)
-        self._pl_unchecked -= requested or set()
+        asked = requested or set()
+        # Only fields the model actually judged (or that can never be judged) leave the pending set:
+        # capped fields were NOT checked and stay pending so a later batch re-submits them, while
+        # unrenderable ones can never be checked and must not loop; they are flagged in not_examined.
+        capped = {fid for fid in asked if report.not_examined.get(fid) == NOT_EXAMINED_MAX_FIELDS}
+        self._pl_unchecked -= asked - capped
+        self._pl_unchecked |= capped
         current = self.state.plausibility
+        # Merge rule: the new report wins for the fields it requested; entries for fields not requested
+        # this time are kept (while still answered); a field now examined drops out.
+        previous = {} if current is None else {f: r for f, r in current.not_examined.items() if f not in asked}
+        merged_not_examined = {f: r for f, r in {**previous, **report.not_examined}.items() if f in self.state.answers}
         if current is None:
-            merged = report.model_copy(update={"items": {}})
+            merged = report.model_copy(update={"items": {}, "not_examined": merged_not_examined})
         else:
             merged = current.model_copy(
                 update={
@@ -959,6 +974,7 @@ class AudioFormSession:
                     "threshold": report.threshold,
                     "latency_ms": report.latency_ms,
                     "items": dict(current.items),
+                    "not_examined": merged_not_examined,
                 }
             )
         for fid in requested or set():
@@ -977,6 +993,11 @@ class AudioFormSession:
                     self.state.flagged[fid] = answer.version
         self.state.plausibility = merged
         if not self._review_enabled():
+            # No review confirmation will arrive to request the next capped batch.
+            pending = self._plausibility_fields(capped)
+            if pending:
+                self._pl_requested = set(pending)
+                return [RunPlausibility(fields=pending), self._save()]
             return self._submit()
         return self._start_review(report=report)
 
@@ -1066,14 +1087,19 @@ class AudioFormSession:
             return [Error(code="WRONG_PHASE", message="Nothing to review right now")]
         if not ev.confirmed:
             return self._start_review(report=None)
+        fields = self._plausibility_fields(set(self.state.answers))
+        # The cap limits each batch, regardless of how LLM failures are handled.
+        report = self.state.plausibility
+        pending = {
+            fid for fid in fields if report is not None and report.not_examined.get(fid) == NOT_EXAMINED_MAX_FIELDS
+        }
         if self._llm.on_error == "block":
             # AC13: a blocked (or never-run, e.g. after a resume) check must pass before anything is stored.
-            fields = self._plausibility_fields(set(self.state.answers))
-            pending = (self._pl_unchecked & fields) or (fields if self.state.plausibility is None else set())
-            if pending:
-                self._pl_requested = set(pending)
-                self.state.phase = Phase.PLAUSIBILITY
-                return [RunPlausibility(fields=pending), self._save()]
+            pending |= (self._pl_unchecked & fields) or (fields if report is None else set())
+        if pending:
+            self._pl_requested = set(pending)
+            self.state.phase = Phase.PLAUSIBILITY
+            return [RunPlausibility(fields=pending), self._save()]
         # The snapshot goes BEFORE the Submit: FormComplete deletes it, so a later save would lose its CAS.
         submit = self._submit()
         return [self._save(), *submit]

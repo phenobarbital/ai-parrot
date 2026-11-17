@@ -463,8 +463,8 @@ before any document or plane can see it (Goal G9).
 
 ## See Also
 
-- [WikiToolkit as Claude Code infrastructure](../wiki-claude-code.md) —
+- [WikiToolkit as Claude Code infrastructure](https://github.com/phenobarbital/ai-parrot/wiki/LLM-Wiki-WikiToolkit-as-Claude-Code-infrastructure) —
   codebase wiki setup and namespaces
-- [LLM Wiki architecture](../llm-wiki.md) — PageIndex + GraphIndex +
+- [LLM Wiki architecture](https://github.com/phenobarbital/ai-parrot/wiki/LLM-Wiki-LLM-Wiki-%E2%80%94-an-agent-maintained-knowledge-repository) — PageIndex + GraphIndex +
   Ontology layers
 - Spec: `sdd/specs/jira-extractor-llmwiki.spec.md`

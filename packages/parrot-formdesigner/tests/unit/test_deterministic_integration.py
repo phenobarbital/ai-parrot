@@ -73,7 +73,18 @@ class TestEquivalence:
             )],
         )
 
-        assert shortcut_form.model_dump() == explicit_form.model_dump()
+        generated_identities = {
+            "form_uid": True,
+            "sections": {
+                "__all__": {
+                    "section_uid": True,
+                    "fields": {"__all__": {"field_uid": True}},
+                }
+            },
+        }
+        assert shortcut_form.model_dump(exclude=generated_identities) == explicit_form.model_dump(
+            exclude=generated_identities
+        )
 
 
 class TestEndToEnd:

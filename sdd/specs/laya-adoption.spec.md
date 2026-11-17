@@ -5,11 +5,12 @@ slug: laya-adoption
 type: feature
 base_branch: dev
 status: approved
+implementation_status: reopened
 projects: [ai-parrot, ai-parrot-client-jev]
 tags: [laya, classification, model-routing, guardrails, evaluation]
 proposal: sdd/proposals/laya-adoption.proposal.md
 created: 2026-09-21
-updated: 2026-09-21
+updated: 2026-11-10
 ---
 
 # Feature Specification: Laya CPU Evaluation
@@ -22,8 +23,8 @@ updated: 2026-09-21
 
 The proposal's FEAT-585 is a research-state identity, not this feature's reserved identity.
 The allocator returned FEAT-589. Preserve the proposal and its research directory as provenance.
-Projects and tags are carried from the proposal; Jev is comparative context only. The Anthropic
-satellite is consumed by the experiment but is not modified.
+Projects and tags are carried from the proposal; Jev is comparative context only. The Anthropic and Google
+satellites are consumed by the experiment but are not modified.
 
 ## 1. Motivation & Business Requirements
 
@@ -37,7 +38,7 @@ Existing availability fallback does not establish that a selected model is cheap
 ### Goals
 
 - Deliver a runnable end-to-end Python evaluation under `artifacts/laya/`, on CPU, in English.
-- Exercise real Laya inference in all three scenarios and optional real Anthropic calls in routing.
+- Exercise real Laya inference in all three scenarios and optional real Anthropic or Google calls in routing.
 - Compare injection results with the existing regex baseline on identical English samples.
 - Report reproducible timings, decisions, errors, usage and limitations; produce an exploratory
   report without numerical production-adoption gates.
@@ -88,7 +89,10 @@ model enum contains no OPUS_5; its direct backend passes strings unchanged. Do n
 to a different family. Accept an explicit `--primary-api-model` for the provider identifier and
 record both values. Require `--cheap-api-model` and positive `--max-live-calls` for `--live`;
 otherwise perform real local routing inference and mark downstream evaluation `incomplete`.
-Both live model IDs use one direct Anthropic client configuration. Live preflight rejects missing
+Both live model IDs use one client selected by `--provider anthropic|google` (default: Anthropic).
+Google uses `GoogleGenAIClient(vertexai=False)` with unqualified Gemini model IDs. Credential
+preflight follows each client's environment/project configuration (`ANTHROPIC_API_KEY` or
+`GOOGLE_API_KEY`); credentials are never persisted in reports. Live preflight rejects missing
 inputs before requests, and provider model errors are recorded without substitution. These are
 run-time inputs, not a blocker to implementing the evaluation harness.
 
@@ -96,7 +100,9 @@ The live cap counts logical `Agent.ask` calls across both arms, including failed
 a slot before dispatch. Require two remaining slots before starting a pair. Record the client's
 existing SDK retry/fallback behavior: a logical-call cap is not a hard HTTP-attempt or money cap.
 Use an explicit output-token limit (default 256). No live calls are executed while writing this spec.
-Read the provider-returned model from `AIMessage.raw_response['model']` where available;
+Read Anthropic's provider-returned model from `AIMessage.raw_response['model']`; for Google
+(provider tags `google_genai`, `google`, `gemini`, `vertex_ai`) use raw `model_version` or
+`modelVersion`. Preserve provider-resolved alias/version differences in the report;
 `AIMessage.model` alone is insufficient proof because the factory accepts the requested model.
 Record requested, selected, reported and provider-returned models plus fallback metadata. Missing
 actual-model evidence makes verification incomplete. Unknown or mismatched models remain visible.
@@ -117,7 +123,7 @@ English fixtures + CLI configuration
                   |
           validated typed decisions
                   |
-          optional routed Agent -------> Anthropic client
+          optional routed Agent -------> selected Anthropic / Google client
                   |
           JSON report + Markdown report
 ```
@@ -127,7 +133,7 @@ English fixtures + CLI configuration
 | Existing component | Integration | Constraint |
 |---|---|---|
 | `Agent` / `AbstractBot.execute_llm_call` | Evaluation subclass | Preserve super dispatch and budget hook; no core edits |
-| `AnthropicClient.ask` | Per-call `model` | Same provider, tools disabled, no direct SDK use |
+| `AnthropicClient.ask` / `GoogleGenAIClient.ask` | Per-call `model` | Same provider, tools disabled, no direct SDK use |
 | `AIMessage` | Evidence and usage | Preserve raw model and fallback evidence separately |
 | `PromptInjectionDetector` | Regex baseline | Same held-out texts, normal framework stripping |
 | Injection benchmark corpus | Fixture provenance | Explicit English manifest; no inferred language field |
@@ -139,12 +145,12 @@ These schemas are new evaluation contracts, not existing Parrot APIs.
 
 | Model | Required fields / invariants |
 |---|---|
-| `EvaluationConfig` | `worker_python: Path`, `checkpoint_path: Path`, `checkpoint_revision: str`, `scenario: Literal['all','injection','routing','grounded']`, `live: bool=False`, `primary_label: str='anthropic:opus-5'`, `primary_api_model: str|None`, `cheap_api_model: str|None`, `max_live_calls: int=0`, `max_output_tokens: int=256`, `injection_threshold: float=0.5`, `routing_threshold: float=0.8`, `startup_timeout_s: float=300`, `prediction_timeout_s: float=30`, `warmup: int=3`, `repeats: int=10`, `seed: int=42`, `output_dir: Path`; thresholds in [0,1], positive timeouts/repeats/tokens, nonnegative warmup/call cap |
+| `EvaluationConfig` | `worker_python: Path`, `checkpoint_path: Path`, `checkpoint_revision: str`, `scenario: Literal['all','injection','routing','grounded']`, `live: bool=False`, `provider: Literal['anthropic','google']='anthropic'`, `primary_label: str='anthropic:opus-5'`, `primary_api_model: str|None`, `cheap_api_model: str|None`, `max_live_calls: int=0`, `max_output_tokens: int=256`, `injection_threshold: float=0.5`, `routing_threshold: float=0.8`, `startup_timeout_s: float=300`, `prediction_timeout_s: float=30`, `warmup: int=3`, `repeats: int=10`, `seed: int=42`, `output_dir: Path`; thresholds in [0,1], positive timeouts/repeats/tokens, nonnegative warmup/call cap |
 | `EvaluationCase` | `id: str`, `scenario`, `language: Literal['en']`, `split: Literal['calibration','evaluation']`, `state: str`, `expected: str`, `bucket: str`, `source: str`, `source_sha256: str|None`; unique IDs; expected label belongs to scenario's declared set |
 | `PredictionRequest` | `request_id: str`, `state: str`, `questions: dict[str, dict[str, Any]]`; one fixed schema per scenario |
 | `PredictionResult` | `request_id: str`, `status: Literal['ok','error']`, `answers: dict[str, dict[str, Any]]`, `inference_ms: float|None`, `roundtrip_ms: float|None`, `error_code: str|None`, `error_message: str|None`; answers validated before scenario scoring |
 | `RouteDecision` | `choice: Literal['primary','cheap','abstain']`, `selected_model: str|None`, `confidence: float|None`, `reason: str`; no model invented when CLI inputs absent |
-| `SampleResult` | `case_id`, `scenario`, `repeat`, `expected`, `predicted: str|None`, `status`, `error_code`, `timings_ms`, `decision: RouteDecision|None`, `requested_model`, `selected_model`, `reported_model`, `actual_model`, `fallback_metadata`, `usage`, `answer: str|None`, `quality_pass: bool|None`; nullable fields remain null rather than zero |
+| `SampleResult` | `case_id`, `scenario`, `repeat`, `expected`, `predicted: str|None`, `status`, `error_code`, `error_message`, `answers`, `split`, `timings_ms`, `decision: RouteDecision|None`, `requested_model`, `selected_model`, `reported_model`, `actual_model`, `fallback_metadata`, `usage`, `answer: str|None`, `quality_pass: bool|None`; nullable fields remain null rather than zero |
 | `EvaluationReport` | `schema_version: Literal['1']`, `status: Literal['complete','incomplete','error']`, `config`, `environment`, `fixture_sha256`, `question_schemas`, `samples: list[SampleResult]`, `metrics`, `limitations`; secrets excluded from serialization |
 
 Stable error codes: `dependency_missing`, `checkpoint_missing`, `startup_timeout`,
@@ -264,7 +270,7 @@ sequentially and makes no claim that an entire shared Agent is concurrency-safe.
 
 - **Paths**: new `artifacts/laya/evaluate.py`, `artifacts/laya/reporting.py`.
 - **Responsibility**: invoke three scenarios, optional live pairs, quality checks and report output.
-- **Depends on**: M1–M3, existing regex detector and Anthropic satellite.
+- **Depends on**: M1–M3, existing regex detector and selected provider satellite.
 - **Interface Skeleton**:
 
 ```python
@@ -298,6 +304,117 @@ async def test_real_cpu_scenarios() -> None:
     """Opt-in run of all scenarios with real local inference; distinguish unavailable live evidence."""
 ```
 
+### Reopened evaluation scope (2026-11-10)
+
+The implementation is reopened at the requester's direction. Design status remains approved
+so follow-up tasks can execute; the index completion timestamp is cleared. Preserve TASK-3605
+through TASK-3618 as completed history. Their planning blueprints contain FILL IN snippets,
+but those are not executable source. Current `artifacts/laya/*.py` contains no executable
+NotImplementedError; `Predictor.predict` is a Protocol signature. The failed report
+`completion-cpu-1` records the previously fixed event-loop issue and is retained as history.
+
+The real outstanding work is durable evidence, usable deterministic rubric checks, and
+explicit cheaper-model coverage. No production integration, new dependency, automatic paid
+call, forced routing threshold adjustment or revision of prior measured reports is authorized
+by this decomposition. A branch/worktree is provisioned only when implementation starts.
+
+### Module 6: Retained minimal provider evidence (TASK-5466)
+
+Add `SampleResult.provider_evidence: dict[str, str]` with an empty default, compatible with
+schema-1 historical reports. Capture ONLY provider plus string-valued raw `model`,
+`model_version`, `modelVersion`; omit unknown keys, nested objects, credentials, headers and
+response content. Persist this before interpreting it, including when the provider tag is
+unknown. Resolve only known provider tags using the existing extraction precedence. Never
+use AIMessage.model as actual-model proof. Missing evidence remains model_unverified.
+Keep extract_model_evidence's signature and call sites stable; factor its resolution through
+the retained mapping so saved evidence can be reinterpreted offline without paid calls.
+
+```python
+# proposed in artifacts/laya/live.py
+from parrot.models.responses import AIMessage
+
+def capture_provider_evidence(message: AIMessage) -> dict[str, str]:
+    """Capture only the allowlisted provider/model identity strings."""
+
+def resolve_provider_model(evidence: dict[str, str]) -> str | None:
+    """Resolve a provider-returned version without substituting requested metadata."""
+```
+
+### Module 7: Versioned deterministic rubric checks (TASK-5467)
+
+Preserve legacy rubric files and their scoring semantics. Add an explicitly selected v2 file
+(`--rubric-file`, default None) and record its SHA-256 and version in EvaluationReport.
+A v2 envelope is `{"version": 2, "cases": {case_id: rubric}}`; a rubric has
+`all_of: list[list[str]]` (each group requires one literal alternative) and
+`none_of: list[str]` (forbidden literals). Validate through new Pydantic RubricV2 and
+RubricFileV2 models with extra=forbid; reject empty groups/strings, missing case coverage,
+wrong root types and unsupported versions before starting a worker or paid calls.
+Use Unicode normalization, casefold and collapsed whitespace; match literal terms at word
+boundaries. Do not execute regular expressions or call a model judge. These are explicitly
+heuristic checks, not semantic equivalence or population accuracy. Keep rubric_pass returning
+bool or None and load_rubrics returning a case mapping for existing callers.
+
+Create `artifacts/laya/fixtures/routing_rubrics_v2.json` with deterministic fact/contradiction
+checks and synthetic positive, paraphrased, negative and adversarial examples in tests.
+Do not alter old fixtures or old reports and do not call this newly authored rubric held-out
+validation of previously observed provider responses. Missing rubrics still score None.
+
+```python
+# proposed fields in artifacts/laya/models.py
+# EvaluationConfig.rubric_file: Path | None = None
+# EvaluationReport.rubric_sha256: str | None = None
+# EvaluationReport.rubric_version: int | None = None
+class RubricV2(_Record):
+    """Nonempty groups of literal alternatives and optional forbidden terms."""
+    all_of: list[list[str]]
+    none_of: list[str] = Field(default_factory=list)
+
+class RubricFileV2(_Record):
+    """Versioned case-to-rubric envelope; reject unsupported versions."""
+    version: Literal[2]
+    cases: dict[str, RubricV2]
+```
+
+Existing load_rubrics(path: Path) and rubric_pass(answer: str, rubric: dict[str, Any] | None)
+remain the integration interfaces. Normalize v2 entries to dictionaries tagged with version=2;
+legacy mappings retain their old shape. Only explicitly selected v2 rubrics use new scoring.
+
+### Module 8: Explicit cheap-model comparison and coverage (TASK-5468)
+
+Add `EvaluationConfig.include_cheap_baseline: bool=False` and CLI
+`--include-cheap-baseline`. Require live routing mode (scenario routing or all), two distinct
+model IDs and the usual credentials/cap. Default execution remains the existing pair. When
+selected, each fixture runs primary, routed, then cheap, with all three logical-call slots
+reserved atomically before the first arm. Never start a partial group. Failures consume slots.
+A separate `arm="cheap"` uses a RouteDecision bound to the configured cheap model with reason
+`cheap_baseline`; it is NOT a Laya selection and must not enter Laya routing proportions.
+No mutation of the client default; preserve thresholds and use the same generation settings.
+
+```python
+# proposed method on artifacts/laya/live.py::LiveCallBudget
+# Existing reserve_pair delegates to reserve_group(2), preserving its API.
+def reserve_group(self, size: int) -> bool:
+    """Reserve a positive group size atomically, or return False without dispatch."""
+```
+
+Extend SampleResult.arm to include cheap. Existing run_live_routing_pairs signature remains
+stable and follows config.include_cheap_baseline. Reports include all requested arms and a
+coverage block: logical calls attempted, arms with provider-model evidence, models actually
+reported, and whether the cheap baseline actually returned the configured model. Alias
+mismatches remain visible; never label a mismatched actual model as proven cheap execution.
+Report missing cheap evidence explicitly rather than claim savings. Missing per-model price
+or usage must make that arm's cost null rather than report a partial underestimated total.
+Close the evaluation Agent in a finally block after configuration/live calls; cancellation
+must still propagate. Provide fake-agent lifecycle tests and opt-in real integration commands.
+No paid verification is a default test; absent prerequisites remain reported skips.
+
+#### Follow-up delegation eligibility
+
+All three tasks use the normal implementation route, without a Delegation Contract. Behavioral
+edge cases and tests require reasoning; no full-file mechanical writer packet is claimed.
+Tasks 5467 and 5468 are serialized by consumed evidence/rubric contracts and overlapping models,
+live runner and CLI files. Isolation itself is not the reason for those dependencies.
+
 ## 4. Test Specification
 
 ### Unit Tests
@@ -312,8 +429,31 @@ async def test_real_cpu_scenarios() -> None:
 | Routing fallback | M3 | Invalid, abstained and low-confidence results retain primary with distinct reasons |
 | Model isolation | M3 | ContextVar reset on success/error/cancel, copied kwargs, super hook reached, defaults unchanged |
 | Live configuration/cap | M4 | No calls by default; missing IDs fail preflight; both arms counted; no partial pair after cap |
-| Model evidence | M4 | Raw provider model preferred; requested-only metadata cannot establish actual execution; fallback visible |
+| Model evidence | M4 | Anthropic raw model and Google model-version/provider-tag variants covered; requested-only metadata cannot establish actual execution; fallback visible |
 | Reports | M4 | Correct confusion matrix/quantiles, null unavailable values, failed samples not silently excluded, no overwrite |
+
+### Validation Contract
+
+tests:
+  - packages/ai-parrot/tests/unit/laya_eval/test_laya_adapter.py
+  - packages/ai-parrot/tests/unit/laya_eval/test_laya_context_limits.py
+  - packages/ai-parrot/tests/unit/laya_eval/test_laya_evaluate_cli.py
+  - packages/ai-parrot/tests/unit/laya_eval/test_laya_fixtures.py
+  - packages/ai-parrot/tests/unit/laya_eval/test_laya_live.py
+  - packages/ai-parrot/tests/unit/laya_eval/test_laya_live_pairs.py
+  - packages/ai-parrot/tests/unit/laya_eval/test_laya_models.py
+  - packages/ai-parrot/tests/unit/laya_eval/test_laya_reporting.py
+  - packages/ai-parrot/tests/unit/laya_eval/test_laya_routing.py
+  - packages/ai-parrot/tests/unit/laya_eval/test_laya_runtime.py
+  - packages/ai-parrot/tests/unit/laya_eval/test_laya_scenarios.py
+  - packages/ai-parrot/tests/unit/laya_eval/test_laya_validation.py
+  - packages/ai-parrot/tests/unit/laya_eval/test_laya_worker.py
+  - packages/ai-parrot/tests/unit/test_laya_evaluation.py
+  - packages/ai-parrot/tests/integration/test_laya_evaluation.py
+  - packages/ai-parrot/tests/unit/laya_eval/test_laya_evidence_retention.py
+  - packages/ai-parrot/tests/unit/laya_eval/test_laya_rubrics_v2.py
+  - packages/ai-parrot/tests/unit/laya_eval/test_laya_cheap_baseline.py
+markers: none
 
 ### Integration Tests
 
@@ -352,25 +492,43 @@ the configured cheap model is cheaper from its name or the framework's fallback 
 
 ## 5. Acceptance Criteria
 
-- [ ] Runnable documented CLI and versioned fixtures exist under `artifacts/laya/`.
-- [ ] Real CPU inference executes injection, routing classification and document categorization.
-- [ ] The regex baseline uses the identical English injection fixture manifest.
-- [ ] Positive probability, choice validation and error/abstention policies pass regression tests.
-- [ ] Request-local routing preserves parent dispatch, client defaults and budget propagation.
-- [ ] Live routing is opt-in, model inputs explicit, logical calls capped, actual-model evidence
+- [x] Runnable documented CLI and versioned fixtures exist under `artifacts/laya/`.
+- [x] Real CPU inference executes injection, routing classification and document categorization.
+- [x] The regex baseline uses the identical English injection fixture manifest.
+- [x] Positive probability, choice validation and error/abstention policies pass regression tests.
+- [x] Request-local routing preserves parent dispatch, client defaults and budget propagation.
+- [x] Live routing is opt-in, model inputs explicit, logical calls capped, actual-model evidence
   recorded; absent credentials/model IDs leave that scenario incomplete and clearly reported.
-- [ ] JSON and Markdown reports capture reproducibility, latency, resource use, quality and failures.
-- [ ] Real local reports are produced for review; if prerequisites prevent execution, the feature
+- [x] JSON and Markdown reports capture reproducibility, latency, resource use, quality and failures.
+- [x] Real local reports are produced for review; if prerequisites prevent execution, the feature
   remains unverified rather than claiming end-to-end completion. Live evidence is conditional on
   supplied valid IDs/credentials/cap and is not required to claim local-classifier evaluation only.
-- [ ] Focused tests/lint pass; optional skips and limitations are disclosed.
-- [ ] No workspace dependency/lockfile or production code changes; documentation covers isolated setup.
-- [ ] No numerical adoption gate or production-readiness conclusion is invented.
+- [x] Focused tests/lint pass; optional skips and limitations are disclosed.
+- [x] No workspace dependency/lockfile or production code changes; documentation covers isolated setup.
+- [x] No numerical adoption gate or production-readiness conclusion is invented.
+
+Evidence: `sdd/state/FEAT-589/verification/evaluation-summary.json` and
+`artifacts/laya/README.md`. Acceptance is for an exploratory evaluation framework, not production
+adoption. The full paid run retains incomplete model evidence; only the two-call confirmation
+verifies provider versions. No cheaper-model execution or cost savings were demonstrated.
+
+### Open follow-up acceptance criteria
+
+- [ ] R1: Allowlisted provider evidence survives JSON serialization and can be resolved offline;
+  missing/unknown identities do not become requested-model proof; secret/content fields are absent.
+- [ ] R2: Explicit v2 rubrics validate before dispatch, carry version/hash provenance, cover
+  positive/paraphrased/negative/contradictory synthetic answers, and leave legacy results unchanged.
+- [ ] R3: An explicit cheap baseline uses a separate arm, atomic three-call budgets, request-local
+  model selection and finally-cleanup; its evidence is reported separately from Laya decisions.
+- [ ] R4: Cost/coverage never overclaim incomplete actual-model, price or usage evidence;
+  focused regressions pass and optional paid runs are clearly distinguished from offline tests.
 
 ## 6. Codebase Contract
 
-These imports and signatures are verified from source, not by loading optional runtime dependencies.
-Implementation must verify any additional API before using it.
+The original design anchors below were verified during specification preparation; Google
+anchors are separately refreshed below. The isolated Laya and Google runtime paths have now
+also been exercised, as recorded in the verification summary. Reverify older anchors before
+future implementation changes.
 
 ### Verified Imports
 
@@ -379,6 +537,8 @@ from parrot.bots.agent import Agent
 # verified: packages/ai-parrot/src/parrot/bots/agent.py:1325
 from parrot.clients.base import AbstractClient
 # verified: packages/ai-parrot/src/parrot/bots/abstract.py:35 (existing import)
+from parrot.clients.google import GoogleGenAIClient
+# verified: packages/ai-parrot-client-google/src/parrot/clients/google/__init__.py:1
 from parrot.clients.anthropic import AnthropicClient
 # verified: packages/ai-parrot-client-anthropic/src/parrot/clients/anthropic/__init__.py:1
 from parrot.models.responses import AIMessage
@@ -388,6 +548,18 @@ from parrot.security.prompt_injection import PromptInjectionDetector
 from benchmarks.injection_guardrail_latency.corpus import build_eval_set
 # verified: benchmarks/injection_guardrail_latency/corpus.py:197
 ```
+
+### Google verification anchors (2026-11-10)
+
+Verified against base commit `9506ea52615ecc3eef4cb158e7db34f426d83409`:
+
+| Contract | Evidence |
+|---|---|
+| Credential key and fallback `gemini-3.1-flash-lite` | `packages/ai-parrot-client-google/src/parrot/clients/google/client.py:124` and `:131` |
+| API key resolved through project config | `packages/ai-parrot-client-google/src/parrot/clients/google/client.py:197` |
+| `ask(prompt, model=None, max_tokens=None, ..., **kwargs)` supports per-call model | `packages/ai-parrot-client-google/src/parrot/clients/google/client.py:3296` |
+| Raw response retained by Gemini factory | `packages/ai-parrot/src/parrot/models/responses.py:1020` |
+| Returned provider tag is `google_genai` | `packages/ai-parrot-client-google/src/parrot/clients/google/client.py:4092` |
 
 ### Existing Class Signatures
 
@@ -440,8 +612,8 @@ async def ask(
 
 ### Does NOT Exist (Anti-Hallucination)
 
-- No Laya dependency in inspected workspace/root and core manifests; no existing evaluation module
-  is assumed. Everything under `artifacts/laya/` in this spec is proposed new work.
+- Laya remains outside workspace/root and core manifests; its isolated evaluation dependency
+  and implemented modules live under `artifacts/laya/`.
 - No language field in `build_eval_set()`; no implicit English-filter helper may be assumed.
 - No `ClaudeModel.OPUS_5` in the inspected enum; no `opus-5` shorthand translation in the inspected
   direct backend. Preserve user intent without claiming provider availability.
@@ -467,7 +639,7 @@ distribution paths. Do not modify the root ignore rule or lockfile.
 
 ### Known Risks / Gotchas
 
-- CPU performance, dependency compatibility and classifier quality remain unmeasured.
+- CPU smoke performance and classifier quality are measured; production representativeness remains unverified.
 - Confidence may be poorly calibrated; thresholds are experimental settings, not security promises.
 - Silent input truncation could invalidate grounded results; verified preflight is mandatory.
 - Model aliases and provider availability may change. Validate at execution time; no substitution.
@@ -481,7 +653,7 @@ distribution paths. Do not modify the root ignore rule or lockfile.
 | Package | Version / policy | Reason |
 |---|---|---|
 | Pydantic | Existing core pin 2.12.5 (`packages/ai-parrot/pyproject.toml:54`) | Host records |
-| ai-parrot-client-anthropic | Existing workspace distribution | Live agent calls |
+| ai-parrot-client-anthropic / ai-parrot-client-google | Existing workspace distributions | Selected-provider live agent calls |
 | Laya | Proposed isolated pin 0.3.5; verify installable distribution against inspected API before locking | CPU decisions |
 | torch / transformers / safetensors / huggingface_hub / numpy | Resolve only inside standalone evaluation environment; capture exact versions | Laya runtime dependencies |
 
@@ -520,14 +692,17 @@ commit and built-in local courtesy fast-forward; only this spec is staged for th
 - [x] U1 hardware/languages — requester: “1. CPU, lang: English”. Applied throughout.
 - [x] U2 primary preference — requester: “2. routing: anthropic:opus-5 as model for routing with laya”.
   Preserve this requested label; Laya makes the decision and the selected Anthropic model answers.
-- [ ] U2 live configuration — requester supplies cheaper model, verified primary API identifier and
-  positive logical-call cap via CLI. Until then live evidence is incomplete; no default alternative
-  model or paid-call budget is inferred. Follow-up requested during spec preparation.
+- [x] U2 live configuration — requester authorized Google paid verification with
+  `google:gemini-3.5-flash`. Used comparison model `gemini-3.1-flash-lite`, 16 logical calls
+  plus a separate two-call evidence confirmation. Google returned `gemini-3.6-flash` in the
+  confirmed pair; the original Anthropic preference remains historical, not verified.
 - [x] U3 success criteria — requester: “3. yes, exploratory report”. No production numerical gates.
 - [x] U4 grounded classification — requester: “4. agree.” Refers to document categorization with
   known labels and an insufficient-evidence outcome, as proposed in the preceding clarification.
-- [ ] Runtime readiness — implementation owner verifies isolated Laya 0.3.5 compatibility, snapshot
-  identity and overflow preflight before M2 completion. No adoption result is presumed.
+- [x] Runtime readiness — verified 2026-11-10 with isolated Laya 0.3.5, real CPU inference on
+  checkpoint `85cc74ddae6109077ebe2853a9b3077fb6606a78`, and actual-tokenizer overflow preflight.
+  See `artifacts/laya/README.md` for results and reproducible commands. Live-provider evidence
+  remains separate; no production adoption result is inferred.
 
 ## 9. Design Research Cross-Check
 
@@ -549,3 +724,29 @@ Summary: 4 confirmed, 1 rejected, 0 newly escalated design choices; runtime inpu
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-21 | Codex | Initial review specification incorporating requester decisions and verified contracts |
+| 0.2 | 2026-11-10 | Codex | Completed SDK adapter, verified real CPU capability evaluation and token budgets; retained explicit live-provider prerequisites |
+| 0.3 | 2026-11-10 | Codex | User-authorized Google live evaluation: provider selection, Google model-version evidence and paired-call verification |
+
+### Google live evaluation extension (2026-11-10)
+
+The requester explicitly authorized paid calls with `google:gemini-3.5-flash`, extending
+this evaluation's original Anthropic-only live scope. `EvaluationConfig.provider` and
+`--provider` select `anthropic` (default) or `google`. Google uses the existing
+`GoogleGenAIClient` through the same Agent routing hook, with API model
+`gemini-3.5-flash` and comparison model `gemini-3.1-flash-lite` (the client's existing
+fallback). No production provider code is changed. The live budget is 16 logical calls
+for the eight paired fixtures, with a separate two-call confirmation after correcting
+the evidence extractor's missing `google_genai` provider alias.
+
+Google credentials follow the client's `GOOGLE_API_KEY` environment/project configuration.
+Execution evidence comes from raw `model_version`/`modelVersion`; a requested model alone
+never counts as proof. Reports preserve mismatches and leave absent evidence incomplete.
+See `artifacts/laya/README.md` for reproducible flags and measured outcomes. The historical
+Anthropic U2 model preference remains recorded; it does not govern this requested Google run.
+Durable results and original report hashes are recorded in
+`sdd/state/FEAT-589/verification/evaluation-summary.json`.
+
+## Reopening record
+
+2026-11-10: retain FEAT-589 identity, reopen implementation, and add TASK-5466–TASK-5468.
+Historical evaluation acceptance remains checked; R1–R4 are open. No code is implemented by this planning run.

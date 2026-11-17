@@ -1,0 +1,1487 @@
+"""Deterministic FEAT-768 native policy tests (no Claude process, no network)."""
+
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import time
+import uuid
+
+import pytest
+
+from parrot.flows.dev_loop import native_claude_sandbox as native
+from parrot.flows.dev_loop import worktree_environment as policy
+
+
+@pytest.fixture(autouse=True)
+def scratch_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Keep the scratch root inside tmp_path."""
+    root = tmp_path / "claude-scratch"
+    monkeypatch.setattr(policy, "CLAUDE_SCRATCH_ROOT", root)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    return root
+
+
+_REAL_WARM_TIKTOKEN_CACHE = native.warm_tiktoken_cache
+
+
+@pytest.fixture(autouse=True)
+def no_tiktoken_warmup(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep launcher tests off the network; the warm-up has its own tests below."""
+    monkeypatch.setattr(native, "warm_tiktoken_cache", lambda target, environ: None)
+
+
+_REAL_CLAUDE_VERSION = native._claude_version
+
+
+@pytest.fixture(autouse=True)
+def qualified_claude_version(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Report a prefix-qualified Claude Code without running the CLI; the gate has its own tests."""
+    monkeypatch.setattr(native, "_claude_version", lambda claude: native.MIN_PREFIX_CLAUDE_VERSION)
+
+
+@pytest.fixture
+def linked(tmp_path: Path) -> tuple[Path, Path]:
+    """Return a linked feature worktree and its primary checkout."""
+    main = tmp_path / "main"
+    git_dir = main / ".git"
+    feature_admin = git_dir / "worktrees" / "feat"
+    pool_admin = git_dir / "worktrees" / "pool"
+    for admin in (feature_admin, pool_admin):
+        admin.mkdir(parents=True)
+        (admin / "commondir").write_text("../..\n")
+    feature = main / ".parrot" / "worktrees" / "feat"
+    pool = main / ".parrot" / "worktrees" / "pool"
+    for worktree, admin in ((feature, feature_admin), (pool, pool_admin)):
+        worktree.mkdir(parents=True)
+        (worktree / ".git").write_text(f"gitdir: {admin}\n")
+    environment = main / ".venv"
+    environment.mkdir()
+    (environment / "pyvenv.cfg").write_text("home = /usr/bin\n")
+    (feature / ".venv").symlink_to(environment, target_is_directory=True)
+    (main / ".parrot" / "ledger").mkdir(parents=True)
+    (feature / "packages" / "x" / "src").mkdir(parents=True)
+    return feature, main
+
+
+def test_native_settings_reject_widening_inputs(tmp_path: Path) -> None:
+    """Malformed roots and invalid domains cannot produce a permissive launch."""
+    with pytest.raises(ValueError):
+        native.native_sandbox_settings(tmp_path)
+    with pytest.raises(ValueError):
+        native.validate_allowed_domains(["https://github.com"])
+
+
+def test_native_allow_write_includes_coder_evidence_dir(linked: tuple[Path, Path]) -> None:
+    """The native backend allows exactly what Bubblewrap binds, and nothing else under ``artifacts/``."""
+    feature, main = linked
+    allow = native.native_sandbox_settings(feature)["sandbox"]["filesystem"]["allowWrite"]
+    assert str((main / "artifacts" / "logs" / "sdd-coder-usage").resolve()) in allow
+    assert str((main / "artifacts").resolve()) not in allow
+
+
+def test_protected_argv_binds_experience(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, scratch_root: Path
+) -> None:
+    """Bubblewrap grants the exact shared roots, including experience but excluding wiki and HOME."""
+    feature, main = linked
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+
+    argv = policy.protected_argv(feature, ["true"])
+    binds = [Path(argv[index + 1]) for index, token in enumerate(argv) if token == "--bind"]
+
+    assert binds == [
+        scratch_root.resolve(),
+        (main / ".parrot" / "worktrees").resolve(),
+        (main / ".git").resolve(),
+        (main / ".parrot" / "ledger").resolve(),
+        (main / "artifacts" / "logs" / "sdd-coder-usage").resolve(),
+        (main / ".parrot" / "experience").resolve(),
+    ]
+    assert (main / ".parrot" / "wiki").resolve() not in binds
+    assert Path.home().resolve() not in binds
+
+
+def test_settings_are_strict_and_explicit(linked: tuple[Path, Path]) -> None:
+    """All security keys are present with strict values."""
+    feature, main = linked
+    settings = native.native_sandbox_settings(feature, allowed_domains=["GitHub.COM.", "github.com"])
+    sandbox = settings["sandbox"]
+    assert sandbox["enabled"] is True
+    assert sandbox["failIfUnavailable"] is True
+    assert sandbox["allowUnsandboxedCommands"] is False
+    assert sandbox["excludedCommands"] == []
+    assert sandbox["allowNestedUserNamespaces"] is False
+    assert sandbox["network"] == {
+        "allowAllUnixSockets": False,
+        "strictAllowlist": True,
+        "allowedDomains": ["github.com"],
+    }
+    assert str(main) not in sandbox["filesystem"]["allowWrite"]
+    deny = sandbox["filesystem"]["denyWrite"]
+    worktree = feature
+    controls = worktree / "packages" / "ai-parrot" / "src" / "parrot" / "flows" / "dev_loop"
+    for control in (
+        controls / "native_claude_sandbox.py",
+        controls / "worktree_environment.py",
+        worktree / "packages" / "ai-parrot" / "src" / "parrot" / "sdd" / "scripts" / "native_claude_sandbox.py",
+        worktree / "packages" / "ai-parrot" / "src" / "parrot" / "sdd" / "scripts" / "worktree_environment.py",
+        worktree / ".claude" / "settings.json",
+        worktree / ".claude" / "settings.local.json",
+        worktree / ".claude" / "agents",
+    ):
+        assert str(control.resolve()) in deny, control
+    assert settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"].endswith(" || exit 2")
+
+
+@pytest.fixture(autouse=True)
+def _clean_sandbox_mode_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Never inherit a developer's mode/marker or a cached probe result into a test."""
+    monkeypatch.delenv(native.MODE_ENV, raising=False)
+    monkeypatch.delenv(native.DEGRADED_ENV, raising=False)
+    monkeypatch.setattr(native, "_probe_cache", None)
+
+
+def test_sandbox_mode_resolution_prefers_environment_then_pyproject(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    feature, _main = linked
+    assert native.resolve_sandbox_mode(feature) == "required"  # no pyproject, no env
+
+    (feature / "pyproject.toml").write_text("[tool.parrot.sdd]\nsandbox = 'preferred'\n", encoding="utf-8")
+    assert native.resolve_sandbox_mode(feature) == "preferred"
+    monkeypatch.setenv(native.MODE_ENV, "   ")  # empty/whitespace is "unset"
+    assert native.resolve_sandbox_mode(feature) == "preferred"
+    monkeypatch.setenv(native.MODE_ENV, " OFF ")
+    assert native.resolve_sandbox_mode(feature) == "off"
+    monkeypatch.setenv(native.MODE_ENV, "invalid")
+    with pytest.raises(ValueError, match=native.MODE_ENV):
+        native.resolve_sandbox_mode(feature)
+
+
+@pytest.mark.parametrize(
+    ("content", "match"),
+    [
+        ("[tool.parrot.sdd]\nsandbox = 'off'\n", "may only be set through"),
+        ("[tool.parrot.sdd]\nsandbox = 'legacy'\n", "may only be set through"),
+        ("[tool.parrot.sdd]\nsandbox = 'unsafe'\n", "pyproject.toml"),
+        ("[tool.parrot.sdd]\nsandbox = 3\n", "pyproject.toml"),
+        ("[tool.parrot]\nsdd = 'x'\n[tool.parrot.sdd]\n", "malformed"),
+        ("[tool]\nparrot = 1\n", r"\[tool\.parrot\] is not a table"),
+    ],
+)
+def test_sandbox_mode_pyproject_errors(linked: tuple[Path, Path], content: str, match: str) -> None:
+    """A repository may choose required/preferred only; anything else is an error naming the source."""
+    feature, _main = linked
+    (feature / "pyproject.toml").write_text(content, encoding="utf-8")
+    with pytest.raises(ValueError, match=match):
+        native.resolve_sandbox_mode(feature)
+
+
+def test_settings_can_omit_native_sandbox(linked: tuple[Path, Path]) -> None:
+    feature, _main = linked
+
+    settings = native.native_sandbox_settings(feature, include_sandbox=False)
+
+    assert "sandbox" not in settings
+    assert settings["hooks"]["PreToolUse"]
+
+
+def test_plan_native_launch_degrades_or_refuses(linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    feature, _main = linked
+    monkeypatch.setattr(native, "native_sandbox_available", lambda: (False, "probe failed"))
+
+    (feature / "pyproject.toml").write_text("[tool.parrot.sdd]\nsandbox = 'preferred'\n", encoding="utf-8")
+    mode, degraded, reason, settings = native.plan_native_launch(feature)
+    assert (mode, degraded, reason) == ("preferred", True, "probe failed")
+    assert "sandbox" not in settings
+
+    (feature / "pyproject.toml").write_text("[tool.parrot.sdd]\nsandbox = 'required'\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="probe failed"):
+        native.plan_native_launch(feature)
+
+
+def test_plan_native_launch_strict_when_available_and_off_skips_probe(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    feature, _main = linked
+    (feature / "pyproject.toml").write_text("[tool.parrot.sdd]\nsandbox = 'preferred'\n", encoding="utf-8")
+    monkeypatch.setattr(native, "native_sandbox_available", lambda: (True, ""))
+    mode, degraded, reason, settings = native.plan_native_launch(feature)
+    assert (mode, degraded, reason) == ("preferred", False, "")
+    assert settings["sandbox"]["failIfUnavailable"] is True  # preferred + available == required + available
+
+    def _never() -> tuple[bool, str]:
+        raise AssertionError("probe must not run in off mode")
+
+    monkeypatch.setattr(native, "native_sandbox_available", _never)
+    monkeypatch.setenv(native.MODE_ENV, "off")
+    mode, degraded, reason, settings = native.plan_native_launch(feature)
+    assert (mode, degraded, reason) == ("off", True, "sandbox mode off")
+    assert "sandbox" not in settings
+
+
+def test_plan_native_launch_legacy_uses_bubblewrap_without_native_probe(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Legacy mode keeps the hook's Bubblewrap boundary without native settings."""
+    feature, _main = linked
+    monkeypatch.setenv(native.MODE_ENV, "legacy")
+    monkeypatch.setattr(native.shutil, "which", lambda name: "/usr/bin/bwrap" if name == "bwrap" else None)
+    monkeypatch.setattr(native, "_bwrap_probe", lambda executable: (True, ""))
+    monkeypatch.setattr(
+        native,
+        "native_sandbox_available",
+        lambda: (_ for _ in ()).throw(AssertionError("native probe must not run in legacy mode")),
+    )
+
+    mode, degraded, reason, settings = native.plan_native_launch(feature, allowed_domains=["invalid"])
+
+    assert (mode, degraded, reason) == ("legacy", False, "")
+    assert "sandbox" not in settings
+    assert settings["hooks"]["PreToolUse"]
+
+
+@pytest.mark.parametrize(
+    ("platform", "executable", "probe", "match"),
+    [
+        ("darwin", "/usr/bin/bwrap", (True, ""), "not available on macos"),
+        ("linux", None, (True, ""), "missing prerequisite"),
+        ("linux", "/usr/bin/bwrap", (False, "namespace denied"), "namespace denied"),
+    ],
+)
+def test_plan_native_launch_legacy_refuses_unusable_bubblewrap(
+    linked: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    platform: str,
+    executable: str | None,
+    probe: tuple[bool, str],
+    match: str,
+) -> None:
+    """Legacy mode never permits an unprotected launch."""
+    feature, _main = linked
+    monkeypatch.setenv(native.MODE_ENV, "legacy")
+    monkeypatch.setattr(native.sys, "platform", platform)
+    monkeypatch.setattr(native.shutil, "which", lambda name: executable)
+    monkeypatch.setattr(native, "_bwrap_probe", lambda executable: probe)
+
+    with pytest.raises(RuntimeError, match=match):
+        native.plan_native_launch(feature)
+
+
+def test_launch_backend_selects_bubblewrap_only_for_legacy() -> None:
+    """Only the declared legacy posture retains the Bubblewrap hook backend."""
+    assert native.launch_backend("legacy") == native.BACKEND_BUBBLEWRAP
+    assert native.launch_backend("required") == native.BACKEND_NATIVE
+
+
+def test_native_sandbox_available_branches(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[list[str]] = []
+
+    class _Completed:
+        def __init__(self, returncode: int, stderr: str = "") -> None:
+            self.returncode, self.stderr = returncode, stderr
+
+    monkeypatch.setattr(native, "sandbox_platform", lambda: "linux")
+    monkeypatch.setattr(native.shutil, "which", lambda name: None if name == "socat" else f"/usr/bin/{name}")
+    assert native.native_sandbox_available() == (False, "missing prerequisite(s): socat")
+
+    monkeypatch.setattr(native, "_probe_cache", None)
+    monkeypatch.setattr(native.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(
+        native.subprocess, "run", lambda argv, **kw: calls.append(argv) or _Completed(1, "\nbwrap: denied\n")
+    )
+    assert native.native_sandbox_available() == (False, "bwrap: denied")
+    assert calls[0][:3] == ["/usr/bin/bwrap", "--unshare-user", "--unshare-pid"]
+    assert native.native_sandbox_available() == (False, "bwrap: denied") and len(calls) == 1  # cached
+
+    monkeypatch.setattr(native, "_probe_cache", None)
+
+    def _timeout(argv: list[str], **kw: object) -> _Completed:
+        raise native.subprocess.TimeoutExpired(argv, 10)
+
+    monkeypatch.setattr(native.subprocess, "run", _timeout)
+    assert native.native_sandbox_available() == (False, "bwrap probe timed out")
+
+    monkeypatch.setattr(native, "_probe_cache", None)
+    monkeypatch.setattr(native.subprocess, "run", lambda argv, **kw: _Completed(0))
+    assert native.native_sandbox_available() == (True, "")
+
+
+@pytest.mark.parametrize(
+    ("platform", "expected"),
+    [("linux", "linux"), ("darwin", "macos"), ("win32", "windows"), ("cygwin", "windows"), ("freebsd", "unsupported")],
+)
+def test_sandbox_platform(monkeypatch: pytest.MonkeyPatch, platform: str, expected: str) -> None:
+    """Supported host platforms have explicit native-sandbox outcomes."""
+    monkeypatch.setattr(native.sys, "platform", platform)
+    assert native.sandbox_platform() == expected
+
+
+def test_native_sandbox_available_macos_windows_and_unsupported(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Non-Linux probes neither require Bubblewrap nor silently permit a sandbox."""
+    calls: list[list[str]] = []
+
+    class _Completed:
+        def __init__(self, returncode: int, stderr: str = "") -> None:
+            self.returncode, self.stderr = returncode, stderr
+
+    monkeypatch.setattr(native, "sandbox_platform", lambda: "macos")
+    monkeypatch.setattr(native.shutil, "which", lambda name: None)
+    assert native.native_sandbox_available() == (False, "missing prerequisite(s): sandbox-exec")
+
+    monkeypatch.setattr(native, "_probe_cache", None)
+    monkeypatch.setattr(native.shutil, "which", lambda name: "/usr/bin/sandbox-exec")
+    monkeypatch.setattr(
+        native.subprocess, "run", lambda argv, **kwargs: calls.append(argv) or _Completed(1, "Seatbelt denied\n")
+    )
+    assert native.native_sandbox_available() == (False, "Seatbelt denied")
+    assert calls == [["/usr/bin/sandbox-exec", "-p", "(version 1)(allow default)", "/usr/bin/true"]]
+
+    monkeypatch.setattr(native, "_probe_cache", None)
+    monkeypatch.setattr(native.subprocess, "run", lambda argv, **kwargs: _Completed(0))
+    assert native.native_sandbox_available() == (True, "")
+
+    monkeypatch.setattr(native, "_probe_cache", None)
+    monkeypatch.setattr(native, "sandbox_platform", lambda: "windows")
+    available, reason = native.native_sandbox_available()
+    assert available is False and "WSL2" in reason and "PARROT_SDD_SANDBOX_MODE=preferred" in reason
+
+    monkeypatch.setattr(native, "_probe_cache", None)
+    monkeypatch.setattr(native, "sandbox_platform", lambda: "unsupported")
+    monkeypatch.setattr(native.sys, "platform", "plan9")
+    assert native.native_sandbox_available() == (False, "unsupported platform 'plan9' for the native sandbox")
+
+
+def test_user_tag_is_safe_without_getuid(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Windows-style users produce stable cache directory names."""
+    monkeypatch.delattr(native.os, "getuid", raising=False)
+    monkeypatch.setattr(native.getpass, "getuser", lambda: "Ada Lovelace!")
+    assert native._user_tag() == "AdaLovelace"
+
+
+def test_launch_worker_prints_macos_seatbelt_notice(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A strict macOS launch makes the unqualified backend visible to the operator."""
+    feature, _main = linked
+    monkeypatch.setattr(native.shutil, "which", lambda name, **_kwargs: "/usr/bin/claude" if name == "claude" else None)
+    monkeypatch.setattr(native, "_native_roots", lambda cwd: (feature, feature / ".git", feature))
+    monkeypatch.setattr(native, "plan_native_launch", lambda *args, **kwargs: ("required", False, "", {}))
+    monkeypatch.setattr(native, "native_root_env", lambda cwd: {})
+    monkeypatch.setattr(native, "sandbox_platform", lambda: "macos")
+    monkeypatch.setattr(native.os, "execvpe", lambda *args: None)
+
+    assert native.launch_worker([]) == 1
+    assert "NOTICE macOS Seatbelt backend is implemented but not certified" in capsys.readouterr().err
+
+
+def test_launch_worker_uses_requested_cwd_and_final_prompt(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A host launcher may select the feature worktree and final worker trigger."""
+    feature, _main = linked
+    calls: list[object] = []
+    monkeypatch.setattr(native.shutil, "which", lambda name: "/usr/bin/claude" if name == "claude" else None)
+    monkeypatch.setattr(native, "_native_roots", lambda cwd: (feature, feature / ".git", feature))
+    monkeypatch.setattr(native, "plan_native_launch", lambda *args, **kwargs: ("required", False, "", {}))
+    monkeypatch.setattr(native, "native_root_env", lambda cwd: {})
+    monkeypatch.setattr(native, "_allocate_session_cache", lambda: feature / "cache")
+    monkeypatch.setattr(native.os, "chdir", lambda cwd: calls.append(cwd))
+    monkeypatch.setattr(native.os, "execvpe", lambda *args: calls.append(args))
+
+    assert native.launch_worker(["--", "--verbose"], cwd=feature, initial_prompt="run FEAT-768") == 1
+    assert calls[0] == feature
+    command = calls[1][1]
+    assert command[-1] == "run FEAT-768"
+    assert command[-2] == "--verbose"
+
+
+def test_prepare_shell_prefix_writes_policy_and_launcher(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The launcher records every hook and MCP command in an immutable session policy."""
+    feature, main = linked
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    settings = {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "launch-stop"}]}]}}
+    claude = feature / ".claude"
+    (claude / "agents").mkdir(parents=True)
+    (claude / "settings.json").write_text(json.dumps({"hooks": {"PreToolUse": [{"command": "project"}]}}))
+    (claude / "settings.local.json").write_text(json.dumps({"hooks": {"Stop": [{"command": "local"}]}}))
+    (claude / "agents" / "sdd-worker.md").write_text("---\nhooks:\n  Stop:\n    command: 'agent-stop'\n---\n")
+    (main / ".mcp.json").write_text(json.dumps({"mcpServers": {"tool": {"command": "mcp", "args": ["x"]}}}))
+    # A worktree copy is worker-writable: it must never reach the pass-through allowlist.
+    (feature / ".mcp.json").write_text(json.dumps({"mcpServers": {"planted": {"command": "evil", "args": []}}}))
+
+    environment = native.prepare_shell_prefix(feature, settings, "legacy", rtk=False)
+
+    policy_path = Path(environment["PARROT_SDD_SHELL_PREFIX_POLICY"])
+    prefix_path = Path(environment["CLAUDE_CODE_SHELL_PREFIX"])
+    policy_document = json.loads(policy_path.read_text())
+    assert policy_document["hook_commands"] == ["launch-stop", "project", "local", "agent-stop"]
+    assert policy_document["mcp_argv"] == [["mcp", "x"]]
+    assert policy_document["worktree"] == str(feature.resolve())
+    assert policy_path.stat().st_mode & 0o777 == 0o400
+    assert prefix_path.stat().st_mode & 0o777 == 0o500
+    assert prefix_path.parent.stat().st_mode & 0o777 == 0o700
+
+
+def test_prepare_shell_prefix_copies_runtime_into_session(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The stub execs a read-only copy of the prefix, never the (possibly writable) source tree."""
+    feature, _main = linked
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+
+    environment = native.prepare_shell_prefix(feature, {}, "legacy", rtk=False)
+
+    prefix_path = Path(environment["CLAUDE_CODE_SHELL_PREFIX"])
+    scripts = Path(native.__file__).resolve().parent
+    for name in ("shell_prefix.py", "worktree_environment.py"):
+        copy = prefix_path.parent / name
+        assert copy.read_bytes() == (scripts / name).read_bytes()
+        assert copy.stat().st_mode & 0o777 == 0o400
+    stub = prefix_path.read_text()
+    assert str(prefix_path.parent / "shell_prefix.py") in stub
+    assert str(scripts) not in stub
+
+
+def test_prefix_stub_runs_passthrough_from_session_copy(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The session copy is self-sufficient: it runs a recorded hook command with no source tree on the path."""
+    feature, _main = linked
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    settings = {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "printf hook-ran"}]}]}}
+    environment = native.prepare_shell_prefix(feature, settings, "legacy", rtk=False)
+
+    result = subprocess.run(
+        [environment["CLAUDE_CODE_SHELL_PREFIX"], "printf hook-ran"],
+        env={
+            "PATH": os.environ["PATH"],
+            "PARROT_SDD_SHELL_PREFIX_POLICY": environment["PARROT_SDD_SHELL_PREFIX_POLICY"],
+        },
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert (result.returncode, result.stdout, result.stderr) == (0, "hook-ran", "")
+
+
+@pytest.mark.parametrize(
+    ("script", "expected"),
+    [
+        ("echo '2.1.322 (Claude Code)'", (2, 1, 322)),
+        ("echo 'no version here'", None),
+        ("echo 2.1.322; exit 3", None),
+    ],
+)
+def test_claude_version_parses_the_cli_output(
+    tmp_path: Path, script: str, expected: tuple[int, int, int] | None
+) -> None:
+    """Only a successful ``--version`` run that prints X.Y.Z yields a version."""
+    claude = tmp_path / "claude"
+    claude.write_text(f"#!/bin/sh\n{script}\n")
+    claude.chmod(0o700)
+
+    assert _REAL_CLAUDE_VERSION(str(claude)) == expected
+    assert _REAL_CLAUDE_VERSION(str(tmp_path / "absent")) is None
+
+
+def test_expired_prefix_session_survives_while_its_owner_is_alive(tmp_path: Path) -> None:
+    """Age alone never removes the policy of a session whose launcher process still exists."""
+    old = time.time() - 8 * 24 * 60 * 60
+    sessions = {}
+    for label, pid in (("alive", os.getpid()), ("dead", 2**22 + 12345), ("legacy", None)):
+        session = tmp_path / str(uuid.uuid4())
+        session.mkdir()
+        if pid is not None:
+            (session / "owner.pid").write_text(f"{pid}\n")
+        os.utime(session, (old, old))
+        sessions[label] = session
+
+    native._remove_expired_prefix_sessions(tmp_path)
+
+    assert sessions["alive"].is_dir()
+    assert not sessions["dead"].exists()
+    assert not sessions["legacy"].exists()
+
+
+def test_prepare_shell_prefix_records_its_owner(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The session directory names the launcher process that owns it."""
+    feature, _main = linked
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+
+    environment = native.prepare_shell_prefix(feature, {}, "legacy", rtk=False)
+
+    owner = Path(environment["PARROT_SDD_SHELL_PREFIX_POLICY"]).with_name("owner.pid")
+    assert owner.read_text().strip() == str(os.getpid())
+
+
+@pytest.mark.parametrize("header", ["hooks:", "hooks: # lifecycle hooks", "hooks:\t# comment"])
+def test_agent_hook_commands_only_inside_hooks_block(tmp_path: Path, header: str) -> None:
+    """A ``command:`` key outside the frontmatter's ``hooks:`` block is never allowlisted."""
+    agent = tmp_path / "sdd-worker.md"
+    agent.write_text(
+        "---\n"
+        "name: sdd-worker\n"
+        "command: 'top-level'\n"
+        "mcpServers:\n"
+        "  tool:\n"
+        "    command: other-block\n"
+        f"{header}\n"
+        "  PreToolUse:\n"
+        "    - matcher: Bash\n"
+        "      hooks:\n"
+        "        - type: command\n"
+        "          command: 'guard --hook || exit 2'\n"
+        '        - command: "second"\n'
+        "color: blue\n"
+        "---\n"
+        "command: body\n"
+    )
+
+    assert native._agent_hook_commands(agent) == ["guard --hook || exit 2", "second"]
+    assert native._agent_hook_commands(tmp_path / "absent.md") == []
+
+
+def test_prefix_mcp_config_requires_servers_in_the_primary_checkout(linked: tuple[Path, Path]) -> None:
+    """Only a primary ``.mcp.json`` that declares a server is a usable MCP configuration."""
+    feature, main = linked
+    (feature / ".mcp.json").write_text(json.dumps({"mcpServers": {"planted": {"command": "evil"}}}))
+    assert native.load_prefix_mcp_config(feature) == {"mcpServers": {}}
+
+    (main / ".mcp.json").write_text(json.dumps({"mcpServers": {}}))
+    assert native.load_prefix_mcp_config(feature) == {"mcpServers": {}}
+
+    (main / ".mcp.json").write_text("{not json")
+    assert native.load_prefix_mcp_config(feature) == {"mcpServers": {}}
+
+    (main / ".mcp.json").write_text(json.dumps({"mcpServers": {"tool": {"command": "mcp"}}}))
+    assert native.load_prefix_mcp_config(feature) == {"mcpServers": {"tool": {"command": "mcp"}}}
+
+
+def test_prepare_shell_prefix_without_primary_mcp_config_records_no_server(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A worktree-only ``.mcp.json`` leaves the pass-through allowlist empty."""
+    feature, _main = linked
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    (feature / ".mcp.json").write_text(json.dumps({"mcpServers": {"planted": {"command": "evil", "args": []}}}))
+
+    environment = native.prepare_shell_prefix(feature, {}, "legacy", rtk=False)
+
+    assert json.loads(Path(environment["PARROT_SDD_SHELL_PREFIX_POLICY"]).read_text())["mcp_argv"] == []
+
+
+def test_prepare_shell_prefix_refuses_writable_root(linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    """A policy beneath any session-writable root is rejected before launch."""
+    feature, _main = linked
+    monkeypatch.setenv("XDG_STATE_HOME", str(feature))
+
+    with pytest.raises(RuntimeError, match="writable by the session"):
+        native.prepare_shell_prefix(feature, {}, "legacy", rtk=False)
+
+
+_SECRET = "ghp_SECRET_TOKEN_VALUE"
+
+
+def _launch_harness(
+    linked: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    primary_toml: str | None,
+    worktree_toml: str | None = None,
+) -> tuple[Path, dict[str, object]]:
+    """Wire launch_worker to a fake claude and record the plan domains, exec command and env."""
+    feature, main = linked
+    if primary_toml is not None:
+        (main / "pyproject.toml").write_text(primary_toml)
+    if worktree_toml is not None:
+        (feature / "pyproject.toml").write_text(worktree_toml)
+    seen: dict[str, object] = {"gh_calls": 0, "exec": None}
+
+    def fake_plan(cwd: Path, *, allowed_domains=()):  # noqa: ANN001, ANN202
+        seen["domains"] = list(allowed_domains)
+        return "required", False, "", {}
+
+    monkeypatch.setattr(native.shutil, "which", lambda name: f"/usr/bin/{name}" if name in ("claude", "gh") else None)
+    monkeypatch.setattr(native, "_native_roots", lambda cwd: (feature, feature / ".git", main))
+    monkeypatch.setattr(native, "plan_native_launch", fake_plan)
+    monkeypatch.setattr(native, "native_root_env", lambda cwd: {})
+    monkeypatch.setattr(native, "_allocate_session_cache", lambda: feature / "cache")
+    monkeypatch.setattr(native.os, "chdir", lambda cwd: None)
+    monkeypatch.setattr(native.os, "execvpe", lambda *args: seen.__setitem__("exec", args))
+    monkeypatch.delenv(native.MODE_ENV, raising=False)
+    return feature, seen
+
+
+def _fake_gh(
+    monkeypatch: pytest.MonkeyPatch, seen: dict[str, object], *, code: int = 0, out: str = _SECRET + "\n"
+) -> None:
+    def run(cmd, **kwargs):  # noqa: ANN001, ANN003, ANN202
+        seen["gh_calls"] = int(seen["gh_calls"]) + 1  # type: ignore[call-overload]
+        return subprocess.CompletedProcess(cmd, code, stdout=out, stderr="")
+
+    monkeypatch.setattr(native.subprocess, "run", run)
+
+
+_CONFIG = 'tool = {parrot = {sdd = {sandbox_allowed_domains = ["api.github.com"], gh_token = true}}}\n'
+
+
+def test_launch_config_domains_union_with_flags(linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    """Primary-checkout config domains reach the plan, unioned order-stably with flags."""
+    feature, seen = _launch_harness(linked, monkeypatch, primary_toml=_CONFIG)
+    _fake_gh(monkeypatch, seen)
+    args = ["--sandbox-allow-domain", "pypi.org", "--sandbox-allow-domain", "API.github.com"]
+    assert native.launch_worker(args, cwd=feature) == 1
+    assert seen["domains"] == ["api.github.com", "pypi.org"]
+
+
+def test_worktree_config_is_ignored(linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    """A worktree pyproject (session-writable) never widens egress."""
+    feature, seen = _launch_harness(
+        linked,
+        monkeypatch,
+        primary_toml=None,
+        worktree_toml='tool = {parrot = {sdd = {sandbox_allowed_domains = ["evil.example.com"], gh_token = true}}}\n',
+    )
+    _fake_gh(monkeypatch, seen)
+    native.launch_worker([], cwd=feature)
+    assert seen["domains"] == []
+    assert seen["gh_calls"] == 0
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        'sandbox_allowed_domains = "api.github.com"',
+        'sandbox_allowed_domains = ["https://github.com"]',
+        "gh_token = 1",
+        "sandbox_allowed_domains = [",
+    ],
+)
+def test_malformed_launch_config_exits_2(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], body: str
+) -> None:
+    """Bad config refuses to launch claude and names the file."""
+    feature, seen = _launch_harness(linked, monkeypatch, primary_toml=f"[tool.parrot.sdd]\n{body}\n")
+    assert native.launch_worker([], cwd=feature) == 2
+    assert seen["exec"] is None
+    assert "Invalid sandbox launch config" in capsys.readouterr().err
+
+
+def test_gh_token_injected_never_leaked(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The host-resolved token reaches only the exec env, never argv or output."""
+    feature, seen = _launch_harness(linked, monkeypatch, primary_toml=_CONFIG)
+    _fake_gh(monkeypatch, seen)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    native.launch_worker([], cwd=feature)
+    _path, command, env = seen["exec"]  # type: ignore[misc]
+    assert env["GH_TOKEN"] == _SECRET
+    assert all(_SECRET not in part for part in command)
+    captured = capsys.readouterr()
+    assert _SECRET not in captured.out + captured.err
+
+
+def test_existing_gh_token_kept_and_gh_not_called(linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    """A GH_TOKEN already in the environment wins."""
+    feature, seen = _launch_harness(linked, monkeypatch, primary_toml=_CONFIG)
+    _fake_gh(monkeypatch, seen)
+    monkeypatch.setenv("GH_TOKEN", "preset")
+    native.launch_worker([], cwd=feature)
+    assert seen["gh_calls"] == 0
+    assert seen["exec"][2]["GH_TOKEN"] == "preset"  # type: ignore[index]
+
+
+def test_no_gh_token_flag_skips_resolution(linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    """--no-gh-token is launcher-owned: no token, no gh call, not forwarded to claude."""
+    feature, seen = _launch_harness(linked, monkeypatch, primary_toml=_CONFIG)
+    _fake_gh(monkeypatch, seen)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    native.launch_worker(["--no-gh-token"], cwd=feature)
+    assert seen["gh_calls"] == 0
+    assert "GH_TOKEN" not in seen["exec"][2]  # type: ignore[index]
+    assert "--no-gh-token" not in seen["exec"][1]  # type: ignore[index]
+
+
+@pytest.mark.parametrize("failure", ["missing", "nonzero", "timeout", "empty"])
+def test_gh_token_failure_warns_and_launches(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], failure: str
+) -> None:
+    """Any gh failure warns on stderr and proceeds without GH_TOKEN."""
+    feature, seen = _launch_harness(linked, monkeypatch, primary_toml=_CONFIG)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    if failure == "missing":
+        monkeypatch.setattr(native.shutil, "which", lambda name: "/usr/bin/claude" if name == "claude" else None)
+    elif failure == "nonzero":
+        _fake_gh(monkeypatch, seen, code=1, out=_SECRET)
+    elif failure == "empty":
+        _fake_gh(monkeypatch, seen, out="  \n")
+    else:
+
+        def boom(cmd, **kwargs):  # noqa: ANN001, ANN003, ANN202
+            raise subprocess.TimeoutExpired(cmd, 10)
+
+        monkeypatch.setattr(native.subprocess, "run", boom)
+    native.launch_worker([], cwd=feature)
+    captured = capsys.readouterr()
+    assert "WARNING gh_token is enabled but no token could be obtained" in captured.err
+    assert _SECRET not in captured.out + captured.err
+    assert seen["exec"] is not None
+    assert "GH_TOKEN" not in seen["exec"][2]  # type: ignore[index]
+
+
+@pytest.mark.parametrize(
+    ("mode", "degraded"),
+    [("required", False), ("preferred", True), ("off", False), ("legacy", False)],
+)
+def test_notification_settings_preserve_policy(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, mode: str, degraded: bool
+) -> None:
+    """A marked tmux feature adds one Stop command without changing compiled policy."""
+    feature, _main = linked
+    captured: list[tuple[object, ...]] = []
+    settings = {
+        "sandbox": {"enabled": mode != "legacy", "network": {"allowAllUnixSockets": False}},
+        "hooks": {
+            "PreToolUse": [{"hooks": [{"type": "command", "command": "pre", "timeout": 10}]}],
+            "Stop": [{"hooks": [{"type": "command", "command": "existing", "timeout": 9}]}],
+        },
+    }
+
+    def configure(cache: Path, *, worktree: Path, env: dict[str, str]) -> str:
+        assert cache == feature / "cache" and worktree == feature
+        assert env["TMUX_PANE"] == "%4"
+        return "helper --hook"
+
+    class Loader:
+        def exec_module(self, module: object) -> None:
+            module.configure_notification = configure
+
+    spec = type("Spec", (), {"loader": Loader()})()
+    monkeypatch.setattr(native.shutil, "which", lambda name: "/usr/bin/claude" if name == "claude" else None)
+    monkeypatch.setattr(native, "_native_roots", lambda cwd: (feature, feature / ".git", feature))
+    monkeypatch.setattr(native, "plan_native_launch", lambda *args, **kwargs: (mode, degraded, "", settings))
+    monkeypatch.setattr(native, "native_root_env", lambda cwd: {})
+    monkeypatch.setattr(native, "_allocate_session_cache", lambda: feature / "cache")
+    monkeypatch.setattr(native.importlib.util, "spec_from_file_location", lambda *args: spec)
+    monkeypatch.setattr(native.importlib.util, "module_from_spec", lambda spec: type("Helper", (), {})())
+    monkeypatch.setattr(native.os, "chdir", lambda cwd: captured.append(("chdir", cwd)))
+    monkeypatch.setattr(native.os, "execvpe", lambda *args: captured.append(args))
+
+    native.launch_worker(
+        [],
+        cwd=feature,
+        base_env={
+            "TMUX_PANE": "%4",
+            "PARROT_SDD_NOTIFY_FEATURE": "FEAT-768",
+            "PARROT_SDD_NOTIFY_SLUG": "sandbox",
+            "PARROT_SDD_NOTIFY_DESKTOP": "{}",
+        },
+    )
+    command = captured[1][1]
+    compiled = json.loads(command[command.index("--settings") + 1])
+    environment = captured[1][2]
+    assert compiled["sandbox"] == {"enabled": mode != "legacy", "network": {"allowAllUnixSockets": False}}
+    assert compiled["hooks"]["PreToolUse"] == settings["hooks"]["PreToolUse"]
+    assert compiled["hooks"]["Stop"] == [
+        {"hooks": [{"type": "command", "command": "existing", "timeout": 9}]},
+        {"hooks": [{"type": "command", "command": "helper --hook", "timeout": 5}]},
+    ]
+    assert environment["PARROT_SDD_NOTIFY_PYTHON"] == str(Path(native.sys.executable).absolute())
+    assert environment["PARROT_SDD_NOTIFY_HELPER"] == str(
+        Path(native.__file__).resolve().with_name("worker_notification.py")
+    )
+
+
+@pytest.mark.parametrize(
+    "base_env",
+    [
+        {
+            "PARROT_SDD_NOTIFY_FEATURE": "FEAT-768",
+            "PARROT_SDD_NOTIFY_SLUG": "sandbox",
+            "PARROT_SDD_NOTIFY_DESKTOP": "{}",
+        },
+        {
+            "TMUX_PANE": "%4",
+            "PARROT_SDD_NOTIFY_FEATURE": "",
+            "PARROT_SDD_NOTIFY_SLUG": "sandbox",
+            "PARROT_SDD_NOTIFY_DESKTOP": "{}",
+        },
+    ],
+)
+def test_notification_requires_tmux_and_complete_metadata(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, base_env: dict[str, str]
+) -> None:
+    """Missing tmux state or identity cannot load a helper or retain stale exports."""
+    feature, _main = linked
+    captured: list[tuple[object, ...]] = []
+    base_env.update({"PARROT_SDD_NOTIFY_PYTHON": "/stale/python", "PARROT_SDD_NOTIFY_HELPER": "/stale/helper"})
+    monkeypatch.setattr(native.shutil, "which", lambda name: "/usr/bin/claude" if name == "claude" else None)
+    monkeypatch.setattr(native, "_native_roots", lambda cwd: (feature, feature / ".git", feature))
+    monkeypatch.setattr(native, "plan_native_launch", lambda *args, **kwargs: ("required", False, "", {"hooks": {}}))
+    monkeypatch.setattr(native, "native_root_env", lambda cwd: {})
+    monkeypatch.setattr(native, "_allocate_session_cache", lambda: feature / "cache")
+    monkeypatch.setattr(
+        native.importlib.util, "spec_from_file_location", lambda *args: pytest.fail("metadata must gate helper loading")
+    )
+    monkeypatch.setattr(native.os, "chdir", lambda cwd: captured.append(("chdir", cwd)))
+    monkeypatch.setattr(native.os, "execvpe", lambda *args: captured.append(args))
+
+    native.launch_worker([], cwd=feature, base_env=base_env)
+    environment = captured[1][2]
+    assert "PARROT_SDD_NOTIFY_PYTHON" not in environment
+    assert "PARROT_SDD_NOTIFY_HELPER" not in environment
+
+
+def test_notification_setup_failure_does_not_fail_launch(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Invalid metadata and helper loading failures keep the worker executable."""
+    feature, _main = linked
+    captured: list[tuple[object, ...]] = []
+    settings = {"hooks": {"PreToolUse": [{"hooks": [{"type": "command", "command": "pre", "timeout": 10}]}]}}
+    monkeypatch.setattr(native.shutil, "which", lambda name: "/usr/bin/claude" if name == "claude" else None)
+    monkeypatch.setattr(native, "_native_roots", lambda cwd: (feature, feature / ".git", feature))
+    monkeypatch.setattr(native, "plan_native_launch", lambda *args, **kwargs: ("required", False, "", settings))
+    monkeypatch.setattr(native, "native_root_env", lambda cwd: {})
+    monkeypatch.setattr(native, "_allocate_session_cache", lambda: feature / "cache")
+    monkeypatch.setattr(
+        native.importlib.util, "spec_from_file_location", lambda *args: (_ for _ in ()).throw(OSError("gone"))
+    )
+    monkeypatch.setattr(native.os, "chdir", lambda cwd: captured.append(("chdir", cwd)))
+    monkeypatch.setattr(native.os, "execvpe", lambda *args: captured.append(args))
+
+    native.launch_worker(
+        [],
+        cwd=feature,
+        initial_prompt="run FEAT-768",
+        base_env={
+            "TMUX_PANE": "%4",
+            "PARROT_SDD_NOTIFY_FEATURE": "FEAT-768",
+            "PARROT_SDD_NOTIFY_SLUG": "sandbox",
+            "PARROT_SDD_NOTIFY_DESKTOP": "{}",
+            "PARROT_SDD_NOTIFY_PYTHON": "/stale/python",
+            "PARROT_SDD_NOTIFY_HELPER": "/stale/helper",
+        },
+    )
+    command = captured[1][1]
+    compiled = json.loads(command[command.index("--settings") + 1])
+    environment = captured[1][2]
+    assert compiled == settings
+    assert "PARROT_SDD_NOTIFY_PYTHON" not in environment
+    assert "PARROT_SDD_NOTIFY_HELPER" not in environment
+    assert command[-1] == "run FEAT-768"
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "https://github.com",
+        "*.github.com",
+        "github.com:443",
+        "10.0.0.1",
+        "::1",
+        "",
+        "127.1",
+        "2130706433",
+        "0x7f.1",
+        "1.2.3",
+        "localhost",
+        "metadata",
+    ],
+)
+def test_domain_rejected(linked: tuple[Path, Path], bad: str) -> None:
+    """Only exact DNS hostnames are valid egress grants."""
+    assert linked
+    with pytest.raises(ValueError):
+        native.validate_allowed_domains([bad])
+
+
+def test_write_matrix_positive_and_negative(linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    """Task paths are writable while environments and control paths are protected."""
+    feature, main = linked
+    monkeypatch.setenv("XDG_DATA_HOME", str(main / "data"))
+    task_file = feature / "task.py"
+    native.validate_native_write_path(feature, task_file)
+    native.validate_native_write_path(feature, policy.claude_scratch_root() / "scratch.txt")
+    native.validate_native_write_path(feature, main / ".parrot" / "worktrees" / "new" / "file")
+    denied = [
+        feature / ".venv" / "editable.pth",
+        main / ".git" / "config",
+        main / ".git" / "hooks" / "pre-commit",
+        main / ".git" / "worktrees" / "feat" / "config.worktree",
+        main / "data" / "rtk" / "trust.json",
+        feature / ".claude" / "settings.local.json",
+        feature / "packages" / "ai-parrot" / "src" / "parrot" / "flows" / "dev_loop" / "native_claude_sandbox.py",
+        feature / "packages" / "ai-parrot" / "src" / "parrot" / "sdd" / "scripts" / "native_claude_sandbox.py",
+        feature / "packages" / "ai-parrot" / "src" / "parrot" / "sdd" / "scripts" / "worktree_environment.py",
+        Path(native.__file__).resolve().parent / "worktree_environment.py",
+    ]
+    for target in denied:
+        with pytest.raises(ValueError):
+            native.validate_native_write_path(feature, target)
+
+
+def test_task_cwd_prefix_rules(linked: tuple[Path, Path]) -> None:
+    """A literal absolute prefix selects a sibling linked worktree; a relative one resolves against the session."""
+    feature, main = linked
+    pool = main / ".parrot" / "worktrees" / "pool"
+    assert native.native_task_cwd(feature, f"cd {pool} && pytest -q") == pool.resolve()
+    assert native.native_task_cwd(feature, "pytest -q") == feature
+    # issue:2860a2723bad — `cd packages && …` stays inside the session worktree, so the hook roots there
+    # instead of denying the command with "Native task cwd must be an absolute path".
+    assert native.native_task_cwd(feature, "cd packages && python3 - <<'PY'\nimport re\nPY") == feature.resolve()
+    assert native.native_task_cwd(feature, "cd ./packages/x/src && pytest -q") == feature.resolve()
+    assert native.native_task_cwd(feature, "cd ../pool && pytest -q") == pool.resolve()
+    for command in (
+        f"cd '{pool}' && pytest -q",
+        "cd $HOME && pytest -q",
+        "cd /tmp && pytest -q",
+        "cd /tmp",
+        "cd .. && pytest -q",  # the primary checkout's worktree directory
+        "cd ../../.. && pytest -q",  # the primary checkout itself
+    ):
+        with pytest.raises(ValueError):
+            native.native_task_cwd(feature, command)
+
+
+def test_environment_does_not_mutate_os_environ(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, scratch_root: Path
+) -> None:
+    """Native environment values are task-local and leave process state unchanged."""
+    feature, _main = linked
+    before = dict(os.environ)
+    monkeypatch.setenv(native.CACHE_DIR_ENV, str(scratch_root / "configured"))
+    environment = native.native_command_environment(feature)
+    assert environment["UV_NO_SYNC"] == "1"
+    assert environment["PYTHONDONTWRITEBYTECODE"] == "1"
+    assert environment["PYTHONPATH"].split(os.pathsep)[0] == str(feature / "packages" / "x" / "src")
+    assert Path(environment["XDG_CACHE_HOME"]).is_relative_to(scratch_root)
+    assert Path(environment["UV_CACHE_DIR"]).is_relative_to(scratch_root)
+    assert Path(environment["TIKTOKEN_CACHE_DIR"]).is_relative_to(scratch_root)
+    assert os.environ[native.CACHE_DIR_ENV] == str(scratch_root / "configured")
+    assert {key: value for key, value in os.environ.items() if key != native.CACHE_DIR_ENV} == {
+        key: value for key, value in before.items() if key != native.CACHE_DIR_ENV
+    }
+
+
+def test_module_imports_as_script_sibling() -> None:
+    """The module has no package-import dependency when loaded as a script sibling."""
+    module_dir = str(Path(native.__file__).parent)
+    code = f"import sys; sys.path.insert(0, {module_dir!r}); import native_claude_sandbox"
+    result = subprocess.run([sys.executable, "-S", "-c", code], capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr
+
+
+def test_hook_command_uses_the_launching_interpreter(linked: tuple[Path, Path]) -> None:
+    feature, _main = linked
+    command = native.native_sandbox_settings(feature)["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+    assert command.startswith((native.shlex.quote(sys.executable), sys.executable))
+
+
+def test_hook_import_closure_is_write_protected(linked: tuple[Path, Path]) -> None:
+    """Every module the host-side experience hook imports is a control file (issue:7993840a23a1).
+
+    ``experience_hook`` imports ``transitions`` at module top, and importing either executes each
+    parent package's ``__init__``; a worktree-writable copy of any of them would run host-side.
+    """
+    feature, _main = linked
+    running = Path(native.__file__).resolve().parents[2]
+    worktree = feature / "packages" / "ai-parrot" / "src" / "parrot"
+    deny = native.native_sandbox_settings(feature)["sandbox"]["filesystem"]["denyWrite"]
+    for package_root in (running, worktree):
+        targets = [
+            package_root / "knowledge" / "wiki" / "experience" / "transitions.py",
+            package_root / "knowledge" / "wiki" / "experience" / "fastpath.py",
+            package_root / "__init__.py",
+            package_root / "version.py",
+            package_root / "sdd" / "__init__.py",
+            package_root / "sdd" / "scripts" / "__init__.py",
+            package_root / "knowledge" / "__init__.py",
+            package_root / "knowledge" / "wiki" / "__init__.py",
+            package_root / "knowledge" / "wiki" / "experience" / "__init__.py",
+        ]
+        for target in targets:
+            assert str(target.resolve()) in deny, target
+    with pytest.raises(ValueError):
+        native.validate_native_write_path(feature, worktree / "knowledge" / "wiki" / "experience" / "transitions.py")
+    with pytest.raises(ValueError):
+        native.validate_native_write_path(feature, worktree / "knowledge" / "wiki" / "__init__.py")
+
+
+def test_hook_import_closure_matches_the_hook_source() -> None:
+    """The protected list covers every ``parrot`` module ``experience_hook`` imports at module top."""
+    import ast
+
+    package_root = Path(native.__file__).resolve().parents[2]
+    protected = set(native._control_files(package_root.parents[3]))
+    pending = [package_root / "sdd" / "scripts" / "experience_hook.py"]
+    seen: set[Path] = set()
+    while pending:
+        source = pending.pop()
+        if source in seen:
+            continue
+        seen.add(source)
+        assert source in protected, source
+        for node in ast.parse(source.read_text(encoding="utf-8")).body:
+            if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("parrot."):
+                parts = node.module.split(".")[1:]
+                pending.append(package_root.joinpath(*parts).with_suffix(".py"))
+                for depth in range(len(parts)):
+                    assert package_root.joinpath(*parts[:depth], "__init__.py") in protected
+
+
+@pytest.mark.parametrize(
+    "module",
+    ["parrot.sdd.scripts.experience_hook", "parrot.sdd.scripts.worktree_environment"],
+)
+def test_hook_runtime_import_closure_is_protected(module: str, tmp_path: Path) -> None:
+    """Every ``parrot`` file a host-side hook loads at import time is a control file (issue:57c0839196d4).
+
+    The closure is measured in a fresh interpreter rather than parsed, so a relative import inside a
+    package ``__init__`` (``parrot/__init__.py`` -> ``version.py``) cannot slip past the protected list.
+    """
+    package_root = Path(native.__file__).resolve().parents[2]
+    protected = set(native._control_files(package_root.parents[3]))
+    probe = (
+        "import importlib, json, sys\n"
+        f"importlib.import_module({module!r})\n"
+        "files = [getattr(m, '__file__', None) for n, m in sys.modules.items() if n.split('.')[0] == 'parrot']\n"
+        "print(json.dumps(sorted(f for f in files if f)))\n"
+    )
+    env = {**os.environ, "PYTHONPATH": str(package_root.parent)}
+    done = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True, env=env, cwd=tmp_path, check=True
+    )
+    loaded = [Path(item).resolve() for item in json.loads(done.stdout.strip().splitlines()[-1])]
+    inside = [path for path in loaded if path.is_relative_to(package_root)]
+    assert package_root / "version.py" in inside
+    assert package_root.joinpath(*module.split(".")[1:]).with_suffix(".py") in inside
+    assert [path for path in inside if path not in protected] == []
+
+
+def test_launch_worker_marks_experience_hooks_isolated(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The worker environment tells a project-settings experience hook to stand down."""
+    from parrot.sdd.scripts import experience_hook
+
+    feature, seen = _launch_harness(linked, monkeypatch, primary_toml=None)
+    monkeypatch.delenv(native.EXPERIENCE_ISOLATED_ENV, raising=False)
+    native.launch_worker([], cwd=feature)
+    _path, _command, env = seen["exec"]  # type: ignore[misc]
+    assert native.EXPERIENCE_ISOLATED_ENV == experience_hook.ISOLATED_ENV
+    assert env[native.EXPERIENCE_ISOLATED_ENV] == "1"
+
+
+def test_sibling_worktree_admin_dirs_are_denied(linked: tuple[Path, Path]) -> None:
+    feature, main = linked
+    sibling = main / ".git" / "worktrees" / "other"
+    sibling.mkdir()
+    deny = native.native_sandbox_settings(feature)["sandbox"]["filesystem"]["denyWrite"]
+    assert str(sibling.resolve()) in deny
+    assert str((main / ".git" / "worktrees" / "feat").resolve()) not in deny  # our own admin dir stays usable
+
+
+def test_native_settings_experience_hooks(linked: tuple[Path, Path]) -> None:
+    """Generate exact advisory hook entries with the primary shared interpreter."""
+    feature, main = linked
+    shared_python = main / ".venv" / "bin" / "python"
+    shared_python.parent.mkdir()
+    shared_python.symlink_to(sys.executable)
+    settings = native.native_sandbox_settings(feature)
+
+    assert settings["hooks"]["PostToolUse"] == [
+        {
+            "matcher": "Bash",
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": native.shlex.join(
+                        [
+                            str(shared_python),
+                            "-I",
+                            "-m",
+                            "parrot.sdd.scripts.experience_hook",
+                            "--host",
+                            "claude",
+                            "--event",
+                            "post",
+                            "--isolated",
+                        ]
+                    ),
+                    "timeout": 5,
+                }
+            ],
+        }
+    ]
+    assert settings["hooks"]["PostToolUseFailure"][0]["matcher"] == "Bash"
+    failure_command = settings["hooks"]["PostToolUseFailure"][0]["hooks"][0]["command"]
+    assert "--event post-failure" in failure_command
+    assert "|| exit 2" not in failure_command
+    assert all("experience_hook" not in hook.get("command", "") for hook in settings["hooks"]["PreToolUse"][0]["hooks"])
+    assert str(feature / ".venv" / "bin" / "python") not in settings["hooks"]["PostToolUse"][0]["hooks"][0]["command"]
+    pre_tool_command = settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+    assert pre_tool_command.startswith(native.shlex.quote(str(shared_python)) + " ")
+    assert str(shared_python.resolve()) not in pre_tool_command
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX venv layout (bin/python symlink)")
+def test_shared_python_keeps_the_venv_symlink_importable(tmp_path: Path) -> None:
+    """The hook interpreter must start through the venv link, or the venv's packages vanish.
+
+    Regression for issue:1315b9a83d8a: resolving ``.venv/bin/python`` lands on the base interpreter,
+    which never reads ``pyvenv.cfg``, so ``import parrot`` failed in the PreToolUse guard (``|| exit 2``).
+    """
+    base = Path(sys.executable).resolve()
+    primary = tmp_path / "primary"
+    venv = primary / ".venv"
+    (venv / "bin").mkdir(parents=True)
+    (venv / "pyvenv.cfg").write_text(f"home = {base.parent}\ninclude-system-site-packages = false\n")
+    (venv / "bin" / "python").symlink_to(base)
+    version = f"python{sys.version_info.major}.{sys.version_info.minor}"
+    site_packages = venv / "lib" / version / "site-packages"
+    site_packages.mkdir(parents=True)
+    (site_packages / "feat887_venv_marker.py").write_text("VALUE = 'venv'\n")
+    probe = ["-I", "-c", "import feat887_venv_marker as m; print(m.VALUE)"]
+
+    python = native._shared_python(primary)
+
+    assert python == venv / "bin" / "python"
+    assert python.is_symlink()
+    ran = subprocess.run([str(python), *probe], capture_output=True, text=True, timeout=30, check=False)
+    assert ran.returncode == 0, ran.stderr
+    assert ran.stdout.strip() == "venv"
+    # The resolved target is the base interpreter: it cannot see the venv (the bug this guards).
+    resolved = subprocess.run([str(python.resolve()), *probe], capture_output=True, text=True, timeout=30, check=False)
+    assert resolved.returncode != 0
+
+
+def test_agent_frontmatter_has_no_experience_hooks() -> None:
+    """Shipped Claude agent frontmatter does not duplicate settings-level experience hooks."""
+    paths = (
+        Path(".claude/agents/sdd-coder.md"),
+        Path(".claude/agents/sdd-worker.md"),
+        Path("packages/ai-parrot/src/parrot/sdd/_assets/claude/agents/sdd-coder.md"),
+        Path("packages/ai-parrot/src/parrot/sdd/_assets/claude/agents/sdd-worker.md"),
+        Path("packages/ai-parrot/src/parrot/sdd/_assets/agents/agents/sdd-coder/agent.md"),
+        Path("packages/ai-parrot/src/parrot/sdd/_assets/agents/agents/sdd-worker/agent.md"),
+    )
+    for path in paths:
+        assert path.is_file()
+        assert "parrot sdd experience hook" not in path.read_text(encoding="utf-8")
+
+
+def test_frozen_roots_win_over_a_forged_git_marker(linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    feature, main = linked
+    root_env = native.native_root_env(feature)
+    frozen = root_env[native.ROOTS_ENV].split(native.os.pathsep)
+    assert [Path(p) for p in frozen] == list(native._native_roots(feature))
+
+    monkeypatch.setenv(native.ROOTS_ENV, root_env[native.ROOTS_ENV])
+    (feature / ".git").write_text("gitdir: /nonexistent/forged\n", encoding="utf-8")  # session-writable marker
+    assert native._native_roots(feature / "sub") == tuple(Path(p) for p in frozen)
+    with pytest.raises(ValueError):  # a cwd outside the frozen root still derives (and here fails) on its own
+        native._native_roots(main / "elsewhere")
+
+
+def test_script_mode_sibling_import_resolves_inside_sdd_scripts(tmp_path: Path) -> None:
+    """Under ``python -S`` (no parrot) the shims + moved files stay co-importable as script siblings."""
+    import subprocess
+    import sys
+
+    dev_loop = Path(native.__file__).resolve().parents[2] / "flows" / "dev_loop"
+    code = (
+        "import importlib.util, sys; sys.path.insert(0, sys.argv[1]); "
+        "import native_claude_sandbox as n, worktree_environment as w; "
+        "assert 'parrot' not in sys.modules, 'parrot'; "
+        "assert n.__file__.endswith('sdd/scripts/native_claude_sandbox.py'), n.__file__; "
+        "assert n._we is w or n._we.__file__.endswith('worktree_environment.py'); "
+        "p = __import__('pathlib').Path(n.__file__).with_name('worker_notification.py'); "
+        "s = importlib.util.spec_from_file_location('worker_notification', p); "
+        "m = importlib.util.module_from_spec(s); s.loader.exec_module(m); "
+        "assert callable(m.configure_notification); assert 'parrot' not in sys.modules; print('ok')"
+    )
+    result = subprocess.run(
+        [sys.executable, "-S", "-c", code, str(dev_loop)],
+        capture_output=True,
+        text=True,
+        env={},
+        cwd=tmp_path,
+        check=False,
+    )
+    assert result.stdout.strip() == "ok", result.stderr
+
+
+def test_script_mode_native_settings_for_a_linked_worktree(linked: tuple[Path, Path], tmp_path: Path) -> None:
+    """The tmux child (``python -S``) builds settings for a linked worktree without importing parrot."""
+    feature, main = linked
+    admin_root = main / ".parrot" / "worktrees"
+    admin_root.mkdir(parents=True, exist_ok=True)
+    dev_loop = Path(native.__file__).resolve().parents[2] / "flows" / "dev_loop"
+    code = (
+        "import sys; sys.path.insert(0, sys.argv[1]); from pathlib import Path; "
+        "import native_claude_sandbox as n, worktree_environment as w; "
+        "s = n.native_sandbox_settings(Path(sys.argv[2])); "
+        "assert 'parrot' not in sys.modules, 'parrot'; "
+        "print(sys.argv[3] in s['sandbox']['filesystem']['allowWrite'])"
+    )
+    result = subprocess.run(
+        [sys.executable, "-S", "-c", code, str(dev_loop), str(feature), str(admin_root.resolve())],
+        capture_output=True,
+        text=True,
+        env={"HOME": str(tmp_path)},
+        cwd=tmp_path,
+        check=False,
+    )
+    assert result.stdout.strip() == "True", result.stderr
+
+
+def test_tiktoken_cache_is_shared_not_per_session(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, scratch_root: Path
+) -> None:
+    """The tiktoken cache survives the launcher reaping per-session caches."""
+    feature, _main = linked
+    session = scratch_root / "parrot-sdd-cache" / "8c1b7f0e-6a4e-4d8a-9b1e-2f6c5d4a3b21"
+    monkeypatch.setenv(native.CACHE_DIR_ENV, str(session))
+    environment = native.native_command_environment(feature)
+    cache = Path(environment["TIKTOKEN_CACHE_DIR"])
+    assert cache == native.tiktoken_cache_dir()
+    assert not cache.is_relative_to(session)
+    assert cache.parent.name.startswith("shared-")
+
+
+def test_warm_tiktoken_cache_copies_host_cache_without_download(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Encodings already cached on the host are copied; nothing is downloaded."""
+    host_tmp = tmp_path / "host-tmp"
+    host_cache = host_tmp / "data-gym-cache"
+    host_cache.mkdir(parents=True)
+    encoding = "9b5ad71b2ce5302211f9c61530b329a4922fc6a4"
+    (host_cache / encoding).write_bytes(b"encoding")
+    (host_cache / "notes.txt").write_text("not an encoding", encoding="utf-8")
+    (host_cache / ("a" * 40)).symlink_to(host_cache / "notes.txt")
+
+    def no_download(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("must not download when the host cache is seeded")
+
+    monkeypatch.setattr(native.subprocess, "run", no_download)
+    target = tmp_path / "sandbox-cache"
+    _REAL_WARM_TIKTOKEN_CACHE(target, {"TMPDIR": str(host_tmp)})
+    assert sorted(entry.name for entry in target.iterdir()) == [encoding]
+    assert (target / encoding).read_bytes() == b"encoding"
+
+
+def test_warm_tiktoken_cache_downloads_into_target_when_host_cache_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With no host cache, the host downloads straight into the sandbox cache, bounded by a timeout."""
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(native.importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(native.subprocess, "run", lambda argv, **kwargs: calls.append({"argv": argv, **kwargs}))
+    target = tmp_path / "sandbox-cache"
+    _REAL_WARM_TIKTOKEN_CACHE(target, {"TMPDIR": str(tmp_path / "empty-tmp")})
+    assert len(calls) == 1
+    assert calls[0]["env"]["TIKTOKEN_CACHE_DIR"] == str(target)  # type: ignore[index]
+    assert calls[0]["timeout"] == native._TIKTOKEN_WARM_TIMEOUT_S
+    assert "cl100k_base" in calls[0]["argv"][-1]  # type: ignore[index]
+
+
+def test_warm_tiktoken_cache_never_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A slow or failing download leaves the cache empty instead of failing the launch."""
+
+    def timeout(*_args: object, **_kwargs: object) -> None:
+        raise subprocess.TimeoutExpired(cmd="tiktoken", timeout=1)
+
+    monkeypatch.setattr(native.importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(native.subprocess, "run", timeout)
+    _REAL_WARM_TIKTOKEN_CACHE(tmp_path / "sandbox-cache", {"TMPDIR": str(tmp_path / "empty-tmp")})
+
+
+@pytest.mark.parametrize("kind", ["symlink", "dangling-symlink", "fifo", "directory"])
+def test_prefix_mcp_config_rejects_nonregular_sources(linked: tuple[Path, Path], kind: str) -> None:
+    """A primary pathname cannot grant trust to a writable target or block on a FIFO."""
+    feature, primary = linked
+    config = primary / ".mcp.json"
+    if kind in {"symlink", "dangling-symlink"}:
+        target = feature / "editable.json"
+        if kind == "symlink":
+            target.write_text(json.dumps({"mcpServers": {"tool": {"command": "untrusted"}}}))
+        config.symlink_to(target)
+    elif kind == "fifo":
+        os.mkfifo(config)
+    else:
+        config.mkdir()
+
+    with pytest.raises(RuntimeError, match="symlink|regular file"):
+        native.prepare_shell_prefix(feature, {}, "legacy", rtk=False)
+
+
+@pytest.mark.parametrize(
+    ("value", "environ", "expected"),
+    [
+        ("${BIN}", {"BIN": "/opt/bin/server"}, "/opt/bin/server"),
+        ("${BIN:-server}", {}, "server"),
+        ("${BIN:-server}", {"BIN": ""}, "server"),
+        ("${BIN}", {}, "${BIN}"),
+        ("${BIN:-}", {}, ""),
+        ("${BIN}/${ARG}", {"BIN": "/opt/bin", "ARG": "two words"}, "/opt/bin/two words"),
+        ("${BIN}", {"BIN": "${OTHER}", "OTHER": "expanded-twice"}, "${OTHER}"),
+        ("$BIN $(echo untouched)", {"BIN": "server"}, "$BIN $(echo untouched)"),
+    ],
+)
+def test_mcp_expansion_matches_claude_semantics(value: str, environ: dict[str, str], expected: str) -> None:
+    """Expansion preserves empty/unset semantics, argv boundaries and nonrecursive substitutions."""
+    assert native._expand_mcp_argument(value, environ) == expected
+
+
+def test_prefix_snapshot_and_policy_share_one_config_read(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A source replacement after parsing cannot change the snapshot or its expanded allowlist."""
+    from parrot.sdd.scripts import shell_prefix
+
+    feature, primary = linked
+    source = primary / ".mcp.json"
+    original = {
+        "mcpServers": {
+            "tool": {"command": "${MCP_BIN}", "args": ["${ARG:-fallback}", "${EMPTY:-fallback}"]},
+            "remote": {"type": "http", "url": "https://example.invalid/mcp", "headers": {"X-Key": "${KEY}"}},
+        }
+    }
+    source.write_text(json.dumps(original))
+    real_load = native.load_prefix_mcp_config
+    reads = []
+
+    def load_then_replace(cwd: Path) -> dict[str, object]:
+        reads.append(cwd)
+        document = real_load(cwd)
+        source.write_text(json.dumps({"mcpServers": {"replacement": {"command": "different"}}}))
+        return document
+
+    monkeypatch.setattr(native, "load_prefix_mcp_config", load_then_replace)
+    monkeypatch.setenv("MCP_BIN", "parent-must-not-win")
+    environment = native.prepare_shell_prefix(
+        feature,
+        {},
+        "legacy",
+        rtk=False,
+        environ={"MCP_BIN": "/opt/tools/server", "ARG": "two words", "EMPTY": "", "KEY": "test-secret"},
+    )
+    policy_path = Path(environment["PARROT_SDD_SHELL_PREFIX_POLICY"])
+    snapshot = policy_path.with_name("mcp.json")
+    loaded, _digest = shell_prefix.load_policy(policy_path)
+
+    assert reads == [feature]
+    assert json.loads(snapshot.read_text()) == original
+    assert snapshot.stat().st_mode & 0o777 == 0o400
+    assert "test-secret" not in snapshot.read_text()
+    assert loaded.mcp_argv == (("/opt/tools/server", "two words", "fallback"),)
+    command = "/opt/tools/server 'two words' fallback"
+    assert shell_prefix.decide(command, loaded, feature).kind == "passthrough"
+
+
+def test_prefix_mcp_open_rejects_symlink_swap(linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    """Replacing a regular config after inspection cannot make open follow a writable target."""
+    feature, primary = linked
+    config = primary / ".mcp.json"
+    config.write_text('{"mcpServers": {}}')
+    target = feature / "editable.json"
+    target.write_text('{"mcpServers": {"bad": {"command": "untrusted"}}}')
+    real_open = os.open
+
+    def swap_before_open(path: Path, flags: int) -> int:
+        config.rename(primary / "original.json")
+        config.symlink_to(target)
+        return real_open(path, flags)
+
+    monkeypatch.setattr(native.os, "open", swap_before_open)
+    with pytest.raises(RuntimeError, match="safely open"):
+        native.load_prefix_mcp_config(feature)
+
+
+def test_agent_hooks_header_requires_yaml_comment_separator(tmp_path: Path) -> None:
+    """A malformed header cannot allowlist commands from a different YAML key."""
+    agent = tmp_path / "agent.md"
+    agent.write_text("---\nhooks:#not-a-comment\n  command: do-not-allow\n---\n")
+    assert native._agent_hook_commands(agent) == []
+
+
+@pytest.fixture
+def fake_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Pin the home directory, so the home guard does not depend on where pytest keeps tmp_path."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr(policy.Path, "home", classmethod(lambda cls: home))
+    return home
+
+
+def _extra_write_config(*paths: str | Path) -> str:
+    return f"[tool.parrot.sdd]\nsandbox_extra_write_paths = {json.dumps([str(path) for path in paths])}\n"
+
+
+def test_native_allow_write_includes_declared_extra_dir(
+    linked: tuple[Path, Path], tmp_path: Path, fake_home: Path
+) -> None:
+    """The native backend allows the operator-declared directory, exactly as Bubblewrap binds it."""
+    feature, main = linked
+    extra = tmp_path / "navigator"
+    (main / "pyproject.toml").write_text(_extra_write_config(extra))
+    allow = native.native_sandbox_settings(feature)["sandbox"]["filesystem"]["allowWrite"]
+    assert str(extra.resolve()) in allow
+    assert extra.is_dir()
+    assert "/tmp" not in allow and "/" not in allow
+    native.validate_native_write_path(feature, extra / "log" / "navigator.log")
+    assert extra.resolve() in native._prefix_writable_roots(feature)
+
+
+@pytest.mark.parametrize("paths", [["/tmp"], ["/tmp/navigator", "/tmp"], ["/"]])
+def test_native_allow_write_never_contains_tmp_itself(
+    linked: tuple[Path, Path], fake_home: Path, paths: list[str]
+) -> None:
+    """A whole shared tree cannot be granted: the declaration is refused and nothing from it is allowed."""
+    feature, main = linked
+    (main / "pyproject.toml").write_text(_extra_write_config(*paths))
+    allow = native.native_sandbox_settings(feature)["sandbox"]["filesystem"]["allowWrite"]
+    assert "/tmp" not in allow and "/" not in allow
+    assert "/tmp/navigator" not in allow
+    with pytest.raises(ValueError, match="Invalid sandbox launch config"):
+        native.load_launch_config(main)
+
+
+def test_worktree_pyproject_cannot_declare_native_extra_write_paths(
+    linked: tuple[Path, Path], tmp_path: Path, fake_home: Path
+) -> None:
+    """The worktree's own pyproject is session-writable and never widens the policy."""
+    feature, _main = linked
+    extra = tmp_path / "navigator"
+    (feature / "pyproject.toml").write_text(_extra_write_config(extra))
+    allow = native.native_sandbox_settings(feature)["sandbox"]["filesystem"]["allowWrite"]
+    assert str(extra.resolve()) not in allow
+
+
+@pytest.mark.parametrize(
+    "body",
+    ['sandbox_extra_write_paths = ["/tmp"]', 'sandbox_extra_write_paths = "/tmp/navigator"',
+     'sandbox_extra_write_paths = ["relative/dir"]'],
+)  # fmt: skip
+def test_malformed_extra_write_paths_exit_2(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], body: str
+) -> None:
+    """A bad extra-path declaration refuses to launch claude and names the file."""
+    feature, seen = _launch_harness(linked, monkeypatch, primary_toml=f"[tool.parrot.sdd]\n{body}\n")
+    assert native.launch_worker([], cwd=feature) == 2
+    assert seen["exec"] is None
+    assert "Invalid sandbox launch config" in capsys.readouterr().err

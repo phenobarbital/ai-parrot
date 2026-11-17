@@ -59,7 +59,7 @@ async def _shutdown(tool: PythonREPLTool) -> None:
         await tool._worker_pool.shutdown()
 
 
-async def test_cold_worker_seeding_survives_slow_bootstrap(tmp_path, caplog):
+async def test_cold_worker_seeding_survives_slow_bootstrap(repl_output_dir, caplog):
     """THE Probe B regression (AC7): an 8 s bootstrap no longer kills anything.
 
     Three consecutive calls on a tool whose worker takes 8 s to boot must all
@@ -69,7 +69,7 @@ async def test_cold_worker_seeding_survives_slow_bootstrap(tmp_path, caplog):
     caplog.set_level(logging.DEBUG, logger="parrot.tools.repl_worker")
     tool = PythonPandasTool(
         dataframes=None,
-        report_dir=str(tmp_path),
+        report_dir=str(repl_output_dir),
         setup_code=SLOW_BOOT,
         worker_config=COLD_START_CONFIG,
     )
@@ -89,7 +89,7 @@ async def test_cold_worker_seeding_survives_slow_bootstrap(tmp_path, caplog):
         await _shutdown(tool)
 
 
-async def test_pandas_seeding_order_independent(tmp_path, caplog):
+async def test_pandas_seeding_order_independent(repl_output_dir, caplog):
     """A DataFrame plus its scalar metadata seed fine in ANY order (F009/F016 C6).
 
     `_get_worker_handle()` iterates `set(self.df_locals) - self._seeded_df_names`,
@@ -103,7 +103,7 @@ async def test_pandas_seeding_order_independent(tmp_path, caplog):
 
     tool = PythonPandasTool(
         dataframes={"sales": frame},
-        report_dir=str(tmp_path),
+        report_dir=str(repl_output_dir),
         setup_code=SLOW_BOOT,
         worker_config=COLD_START_CONFIG,
     )
@@ -130,7 +130,7 @@ async def test_pandas_seeding_order_independent(tmp_path, caplog):
         await _shutdown(tool)
 
 
-async def test_namespace_api_after_soft_timeout_keeps_state(tmp_path, monkeypatch):
+async def test_namespace_api_after_soft_timeout_keeps_state(repl_output_dir, monkeypatch):
     """AC3 end-to-end: a non-lethal namespace timeout preserves the namespace.
 
     Set `x = 1`, force one `list_vars()` timeout on a tight
@@ -145,7 +145,7 @@ async def test_namespace_api_after_soft_timeout_keeps_state(tmp_path, monkeypatc
         prewarm_pool_size=0,
         namespace_timeout_ms=200,
     )
-    tool = PythonREPLTool(report_dir=str(tmp_path), worker_config=config)
+    tool = PythonREPLTool(report_dir=str(repl_output_dir), worker_config=config)
     try:
         out = await tool._execute("x = 1")
         assert isinstance(out, str), f"expected success, got {out!r}"

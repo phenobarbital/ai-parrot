@@ -5,6 +5,7 @@ Exposes 13 predefined computer-use actions, screenshot/recording capabilities,
 and task/loop execution as agent-callable tools. Handles coordinate normalization
 (0-1000 → viewport pixels) and delegates all browser operations to AsyncComputerBackend.
 """
+
 from __future__ import annotations
 
 import logging

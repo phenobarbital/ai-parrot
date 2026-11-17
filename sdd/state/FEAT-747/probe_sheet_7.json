@@ -1,0 +1,290 @@
+[
+ {
+  "id": "c151",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/models.py",
+  "name": "EntryType",
+  "expected": "class EntryType(str, Enum):  class OperationType(str, Enum):",
+  "expected_line": 15
+ },
+ {
+  "id": "c152",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/models.py",
+  "name": "OperationType",
+  "expected": null,
+  "expected_line": 15
+ },
+ {
+  "id": "c169",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/models.py",
+  "name": "EntryType",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c170",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/models.py",
+  "name": "StoreResultInput",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c171",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/models.py",
+  "name": "GetResultInput",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c153",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/blob.py",
+  "name": "BlobKind",
+  "expected": null,
+  "expected_line": 135
+ },
+ {
+  "id": "c154",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/blob.py",
+  "line": 244
+ },
+ {
+  "id": "c157",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/blob.py",
+  "line": null
+ },
+ {
+  "id": "c158",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/store/postgres.py",
+  "line": null
+ },
+ {
+  "id": "c221",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tests/test_working_memory.py",
+  "line": 1
+ },
+ {
+  "id": "c143",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "name": "WorkingMemoryToolkit",
+  "expected": "class WorkingMemoryToolkit(TaskMemoryToolsMixin, AbstractToolkit):",
+  "expected_line": 47
+ },
+ {
+  "id": "c144",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "name": "_put",
+  "expected": "async def _put(self, key: str, df: pd.DataFrame, **kwargs: Any):",
+  "expected_line": 244
+ },
+ {
+  "id": "c145",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "name": "_put_generic",
+  "expected": "async def _put_generic(self, key: str, data: Any, **kwargs: Any):",
+  "expected_line": 244
+ },
+ {
+  "id": "c146",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "name": "_drop",
+  "expected": null,
+  "expected_line": 244
+ },
+ {
+  "id": "c147",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "name": "store_result",
+  "expected": "async def store_result(self, key: str, data: Any, data_type: str = \"auto\", description: str = \"\",",
+  "expected_line": 374
+ },
+ {
+  "id": "c148",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "name": "get_result",
+  "expected": "async def get_result(self, key: str, max_length: int = 500, include_raw: bool = False, max_rehydrate_bytes=None",
+  "expected_line": 425
+ },
+ {
+  "id": "c149",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "name": "import_from_tool",
+  "expected": "async def import_from_tool(  # pulls a tool's shared dataframe into working memory",
+  "expected_line": 813
+ },
+ {
+  "id": "c150",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "name": "_stage_missing_sources",
+  "expected": null,
+  "expected_line": 813
+ },
+ {
+  "id": "c155",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "name": "WorkingMemoryToolkit",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c160",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "name": "WorkingMemoryToolkit",
+  "expected": null,
+  "expected_line": 1
+ },
+ {
+  "id": "c161",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "name": "WorkingMemoryToolkit",
+  "expected": "class WorkingMemoryToolkit(TaskMemoryToolsMixin, AbstractToolkit):",
+  "expected_line": 48
+ },
+ {
+  "id": "c162",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "name": "store_result",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c163",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "name": "get_result",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c164",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "name": "search_stored",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c165",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "name": "list_stored",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c166",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "name": "compute_and_store",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c167",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "name": "import_from_tool",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c168",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "name": "from_runtime",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c270",
+  "kind": "file",
+  "path": "packages/ai-parrot/tests/clients/test_nova_protocol_frames.py",
+  "line": null
+ },
+ {
+  "id": "c33",
+  "kind": "file",
+  "path": "packages/ai-parrot/tests/integration/events/test_a2a_trace_propagation.py",
+  "line": 1
+ },
+ {
+  "id": "c42",
+  "kind": "file",
+  "path": "packages/ai-parrot/tests/integration/events/test_a2a_trace_propagation.py",
+  "line": null
+ },
+ {
+  "id": "c220",
+  "kind": "file",
+  "path": "packages/ai-parrot/tests/registry/test_capability_registry.py",
+  "line": 1
+ },
+ {
+  "id": "c222",
+  "kind": "file",
+  "path": "packages/ai-parrot/tests/test_a2a_v1_mesh_router.py",
+  "line": 1
+ },
+ {
+  "id": "c219",
+  "kind": "file",
+  "path": "packages/ai-parrot/tests/test_agent_registry_instances.py",
+  "line": 1
+ },
+ {
+  "id": "c218",
+  "kind": "file",
+  "path": "packages/ai-parrot/tests/test_crew_sequential_regression.py",
+  "line": 1
+ },
+ {
+  "id": "c247",
+  "kind": "file",
+  "path": "packages/ai-parrot/tests/unit/events/lifecycle/test_registry.py",
+  "line": null
+ },
+ {
+  "id": "c239",
+  "kind": "file",
+  "path": "policies/tool-business-hours.yaml",
+  "line": null
+ },
+ {
+  "id": "c139",
+  "kind": "file",
+  "path": "sdd/proposals/matrix-agents-swarm.brainstorm.md",
+  "line": null
+ },
+ {
+  "id": "c113",
+  "kind": "file",
+  "path": "sdd/proposals/workingmemory-toolkit.proposal.md",
+  "line": 11
+ },
+ {
+  "id": "c159",
+  "kind": "file",
+  "path": "sdd/proposals/workingmemory-toolkit.proposal.md",
+  "line": 252
+ }
+]

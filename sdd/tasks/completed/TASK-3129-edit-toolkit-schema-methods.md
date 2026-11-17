@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-388 — Deterministic CreateFormTool
 **Spec**: `sdd/specs/deterministic-creationformtool.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-3127

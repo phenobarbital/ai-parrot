@@ -177,7 +177,7 @@ async def test_cli_seat_visibility_and_fallback(three_role_worktrees: dict[str, 
 async def test_parent_visibility_does_not_imply_child_visibility(tmp_path: Path) -> None:
     """Blindly copying a parent worktree's rendered config into a child resolves WRONG.
 
-    docs/sdd/lsp-pilot.md explicitly warns against this; this test proves
+    wiki/sdd-tooling/sdd/lsp-pilot.md explicitly warns against this; this test proves
     the failure mode empirically rather than only documenting it.
     """
     parent = _make_worktree(tmp_path / "parent")

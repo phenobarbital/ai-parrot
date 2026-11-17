@@ -1,0 +1,178 @@
+{
+  "feature": "contracts-pilot-signoff-e2e",
+  "feature_id": "FEAT-815",
+  "spec": "sdd/specs/contracts-pilot-signoff-e2e.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-05T03:14:37.741928+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/knowledge/contracts/test_pilot_matrix.py",
+          "packages/ai-parrot/tests/knowledge/contracts/test_pilot_dispositions.py",
+          "packages/ai-parrot/tests/e2e/contracts/test_fixtures_smoke.py",
+          "packages/ai-parrot/tests/e2e/contracts/test_catalog_roundtrip.py",
+          "packages/ai-parrot/tests/e2e/contracts/test_graph_publication.py",
+          "packages/ai-parrot/tests/e2e/contracts/test_card_lookup.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:31627b4f54337dba21f5db17ca3fc12250a7430cbb471e5772353c4889980805"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5222",
+      "slug": "pilot-case-matrix-models",
+      "title": "Pilot case matrix models (M1)",
+      "feature_id": "FEAT-815",
+      "feature": "contracts-pilot-signoff-e2e",
+      "spec": "sdd/specs/contracts-pilot-signoff-e2e.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "root task, no dependencies; creates `parrot.knowledge.contracts.pilot` consumed by TASK-5223 and TASK-5228.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5222-pilot-case-matrix-models.md"
+    },
+    {
+      "id": "TASK-5223",
+      "slug": "pilot-cli-commands",
+      "title": "`parrot contracts pilot` CLI (M2)",
+      "feature_id": "FEAT-815",
+      "feature": "contracts-pilot-signoff-e2e",
+      "spec": "sdd/specs/contracts-pilot-signoff-e2e.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5222"
+      ],
+      "parallel": true,
+      "parallelism_notes": "imports PilotCase/CaseMatrix/CaseDisposition/PilotSignoff from TASK-5222 (knowledge/contracts/pilot.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5223-pilot-cli-commands.md"
+    },
+    {
+      "id": "TASK-5224",
+      "slug": "contracts-e2e-plan-fixtures",
+      "title": "E2E plan & synthetic contract fixtures (M3)",
+      "feature_id": "FEAT-815",
+      "feature": "contracts-pilot-signoff-e2e",
+      "spec": "sdd/specs/contracts-pilot-signoff-e2e.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "root task of W2; creates tests/e2e/contracts/conftest.py + e2e-plan.md consumed by TASK-5225, TASK-5226, TASK-5227.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5224-contracts-e2e-plan-fixtures.md"
+    },
+    {
+      "id": "TASK-5225",
+      "slug": "e2e-catalog-roundtrip",
+      "title": "Catalog roundtrip: synthetic card upserted and read back with matching fields (M4)",
+      "feature_id": "FEAT-815",
+      "feature": "contracts-pilot-signoff-e2e",
+      "spec": "sdd/specs/contracts-pilot-signoff-e2e.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5224"
+      ],
+      "parallel": true,
+      "parallelism_notes": "contracts-catalog-roundtrip: uses fixtures from TASK-5224 (tests/e2e/contracts/conftest.py) and must match node id test_synthetic_contract_roundtrips_through_catalog frozen in its e2e-plan.md.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5225-e2e-catalog-roundtrip.md"
+    },
+    {
+      "id": "TASK-5226",
+      "slug": "e2e-graph-publication",
+      "title": "Graph publication: temporal drain + loader publish synthetic contract nodes (M5)",
+      "feature_id": "FEAT-815",
+      "feature": "contracts-pilot-signoff-e2e",
+      "spec": "sdd/specs/contracts-pilot-signoff-e2e.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5224"
+      ],
+      "parallel": true,
+      "parallelism_notes": "contracts-graph-publication: uses fixtures from TASK-5224 (tests/e2e/contracts/conftest.py) and must match node id test_temporal_drain_publishes_synthetic_contract_nodes frozen in its e2e-plan.md.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5226-e2e-graph-publication.md"
+    },
+    {
+      "id": "TASK-5227",
+      "slug": "e2e-card-lookup",
+      "title": "Card lookup: lookup returns the correct citation for a published synthetic contract (M6)",
+      "feature_id": "FEAT-815",
+      "feature": "contracts-pilot-signoff-e2e",
+      "spec": "sdd/specs/contracts-pilot-signoff-e2e.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5224"
+      ],
+      "parallel": true,
+      "parallelism_notes": "contracts-card-lookup: uses fixtures from TASK-5224 (tests/e2e/contracts/conftest.py) and must match node id test_lookup_cites_published_synthetic_contract frozen in its e2e-plan.md.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5227-e2e-card-lookup.md"
+    },
+    {
+      "id": "TASK-5228",
+      "slug": "contracts-pilot-wiki-update",
+      "title": "Documentation — wiki/knowledge/contracts-pilot-acceptance.md (M7)",
+      "feature_id": "FEAT-815",
+      "feature": "contracts-pilot-signoff-e2e",
+      "spec": "sdd/specs/contracts-pilot-signoff-e2e.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5222",
+        "TASK-5223",
+        "TASK-5225",
+        "TASK-5226",
+        "TASK-5227"
+      ],
+      "parallel": true,
+      "parallelism_notes": "documents CaseMatrix/PilotSignoff (TASK-5222), the `parrot contracts pilot` commands (TASK-5223) and the three E2E node IDs (TASK-5225 test_catalog_roundtrip.py, TASK-5226 test_graph_publication.py, TASK-5227 test_card_lookup.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5228-contracts-pilot-wiki-update.md"
+    }
+  ]
+}

@@ -3,7 +3,7 @@
 **Feature**: FEAT-621 — Agent Studio — Database-Backed Storage
 **Spec**: `sdd/specs/agentstudio-db-storage.spec.md`
 **Spec wave**: W0 — Studio migrations + runner (M1, part 1: files, checksum, manifest)
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

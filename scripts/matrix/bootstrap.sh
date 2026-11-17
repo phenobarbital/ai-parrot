@@ -113,6 +113,6 @@ cat <<EOF
         server_name: ${MATRIX_SERVER_NAME:-parrot.local}
         appservice_port: 8449
 
-      Optional bridges (Slack/Signal/Discord) — see docs/integrations/matrix/BRIDGES.md:
+      Optional bridges (Slack/Signal/Discord) — see wiki/integrations/matrix/BRIDGES.md:
         docker compose -f docker-compose.matrix.yml --profile bridges up -d
 EOF

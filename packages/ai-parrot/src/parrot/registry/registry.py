@@ -7,11 +7,16 @@ and registering agents from the agents/ directory.
 """
 
 from __future__ import annotations
+import fnmatch
 import sys
 import os
 import tempfile
 import asyncio
-from typing import Dict, Iterable, List, Literal, Type, Set, Union, Optional, Any, Protocol
+from enum import Enum
+from typing import TYPE_CHECKING, Dict, Iterable, List, Literal, Type, Set, Union, Optional, Any, Protocol
+
+if TYPE_CHECKING:
+    from .capabilities.registry import CapabilityRegistry
 from pathlib import Path
 import hashlib
 from types import ModuleType
@@ -28,7 +33,7 @@ except ImportError:
     pass
 from navconfig.logging import logging
 from navconfig import BASE_DIR
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from aiohttp import web
 from ..bots.abstract import AbstractBot
 from ..mcp import MCPServerConfig
@@ -38,12 +43,25 @@ from ..conf import AGENTS_DIR
 from ..auth.models import PolicyRuleConfig
 from ..auth.agent_guard import enforce_agent_access, AgentAccessDenied  # noqa: F401
 from ..tools.spec import AgentMCPServerSpec, ToolkitSpec, normalize_tooling
+from ..roost.directory import CapabilityMatch, Locality, RoostAgentConfig, locality_of, rank
 
 
 class AgentFactory(Protocol):
     """Protocol for agent factory callable."""
 
     def __call__(self, **kwargs: Any) -> AbstractBot: ...
+
+
+class AgentKind(str, Enum):
+    """Where an agent runs: in-process, behind the A2A client, or behind a Squawk endpoint (FEAT-746 U2)."""
+
+    LOCAL = "local"
+    A2A = "a2a"
+    SQUAWK = "squawk"
+
+
+class RemoteAgentNotInstantiable(ValueError):
+    """get_instance() on a remote-kind registry entry; resolve it through the protocol client instead."""
 
 
 @dataclass(slots=True)
@@ -56,7 +74,7 @@ class BotMetadata:
     """
 
     name: str
-    factory: Union[Type[AbstractBot], AgentFactory]
+    factory: Union[Type[AbstractBot], AgentFactory, None]
     module_path: str
     file_path: Path
     singleton: bool = False
@@ -67,17 +85,24 @@ class BotMetadata:
     startup_config: Dict[str, Any] = field(default_factory=dict)  # Config for startup instantiation
     bot_config: Optional[Any] = None  # Optional[BotConfig] – declarative agent configuration
     events_block: Optional[Dict[str, Any]] = None  # FEAT-176: parsed 'events:' YAML block
+    kind: AgentKind = AgentKind.LOCAL
+    endpoint: Optional[str] = None
+    contract_categories: List[str] = field(default_factory=list)
+    roost: Optional[RoostAgentConfig] = None  # FEAT-747: Roost contract advert + carrier + grant
     _instance: Optional[AbstractBot] = None
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
 
     def __post_init__(self):
         """Validate bot metadata after creation."""
-        # Check if factory is a class (subclass of AbstractBot) or a callable (AgentFactory)
-        is_class = inspect.isclass(self.factory) and issubclass(self.factory, AbstractBot)
-        is_factory = callable(self.factory)
+        if self.kind == AgentKind.LOCAL:
+            # Check if factory is a class (subclass of AbstractBot) or a callable (AgentFactory)
+            is_class = inspect.isclass(self.factory) and issubclass(self.factory, AbstractBot)
+            is_factory = callable(self.factory)
 
-        if not (is_class or is_factory):
-            raise ValueError(f"Bot {self.name} factory must be AbstractBot subclass or callable")
+            if not (is_class or is_factory):
+                raise ValueError(f"Bot {self.name} factory must be AbstractBot subclass or callable")
+        elif not self.endpoint:
+            raise ValueError(f"Remote bot {self.name} (kind={self.kind.value}) requires an endpoint")
         # If at_startup=True, automatically make it singleton
         if self.at_startup:
             self.singleton = True
@@ -89,6 +114,8 @@ class BotMetadata:
         This implements lazy instantiation - instances are only created when needed.
         For singleton bots, the same instance is returned on subsequent calls.
         """
+        if self.kind != AgentKind.LOCAL:
+            raise RemoteAgentNotInstantiable(f"{self.name} is a {self.kind.value} agent; use the protocol client")
         # Singleton path
         if self.singleton and self._instance is not None:
             return self._instance
@@ -224,12 +251,28 @@ class PromptConfig(BaseModel):
     customize: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
 
 
+class MCPLocalExposure(BaseModel):
+    """Opt-in declaration that an agent may be served as a local stdio MCP server (FEAT-877).
+
+    Attributes:
+        enabled: When False the agent is treated as undeclared.
+        allow: Method names to expose. None exposes every own-class method; an entry
+            that is not an own-class public async method is an error at install and at
+            serve time (raised by parrot.mcp.agent_toolkit).
+    """
+
+    enabled: bool = True
+    allow: Optional[List[str]] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class BotConfig(BaseModel):
     """Configuration for the bot in config-based discovery."""
 
     name: str
-    class_name: str
-    module: str
+    class_name: Optional[str] = None
+    module: Optional[str] = None
     enabled: bool = True
     # "repo": curated YAML committed to the repo. "factory": written at runtime
     # by AgentFactory and deletable via DELETE /api/v1/bots/{id}.
@@ -242,6 +285,7 @@ class BotConfig(BaseModel):
     model: Optional[ModelConfig] = Field(default=None)
     system_prompt: Optional[Union[str, Dict[str, Any]]] = Field(default=None)
     prompt: Optional[PromptConfig] = Field(default=None)
+    mcp_local: Optional[MCPLocalExposure] = Field(default=None)
     vector_store: Optional[StoreConfig] = Field(default=None)
 
     tags: Optional[Set[str]] = Field(default_factory=set)
@@ -253,6 +297,35 @@ class BotConfig(BaseModel):
     # Each entry is a dict matching PolicyRuleConfig schema:
     #   {action: "agent:chat", effect: "allow", groups: ["engineering"]}
     policies: Optional[List["PolicyRuleConfig"]] = Field(default=None)
+    kind: AgentKind = AgentKind.LOCAL
+    endpoint: Optional[str] = None
+    contract_categories: List[str] = Field(default_factory=list)
+
+    @field_validator("mcp_local", mode="before")
+    @classmethod
+    def _coerce_mcp_local(cls, value: Any) -> Any:
+        """Coerce the `mcp_local` declaration (FEAT-877).
+
+        True -> {} (enabled, no allowlist); False/None -> None; anything else unchanged.
+        """
+        if value is True:
+            return {}
+        if value is False or value is None:
+            return None
+        return value
+
+    @model_validator(mode="after")
+    def _kind_requirements(self) -> "BotConfig":
+        """Local agents need class_name/module; remote agents need an endpoint."""
+        if self.kind == AgentKind.LOCAL:
+            for fname in ("class_name", "module"):
+                if not getattr(self, fname):
+                    raise ValueError(f"{fname} is required for local agent {self.name!r}")
+        elif not self.endpoint:
+            raise ValueError(f"endpoint is required for {self.kind.value} agent {self.name!r}")
+        return self
+
+    roost: Optional[RoostAgentConfig] = Field(default=None)  # FEAT-747
 
 
 class AgentRegistry:
@@ -536,6 +609,7 @@ class AgentRegistry:
         at_startup: bool = False,
         startup_config: Optional[Dict[str, Any]] = None,
         bot_config: Optional["BotConfig"] = None,
+        roost: Optional[RoostAgentConfig] = None,
         **kwargs: Any,
     ) -> None:
         """Register a bot class with the registry."""
@@ -576,8 +650,10 @@ class AgentRegistry:
             dependencies=dependencies or [],
             bot_config=bot_config,
         )
+        metadata.roost = roost or getattr(bot_config, "roost", None)
 
         self._registered_agents[name] = metadata
+        self._mirror_roost(name, metadata, replace=replace)
         self.logger.info(f"Registered bot: {name}")
 
         # PBAC: collect and register policy rules for this agent
@@ -686,6 +762,11 @@ class AgentRegistry:
             return None
 
         metadata = self._registered_agents[name]
+        if metadata.kind != AgentKind.LOCAL:
+            # Authorize first: an unauthorized caller must get AgentAccessDenied, not
+            # learn that the entry exists and is remote.
+            await enforce_agent_access(self._evaluator, name, request)
+            raise RemoteAgentNotInstantiable(f"{name} is a {metadata.kind.value} agent; use the protocol client")
         try:
             instance = await metadata.get_instance(**kwargs)
             self.logger.debug(f"Retrieved instance for bot: {name}")
@@ -744,6 +825,11 @@ class AgentRegistry:
 
         for config in configs:
             if not config.enabled:
+                continue
+
+            if config.kind != AgentKind.LOCAL:
+                self.register_remote(config)
+                registered_count += 1
                 continue
 
             try:
@@ -848,6 +934,8 @@ class AgentRegistry:
         Create a factory function that instantiates an agent from BotConfig.
         Handles the translation from declarative config to AbstractBot arguments.
         """
+        if config.kind != AgentKind.LOCAL:
+            raise RemoteAgentNotInstantiable(f"{config.name} is a {config.kind.value} agent; use the protocol client")
         # Import module and class dynamically
         try:
             module = importlib.import_module(config.module)
@@ -1021,11 +1109,21 @@ class AgentRegistry:
         if "prompt" in content:
             bot_config_data["prompt"] = PromptConfig(**content["prompt"])
 
+        # Map 'mcp_local' section (FEAT-877): raw value, coerced by BotConfig._coerce_mcp_local
+        if "mcp_local" in content:
+            bot_config_data["mcp_local"] = content["mcp_local"]
+
         # Create BotConfig
         config = BotConfig(**bot_config_data)
 
         if not config.enabled:
             return False
+
+        if config.kind != AgentKind.LOCAL:
+            remote = self.register_remote(config)
+            remote.file_path = yaml_file
+            self.logger.info(f"Loaded remote agent definition from {yaml_file}: {config.name}")
+            return True
 
         # FEAT-176: parse optional top-level 'events:' block
         events_block = content.get("events") or None
@@ -1068,7 +1166,7 @@ class AgentRegistry:
         Args:
             config: Fully- or partially-populated agent configuration to
                 persist.
-            category: Sub-directory under ``AGENTS_DIR/agents/`` to write
+            category: Sub-directory under this registry's ``agents/`` directory to write
                 into.
 
         Returns:
@@ -1076,14 +1174,14 @@ class AgentRegistry:
 
         Raises:
             ValueError: ``category`` (or the config's name) would resolve
-                the write target outside ``AGENTS_DIR/agents/`` — path
+                the write target outside this registry's ``agents/`` directory — path
                 traversal guard (defense in depth; HTTP callers validate
                 the slug shape upstream too).
         """
         # SECURITY (adversarial-review fix): `category` is a caller-supplied
         # path segment — resolve and containment-check it so "../../.."
-        # can never write the YAML outside AGENTS_DIR/agents/.
-        definitions_root = AGENTS_DIR.joinpath("agents").resolve()
+        # can never write the YAML outside this registry's agents directory.
+        definitions_root = self.agents_dir.joinpath("agents").resolve()
         base_dir = definitions_root.joinpath(category).resolve()
         if base_dir != definitions_root and definitions_root not in base_dir.parents:
             raise ValueError(f"Invalid category {category!r}: resolves outside the agents definitions directory.")
@@ -1116,6 +1214,12 @@ class AgentRegistry:
             "priority": config.priority,
         }
 
+        if config.kind != AgentKind.LOCAL:
+            # Remote entries round-trip their protocol identity; class_name/module stay None.
+            agent_section["kind"] = config.kind.value
+            agent_section["endpoint"] = config.endpoint
+            agent_section["contract_categories"] = list(config.contract_categories)
+
         if config.vector_store is not None:
             store = config.vector_store
             agent_section["vector_store"] = asdict(store) if is_dataclass(store) else dict(store)
@@ -1136,6 +1240,9 @@ class AgentRegistry:
 
         if config.prompt:
             data["prompt"] = config.prompt.model_dump(exclude_none=True)
+
+        if config.mcp_local is not None:
+            data["mcp_local"] = config.mcp_local.model_dump(exclude_none=True)
 
         with open(file_path, "w") as f:
             yaml.dump(data, f)
@@ -1306,11 +1413,13 @@ class AgentRegistry:
                 self.logger.error(f"Failed to import {file_path}: {e}")
         return imported_count
 
-    async def load_modules(self) -> int:
-        """
-        Dynamically import all Python modules from every discovery directory.
+    def load_modules_sync(self) -> int:
+        """Import every ``*.py`` in every discovery directory (sync).
 
-        This triggers any decorators in those modules to register agents.
+        This triggers any ``@register_agent`` decorators in those modules.
+
+        Returns:
+            Number of modules imported.
         """
         total_imported = 0
         for directory in self._discovery_paths:
@@ -1320,6 +1429,14 @@ class AgentRegistry:
             f"Discovered (decorator) agent modules: {total_imported} across {len(self._discovery_paths)} directories"
         )
         return total_imported
+
+    async def load_modules(self) -> int:
+        """
+        Dynamically import all Python modules from every discovery directory.
+
+        This triggers any decorators in those modules to register agents.
+        """
+        return self.load_modules_sync()
 
     def register_bot_decorator(
         self,
@@ -1331,6 +1448,8 @@ class AgentRegistry:
         at_startup: bool = False,
         startup_config: Optional[Dict[str, Any]] = None,
         tags: Optional[Iterable[str]] = None,
+        roost: Optional[RoostAgentConfig] = None,
+        mcp_local: Union[bool, Dict[str, Any], MCPLocalExposure, None] = None,
         **kwargs,
     ):
         """
@@ -1345,6 +1464,8 @@ class AgentRegistry:
             dependencies: List of required dependencies
             singleton: Whether to enforce singleton instance
             tags: Optional tags for categorization
+            mcp_local: FEAT-877 opt-in to local stdio MCP exposure (True, a mapping
+                with ``enabled``/``allow``, or an MCPLocalExposure).
             **kwargs: Additional registration parameters
 
         Usage:
@@ -1395,6 +1516,8 @@ class AgentRegistry:
                 startup_config=startup_config or {},
                 tags=set(tags or []),
                 priority=priority,
+                roost=roost,
+                mcp_local=mcp_local,
             )
 
             # Register immediately using the core register method
@@ -1408,6 +1531,7 @@ class AgentRegistry:
                 priority=priority,
                 dependencies=dependencies,
                 bot_config=_bot_config,
+                roost=roost,
                 **kwargs,
             )
 
@@ -1435,6 +1559,45 @@ class AgentRegistry:
         """
         return sorted(self._registered_agents.values(), key=lambda meta: meta.name)
 
+    def find_by_kind(self, kind: AgentKind) -> List[BotMetadata]:
+        """Registered entries of one kind, sorted by name."""
+        return [m for m in self.list_agents() if m.kind == kind]
+
+    def find_serving(self, category: str) -> List[BotMetadata]:
+        """Remote entries advertising `category` in contract_categories (exact match)."""
+        return [m for m in self.list_agents() if m.kind != AgentKind.LOCAL and category in m.contract_categories]
+
+    def register_remote(self, config: BotConfig) -> BotMetadata:
+        """Register a kind != local entry (no factory); never instantiates anything.
+
+        Args:
+            config: A validated remote ``BotConfig`` (kind ``a2a`` or ``squawk``).
+
+        Returns:
+            The stored :class:`BotMetadata`.
+        """
+        if config.kind == AgentKind.LOCAL:
+            raise ValueError(f"{config.name} is a local agent; use register()")
+        metadata = BotMetadata(
+            name=config.name,
+            factory=None,
+            module_path="",
+            file_path=Path("remote"),
+            tags=config.tags,
+            priority=config.priority,
+            bot_config=config,
+            kind=config.kind,
+            endpoint=config.endpoint,
+            contract_categories=list(config.contract_categories),
+            roost=config.roost,
+        )
+        self._registered_agents[config.name] = metadata
+        # Advertise the remote agent's Roost capabilities (Locality.REMOTE); replace any
+        # previous mirror so re-registering a name never leaves stale capabilities behind.
+        self._mirror_roost(config.name, metadata, replace=True)
+        self.logger.info(f"Registered remote bot: {config.name} ({config.kind.value} @ {config.endpoint})")
+        return metadata
+
     def list_agent_names(self) -> List[str]:
         """Return the names of every registered agent, sorted.
 
@@ -1450,6 +1613,102 @@ class AgentRegistry:
     def get_bots_by_tag(self, tag: str) -> List[BotMetadata]:
         """Get all bots that have a specific tag."""
         return [metadata for metadata in self._registered_agents.values() if tag in metadata.tags]
+
+    @property
+    def capability_registry(self) -> "CapabilityRegistry":
+        """Lazily created FEAT-070 registry used as the Roost directory index (FEAT-747)."""
+        reg = getattr(self, "_capability_registry", None)
+        if reg is None:
+            from .capabilities.registry import CapabilityRegistry  # noqa: PLC0415 — numpy import stays lazy
+
+            reg = self._capability_registry = CapabilityRegistry()
+        return reg
+
+    def _mirror_roost(self, name: str, metadata: BotMetadata, *, replace: bool) -> None:
+        """Mirror ``metadata.roost.capabilities`` into the capability index (FEAT-747)."""
+        if replace:
+            self.capability_registry.unregister_agent(name)
+
+        roost = metadata.roost
+        if roost is None:
+            return
+
+        kind = getattr(metadata, "kind", "local")
+        locality = locality_of(roost, kind=kind, local_host_id=None)
+        for cap_id in roost.capabilities:
+            category = next(
+                (category for category in roost.categories if cap_id == category or cap_id.startswith(f"{category}.")),
+                None,
+            )
+            self.capability_registry.register_agent_capability(
+                name,
+                cap_id,
+                keywords=roost.keywords,
+                category=category,
+                locality=int(locality),
+                cost=roost.cost,
+                backing=roost.backing,
+                kind=kind,
+                metadata={"category_hash": roost.category_hashes.get(category)},
+            )
+
+    def find_capability(
+        self,
+        query: str,
+        *,
+        caller: Optional[str] = None,
+        limit: int = 5,
+        include_remote: bool = True,
+    ) -> List[CapabilityMatch]:
+        """Perform deterministic capability lookup with optional caller grant filtering.
+
+        Never calls an LLM or an embedding function. When ``caller`` is given,
+        a missing or empty grant fails closed.
+
+        Args:
+            query: Exact capability id, glob, category, or keyword.
+            caller: Optional registered caller whose grant scopes constrain matches.
+            limit: Maximum number of ranked matches to return.
+            include_remote: Whether entries with remote locality are eligible.
+
+        Returns:
+            Ranked capability matches permitted for the caller.
+        """
+        from .capabilities.models import ResourceType
+
+        if limit <= 0:
+            return []
+
+        entries = self.capability_registry.find_exact(
+            query,
+            resource_types=[ResourceType.AGENT],
+            limit=sys.maxsize,
+        )
+        matches = [
+            CapabilityMatch(
+                agent_name=entry.metadata["agent_name"],
+                cap_id=entry.metadata["cap_id"],
+                locality=Locality(entry.metadata["locality"]),
+                cost=entry.metadata["cost"],
+                kind=entry.metadata["kind"],
+                backing=entry.metadata["backing"],
+                score=entry.metadata.get("score", 1.0),
+                category_hash=entry.metadata.get("category_hash"),
+            )
+            for entry in entries
+        ]
+
+        if caller is not None:
+            caller_metadata = self.get_metadata(caller)
+            grant = caller_metadata.roost.grant if caller_metadata is not None and caller_metadata.roost else None
+            scopes = grant.scopes if grant is not None else []
+            if not scopes:
+                return []
+            matches = [match for match in matches if any(fnmatch.fnmatchcase(match.cap_id, scope) for scope in scopes)]
+
+        if not include_remote:
+            matches = [match for match in matches if match.locality != Locality.REMOTE]
+        return rank(matches)[:limit]
 
     def clear_registry(self) -> None:
         """Clear all registered bots. Useful for testing."""

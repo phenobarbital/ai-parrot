@@ -9,7 +9,7 @@ Provides clean Pydantic models for Workday objects with:
 import contextlib
 from typing import Any, Dict, List, Optional, Type, TypeVar, Union
 from datetime import date, datetime
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ConfigDict
 from zeep import helpers
 
 
@@ -140,8 +140,8 @@ class TimeOffBalanceModel(BaseModel):
         description="Total available time off across all types"
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "worker_id": "12345",
                 "as_of_date": "2025-10-24",
@@ -157,7 +157,8 @@ class TimeOffBalanceModel(BaseModel):
                     }
                 ]
             }
-        }
+        },
+    )
 
 class WorkerModel(BaseModel):
     """
@@ -202,8 +203,8 @@ class WorkerModel(BaseModel):
     # Compensation (optional, might be sensitive)
     compensation: Optional[Compensation] = None
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "worker_id": "12345",
                 "employee_id": "EMP-001",
@@ -214,7 +215,8 @@ class WorkerModel(BaseModel):
                 "business_title": "Senior Software Engineer",
                 "is_active": True
             }
-        }
+        },
+    )
 
 
 class OrganizationModel(BaseModel):
@@ -258,15 +260,16 @@ class ContactModel(BaseModel):
     instant_messengers: List[Dict[str, str]] = Field(default_factory=list, description="IM handles")
     social_networks: List[Dict[str, str]] = Field(default_factory=list, description="Social media")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "worker_id": "12345",
                 "primary_email": "john.doe@company.com",
                 "work_phone": "+1 (555) 123-4567",
                 "mobile_phone": "+1 (555) 987-6543"
             }
-        }
+        },
+    )
 
 
 

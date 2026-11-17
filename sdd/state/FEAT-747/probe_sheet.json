@@ -1,0 +1,2178 @@
+[
+ {
+  "id": "c0",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "name": "BotMetadata",
+  "expected": null,
+  "expected_line": 50
+ },
+ {
+  "id": "c1",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "name": "__init__",
+  "expected": null,
+  "expected_line": 258
+ },
+ {
+  "id": "c2",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "name": "register",
+  "expected": "def register(self, name: str, factory: Type[AbstractBot], *, singleton=False, tags=None,",
+  "expected_line": 526
+ },
+ {
+  "id": "c3",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "name": "get_bot_instance",
+  "expected": "def get_bot_instance(self, name: str) -> Optional[AbstractBot]:",
+  "expected_line": 519
+ },
+ {
+  "id": "c4",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "name": "register_bot_decorator",
+  "expected": "def register_bot_decorator(self, name=..., *, tags=None, ...)",
+  "expected_line": 1324
+ },
+ {
+  "id": "c5",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "name": "list_agents",
+  "expected": "def list_agents(self) -> List[BotMetadata]:",
+  "expected_line": 1421
+ },
+ {
+  "id": "c6",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "name": "get_bots_by_tag",
+  "expected": "def get_bots_by_tag(self, tag: str) -> List[BotMetadata]:",
+  "expected_line": 1421
+ },
+ {
+  "id": "c7",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "name": "get_bots_by_tag",
+  "expected": "def get_bots_by_tag(self, tag: str) -> List[BotMetadata]:",
+  "expected_line": 1450
+ },
+ {
+  "id": "c8",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "name": "get_registration_info",
+  "expected": null,
+  "expected_line": 1459
+ },
+ {
+  "id": "c9",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "name": "AgentRegistry",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c10",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/capabilities/models.py",
+  "name": "IntentRouterConfig",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c11",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/routing/embedding_router.py",
+  "name": "EmbeddingIntentRouter",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c12",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/routing/store_router.py",
+  "name": "StoreRouter",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c13",
+  "kind": "anchor",
+  "path": "packages/ai-parrot/src/parrot/registry/__init__.py",
+  "anchor": "agent_registry = AgentRegistry(agents_dir=AGENTS_DIR, extra_agent_dirs=[PLUGINS_DIR / \"agents\"])",
+  "for": "agent_registry"
+ },
+ {
+  "id": "c14",
+  "kind": "anchor",
+  "path": "packages/ai-parrot/src/parrot/registry/__init__.py",
+  "anchor": "register_agent = agent_registry.register_bot_decorator",
+  "for": "register_agent"
+ },
+ {
+  "id": "c15",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "name": "AgentRegistry",
+  "expected": "class AgentRegistry:  # Central registry for managing Bot/Agent discovery and registration",
+  "expected_line": 258
+ },
+ {
+  "id": "c16",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "name": "register_instance",
+  "expected": null,
+  "expected_line": 586
+ },
+ {
+  "id": "c17",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "name": "get_instance",
+  "expected": "async def get_instance(self, name, request)  # PBAC-guarded (enforce_agent_access)",
+  "expected_line": 659
+ },
+ {
+  "id": "c18",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "name": "register_bot_decorator",
+  "expected": "def register_bot_decorator(self, *, name=None, priority=0, dependencies=None,",
+  "expected_line": 1324
+ },
+ {
+  "id": "c19",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "name": "list_agents",
+  "expected": null,
+  "expected_line": 1421
+ },
+ {
+  "id": "c20",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "name": "get_bots_by_tag",
+  "expected": "def get_bots_by_tag(self, tag: str) -> List[BotMetadata]",
+  "expected_line": 1450
+ },
+ {
+  "id": "c21",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/appservice.py",
+  "name": "send_reply_as_agent",
+  "expected": null,
+  "expected_line": 341
+ },
+ {
+  "id": "c22",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/mention.py",
+  "name": "build_reply_relation",
+  "expected": null,
+  "expected_line": 102
+ },
+ {
+  "id": "c23",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/core/hooks/messaging.py",
+  "name": "MSTeamsHook",
+  "expected": null,
+  "expected_line": 231
+ },
+ {
+  "id": "c24",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/core/context.py",
+  "name": "FlowContext",
+  "expected": "class FlowContext:",
+  "expected_line": 55
+ },
+ {
+  "id": "c25",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/core/context.py",
+  "name": "resolve_agent",
+  "expected": null,
+  "expected_line": 123
+ },
+ {
+  "id": "c26",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/core/context.py",
+  "name": "get_input_for_node",
+  "expected": null,
+  "expected_line": 259
+ },
+ {
+  "id": "c27",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/core/context.py",
+  "name": "to_snapshot",
+  "expected": null,
+  "expected_line": 287
+ },
+ {
+  "id": "c28",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/flow/actions.py",
+  "name": "SetContextAction",
+  "expected": null,
+  "expected_line": 309
+ },
+ {
+  "id": "c29",
+  "kind": "anchor",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/core/context.py",
+  "anchor": "trace_context: Optional[\"TraceContext\"] = field(default=None)",
+  "for": "trace_context"
+ },
+ {
+  "id": "c30",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/core/context.py",
+  "line": 33
+ },
+ {
+  "id": "c31",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/observability/recorders/models.py",
+  "line": 1
+ },
+ {
+  "id": "c32",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/observability/subscribers/trace.py",
+  "line": 1
+ },
+ {
+  "id": "c33",
+  "kind": "file",
+  "path": "packages/ai-parrot/tests/integration/events/test_a2a_trace_propagation.py",
+  "line": 1
+ },
+ {
+  "id": "c34",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/core/context.py",
+  "name": "FlowContext",
+  "expected": "class FlowContext:  # Execution state tracker for a single flow/crew run.",
+  "expected_line": 56
+ },
+ {
+  "id": "c35",
+  "kind": "anchor",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/core/context.py",
+  "anchor": "shared_data: Dict[str, Any] = field(default_factory=dict)",
+  "for": "shared_data"
+ },
+ {
+  "id": "c36",
+  "kind": "anchor",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/core/context.py",
+  "anchor": "agent_registry: Optional[\"AgentRegistry\"] = field(default=None)",
+  "for": "agent_registry"
+ },
+ {
+  "id": "c37",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/core/context.py",
+  "name": "resolve_agent",
+  "expected": null,
+  "expected_line": 145
+ },
+ {
+  "id": "c38",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/core/context.py",
+  "name": "mark_completed",
+  "expected": null,
+  "expected_line": 177
+ },
+ {
+  "id": "c39",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/__init__.py",
+  "line": 1
+ },
+ {
+  "id": "c40",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/execution_plan/models.py",
+  "name": "PlanRunMetadata",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c41",
+  "kind": "file",
+  "path": "sdd/tasks/completed/TASK-976-add-shared-data-and-noderesult.md",
+  "line": null
+ },
+ {
+  "id": "c42",
+  "kind": "file",
+  "path": "packages/ai-parrot/tests/integration/events/test_a2a_trace_propagation.py",
+  "line": null
+ },
+ {
+  "id": "c43",
+  "kind": "file",
+  "path": "sdd/tasks/completed/TASK-1182-trace-context-dataclass.md",
+  "line": null
+ },
+ {
+  "id": "c44",
+  "kind": "file",
+  "path": "packages/ai-parrot/docs/lifecycle_events.md",
+  "line": null
+ },
+ {
+  "id": "c45",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/tools.py",
+  "name": "ResultRetrievalTool",
+  "expected": "class ResultRetrievalTool(AbstractTool):",
+  "expected_line": 16
+ },
+ {
+  "id": "c46",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/tools.py",
+  "name": "_execute",
+  "expected": "async def _execute(self, action: str, agent_id=None, query=None, page_id=None) -> str:",
+  "expected_line": 124
+ },
+ {
+  "id": "c47",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py",
+  "name": "run_sequential",
+  "expected": "async def run_sequential(self, query: str, user_id: str = None, session_id: str = None,",
+  "expected_line": 1744
+ },
+ {
+  "id": "c48",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py",
+  "name": "run_sequential",
+  "expected": null,
+  "expected_line": 1825
+ },
+ {
+  "id": "c49",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py",
+  "name": "run_sequential",
+  "expected": null,
+  "expected_line": 1862
+ },
+ {
+  "id": "c50",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py",
+  "name": "run_loop",
+  "expected": "async def run_loop(self, ..., max_iterations: int = 2,",
+  "expected_line": 2090
+ },
+ {
+  "id": "c51",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py",
+  "name": "run_flow",
+  "expected": "async def run_flow(self, ..., max_iterations: int = 100,",
+  "expected_line": 2933
+ },
+ {
+  "id": "c52",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py",
+  "name": "run_flow",
+  "expected": null,
+  "expected_line": 3037
+ },
+ {
+  "id": "c53",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py",
+  "name": "_build_reexecution_prompt",
+  "expected": null,
+  "expected_line": 3745
+ },
+ {
+  "id": "c54",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py",
+  "name": "AgentCrew",
+  "expected": null,
+  "expected_line": 1
+ },
+ {
+  "id": "c55",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py",
+  "name": "_extract_result",
+  "expected": "def _extract_result(self, response): Extract result string from response.",
+  "expected_line": null
+ },
+ {
+  "id": "c56",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py",
+  "name": "_build_context_summary",
+  "expected": "def _build_context_summary(self, context): Build a human-readable summary of results accumulated so far.",
+  "expected_line": null
+ },
+ {
+  "id": "c57",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py",
+  "name": "_evaluate_loop_condition",
+  "expected": "def _evaluate_loop_condition(self): Ask the configured LLM whether the loop condition has been satisfied.",
+  "expected_line": null
+ },
+ {
+  "id": "c58",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py",
+  "name": "run_loop",
+  "expected": "def run_loop(self, initial_task, condition, max_iterations, user_id, session_id, agent_sequence, pass_full_context, ...)",
+  "expected_line": null
+ },
+ {
+  "id": "c59",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py",
+  "name": "_register_agents_as_tools",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c60",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py",
+  "name": "add_tool_node",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c61",
+  "kind": "file",
+  "path": "docs/orchestration/agentcrew.md",
+  "line": null
+ },
+ {
+  "id": "c62",
+  "kind": "file",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/__init__.py",
+  "line": 1
+ },
+ {
+  "id": "c63",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py",
+  "name": "ParrotEventType",
+  "expected": "class ParrotEventType:",
+  "expected_line": 27
+ },
+ {
+  "id": "c64",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py",
+  "name": "AgentCardEventContent",
+  "expected": "class AgentCardEventContent(BaseModel): ...  class TaskEventContent(BaseModel): ...",
+  "expected_line": 89
+ },
+ {
+  "id": "c65",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py",
+  "name": "TaskEventContent",
+  "expected": null,
+  "expected_line": 89
+ },
+ {
+  "id": "c66",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py",
+  "name": "ResultEventContent",
+  "expected": null,
+  "expected_line": 89
+ },
+ {
+  "id": "c67",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py",
+  "name": "StatusEventContent",
+  "expected": null,
+  "expected_line": 89
+ },
+ {
+  "id": "c68",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py",
+  "name": "AgentAnswer",
+  "expected": null,
+  "expected_line": 89
+ },
+ {
+  "id": "c69",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py",
+  "name": "ChannelStateContent",
+  "expected": "class ChannelStateContent(BaseModel):   # m.parrot.channel, state_key=\"\"",
+  "expected_line": 269
+ },
+ {
+  "id": "c70",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py",
+  "name": "TunnelStateContent",
+  "expected": "class TunnelStateContent(BaseModel):    # m.parrot.tunnel, state_key=\"\"",
+  "expected_line": 269
+ },
+ {
+  "id": "c71",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/client.py",
+  "name": "send_event",
+  "expected": "async def send_event(self, room_id: str, event_type: str, content: Dict[str, Any]) -> str:",
+  "expected_line": 193
+ },
+ {
+  "id": "c72",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/client.py",
+  "name": "set_room_state",
+  "expected": "async def set_room_state(self, room_id, event_type, content, state_key: str = \"\") -> str:",
+  "expected_line": 193
+ },
+ {
+  "id": "c73",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/client.py",
+  "name": "get_room_state_event",
+  "expected": "async def get_room_state_event(self, room_id, event_type, state_key=\"\") -> Optional[Dict]:",
+  "expected_line": 193
+ },
+ {
+  "id": "c74",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/client.py",
+  "name": "on_message",
+  "expected": null,
+  "expected_line": 277
+ },
+ {
+  "id": "c75",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/client.py",
+  "name": "on_custom_event",
+  "expected": "def on_custom_event(self, event_type: str, callback) -> None:",
+  "expected_line": 277
+ },
+ {
+  "id": "c76",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/a2a_transport.py",
+  "name": "MatrixA2ATransport",
+  "expected": null,
+  "expected_line": 25
+ },
+ {
+  "id": "c77",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/a2a_transport.py",
+  "name": "publish_card",
+  "expected": null,
+  "expected_line": 54
+ },
+ {
+  "id": "c78",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/a2a_transport.py",
+  "name": "discover_card",
+  "expected": null,
+  "expected_line": 54
+ },
+ {
+  "id": "c79",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/swarm_toolkit.py",
+  "name": "AgentSwarmToolkit",
+  "expected": "class AgentSwarmToolkit(AbstractToolkit):",
+  "expected_line": 24
+ },
+ {
+  "id": "c80",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/swarm_toolkit.py",
+  "name": "ask_agent",
+  "expected": null,
+  "expected_line": 53
+ },
+ {
+  "id": "c81",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/swarm_toolkit.py",
+  "name": "post_to_channel",
+  "expected": null,
+  "expected_line": 160
+ },
+ {
+  "id": "c82",
+  "kind": "file",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/tunnel.py",
+  "line": 1
+ },
+ {
+  "id": "c83",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/tunnel.py",
+  "name": "register_future",
+  "expected": "def register_future(self, correlation_id: str) -> asyncio.Future:",
+  "expected_line": 318
+ },
+ {
+  "id": "c84",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/tunnel.py",
+  "name": "discard_future",
+  "expected": null,
+  "expected_line": 318
+ },
+ {
+  "id": "c85",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/delegation.py",
+  "name": "DelegationRequest",
+  "expected": null,
+  "expected_line": 31
+ },
+ {
+  "id": "c86",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/delegation.py",
+  "name": "delegate",
+  "expected": null,
+  "expected_line": 71
+ },
+ {
+  "id": "c87",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/registry.py",
+  "name": "MatrixAgentCard",
+  "expected": null,
+  "expected_line": 16
+ },
+ {
+  "id": "c88",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/registry.py",
+  "name": "MatrixCrewRegistry",
+  "expected": null,
+  "expected_line": 67
+ },
+ {
+  "id": "c89",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/session_models.py",
+  "name": "SessionPhase",
+  "expected": null,
+  "expected_line": 14
+ },
+ {
+  "id": "c90",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/session_models.py",
+  "name": "AgentRoundResult",
+  "expected": null,
+  "expected_line": 34
+ },
+ {
+  "id": "c91",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/coordinator.py",
+  "name": "MatrixCoordinator",
+  "expected": null,
+  "expected_line": 17
+ },
+ {
+  "id": "c92",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/hook.py",
+  "name": "MatrixHook",
+  "expected": "class MatrixHook(BaseHook):",
+  "expected_line": 1
+ },
+ {
+  "id": "c93",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/core/hooks/messaging.py",
+  "name": "_MessagingHookBase",
+  "expected": "class _MessagingHookBase(BaseHook): ...  class TelegramHook(_MessagingHookBase):",
+  "expected_line": 21
+ },
+ {
+  "id": "c94",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/core/hooks/messaging.py",
+  "name": "TelegramHook",
+  "expected": null,
+  "expected_line": 21
+ },
+ {
+  "id": "c95",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/observability/fanout.py",
+  "line": 1
+ },
+ {
+  "id": "c96",
+  "kind": "file",
+  "path": "packages/ai-parrot-server/src/parrot/autonomous/evb.py",
+  "line": 1
+ },
+ {
+  "id": "c97",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py",
+  "name": "ParrotEventType",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c98",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py",
+  "name": "TaskEventContent",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c99",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/appservice.py",
+  "name": "MatrixAppService",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c100",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/tunnel.py",
+  "name": "TunnelRegistry",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c101",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/swarm_toolkit.py",
+  "name": "AgentSwarmToolkit",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c102",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/registry.py",
+  "name": "MatrixCrewRegistry",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c103",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/config.py",
+  "name": "MatrixCrewConfig",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c104",
+  "kind": "file",
+  "path": "sdd/specs/matrix-agents-swarm.spec.md",
+  "line": 10
+ },
+ {
+  "id": "c105",
+  "kind": "file",
+  "path": "sdd/specs/matrix-agents-swarm.spec.md",
+  "line": 28
+ },
+ {
+  "id": "c106",
+  "kind": "file",
+  "path": "sdd/specs/matrix-agents-swarm.spec.md",
+  "line": 171
+ },
+ {
+  "id": "c107",
+  "kind": "file",
+  "path": "sdd/specs/matrix-swarm-sample.spec.md",
+  "line": null
+ },
+ {
+  "id": "c108",
+  "kind": "file",
+  "path": "docker-compose.matrix.yml",
+  "line": null
+ },
+ {
+  "id": "c109",
+  "kind": "file",
+  "path": "sdd/specs/parrot-telemetry-event-fanout.spec.md",
+  "line": 80
+ },
+ {
+  "id": "c110",
+  "kind": "file",
+  "path": "sdd/specs/parrot-telemetry-event-fanout.spec.md",
+  "line": 259
+ },
+ {
+  "id": "c111",
+  "kind": "file",
+  "path": "sdd/specs/parrot-telemetry-event-fanout.spec.md",
+  "line": 404
+ },
+ {
+  "id": "c112",
+  "kind": "anchor",
+  "path": "packages/ai-parrot-server/src/parrot/autonomous/orchestrator.py",
+  "anchor": "(per FEAT-710 contract: the one place an EventBus is constructed in ai-parrot today)",
+  "for": "EventBus"
+ },
+ {
+  "id": "c113",
+  "kind": "file",
+  "path": "sdd/proposals/workingmemory-toolkit.proposal.md",
+  "line": 11
+ },
+ {
+  "id": "c114",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/agent.py",
+  "name": "AgentContext",
+  "expected": "class AgentContext:  # Context passed between agents in orchestration.",
+  "expected_line": 20
+ },
+ {
+  "id": "c115",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/agent.py",
+  "name": "QuestionInput",
+  "expected": "class QuestionInput(BaseModel):",
+  "expected_line": 20
+ },
+ {
+  "id": "c116",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/agent.py",
+  "name": "AgentTool",
+  "expected": "class AgentTool(AbstractTool):  # Wraps any BasicAgent/AbstractBot as a tool",
+  "expected_line": 20
+ },
+ {
+  "id": "c117",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/swarm_toolkit.py",
+  "name": "ask_agent",
+  "expected": "async def ask_agent(self, agent, question, expected_schema=None, timeout=None) -> dict:",
+  "expected_line": 53
+ },
+ {
+  "id": "c118",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/swarm_toolkit.py",
+  "name": "send_feedback",
+  "expected": null,
+  "expected_line": 100
+ },
+ {
+  "id": "c119",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/swarm_toolkit.py",
+  "name": "list_agents",
+  "expected": null,
+  "expected_line": 100
+ },
+ {
+  "id": "c120",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/swarm_toolkit.py",
+  "name": "list_channels",
+  "expected": null,
+  "expected_line": 100
+ },
+ {
+  "id": "c121",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/swarm_toolkit.py",
+  "name": "post_to_channel",
+  "expected": null,
+  "expected_line": 100
+ },
+ {
+  "id": "c122",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/delegation.py",
+  "name": "HybridDelegator",
+  "expected": "class HybridDelegator: delegate(request, timeout) ; _wait_for_result(task_id, timeout)",
+  "expected_line": 1
+ },
+ {
+  "id": "c123",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/delegation.py",
+  "name": "DelegationRequest",
+  "expected": "class DelegationRequest(BaseModel): requester_name, target_agent, task_description, room_id, context",
+  "expected_line": 1
+ },
+ {
+  "id": "c124",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/client.py",
+  "name": "MatrixClientWrapper",
+  "expected": "class MatrixClientWrapper:  # send_text, edit_message, send_event, set_room_state, get_room_state_event, on_message, on_custom_event",
+  "expected_line": 1
+ },
+ {
+  "id": "c125",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/appservice.py",
+  "name": "MatrixAppService",
+  "expected": null,
+  "expected_line": 1
+ },
+ {
+  "id": "c126",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/hook.py",
+  "name": "MatrixHook",
+  "expected": "class MatrixHook(BaseHook): hook_type = HookType.MATRIX  # room_routing -> agent/crew",
+  "expected_line": 1
+ },
+ {
+  "id": "c127",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py",
+  "name": "AgentCardEventContent",
+  "expected": "class AgentCardEventContent(BaseModel)  # l.89",
+  "expected_line": 89
+ },
+ {
+  "id": "c128",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py",
+  "name": "TaskEventContent",
+  "expected": "class TaskEventContent(BaseModel)       # l.110",
+  "expected_line": 89
+ },
+ {
+  "id": "c129",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py",
+  "name": "ResultEventContent",
+  "expected": "class ResultEventContent(BaseModel)     # l.131",
+  "expected_line": 89
+ },
+ {
+  "id": "c130",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py",
+  "name": "AgentAnswer",
+  "expected": "class AgentAnswer(BaseModel)            # l.165 \u2014 fixed envelope returned by ask_agent",
+  "expected_line": 89
+ },
+ {
+  "id": "c131",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py",
+  "name": "FeedbackEventContent",
+  "expected": null,
+  "expected_line": 89
+ },
+ {
+  "id": "c132",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py",
+  "name": "ChannelStateContent",
+  "expected": "class ChannelStateContent(BaseModel)    # l.269 (state_key='')",
+  "expected_line": 89
+ },
+ {
+  "id": "c133",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py",
+  "name": "TunnelStateContent",
+  "expected": "class TunnelStateContent(BaseModel)     # l.283",
+  "expected_line": 89
+ },
+ {
+  "id": "c134",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/a2a_transport.py",
+  "name": "MatrixA2ATransport",
+  "expected": "class MatrixA2ATransport:  # publish_card(room_id, card_data) -> room state; discover_card; send_task; send_result; send_status; wait_for_result(room_id, task_id)",
+  "expected_line": 1
+ },
+ {
+  "id": "c135",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/registry.py",
+  "name": "MatrixCrewRegistry",
+  "expected": "class MatrixCrewRegistry: register/unregister/update_status/get/get_by_mxid/all_agents/is_human",
+  "expected_line": 1
+ },
+ {
+  "id": "c136",
+  "kind": "symbol",
+  "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/registry.py",
+  "name": "MatrixAgentCard",
+  "expected": "class MatrixAgentCard(BaseModel): agent_name, display_name, mxid, status ('ready | busy | offline'), current_task, skills: List[str]",
+  "expected_line": 1
+ },
+ {
+  "id": "c137",
+  "kind": "file",
+  "path": "sdd/specs/matrix-collaborative-crew.spec.md",
+  "line": 1
+ },
+ {
+  "id": "c138",
+  "kind": "file",
+  "path": "sdd/specs/integrations-matrix-multi.spec.md",
+  "line": null
+ },
+ {
+  "id": "c139",
+  "kind": "file",
+  "path": "sdd/proposals/matrix-agents-swarm.brainstorm.md",
+  "line": null
+ },
+ {
+  "id": "c140",
+  "kind": "file",
+  "path": "docker-compose.matrix.yml",
+  "line": 1
+ },
+ {
+  "id": "c141",
+  "kind": "file",
+  "path": "docker-compose.matrix.yml",
+  "line": 39
+ },
+ {
+  "id": "c142",
+  "kind": "file",
+  "path": "docker-compose.matrix.yml",
+  "line": 86
+ },
+ {
+  "id": "c143",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "name": "WorkingMemoryToolkit",
+  "expected": "class WorkingMemoryToolkit(TaskMemoryToolsMixin, AbstractToolkit):",
+  "expected_line": 47
+ },
+ {
+  "id": "c144",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "name": "_put",
+  "expected": "async def _put(self, key: str, df: pd.DataFrame, **kwargs: Any):",
+  "expected_line": 244
+ },
+ {
+  "id": "c145",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "name": "_put_generic",
+  "expected": "async def _put_generic(self, key: str, data: Any, **kwargs: Any):",
+  "expected_line": 244
+ },
+ {
+  "id": "c146",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "name": "_drop",
+  "expected": null,
+  "expected_line": 244
+ },
+ {
+  "id": "c147",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "name": "store_result",
+  "expected": "async def store_result(self, key: str, data: Any, data_type: str = \"auto\", description: str = \"\",",
+  "expected_line": 374
+ },
+ {
+  "id": "c148",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "name": "get_result",
+  "expected": "async def get_result(self, key: str, max_length: int = 500, include_raw: bool = False, max_rehydrate_bytes=None",
+  "expected_line": 425
+ },
+ {
+  "id": "c149",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "name": "import_from_tool",
+  "expected": "async def import_from_tool(  # pulls a tool's shared dataframe into working memory",
+  "expected_line": 813
+ },
+ {
+  "id": "c150",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "name": "_stage_missing_sources",
+  "expected": null,
+  "expected_line": 813
+ },
+ {
+  "id": "c151",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/models.py",
+  "name": "EntryType",
+  "expected": "class EntryType(str, Enum):  class OperationType(str, Enum):",
+  "expected_line": 15
+ },
+ {
+  "id": "c152",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/models.py",
+  "name": "OperationType",
+  "expected": null,
+  "expected_line": 15
+ },
+ {
+  "id": "c153",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/blob.py",
+  "name": "BlobKind",
+  "expected": null,
+  "expected_line": 135
+ },
+ {
+  "id": "c154",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/blob.py",
+  "line": 244
+ },
+ {
+  "id": "c155",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "name": "WorkingMemoryToolkit",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c156",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/internals.py",
+  "name": "WorkingMemoryCatalog",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c157",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/blob.py",
+  "line": null
+ },
+ {
+  "id": "c158",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/store/postgres.py",
+  "line": null
+ },
+ {
+  "id": "c159",
+  "kind": "file",
+  "path": "sdd/proposals/workingmemory-toolkit.proposal.md",
+  "line": 252
+ },
+ {
+  "id": "c160",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "name": "WorkingMemoryToolkit",
+  "expected": null,
+  "expected_line": 1
+ },
+ {
+  "id": "c161",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "name": "WorkingMemoryToolkit",
+  "expected": "class WorkingMemoryToolkit(TaskMemoryToolsMixin, AbstractToolkit):",
+  "expected_line": 48
+ },
+ {
+  "id": "c162",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "name": "store_result",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c163",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "name": "get_result",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c164",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "name": "search_stored",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c165",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "name": "list_stored",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c166",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "name": "compute_and_store",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c167",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "name": "import_from_tool",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c168",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+  "name": "from_runtime",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c169",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/models.py",
+  "name": "EntryType",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c170",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/models.py",
+  "name": "StoreResultInput",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c171",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/models.py",
+  "name": "GetResultInput",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c172",
+  "kind": "file",
+  "path": "sdd/specs/extending-workingmemorytoolkit.spec.md",
+  "line": null
+ },
+ {
+  "id": "c173",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "name": "AuditLedgerEntry",
+  "expected": "class AuditLedgerEntry(BaseModel):",
+  "expected_line": 80
+ },
+ {
+  "id": "c174",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "name": "AbstractKMSSigner",
+  "expected": null,
+  "expected_line": 135
+ },
+ {
+  "id": "c175",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "name": "__init__",
+  "expected": "def __init__(self, signer: Optional[AbstractKMSSigner] = None, storage: Optional[Any] = None):",
+  "expected_line": 296
+ },
+ {
+  "id": "c176",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "name": "append",
+  "expected": "async def append(self, *, user_id: str, channel: str, tool: str, provider: str, credential_material: Any) -> AuditLedgerEntry:",
+  "expected_line": 338
+ },
+ {
+  "id": "c177",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "name": "verify",
+  "expected": "async def verify(self, entry_id: str) -> bool:",
+  "expected_line": 407
+ },
+ {
+  "id": "c178",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "name": "get_entry",
+  "expected": null,
+  "expected_line": 407
+ },
+ {
+  "id": "c179",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "name": "entry_count",
+  "expected": null,
+  "expected_line": 407
+ },
+ {
+  "id": "c180",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "line": 1
+ },
+ {
+  "id": "c181",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "name": "AuditLedgerEntry",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c182",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "name": "AbstractKMSSigner",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c183",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "name": "LocalHMACSigner",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c184",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "name": "AzureKeyVaultSigner",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c185",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "name": "AuditLedger",
+  "expected": "class AuditLedger: __init__(self, signer, storage); append(); verify(entry_id); get_entry(entry_id); entry_count()",
+  "expected_line": null
+ },
+ {
+  "id": "c186",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/auth/audit.py",
+  "line": null
+ },
+ {
+  "id": "c187",
+  "kind": "file",
+  "path": "sdd/tasks/completed/TASK-1642-auditledger.md",
+  "line": null
+ },
+ {
+  "id": "c188",
+  "kind": "file",
+  "path": "sdd/tasks/active/TASK-4474-semantic-audit-ledger.md",
+  "line": null
+ },
+ {
+  "id": "c189",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/guardrails/builtin/pbac.py",
+  "name": "PBACToolCallGuardrail",
+  "expected": "class PBACToolCallGuardrail(Guardrail):",
+  "expected_line": 53
+ },
+ {
+  "id": "c190",
+  "kind": "anchor",
+  "path": "packages/ai-parrot/src/parrot/bots/guardrails/builtin/pbac.py",
+  "anchor": "result = self._evaluator.check_access(ctx=eval_ctx, resource_type=ResourceType.TOOL,",
+  "for": "check"
+ },
+ {
+  "id": "c191",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/guardrails/builtin/pbac.py",
+  "name": "_policy_enforcement",
+  "expected": null,
+  "expected_line": 143
+ },
+ {
+  "id": "c192",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/executors/policy.py",
+  "name": "ExecutionPolicy",
+  "expected": "class ExecutionPolicy(BaseModel):",
+  "expected_line": 147
+ },
+ {
+  "id": "c193",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "set_resolver",
+  "expected": "def set_resolver(self, resolver: \"AbstractPermissionResolver\") -> None:",
+  "expected_line": 443
+ },
+ {
+  "id": "c194",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "set_grant_guard",
+  "expected": "def set_grant_guard(self, guard: \"GrantGuard\") -> None:",
+  "expected_line": 528
+ },
+ {
+  "id": "c195",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "name": "_collect_and_register_policies",
+  "expected": "def _collect_and_register_policies(  def register_db_bot_policies(",
+  "expected_line": 379
+ },
+ {
+  "id": "c196",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "name": "register_db_bot_policies",
+  "expected": null,
+  "expected_line": 379
+ },
+ {
+  "id": "c197",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "__init__",
+  "expected": "def __init__(self, logger=None, debug=False, include_search_tool=False,",
+  "expected_line": 289
+ },
+ {
+  "id": "c198",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "add_tool",
+  "expected": "def add_tool(self, tool: Union[ToolDefinition, AbstractTool], name: Optional[str] = None",
+  "expected_line": 827
+ },
+ {
+  "id": "c199",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "register_tool",
+  "expected": null,
+  "expected_line": 827
+ },
+ {
+  "id": "c200",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "register_toolkit",
+  "expected": "def register_toolkit(self, toolkit: Union[str, \"AbstractToolkit\", type], **kwargs)",
+  "expected_line": 1190
+ },
+ {
+  "id": "c201",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "unregister_tool",
+  "expected": "def unregister_tool(self, tool_name: str) -> bool:",
+  "expected_line": 1434
+ },
+ {
+  "id": "c202",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "clear_tools",
+  "expected": null,
+  "expected_line": 1434
+ },
+ {
+  "id": "c203",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "remove_tool",
+  "expected": "def remove_tool(self, tool_name: str) -> None:",
+  "expected_line": 1434
+ },
+ {
+  "id": "c204",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "execute_tool",
+  "expected": "async def execute_tool(",
+  "expected_line": 1787
+ },
+ {
+  "id": "c205",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "register_a2a_agent",
+  "expected": null,
+  "expected_line": 2302
+ },
+ {
+  "id": "c206",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "get_by_skill",
+  "expected": "def get_by_skill(self, skill: str) -> List[RegisteredAgent]:",
+  "expected_line": 2342
+ },
+ {
+  "id": "c207",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "get_by_tag",
+  "expected": null,
+  "expected_line": 2342
+ },
+ {
+  "id": "c208",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "search_a2a_agents",
+  "expected": null,
+  "expected_line": 2342
+ },
+ {
+  "id": "c209",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "execute_tool_call",
+  "expected": "async def execute_tool_call(",
+  "expected_line": 2403
+ },
+ {
+  "id": "c210",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "clone",
+  "expected": "def clone(self, *, include_search_tool: bool = False) -> \"ToolManager\":",
+  "expected_line": 2824
+ },
+ {
+  "id": "c211",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "list_shared_dataframes",
+  "expected": null,
+  "expected_line": 2934
+ },
+ {
+  "id": "c212",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "add_result_hook",
+  "expected": "def add_result_hook(self, fn: Callable[[str, Any, Dict[str, Any]], None])",
+  "expected_line": 2934
+ },
+ {
+  "id": "c213",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "cleanup_toolkits",
+  "expected": null,
+  "expected_line": 2934
+ },
+ {
+  "id": "c214",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/a2a_agent.py",
+  "name": "A2AAgent",
+  "expected": "class A2AAgent(BasicAgent, A2AEnabledMixin):",
+  "expected_line": 1
+ },
+ {
+  "id": "c215",
+  "kind": "file",
+  "path": "packages/ai-parrot-integrations/tests/test_matrix_swarm_toolkit.py",
+  "line": 1
+ },
+ {
+  "id": "c216",
+  "kind": "file",
+  "path": "packages/ai-parrot-integrations/tests/test_matrix_tunnel.py",
+  "line": 1
+ },
+ {
+  "id": "c217",
+  "kind": "file",
+  "path": "packages/ai-parrot-integrations/tests/test_matrix_delegation.py",
+  "line": 1
+ },
+ {
+  "id": "c218",
+  "kind": "file",
+  "path": "packages/ai-parrot/tests/test_crew_sequential_regression.py",
+  "line": 1
+ },
+ {
+  "id": "c219",
+  "kind": "file",
+  "path": "packages/ai-parrot/tests/test_agent_registry_instances.py",
+  "line": 1
+ },
+ {
+  "id": "c220",
+  "kind": "file",
+  "path": "packages/ai-parrot/tests/registry/test_capability_registry.py",
+  "line": 1
+ },
+ {
+  "id": "c221",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/tests/test_working_memory.py",
+  "line": 1
+ },
+ {
+  "id": "c222",
+  "kind": "file",
+  "path": "packages/ai-parrot/tests/test_a2a_v1_mesh_router.py",
+  "line": 1
+ },
+ {
+  "id": "c223",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/capabilities/models.py",
+  "name": "ResourceType",
+  "expected": "class ResourceType(str, Enum):",
+  "expected_line": 25
+ },
+ {
+  "id": "c224",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/capabilities/models.py",
+  "name": "CapabilityEntry",
+  "expected": "class CapabilityEntry(BaseModel):",
+  "expected_line": 48
+ },
+ {
+  "id": "c225",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/capabilities/registry.py",
+  "name": "CapabilityRegistry",
+  "expected": "class CapabilityRegistry:",
+  "expected_line": 19
+ },
+ {
+  "id": "c226",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/capabilities/registry.py",
+  "name": "build_index",
+  "expected": null,
+  "expected_line": 46
+ },
+ {
+  "id": "c227",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/capabilities/registry.py",
+  "name": "search",
+  "expected": "async def search(",
+  "expected_line": 183
+ },
+ {
+  "id": "c228",
+  "kind": "file",
+  "path": "sdd/specs/tool-call-delegate.spec.md",
+  "line": 8
+ },
+ {
+  "id": "c229",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/bots/a2a_agent.py",
+  "line": null
+ },
+ {
+  "id": "c230",
+  "kind": "file",
+  "path": "sdd/specs/a2a-protocol-compatibility.spec.md",
+  "line": null
+ },
+ {
+  "id": "c231",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/guardrails/builtin/pbac.py",
+  "name": "PBACToolCallGuardrail",
+  "expected": null,
+  "expected_line": 1
+ },
+ {
+  "id": "c232",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/guardrails/builtin/pbac.py",
+  "name": "PolicyDenialReport",
+  "expected": null,
+  "expected_line": 1
+ },
+ {
+  "id": "c233",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/auth/agent_guard.py",
+  "name": "enforce_agent_access",
+  "expected": null,
+  "expected_line": 1
+ },
+ {
+  "id": "c234",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/auth/agent_guard.py",
+  "name": "AgentAccessDenied",
+  "expected": null,
+  "expected_line": 1
+ },
+ {
+  "id": "c235",
+  "kind": "anchor",
+  "path": "packages/ai-parrot/src/parrot/auth/agent_guard.py",
+  "anchor": "parse_bot_permissions: Validate and parse the JSONB shape stored in navigator.ai_bots.permissions",
+  "for": "parse_bot_permissions"
+ },
+ {
+  "id": "c236",
+  "kind": "file",
+  "path": "docs/security/pbac-guardrails.md",
+  "line": null
+ },
+ {
+  "id": "c237",
+  "kind": "file",
+  "path": "sdd/specs/pbac-guardrails.spec.md",
+  "line": null
+ },
+ {
+  "id": "c238",
+  "kind": "file",
+  "path": "sdd/specs/dataplane-authz.spec.md",
+  "line": null
+ },
+ {
+  "id": "c239",
+  "kind": "file",
+  "path": "policies/tool-business-hours.yaml",
+  "line": null
+ },
+ {
+  "id": "c240",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/observability/fanout.py",
+  "name": "setup_event_fanout",
+  "expected": "def setup_event_fanout(bus): Attach a dedicated Streams/publish-only bus and subscribe usage events.",
+  "expected_line": 1
+ },
+ {
+  "id": "c241",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/observability/fanout.py",
+  "name": "_validate_bus",
+  "expected": "def _validate_bus(bus): Require a Streams transport configured in publish-only mode.",
+  "expected_line": 1
+ },
+ {
+  "id": "c242",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/observability/fanout.py",
+  "name": "redact_usage_event",
+  "expected": null,
+  "expected_line": 1
+ },
+ {
+  "id": "c243",
+  "kind": "file",
+  "path": "docs/events/eventbus-v2.md",
+  "line": null
+ },
+ {
+  "id": "c244",
+  "kind": "file",
+  "path": "docs/events/eventbus-migration.md",
+  "line": null
+ },
+ {
+  "id": "c245",
+  "kind": "file",
+  "path": "sdd/tasks/completed/TASK-1800-buscore-facade-dlq.md",
+  "line": null
+ },
+ {
+  "id": "c246",
+  "kind": "file",
+  "path": "sdd/specs/eventbus-consolidation.spec.md",
+  "line": null
+ },
+ {
+  "id": "c247",
+  "kind": "file",
+  "path": "packages/ai-parrot/tests/unit/events/lifecycle/test_registry.py",
+  "line": null
+ },
+ {
+  "id": "c248",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/client.py",
+  "name": "A2AClient",
+  "expected": null,
+  "expected_line": 1
+ },
+ {
+  "id": "c249",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/client.py",
+  "name": "A2ARemoteAgentTool",
+  "expected": null,
+  "expected_line": 1
+ },
+ {
+  "id": "c250",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/client.py",
+  "name": "A2ARemoteSkillTool",
+  "expected": "class A2ARemoteSkillTool: Wraps a specific skill from a remote A2A agent as a tool.",
+  "expected_line": 1
+ },
+ {
+  "id": "c251",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/client.py",
+  "name": "_create_skill_input_model",
+  "expected": "def _create_skill_input_model(skill): Dynamically create a Pydantic model from an AgentSkill's input_schema.",
+  "expected_line": 1
+ },
+ {
+  "id": "c252",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/mixin.py",
+  "name": "A2AClientMixin",
+  "expected": "class A2AClientMixin:",
+  "expected_line": 34
+ },
+ {
+  "id": "c253",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/mixin.py",
+  "name": "set_matrix_transport",
+  "expected": null,
+  "expected_line": 105
+ },
+ {
+  "id": "c254",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/mixin.py",
+  "name": "discover_from_mesh",
+  "expected": "async def discover_from_mesh(self, skill, tag, register_as_tools)",
+  "expected_line": 146
+ },
+ {
+  "id": "c255",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/mixin.py",
+  "name": "fan_out",
+  "expected": null,
+  "expected_line": 346
+ },
+ {
+  "id": "c256",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/mixin.py",
+  "name": "pipeline",
+  "expected": null,
+  "expected_line": 346
+ },
+ {
+  "id": "c257",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/mixin.py",
+  "name": "add_a2a_agent",
+  "expected": null,
+  "expected_line": 346
+ },
+ {
+  "id": "c258",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/mixin.py",
+  "name": "ask_remote_agent",
+  "expected": null,
+  "expected_line": 535
+ },
+ {
+  "id": "c259",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/mixin.py",
+  "name": "invoke_remote_skill",
+  "expected": null,
+  "expected_line": 535
+ },
+ {
+  "id": "c260",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/mesh.py",
+  "name": "A2AMeshDiscovery",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c261",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/router.py",
+  "name": "A2AProxyRouter",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c262",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/agents/a2a_orchestrator.py",
+  "line": null
+ },
+ {
+  "id": "c263",
+  "kind": "file",
+  "path": "docs/architecture/02-a2a.md",
+  "line": null
+ },
+ {
+  "id": "c264",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "ToolManager",
+  "expected": "class ToolManager: __init__(self, logger, debug, include_search_tool, resolver, execution_policy)",
+  "expected_line": null
+ },
+ {
+  "id": "c265",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "ToolSchemaAdapter",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c266",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "ToolDefinition",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c267",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "ToolNameCollisionError",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c268",
+  "kind": "file",
+  "path": "sdd/tasks/completed/TASK-3662-agenttalk-session-overrides.md",
+  "line": null
+ },
+ {
+  "id": "c269",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/core/types.py",
+  "line": null
+ },
+ {
+  "id": "c270",
+  "kind": "file",
+  "path": "packages/ai-parrot/tests/clients/test_nova_protocol_frames.py",
+  "line": null
+ },
+ {
+  "id": "c271",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/repl_worker/transport.py",
+  "name": "encode_dataframe",
+  "expected": null,
+  "expected_line": 1
+ },
+ {
+  "id": "c272",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/repl_worker/transport.py",
+  "name": "decode_dataframe_from_shm",
+  "expected": null,
+  "expected_line": 1
+ },
+ {
+  "id": "c273",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/repl_worker/transport.py",
+  "name": "unlink_shm",
+  "expected": null,
+  "expected_line": 1
+ },
+ {
+  "id": "c274",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/repl_worker/handle.py",
+  "name": "inject_dataframe",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c275",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/pythonrepl.py",
+  "name": "inject_dataframe",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c276",
+  "kind": "file",
+  "path": "sdd/tasks/completed/TASK-1945-dataframe-arrow-transport.md",
+  "line": null
+ },
+ {
+  "id": "c277",
+  "kind": "absent",
+  "name": "performative",
+  "scope": "packages/ai-parrot/src/parrot"
+ },
+ {
+  "id": "c278",
+  "kind": "absent",
+  "name": "performative",
+  "scope": "packages/ai-parrot-integrations/src/parrot"
+ },
+ {
+  "id": "c279",
+  "kind": "absent",
+  "name": "performative",
+  "scope": "packages/ai-parrot-server/src/parrot"
+ },
+ {
+  "id": "c280",
+  "kind": "absent",
+  "name": "speech_act",
+  "scope": "packages/ai-parrot/src/parrot"
+ },
+ {
+  "id": "c281",
+  "kind": "absent",
+  "name": "not_understood",
+  "scope": "packages/ai-parrot/src/parrot"
+ },
+ {
+  "id": "c282",
+  "kind": "absent",
+  "name": "contract_net",
+  "scope": "packages/ai-parrot/src/parrot"
+ },
+ {
+  "id": "c283",
+  "kind": "absent",
+  "name": "FIPA",
+  "scope": "packages/ai-parrot/src/parrot"
+ },
+ {
+  "id": "c284",
+  "kind": "absent",
+  "name": "find_capability",
+  "scope": "packages/ai-parrot/src/parrot/registry"
+ },
+ {
+  "id": "c285",
+  "kind": "absent",
+  "name": "locality",
+  "scope": "packages/ai-parrot/src/parrot/registry"
+ },
+ {
+  "id": "c286",
+  "kind": "absent",
+  "name": "blackboard",
+  "scope": "packages/ai-parrot/src/parrot/bots/flows"
+ },
+ {
+  "id": "c287",
+  "kind": "absent",
+  "name": "single_writer",
+  "scope": "packages/ai-parrot/src/parrot/bots/flows"
+ },
+ {
+  "id": "c288",
+  "kind": "absent",
+  "name": "allowed_agents",
+  "scope": "packages/ai-parrot/src/parrot/registry"
+ },
+ {
+  "id": "c289",
+  "kind": "absent",
+  "name": "inter_agent",
+  "scope": "packages/ai-parrot/src/parrot/registry"
+ },
+ {
+  "id": "c290",
+  "kind": "absent",
+  "name": "can_call",
+  "scope": "packages/ai-parrot/src/parrot/registry"
+ },
+ {
+  "id": "c291",
+  "kind": "absent",
+  "name": "polars",
+  "scope": "packages/ai-parrot/src/parrot/tools/working_memory"
+ },
+ {
+  "id": "c292",
+  "kind": "absent",
+  "name": "shared_memory",
+  "scope": "packages/ai-parrot/src/parrot/tools/working_memory"
+ }
+]

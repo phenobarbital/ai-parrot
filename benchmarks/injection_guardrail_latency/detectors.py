@@ -202,6 +202,8 @@ class TransformerDetector:
             (every physical core, per session) — deliberately available so
             the benchmark can *show* what the uncapped pool costs.
         inter_op_threads: ORT inter-op cap.
+        max_length: Maximum tokenizer sequence length.
+        positive_labels: Case-insensitive substrings identifying positive labels.
     """
 
     def __init__(
@@ -212,6 +214,8 @@ class TransformerDetector:
         intra_op_threads: int = 2,
         inter_op_threads: int = 1,
         max_length: int = MAX_LENGTH,
+        *,
+        positive_labels: tuple[str, ...] = ("inject",),
     ) -> None:
         self.name = f"clf-{backend}"
         self.model_id = model_id
@@ -220,6 +224,7 @@ class TransformerDetector:
         self.intra_op_threads = intra_op_threads
         self.inter_op_threads = inter_op_threads
         self.max_length = max_length
+        self.positive_labels = positive_labels
         self._tokenizer = None
         self._model = None
         self._session = None
@@ -242,7 +247,7 @@ class TransformerDetector:
         model = AutoModelForSequenceClassification.from_pretrained(self.model_id)
         model.eval()
         self._model = model
-        self._injection_index = _resolve_injection_index(model.config.id2label)
+        self._injection_index = _resolve_injection_index(model.config.id2label, self.positive_labels)
 
     def _load_onnx(self) -> None:
         import json
@@ -277,7 +282,7 @@ class TransformerDetector:
         config_path = self.onnx_dir / "config.json"
         if config_path.exists():
             id2label = json.loads(config_path.read_text()).get("id2label", {})
-            self._injection_index = _resolve_injection_index(id2label)
+            self._injection_index = _resolve_injection_index(id2label, self.positive_labels)
 
     def score(self, text: str) -> float:
         if self.backend == "torch":
@@ -315,18 +320,19 @@ def _softmax(logits: np.ndarray) -> np.ndarray:
     return exps / np.sum(exps)
 
 
-def _resolve_injection_index(id2label: dict) -> int:
+def _resolve_injection_index(id2label: dict, positive_labels: tuple[str, ...] = ("inject",)) -> int:
     """Locate the positive ("injection") class index from a label map.
 
     Args:
         id2label: The model config's ``id2label`` mapping. Keys may be
             ``int`` (torch config) or ``str`` (JSON round-trip).
+        positive_labels: Case-insensitive substrings identifying positive labels.
 
     Returns:
         The index of the injection class, defaulting to ``1``.
     """
     for key, label in (id2label or {}).items():
-        if "inject" in str(label).lower():
+        if any(positive_label in str(label).lower() for positive_label in positive_labels):
             return int(key)
     return 1
 

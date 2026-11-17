@@ -410,6 +410,7 @@ class GrokClient(AbstractClient):
             input_tokens=getattr(_lc_grok2_usage, "prompt_tokens", None) if _lc_grok2_usage else None,
             output_tokens=getattr(_lc_grok2_usage, "completion_tokens", None) if _lc_grok2_usage else None,
             finish_reason=None,
+            usage=_lc_grok2_usage,
         )
         return ai_message
 
@@ -547,6 +548,7 @@ class GrokClient(AbstractClient):
             input_tokens=getattr(usage, "prompt_tokens", None),
             output_tokens=getattr(usage, "completion_tokens", None),
             finish_reason=None,
+            usage=usage,
         )
         yield ai_message
 

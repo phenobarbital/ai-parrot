@@ -1,0 +1,2 @@
+{"type":"thread.started","thread_id":"thread-1","auth_mode":"chatgpt","plan_type":"plus"}
+{"type":"turn.completed","usage":{"input_tokens":1200,"cached_input_tokens":800,"output_tokens":300,"reasoning_output_tokens":125},"cost_microusd":2500}

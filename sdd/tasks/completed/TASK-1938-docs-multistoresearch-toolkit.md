@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-379 — MultiStoreSearch Toolkit with PageIndex, GraphIndex & ParrotWiki Origins
 **Spec**: `sdd/specs/multistoresearchtool-parrotwiki.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-1936, TASK-1937

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-697 — sdd-coder blast collector must read the wiki plane from the main checkout
 **Spec**: `sdd/specs/sdd-coder-complexity-collectors-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4423

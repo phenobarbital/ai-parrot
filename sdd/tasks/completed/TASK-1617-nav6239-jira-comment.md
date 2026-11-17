@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-254 — BotManager Hot Registration — NAV-6239 Confirmation
 **Spec**: `sdd/specs/botmanager-hot-registration-nav6239.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-1616

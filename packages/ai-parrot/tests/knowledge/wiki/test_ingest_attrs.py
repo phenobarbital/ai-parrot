@@ -1,5 +1,6 @@
 """Regression cases for FEAT-627."""
 
+import logging
 from pathlib import Path
 
 import pytest
@@ -131,3 +132,19 @@ def test_no_frontmatter_build_parity(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert malformed_record.body == "# malformed.md\n\n## Content\n" + malformed
     assert source_record.attrs == {}
     assert source_record.category == "module"
+
+
+def test_build_file_slice_malformed_frontmatter_warns_with_path(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """A document whose frontmatter is not valid YAML still gets a page (empty attrs) and a WARNING naming it."""
+    rel_path = "sdd/state/FEAT-746/findings/F007-pbac-policy-gate.md"
+    target = tmp_path / rel_path
+    target.parent.mkdir(parents=True)
+    target.write_text("---\nid: F007\nquery_id: [Q026, Q043], [Q033, Q050]\ntype: read\n---\n# F007\n\nBody.\n", encoding="utf-8")
+    with caplog.at_level(logging.DEBUG, logger="parrot.knowledge.wiki"):
+        file_slice = subject.build_file_slice(tmp_path, rel_path)
+    assert file_slice is not None
+    assert file_slice.record.attrs == {}
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING and rel_path in r.getMessage()]
+    assert len(warnings) == 1
+    assert warnings[0].exc_info is None
+    assert "Traceback" not in caplog.text

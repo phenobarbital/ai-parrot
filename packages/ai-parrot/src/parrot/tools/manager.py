@@ -10,14 +10,18 @@ import pandas as pd
 from .abstract import AbstractTool, ToolResult, _run_tool_output_guardrails
 from .compression import CompressionStage, CompressorRegistry
 from .compression import (
-    codecs as _compression_codecs,
+    codecs as _compression_codecs,  # noqa: F401
 )  # noqa: F401 - import side effect: registers built-in codecs before CompressorRegistry.load()
 from .compression.budget import BudgetRouter
 from .compression.tee import CompressionTee
 from .mcp_mixin import MCPToolManagerMixin
 from ..a2a.models import RegisteredAgent, AgentCard
+from ..auth.credentials import CredentialRequired
 from ..auth.exceptions import AuthorizationRequired
+from ..auth.pending import record_auth_requirement
+from ..auth.retry_safety import current_turn_tracker
 from ..core.exceptions import BudgetError
+from ..memory.agent_memory.attribution import capture_tool_attempt
 
 if TYPE_CHECKING:
     from ..auth.permission import PermissionContext
@@ -1191,6 +1195,12 @@ class ToolManager(MCPToolManagerMixin):
         """
         Register all tools from a toolkit.
 
+        Re-registration is a no-op that keeps the FIRST registration: when a
+        toolkit of the same exact class and the same ``tool_prefix`` is already
+        registered, its registered tools are returned and nothing is mutated —
+        a name or class is not even constructed. A name claimed by a DIFFERENT
+        owner still raises ``ToolNameCollisionError``.
+
         This method supports multiple input types:
         - String: Looks up the toolkit by name in SUPPORTED_TOOLKITS registry
         - Class: Instantiates the toolkit class with provided kwargs
@@ -1230,6 +1240,11 @@ class ToolManager(MCPToolManagerMixin):
             if toolkit_class is None:
                 available = ToolkitRegistry.list_toolkits()
                 raise ValueError(f"Unknown toolkit: '{toolkit}'. " f"Available toolkits: {available}")
+            existing = self._match_registered_toolkit(
+                toolkit_class, kwargs.get("tool_prefix", getattr(toolkit_class, "tool_prefix", None))
+            )
+            if existing is not None:
+                return self._keep_first(existing, candidate=None)
             try:
                 toolkit_instance = self.build_toolkit(toolkit_class, toolkit, kwargs)
             except Exception as e:
@@ -1239,6 +1254,11 @@ class ToolManager(MCPToolManagerMixin):
         elif isinstance(toolkit, type) and issubclass(toolkit, AbstractToolkit):
             # It's a toolkit class, instantiate it
             toolkit_name = toolkit.__name__
+            existing = self._match_registered_toolkit(
+                toolkit, kwargs.get("tool_prefix", getattr(toolkit, "tool_prefix", None))
+            )
+            if existing is not None:
+                return self._keep_first(existing, candidate=None)
             try:
                 toolkit_instance = self.build_toolkit(toolkit, self._slug_of_class(toolkit), kwargs)
             except Exception as e:
@@ -1249,6 +1269,9 @@ class ToolManager(MCPToolManagerMixin):
             # Already an instance
             toolkit_instance = toolkit
             toolkit_name = toolkit.__class__.__name__
+            existing = self._match_registered_toolkit(type(toolkit), toolkit.tool_prefix)
+            if existing is not None:
+                return self._keep_first(existing, candidate=toolkit)
 
         else:
             raise ValueError(
@@ -1719,6 +1742,7 @@ class ToolManager(MCPToolManagerMixin):
         call: Any,
         *,
         sync: bool = False,
+        gated: bool = False,
     ) -> Any:
         """Run one execution attempt, observed when an observer is installed.
 
@@ -1739,6 +1763,8 @@ class ToolManager(MCPToolManagerMixin):
             sync: When ``True``, ``call`` returns a plain value rather
                 than an awaitable — the legacy inline synchronous path,
                 preserved exactly.
+            gated: True when ``call`` runs AbstractTool.execute, which reports its own
+                body/pre-body marks.
 
         Returns:
             Whatever the attempt returned.
@@ -1748,21 +1774,41 @@ class ToolManager(MCPToolManagerMixin):
                 ``CancelledError`` is recorded and re-raised, never
                 swallowed.
         """
-        observer = self._invocation_observer
-        if observer is None or observation is None:
-            return call() if sync else await call()
+        tracker = current_turn_tracker()
+        if tracker is not None:
+            tracker.mark_dispatch()
+            if not gated:
+                tracker.mark_body_started()  # a plain function's call IS its body
 
-        observed = await observer.begin(tool_name)
-        observation.executed = True
+        observer = self._invocation_observer
+        observed = None
+        if observer is not None and observation is not None:
+            observed = await observer.begin(tool_name)
+            observation.executed = True
         try:
             result = call() if sync else await call()
         except asyncio.CancelledError:
-            await observer.cancelled(observed)
+            if observed is not None:
+                await observer.cancelled(observed)
+            try:
+                await capture_tool_attempt(tool_name, terminal="cancelled")
+            except Exception as exc:  # noqa: BLE001 - memory capture cannot replace cancellation
+                self.logger.warning("tool memory capture failed: %s", type(exc).__name__)
             raise
         except BaseException as exc:  # noqa: BLE001 — classified, then re-raised
-            await observer.finish(observed, exception=exc)
+            if observed is not None:
+                await observer.finish(observed, exception=exc)
+            try:
+                await capture_tool_attempt(tool_name, terminal="raised", exception=exc)
+            except Exception as capture_exc:  # noqa: BLE001 - preserve the execution exception
+                self.logger.warning("tool memory capture failed: %s", type(capture_exc).__name__)
             raise
-        await observer.finish(observed, value=result)
+        if observed is not None:
+            await observer.finish(observed, value=result)
+        try:
+            await capture_tool_attempt(tool_name, terminal="returned", returned=result)
+        except Exception as exc:  # noqa: BLE001 - memory capture cannot replace the tool result
+            self.logger.warning("tool memory capture failed: %s", type(exc).__name__)
         return result
 
     async def execute_tool(
@@ -2164,7 +2210,10 @@ class ToolManager(MCPToolManagerMixin):
                         exec_kwargs.setdefault("_cred_user_id", getattr(permission_context, "user_id", None))
 
                 result = await self._observed(
-                    observation, tool_name, lambda: self._call_tool_execute(tool, exec_kwargs, parameters, approved)
+                    observation,
+                    tool_name,
+                    lambda: self._call_tool_execute(tool, exec_kwargs, parameters, approved),
+                    gated=True,
                 )
 
                 if return_tool_result:
@@ -2251,23 +2300,24 @@ class ToolManager(MCPToolManagerMixin):
                 return out
             else:
                 raise ValueError(f"Unknown tool type: {type(tool)}")
-        except AuthorizationRequired as auth_exc:
+        except (AuthorizationRequired, CredentialRequired) as auth_exc:
+            payload = (
+                auth_exc.to_payload(tool_name=tool_name)
+                if isinstance(auth_exc, CredentialRequired)
+                else auth_exc.to_payload()
+            )
             self.logger.info(
                 "Authorization required for tool %s: provider=%s",
                 tool_name,
-                auth_exc.provider,
+                payload.provider,
             )
+            record_auth_requirement(payload)
             return ToolResult(
                 success=False,
                 status="authorization_required",
                 result=None,
-                error=auth_exc.message,
-                metadata={
-                    "auth_url": auth_exc.auth_url,
-                    "provider": auth_exc.provider,
-                    "scopes": list(auth_exc.scopes),
-                    "tool_name": auth_exc.tool_name,
-                },
+                error=payload.message,
+                metadata=payload.model_dump(),
             )
         except Exception as e:
             self.logger.error("Error executing tool %s: %s", tool_name, e)
@@ -2699,6 +2749,72 @@ class ToolManager(MCPToolManagerMixin):
             i += 1
             name = f"{base}_{i}"
         return name
+
+    def _registered_toolkit_owners(self) -> List["AbstractToolkit"]:
+        """Return unique toolkit owners of registered tools in registration order."""
+        owners: List[Any] = []
+        seen: Set[int] = set()
+        for tool in self._tools.values():
+            owner = get_toolkit_owner(tool)
+            if owner is None or id(owner) in seen:
+                continue
+            seen.add(id(owner))
+            owners.append(owner)
+        return owners
+
+    def find_registered_toolkit(
+        self,
+        toolkit_cls: type,
+        *,
+        tool_prefix: Optional[str] = None,
+    ) -> Optional["AbstractToolkit"]:
+        """Return the first registered instance of ``toolkit_cls``, or ``None``.
+
+        Matches on the exact class and, when ``tool_prefix`` is given, on an
+        equal prefix. A ``None`` prefix means that no prefix filter is applied.
+
+        Args:
+            toolkit_cls: The toolkit class to find.
+            tool_prefix: Optional prefix filter.
+
+        Returns:
+            The first matching registered toolkit, or ``None``.
+        """
+        for owner in self._registered_toolkit_owners():
+            if type(owner) is not toolkit_cls:
+                continue
+            if tool_prefix is not None and owner.tool_prefix != tool_prefix:
+                continue
+            return owner
+        return None
+
+    def _match_registered_toolkit(self, toolkit_cls: type, tool_prefix: Optional[str]) -> Optional["AbstractToolkit"]:
+        """Return an exact-class and exact-prefix registered toolkit, if any."""
+        for owner in self._registered_toolkit_owners():
+            if type(owner) is toolkit_cls and owner.tool_prefix == tool_prefix:
+                return owner
+        return None
+
+    def _registered_tools_of(self, owner: "AbstractToolkit") -> List[AbstractTool]:
+        """Return tools registered from ``owner`` in registration order."""
+        return [tool for tool in self._tools.values() if get_toolkit_owner(tool) is owner]
+
+    def _keep_first(self, existing: "AbstractToolkit", candidate: Optional["AbstractToolkit"]) -> List[AbstractTool]:
+        """Log a keep-first skip and return the existing owner's tools."""
+        if candidate is not None and candidate is not existing:
+            self.logger.warning(
+                "Toolkit %s (tool_prefix=%r) is already registered; keeping the first instance "
+                "and ignoring the new one.",
+                type(existing).__name__,
+                existing.tool_prefix,
+            )
+        else:
+            self.logger.debug(
+                "Toolkit %s (tool_prefix=%r) is already registered; keeping the first instance.",
+                type(existing).__name__,
+                existing.tool_prefix,
+            )
+        return self._registered_tools_of(existing)
 
     def _find_working_memory_toolkit(self) -> Optional[Any]:
         """Locate an already-registered ``WorkingMemoryToolkit`` instance.

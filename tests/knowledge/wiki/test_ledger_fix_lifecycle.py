@@ -7,7 +7,7 @@ import asyncio
 import pytest
 
 from parrot.knowledge.wiki.ledger.fix_planner import plan_fix_batch
-from parrot.knowledge.wiki.ledger.index import LedgerIndex
+from parrot.knowledge.wiki.ledger.index import ClaimHeldByOther, LedgerIndex
 from parrot.knowledge.wiki.ledger.log import LedgerLog
 from parrot.knowledge.wiki.ledger.service import LedgerService
 from parrot.knowledge.wiki.ledger.store import LedgerStore
@@ -109,3 +109,49 @@ async def test_plan_reflects_ready_pool_after_release(service):
     plan = plan_fix_batch(await service.ready_work(), generated_at="x")
     plan_issue_ids = {issue.issue_id for group in plan.groups for issue in group.issues}
     assert plan_issue_ids == set(ids)
+
+
+# --- issue:5439a91953a4 — parallel /sdd-fix sessions must not close or release each other's claims ---
+
+SESSION_A = "agent:sdd-fix:aaaa1111"
+SESSION_B = "agent:sdd-fix:bbbb2222"
+
+
+async def test_session_cannot_close_an_issue_another_session_claimed(service):
+    first, second = await _seed_group(service, n=2)  # one fix group, two issues
+    assert await service.claim(first, SESSION_A) is True
+    assert await service.claim(second, SESSION_B) is True
+    # Session A widens its scope to the whole group: the issue B claimed is not A's to close.
+    with pytest.raises(ClaimHeldByOther) as exc:
+        await service.close_issue(second, "absorbed", SESSION_A, resolved_by="commit:a")
+    assert exc.value.claimed_by == SESSION_B
+    state = await _state(service, second)
+    assert state["status"] == "claimed"
+    assert state["claimed_by"] == SESSION_B
+    # Its own claim still closes normally.
+    assert await service.close_issue(first, "fixed", SESSION_A, resolved_by="commit:a") is True
+
+
+async def test_session_cannot_unclaim_another_sessions_claim(service):
+    (iid,) = await _seed_group(service, n=1)
+    assert await service.claim(iid, SESSION_B) is True
+    with pytest.raises(ClaimHeldByOther):
+        await service.unclaim(iid, "not mine", SESSION_A)
+    assert (await _state(service, iid))["claimed_by"] == SESSION_B
+    assert await service.unclaim(iid, "releasing", SESSION_B) is True
+
+
+async def test_force_overrides_a_foreign_claim(service):
+    first, second = await _seed_group(service, n=2)
+    assert await service.claim(first, SESSION_A) is True
+    assert await service.claim(second, SESSION_A) is True
+    # /sdd-done closes the issue an /sdd-fix session handed off; a stale claim can be released by hand.
+    assert await service.close_issue(first, "verified", "agent:sdd-done", resolved_by="task:TASK-1", force=True)
+    assert await service.unclaim(second, "stale claim", "human:jesus", force=True) is True
+    assert (await _state(service, first))["closed_by"] == "agent:sdd-done"
+    assert (await _state(service, second))["status"] == "open"
+
+
+async def test_unclaimed_issue_closes_for_any_actor(service):
+    (iid,) = await _seed_group(service, n=1)
+    assert await service.close_issue(iid, "fixed", SESSION_A, resolved_by="commit:a") is True

@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
-DOC = REPO_ROOT / "docs" / "knowledge" / "manuals.md"
+DOC = REPO_ROOT / "wiki" / "knowledge" / "manuals.md"
 
 HEADINGS = (
     "## 1. Installation",

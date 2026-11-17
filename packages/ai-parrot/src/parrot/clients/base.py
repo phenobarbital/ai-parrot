@@ -83,11 +83,28 @@ from navigator_eventbus.lifecycle.global_registry import get_global_registry
 from parrot.observability.context import (
     current_agent_name,
     current_session_id,
+    current_tenant,
     current_user_id,
 )
+from parrot.observability.cost import get_shared_cost_calculator, last_call_cost
 
 # FEAT-550: the four public text methods __init_subclass__ wraps with the budget entry adapter.
 _BUDGETED_METHODS: tuple[str, ...] = ("ask", "ask_stream", "resume", "invoke")
+
+_PROVIDER_LABEL_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
+
+
+def _safe_provider_label(value: Any) -> str:
+    """Return a tool-supplied provider id only when it is a short plain identifier, else a generic label."""
+    if isinstance(value, str) and _PROVIDER_LABEL_RE.match(value):
+        return value
+    return "the required service"
+
+
+_NEEDS_AUTH_TOOL_MESSAGE = (
+    "The user must connect their {provider} account before this tool can run. "
+    "Do not retry this tool in this turn; tell the user a connection is required."
+)
 
 LLM_PRESETS = {
     "analytical": {"temperature": 0.1, "max_tokens": 4000},
@@ -252,6 +269,31 @@ class _LoopClientEntry:
     metadata: dict = field(default_factory=dict)
 
 
+_CACHE_READ_NAMES = ("cache_read_tokens", "cache_read_input_tokens", "cached_input_tokens", "cached_tokens")
+_CACHE_CREATION_NAMES = ("cache_creation_tokens", "cache_creation_input_tokens", "cache_write_input_tokens")
+_REASONING_NAMES = ("reasoning_output_tokens", "reasoning_tokens")
+
+
+def _first_count(usage: Any, names: "tuple[str, ...]") -> "Optional[int]":
+    """Return the first non-negative int attribute or key of *usage* among *names*."""
+    for name in names:
+        value = usage.get(name) if isinstance(usage, dict) else getattr(usage, name, None)
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+    return None
+
+
+def _usage_counters(usage: Any) -> "dict[str, Optional[int]]":
+    """Extract FEAT-783 cache/reasoning counters from a usage object (``None`` when absent)."""
+    if usage is None:
+        return {"cache_read_tokens": None, "cache_creation_tokens": None, "reasoning_output_tokens": None}
+    return {
+        "cache_read_tokens": _first_count(usage, _CACHE_READ_NAMES),
+        "cache_creation_tokens": _first_count(usage, _CACHE_CREATION_NAMES),
+        "reasoning_output_tokens": _first_count(usage, _REASONING_NAMES),
+    }
+
+
 class AbstractClient(EventEmitterMixin, ABC):
     """Abstract base Class for LLM models."""
 
@@ -278,6 +320,12 @@ class AbstractClient(EventEmitterMixin, ABC):
     # public text methods they cover. Empty means "unsupported": any requested or
     # inherited budget fails with BudgetUnsupported BEFORE the implementation runs.
     budget_supported_methods: FrozenSet[str] = frozenset()
+
+    # FEAT-848: whether text ask() executes enabled, registered tools and feeds results back
+    # before returning (in-process or through an agent bridge, subject to existing limits).
+    # No claim about ask_stream() or inline tools registration. AgenticRetriever fails fast
+    # on False instead of reading tool_calls == 0 after a wasted call.
+    supports_tool_loop: bool = True
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         """Install the budget entry adapter once on each concrete public text method (FEAT-550 §2.1)."""
@@ -637,6 +685,7 @@ $backstory
             agent_name=current_agent_name.get(),
             user_id=current_user_id.get(),
             session_id=current_session_id.get(),
+            tenant=current_tenant.get(),
         )
         self.events.emit_nowait(event)
         # Client registries are isolated (forward_to_global=False). Forward the
@@ -716,6 +765,7 @@ $backstory
             agent_name=current_agent_name.get(),
             user_id=current_user_id.get(),
             session_id=current_session_id.get(),
+            tenant=current_tenant.get(),
         )
         self.events.emit_nowait(event)
         # Client registries are isolated (forward_to_global=False). Forward the
@@ -734,7 +784,8 @@ $backstory
         input_tokens: "Optional[int]" = None,
         output_tokens: "Optional[int]" = None,
         finish_reason: "Optional[str]" = None,
-    ) -> None:
+        usage: "Any" = None,
+    ) -> "Optional[float]":
         """Emit ``AfterClientCallEvent`` for a successful call.
 
         Must NOT be called when :meth:`_emit_failed_call` was called.
@@ -747,7 +798,23 @@ $backstory
             input_tokens: Input token count (provider-dependent; may be ``None``).
             output_tokens: Output token count (provider-dependent; may be ``None``).
             finish_reason: Stop reason from the provider.
+            usage: Optional usage object (``CompletionUsage`` or a provider usage
+                object). Its prompt-cache and reasoning counters are copied onto
+                the event and cached tokens are priced at the cache tier (FEAT-783).
+
+        Returns:
+            The call cost in USD computed once for the event (FEAT-710), or
+            ``None`` when pricing is unavailable.
         """
+        counters = _usage_counters(usage)
+        cost_usd = self._compute_call_cost(
+            client_name,
+            model,
+            input_tokens,
+            output_tokens,
+            cached_input_tokens=counters["cache_read_tokens"],
+            cache_creation_tokens=counters["cache_creation_tokens"],
+        )
         event = AfterClientCallEvent(
             trace_context=tc,
             client_name=client_name,
@@ -764,6 +831,10 @@ $backstory
             agent_name=current_agent_name.get(),
             user_id=current_user_id.get(),
             session_id=current_session_id.get(),
+            tenant=current_tenant.get(),
+            cost_usd=cost_usd,
+            **counters,
+            **self._price_revision_fields(client_name, model, cost_usd),
         )
         await self.events.emit(event)
         # Forward to global so cost/token recorders and OTel subscribers
@@ -777,6 +848,54 @@ $backstory
         # the event reaches MetricsSubscriber before the next line of the caller
         # executes.
         await self._forward_to_global_awaited(event)
+        last_call_cost.set(cost_usd)
+        return cost_usd
+
+    def _compute_call_cost(
+        self,
+        client_name: str,
+        model: "Optional[str]",
+        input_tokens: "Optional[int]",
+        output_tokens: "Optional[int]",
+        *,
+        cached_input_tokens: "Optional[int]" = None,
+        cache_creation_tokens: "Optional[int]" = None,
+    ) -> "Optional[float]":
+        """FEAT-710: one cost computation per call, with the shared calculator. Never raises."""
+        calc = get_shared_cost_calculator()
+        if calc is None:
+            return None
+        try:
+            from parrot.observability.attributes import resolve_gen_ai_system  # noqa: PLC0415
+
+            return calc.cost_usd(
+                provider=resolve_gen_ai_system(client_name),
+                model=model or "",
+                input_tokens=input_tokens or 0,
+                output_tokens=output_tokens or 0,
+                cached_input_tokens=cached_input_tokens or 0,
+                cache_creation_tokens=cache_creation_tokens or 0,
+            )
+        except Exception:  # noqa: BLE001 — telemetry must never break the call path
+            self.logger.debug("cost computation failed for %s/%s", client_name, model, exc_info=True)
+            return None
+
+    def _price_revision_fields(
+        self, client_name: str, model: "Optional[str]", cost_usd: "Optional[float]"
+    ) -> "dict[str, Optional[str]]":
+        """Return the revision that priced this call without a second computation."""
+        if cost_usd is None:
+            return {}
+        calc = get_shared_cost_calculator()
+        if calc is None or not hasattr(calc, "revision_for"):
+            return {}
+        try:
+            from parrot.observability.attributes import resolve_gen_ai_system  # noqa: PLC0415
+
+            revision, valid_from = calc.revision_for(resolve_gen_ai_system(client_name), model or "")
+            return {"price_revision": revision, "price_valid_from": valid_from}
+        except Exception:  # noqa: BLE001 — telemetry must never break the call path
+            return {}
 
     async def _emit_failed_call(
         self,
@@ -813,6 +932,7 @@ $backstory
             agent_name=current_agent_name.get(),
             user_id=current_user_id.get(),
             session_id=current_session_id.get(),
+            tenant=current_tenant.get(),
         )
         await self.events.emit(event)
         # AWAITED — same FEAT-548 Finding #2 rationale as _emit_after_call.
@@ -1628,6 +1748,9 @@ $backstory
                     # nothing. A tool that errors without a message still
                     # gets a readable one here.
                     raise ValueError(result.error or f"Tool {tool_name} returned status=error without a message")
+                if result.status == "authorization_required":
+                    provider = _safe_provider_label((result.metadata or {}).get("provider"))
+                    return _NEEDS_AUTH_TOOL_MESSAGE.format(provider=provider)
                 return result.result
             return result
         except Exception as e:

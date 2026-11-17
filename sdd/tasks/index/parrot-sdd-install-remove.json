@@ -1,0 +1,205 @@
+{
+  "feature": "parrot-sdd-install-remove",
+  "feature_id": "FEAT-795",
+  "spec": "sdd/specs/parrot-sdd-install-remove.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-03T16:52:09Z",
+  "completed_at": "2026-11-03T19:54:32+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/sdd/test_installer_stale.py",
+          "packages/ai-parrot/tests/mcp/test_toolkit_stale.py",
+          "packages/ai-parrot/tests/sdd/test_scripts_ledger_worktree.py",
+          "packages/ai-parrot/tests/sdd/test_no_repo_script_refs.py",
+          "packages/ai-parrot/tests/sdd/test_sdd_cli.py",
+          "packages/ai-parrot/tests/sdd/test_installer.py",
+          "packages/ai-parrot/tests/sdd/test_installer_toolkits.py",
+          "packages/ai-parrot/tests/docs/test_getting_started_claims.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:f7c327dd98e841c949ae72bd813bf3275fc2fffd29ecf16cca6d914a613ca4f1"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5129",
+      "slug": "stale-sdd-detector",
+      "title": "Stale SDD file detector (parrot/sdd/stale.py)",
+      "feature_id": "FEAT-795",
+      "feature": "parrot-sdd-install-remove",
+      "spec": "sdd/specs/parrot-sdd-install-remove.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies: new module stale.py + new test file; reads only existing installer helpers (load_manifest, load_receipt).",
+      "assigned_to": null,
+      "started_at": "2026-11-03T17:07:13+00:00",
+      "completed_at": "2026-11-03T17:35:36+00:00",
+      "file": "sdd/tasks/completed/TASK-5129-stale-sdd-detector.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5130",
+      "slug": "stale-mcp-detection",
+      "title": "Stale MCP toolkit entry detection (toolkit_stale.py, read side)",
+      "feature_id": "FEAT-795",
+      "feature": "parrot-sdd-install-remove",
+      "spec": "sdd/specs/parrot-sdd-install-remove.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies: creates parrot/mcp/toolkit_stale.py and tests/mcp/test_toolkit_stale.py from existing mcp/google helpers.",
+      "assigned_to": null,
+      "started_at": "2026-11-03T17:07:13+00:00",
+      "completed_at": "2026-11-03T17:35:37+00:00",
+      "file": "sdd/tasks/completed/TASK-5130-stale-mcp-detection.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5131",
+      "slug": "stale-mcp-removal",
+      "title": "Stale MCP toolkit entry removal (remove_stale_mcp_entries)",
+      "feature_id": "FEAT-795",
+      "feature": "parrot-sdd-install-remove",
+      "spec": "sdd/specs/parrot-sdd-install-remove.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5130"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-5130: extends toolkit_stale.py (find_stale_mcp_entries, _mcp_files, _McpFile) and appends to test_toolkit_stale.py created there.",
+      "assigned_to": null,
+      "started_at": "2026-11-03T17:07:13+00:00",
+      "completed_at": "2026-11-03T17:52:17+00:00",
+      "file": "sdd/tasks/completed/TASK-5131-stale-mcp-removal.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5132",
+      "slug": "installer-stale-wiring",
+      "title": "Installer wiring: plan/apply stale removal, install note, status keys",
+      "feature_id": "FEAT-795",
+      "feature": "parrot-sdd-install-remove",
+      "spec": "sdd/specs/parrot-sdd-install-remove.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5129",
+        "TASK-5130"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-5129: imports find_stale/is_source_checkout from parrot/sdd/stale.py and appends to test_installer_stale.py; TASK-5130: imports find_stale_mcp_entries for the install note and status_mcp key.",
+      "assigned_to": null,
+      "started_at": "2026-11-03T17:07:13+00:00",
+      "completed_at": "2026-11-03T17:52:18+00:00",
+      "file": "sdd/tasks/completed/TASK-5132-installer-stale-wiring.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5133",
+      "slug": "port-remove-worktree",
+      "title": "Port scripts/remove_worktree.py to parrot sdd worktree list|remove",
+      "feature_id": "FEAT-795",
+      "feature": "parrot-sdd-install-remove",
+      "spec": "sdd/specs/parrot-sdd-install-remove.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies: new parrot/sdd/scripts/remove_worktree.py, shim, VERBS rows in cli.py (cli.py also edited by TASK-5135, which depends on this task).",
+      "assigned_to": null,
+      "started_at": "2026-11-03T17:07:13+00:00",
+      "completed_at": "2026-11-03T17:35:37+00:00",
+      "file": "sdd/tasks/completed/TASK-5133-port-remove-worktree.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5134",
+      "slug": "ship-remove-worktree-assets",
+      "title": "Ship /remove-worktree to all three hosts (command, twins, asset sync)",
+      "feature_id": "FEAT-795",
+      "feature": "parrot-sdd-install-remove",
+      "spec": "sdd/specs/parrot-sdd-install-remove.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5133"
+      ],
+      "parallel": false,
+      "parallelism_notes": "TASK-5133: the shipped command calls the `parrot sdd worktree list|remove` verbs it mounts. Exclusive: `check_asset_sync.py --write` regenerates the shared parrot/sdd/_assets/ tree and manifest.json every installer test reads.",
+      "assigned_to": null,
+      "started_at": "2026-11-03T17:07:13+00:00",
+      "completed_at": "2026-11-03T19:54:32+00:00",
+      "file": "sdd/tasks/completed/TASK-5134-ship-remove-worktree-assets.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5135",
+      "slug": "cli-stalled-flags",
+      "title": "CLI: uninstall --stalled/--stale --keep, stale lines in status",
+      "feature_id": "FEAT-795",
+      "feature": "parrot-sdd-install-remove",
+      "spec": "sdd/specs/parrot-sdd-install-remove.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5131",
+        "TASK-5132",
+        "TASK-5133"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-5132: imports remove_stale_sdd_files and prints sdd_status stale/stale_mcp keys; TASK-5131: lazily imports remove_stale_mcp_entries; TASK-5133: both edit parrot/sdd/cli.py (serialized, TASK-5133 first).",
+      "assigned_to": null,
+      "started_at": "2026-11-03T17:07:13+00:00",
+      "completed_at": "2026-11-03T17:56:27+00:00",
+      "file": "sdd/tasks/completed/TASK-5135-cli-stalled-flags.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5136",
+      "slug": "docs-stalled-and-worktree",
+      "title": "Document --stalled/--keep and parrot sdd worktree list|remove",
+      "feature_id": "FEAT-795",
+      "feature": "parrot-sdd-install-remove",
+      "spec": "sdd/specs/parrot-sdd-install-remove.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5135"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-5135: docs verify markers flag=sdd uninstall:--stalled/--keep must resolve against the real CLI (test_cited_flags_exist); the worktree list/remove markers come from TASK-5133 via TASK-5135.",
+      "assigned_to": null,
+      "started_at": "2026-11-03T17:07:13+00:00",
+      "completed_at": "2026-11-03T18:00:39+00:00",
+      "file": "sdd/tasks/completed/TASK-5136-docs-stalled-and-worktree.md",
+      "verification": "verified"
+    }
+  ]
+}

@@ -19,15 +19,16 @@ from google.genai import errors as genai_errors
 
 from parrot.clients.google.reel.clip import GeneratedReelClip
 from parrot.clients.google.reel.errors import ReelError, ReelErrorCode
-from parrot.clients.google.reel.profiles import VideoProfileRegistry
+from parrot.clients.google.reel.profiles import VideoModelProfile
 from parrot.clients.google.reel.veo import VeoClipAdapter
 
 FAR_DEADLINE = lambda: time.monotonic() + 30.0  # noqa: E731
 
 
 @pytest.fixture
-def profile():
-    return VideoProfileRegistry.default().resolve("veo-3.1-generate-preview", "gemini_developer")
+def profile(veo_test_profile: VideoModelProfile) -> VideoModelProfile:
+    """The Veo profile under test (see ``conftest.veo_test_profile``)."""
+    return veo_test_profile
 
 
 def _op(*, done=True, error=None, generated_videos=None, name="operations/op-123"):

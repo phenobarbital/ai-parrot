@@ -80,7 +80,7 @@ async def main():
             "Expert in Navigator platform with knowledge of all 66 widget types, "
             "their JSON configurations, the permission model, and entity hierarchy."
         ),
-        llm="google:gemini-2.5-flash",
+        llm="google:gemini-3.8-flash",
         tools=toolkit.get_tools(),
     )
 

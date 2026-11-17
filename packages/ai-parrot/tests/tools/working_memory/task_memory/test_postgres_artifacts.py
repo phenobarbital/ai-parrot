@@ -88,7 +88,7 @@ def _real_local_file_manager(base):
     from navigator.utils.file import LocalFileManager
 
     manager = LocalFileManager(base_path=str(base), create_base=True)
-    if type(manager).__module__.startswith("tests."):  # pragma: no cover - defensive
+    if type(manager).__module__.startswith(f"{__package__.split('.', maxsplit=1)[0]}."):  # pragma: no cover - defensive
         pytest.skip("file-manager stub is active; refusing to assert I/O against a mock")
     return manager
 

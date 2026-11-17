@@ -2,7 +2,7 @@
 
 **Feature**: monorepo-migration
 **Spec**: `sdd/specs/monorepo-migration.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-398, TASK-399, TASK-400, TASK-401, TASK-402, TASK-403, TASK-404, TASK-405, TASK-406, TASK-407, TASK-408

@@ -1,5 +1,7 @@
 # parrot:summary: Patch generation for work whose design is already decided in a TASK file.
 # parrot:requires_llm: true
+# parrot:requires_dist: parrot_tools
+# parrot:requires_pip: ai-parrot-tools
   targeted-writer:
     class: parrot_tools.tool_optimizations.writer.TargetedWriterToolkit
     # Seeded disabled: this toolkit needs a model you choose. Set `llm` to a

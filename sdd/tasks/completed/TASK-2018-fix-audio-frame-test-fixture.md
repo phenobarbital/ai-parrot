@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-395 — Fix deadlock in AudioFormWSHandler confirm_answer flow
 **Spec**: `sdd/specs/audio-ws-confirm-answer-deadlock.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-2017

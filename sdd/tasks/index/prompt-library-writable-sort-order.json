@@ -1,0 +1,117 @@
+{
+  "feature": "prompt-library-writable-sort-order",
+  "feature_id": "FEAT-794",
+  "spec": "sdd/specs/prompt-library-writable-sort-order.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-03T12:00:00-04:00",
+  "completed_at": "2026-11-03T15:56:58+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/handlers/test_prompt_library.py",
+          "packages/ai-parrot-server/tests/handlers/test_prompt_library_handler.py",
+          "packages/ai-parrot-server/tests/studio/storage/test_migration_files.py",
+          "packages/ai-parrot-server/tests/studio/storage/test_migrations_db.py",
+          "packages/ai-parrot-server/tests/studio/storage/test_backend.py",
+          "packages/ai-parrot-server/tests/studio/test_feat605_contract_doc.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:f3b293a6492cefa5a2ae195357a57da5d7df3c17ed34ca1ab7170422a7373a51"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5125",
+      "slug": "studio-migration-0009-prompt-library",
+      "title": "Studio migration 0009 — agent_id and sort_order on prompt_library",
+      "feature_id": "FEAT-794",
+      "feature": "prompt-library-writable-sort-order",
+      "spec": "sdd/specs/prompt-library-writable-sort-order.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "exclusive: regenerates the shared migrations MANIFEST.json with --stamp and runs DDL (apply_studio_migrations, prompt_library create/drop) against the shared TEST_STUDIO_PG_DSN database",
+      "assigned_to": "claude-opus-5-5 (session)",
+      "started_at": "2026-11-03T11:31:06-04:00",
+      "completed_at": "2026-11-03T15:37:47+00:00",
+      "file": "sdd/tasks/completed/TASK-5125-studio-migration-0009-prompt-library.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5126",
+      "slug": "prompt-library-model-sort-order",
+      "title": "PromptLibrary model — sort_order field and a string prompt_category default",
+      "feature_id": "FEAT-794",
+      "feature": "prompt-library-writable-sort-order",
+      "spec": "sdd/specs/prompt-library-writable-sort-order.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "leaf: only packages/ai-parrot/src/parrot/models/bots.py and the model tests in test_prompt_library.py; no DDL",
+      "assigned_to": "claude-opus-5-5 (session)",
+      "started_at": "2026-11-03T11:22:22-04:00",
+      "completed_at": "2026-11-03T15:25:19+00:00",
+      "file": "sdd/tasks/completed/TASK-5126-prompt-library-model-sort-order.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5127",
+      "slug": "prompt-library-handler-write-hooks",
+      "title": "PromptLibraryManagement — keep created_by on update, stamp updated_at",
+      "feature_id": "FEAT-794",
+      "feature": "prompt-library-writable-sort-order",
+      "spec": "sdd/specs/prompt-library-writable-sort-order.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5125",
+        "TASK-5126"
+      ],
+      "parallel": false,
+      "parallelism_notes": "needs migration 0009 from TASK-5125 (its tests apply it to add the columns); needs PromptLibrary.sort_order from TASK-5126 (models/bots.py) and both modify test_prompt_library.py; exclusive: creates/drops navigator.prompt_library in the shared TEST_STUDIO_PG_DSN database",
+      "assigned_to": "claude-opus-5-5 (session)",
+      "started_at": "2026-11-03T11:40:45-04:00",
+      "completed_at": "2026-11-03T15:56:58+00:00",
+      "file": "sdd/tasks/completed/TASK-5127-prompt-library-handler-write-hooks.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5128",
+      "slug": "studio-contract-x1-schema-nine",
+      "title": "Studio cross-spec contract and docs — required schema 1..9",
+      "feature_id": "FEAT-794",
+      "feature": "prompt-library-writable-sort-order",
+      "spec": "sdd/specs/prompt-library-writable-sort-order.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "leaf: text-only edits to the three X1 spec rows, docs/agentstudio/db-storage.md and test_feat605_contract_doc.py, which reads those files and never imports the migrate constant",
+      "assigned_to": "claude-opus-5-5 (session)",
+      "started_at": "2026-11-03T11:25:38-04:00",
+      "completed_at": "2026-11-03T15:29:32+00:00",
+      "file": "sdd/tasks/completed/TASK-5128-studio-contract-x1-schema-nine.md",
+      "verification": "verified"
+    }
+  ]
+}

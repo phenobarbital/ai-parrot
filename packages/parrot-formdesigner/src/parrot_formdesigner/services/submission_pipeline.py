@@ -10,12 +10,19 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from ..core.audit_trail import AuditDetail, AuditTrailConfig, ValidationTrace
 from ..core.events import FormEventAbort
-from ..core.llm_validation import PlausibilityReport, llm_validation_enabled
+from ..core.public_access import RejectionReason, evaluate_open, normalize_key_value
+from ..core.llm_validation import (
+    LLMValidationConfig,
+    PlausibilityReport,
+    implausible_fields,
+    llm_validation_enabled,
+)
 from ..core.schema import FormSchema, UnknownFieldsPolicy
 from ..core.voice_answer import VoiceEvidenceEnvelope, is_voice_envelope, unwrap_voice
 from .auth_context import AuthContext
@@ -24,18 +31,29 @@ from .metadata_enricher import MetadataResolutionError, enrich_submission
 from .plausibility import AnswerPlausibilityChecker, PlausibilityBlocked
 from .sinks.base import SinkNotCapableError, SinkTargetMismatchError, SinkUnavailableError
 from .sinks.mapper import flatten_submission, nest_submission
-from .submissions import FormSubmission, FormSubmissionStorage
+from .submissions import DuplicateResponse, FormSubmission, FormSubmissionStorage, ResponseLimitReached
 from .unknown_fields import ExtrasCapExceeded, enforce_extras_cap
+from .validation_trace import ValidationTraceCollector, cap_trace
 from .validators import FormValidator, ValidationResult
 
 if TYPE_CHECKING:
+    from .llm_quota import QuotaDecision
     from aiohttp import web
 
     from .forwarder import SubmissionForwarder
     from .partial_saves import PartialSaveStore
     from .sinks.factory import SinkFactory
 
-__all__ = ["SubmissionPipeline", "SubmitOutcome", "SubmitSinkError", "ValidationFailed", "PlausibilityBlocked"]
+__all__ = [
+    "SubmissionPipeline",
+    "SubmitOutcome",
+    "SubmitSinkError",
+    "ValidationFailed",
+    "PlausibilityBlocked",
+    "ImplausibleSubmission",
+    "PlausibilityRateLimited",
+    "SubmissionRejected",
+]
 
 
 class SubmitOutcome(BaseModel):
@@ -50,6 +68,7 @@ class SubmitOutcome(BaseModel):
     forward_error: str | None = None
     plausibility: PlausibilityReport | None = None
     validation: ValidationResult
+    created_at: datetime | None = None  # FEAT-730: the stored submission's created_at (UTC)
 
 
 class ValidationFailed(Exception):
@@ -69,6 +88,55 @@ class SubmitSinkError(Exception):
         self.headers = headers or {}
 
 
+_DEFAULT_IMPLAUSIBLE_MESSAGE = "This answer does not appear to answer the question."
+
+
+class ImplausibleSubmission(Exception):
+    """Gate refusal (422 class): answers flagged under a non-``annotate`` policy."""
+
+    def __init__(
+        self,
+        *,
+        policy: Literal["review", "reject"],
+        fields: list[str],
+        report: PlausibilityReport,
+    ) -> None:
+        self.policy = policy
+        self.fields = list(fields)
+        self.report = report
+        self.errors: dict[str, list[str]] = {
+            field_id: [report.items[field_id].reason or _DEFAULT_IMPLAUSIBLE_MESSAGE]
+            for field_id in self.fields
+            if field_id in report.items
+        }
+        super().__init__(f"Implausible answers ({policy}): {', '.join(self.fields)}")
+
+    @property
+    def code(self) -> str:
+        """Return the client-facing refusal code for the enforcement policy."""
+        return "PLAUSIBILITY_REVIEW" if self.policy == "review" else "PLAUSIBILITY_REJECTED"
+
+
+class SubmissionRejected(Exception):
+    """Response-policy refusal (HTTP 409, FEAT-730). Controlled flow — never dispatched to onError."""
+
+    def __init__(self, reason: RejectionReason, message: str, *, field_id: str | None = None) -> None:
+        super().__init__(message)
+        self.reason: RejectionReason = reason
+        self.field_id = field_id
+
+
+class PlausibilityRateLimited(Exception):
+    """The LLM quota denied a plausibility check that the policy cannot skip (429 class)."""
+
+    def __init__(self, retry_after_s: int) -> None:
+        self.retry_after_s = retry_after_s
+        super().__init__(f"Plausibility check rate limited; retry after {retry_after_s}s")
+
+
+QuotaCheck = Callable[[], Awaitable["QuotaDecision"]]
+
+
 class SubmissionPipeline:
     """Validate → plausibility → persist → forward → cleanup → events, for every channel."""
 
@@ -81,6 +149,7 @@ class SubmissionPipeline:
         partial_store: "PartialSaveStore | None",
         plausibility: AnswerPlausibilityChecker | None,
         sink_factory: "SinkFactory | None" = None,
+        tenant_scoped_submissions: bool = False,
         logger: logging.Logger | None = None,
         dispatch_fn: Any = None,
     ) -> None:
@@ -91,11 +160,99 @@ class SubmissionPipeline:
         self.partial_store = partial_store
         self.plausibility = plausibility
         self.sink_factory = sink_factory
+        # FEAT-730 G8: stamp the URL tenant on the generic store only when the host opts in.
+        self.tenant_scoped_submissions = tenant_scoped_submissions
         self.logger = logger or logging.getLogger(__name__)
 
     def _plausibility_enabled(self, form: FormSchema) -> bool:
         """True when any field resolves llm_validation on (field override or form default)."""
         return any(llm_validation_enabled(form, f) for f in form.iter_fields_recursive())
+
+    @staticmethod
+    def _audit_config(form: FormSchema) -> AuditTrailConfig:
+        """Return the form's audit config, or the ``summary`` default when absent (FEAT-732)."""
+        return form.audit_trail or AuditTrailConfig()
+
+    def _new_collector(self, form: FormSchema, *, locale: str) -> ValidationTraceCollector | None:
+        """Build a collector, or ``None`` when detail is OFF — so an audit-off form pays nothing."""
+        config = self._audit_config(form)
+        if config.detail is AuditDetail.OFF:
+            return None
+        return ValidationTraceCollector(detail=config.detail, locale=locale)
+
+    def _capped_trace(self, trace: ValidationTrace, max_bytes: int) -> dict[str, Any]:
+        """Cap ``trace``; a cap too small for even the header degrades to a minimal header, never a failed submit."""
+        try:
+            return cap_trace(trace, max_bytes=max_bytes)
+        except ValueError:
+            self.logger.warning(
+                "audit trace for form %s does not fit max_bytes=%d; storing a minimal header", trace.form_id, max_bytes
+            )
+            minimal = trace.model_copy(
+                update={
+                    "form_checks": [],
+                    "fields": [],
+                    "truncated": True,
+                    "omitted_fields": len(trace.fields),
+                    "omitted_checks": sum(len(f.checks_ran) for f in trace.fields),
+                }
+            )
+            return minimal.model_dump(mode="json")
+
+    def gate_for(
+        self, form: FormSchema, report: PlausibilityReport | None, *, ack: bool = False
+    ) -> ImplausibleSubmission | None:
+        """Return the pure enforcement decision for one plausibility report.
+
+        Args:
+            form: The form whose ``llm_validation.on_implausible`` decides.
+            report: The plausibility outcome, or ``None`` when no check ran.
+            ack: The client reconfirmed these answers (``review`` only).
+
+        Returns:
+            The gate exception to raise, or ``None`` when submission may proceed.
+        """
+        if report is None:
+            return None
+        policy = form.llm_validation.on_implausible if form.llm_validation else "annotate"
+        if policy == "annotate":
+            return None
+        flagged = implausible_fields(report)
+        if not flagged:
+            return None
+        if policy == "review" and ack:
+            return None
+        return ImplausibleSubmission(policy=policy, fields=flagged, report=report)
+
+    async def _charge_quota(
+        self, form: FormSchema, quota_check: "QuotaCheck | None", *, skippable: bool
+    ) -> PlausibilityReport | None:
+        """Charge the LLM quota immediately before a plausibility call (FEAT-728).
+
+        Called only once every deterministic step passed and a check is about to
+        run, so invalid submissions and LLM-less pipelines never burn quota.
+
+        Args:
+            form: The form being checked.
+            quota_check: Awaitable returning the limiter decision, or ``None`` for no quota.
+            skippable: True when an ``annotate`` form may continue without a verdict.
+
+        Returns:
+            ``None`` when the check may run, or a ``skipped`` report when it must be skipped.
+
+        Raises:
+            PlausibilityRateLimited: When denied and the call cannot be skipped.
+        """
+        if quota_check is None:
+            return None
+        decision = await quota_check()
+        if decision.allowed:
+            return None
+        policy = form.llm_validation.on_implausible if form.llm_validation else "annotate"
+        if skippable and policy == "annotate":
+            config = form.llm_validation or LLMValidationConfig()
+            return PlausibilityReport(status="skipped", reason="rate_limited", threshold=config.threshold)
+        raise PlausibilityRateLimited(decision.retry_after_s)
 
     async def validate(
         self,
@@ -106,6 +263,7 @@ class SubmissionPipeline:
         auth_context: AuthContext | None,
         llm_validation: bool = False,
         visit_context: dict[str, Any] | None = None,
+        quota_check: "QuotaCheck | None" = None,
     ) -> tuple[ValidationResult, PlausibilityReport | None]:
         """Prepare step: deterministic validation, then plausibility only when valid and requested."""
         result = await self.validator.validate(
@@ -113,6 +271,7 @@ class SubmissionPipeline:
         )
         report: PlausibilityReport | None = None
         if llm_validation and result.is_valid and self.plausibility is not None and self._plausibility_enabled(form):
+            await self._charge_quota(form, quota_check, skippable=False)
             report = await self.plausibility.check(form, unwrap_voice(result.sanitized_data), locale=locale)
         return result, report
 
@@ -129,12 +288,17 @@ class SubmissionPipeline:
         auth_context: AuthContext | None,
         merge_session_id: str | None,
         plausibility: PlausibilityReport | None = None,
+        plausibility_ack: bool = False,
         request: "web.Request | None" = None,
         visit_context: dict[str, Any] | None = None,
         submission_id: str | None = None,
+        quota_check: "QuotaCheck | None" = None,
     ) -> SubmitOutcome:
         """Commit step. Raises ValidationFailed, SubmitSinkError, PlausibilityBlocked or FormEventAbort."""
         auth = auth_context or AuthContext(scheme="none")
+        # FEAT-730: a closed form is refused before onBeforeSubmit / validation / any LLM call.
+        if evaluate_open(form.public_access, now=datetime.now(timezone.utc)) == "form_closed":
+            raise SubmissionRejected("form_closed", "This form is no longer accepting responses.")
 
         async def _on_error(exc: BaseException, where: str) -> None:
             try:
@@ -151,7 +315,12 @@ class SubmissionPipeline:
                 data = dict(resolution.payload)
 
             result = await self.validator.validate(
-                form, data, locale=locale, auth_context=auth_context, visit_context=visit_context
+                form,
+                data,
+                locale=locale,
+                auth_context=auth_context,
+                visit_context=visit_context,
+                trace=self._new_collector(form, locale=locale),
             )
             if not result.is_valid:
                 await _on_error(ValueError(f"Validation failed: {result.errors}"), "validation")
@@ -186,7 +355,23 @@ class SubmissionPipeline:
             # Plausibility sits after every deterministic 422 so an invalid submission never costs an LLM call.
             # A report passed in by the caller (audio REVIEW) is used as-is. PlausibilityBlocked propagates.
             if plausibility is None and self.plausibility is not None and self._plausibility_enabled(form):
-                plausibility = await self.plausibility.check(form, unwrap_voice(result.sanitized_data), locale=locale)
+                plausibility = await self._charge_quota(form, quota_check, skippable=True)
+                if plausibility is None:
+                    plausibility = await self.plausibility.check(
+                        form, unwrap_voice(result.sanitized_data), locale=locale
+                    )
+
+            gate = self.gate_for(form, plausibility, ack=plausibility_ack)
+            if gate is not None:
+                self.logger.info(
+                    "Submission refused by plausibility policy %s for form %s (%d field(s))",
+                    gate.policy,
+                    form.form_id,
+                    len(gate.fields),
+                )
+                if gate.policy == "reject":
+                    await _on_error(gate, "plausibility reject")
+                raise gate
 
             # Storage/wire asymmetry is DELIBERATE (FEAT-458): extras are stored in their own column but
             # flat-merged into the outbound payload. Declared answers win a key collision.
@@ -194,8 +379,14 @@ class SubmissionPipeline:
 
             stored_data = self.attach_verdicts(result.sanitized_data, plausibility)
             ctx = dict(context or {})
+            # FEAT-732 — capped BEFORE the merge, so llm_validation is never what gets truncated.
+            if isinstance(result.trace, ValidationTrace):
+                ctx["validation"] = self._capped_trace(result.trace, self._audit_config(form).effective_max_bytes)
             if plausibility is not None:
                 ctx["llm_validation"] = plausibility.model_dump(mode="json")
+                review_policy = form.llm_validation.on_implausible if form.llm_validation else "annotate"
+                if plausibility_ack and review_policy == "review" and implausible_fields(plausibility):
+                    ctx["llm_validation"]["acknowledged"] = True
             submission = FormSubmission(
                 submission_id=submission_id or str(uuid.uuid4()),
                 form_uid=form.form_uid,
@@ -245,6 +436,7 @@ class SubmissionPipeline:
                         else flatten_submission(form, submission)
                     )
                     await sink.write(submission, payload)
+                    await self._clear_pending_after_sink(submission, tenant)
                 except SinkUnavailableError as exc:
                     await _on_error(exc, "sink write")
                     raise SubmitSinkError(str(exc), status=503, headers={"Retry-After": "30"}) from exc
@@ -256,8 +448,15 @@ class SubmissionPipeline:
                     raise SubmitSinkError(str(exc), status=501) from exc
                 stored_in = "sink"
             elif self.submission_storage is not None:
-                await self.submission_storage.store(submission)
+                await self._store_generic(form, submission, unwrap_voice(submission.data), tenant)
                 stored_in = "generic"
+            elif form.public_access is not None and (
+                form.public_access.max_responses is not None or form.public_access.unique_key_field is not None
+            ):
+                raise SubmitSinkError(
+                    "Form declares a response cap / unique key but no submission_storage is configured",
+                    status=501,
+                )
             else:
                 self.logger.debug(
                     "No submission_storage configured — skipping local storage for %s", submission.submission_id
@@ -304,8 +503,17 @@ class SubmissionPipeline:
                 forward_error=forward_error,
                 plausibility=plausibility,
                 validation=result,
+                created_at=submission.created_at,
             )
-        except (FormEventAbort, ValidationFailed, SubmitSinkError, PlausibilityBlocked):
+        except (
+            FormEventAbort,
+            ValidationFailed,
+            SubmitSinkError,
+            PlausibilityBlocked,
+            ImplausibleSubmission,
+            PlausibilityRateLimited,
+            SubmissionRejected,
+        ):
             raise
         except Exception as exc:
             user_message: str | None = None
@@ -320,6 +528,55 @@ class SubmissionPipeline:
                 request["_lifecycle_user_message"] = user_message
             self.logger.exception("submit failed for form %r: %s", form.form_uid, type(exc).__name__)
             raise
+
+    async def _store_generic(
+        self, form: FormSchema, submission: FormSubmission, data: dict[str, Any], tenant: str | None
+    ) -> None:
+        """Generic-store branch (FEAT-730): tenant stamping behind the flag; guarded store when the
+        form's public_access needs counting. Maps storage refusals to SubmissionRejected."""
+        storage = self.submission_storage
+        assert storage is not None  # caller checked
+        store_tenant = tenant if self.tenant_scoped_submissions else None
+        if store_tenant is not None:
+            submission.tenant = store_tenant
+        cfg = form.public_access
+        if cfg is None or (cfg.max_responses is None and cfg.unique_key_field is None):
+            if store_tenant is None:
+                await storage.store(submission)  # today's exact call (AC1 / AC8 flag off)
+            else:
+                await storage.store(submission, tenant=store_tenant)
+            return
+        unique_value = normalize_key_value(data.get(cfg.unique_key_field)) if cfg.unique_key_field else None
+        try:
+            await storage.store_guarded(
+                submission,
+                tenant=store_tenant,
+                max_responses=cfg.max_responses,
+                unique_key_field=cfg.unique_key_field,
+                unique_value=unique_value,
+            )
+        except ResponseLimitReached as exc:
+            raise SubmissionRejected(
+                "response_limit_reached", "This form is no longer accepting responses."
+            ) from exc
+        except DuplicateResponse as exc:
+            raise SubmissionRejected(
+                "duplicate_response", "A response with this value was already submitted.", field_id=exc.field_id
+            ) from exc
+
+    async def _clear_pending_after_sink(self, submission: FormSubmission, tenant: str | None) -> None:
+        """FEAT-731: best-effort pending-upload clear for sink forms (not transactional with the sink)."""
+        pending = getattr(self.submission_storage, "_pending", None)
+        if pending is None:
+            return
+        from .pending_uploads import iter_blob_refs
+
+        try:
+            await pending.clear(iter_blob_refs(submission.data), tenant=tenant)
+        except Exception as exc:  # noqa: BLE001 — the sink write already succeeded
+            self.logger.warning(
+                "pending-upload clear after sink write failed for %s: %s", submission.submission_id, exc
+            )
 
     def attach_verdicts(self, data: dict[str, Any], report: PlausibilityReport | None) -> dict[str, Any]:
         """Public (audio client-submit mode): copy each verdict into its spoken envelope (``VoiceEvidenceEnvelope.plausibility``); scalars untouched."""

@@ -148,12 +148,13 @@ def _real_env() -> dict[str, str] | None:
 def _required_live_env() -> tuple[dict[str, str] | None, list[str]]:
     """Return all live prerequisites and identify every missing variable."""
     environment = _real_env()
+    provider = os.environ.get("LAYA_EVAL_PROVIDER", "anthropic")
     keys = (
         "LAYA_EVAL_LIVE",
         "LAYA_EVAL_PRIMARY_API_MODEL",
         "LAYA_EVAL_CHEAP_API_MODEL",
         "LAYA_EVAL_MAX_LIVE_CALLS",
-        "ANTHROPIC_API_KEY",
+        "GOOGLE_API_KEY" if provider == "google" else "ANTHROPIC_API_KEY",
     )
     missing = [key for key in keys if not os.environ.get(key)]
     if os.environ.get("LAYA_EVAL_LIVE") != "1" and "LAYA_EVAL_LIVE" not in missing:
@@ -225,6 +226,10 @@ async def test_live_paired_routing(tmp_path: Path) -> None:
             "--live",
             "--primary-api-model",
             os.environ["LAYA_EVAL_PRIMARY_API_MODEL"],
+            "--provider",
+            os.environ.get("LAYA_EVAL_PROVIDER", "anthropic"),
+            "--max-output-tokens",
+            os.environ.get("LAYA_EVAL_MAX_OUTPUT_TOKENS", "1024"),
             "--cheap-api-model",
             os.environ["LAYA_EVAL_CHEAP_API_MODEL"],
             "--max-live-calls",

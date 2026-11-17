@@ -1,0 +1,9 @@
+S-4 gives CLI-run agents and the stdio MCP toolkit servers that Claude Code / Codex launch a **Navigator-keyed principal** and a way to **use FEAT-773 connections from outside the server process**. Research shows the CLI has three identity regimes today and none is a Navigator `user_id`: `parrot agent` standalone uses `--user` or the literal `cli-user` (`parrot/cli/agent_repl.py::_run`), `--server` mode sends a hand-supplied bearer (`cli/loaders.py::ServerAgentProxy`), and `parrot/cli/identity.py::build_cli_permission_context` builds an Entra-keyed `channel="cli"` context only for O365 device-code bots. Stdio toolkit servers (`parrot/mcp/toolkit_server.py::create_toolkit_mcp_server`, `local_cli.py::mcp_local`, `local_server.py::StdioMCPServer`) carry no principal, broker or vault, and FEAT-485 forbids them from importing server code. Two precedents carry most of the design: agentd's connection-time principal binding (`agentd/server.py::JsonRpcUnixServer._resolve_identity`) and the FEAT-696 CLI 3LO flow (`parrot_tools/jira_cli.py::auth` + `jira_local_auth.py`), which is manual-paste, single-user `local:cli` and Jira-only. The recommendation is a `/sdd-spec FEAT-774` after FEAT-773 merges: `parrot login` (browser/device) as the principal source, a `CliPrincipalResolver`, an encrypted local token cache synced from the server, principal binding at stdio-server start, `parrot connect` with poll + paste completion, a generic RFC 8628 device-code engine, and agentd mapping through the per-OS-user login file.
+
+---
+
+Origin:
+S-4 of FEAT-773: CLI-based agents (AgentREPL, agent daemon) and MCP-based tools in a CLI
+(parrot mcp-local stdio servers for Claude Code / Codex) consuming delegated-auth connections.
+See sdd/specs/delegated-auth-connections.spec.md §1 Non-Goals S-4 bullet and
+sdd/proposals/delegated-auth-connections.proposal.md §6 S-4 row.

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-637 — JiraToolkit Template Support
 **Spec**: `sdd/specs/jiratoolkit-template-support.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

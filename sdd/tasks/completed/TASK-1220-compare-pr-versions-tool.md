@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-182 — GitToolkit On-Demand Code Retrieval for GithubReviewer
 **Spec**: `sdd/specs/gittoolkit-pr-context-retrieval.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-1217, TASK-1219

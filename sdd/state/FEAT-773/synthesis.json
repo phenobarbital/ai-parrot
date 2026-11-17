@@ -1,0 +1,1301 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-773",
+  "mode": "enrichment",
+  "summary_oneline": "Most of the brainstorm's 'connections core' already exists in parrot.auth (AbstractOAuth2Manager, OAuth2ProviderRegistry, IntegrationsService, CredentialBroker, Identity Vault owner); the real gap is making connections principal-keyed and channel-neutral: re-key the hot cache off the channel, move Jira onto the generic manager, unify the two needs-auth signals, open a user-level connections view and push completion to channels instead of direct in-process calls.",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/auth/oauth2_base.py",
+      "symbol": "AbstractOAuth2Manager",
+      "lines": "89-623",
+      "role": "generic 3LO engine: PKCE S256, Redis nonce state (10 min), vault+Redis persistence, lock-protected rotating refresh, revoke, setup() mounts the callback — keyed (provider, channel, user_id)",
+      "evidence": [
+        "F044",
+        "F071"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/auth/jira_oauth.py",
+      "symbol": "JiraOAuthManager",
+      "lines": "231-800",
+      "role": "Jira-specific manager (jira:oauth:{channel}:{user_id}, no PKCE, accessible-resources→cloud_id) with the CredentialSink Protocol for the durable owner; parallel to, not a subclass of, AbstractOAuth2Manager",
+      "evidence": [
+        "F002",
+        "F059",
+        "F071"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/auth/o365_oauth.py",
+      "symbol": "O365OAuthManager",
+      "lines": "55-165",
+      "role": "the only AbstractOAuth2Manager subclass (Microsoft identity platform, PKCE, prompt=select_account)",
+      "evidence": [
+        "F041",
+        "F061"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/auth/oauth2/registry.py",
+      "symbol": "OAuth2ProviderRegistry",
+      "lines": "20-126",
+      "role": "provider descriptor ABC (provider_id, display_name, icon, default_scopes, pbac_action_namespace, manager, toolkit_factory) + singleton registry — the existing counterpart of the proposed OAuthProviderRegistry",
+      "evidence": [
+        "F037",
+        "F055",
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/auth/oauth2/service.py",
+      "symbol": "IntegrationsService",
+      "lines": "74-482",
+      "role": "existing web-channel 'ConnectionManager': list_for_user, start_connect (channel='web' hard-coded, agent-scoped), confirm_enable, disconnect, persist_credential; status reads Identity Vault for jira, VaultTokenSync otherwise; PBAC fail-closed",
+      "evidence": [
+        "F038",
+        "F075"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/auth/oauth2/models.py",
+      "symbol": "IntegrationDescriptor",
+      "lines": "21-180",
+      "role": "API contracts the brainstorm re-proposes: IntegrationDescriptor, ConnectInitResponse, AuthRequiredEnvelope, UsersIntegrationRow (principal-keyed metadata row, channel as attribute)",
+      "evidence": [
+        "F036"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/auth/oauth2/persistence.py",
+      "symbol": "upsert_users_integration",
+      "lines": "42-191",
+      "role": "connection metadata (not tokens) in DocumentDB users_integrations keyed (user_id, provider) + user_agent_toolkits",
+      "evidence": [
+        "F039"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/auth/oauth2/mcp_provider.py",
+      "symbol": "MCPOAuth2Provider",
+      "lines": "36-125",
+      "role": "MCP servers already enumerate in the provider registry as mcp:{server_name}",
+      "evidence": [
+        "F045"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/auth/oauth2_routes.py",
+      "symbol": "make_oauth2_callback",
+      "lines": "123-310",
+      "role": "generic per-provider callback factory at /api/auth/oauth2/{provider}/callback with navigator-auth exclude_list, web postMessage page, A2A resume hook — the proposed /oauth/callback/{provider} already exists in shape",
+      "evidence": [
+        "F005",
+        "F070"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/auth/routes.py",
+      "symbol": "jira_oauth_callback",
+      "lines": "232-351",
+      "role": "legacy Jira-only callback /api/auth/jira/callback dispatching by state.channel with direct in-process notifier calls; core lazily imports integrations here",
+      "evidence": [
+        "F024",
+        "F073",
+        "F064"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/auth/broker/core.py",
+      "symbol": "CredentialBroker",
+      "lines": "32-215",
+      "role": "FEAT-264 provider_id→resolver registry; resolve(provider, channel, user_id) → ResolvedCredential | NeedsAuth, fails closed, appends audit; no start/callback/refresh/revoke",
+      "evidence": [
+        "F006",
+        "F054",
+        "F058"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/auth/credentials.py",
+      "symbol": "CredentialResolver",
+      "lines": "82-202",
+      "role": "generic (channel, user_id) resolver ABC + OAuthCredentialResolver + NeedsAuth model + CredentialRequired exception (second needs-auth signal)",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/auth/exceptions.py",
+      "symbol": "AuthorizationRequired",
+      "lines": "12-47",
+      "role": "first needs-auth signal (FEAT-107), converted by ToolManager to ToolResult(status='authorization_required')",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+      "symbol": "ToolManager.execute_tool",
+      "lines": "2273-2290",
+      "role": "single AuthorizationRequired catch → ToolResult(success=False, status='authorization_required', metadata={auth_url, provider, scopes, tool_name}); CredentialRequired is NOT converted here",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/abstract.py",
+      "symbol": "AbstractTool.execute",
+      "lines": "1012-1045",
+      "role": "FEAT-264 broker seam (credential_provider + _broker) raising CredentialRequired before _pre_execute; both exceptions re-raised at 1182-1197",
+      "evidence": [
+        "F004",
+        "F033"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/toolkit.py",
+      "symbol": "AbstractToolkit.credential_provider",
+      "lines": "315-331",
+      "role": "toolkit-level credential_provider (provider id only, propagated to generated tools); requires_auth does not exist",
+      "evidence": [
+        "F033"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/jira_connect_tool.py",
+      "symbol": "JiraConnectTool._execute",
+      "lines": "70-92",
+      "role": "placeholder tool hot-swapped once Jira tokens exist (AgentTalk) — the FEAT-083 hot-swap is still live",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/auth/identity.py",
+      "symbol": "CanonicalIdentityMapper",
+      "lines": "57-100",
+      "role": "broker's principal notion: Entra OID → lower-cased email → None (fail closed) — not the navigator bigint user_id",
+      "evidence": [
+        "F042",
+        "F072"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/auth/permission.py",
+      "symbol": "PermissionContext",
+      "lines": "21-126",
+      "role": "UserSession(user_id, tenant_id, roles) + channel; user_id is the raw channel id on Telegram and the session user on web",
+      "evidence": [
+        "F014",
+        "F048"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/services/identity_mapping.py",
+      "symbol": "IdentityMappingService",
+      "lines": "44-268",
+      "role": "writes auth.user_identities (navigator-auth): channel rows telegram/msteams/slack → nav_user_id (bigint) via raw SQL; token-bearing jira row via IdentityStore.save_linked_identity",
+      "evidence": [
+        "F012",
+        "F056",
+        "F062"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/services/identity_credential_sink.py",
+      "symbol": "IdentityVaultCredentialSink",
+      "lines": "24-171",
+      "role": "FEAT-735 durable Jira owner: persist_minted at link, update_tokens on refresh, resolves nav_user_id from state or by provider account",
+      "evidence": [
+        "F013",
+        "F059"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/services/vault_token_sync.py",
+      "symbol": "VaultTokenSync",
+      "lines": "69-239",
+      "role": "the 'session vault': navigator-session SessionVault made per-user by a deterministic synthetic session_uuid, encrypted, principal-keyed flat {provider}:{field}; serves fireflies/workiq/entra/o365, Jira retired",
+      "evidence": [
+        "F010",
+        "F057"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/security/vault_utils.py",
+      "symbol": "oauth2_vault_name",
+      "lines": "43-211",
+      "role": "third store: AES-GCM envelope v2 credentials in DocumentDB/Postgres user_credentials; OAuth2 vault name embeds the channel (oauth2_{provider}_{channel}_{user_id})",
+      "evidence": [
+        "F011",
+        "F057"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/mcp/oauth.py",
+      "symbol": "TokenStore",
+      "lines": "22-166",
+      "role": "fourth token store shape for MCP: (user_id, server_name), Redis mcp:oauth:{server}:{user_id} / VaultTokenStore; WebOAuthManager, StateStore, NeedsAuthorizationError do not exist",
+      "evidence": [
+        "F019"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/mcp/client.py",
+      "symbol": "MCPClientConfig",
+      "lines": "174-290",
+      "role": "token_supplier is zero-arg (no principal), header_provider(ReadonlyContext) is per call, user_id still bound on the config",
+      "evidence": [
+        "F017",
+        "F063"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/mcp/integration.py",
+      "symbol": "add_oauth_mcp_server",
+      "lines": "1394-1442",
+      "role": "add-time user_id binding confirmed (also add_netsuite_mcp_server 1706-1740)",
+      "evidence": [
+        "F018"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/mcp/oauth2_config.py",
+      "symbol": "MCPOAuth2Config",
+      "lines": "27-204",
+      "role": "descriptor-as-data shape already used for MCP (public client / PKCE declared, presets registry)",
+      "evidence": [
+        "F020"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/handlers/integrations.py",
+      "symbol": "IntegrationsHandler",
+      "lines": "43-160",
+      "role": "/api/v1/agents/integrations/{agent_id}[/{provider}/connect|enable|DELETE]; principal from session, never the body; return_origin allowlist",
+      "evidence": [
+        "F040",
+        "F024"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/manager/manager.py",
+      "symbol": "BotManager._register_oauth2_providers",
+      "lines": "2388-2807",
+      "role": "registers only JiraOAuth2Provider at startup (boot warning when jira_oauth_manager unset); mounts IntegrationsHandler; O365 registration left to the host app",
+      "evidence": [
+        "F016"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/handlers/user.py",
+      "symbol": "UserSocketManager.send_direct_message",
+      "lines": "100-414",
+      "role": "per-process user_sockets keyed by username (JWT); Redis used for user-info and channel pubsub, but no cross-process send-to-user primitive",
+      "evidence": [
+        "F021"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/handlers/agent.py",
+      "symbol": "AgentTalk handler",
+      "lines": "1916-1927",
+      "role": "catches AuthorizationRequired → AuthRequiredEnvelope JSON (HTTP 200); CredentialRequired not caught anywhere in server handlers",
+      "evidence": [
+        "F047"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/observability/fanout.py",
+      "symbol": "setup_event_fanout",
+      "lines": "74-121",
+      "role": "sanctioned bus pattern: EventBus(transport='streams', publish_only=True), redacted payloads, consumers outside parrot",
+      "evidence": [
+        "F023",
+        "F066"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/jira_commands.py",
+      "symbol": "connect_jira_handler",
+      "lines": "50-233",
+      "role": "/connect_jira, /disconnect_jira, /jira_status with raw telegram_id; TelegramOAuthNotifier called directly by the callback route",
+      "evidence": [
+        "F015"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/post_auth_jira.py",
+      "symbol": "JiraPostAuthProvider",
+      "lines": "38-252",
+      "role": "combined /login + Jira flow: embeds nav_user_id in extra_state, writes telegram + jira identity rows; no longer writes tokens (FEAT-735)",
+      "evidence": [
+        "F035",
+        "F073",
+        "F030"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/wrapper.py",
+      "symbol": "TelegramAgentWrapper._build_permission_context",
+      "lines": "1280-1300",
+      "role": "PermissionContext.user_id = raw telegram_id, channel='telegram' (the channel-bound key the brainstorm wants to replace)",
+      "evidence": [
+        "F048",
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/auth.py",
+      "symbol": "BasicAuthStrategy",
+      "lines": "477-495",
+      "role": "/login sets TelegramUserSession.nav_user_id (in-memory); the Telegram↔platform link is session-held and persisted only through the combined Jira flow",
+      "evidence": [
+        "F043",
+        "F035"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/integrations/msteams/oauth_callback.py",
+      "symbol": "handle_msteams_jira_callback",
+      "lines": "89-305",
+      "role": "Teams proactive notification (ConversationReference in extra_state) + nav_user_id-guarded identity write already exist",
+      "evidence": [
+        "F035",
+        "F067"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/integrations/manager.py",
+      "symbol": "_build_jira_credential_sink",
+      "lines": "81-107",
+      "role": "wires IdentityVaultCredentialSink into JiraOAuthManager (Protocol injection keeps core free of server imports)",
+      "evidence": [
+        "F030"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/integrations/core/auth/oauth2_providers.py",
+      "symbol": "OAUTH2_PROVIDERS",
+      "lines": "16-44",
+      "role": "login-IdP catalog (google) for channel sign-in — a different 'provider registry' not to be conflated",
+      "evidence": [
+        "F009",
+        "F055"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py",
+      "symbol": "JiraToolkit._pre_execute",
+      "lines": "927-1345",
+      "role": "oauth2_3lo via CredentialResolver in _pre_execute, client cache '{channel}:{user_id}' → (client, token_hash); does NOT declare credential_provider, so it bypasses the broker seam",
+      "evidence": [
+        "F029"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/o365/oauth_toolkit.py",
+      "symbol": "Office365Toolkit",
+      "lines": "37-150",
+      "role": "delegated 3LO toolkit with credential_provider='o365' (broker seam) and legacy _pre_execute fallback raising AuthorizationRequired",
+      "evidence": [
+        "F025"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/o365/base.py",
+      "symbol": "O365AuthMode",
+      "lines": "22-26",
+      "role": "DIRECT/OBO/DELEGATED(+CACHED) on the older O365Tool; DELEGATED is interactive MSAL, not the vault-backed path",
+      "evidence": [
+        "F026"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/ui/src/lib/components/agents/integrations/IntegrationsMenu.svelte",
+      "symbol": "IntegrationsMenu",
+      "lines": "1-167",
+      "role": "admin UI already ships a per-agent integrations menu, ConnectIntegrationPill for auth_required, and oauth/popup.ts awaitOAuthCallback; no WS push, no cross-channel view, no auto-retry",
+      "evidence": [
+        "F027",
+        "F046",
+        "F065"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+      "symbol": "AuditLedger",
+      "lines": "80-296",
+      "role": "canonical KMS-signed ledger (used by broker); legacy parrot/auth/audit.py still imported once by msagentsdk/wrapper.py",
+      "evidence": [
+        "F034",
+        "F076"
+      ]
+    },
+    {
+      "path": "docs/auth/jira-credential-ownership.md",
+      "symbol": "The answer",
+      "lines": "1-80",
+      "role": "FEAT-735 decision (2026-10-23): Identity Vault durable owner, Redis live tool path, Slack first-link gap",
+      "evidence": [
+        "F031"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "statement": "The durable owner of the Jira grant is navigator-auth's Identity Vault (auth.user_identities keyed by nav user_id + provider + account), with Redis jira:oauth:{channel}:{user_id} as the live tool path — decided 2026-10-23 (FEAT-735), one week before this research.",
+      "evidence": [
+        "F031",
+        "F059",
+        "F049",
+        "F050"
+      ],
+      "implication": "The proposal must build the principal-keyed vault on the Identity Vault, not introduce a competing CredentialVault; the 'dual-read migration' targets the Redis hot cache key, not the durable store."
+    },
+    {
+      "statement": "ai-parrot core must never import ai-parrot-server (parrot.services.*); the sink is injected through the CredentialSink Protocol, but parrot/auth/routes.py already lazily imports integrations modules.",
+      "evidence": [
+        "F002",
+        "F059",
+        "F024"
+      ],
+      "implication": "Channel notification must stay behind a Protocol/registry in core; the Jira callback's lazy integrations imports are existing debt to remove, not a pattern to copy."
+    },
+    {
+      "statement": "auth.user_identities.user_id is a bigint FK to auth.users; channel callbacks must carry the Navigator id under a dedicated nav_user_id state key and never reuse state['user_id'] (the channel id); the table already allows several accounts per provider per user.",
+      "evidence": [
+        "F012",
+        "F056",
+        "F062",
+        "F035"
+      ],
+      "implication": "The (principal, provider, account) key the brainstorm wants already matches the schema; the migration risk is principal resolution, not storage."
+    },
+    {
+      "statement": "Two incompatible principal notions coexist: the broker's CanonicalIdentityMapper (Entra OID → email) and the identity layer's Navigator bigint user_id; FEAT-729 proved they can be bridged at login (provider_user_id == oid).",
+      "evidence": [
+        "F042",
+        "F072",
+        "F060"
+      ],
+      "implication": "One principal key must be chosen for the vault and a mapping step added for the other; otherwise cross-surface reuse silently breaks."
+    },
+    {
+      "statement": "On Telegram, PermissionContext.user_id is the raw telegram_id and the nav link exists only after /login, persisted to auth.user_identities only as a side effect of the combined Jira flow.",
+      "evidence": [
+        "F048",
+        "F043",
+        "F035",
+        "F056"
+      ],
+      "implication": "Zero-reconnect is achievable only for users who linked via /login; others hold only the channel-keyed Redis copy and need a one-time link step."
+    },
+    {
+      "statement": "FEAT-144 explicitly decided per-(user, agent, toolkit) enablement and declared cross-channel credential sharing a non-goal; IntegrationsService hard-codes channel='web' and is agent-scoped.",
+      "evidence": [
+        "F065",
+        "F038",
+        "F075"
+      ],
+      "implication": "The brainstorm's core goal reverses a recorded product decision; the proposal must state the reversal explicitly and keep per-agent enablement as a separate concern from the connection itself."
+    },
+    {
+      "statement": "AbstractOAuth2Manager and vault_utils key everything by (provider, channel, user_id) (Redis oauth2:{p}:{c}:{u}, vault oauth2_{p}_{c}_{u}); JiraOAuthManager duplicates the same shape with jira:* keys and is deliberately not a subclass.",
+      "evidence": [
+        "F044",
+        "F071",
+        "F011",
+        "F002"
+      ],
+      "implication": "Re-keying is a change in one base class plus a Jira migration onto it — not a new ConnectionManager."
+    },
+    {
+      "statement": "Completion → channel is a direct in-process dispatch in the callback handlers (app['jira_oauth_notifier'], Slack/Teams handlers, web postMessage); navigator-eventbus is a live dependency used publish-only (Streams) but no channel wrapper subscribes to any topic.",
+      "evidence": [
+        "F024",
+        "F073",
+        "F064",
+        "F022",
+        "F023",
+        "F066"
+      ],
+      "implication": "Event-driven completion requires either a consuming bus instance in channel processes (new wiring) or an in-process notifier registry; the callback and the Telegram bot currently share one aiohttp app."
+    },
+    {
+      "statement": "UserSocketManager.send_direct_message is process-local and keyed by JWT username, not nav user_id; Redis pubsub exists for channels only.",
+      "evidence": [
+        "F021"
+      ],
+      "implication": "Web push of connection.completed needs a username↔principal map and a Redis-backed per-user channel or must stay popup-only."
+    },
+    {
+      "statement": "Two needs-auth signals: AuthorizationRequired (legacy _pre_execute path) is converted to ToolResult(status='authorization_required', metadata={auth_url, provider, scopes, tool_name}) by ToolManager and to AuthRequiredEnvelope by AgentTalk; CredentialRequired (broker seam) bubbles uncaught by server handlers.",
+      "evidence": [
+        "F004",
+        "F047",
+        "F001",
+        "F003"
+      ],
+      "implication": "Unification is a ToolManager-level catch for CredentialRequired producing the same ToolResult, plus retiring one of the two raise sites; both classes live in core."
+    },
+    {
+      "statement": "JiraToolkit does not declare credential_provider and still uses the FEAT-083 hot-swap placeholder (JiraConnectTool); Office365Toolkit declares credential_provider='o365'.",
+      "evidence": [
+        "F029",
+        "F004",
+        "F025"
+      ],
+      "implication": "Putting Jira on the broker seam (declare-once, resolve-at-call) removes the hot-swap and aligns it with O365."
+    },
+    {
+      "statement": "MCP per-user tokens are injected at call time via header_provider(ReadonlyContext) (FEAT-264 M9), but token_supplier is zero-arg and MCPClientConfig.user_id / add_oauth_mcp_server(user_id=...) still bind the user at add-time; the MCP auth surface has had zero commits in 120 days.",
+      "evidence": [
+        "F017",
+        "F018",
+        "F063",
+        "F052"
+      ],
+      "implication": "The MCP change is removing the add-time user_id and routing token_supplier through the broker — small, no concurrent-edit risk."
+    },
+    {
+      "statement": "The web integrations API already derives the principal from the authenticated session and validates return_origin against WEB_OAUTH_ALLOWED_ORIGINS; a generic per-provider callback with web postMessage, A2A resume and navigator-auth exclude_list exists at /api/auth/oauth2/{provider}/callback.",
+      "evidence": [
+        "F040",
+        "F005",
+        "F070",
+        "F064"
+      ],
+      "implication": "Brainstorm items 7 (routes) and the callback are largely present; the delta is a user-level (non-agent) listing and the Jira route retirement."
+    },
+    {
+      "statement": "Name collisions: OAuth2ProviderRegistry (core, tool credentials) vs OAUTH2_PROVIDERS (integrations, login IdPs) vs proposed OAuthProviderRegistry; two setup_oauth2_routes (core tool-credential callback vs Telegram WebApp login callback).",
+      "evidence": [
+        "F055",
+        "F009",
+        "F048"
+      ],
+      "implication": "The proposal must reuse the existing names or choose unambiguous new ones; it must not introduce a third registry."
+    },
+    {
+      "statement": "O365 has three store paths: 3LO browser flow writes vault_utils oauth2_o365_web_{user_id}; device-code CLI writes VaultTokenSync o365:*; Gen-1 /api/v1/o365/auth/sessions routes were deleted (no /api/o365/oauth/* exists).",
+      "evidence": [
+        "F061",
+        "F032",
+        "F024",
+        "F025"
+      ],
+      "implication": "The 'microsoft' descriptor the brainstorm plans for S-3a already exists (O365OAuthManager + O365OAuth2Provider); S-3a's O365 work is store consolidation, not a new provider."
+    },
+    {
+      "statement": "MS Teams already has a user-auth lane (FEAT-729: MSTeamsAuthStrategy, TokenExchangeClient, /login, aad_object_id ↔ nav_user_id) and proactive Jira notifications (FEAT-225); Slack has /connect_jira + DM notifier; Slack first-link still has no owner.",
+      "evidence": [
+        "F060",
+        "F035",
+        "F067",
+        "F031"
+      ],
+      "implication": "S-3b's dependency on TeamsHumanChannel is moot; Teams is a channel adapter over existing primitives. Slack should be in scope as a fourth channel."
+    },
+    {
+      "statement": "Audit must go through parrot.security.audit_ledger.AuditLedger (canonical, KMS-signed); the legacy parrot/auth/audit.py is still imported by msagentsdk/wrapper.py.",
+      "evidence": [
+        "F034",
+        "F076"
+      ],
+      "implication": "connection.* audit entries target the canonical ledger; the legacy import is pre-existing debt."
+    },
+    {
+      "statement": "Provider behaviour is code today (AbstractOAuth2Manager subclass per provider + OAuth2Provider metadata subclass); only MCP has descriptor-as-data (MCPOAuth2Config presets); the broker has a YAML manifest loader for per-agent credential configs.",
+      "evidence": [
+        "F037",
+        "F020",
+        "F058",
+        "F008"
+      ],
+      "implication": "'Provider behaviour is data, not code' is a genuine new capability; it can be layered on the manager hooks (endpoints, PKCE flag, extra params, identity probe) without replacing the registry."
+    }
+  ],
+  "investigation": null,
+  "enrichment": {
+    "new": [
+      "Principal-keyed credential path: AbstractOAuth2Manager (and the Jira manager once migrated) key Redis/vault entries by the Navigator principal, with channel kept as an attribute and resolved from the channel id through auth.user_identities at the start of a tool call (one lookup, cached per session).",
+      "Channel-neutral connections facade: evolve IntegrationsService into a user-level service (list_for_principal / start(provider, principal, channel, return_to) / disconnect / status) and expose it as /api/v1/connections* alongside the agent-scoped /api/v1/agents/integrations routes (which keep per-agent enablement).",
+      "connection.completed / connection.revoked / connection.refresh_failed events: published from the generic callback and refresh paths following the fanout.py publish-only Streams pattern, plus an in-core ChannelNotifier Protocol registry so channel adapters (telegram, slack, msteams, web) register notify() once instead of being imported by the callback.",
+      "Generic channel commands: /connect <provider>, /disconnect <provider>, /status driven by OAuth2ProviderRegistry (keep /connect_jira and /connect_office365 as aliases).",
+      "Unified needs-auth contract: ToolManager converts CredentialRequired to the same ToolResult(status='authorization_required') shape, and the server handlers stop special-casing one exception.",
+      "Descriptor-as-data layer: OAuth2Provider / AbstractOAuth2Manager accept endpoint, PKCE, refresh-policy, identity-probe and extra-param configuration from a descriptor (Pydantic + optional YAML), so adding Atlassian/Microsoft/NetSuite does not require a manager subclass.",
+      "Web push on completion: a Redis-backed per-principal channel in UserSocketManager so the Connections panel flips without a reload, and an automatic retry hook after connect."
+    ],
+    "modified": [
+      {
+        "path": "packages/ai-parrot/src/parrot/auth/oauth2_base.py",
+        "symbol": "AbstractOAuth2Manager",
+        "change": "principal-keyed key templates with channel as attribute; provider revoke endpoint hook; event publication after handle_callback/_refresh_tokens/revoke; descriptor-driven endpoints",
+        "evidence": [
+          "F044",
+          "F071"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/auth/jira_oauth.py",
+        "symbol": "JiraOAuthManager",
+        "change": "re-implement as an AbstractOAuth2Manager subclass (accessible-resources→cloud_id as a post-exchange hook), keep the CredentialSink, dual-read jira:oauth:{channel}:{user_id} during the migration window",
+        "evidence": [
+          "F002",
+          "F059"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/auth/routes.py",
+        "symbol": "jira_oauth_callback",
+        "change": "retire /api/auth/jira/callback in favour of the generic /api/auth/oauth2/jira/callback; remove core→integrations lazy imports",
+        "evidence": [
+          "F024",
+          "F073"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/auth/oauth2_routes.py",
+        "symbol": "make_oauth2_callback",
+        "change": "publish connection.completed and dispatch via the ChannelNotifier registry for non-web channels instead of web-only branching",
+        "evidence": [
+          "F005",
+          "F070"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/auth/oauth2/service.py",
+        "symbol": "IntegrationsService",
+        "change": "channel parameter instead of hard-coded 'web'; principal-level listing; one status probe path (Identity Vault / manager.is_connected) for every provider",
+        "evidence": [
+          "F038",
+          "F075"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+        "symbol": "ToolManager.execute_tool",
+        "change": "also catch CredentialRequired → ToolResult(status='authorization_required'); invalidate per-session resolver caches on connection.completed",
+        "evidence": [
+          "F004"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py",
+        "symbol": "JiraToolkit",
+        "change": "declare credential_provider='jira' so the broker seam applies; drop the hot-swap placeholder dependency",
+        "evidence": [
+          "F029",
+          "F004"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/mcp/client.py",
+        "symbol": "MCPClientConfig",
+        "change": "remove add-time user_id binding; token_supplier receives the per-call context / resolves through the broker",
+        "evidence": [
+          "F017",
+          "F018",
+          "F063"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-server/src/parrot/manager/manager.py",
+        "symbol": "BotManager._register_oauth2_providers",
+        "change": "register every configured provider (o365, mcp, …) from descriptors, not only Jira",
+        "evidence": [
+          "F016"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-server/src/parrot/handlers/user.py",
+        "symbol": "UserSocketManager",
+        "change": "Redis-backed send-to-principal across processes; map username↔nav user_id",
+        "evidence": [
+          "F021"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/jira_commands.py",
+        "symbol": "register_jira_commands",
+        "change": "generic /connect <provider> commands + ChannelNotifier implementation; nav principal resolution from TelegramUserSession / auth.user_identities",
+        "evidence": [
+          "F015",
+          "F043",
+          "F048"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-integrations/src/parrot/integrations/msteams/oauth_callback.py",
+        "symbol": "MSTeamsOAuthNotifier",
+        "change": "becomes the Teams ChannelNotifier; same for slack/oauth_callback.py",
+        "evidence": [
+          "F035",
+          "F067"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-server/ui/src/lib/components/agents/integrations/IntegrationsMenu.svelte",
+        "symbol": "IntegrationsMenu",
+        "change": "user-level Connections panel (status, account, scopes, expiry) fed by /api/v1/connections, WS-driven refresh, auto-retry after ConnectIntegrationPill",
+        "evidence": [
+          "F027",
+          "F046"
+        ]
+      }
+    ],
+    "untouched": [
+      "OAuthRoutesMixin on HttpMCPServer and the navigator-auth OAuth 2.1 authorization server (parrot as resource server — opposite direction).",
+      "The FEAT-735 ownership decision (Identity Vault durable owner, Redis live path, G4 no per-call Postgres decrypt) and the IdentityVaultCredentialSink.",
+      "VaultTokenSync usage for fireflies / workiq / entra device-code and the BYOK per-user LLM keys.",
+      "A2A suspend/resume (SuspendedExecutionStore, register_a2a_resume_hook) and the MSAgentSDK Adaptive/OAuth card lane.",
+      "Per-(user, agent, toolkit) enablement rows (user_agent_toolkits) — enablement stays per agent even when the connection becomes per principal.",
+      "CredentialBroker / CredentialResolverFactory / CanonicalIdentityMapper internals (only consumed; the principal mapping is added around them)."
+    ],
+    "patterns": [
+      {
+        "pattern": "Protocol-based injection from server into core (CredentialSink on JiraOAuthManager) — reuse for ChannelNotifier and the principal resolver.",
+        "evidence": [
+          "F002",
+          "F059",
+          "F030"
+        ]
+      },
+      {
+        "pattern": "Publish-only Streams EventBus with redacted payloads and durable outbox (observability/fanout.py).",
+        "evidence": [
+          "F023",
+          "F066"
+        ]
+      },
+      {
+        "pattern": "Principal from the authenticated session, never from the body; return_origin allowlist (IntegrationsHandler, IntegrationsService.start_connect).",
+        "evidence": [
+          "F040",
+          "F038"
+        ]
+      },
+      {
+        "pattern": "Manager hooks (_exchange_code, _refresh_request, _discover_identity, _build_token_set, authorization_url_extra_params) as the extension seam for provider behaviour.",
+        "evidence": [
+          "F044",
+          "F041"
+        ]
+      },
+      {
+        "pattern": "nav_user_id travels in OAuth extra_state under its own key; callbacks fail closed on a non-numeric id.",
+        "evidence": [
+          "F035",
+          "F062",
+          "F056"
+        ]
+      },
+      {
+        "pattern": "Proactive channel notification keyed by a serialized ConversationReference (Teams) / chat_id (Telegram) stored in extra_state.",
+        "evidence": [
+          "F035",
+          "F015",
+          "F067"
+        ]
+      }
+    ],
+    "risks": [
+      {
+        "risk": "Reversing FEAT-144's channel-separate credential decision changes who can use a connection; without an explicit product statement the migration can be read as a security regression.",
+        "evidence": [
+          "F065"
+        ],
+        "mitigation": "Record the reversal in the spec; keep per-agent enablement; PBAC allowlist on connect."
+      },
+      {
+        "risk": "Two principal keys (Entra OID/email vs Navigator bigint) — picking one strands the other surfaces (A2A/MSAgentSDK vs Telegram/Teams/web).",
+        "evidence": [
+          "F042",
+          "F072",
+          "F060"
+        ],
+        "mitigation": "Choose Navigator user_id as the vault key and map OID/email → user_id via auth.user_identities (FEAT-729 bridge)."
+      },
+      {
+        "risk": "Telegram users who connected Jira without /login have no principal; zero-reconnect is impossible for them.",
+        "evidence": [
+          "F048",
+          "F043",
+          "F035"
+        ],
+        "mitigation": "Dual-read by channel key + one-time /login link prompt; measure legacy-key reads before cutover."
+      },
+      {
+        "risk": "Re-keying the Redis hot cache (jira:oauth:*, oauth2:*) and vault names (oauth2_{p}_{c}_{u}) invalidates live sessions if not dual-read.",
+        "evidence": [
+          "F002",
+          "F044",
+          "F011"
+        ],
+        "mitigation": "Read new key, fall back to legacy key, rewrite; delete after a measured window."
+      },
+      {
+        "risk": "Event-driven completion assumes a consumer in the channel bot process; today the Telegram bot and the callback share one aiohttp app and the bus is publish-only.",
+        "evidence": [
+          "F022",
+          "F023",
+          "F073"
+        ],
+        "mitigation": "In-process ChannelNotifier registry as the primary path, bus publication for audit/out-of-process consumers; do not block notification on the bus."
+      },
+      {
+        "risk": "Web push requires UserSocketManager changes (cross-process, username vs user_id).",
+        "evidence": [
+          "F021"
+        ],
+        "mitigation": "Keep popup postMessage as the load-bearing path; WS push is additive."
+      },
+      {
+        "risk": "Name collisions with existing registries/routes (OAuth2ProviderRegistry, OAUTH2_PROVIDERS, two setup_oauth2_routes).",
+        "evidence": [
+          "F055",
+          "F048",
+          "F009"
+        ],
+        "mitigation": "Reuse existing names; no new OAuthProviderRegistry."
+      }
+    ]
+  },
+  "confidence_map": [
+    {
+      "id": "C1",
+      "statement": "A generic 3LO manager with PKCE S256, Redis nonce state, vault+Redis persistence and lock-protected rotating refresh exists at parrot/auth/oauth2_base.py::AbstractOAuth2Manager.",
+      "evidence": [
+        "F044",
+        "F071"
+      ],
+      "confidence": "high",
+      "reasoning": "Full file read with line-anchored excerpts, corroborated by wiki page."
+    },
+    {
+      "id": "C2",
+      "statement": "JiraOAuthManager is a parallel implementation (jira:oauth:{channel}:{user_id}, no PKCE), not a subclass of the generic manager, and carries the FEAT-735 CredentialSink.",
+      "evidence": [
+        "F002",
+        "F059",
+        "F071"
+      ],
+      "confidence": "high",
+      "reasoning": "Read + grep + spec page agree."
+    },
+    {
+      "id": "C3",
+      "statement": "A provider registry (OAuth2ProviderRegistry / OAuth2Provider) and a web IntegrationsService with list/start/enable/disconnect/persist already exist, agent-scoped and channel='web' hard-coded.",
+      "evidence": [
+        "F037",
+        "F038",
+        "F075",
+        "F036"
+      ],
+      "confidence": "high",
+      "reasoning": "Direct reads of registry.py, service.py, models.py."
+    },
+    {
+      "id": "C4",
+      "statement": "A generic per-provider callback (/api/auth/oauth2/{provider}/callback) with navigator-auth exclusion, web postMessage page and A2A resume exists; Jira still uses its own /api/auth/jira/callback with direct channel dispatch.",
+      "evidence": [
+        "F005",
+        "F070",
+        "F024",
+        "F073"
+      ],
+      "confidence": "high",
+      "reasoning": "Both route modules read."
+    },
+    {
+      "id": "C5",
+      "statement": "The FEAT-264 CredentialBroker stack (broker, factory, CredentialRequired/NeedsAuth, tool-loop seam, credential_provider, CanonicalIdentityMapper) is fully shipped (11/11 tasks).",
+      "evidence": [
+        "F054",
+        "F058",
+        "F006",
+        "F004",
+        "F033",
+        "F042"
+      ],
+      "confidence": "high",
+      "reasoning": "Code reads plus task index."
+    },
+    {
+      "id": "C6",
+      "statement": "Two needs-auth signals coexist in core; ToolManager converts AuthorizationRequired to ToolResult(status='authorization_required', metadata={auth_url, provider, scopes, tool_name}) while CredentialRequired bubbles uncaught by server handlers.",
+      "evidence": [
+        "F004",
+        "F047",
+        "F001",
+        "F003"
+      ],
+      "confidence": "high",
+      "reasoning": "Grep + read of manager.py, abstract.py, handlers/agent.py."
+    },
+    {
+      "id": "C7",
+      "statement": "The durable owner of the Jira grant is the navigator-auth Identity Vault keyed by Navigator user_id; this was decided 2026-10-23 (FEAT-735) and Redis remains the live tool path.",
+      "evidence": [
+        "F031",
+        "F059",
+        "F013",
+        "F049",
+        "F050"
+      ],
+      "confidence": "high",
+      "reasoning": "Doc, spec, code and git history agree; one week old."
+    },
+    {
+      "id": "C8",
+      "statement": "The 'session vault' is navigator-session's user vault made persistent per user by a deterministic session_uuid (VaultTokenSync), encrypted; two more stores exist (vault_utils DocumentDB/Postgres user_credentials with channel in the key; MCP TokenStore).",
+      "evidence": [
+        "F010",
+        "F011",
+        "F019",
+        "F057",
+        "F068"
+      ],
+      "confidence": "high",
+      "reasoning": "Direct reads of all three modules."
+    },
+    {
+      "id": "C9",
+      "statement": "Channel ids map to the Navigator principal through auth.user_identities (bigint user_id), written by IdentityMappingService; on Telegram the link is created by /login and persisted only via the combined Jira flow; PermissionContext.user_id stays the raw telegram_id.",
+      "evidence": [
+        "F012",
+        "F056",
+        "F035",
+        "F043",
+        "F048",
+        "F062"
+      ],
+      "confidence": "high",
+      "reasoning": "Service read + wrapper/auth/post_auth reads."
+    },
+    {
+      "id": "C10",
+      "statement": "The broker's canonical identity (Entra OID/email) and the identity layer's Navigator bigint id are two different principal keys; nothing maps between them except the Teams login lane.",
+      "evidence": [
+        "F042",
+        "F072",
+        "F060"
+      ],
+      "confidence": "high",
+      "reasoning": "identity.py read + FEAT-729 spec."
+    },
+    {
+      "id": "C11",
+      "statement": "NeedsAuthorizationError, WebOAuthManager, StateStore, requires_auth, parrot.connections, ConnectionManager, ConnectionChannel and AuthRequirement do not exist; TokenStore does (parrot/mcp/oauth.py).",
+      "evidence": [
+        "F019",
+        "F033"
+      ],
+      "confidence": "high",
+      "reasoning": "Negative greps over packages/; probe confirmed ConnectionChannel/AuthRequirement absent."
+    },
+    {
+      "id": "C12",
+      "statement": "MCP per-user tokens are injected at call time through header_provider, but token_supplier is zero-arg and MCPClientConfig.user_id / add_oauth_mcp_server(user_id) still bind at add time; the old MCP OAuthManager was removed (FEAT-262).",
+      "evidence": [
+        "F017",
+        "F018",
+        "F063",
+        "F052",
+        "F019"
+      ],
+      "confidence": "high",
+      "reasoning": "client.py/integration.py greps + task page + git history."
+    },
+    {
+      "id": "C13",
+      "statement": "No /api/o365/oauth/initiate|status routes exist; the admin UI ships an integrations menu, OAuth popup helper and inline ConnectIntegrationPill (FEAT-144), without WS push, cross-channel status or auto-retry.",
+      "evidence": [
+        "F024",
+        "F027",
+        "F046",
+        "F065"
+      ],
+      "confidence": "high",
+      "reasoning": "Grep over packages + UI reads; the TROC AgentChat repo was not inspected."
+    },
+    {
+      "id": "C14",
+      "statement": "Completion notification is a direct in-process call from the callback (Telegram notifier on app[...], Slack DM, Teams proactive, web postMessage); navigator-eventbus is present but no channel wrapper subscribes.",
+      "evidence": [
+        "F024",
+        "F073",
+        "F064",
+        "F022",
+        "F023"
+      ],
+      "confidence": "high",
+      "reasoning": "Route reads + grep for bus imports in integrations."
+    },
+    {
+      "id": "C15",
+      "statement": "UserSocketManager cannot target one principal across processes today (process-local dict keyed by username).",
+      "evidence": [
+        "F021"
+      ],
+      "confidence": "medium",
+      "reasoning": "handlers/user.py read; the parent navigator WebSocketManager (external package) was not inspected and may offer pubsub delivery."
+    },
+    {
+      "id": "C16",
+      "statement": "MS Teams already has a user-auth lane (FEAT-729) and proactive Jira notifications (FEAT-225); Slack has /connect_jira + DM; O365 has O365OAuthManager + O365OAuth2Provider; Gen-1 O365 routes were deleted.",
+      "evidence": [
+        "F060",
+        "F067",
+        "F035",
+        "F061",
+        "F041"
+      ],
+      "confidence": "high",
+      "reasoning": "Spec pages + code reads."
+    },
+    {
+      "id": "C17",
+      "statement": "FEAT-144 recorded cross-channel credential sharing as a non-goal and chose per-(user, agent, toolkit) enablement.",
+      "evidence": [
+        "F065",
+        "F039"
+      ],
+      "confidence": "high",
+      "reasoning": "Task/spec pages + persistence.py."
+    },
+    {
+      "id": "C18",
+      "statement": "JiraToolkit does not declare credential_provider and still relies on the hot-swap placeholder tool; Office365Toolkit declares it.",
+      "evidence": [
+        "F029",
+        "F004",
+        "F025"
+      ],
+      "confidence": "high",
+      "reasoning": "Greps and reads of both toolkits."
+    },
+    {
+      "id": "C19",
+      "statement": "The remaining delta for the brainstorm's Option B is re-keying by principal, Jira onto the generic manager, channel-neutral service/routes, event or registry-based completion, generic channel commands and descriptor-as-data — not a new core module.",
+      "evidence": [
+        "F044",
+        "F038",
+        "F005",
+        "F073",
+        "F015",
+        "F037"
+      ],
+      "confidence": "medium",
+      "reasoning": "Inferred scope across many findings; depends on the principal-key and module-placement decisions (U1, U4)."
+    },
+    {
+      "id": "C20",
+      "statement": "The O365 3LO browser flow and the device-code CLI flow write different stores (vault_utils vs VaultTokenSync o365:*), with no consolidation feature filed.",
+      "evidence": [
+        "F061",
+        "F032"
+      ],
+      "confidence": "medium",
+      "reasoning": "Spec statement + docs; the deferred follow-up was searched only in the wiki."
+    },
+    {
+      "id": "C21",
+      "statement": "Legacy Redis jira:oauth:* has a single writer/reader (JiraOAuthManager); toolkits reach it only via OAuthCredentialResolver.get_valid_token.",
+      "evidence": [
+        "F002",
+        "F031"
+      ],
+      "confidence": "high",
+      "reasoning": "Grep over packages/ excluding tests."
+    },
+    {
+      "id": "C22",
+      "statement": "Ledger issue e2221d566081 (retire VaultTokenSync Jira write) is stale-open: its ask was delivered by FEAT-735 TASK-4671.",
+      "evidence": [
+        "F074",
+        "F030",
+        "F051"
+      ],
+      "confidence": "high",
+      "reasoning": "Ledger show + post_auth_jira.py grep + git history."
+    },
+    {
+      "id": "C23",
+      "statement": "External provider facts (Atlassian rotating refresh lifetimes, Microsoft refresh lifetime, NetSuite 7-day rotation) were not verified in this research.",
+      "evidence": [],
+      "confidence": "low",
+      "reasoning": "R6 is external to the codebase; no web lookups were made. Must be re-verified in the spec."
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Which key is THE principal for the connections vault: the Navigator bigint user_id (used by auth.user_identities, VaultTokenSync and the Telegram/Teams/web lanes) or the broker's canonical Entra OID/email (used by A2A/MSAgentSDK/CLI)?",
+      "blocks_claims": [
+        "C10",
+        "C19"
+      ],
+      "plausible_answers": [
+        "Navigator user_id, with OID/email → user_id mapped through auth.user_identities (FEAT-729 bridge)",
+        "Entra OID/email, with Telegram/Teams/web mapping their nav user to an OID/email at login",
+        "Both, stored as separate columns with the Navigator id as primary"
+      ],
+      "ask_user": true,
+      "user_answer": "Both columns, Navigator primary — the connection row stores the navigator-auth bigint user_id (lookup key) and the Entra OID/email as a secondary index for Copilot/A2A/MSAgentSDK surfaces.",
+      "resolved_at": "2026-10-30T12:57:52Z"
+    },
+    {
+      "id": "U2",
+      "question": "Do you confirm reversing the FEAT-144 decision: a connection belongs to the principal and is usable on every channel and every agent (per-agent toolkit enablement stays as a separate switch)?",
+      "blocks_claims": [
+        "C17",
+        "C19"
+      ],
+      "plausible_answers": [
+        "Yes — connection per principal, enablement per agent stays",
+        "Yes, and drop per-agent enablement too (one connection, all agents)",
+        "No — keep channel-separate credentials; only unify the code paths"
+      ],
+      "ask_user": true,
+      "user_answer": "Reverse fully: one connection, all agents — a connected provider is available to every agent the principal can reach on every channel; per-agent enablement (user_agent_toolkits) is dropped.",
+      "resolved_at": "2026-10-30T12:57:52Z"
+    },
+    {
+      "id": "U3",
+      "question": "For Telegram users who ran /connect_jira without /login (no Navigator principal), what is acceptable: a one-time /login prompt to link, or an indefinite channel-keyed fallback?",
+      "blocks_claims": [
+        "C9",
+        "C19"
+      ],
+      "plausible_answers": [
+        "One-time /login link prompt; dual-read until they link; delete legacy keys after a measured window",
+        "Keep channel-keyed fallback indefinitely for Telegram",
+        "Force re-connect (accept the reconnect cost)"
+      ],
+      "ask_user": true,
+      "user_answer": "Force re-connect — Telegram users who connected Jira without /login re-authorize once the principal key is live; no indefinite channel-keyed fallback. Users who linked via /login keep their Identity Vault copy (no reconnect).",
+      "resolved_at": "2026-10-30T12:57:52Z"
+    },
+    {
+      "id": "U4",
+      "question": "Where does the unified code live: evolve parrot.auth.oauth2 (registry, IntegrationsService, oauth2_base) in place, or create parrot.connections as a new package that re-exports and extends them?",
+      "blocks_claims": [
+        "C19"
+      ],
+      "plausible_answers": [
+        "Evolve parrot.auth.oauth2 / oauth2_base in place (no new package, no renames)",
+        "New parrot.connections package wrapping the existing modules (facade), existing import paths kept",
+        "New parrot.connections package and hard-cut the old names"
+      ],
+      "ask_user": true,
+      "user_answer": "Evolve parrot.auth.oauth2 in place — no new parrot.connections package, no renames; extend AbstractOAuth2Manager, IntegrationsService, OAuth2ProviderRegistry and oauth2_routes where they are.",
+      "resolved_at": "2026-10-30T12:57:52Z"
+    },
+    {
+      "id": "U5",
+      "question": "Completion transport: in-process ChannelNotifier registry (today's topology, callback and bots share one app) with bus publication for audit only, or require channel processes to consume navigator-eventbus (Streams) topics?",
+      "blocks_claims": [
+        "C14",
+        "C15"
+      ],
+      "plausible_answers": [
+        "Notifier registry primary + publish-only bus for audit/out-of-process consumers",
+        "Bus is the only path; add consuming bus instances to every channel wrapper",
+        "Keep direct calls, just move them behind a Protocol"
+      ],
+      "ask_user": true,
+      "user_answer": "Notifier registry + publish-only bus — an in-core ChannelNotifier Protocol registry is the delivery path; connection.* events are also published on the Streams bus for audit/out-of-process consumers, never load-bearing.",
+      "resolved_at": "2026-10-30T12:57:52Z"
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization and constraints are high-confidence and the architectural fork (Option B) was already settled in the source brainstorm; the five unknowns are product/placement decisions, not research gaps, and once answered the spec split (core → Telegram → web/Slack → Teams) can be written directly on the existing modules."
+  },
+  "overall_confidence": "medium",
+  "meta": {
+    "findings_used": [
+      "F001",
+      "F002",
+      "F003",
+      "F004",
+      "F005",
+      "F006",
+      "F007",
+      "F008",
+      "F009",
+      "F010",
+      "F011",
+      "F012",
+      "F013",
+      "F014",
+      "F015",
+      "F016",
+      "F017",
+      "F018",
+      "F019",
+      "F020",
+      "F021",
+      "F022",
+      "F023",
+      "F024",
+      "F025",
+      "F026",
+      "F027",
+      "F029",
+      "F030",
+      "F031",
+      "F032",
+      "F033",
+      "F034",
+      "F035",
+      "F036",
+      "F037",
+      "F038",
+      "F039",
+      "F040",
+      "F041",
+      "F042",
+      "F043",
+      "F044",
+      "F045",
+      "F046",
+      "F047",
+      "F048",
+      "F049",
+      "F050",
+      "F051",
+      "F052",
+      "F054",
+      "F055",
+      "F056",
+      "F057",
+      "F058",
+      "F059",
+      "F060",
+      "F061",
+      "F062",
+      "F063",
+      "F064",
+      "F065",
+      "F066",
+      "F067",
+      "F068",
+      "F070",
+      "F071",
+      "F072",
+      "F073",
+      "F074",
+      "F075",
+      "F076"
+    ],
+    "findings_unused": [
+      "F028",
+      "F053",
+      "F069"
+    ],
+    "notes": "Overall confidence is medium because scope confidence (C19) depends on U1/U2/U4. R6 provider facts were not researched (C23). The TROC AgentChat UI repository was not inspected; only the admin UI in ai-parrot-server/ui was. Research was not truncated."
+  }
+}

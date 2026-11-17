@@ -36,7 +36,7 @@ keep only tasks whose index's `spec` is in the taxonomy list (AND across flags,
 OR within a repeated flag):
 
 ```bash
-SPECS=$(python -m scripts.sdd.doc_taxonomy --kind spec --paths-only --project <p> --tag <t>)
+SPECS=$(parrot sdd docs list --kind spec --paths-only --project <p> --tag <t>)
 TASKS=$(jq -s --arg specs "$SPECS" '[.[] | select(.feature != "_orphans") | select(.spec as $s | ($specs | split("\n")) | index($s)) | .tasks[]]' sdd/tasks/index/*.json)
 ```
 
@@ -49,7 +49,7 @@ Map each active worktree to its feature ID by matching the worktree name pattern
 
 Additionally, call the worktree status library for richer data:
 ```bash
-WT_REPORTS=$(python -m scripts.sdd.worktree_status --json 2>/dev/null || echo "[]")
+WT_REPORTS=$(parrot sdd worktree status --json 2>/dev/null || echo "[]")
 ```
 Build a lookup from `feature_slug` → `WorktreeReport`. This provides task progress
 counts and `ready_for_done` flags that the bare `git worktree list` cannot give.
@@ -98,8 +98,8 @@ FEAT-007 — Ontological RAG
 
 FEAT-008 — MCP Security Layer
   🔵 No worktree — create one:
-     git worktree add -b feat-008-mcp-security .claude/worktrees/feat-008-mcp-security HEAD
-     cd .claude/worktrees/feat-008-mcp-security
+     parrot sdd worktree ensure --slug mcp-security --feature-id FEAT-008
+     cd "$WORKTREES_DIR/feat-008-mcp-security"
   2. TASK-010 — SecurityLayer base   [high / M]
      Depends-on: none
      → /sdd-start TASK-010
@@ -107,11 +107,11 @@ FEAT-008 — MCP Security Layer
 FEAT-009 — Security Toolkits
   ⚡ Parallel tasks (can run in separate worktrees):
   3. TASK-042 — Prowler Toolkit      [medium / S]
-     git worktree add -b task-042-prowler .claude/worktrees/task-042-prowler HEAD
-     → cd .claude/worktrees/task-042-prowler && /sdd-start TASK-042
+     parrot sdd worktree ensure --slug prowler --feature-id FEAT-042
+     → cd "$WORKTREES_DIR/task-042-prowler" && /sdd-start TASK-042
   4. TASK-043 — Trivy Toolkit        [medium / S]
-     git worktree add -b task-043-trivy .claude/worktrees/task-043-trivy HEAD
-     → cd .claude/worktrees/task-043-trivy && /sdd-start TASK-043
+     parrot sdd worktree ensure --slug trivy --feature-id FEAT-043
+     → cd "$WORKTREES_DIR/task-043-trivy" && /sdd-start TASK-043
 ```
 
 If no tasks are unblocked:
@@ -152,5 +152,5 @@ do not print an empty header.
 ## Reference
 - Per-spec index files: `sdd/tasks/index/*.json` (excluding `_orphans.json`)
 - Active worktrees: `git worktree list`
-- Worktree policy: `CLAUDE.md` (section "Worktree Policy")
+- Worktree policy: `sdd/WORKFLOW.md` (section "Git Configuration")
 - SDD methodology: `sdd/WORKFLOW.md`

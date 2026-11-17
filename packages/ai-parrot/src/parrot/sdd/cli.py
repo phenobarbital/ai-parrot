@@ -1,0 +1,427 @@
+"""``parrot sdd`` — install the SDD flow (commands, agents, rules, templates) into a repository,
+and expose its packaged helpers as ``parrot sdd <noun> <verb>`` (C30) inside the venv the launcher resolved."""
+
+from __future__ import annotations
+
+import importlib
+import json
+from typing import Any
+from pathlib import Path
+
+import click
+
+from parrot.launcher import LinkedWorktreeError, install_root, require_primary_checkout
+from parrot.sdd.installer import (
+    SUPPORTED_HOSTS,
+    install_sdd_integration,
+    remove_stale_sdd_files,
+    sdd_status,
+    uninstall_sdd_integration,
+)
+
+_HELPER_PACKAGE = "parrot.sdd.scripts"
+_dry_run_option = click.option("--dry-run", is_flag=True, help="Print the plan and change nothing.")
+_keep_edits_option = click.option(
+    "--keep-edits",
+    is_flag=True,
+    help=(
+        "Leave SDD files that were edited since parrot wrote them, or that parrot did not record, untouched "
+        "(default: replace/remove them — they are parrot-owned assets)."
+    ),
+)
+
+_path_option = click.option(
+    "--path",
+    "path_",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=None,
+    help="Target repository root (default: current directory).",
+)
+_host_option = click.option(
+    "--host",
+    "hosts",
+    type=click.Choice(SUPPORTED_HOSTS),
+    multiple=True,
+    help="Assistant host(s) to install for; repeatable (default: claude).",
+)
+
+
+def _root(path_: Path | None, *, write: bool = True) -> Path:
+    """Resolve an install target and reject implicit linked-worktree writes."""
+    candidate = path_ or Path.cwd()
+    if not candidate.is_dir():
+        raise click.ClickException(f"Not a directory: {candidate.resolve()}")
+    resolved = install_root(Path.cwd(), explicit=path_)
+    try:
+        return (require_primary_checkout(resolved) if write else resolved).root
+    except LinkedWorktreeError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
+def _echo_actions(actions: list[str]) -> None:
+    for action in actions:
+        if action.startswith(("warning:", "note:")):
+            click.echo(f"  ! {action}", err=True)
+        elif action.startswith("plan:"):
+            click.echo(f"  · {action}")
+        else:
+            click.echo(f"  ✓ {action}")
+
+
+@click.group(name="sdd")
+def sdd() -> None:
+    """Spec-Driven Development flow: install / uninstall / status, <noun> <verb>."""
+
+
+@sdd.command()
+@_path_option
+@_host_option
+@_keep_edits_option
+@click.option("--force", is_flag=True, hidden=True, help="Deprecated no-op: overwriting is now the default.")
+@click.option(
+    "--portable/--no-portable",
+    "portable",
+    default=None,
+    help=("Bare launcher commands or baked paths; default keeps each host's form then follows the launcher."),
+)
+@click.option("--base-branch", "base_branch", default=None, help="SDD base branch to seed and prepare (default: dev).")
+@click.option("--push-base", is_flag=True, help="Also `git push -u origin <base-branch>` when origin lacks it.")
+@click.option(
+    "--hotfix-base",
+    "hotfix_base",
+    default=None,
+    help="Hotfix branch to seed (default: main); required with --base-branch main.",
+)
+@click.option(
+    "--no-dangerous-guard",
+    is_flag=True,
+    help="Do not register the PreToolUse dangerous-actions guard in .claude/settings.json.",
+)
+@click.option(
+    "--no-sdd-coder",
+    is_flag=True,
+    help="Do not register the sdd-coder and bounded-source MCP toolkits.",
+)
+@click.option(
+    "--no-agy-permissions",
+    is_flag=True,
+    help="Do not register the Antigravity (agy) permission hook and rules for the google host.",
+)
+@_dry_run_option
+def install(
+    path_: Path | None,
+    hosts: tuple[str, ...],
+    keep_edits: bool,
+    force: bool,
+    portable: bool | None,
+    base_branch: str | None,
+    push_base: bool,
+    hotfix_base: str | None,
+    no_dangerous_guard: bool,
+    no_sdd_coder: bool,
+    no_agy_permissions: bool,
+    dry_run: bool,
+) -> None:
+    """Deploy the packaged SDD assets into the repository, replacing older or edited copies (seeds are kept)."""
+    if force and keep_edits:
+        raise click.UsageError("--force and --keep-edits are mutually exclusive")
+    try:
+        _echo_actions(
+            install_sdd_integration(
+                _root(path_, write=True),
+                hosts or ("claude",),
+                keep_edits=keep_edits,
+                dry_run=dry_run,
+                portable=portable,
+                base_branch=base_branch,
+                push_base=push_base,
+                hotfix_base=hotfix_base,
+                dangerous_guard=not no_dangerous_guard,
+                sdd_coder=not no_sdd_coder,
+                agy_permissions=not no_agy_permissions,
+            )
+        )
+    except (ValueError, RuntimeError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
+@sdd.command()
+@_path_option
+@_host_option
+@_keep_edits_option
+@_dry_run_option
+@click.option(
+    "--stalled",
+    "--stale",
+    "stalled",
+    is_flag=True,
+    help=(
+        "Remove only stale SDD files (hand-copied, retired or no longer shipped) and stale MCP toolkit entries for "
+        "the selected hosts (default: claude, like a plain uninstall; repeat --host for codex/google); current "
+        "assets are kept."
+    ),
+)
+@click.option(
+    "--keep",
+    "keep",
+    multiple=True,
+    metavar="GLOB",
+    help="With --stalled: never remove paths matching GLOB (repeatable); MCP entries match as <file>#<key>.",
+)
+def uninstall(
+    path_: Path | None,
+    hosts: tuple[str, ...],
+    keep_edits: bool,
+    dry_run: bool,
+    stalled: bool,
+    keep: tuple[str, ...],
+) -> None:
+    """Remove the SDD files (commands, agents, rules, templates); seeds and state are kept.
+
+    With --stalled, remove only stale files and stale MCP entries instead.
+    """
+    if stalled and keep_edits:
+        raise click.UsageError("--stalled cannot be combined with --keep-edits")
+    if keep and not stalled:
+        raise click.UsageError("--keep requires --stalled")
+    root = _root(path_, write=True)
+    if stalled:
+        selected = hosts or ("claude",)
+        refused: str | None = None
+        try:
+            _echo_actions(remove_stale_sdd_files(root, selected, keep=keep, dry_run=dry_run))
+        except RuntimeError as exc:
+            refused = str(exc)
+            click.echo(f"  ! {exc}", err=True)
+        except ValueError as exc:
+            raise click.ClickException(str(exc)) from exc
+        from parrot.mcp.toolkit_stale import remove_stale_mcp_entries
+
+        try:
+            _echo_actions(remove_stale_mcp_entries(root, selected, keep=keep, dry_run=dry_run))
+        except (ValueError, RuntimeError, OSError) as exc:
+            raise click.ClickException(str(exc)) from exc
+        if refused is not None:
+            raise click.ClickException(refused)
+        return
+    try:
+        _echo_actions(uninstall_sdd_integration(root, hosts or ("claude",), keep_edits=keep_edits, dry_run=dry_run))
+    except (ValueError, RuntimeError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
+@sdd.command()
+@_path_option
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable output.")
+def status(path_: Path | None, as_json: bool) -> None:
+    """Show each SDD asset as current, outdated, edited, foreign or missing per host, plus seeds and state."""
+    report = sdd_status(_root(path_, write=False))
+    if as_json:
+        click.echo(json.dumps(report, indent=2))
+        return
+    for host, states in report["hosts"].items():
+        counts = ", ".join(
+            f"{len(states[name])} {name}" for name in ("current", "outdated", "edited", "foreign", "missing")
+        )
+        click.echo(f"{host}: {counts}")
+        for name in ("outdated", "edited", "foreign"):
+            for target in states[name]:
+                click.echo(f"  {name}: {target}")
+    for target, state in report["seeds"].items():
+        click.echo(f"seed {target}: {state}")
+    for flag in ("config", "gitignore", "id_ledger", "gitattributes", "ledger_hooks"):
+        click.echo(f"{flag}: {'yes' if report[flag] else 'no'}")
+    guard = report["guard_hook"]
+    if guard["form"] is not None:
+        click.echo(f"guard hook: {guard['form']} ({'resolvable' if guard['resolvable'] else 'NOT resolvable'})")
+    click.echo(f"stale: {len(report['stale'])}")
+    for entry in report["stale"]:
+        click.echo(f"  stale: {entry['path']} ({entry['reason']})")
+    click.echo(f"stale mcp: {len(report['stale_mcp'])}")
+    for entry in report["stale_mcp"]:
+        click.echo(f"  stale mcp: {entry['file']}#{entry['key']} ({entry['reason']})")
+    click.echo(f"receipt version: {report['receipt_version'] or 'none'}")
+
+
+#: C30 item 1 — normative command ↔ module map: noun → verb → (module, argv prefix, one-line help).
+VERBS: dict[str, dict[str, tuple[str, tuple[str, ...], str]]] = {
+    "worktree": {
+        "ensure": ("ensure_worktree", (), "Create or reuse the feature/hotfix worktree (idempotent)."),
+        "root": ("worktree_root", (), "Print the resolved worktree root."),
+        "status": ("worktree_status", (), "Discover SDD worktrees and report task state and health."),
+        "guard": ("worktree_environment", (), "Serve the PreToolUse shared-environment guard (--hook)."),
+        "baseline": (
+            "worktree_baseline",
+            (),
+            "Create/remove a runnable baseline checkout of a base ref, compiled .so files included.",
+        ),
+        "list": ("remove_worktree", ("list",), "List worktrees and orphan dirs: dirty, unpushed, PR, live processes."),
+        "sync-base": (
+            "worktree_sync",
+            (),
+            "Bring origin/<base_branch> (or chosen commits) into a worktree; never pushes.",
+        ),
+        "push-protection": (
+            "worktree_push_protection",
+            (),
+            "Enable/disable/inspect the host-provisioned no_push guard sandboxed sync-base needs.",
+        ),
+        "remove": (
+            "remove_worktree",
+            ("remove",),
+            "Remove a worktree safely (refuses a live sdd-worker, dirty, unpushed).",
+        ),
+    },
+    "task": {
+        "close": ("close_task", (), "Close a task: move it to completed/ and stamp the per-spec index."),
+        "finalize": ("finalize_task", (), "Finalize a task from its evidence file."),
+        "heal": ("heal_orphans", (), "Re-attach orphaned task files to their per-spec index."),
+        "graph": ("check_task_graph", (), "Validate a per-spec index task graph."),
+        "state": ("check_task_state", (), "Read-only backstop for stalled task files."),
+        "review": ("review_checkpoint", (), "Review: prepare | validate | record."),
+    },
+    "experience": {
+        "init": ("experience_cli", ("init",), "Initialize the experience plane."),
+        "brief": ("experience_cli", ("brief",), "Show known pitfalls."),
+        "record": ("experience_cli", ("record",), "Record a candidate lesson."),
+        "list": ("experience_cli", ("list",), "List experience lessons."),
+        "show": ("experience_cli", ("show",), "Show one lesson."),
+        "retire": ("experience_cli", ("retire",), "Retire one lesson."),
+        "sync": ("experience_cli", ("sync",), "Sync global experience events."),
+        "export": ("experience_cli", ("export",), "Export shared lesson definitions."),
+        "rebuild": ("experience_cli", ("rebuild",), "Rebuild experience indexes."),
+        "hook": ("experience_hook", (), "Handle a host hook event."),
+    },
+    "ids": {
+        "reserve": ("reserve_ids", (), "Reserve TASK/FEAT ids on the git-native ledger."),
+        "check": ("check_id_collisions", (), "Scan for TASK/FEAT id collisions."),
+        "ledger": ("id_ledger", (), "Inspect or bootstrap the TASK/FEAT id counter."),
+    },
+    "spec": {
+        **{
+            v: ("spec_tools", (v,), f"spec_tools {v}")
+            for v in (
+                "init-run",
+                "render-brief",
+                "stamp-run",
+                "validate-suggestions",
+                "check-path",
+                "commit-intake",
+                "existing-feature-id",
+            )
+        },
+        "prune-intake": ("prune_intake", (), "Prune stale /sdd-spec intake staging."),
+        "consequences": ("check_spec_consequences", (), "Decision-audit gate for a spec (FEAT-784)."),
+    },
+    "brief": {v: ("brief_meta", (v,), f"brief_meta {v}") for v in ("plan", "write-index")},
+    "docs": {
+        **{v: ("sdd_meta", (v,), f"Document flow metadata: {v}") for v in ("parse", "taxonomy", "resolve-flow")},
+        "list": ("doc_taxonomy", (), "List SDD docs by projects/tags frontmatter."),
+        "backfill": ("backfill_taxonomy", (), "Infer projects frontmatter for existing SDD docs."),
+        "migrate-index": ("migrate_index", (), "One-shot monolith → per-spec index migration."),
+    },
+    "tests": {
+        "select": ("select_tests", (), "Select the tests a task/feature must run."),
+        "report": ("test_report", (), "Test report: render | decide-rerun."),
+        "contract": ("cache_test_contract", (), "Cache a spec's Validation Contract into its index."),
+        "e2e-closeout": ("check_e2e_closeout", (), "E2E evidence gate for the closeout surfaces."),
+    },
+    "closeout": {
+        "run": ("run_closeout_hooks", (), "Dispatch /sdd-done closeout hooks."),
+        "resolve-issues": ("close_resolved_issues", (), "Close the ledger issues a finished feature fixed."),
+    },
+    "techwiki": {
+        "api": ("techwiki_api", (), "Generate the markdown API reference for the configured packages."),
+        "bundle": ("techwiki_bundle", (), "Assemble the publishable GitHub-wiki bundle (authored + API + ADRs)."),
+        "check": ("techwiki_check", (), "Report a spec's declared documentation pages (never blocking)."),
+        "sidebar": ("techwiki_bundle", ("--sidebar-only",), "Render Home.md and _Sidebar.md only."),
+    },
+    "procedure": {
+        v: ("procedure", (v,), f"Procedure graph: {v}") for v in ("build", "list", "show", "next", "check", "brief")
+    },
+    "hooks": {
+        "install": ("install_hooks", (), "Install the SDD git hooks."),
+        "dangerous-actions": ("dangerous_actions", (), "Serve the PreToolUse dangerous-actions guard (--hook)."),
+        "agy-permissions": (
+            "agy_permissions",
+            (),
+            "Serve the Antigravity (agy) PreToolUse permission policy (--hook).",
+        ),
+    },
+}
+#: Packaged modules with a main() that are deliberately NOT mounted (C22: /sdd-insight does not ship).
+# `native_claude_sandbox.main()` serves the `launch-worker` script entry; its CLI is `parrot sdd launch worker`.
+# `shell_prefix.main()` is the host-configured shell prefix and replaces the current process.
+# `worker_notification.main()` is invoked as a host lifecycle hook, not as an operator-facing SDD command.
+_UNMOUNTED: frozenset[str] = frozenset({"native_claude_sandbox", "shell_prefix", "worker_notification"})
+_PASSTHROUGH = {"ignore_unknown_options": True, "allow_interspersed_args": False}
+
+
+def mounted_modules() -> set[str]:
+    """Return every ``parrot.sdd.scripts`` module reachable through a verb."""
+    return {module for verbs in VERBS.values() for module, _, _ in verbs.values()}
+
+
+def _mount(noun: click.Group, verb: str, module: str, prefix: tuple[str, ...], help_: str) -> None:
+    """Mount ``noun verb [args…]`` → ``parrot.sdd.scripts.<module>.main([*prefix, *args])`` (C30 item 2)."""
+
+    @noun.command(name=verb, help=help_, add_help_option=False, context_settings=_PASSTHROUGH)
+    @click.argument("args", nargs=-1, type=click.UNPROCESSED)
+    def _verb(args: tuple[str, ...]) -> None:
+        main = importlib.import_module(f"{_HELPER_PACKAGE}.{module}").main
+        try:
+            code = main([*prefix, *args])
+        except SystemExit as exc:  # the helper's own exit (argparse --help exits 0)
+            code = exc.code
+        raise click.exceptions.Exit(code if isinstance(code, int) else (0 if code is None else 1))
+
+
+class _LazyProxyGroup(click.Group):
+    """A click group that resolves `module:attr` on first use and delegates listing/lookup to it (C30 item 4).
+
+    The ledger commands read only `ctx.obj["remote"]`, which `remote_aware` fills itself, so no `wiki` group
+    callback has to run first and no `invoke()` override is needed.
+    """
+
+    def __init__(self, name: str, target: str, **kwargs: Any) -> None:
+        super().__init__(name, **kwargs)
+        self._target = target
+        self._real: click.Group | None = None
+
+    def _resolve(self) -> click.Group:
+        if self._real is None:
+            module, _, attr = self._target.partition(":")
+            self._real = getattr(importlib.import_module(module), attr)
+        return self._real
+
+    def list_commands(self, ctx: click.Context) -> list[str]:
+        """Forward to the real group."""
+        return self._resolve().list_commands(ctx)
+
+    def get_command(self, ctx: click.Context, name: str) -> click.Command | None:
+        """Forward to the real group."""
+        return self._resolve().get_command(ctx, name)
+
+
+sdd.add_command(
+    _LazyProxyGroup(
+        "ledger",
+        "parrot.knowledge.wiki.cli:ledger",
+        help="Work ledger (same commands as `wikitoolkit ledger`; both spellings are valid).",
+    ),
+)
+
+from parrot.sdd.launch_cli import launch as _launch  # noqa: E402  light: click only; parrot.flows loads inside
+
+sdd.add_command(_launch)
+
+# Lazy: parrot.sdd.experts_cli pulls in parrot.experts -> parrot.bots -> navconfig, whose bootstrap raises in a
+# repository without an env/ directory. Every other `parrot sdd` command must stay import-light.
+sdd.add_command(
+    _LazyProxyGroup("experts", "parrot.sdd.experts_cli:experts", help="Expert delegation helpers."),
+)
+
+for _noun, _verbs in VERBS.items():
+    _group = sdd.group(name=_noun, help=f"SDD {_noun} helpers.")(lambda: None)
+    for _verb, (_module, _prefix, _help) in _verbs.items():
+        _mount(_group, _verb, _module, _prefix, _help)

@@ -6,7 +6,7 @@ loading, listing, updating, and deleting artifacts.
 
 FEAT-116: Refactored to use ConversationBackend ABC and OverflowStore.
 Removed the leaky ConversationDynamoDB-specific abstraction (FEAT-116).
-See docs/storage-backends.md for backend configuration.
+See wiki/stores/storage-backends.md for backend configuration.
 """
 
 import io

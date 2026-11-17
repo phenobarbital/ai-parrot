@@ -131,6 +131,12 @@ class Chatbot(BaseBot):
 
     async def configure(self, app=None) -> None:
         """Load configuration for this Chatbot."""
+        # FEAT-726: this override works BEFORE super(), so the base's own guard
+        # cannot help it — a repeat entry would re-run the database round-trip.
+        # Still enter super() so the counter and the INFO log stay truthful.
+        if self.configure_is_noop(app):
+            await super().configure(app)
+            return
         if self._from_database:
             bot = None
             try:

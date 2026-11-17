@@ -12,7 +12,7 @@ Two groups of tests live here:
    (``docs/sdd/lsp-pilot-live-run-summary.json``, a trimmed
    :class:`PilotReport` from the actual 180-attempt run executed 2026-09-20
    against real Bedrock-Mantle seats -- see
-   ``docs/sdd/lsp-pilot-results.md`` and TASK-3514's Completion Note) and
+   ``wiki/sdd-tooling/sdd/lsp-pilot-results.md`` and TASK-3514's Completion Note) and
    runs the SAME integrity/gate functions against genuine evidence, not a
    fixture. Per spec ("human acceptance review... cannot be an unattended,
    automated sign-off"), certification was performed by the operator on
@@ -315,7 +315,7 @@ def test_real_live_run_has_full_180_attempt_coverage_and_traces() -> None:
 def test_real_live_run_gate_matches_published_no_go_decision() -> None:
     """`evaluate_gate`, re-run on the committed real attempts, reproduces the published `no_go`.
 
-    Guards against `docs/sdd/lsp-pilot-results.md`'s published numbers
+    Guards against `wiki/sdd-tooling/sdd/lsp-pilot-results.md`'s published numbers
     ever silently drifting from the raw evidence that produced them.
     """
     report = _load_real_report()
@@ -345,7 +345,7 @@ def test_real_live_run_manifest_matches_published_results_doc() -> None:
     assert report.synthetic is False, (
         "this evidence was certified by the operator on 2026-09-20 after human "
         "acceptance review of the `no_go` decision -- see TASK-3514's Completion "
-        "Note and `docs/sdd/lsp-pilot-results.md`'s Certification status table. "
+        "Note and `wiki/sdd-tooling/sdd/lsp-pilot-results.md`'s Certification status table. "
         "If this now reads True, the committed evidence was replaced or reverted: "
         "do not re-certify it from an agent -- a human must review the new run."
     )

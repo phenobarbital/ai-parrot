@@ -210,11 +210,30 @@ def normalize_frontmatter(fm: Mapping[str, Any], *, source: str, strict: bool = 
     )
 
 
-def parse_leading_yaml(text: str) -> dict[str, Any] | None:
+def _yaml_error_summary(exc: yaml.YAMLError) -> str:
+    """Collapse a PyYAML error into one line with its 1-based line/column.
+
+    Args:
+        exc: The error raised by :func:`yaml.safe_load`.
+
+    Returns:
+        ``"<problem> (line N, column M)"`` for marked errors, otherwise the
+        error text squashed onto a single line.
+    """
+    if isinstance(exc, yaml.MarkedYAMLError) and exc.problem_mark is not None:
+        mark = exc.problem_mark
+        problem = exc.problem or exc.context or exc.__class__.__name__
+        return f"{problem} (line {mark.line + 1}, column {mark.column + 1})"
+    return " ".join(str(exc).split())
+
+
+def parse_leading_yaml(text: str, *, path: str | None = None) -> dict[str, Any] | None:
     """Return a leading YAML mapping, or None for missing/invalid frontmatter.
 
     Args:
         text: Markdown or text content that may begin with YAML frontmatter.
+        path: Optional source path used to name the document in the warning
+            emitted when the block is not valid YAML.
 
     Returns:
         The parsed mapping, or ``None`` when no valid leading block exists.
@@ -230,8 +249,12 @@ def parse_leading_yaml(text: str) -> dict[str, Any] | None:
             return None
         try:
             parsed = yaml.safe_load("\n".join(block))
-        except yaml.YAMLError:
-            logger.debug("Malformed leading YAML frontmatter", exc_info=True)
+        except yaml.YAMLError as exc:
+            logger.warning(
+                "Malformed leading YAML frontmatter in %s: %s",
+                path or "<inline text>",
+                _yaml_error_summary(exc),
+            )
             return None
         if not isinstance(parsed, dict):
             logger.debug("Leading YAML frontmatter is not a mapping")

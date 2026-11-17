@@ -164,7 +164,9 @@ def test_cli_close_accepts_resolved_by(runner, mock_service):
     with patch(_FROM_ROOT, return_value=mock_service):
         result = runner.invoke(ledger, ["close", "issue:abc", "--reason", "fixed", "--resolved-by", "commit:deadbeef"])
     assert result.exit_code == 0
-    mock_service.close_issue.assert_awaited_once_with("issue:abc", "fixed", "agent:cli", resolved_by="commit:deadbeef")
+    mock_service.close_issue.assert_awaited_once_with(
+        "issue:abc", "fixed", "agent:cli", resolved_by="commit:deadbeef", force=False
+    )
 
 
 def test_cli_unclaim_roundtrip(runner, tmp_path):
@@ -172,7 +174,7 @@ def test_cli_unclaim_roundtrip(runner, tmp_path):
     issue_id = asyncio.run(service.open_issue(title="Round trip", body="b", discovered_from="task:TASK-1"))
     assert asyncio.run(service.claim(issue_id, "agent:test")) is True
     with patch(_FROM_ROOT, return_value=service):
-        assert runner.invoke(ledger, ["unclaim", issue_id, "--reason", "released"]).exit_code == 0
+        assert runner.invoke(ledger, ["unclaim", issue_id, "--reason", "released", "--actor", "agent:test"]).exit_code == 0
         ready = runner.invoke(ledger, ["ready"])
     assert issue_id in ready.output
 

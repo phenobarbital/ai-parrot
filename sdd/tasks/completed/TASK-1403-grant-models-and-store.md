@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-211 — Tool Grants & Bounded Approval Windows
 **Spec**: `sdd/specs/FEAT-211-tool-grants-bounded-approval.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

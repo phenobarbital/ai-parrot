@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-463 — Matrix Agents Swarm
 **Spec**: `sdd/specs/matrix-agents-swarm.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: none

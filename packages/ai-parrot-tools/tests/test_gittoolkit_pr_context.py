@@ -7,7 +7,7 @@ and search_repo_code (TASK-1221).
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import patch, MagicMock
+from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
 from pydantic import ValidationError
@@ -17,10 +17,14 @@ from parrot_tools.gittoolkit import (
     FileContentResult,
     GetFileContentInput,
     GitToolkit,
+    GitToolkitError,
+    ListRepoDirectoryInput,
+    RepoDirectoryEntry,
+    RepoDirectoryListing,
     SearchRepoCodeInput,
     _FileBlobCache,
 )
-
+import parrot_tools.gittoolkit as gittoolkit_module
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -145,6 +149,139 @@ class TestPydanticModels:
         assert r.truncated is False
         assert r.error is None
         assert r.content is None
+
+
+class TestRepoDirectoryListing:
+    def test_models_schema_and_exports(self):
+        entry = RepoDirectoryEntry(name="spec.md", path="sdd/specs/spec.md", type="file")
+        listing = RepoDirectoryListing(
+            exists=True,
+            path="sdd/specs",
+            ref="feature/ref",
+            repository="owner/repo",
+            entries=[entry],
+        )
+        input_model = ListRepoDirectoryInput(path="sdd/specs", ref="feature/ref")
+
+        assert listing.entries == [entry]
+        assert input_model.repository is None
+        assert GitToolkit.list_repo_directory._args_schema is ListRepoDirectoryInput
+        assert {
+            "RepoDirectoryEntry",
+            "RepoDirectoryListing",
+            "ListRepoDirectoryInput",
+        }.issubset(gittoolkit_module.__all__)
+
+    @pytest.mark.asyncio
+    async def test_list_repo_directory_returns_entries(self, git_toolkit_pat: GitToolkit) -> None:
+        """Forward the exact ref and repository and return typed file/dir entries."""
+        response = _make_response(
+            json_data=[
+                {"name": "one.spec.md", "path": "sdd/specs/one.spec.md", "type": "file"},
+                {"name": "archive", "path": "sdd/specs/archive", "type": "dir"},
+                {"name": "spec-link", "path": "sdd/specs/spec-link", "type": "symlink"},
+            ]
+        )
+
+        with patch.object(git_toolkit_pat, "_request", return_value=response) as request:
+            result = await git_toolkit_pat.list_repo_directory(
+                path="sdd/specs",
+                ref="refs/pull/17/head",
+                repository="owner/repo",
+            )
+
+        assert result == RepoDirectoryListing(
+            exists=True,
+            path="sdd/specs",
+            ref="refs/pull/17/head",
+            repository="owner/repo",
+            entries=[
+                RepoDirectoryEntry(name="one.spec.md", path="sdd/specs/one.spec.md", type="file"),
+                RepoDirectoryEntry(name="archive", path="sdd/specs/archive", type="dir"),
+            ],
+        )
+        request.assert_called_once_with(
+            "GET",
+            "https://api.github.com/repos/owner/repo/contents/sdd/specs",
+            "test-pat",
+            expected=200,
+            params={"ref": "refs/pull/17/head"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_list_repo_directory_empty_default_repository(self, git_toolkit_pat: GitToolkit) -> None:
+        """An empty array is a valid listing and resolves the configured repository."""
+        with patch.object(git_toolkit_pat, "_request", return_value=_make_response(json_data=[])) as request:
+            result = await git_toolkit_pat.list_repo_directory(path="sdd/specs", ref="main")
+
+        assert result.exists is True
+        assert result.repository == "owner/repo"
+        assert result.entries == []
+        assert request.call_args.kwargs["params"] == {"ref": "main"}
+
+    @pytest.mark.asyncio
+    async def test_list_repo_directory_404_is_not_exists(self, git_toolkit_pat: GitToolkit) -> None:
+        """A missing directory returns empty entries instead of raising."""
+        with patch.object(
+            git_toolkit_pat,
+            "_request",
+            side_effect=GitToolkitError("GitHub API call failed with status 404: Not Found"),
+        ):
+            result = await git_toolkit_pat.list_repo_directory(
+                path="missing",
+                ref="feature/ref",
+                repository="owner/repo",
+            )
+
+        assert result == RepoDirectoryListing(
+            exists=False,
+            path="missing",
+            ref="feature/ref",
+            repository="owner/repo",
+            entries=[],
+        )
+
+    @pytest.mark.asyncio
+    async def test_list_repo_directory_errors(self, git_toolkit_pat: GitToolkit) -> None:
+        """Non-404 failures propagate and a file response is not a directory."""
+        rate_limit = GitToolkitError("GitHub API call failed with status 403: rate limit")
+        with patch.object(git_toolkit_pat, "_request", side_effect=rate_limit):
+            with pytest.raises(GitToolkitError) as exc_info:
+                await git_toolkit_pat.list_repo_directory(path="sdd/specs", ref="main")
+        assert exc_info.value is rate_limit
+
+        file_response = _make_response(
+            json_data={"name": "one.spec.md", "path": "sdd/specs/one.spec.md", "type": "file"}
+        )
+        with patch.object(git_toolkit_pat, "_request", return_value=file_response):
+            with pytest.raises(GitToolkitError, match="non-directory response"):
+                await git_toolkit_pat.list_repo_directory(path="sdd/specs/one.spec.md", ref="main")
+
+    @pytest.mark.asyncio
+    async def test_list_repo_directory_offloads_sync_helper(self, git_toolkit_pat: GitToolkit) -> None:
+        """The async tool delegates blocking transport work to a worker thread."""
+        expected = RepoDirectoryListing(
+            exists=True,
+            path="sdd/specs",
+            ref="main",
+            repository="owner/repo",
+        )
+        to_thread = AsyncMock(return_value=expected)
+
+        with patch("parrot_tools.gittoolkit.asyncio.to_thread", to_thread):
+            result = await git_toolkit_pat.list_repo_directory(
+                path="sdd/specs",
+                ref="main",
+                repository="owner/repo",
+            )
+
+        assert result is expected
+        to_thread.assert_awaited_once_with(
+            git_toolkit_pat._list_repo_directory_sync,
+            "owner/repo",
+            "sdd/specs",
+            "main",
+        )
 
 
 # ---------------------------------------------------------------------------

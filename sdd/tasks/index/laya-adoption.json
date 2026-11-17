@@ -5,9 +5,46 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-21T22:30:00+00:00",
-  "completed_at": "2026-09-22T13:32:32+00:00",
+  "completed_at": null,
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/unit/laya_eval/test_laya_adapter.py",
+          "packages/ai-parrot/tests/unit/laya_eval/test_laya_context_limits.py",
+          "packages/ai-parrot/tests/unit/laya_eval/test_laya_evaluate_cli.py",
+          "packages/ai-parrot/tests/unit/laya_eval/test_laya_fixtures.py",
+          "packages/ai-parrot/tests/unit/laya_eval/test_laya_live.py",
+          "packages/ai-parrot/tests/unit/laya_eval/test_laya_live_pairs.py",
+          "packages/ai-parrot/tests/unit/laya_eval/test_laya_models.py",
+          "packages/ai-parrot/tests/unit/laya_eval/test_laya_reporting.py",
+          "packages/ai-parrot/tests/unit/laya_eval/test_laya_routing.py",
+          "packages/ai-parrot/tests/unit/laya_eval/test_laya_runtime.py",
+          "packages/ai-parrot/tests/unit/laya_eval/test_laya_scenarios.py",
+          "packages/ai-parrot/tests/unit/laya_eval/test_laya_validation.py",
+          "packages/ai-parrot/tests/unit/laya_eval/test_laya_worker.py",
+          "packages/ai-parrot/tests/unit/test_laya_evaluation.py",
+          "packages/ai-parrot/tests/integration/test_laya_evaluation.py",
+          "packages/ai-parrot/tests/unit/laya_eval/test_laya_evidence_retention.py",
+          "packages/ai-parrot/tests/unit/laya_eval/test_laya_rubrics_v2.py",
+          "packages/ai-parrot/tests/unit/laya_eval/test_laya_cheap_baseline.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:4466a322ef4968874ff51e51e44e5558549b6e0d45543be037b73557fb8db7bf"
+  },
   "tasks": [
     {
       "id": "TASK-3605",
@@ -314,6 +351,69 @@
       "completed_at": "2026-09-22T12:37:08+00:00",
       "file": "sdd/tasks/completed/TASK-3618-laya-readme-and-real-cpu-evidence.md",
       "verification": "verified"
+    },
+    {
+      "id": "TASK-5466",
+      "slug": "laya-retained-provider-evidence",
+      "title": "Retain minimal provider evidence for offline verification",
+      "feature_id": "FEAT-589",
+      "feature": "laya-adoption",
+      "spec": "sdd/specs/laya-adoption.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3606",
+        "TASK-3615"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-3606 for existing SampleResult/models.py and TASK-3615 for live.py paired sampling, whose writes this task extends; consumes existing provider evidence tests from its ancestor TASK-3613.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5466-laya-retained-provider-evidence.md"
+    },
+    {
+      "id": "TASK-5467",
+      "slug": "laya-versioned-rubric-validation",
+      "title": "Add explicit versioned rubric checks and provenance",
+      "feature_id": "FEAT-589",
+      "feature": "laya-adoption",
+      "spec": "sdd/specs/laya-adoption.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5466",
+        "TASK-3616"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-5466 for SampleResult.provider_evidence and overlapping models.py/live.py edits, and TASK-3616 for CLI preflight/evaluate.py and its existing test file.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5467-laya-versioned-rubric-validation.md"
+    },
+    {
+      "id": "TASK-5468",
+      "slug": "laya-explicit-cheap-baseline",
+      "title": "Add explicit cheap baseline, coverage and bounded lifecycle",
+      "feature_id": "FEAT-589",
+      "feature": "laya-adoption",
+      "spec": "sdd/specs/laya-adoption.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5467",
+        "TASK-3618"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-5467 for versioned rubric/config contracts and overlapping models.py/live.py/evaluate.py edits; TASK-3618 supplies the README and completed integration/reporting predecessors being extended.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5468-laya-explicit-cheap-baseline.md"
     }
   ]
 }

@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
+import re
+import shutil
 import stat
 import subprocess
+import tarfile
 import tempfile
 from pathlib import Path
+
+import pytest
+
+from parrot.self_ import uv as uv_mod
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SCRIPT = REPO_ROOT / "scripts" / "install" / "install-parrot.sh"
@@ -53,3 +61,477 @@ def test_script_rejects_unsupported_python() -> None:
 
         assert result.returncode != 0
         assert "unsupported Python" in result.stderr
+
+
+def _run_global(tmp: Path, *extra: str, system_uv: str | None = None) -> subprocess.CompletedProcess[str]:
+    """Run the installer in --global --dry-run with HOME, PARROT_HOME, and PATH sandboxed under tmp."""
+    sandbox = tmp / "dry-run-path"
+    sandbox.mkdir(exist_ok=True)
+    scripts = {"uv": f'#!/bin/sh\necho "uv {system_uv} (fake 2026-01-01)"\n'} if system_uv else None
+    env = {
+        "HOME": str(tmp / "home"),
+        "PARROT_HOME": str(tmp / "home" / ".parrot"),
+        "SHELL": "/bin/bash",
+        "PATH": _fake_bin(sandbox, scripts=scripts),
+    }
+    return subprocess.run(
+        ["bash", str(SCRIPT), "--global", "--dry-run", *extra],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+
+
+def test_global_dry_run_bypasses_python_guard(tmp_path: Path) -> None:
+    """--global runs before the system-Python guard: a nonexistent --python is never executed."""
+    result = _run_global(tmp_path, "--python", "/nonexistent")
+    assert result.returncode == 0, result.stderr
+    assert "unsupported Python" not in result.stderr
+    assert "0.11.28" in result.stdout
+    assert "uv venv" in result.stdout or "venv" in result.stdout
+
+
+def test_global_dry_run_writes_nothing(tmp_path: Path) -> None:
+    """--global --dry-run creates no file under HOME / PARROT_HOME."""
+    result = _run_global(tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert not (tmp_path / "home").exists()
+
+
+def test_global_flags_parse(tmp_path: Path) -> None:
+    """--version pins the spec (ai-parrot and ai-parrot-tools alike, rev 0.5 C20); --with announces one `parrot self add` per component."""
+    result = _run_global(tmp_path, "--version", "9.9.9", "--with", "scraping,sdd-coder")
+    assert result.returncode == 0, result.stderr
+    assert "==9.9.9" in result.stdout
+    assert "ai-parrot-tools==9.9.9" in result.stdout
+    assert "self add scraping" in result.stdout
+    assert "self add sdd-coder" in result.stdout
+
+
+def _script_components(text: str) -> set[str]:
+    """The names in the installer's KNOWN_COMPONENTS line."""
+    line = next(ln for ln in text.splitlines() if ln.startswith("KNOWN_COMPONENTS="))
+    return set(line.split("=", 1)[1].strip('"').split())
+
+
+def test_known_components_match_the_packaged_templates() -> None:
+    """--with is validated against a static list; it must equal the packaged toolkit templates."""
+    from parrot.mcp.toolkit_seed import available_templates
+
+    assert _script_components(SCRIPT.read_text(encoding="utf-8")) == set(available_templates())
+
+
+def test_global_rejects_unknown_component_before_anything(tmp_path: Path) -> None:
+    """`--with sdd` (never a component) fails before the plan, under --dry-run too, and writes nothing."""
+    result = _run_global(tmp_path, "--with", "scraping,sdd")
+    assert result.returncode == 1
+    assert "unknown component 'sdd' for --with; available: bounded-source, browsing" in result.stderr
+    assert "This installer will" not in result.stdout and "→" not in result.stdout
+    assert not (tmp_path / "home").exists()
+
+
+def test_global_skips_empty_component_entries(tmp_path: Path) -> None:
+    """Stray commas never become `parrot self add ''`."""
+    result = _run_global(tmp_path, "--with", ",scraping,")
+    assert result.returncode == 0, result.stderr
+    adds = [ln for ln in result.stdout.splitlines() if "add component" in ln]
+    assert len(adds) == 1 and adds[0].endswith("self add scraping")
+
+
+@pytest.mark.parametrize("flags", [("--with", "scraping"), ("--version", "1.2.3")])
+def test_project_mode_rejects_global_only_flags(tmp_path: Path, flags: tuple[str, str]) -> None:
+    """--with/--version without --global used to be silently ignored; now they fail before any step."""
+    result = subprocess.run(
+        ["bash", str(SCRIPT), "--dry-run", *flags], capture_output=True, text=True, check=False, cwd=tmp_path
+    )
+    assert result.returncode == 1
+    assert "only apply to --global" in result.stderr
+    assert "→" not in result.stdout
+
+
+def test_help_stops_at_the_contract() -> None:
+    """`--help` prints the header comment only, never the script body."""
+    result = subprocess.run(["bash", str(SCRIPT), "--help"], capture_output=True, text=True, check=False)
+    assert result.returncode == 0
+    assert result.stdout.rstrip().endswith("echoed with its purpose before it runs.")
+    assert "set -euo" not in result.stdout
+
+
+def test_global_rejects_project_only_flags(tmp_path: Path) -> None:
+    """--venv is meaningless with --global and is refused."""
+    result = _run_global(tmp_path, "--venv", str(tmp_path / "v"))
+    assert result.returncode != 0
+    assert "--global cannot be combined with --venv" in result.stderr
+
+
+def test_global_dry_run_prints_plan_and_gate(tmp_path: Path) -> None:
+    """C14a/C14b: the plan paragraph and the gate summary precede any `→` announcement."""
+    result = _run_global(tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert "0.11.28" in result.stdout and "SHA-256 pinned" in result.stdout and "SHA256SUMS" in result.stdout
+    assert ".sha256" not in result.stdout  # the checksum is pinned, never fetched from the release
+    assert "never modified, moved or removed" in result.stdout
+    assert result.stdout.index("preflight: network checks skipped") < result.stdout.index("→")
+
+
+_TOOLS = (
+    "bash", "uname", "df", "awk", "dirname", "tar", "gzip", "mkdir", "rm", "ln", "mv", "grep", "cat", "cp",
+    "chmod", "mktemp", "stat", "env", "sed", "sha256sum", "git", "curl", "wget",
+)
+
+
+def test_uv_constants_match_runtime() -> None:
+    """The POSIX installer and runtime use the same pinned uv compatibility range."""
+    text = SCRIPT.read_text(encoding="utf-8")
+    found = {key: re.search(rf'\b{key}="([^"]+)"', text).group(1) for key in ("UV_VERSION", "UV_MIN", "UV_MAX")}
+    assert found == {
+        "UV_VERSION": uv_mod.PINNED_UV_VERSION,
+        "UV_MIN": uv_mod.UV_MIN_VERSION,
+        "UV_MAX": uv_mod.UV_MAX_VERSION,
+    }
+
+
+def test_dry_run_uses_a_compatible_system_uv(tmp_path: Path) -> None:
+    """A compatible system uv is selected before the dry-run plan is emitted."""
+    result = _run_global(tmp_path, system_uv="0.11.30")
+    assert result.returncode == 0, result.stderr
+    assert "use your uv 0.11.30" in result.stdout and "download pinned uv" not in result.stdout
+
+
+def test_dry_run_downloads_when_system_uv_is_out_of_range(tmp_path: Path) -> None:
+    """An incompatible system uv stays untouched and causes a private download plan."""
+    result = _run_global(tmp_path, system_uv="0.13.0")
+    assert result.returncode == 0, result.stderr
+    assert (
+        "download pinned uv 0.11.28" in result.stdout and "libexec" in result.stdout and "left as is" in result.stdout
+    )
+
+
+def _fake_bin(tmp: Path, *, drop: tuple[str, ...] = (), scripts: dict[str, str] | None = None) -> str:
+    """Build a PATH dir of symlinks to the real tools minus `drop`, plus fake `scripts` (name → body)."""
+    bindir = tmp / "fakebin"
+    bindir.mkdir(exist_ok=True)
+    scripts = scripts or {}
+    for name in _TOOLS:
+        real = shutil.which(name)
+        if real and name not in drop and name not in scripts:
+            (bindir / name).symlink_to(real)
+    for name, body in scripts.items():
+        target = bindir / name
+        target.write_text(body, encoding="utf-8")
+        target.chmod(0o755)
+    return str(bindir)
+
+
+def test_gate_unsupported_platform_exits_before_write(tmp_path: Path) -> None:
+    """C14b: a fake `uname` reporting Linux-mips fails the platform gate; nothing is written."""
+    path = _fake_bin(tmp_path, scripts={"uname": '#!/bin/sh\ncase "$1" in -s) echo Linux;; -m) echo mips;; esac\n'})
+    env = {"HOME": str(tmp_path / "home"), "PARROT_HOME": str(tmp_path / "home" / ".parrot"), "PATH": path}
+    result = subprocess.run(["bash", str(SCRIPT), "--global"], capture_output=True, text=True, check=False, env=env)
+    assert result.returncode == 1
+    assert "preflight: unsupported platform" in result.stderr and "fix:" in result.stderr
+    assert not (tmp_path / "home").exists()
+
+
+def test_gate_missing_download_tool_exits_before_write(tmp_path: Path) -> None:
+    """C14b: a PATH without curl/wget fails the tool gate before any write (and before network)."""
+    path = _fake_bin(tmp_path, drop=("curl", "wget"))
+    env = {"HOME": str(tmp_path / "home"), "PARROT_HOME": str(tmp_path / "home" / ".parrot"), "PATH": path}
+    result = subprocess.run(["bash", str(SCRIPT), "--global"], capture_output=True, text=True, check=False, env=env)
+    assert result.returncode == 1 and "no download tool" in result.stderr
+    assert not (tmp_path / "home").exists()
+
+
+def test_gate_unwritable_home_exits_before_write(tmp_path: Path) -> None:
+    """C14b: PARROT_HOME under a read-only parent fails the writability gate."""
+    if os.geteuid() == 0:
+        pytest.skip("root ignores a 0o555 directory")
+    ro = tmp_path / "ro"
+    ro.mkdir()
+    ro.chmod(0o555)
+    try:
+        env = {**os.environ, "HOME": str(tmp_path / "home"), "PARROT_HOME": str(ro / ".parrot")}
+        result = subprocess.run(["bash", str(SCRIPT), "--global"], capture_output=True, text=True, check=False, env=env)
+        assert result.returncode == 1 and "not writable" in result.stderr
+        assert not (ro / ".parrot").exists()
+    finally:
+        ro.chmod(0o755)
+
+
+_FAKE_UNAME = '#!/bin/sh\ncase "$1" in -s) echo Linux;; -m) echo x86_64;; esac\n'
+_FAKE_CURL = """#!/bin/sh
+case "$1" in -fsI) exit 0;; esac
+dest=""; url=""
+while [ $# -gt 0 ]; do
+  case "$1" in -o) dest="$2"; shift 2;; -*) shift;; *) url="$1"; shift;; esac
+done
+stat -c '%a %n' "$(dirname "$dest")" >> "$FIXTURES/dlmode"
+case "$url" in
+  *.sha256) cp "$FIXTURES/uv.tar.gz.sha256" "$dest" ;;
+  *) cp "$FIXTURES/uv.tar.gz" "$dest" ;;
+esac
+"""
+_FAKE_UV = """#!/bin/sh
+case "$1" in
+  --version) echo "uv 0.11.28" ;;
+  venv)
+    mkdir -p "$2/bin"
+    cp "$FIXTURES/python" "$2/bin/python"; chmod 755 "$2/bin/python"
+    for n in wikitoolkit bookstore; do printf '#!/bin/sh\\n' > "$2/bin/$n"; chmod 755 "$2/bin/$n"; done
+    cp "$FIXTURES/parrot" "$2/bin/parrot"; chmod 755 "$2/bin/parrot" ;;
+  pip) exit 0 ;;
+esac
+"""
+
+
+def _run_offline_install(
+    tmp_path: Path,
+    *,
+    fake_parrot: str,
+    system_uv: str | None = None,
+    legacy: bool = False,
+    old_ai_parrot: bool = False,
+    tamper: bool = False,
+) -> subprocess.CompletedProcess[str]:
+    """C14b harness: a real non-dry-run `--global` with fakes — never touches the network or the real HOME."""
+    fixtures = tmp_path / "fixtures"
+    stage = fixtures / "uv-x86_64-unknown-linux-gnu"
+    stage.mkdir(parents=True)
+    (stage / "uv").write_text(_FAKE_UV.replace("$FIXTURES", str(fixtures)), encoding="utf-8")
+    (stage / "uv").chmod(0o755)
+    (fixtures / "parrot").write_text(fake_parrot, encoding="utf-8")
+    (fixtures / "python").write_text("#!/bin/sh\nexit 1\n" if old_ai_parrot else "#!/bin/sh\n", encoding="utf-8")
+    tarball = fixtures / "uv.tar.gz"
+    with tarfile.open(tarball, "w:gz") as tar:
+        tar.add(stage, arcname="uv-x86_64-unknown-linux-gnu")
+    digest = hashlib.sha256(tarball.read_bytes()).hexdigest()
+    (fixtures / "uv.tar.gz.sha256").write_text(f"{digest}  uv-x86_64-unknown-linux-gnu.tar.gz\n", encoding="utf-8")
+    scripts = {"uname": _FAKE_UNAME, "curl": _FAKE_CURL.replace("$FIXTURES", str(fixtures))}
+    if system_uv:
+        scripts["uv"] = _FAKE_UV.replace("$FIXTURES", str(fixtures)).replace("0.11.28", system_uv)
+    path = _fake_bin(tmp_path, scripts=scripts)
+    if system_uv:
+        os.utime(tmp_path / "fakebin" / "uv", ns=(1_700_000_000_000_000_000, 1_700_000_000_000_000_000))
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    env = {
+        "HOME": str(tmp_path / "home"),
+        "PARROT_HOME": str(tmp_path / "home" / ".parrot"),
+        "SHELL": "/bin/bash",
+        "TMPDIR": str(scratch),
+        "PATH": path,
+        # the fixture tarball is not the real uv release: pin its digest (or a wrong one) instead
+        "PARROT_UV_SHA256": "0" * 64 if tamper else digest,
+    }
+    if legacy:
+        bin_dir = tmp_path / "home" / ".parrot" / "bin"
+        bin_dir.mkdir(parents=True)
+        for name in ("uv", "uvx"):
+            (bin_dir / name).write_text("legacy", encoding="utf-8")
+    return subprocess.run(["bash", str(SCRIPT), "--global"], capture_output=True, text=True, check=False, env=env)
+
+
+_PARROT_RUNTIME_BROKEN = "#!/bin/sh\necho 'uv: missing — fix: rerun the bootstrap'; exit 1\n"
+_PARROT_REPO_NOT_READY = (
+    "#!/bin/sh\n"
+    'case "$*" in *--runtime-only*) echo "runtime: ok"; exit 0;; "self env --init") exit 0;; esac\n'
+    "echo 'gh: not authenticated — fix: gh auth login'; echo 'ledger: uncommitted'; exit 1\n"
+)
+_PARROT_ENV_INIT_FAILS = (
+    "#!/bin/sh\n"
+    'case "$*" in *--runtime-only*) echo "runtime: ok"; exit 0;; esac\n'
+    "echo 'Error: could not create the credentials file' >&2; exit 1\n"
+)
+
+
+def test_post_install_runtime_failure_rolls_back(tmp_path: Path) -> None:
+    """C14b: a failing `parrot self doctor --runtime-only` removes what the run created."""
+    result = _run_offline_install(tmp_path, fake_parrot=_PARROT_RUNTIME_BROKEN)
+    assert result.returncode != 0
+    assert "self doctor --runtime-only" in result.stdout and "suggested fixes are printed above" in result.stderr
+    assert not (tmp_path / "home" / ".parrot").exists()
+    rc_file = tmp_path / "home" / ".bashrc"
+    assert not rc_file.exists() or "# >>> parrot >>>" not in rc_file.read_text(encoding="utf-8")
+
+
+def test_post_install_repo_readiness_failures_keep_runtime(tmp_path: Path) -> None:
+    """C14b: unauthenticated gh / uncommitted ledger / outdated SDD assets never roll back a healthy runtime."""
+    result = _run_offline_install(tmp_path, fake_parrot=_PARROT_REPO_NOT_READY)
+    assert result.returncode == 0, result.stderr
+    assert "--runtime-only" in result.stdout and "gh: not authenticated" not in result.stdout
+    home = tmp_path / "home" / ".parrot"
+    assert (home / "bin" / "parrot").exists() and (home / "venv").exists()
+    assert (home / "libexec" / "uv").exists()
+    assert not (home / "bin" / "uv").exists()
+    assert "# >>> parrot >>>" in (tmp_path / "home" / ".bashrc").read_text(encoding="utf-8")
+
+
+def test_offline_install_records_a_compatible_system_uv(tmp_path: Path) -> None:
+    """A compatible system uv is recorded without downloading or placing uv on PATH."""
+    result = _run_offline_install(tmp_path, fake_parrot=_PARROT_REPO_NOT_READY, system_uv="0.11.30")
+    assert result.returncode == 0, result.stderr
+    home = tmp_path / "home" / ".parrot"
+    system = Path((home / "libexec" / "uv-path").read_text(encoding="utf-8").strip())
+    assert system == tmp_path / "fakebin" / "uv"
+    assert not (home / "libexec" / "uv").exists() and not (home / "bin" / "uv").exists()
+    assert not (tmp_path / "fixtures" / "dlmode").exists()
+
+
+def test_offline_install_out_of_range_system_uv_is_untouched(tmp_path: Path) -> None:
+    """An incompatible system uv remains byte- and timestamp-identical while the pinned uv is private."""
+    system = tmp_path / "fakebin" / "uv"
+    result = _run_offline_install(tmp_path, fake_parrot=_PARROT_REPO_NOT_READY, system_uv="0.13.0")
+    assert result.returncode == 0, result.stderr
+    assert (
+        system.read_bytes()
+        == _FAKE_UV.replace("$FIXTURES", str(tmp_path / "fixtures")).replace("0.11.28", "0.13.0").encode()
+    )
+    assert system.stat().st_mtime_ns == 1_700_000_000_000_000_000
+    home = tmp_path / "home" / ".parrot"
+    assert (home / "libexec" / "uv").exists() and not (home / "bin" / "uv").exists()
+
+
+def test_offline_install_removes_legacy_uv_after_success(tmp_path: Path) -> None:
+    """Legacy uv binaries are removed only after the managed runtime passes its doctor."""
+    result = _run_offline_install(tmp_path, fake_parrot=_PARROT_REPO_NOT_READY, legacy=True)
+    assert result.returncode == 0, result.stderr
+    home = tmp_path / "home" / ".parrot"
+    assert not (home / "bin" / "uv").exists() and not (home / "bin" / "uvx").exists()
+
+
+def test_offline_install_failure_keeps_legacy_uv(tmp_path: Path) -> None:
+    """A failed runtime doctor leaves legacy uv intact because rollback cannot restore it."""
+    result = _run_offline_install(tmp_path, fake_parrot=_PARROT_RUNTIME_BROKEN, legacy=True)
+    assert result.returncode != 0
+    assert (tmp_path / "home" / ".parrot" / "bin" / "uv").exists()
+
+
+def test_offline_install_old_ai_parrot_keeps_legacy_layout(tmp_path: Path) -> None:
+    """A pre-layout ai-parrot release receives a pinned legacy uv so its old doctor can run."""
+    result = _run_offline_install(tmp_path, fake_parrot=_PARROT_REPO_NOT_READY, old_ai_parrot=True)
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "home" / ".parrot" / "bin" / "uv").exists()
+    assert "predates the libexec" in result.stderr
+
+
+def _real_doctor_path_parrot() -> str:
+    """A `parrot` shim that runs the REAL doctor PATH check (parrot.self_.doctor._check_path) and exits 1 on failure."""
+    import sys
+
+    src = Path(__file__).resolve().parents[2] / "src"
+    return (
+        "#!/bin/sh\n"
+        f'PYTHONPATH="{src}" exec "{sys.executable}" -c \''
+        "import sys; from parrot.self_.doctor import _check_path; c = _check_path(); print(c.detail); sys.exit(0 if c.ok else 1)"
+        "\'\n"
+    )
+
+
+def test_runtime_doctor_sees_managed_bin_on_path(tmp_path: Path) -> None:
+    """The in-process doctor PATH check must pass right after install: the installer exports PATH itself."""
+    result = _run_offline_install(tmp_path, fake_parrot=_real_doctor_path_parrot())
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (tmp_path / "home" / ".parrot" / "bin" / "parrot").exists()
+
+
+def test_download_dir_is_private_and_unpredictable(tmp_path: Path) -> None:
+    """The scratch download dir is created by mktemp -d (0700), not a predictable /tmp/parrot-uv.<pid>."""
+    result = _run_offline_install(tmp_path, fake_parrot=_PARROT_REPO_NOT_READY)
+    assert result.returncode == 0, result.stderr
+    modes = (tmp_path / "fixtures" / "dlmode").read_text(encoding="utf-8").split()
+    assert modes[0] == "700"
+    assert "parrot-uv." in modes[1] and modes[1].rsplit("parrot-uv.", 1)[1] != str(os.getpid())
+
+
+_PARROT_RECORDING = '#!/bin/sh\necho "$*" >> "$PARROT_HOME/calls.log"\nexit 0\n'
+
+
+def test_global_install_creates_credentials_after_runtime_check(tmp_path: Path) -> None:
+    """The credentials step runs after the runtime doctor, pinned to the managed venv; its failure only warns."""
+    result = _run_offline_install(tmp_path, fake_parrot=_PARROT_RECORDING)
+    assert result.returncode == 0, result.stdout + result.stderr
+    calls = (tmp_path / "home" / ".parrot" / "calls.log").read_text(encoding="utf-8").splitlines()
+    assert calls.index("self doctor --runtime-only") < calls.index("self env --init")
+    assert any("PARROT_VENV=" in line and "self env --init" in line for line in result.stdout.splitlines())
+
+
+def test_global_install_credentials_failure_keeps_runtime(tmp_path: Path) -> None:
+    """A failing `parrot self env --init` never rolls the verified runtime back; it only warns."""
+    result = _run_offline_install(tmp_path, fake_parrot=_PARROT_ENV_INIT_FAILS)
+    assert result.returncode == 0, result.stderr
+    assert "after 'parrot self update', run 'parrot self env --init'" in result.stderr
+    assert (tmp_path / "home" / ".parrot" / "venv").exists()
+
+
+def test_global_dry_run_announces_credentials(tmp_path: Path) -> None:
+    result = _run_global(tmp_path)
+    assert "self env --init" in result.stdout and "credentials file" in result.stdout
+
+
+@pytest.mark.parametrize("system, machine, warned", [("Linux", "x86_64", False), ("Darwin", "arm64", True)])
+def test_global_dry_run_warns_off_the_official_platform(tmp_path: Path, system: str, machine: str, warned: bool) -> None:
+    """Owner decision 2026-10-29: only Linux x86_64 is official; macOS arm64 gets a warning but is never blocked."""
+    uname = f'#!/bin/sh\ncase "$1" in -s) echo {system};; -m) echo {machine};; esac\n'
+    path = _fake_bin(tmp_path, scripts={"uname": uname})
+    env = {**os.environ, "HOME": str(tmp_path / "home"), "PARROT_HOME": str(tmp_path / "home" / ".parrot"),
+           "SHELL": "/bin/bash", "PATH": path}
+    result = subprocess.run(["bash", str(SCRIPT), "--global", "--dry-run"], capture_output=True, text=True,
+                            check=False, env=env)
+    assert result.returncode == 0, result.stderr
+    assert ("not officially supported (official: Linux x86_64)" in result.stderr) is warned
+
+
+@pytest.mark.parametrize("machine", ["aarch64", "arm64"])
+def test_gate_refuses_linux_arm(tmp_path: Path, machine: str) -> None:
+    """Owner decision 2026-10-29: Linux aarch64 is dropped — the gate refuses it before writing anything."""
+    path = _fake_bin(tmp_path, scripts={"uname": f'#!/bin/sh\ncase "$1" in -s) echo Linux;; -m) echo {machine};; esac\n'})
+    env = {"HOME": str(tmp_path / "home"), "PARROT_HOME": str(tmp_path / "home" / ".parrot"), "PATH": path}
+    result = subprocess.run(["bash", str(SCRIPT), "--global"], capture_output=True, text=True, check=False, env=env)
+    assert result.returncode == 1
+    assert f"preflight: unsupported platform Linux-{machine}" in result.stderr and "ARM Linux is not supported" in result.stderr
+    assert not (tmp_path / "home").exists()
+
+
+@pytest.mark.parametrize("with_python3", [True, False])
+def test_global_dry_run_warns_when_python3_is_missing(tmp_path: Path, with_python3: bool) -> None:
+    """rev 0.8 C29 safeguard: no python3 on PATH is a warning (the SDD commands need it), never a gate."""
+    path = _fake_bin(tmp_path, scripts={"uname": _FAKE_UNAME})
+    if with_python3:
+        (Path(path) / "python3").symlink_to(shutil.which("python3"))
+    env = {"HOME": str(tmp_path / "home"), "PARROT_HOME": str(tmp_path / "home" / ".parrot"), "SHELL": "/bin/bash",
+           "PATH": path}
+    result = subprocess.run(
+        ["bash", str(SCRIPT), "--global", "--dry-run"], capture_output=True, text=True, check=False, env=env
+    )
+    assert result.returncode == 0, result.stderr
+    assert ("warning: python3 not found" in result.stderr) is (not with_python3)
+
+
+def test_tampered_uv_archive_aborts_and_rolls_back(tmp_path: Path) -> None:
+    """issue:6e31d9355edc — an archive whose hash differs from the pin aborts before installing uv."""
+    result = _run_offline_install(tmp_path, fake_parrot="#!/bin/sh\nexit 0\n", tamper=True)
+    assert result.returncode != 0
+    assert "checksum mismatch" in result.stderr
+    assert not (tmp_path / "home" / ".parrot" / "libexec" / "uv").exists()
+
+
+def test_uv_sha256_pins_cover_every_target() -> None:
+    """Every uv_target the POSIX script can select has a pinned SHA-256; no .sha256 is downloaded."""
+    text = SCRIPT.read_text(encoding="utf-8")
+    assert 'fetch "$url.sha256"' not in text
+    for target in ("x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "aarch64-apple-darwin"):
+        assert f"uv-{target}.tar.gz) echo " in text
+
+
+def test_global_rejects_install_cli(tmp_path: Path) -> None:
+    """issue:73295db52ee4 — --global --install-cli is refused instead of silently dropped."""
+    result = _run_global(tmp_path, "--install-cli")
+    assert result.returncode == 1
+    assert "--global cannot be combined with --install-cli" in result.stderr
+
+
+def test_no_internal_feature_breadcrumb() -> None:
+    """issue:3b2432011ac9 — the public installers carry no internal FEAT-<NNN> id."""
+    for name in ("install-parrot.sh", "install-parrot.ps1"):
+        assert "FEAT-586" not in (SCRIPT.parent / name).read_text(encoding="utf-8")

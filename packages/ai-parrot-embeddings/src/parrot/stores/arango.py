@@ -1110,3 +1110,7 @@ class ArangoDBStore(AbstractStore):
 
         self.logger.info(f"Prepared collection: {collection}")
         return True
+
+
+# Backward-compatible alias: parrot.stores.supported_stores maps the "arango" slug to "ArangoStore".
+ArangoStore = ArangoDBStore

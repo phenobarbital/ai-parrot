@@ -1,0 +1,70 @@
+name: install-matrix
+on:
+  workflow_dispatch:
+    inputs:
+      spec: {description: "pip requirements to install (whitespace-separated)", default: "ai-parrot ai-parrot-tools", type: string}
+      python: {description: "uv-managed Python", default: "3.12", type: string}
+  workflow_call:
+    inputs:
+      spec: {type: string, default: "ai-parrot ai-parrot-tools", required: false}
+      wheel-artifact-pattern: {type: string, default: "", required: false}
+      python: {type: string, default: "3.12", required: false}
+
+jobs:
+  smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]   # Linux aarch64 dropped (owner decision 2026-10-29)
+        # Officially supported: Linux x86_64 only (owner decision 2026-10-29). The other legs keep running and
+        # uploading their SmokeReport, but cannot block a release until the upstream wheels exist
+        # (issue:d725faabd9a8: python-datamodel, navconfig, navigator-api, navigator-auth on macOS arm64;
+        # navigator-auth and uvloop via proxylists on Windows).
+        include:
+          - os: ubuntu-latest
+            official: true
+    continue-on-error: ${{ matrix.official != true }}
+    runs-on: ${{ matrix.os }}
+    env:
+      UV_PYTHON_PREFERENCE: only-managed
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v10.2.0
+      - if: ${{ inputs.wheel-artifact-pattern != '' }}
+        uses: actions/download-artifact@v8
+        with: {pattern: "${{ inputs.wheel-artifact-pattern }}", merge-multiple: true, path: dist}
+      - name: Smoke
+        shell: bash
+        env:
+          IN_SPEC: ${{ inputs.spec }}
+          IN_PYTHON: ${{ inputs.python }}
+          IN_WHEEL_PATTERN: ${{ inputs.wheel-artifact-pattern }}
+          IN_OS: ${{ matrix.os }}
+        run: |
+          ARGS=(--spec "$IN_SPEC")
+          if [ -n "$IN_WHEEL_PATTERN" ]; then
+            CORE=$(uv run --no-project --python "$IN_PYTHON" python - <<'PY'
+          import glob, platform, sys
+          tag = "cp%d%d" % sys.version_info[:2]
+          sysname, mach = platform.system(), platform.machine().lower()
+          plat = {"Linux": "manylinux", "Darwin": "macosx", "Windows": "win"}[sysname]
+          arch = {"x86_64": "x86_64", "amd64": "amd64", "arm64": "arm64", "aarch64": "aarch64"}.get(mach, mach)
+          for w in sorted(glob.glob("dist/ai_parrot-*.whl")):
+              n = w.rsplit("/", 1)[-1]
+              if tag in n and plat in n and (arch in n or "universal" in n or (sysname == "Windows" and "amd64" in n)):
+                  print(w); break
+          PY
+            )
+            TOOLS=$(ls dist/ai_parrot_tools-*.whl 2>/dev/null | head -1 || true)
+            # A pattern means "smoke THESE wheels": never fall back to the published PyPI release.
+            if [ -z "$CORE" ] || [ -z "$TOOLS" ]; then
+              echo "::error::wheel-artifact-pattern '$IN_WHEEL_PATTERN' set but core wheel='${CORE:-<none>}' tools wheel='${TOOLS:-<none>}' not matched for $IN_OS / Python $IN_PYTHON" >&2
+              exit 1
+            fi
+            ARGS=(--wheel "$CORE" --wheel "$TOOLS")
+          fi
+          uv run --no-project --python "$IN_PYTHON" scripts/install/smoke_install.py \
+            "${ARGS[@]}" --python "$IN_PYTHON" --json-out "smoke-$IN_OS.json"
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with: {name: "smoke-${{ matrix.os }}", path: "smoke-${{ matrix.os }}.json"}

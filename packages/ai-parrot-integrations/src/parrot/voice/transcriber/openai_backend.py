@@ -8,8 +8,10 @@ without GPU access or for simpler deployment.
 Originally part of FEAT-008 (MS Teams Voice Note Support),
 refactored to shared location for FEAT-039.
 """
+
 import asyncio
 import logging
+import re
 import time
 from pathlib import Path
 from typing import Dict, Optional
@@ -49,7 +51,39 @@ _LANGUAGE_NAMES: Dict[str, str] = {
     "hebrew": "he",
     "czech": "cs",
     "romanian": "ro",
+    "malay": "ms",
+    "welsh": "cy",
+    "indonesian": "id",
+    "vietnamese": "vi",
+    "thai": "th",
+    "hungarian": "hu",
 }
+
+# An ISO 639-1 code, optionally with a region/script suffix ("en", "en-US", "zh_Hant").
+_ISO_CODE_RE = re.compile(r"^[a-z]{2}([-_][a-z0-9]+)*$")
+
+
+def _iso_language(value: Optional[str]) -> Optional[str]:
+    """Return the ISO 639-1 code for a language name or code, or ``None``.
+
+    Known names map through ``_LANGUAGE_NAMES``; an ISO-looking code keeps its first
+    two letters. Anything else returns ``None``: a code made up from the first two
+    letters of a name ("malay" -> "ma") would be wrong.
+
+    Args:
+        value: A language name ("spanish") or code ("es", "en-US").
+
+    Returns:
+        The two-letter code, or ``None`` when it cannot be determined.
+    """
+    if not isinstance(value, str) or not value.strip():
+        return None
+    norm = value.strip().lower()
+    if norm in _LANGUAGE_NAMES:
+        return _LANGUAGE_NAMES[norm]
+    if _ISO_CODE_RE.match(norm):
+        return norm[:2]
+    return None
 
 
 class OpenAIWhisperBackend(AbstractTranscriberBackend):
@@ -160,14 +194,12 @@ class OpenAIWhisperBackend(AbstractTranscriberBackend):
 
         for attempt in range(self.max_retries):
             try:
-                result = await self._transcribe_attempt(
-                    audio_path, language, start_time
-                )
+                result = await self._transcribe_attempt(audio_path, language, start_time)
                 return result
             except aiohttp.ClientResponseError as e:
                 if e.status == 429:
                     # Rate limited - retry with exponential backoff
-                    wait_time = 2 ** attempt
+                    wait_time = 2**attempt
                     self.logger.warning(
                         "Rate limited by OpenAI API, retrying in %ds (attempt %d/%d)",
                         wait_time,
@@ -177,16 +209,12 @@ class OpenAIWhisperBackend(AbstractTranscriberBackend):
                     await asyncio.sleep(wait_time)
                     last_error = e
                 elif e.status == 401:
-                    raise RuntimeError(
-                        "OpenAI API authentication failed. Check your API key."
-                    ) from e
+                    raise RuntimeError("OpenAI API authentication failed. Check your API key.") from e
                 else:
-                    raise RuntimeError(
-                        f"OpenAI API error ({e.status}): {e.message}"
-                    ) from e
+                    raise RuntimeError(f"OpenAI API error ({e.status}): {e.message}") from e
             except aiohttp.ClientError as e:
                 # Network error - retry with backoff
-                wait_time = 2 ** attempt
+                wait_time = 2**attempt
                 self.logger.warning(
                     "Request failed: %s, retrying in %ds (attempt %d/%d)",
                     str(e),
@@ -197,9 +225,7 @@ class OpenAIWhisperBackend(AbstractTranscriberBackend):
                 await asyncio.sleep(wait_time)
                 last_error = e
 
-        raise RuntimeError(
-            f"Transcription failed after {self.max_retries} attempts: {last_error}"
-        )
+        raise RuntimeError(f"Transcription failed after {self.max_retries} attempts: {last_error}")
 
     async def _transcribe_attempt(
         self,
@@ -256,9 +282,7 @@ class OpenAIWhisperBackend(AbstractTranscriberBackend):
         ) as response:
             if response.status == 200:
                 result_json = await response.json()
-                processing_time_ms = int(
-                    (time.perf_counter() - start_time) * 1000
-                )
+                processing_time_ms = int((time.perf_counter() - start_time) * 1000)
 
                 self.logger.debug(
                     "Transcription completed: %d chars in %dms",
@@ -318,12 +342,7 @@ class OpenAIWhisperBackend(AbstractTranscriberBackend):
             raw_lang = languages[0].get("code")
         if not raw_lang:
             raw_lang = payload.get("language")
-        lang = None
-        if isinstance(raw_lang, str) and raw_lang.strip():
-            norm = raw_lang.strip().lower()
-            lang = _LANGUAGE_NAMES.get(norm) or (norm[:2] if len(norm) <= 5 else None)
-        if not lang and language_hint:
-            lang = language_hint.strip().lower()[:2]
+        lang = _iso_language(raw_lang) or _iso_language(language_hint)
         if not lang:
             lang = "en"
 

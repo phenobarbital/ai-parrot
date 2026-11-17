@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-662 — clients-openai-base-tech-debt
 **Spec**: sdd/specs/clients-openai-base-tech-debt.spec.md
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: XS
 **Depends-on**: none

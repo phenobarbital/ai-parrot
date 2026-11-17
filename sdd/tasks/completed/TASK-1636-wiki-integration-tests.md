@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-260 — LLM Wiki: Persistent Knowledge Base with PageIndex + GraphIndex
 **Spec**: `sdd/specs/llmwiki-pageindex-graphindex.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1627, TASK-1628, TASK-1629, TASK-1630, TASK-1631, TASK-1632, TASK-1633, TASK-1634, TASK-1635

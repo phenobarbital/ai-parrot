@@ -24,13 +24,120 @@ from parrot.memory.compaction.models import (
     TurnState,
     TurnView,
 )
-from parrot.memory.compaction.policies import PrunePolicy, format_invocation_line, get_policy, prune_turn
+from parrot.memory.compaction.policies import (
+    PrunePolicy,
+    format_invocation_parts,
+    get_policy,
+    prune_turn_parts,
+)
+from parrot.memory.parts import MessagePart, render_parts_text
 from parrot.memory.compaction.tokens import TokenCounter, count_turn, get_default_counter, needs_recount
 
 
 def _is_foreign(turn: ConversationTurn, current_chatbot_id: Optional[str]) -> bool:
     """Whether ``turn`` belongs to an agent other than ``current_chatbot_id``."""
     return current_chatbot_id is not None and turn.chatbot_id is not None and turn.chatbot_id != current_chatbot_id
+
+
+_Group = Tuple[MessagePart, ...]
+
+
+def _raw_invocation_group(
+    turn: ConversationTurn,
+    idx: int,
+    limit: Limit,
+    oversize: Collection[int],
+    policies: Optional[Dict[str, PrunePolicy]],
+) -> Tuple[_Group, Tuple[Omission, ...]]:
+    """Parts (one rendered line) and omissions of invocation ``idx`` in the RAW view."""
+    inv = turn.tool_invocations[idx]
+    # An invocation renders through its PrunePolicy (a notice, not a raw excerpt) when the render-time
+    # oversize check flags it, OR when its output was already offloaded at write time — `inv.output`
+    # is then only the <=200-char preview, and the line must still carry the write-time notice.
+    if idx in oversize or "output" in inv.omitted:
+        policy = None
+        if policies is not None and inv.tool_name in policies:
+            policy = policies[inv.tool_name]
+        if policy is None:
+            policy = get_policy(inv.tool_name)
+        pruned = policy.prune(inv, turn_id=turn.turn_id, limit=limit)
+        return (pruned.parts or (MessagePart("text", pruned.notice),)), pruned.omissions
+
+    body: List[str] = []
+    if inv.output:
+        excerpt = inv.output[: limit.max_output_chars]
+        if len(inv.output) > limit.max_output_chars:
+            excerpt += f" …(+{len(inv.output) - limit.max_output_chars:,} chars)"
+        body.append(f"out={excerpt}")
+    if inv.error:
+        body.append(f"error={inv.error}")
+    return format_invocation_parts(inv, limit=limit, body=" ".join(body)), ()
+
+
+def _group_text(group: _Group) -> str:
+    """The single rendered line a group of parts stands for."""
+    return " ".join(p.content for p in group)
+
+
+def _collapse_groups(groups: List[_Group], limit: Limit, counter: TokenCounter) -> List[_Group]:
+    """Drop trailing groups until the block fits ``limit.max_block_tokens`` (adds a ``… +N more`` group)."""
+
+    def block(items: List[_Group]) -> str:
+        return "\n".join(_group_text(g) for g in items)
+
+    if counter.count(block(groups)) <= limit.max_block_tokens:
+        return groups
+    kept = list(groups)
+    dropped = 0
+    while kept and counter.count(block(kept)) > limit.max_block_tokens:
+        kept.pop()
+        dropped += 1
+    if dropped > 0:
+        kept.append((MessagePart("text", f"… +{dropped} more"),))
+    return kept
+
+
+def render_raw_parts(
+    turn: ConversationTurn,
+    limit: Limit,
+    *,
+    oversize: Collection[int] = (),
+    policies: Optional[Dict[str, PrunePolicy]] = None,
+    counter: TokenCounter,
+) -> Tuple[Tuple[MessagePart, ...], Tuple[Omission, ...]]:
+    """Build the RAW-view parts of a turn's tool activity.
+
+    Every invocation renders in full (name, status, elapsed, canonical input, output excerpt, error)
+    **except** those whose index is in ``oversize`` — those go through their :class:`PrunePolicy`
+    instead (the oversize rule applied inside the verbatim tier).
+
+    Args:
+        turn: The turn to render.
+        limit: Bounds on the block (``max_invocations``, ``max_output_chars``, ``max_block_tokens``).
+        oversize: Indices (into ``turn.tool_invocations``) to render through their prune policy.
+        policies: Consulted before the module registry for oversize invocations.
+        counter: Used only to decide whether the whole block must be collapsed.
+
+    Returns:
+        ``(parts, omissions)``; ``parts`` is ``()`` when the turn has no invocations.
+    """
+    if not turn.tool_invocations:
+        return (), ()
+
+    considered = len(turn.tool_invocations[: limit.max_invocations])
+    groups: List[_Group] = []
+    omissions: List[Omission] = []
+    for idx in range(considered):
+        group, new_omissions = _raw_invocation_group(turn, idx, limit, oversize, policies)
+        groups.append(group)
+        omissions.extend(new_omissions)
+
+    remaining = len(turn.tool_invocations) - considered
+    if remaining > 0:
+        groups.append((MessagePart("text", f"… +{remaining} more"),))
+
+    groups = _collapse_groups(groups, limit, counter)
+    return tuple(p for g in groups for p in g), tuple(omissions)
 
 
 def render_raw_view(
@@ -41,80 +148,20 @@ def render_raw_view(
     policies: Optional[Dict[str, PrunePolicy]] = None,
     counter: TokenCounter,
 ) -> Tuple[str, Tuple[Omission, ...]]:
-    """Render the RAW-view ``<tool-activity>`` suffix for a turn.
-
-    Every invocation renders in full (name, status, elapsed, canonical
-    input, output excerpt, error) **except** those whose index is in
-    ``oversize`` — those go through their :class:`PrunePolicy` instead
-    (the oversize rule applied inside the verbatim tier: any output above
-    ``budget.oversize_tool_tokens`` is pruned in every turn but the
-    newest, even when the turn itself renders RAW).
+    """Render the RAW-view ``<tool-activity>`` suffix for a turn (derived from :func:`render_raw_parts`).
 
     Args:
         turn: The turn to render.
-        limit: Bounds on the block (``max_invocations``, ``max_output_chars``,
-            ``max_block_tokens``).
-        oversize: Indices (into ``turn.tool_invocations``) to render
-            through their prune policy instead of as a full excerpt.
-        policies: Consulted before the module registry for oversize
-            invocations (see :func:`~parrot.memory.compaction.policies.prune_turn`).
-        counter: Used only to decide whether the whole block must be
-            collapsed under ``limit.max_block_tokens``.
+        limit: Bounds on the block.
+        oversize: Indices rendered through their prune policy instead of as a full excerpt.
+        policies: Consulted before the module registry for oversize invocations.
+        counter: Used only to decide whether the whole block must be collapsed.
 
     Returns:
-        A tuple of ``(assistant_suffix, omissions)``. ``assistant_suffix``
-        is ``""`` when the turn has no invocations.
+        ``(assistant_suffix, omissions)``; ``assistant_suffix`` is ``""`` when the turn has no invocations.
     """
-    if not turn.tool_invocations:
-        return "", ()
-
-    considered = turn.tool_invocations[: limit.max_invocations]
-    lines: List[str] = []
-    omissions: List[Omission] = []
-
-    for idx, inv in enumerate(considered):
-        # An invocation renders through its PrunePolicy (a notice, not a
-        # raw excerpt) when the render-time oversize check flags it, OR
-        # when its output was already offloaded at write time — `inv.output`
-        # is then only the ≤200-char preview, and the line must still carry
-        # the write-time notice via the policy instead of a plain `out=`.
-        if idx in oversize or "output" in inv.omitted:
-            policy = None
-            if policies is not None and inv.tool_name in policies:
-                policy = policies[inv.tool_name]
-            if policy is None:
-                policy = get_policy(inv.tool_name)
-            pruned = policy.prune(inv, turn_id=turn.turn_id, limit=limit)
-            lines.append(pruned.notice)
-            omissions.extend(pruned.omissions)
-            continue
-
-        parts: List[str] = []
-        if inv.output:
-            excerpt = inv.output[: limit.max_output_chars]
-            if len(inv.output) > limit.max_output_chars:
-                excerpt += f" …(+{len(inv.output) - limit.max_output_chars:,} chars)"
-            parts.append(f"out={excerpt}")
-        if inv.error:
-            parts.append(f"error={inv.error}")
-        lines.append(format_invocation_line(inv, limit=limit, body=" ".join(parts)))
-
-    remaining = len(turn.tool_invocations) - len(considered)
-    if remaining > 0:
-        lines.append(f"… +{remaining} more")
-
-    if counter.count("\n".join(lines)) > limit.max_block_tokens:
-        kept_lines = list(lines)
-        dropped = 0
-        while kept_lines and counter.count("\n".join(kept_lines)) > limit.max_block_tokens:
-            kept_lines.pop()
-            dropped += 1
-        if dropped > 0:
-            kept_lines.append(f"… +{dropped} more")
-        lines = kept_lines
-
-    block = "\n".join(lines)
-    return f"\n\n<tool-activity>\n{block}\n</tool-activity>", tuple(omissions)
+    parts, omissions = render_raw_parts(turn, limit, oversize=oversize, policies=policies, counter=counter)
+    return render_parts_text(parts), omissions
 
 
 def render_tool_activity(turn: ConversationTurn, limit: Limit) -> str:
@@ -245,12 +292,14 @@ def compact_history(
 
         forced = boundary_index is not None and idx <= boundary_index
 
-        raw_suffix, raw_omissions = render_raw_view(
+        raw_parts, raw_omissions = render_raw_parts(
             turn, budget.tool_activity_limit, oversize=oversize, policies=policies, counter=counter
         )
+        raw_suffix = render_parts_text(raw_parts)
         raw_size = math.ceil(calibration * (tc.user + tc.assistant + counter.count(raw_suffix)))
 
-        pr_suffix, pr_omissions = prune_turn(turn, limit=budget.tool_activity_limit, policies=policies)
+        pr_parts, pr_omissions = prune_turn_parts(turn, limit=budget.tool_activity_limit, policies=policies)
+        pr_suffix = render_parts_text(pr_parts)
         pr_size = math.ceil(calibration * (tc.user + tc.assistant + counter.count(pr_suffix)))
 
         # A turn with an oversize invocation can never be classified RAW —
@@ -290,6 +339,7 @@ def compact_history(
                     user_text=turn.user_message or "",
                     assistant_text=turn.assistant_response or "",
                     assistant_suffix=raw_suffix,
+                    parts=raw_parts or None,
                     state=TurnState.RAW,
                     estimated_tokens=raw_size,
                 )
@@ -308,6 +358,7 @@ def compact_history(
                     user_text=turn.user_message or "",
                     assistant_text=turn.assistant_response or "",
                     assistant_suffix=pr_suffix,
+                    parts=pr_parts or None,
                     state=TurnState.PRUNED,
                     estimated_tokens=pr_size,
                 )

@@ -1,0 +1,65 @@
+
+### What's New
+
+- **Contract model and catalog** — `Capability` (cap_id, category, typed input/output, `returns: inline|artifact`, `backing: deterministic|llm_backed`, policy annotations), per-category hashing, handshake deltas, `STALE_CONTRACT` refusal. No counterpart exists; FEAT-070's `CapabilityEntry` is an intent index. *Evidence*: F005
+- **Wire envelope and transport** — a Cap'n Proto schema for Contract / Call / Result / Progress / typed errors (full v0 envelope including cancellation propagation and `PARTIAL` partial artifacts, per Q12), Arrow IPC batches for frames, a Cap'n Proto RPC server (serving dispatcher) and client, trace_id and identity in call metadata (Q6: Cap'n Proto chosen over the gRPC default). Greenfield inside this repo; the version-field and auth-in-metadata conventions of navigator-eventbus's `parrot.events.v1` still apply, its grpc.aio code does not. *Evidence*: F011, F021, F024
+- **RemoteToolkit (AbstractToolkit)** with always-mounted catalog tools (`list` / `mount` / `unmount` / `search` / `find`) that register and unregister capability tool definitions in ToolManager by category, reusing `_categories`, `search_tools` and `get_tool_schemas`. *Evidence*: F003, F011
+- **Handle + descriptor + provenance model**, a media-type descriptor registry (arrow, parquet, mermaid, structurizr, svg, png, pdf, generic) and a content-addressed (sha256) blob store with ACL, TTL and dedup-by-digest, built on `ArtifactBlobStore`/`BlobRef` semantics with new keying and policy. *Evidence*: F010
+- **Capability policy gate** keyed by contract annotations (data class → `ScrubPolicy`, aggregation minimum, row cap, per-caller rate limit, token budget), composed ahead of `PBACToolCallGuardrail` / `PBACPermissionResolver`. *Evidence*: F007, F023
+- **Served ledger** — a new signed entry type (caller, capability, args digest, policy applied, data classes, result digest, cost, backing) over `AbstractKMSSigner` with a fail-closed durable sink. *Evidence*: F006, F026
+- **Local affordance tools** over handles (`df.query` / `df.sample` / `df.join` / `chart.from_df`) with toolkit-enforced materialization caps; pandas + Arrow IPC in v0, Polars as an optional engine later (U3).
+- **Bus carrier in v0** (U4): the same envelope published on navigator-eventbus with `reply_to`, correlation and dedup by `idempotency_key`; needs a bytes-safe serializer and a request/reply convention in navigator-eventbus — spike S6 is a v0 gate. *Evidence*: F008, F024
+- **Cross-hop trace propagation** (caller-generated trace_id in RPC metadata and bus headers) and a per-capability usage/cost event for deterministic calls on both sides. *Evidence*: F009, F025
+- **Remote-agent discovery in AgentRegistry/BotConfig** (U2): `kind: local | a2a | squawk` + endpoint on `BotMetadata`/`BotConfig` so one registry answers "who serves X"; `A2AMeshDiscovery` stays as the A2A-specific health/mesh layer. *Evidence*: F004, F016
+- **Promotion loop, agent-proposed / human-approved** (Q10): the served ledger aggregates LLM-backed calls per capability and args shape; a serving-side agent drafts the deterministic capability (typed I/O + tool binding) and a human approves it into the contract.
+- **Mount policy** (Q11): the planner pre-mounts categories from intent with no LLM turn, and the catalog tools stay available so the model can mount/unmount mid-conversation; S4 verifies prompt-cache behaviour.
+- **Adapters at the edge** — A2A (contract → agent card; artifacts degrade to A2A artifacts) and MCP (mounted category → `AgentMCPMount`-style server; artifacts → resources). Later milestone. *Evidence*: F001, F011
+- **Biscuit capability tokens** issued and attenuated by navigator-auth (Q7) — spike S5; nothing exists in parrot or its history. *Evidence*: F007, F017
+- **New satellite distribution** (U5) owning both the client and server halves of the protocol (Cap'n Proto schema and RPC, dispatcher, blob-store backends); core receives only the shared handle contract once FEAT-704 lands it (U1) plus the ToolManager/WorkingMemory/AgentRegistry seams. *Evidence*: F002, F012
+
+### What Changes
+
+- **`packages/ai-parrot/src/parrot/tools/manager.py`::`ToolManager`** — category-level mount/unmount of tool definitions (lazy loading of a mounted category into the client-facing schema set); remote entries gain a protocol kind if U2 chooses this path. *Evidence*: F003, F022
+- **`packages/ai-parrot/src/parrot/tools/working_memory/tool.py`::`WorkingMemoryToolkit`, `WorkingMemoryCatalog`** — entries carry provenance, media_type and affordances; RemoteToolkit uses the Python-only `store` path. *Evidence*: F010, F015
+- **`packages/ai-parrot/src/parrot/tools/working_memory/task_memory/blob.py`::`ArtifactBlobStore`, `BlobRef`** — extended with a content-addressed key + ACL/TTL, or used as the primitive under a new blob-store facade. *Evidence*: F010
+- **`packages/ai-parrot/src/parrot/registry/registry.py`::`AgentRegistry`, `BotConfig`** — remote-agent kind (`local | a2a | squawk`) + endpoint (U2). *Evidence*: F004, F016
+- **`packages/ai-parrot/src/parrot/a2a/mesh.py`::`A2AMeshDiscovery`, `A2AEndpoint`** — untouched by U2; may gain a read-through from AgentRegistry later. *Evidence*: F001, F004
+- **`packages/ai-parrot/src/parrot/observability/recorders/models.py`::`UsageRecord`** — a per-capability record for deterministic calls (tokens may be 0; ms, rows, backing, cap_id). *Evidence*: F009
+- **`packages/ai-parrot/pyproject.toml`** — no grpcio and no polars added to core (U3, U5); the satellite declares `pycapnp`, `pyarrow` and its blob backends. *Evidence*: F002
+- **`packages/ai-parrot-server/src/parrot/mcp/transports/grpc_session.py`** + `mcp.proto` — delete the dead stub in this feature (U5). *Evidence*: F011
+
+### What's Untouched (Non-Goals)
+
+- A2A JSON-RPC/REST surface and AgentCard discovery (FEAT-272) — stays as the inbound `kind=a2a` path and adapter target.
+- MCP transports (stdio/http/streamable-http/sse/unix/websocket/quic), `MCPClient`, `MCPToolProxy` — the MCP adapter is additive.
+- `parrot/clients/base.py` beyond consuming the existing `_apply_cache_hints` hook in S4.
+- Existing `AuditLedger`/`AuditLedgerEntry` schema and the `CredentialBroker` gate — reused via the signer contract only.
+- FEAT-704 semantic-layer tasks and the `ai-parrot-semantic` satellite — only the shared-contract decision (U1) touches them.
+- navigator-eventbus and navigator-auth internals — outside this repo; the spec records what it needs from them (reply_to convention, bytes-safe serializer, attenuated tokens).
+- Conversation `ArtifactStore` (`parrot/storage/artifacts.py`) and the A2UI structured-artifact contract.
+- Free-form agent conversation, agent dialects, KV-cache exchange, replacing MCP/A2A — brainstorm non-goals.
+
+### Patterns to Follow
+
+- Remote tools become local `AbstractTool`s via a proxy class registered in ToolManager (`MCPToolProxy`, `A2ARemoteSkillTool`); the RemoteToolkit's capability tools keep the shape and change the result route. *Evidence*: F001, F011
+- Own entry model + core signers + async storage callable, fail-closed when required (FEAT-704 `SemanticAuditLedger` over `AbstractKMSSigner`). *Evidence*: F006, F026
+- Guardrail-first enforcement in `execute_tool` with sanitized denial reports (`PBACToolCallGuardrail` / `PolicyDenialReport`); `POLICY_DENIED` reports the same way. *Evidence*: F022, F023
+- Publish-then-reference, checksum + fingerprint, bounded page reads, strict no-pickle Arrow IPC (`ArtifactBlobStore`, `repl_worker/transport.py`). *Evidence*: F010
+- Per-agent mount with canonical PBAC resource names (`AgentMCPMount` mirroring `A2AServer.setup()`) for the MCP adapter. *Evidence*: F011
+- Protobuf service with explicit version field, auth in RPC metadata, open dicts as JSON strings (navigator-eventbus `parrot.events.v1`, formerly TASK-1791). *Evidence*: F021, F024
+- "Mirror the invariant subset of a draft external spec; quarantine wire compatibility behind an adapter" (FEAT-322) for the A2A/MCP adapters. *Evidence*: F027
+
+### Integration Risks
+
+- **Schedule dependency on FEAT-704** (U1: FEAT-704 lands its `ResultHandle` / `SemanticAuditLedger` first, inside the semantic satellite; FEAT-746 consumes and generalizes them). FEAT-704 has 0/26 tasks done and its built branch is salvage-only, so FEAT-746's handle milestone cannot start until FEAT-704 M8/M9b merge. *Mitigation*: the spec declares an explicit dependency on FEAT-704 TASK-4474/TASK-4476 and orders transport, catalog and gate milestones first; the shared models must be importable from core (or a neutral package), not only from `ai-parrot-semantic`. *Evidence*: F020, F026
+- **Cap'n Proto RPC in Python** (Q6): the brainstorm itself notes weaker Python support; `pycapnp` is the only maintained binding, its asyncio RPC layer is younger than grpc.aio, and no precedent exists in this repo or in navigator-eventbus (whose server is grpc.aio). *Mitigation*: spike S2 is re-scoped to "Arrow IPC batches over Cap'n Proto RPC with cancellation and partials" and becomes a hard v0 gate; keep the schema transport-neutral so a gRPC fallback is a transport swap, not a redesign. *Evidence*: F011, F021
+- **Bus carrier in v0 depends on navigator-eventbus** (U4): bytes-safe payload serializer and a `reply_to` request/reply convention do not exist there yet. *Mitigation*: S6 becomes a v0 gate with a navigator-eventbus change request; gRPC ingress versions are no longer a concern because the native transport is Cap'n Proto. *Evidence*: F008, F024
+- **Large-artifact streaming cannot use `FileManagerInterface`** (no byte-range/streaming). *Mitigation*: stream Arrow batches over the RPC into the blob-store writer; S2 covers it. *Evidence*: F010
+- **Per-deployment blob backend** (Q8): local-disk and object-storage implementations behind one blob-store interface double the storage test matrix. *Mitigation*: content-hash key, ACL and TTL live in the interface; backends only move bytes. *Evidence*: F010
+- **New satellite distribution** (U5): one more package to version and release (see the 0.29.0 satellite bootstrap pattern); import-path discipline (PEP 420 namespace) must keep the handle contract in core. *Evidence*: F002, F012
+- **Resource-only PBAC matcher** cannot express per-caller limits or k-anonymity. *Mitigation*: caller-keyed limits live inside the capability gate, not in navigator-auth policies. *Evidence*: F023
+- **Name collisions** (`Artifact` ×3, `ArtifactStore` ×2, `Capability`). *Mitigation*: fix nouns in the spec. *Evidence*: F005, F010
+- **Dead gRPC stub drift** next to a second implementation. *Mitigation*: delete or replace in the same feature. *Evidence*: F011
+
+---
+

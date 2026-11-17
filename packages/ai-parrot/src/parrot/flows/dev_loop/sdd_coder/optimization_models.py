@@ -28,7 +28,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 _UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 _FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 _SHA256_HEX_PATTERN = r"^[0-9a-f]{64}$"
-_TASK_ID_PATTERN = r"^TASK-\d{1,5}$"
+# Reserved `TASK-<NNN>` plus a brief's local `HOTFIX-<KEY>-<n>` (FEAT-698).
+# Kept as a bare string, not a compiled pattern: `Field(pattern=...)` below
+# needs the string form, and it is compiled by pydantic's Rust regex engine --
+# so no lookaround or backreference may be introduced here.
+_TASK_ID_PATTERN = r"^(?:TASK-\d{1,5}|HOTFIX-[A-Za-z0-9][A-Za-z0-9._-]*-\d{1,5})$"
 
 # Keys that must never appear (at any nesting depth) inside a persisted event
 # payload or completion-fact bag: spec R3 "sin texto de prompts ni
@@ -82,11 +86,11 @@ def _check_full_sha(value: str) -> str:
 
 
 def _check_optional_task_id(value: str | None) -> str | None:
-    """Apply the closed `TASK-<1-5 digits>` shape only when a task_id is present."""
+    """Apply the `TASK-<1-5 digits>` / `HOTFIX-<KEY>-<1-5 digits>` shape only when a task_id is present."""
     if value is None:
         return value
     if not re.match(_TASK_ID_PATTERN, value):
-        raise ValueError(f"invalid task id {value!r}; expected TASK-<1-5 digits>")
+        raise ValueError(f"invalid task id {value!r}; expected TASK-<1-5 digits> or HOTFIX-<KEY>-<1-5 digits>")
     return value
 
 
@@ -125,6 +129,41 @@ class EvidenceRef(OptimizationModel):
     relative_path: str = Field(min_length=1)
     size_bytes: int = Field(ge=0)
     media_type: str = Field(min_length=1)
+
+
+class ReviewArtifact(OptimizationModel):
+    """Durable semantic review recorded for one coder delivery."""
+
+    schema_version: Literal[1] = 1
+    kind: Literal["task_review"] = "task_review"
+    feature_slug: str = Field(min_length=1)
+    task_id: str = Field(pattern=_TASK_ID_PATTERN)
+    execution_id: str = Field(min_length=1)
+    source: Literal["coder_review", "manual"]
+    summary: str = Field(min_length=1, max_length=4000)
+    fix_commits: list[str] = Field(default_factory=list)
+    head_sha: str
+    recorded_at: datetime
+    attempt_uid: str | None = None
+    backend: str | None = None
+    model: str | None = None
+
+    _exec_uuid = field_validator("execution_id")(_check_uuid)
+    _head_sha = field_validator("head_sha")(_check_full_sha)
+    _recorded_at_utc = field_validator("recorded_at")(_require_utc)
+
+    @field_validator("fix_commits")
+    @classmethod
+    def _check_fix_commits(cls, value: list[str]) -> list[str]:
+        """Require full git SHAs for every reviewer correction commit."""
+        return [_check_full_sha(item) for item in value]
+
+
+class CoderReviewReceipt(OptimizationModel):
+    """Ledger identity and optional durable artifact for a recorded review."""
+
+    feedback_id: str
+    review_ref: EvidenceRef | None = None
 
 
 # Minimal event kinds from spec R3, mapped to the identity fields each one

@@ -4,9 +4,9 @@ Worktree creation belongs to whoever writes code in the worktree
 (`/sdd-start`, `sdd-worker`) and to the dev-loop orchestrators that plan and
 dispatch in one run (`sdd-planner`, `sdd-research`, `sdd-autopilot`). Planning
 alone (`/sdd-task`) creates none. All of them go through
-`scripts.sdd.ensure_worktree`, so exactly one naming rule exists.
+`parrot sdd worktree ensure`, so exactly one naming rule exists.
 
-These tests keep that true. `.claude/worktrees/` is never inspected: those are
+Live worktrees (under the resolved worktree root, and legacy ones under `.claude/worktrees/`) are never inspected: those are
 separate checkouts of older branches and legitimately hold the old text.
 """
 
@@ -45,24 +45,24 @@ def _read(rel: str) -> str:
 def test_no_command_hand_rolls_a_worktree(rel: str) -> None:
     """No SDD command or agent runs `git worktree add` itself (FEAT-552)."""
     assert "git worktree add" not in _read(rel), (
-        f"{rel} hand-rolls a worktree; call " "`python -m scripts.sdd.ensure_worktree` instead"
+        f"{rel} hand-rolls a worktree; call " "`parrot sdd worktree ensure` instead"
     )
 
 
 @pytest.mark.parametrize("rel", sorted(r for r, needs_cli in _CREATORS.items() if needs_cli))
 def test_every_creator_calls_ensure_worktree(rel: str) -> None:
     """Each lane that provisions a worktree goes through the shared CLI."""
-    assert "scripts.sdd.ensure_worktree" in _read(
+    assert "parrot sdd worktree ensure" in _read(
         rel
-    ), f"{rel} must call `python -m scripts.sdd.ensure_worktree` to provision worktrees"
+    ), f"{rel} must call `parrot sdd worktree ensure` to provision worktrees"
 
 
 #: Agent prompts that run /sdd-spec unattended — they must never enter intake mode (FEAT-577).
 _UNATTENDED_SPEC_CALLERS = (
     ".claude/agents/sdd-research.md",
     ".claude/agents/sdd-planner.md",
-    "packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_data/sdd-research.md",
-    "packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_data/sdd-planner.md",
+    "packages/ai-parrot/src/parrot/sdd/_assets/claude/agents/sdd-research.md",
+    "packages/ai-parrot/src/parrot/sdd/_assets/claude/agents/sdd-planner.md",
 )
 
 
@@ -99,12 +99,60 @@ def test_no_legacy_naming_template_remains() -> None:
     assert not offenders, f"Legacy template `{_LEGACY_TEMPLATE}` found in: " + ", ".join(str(p) for p in offenders)
 
 
+_LEGACY_ROOT = ".claude/worktrees"
+_GUARD_DIRS = (".claude", ".agent", ".agents", "packages/ai-parrot/src/parrot/sdd/_assets")
+_GUARD_SUFFIXES = {".md", ".toml", ".sh"}
+
+
+def test_no_legacy_worktree_root_remains() -> None:
+    """No .md/.toml/.sh under .claude/, .agent/, .agents/, parrot/sdd/_assets/ and CLAUDE.md names
+    `.claude/worktrees` except lines that also contain `git worktree repair` (the migration recipe).
+    Files under a live worktree are skipped exactly as the sibling test does."""
+    if not (_REPO_ROOT / ".claude").is_dir():
+        pytest.skip(".claude/ directory not found at this checkout")
+    offenders: list[str] = []
+    candidates: list[Path] = []
+    for guard_dir in _GUARD_DIRS:
+        dir_path = _REPO_ROOT / guard_dir
+        if dir_path.is_dir():
+            candidates.extend(p for p in dir_path.rglob("*") if p.is_file() and p.suffix in _GUARD_SUFFIXES)
+    claude_md = _REPO_ROOT / "CLAUDE.md"
+    if claude_md.is_file():
+        candidates.append(claude_md)
+
+    for path in candidates:
+        if "worktrees" in path.relative_to(_REPO_ROOT).parts or path.name == "settings.local.json":
+            continue
+        try:
+            content = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        for lineno, line in enumerate(content.splitlines(), start=1):
+            if _LEGACY_ROOT in line:
+                if "git worktree repair" in line:
+                    continue
+                if path.name.startswith("dangerous-actions-blocker"):
+                    continue  # the blocker must still name the legacy root (spec AC1 allow-list)
+                rel = path.relative_to(_REPO_ROOT)
+                offenders.append(f"{rel}:{lineno}")
+
+    assert not offenders, "Legacy worktree root still named in: " + ", ".join(offenders)
+
+
 _SHIPPED_WITH_INLINE_PYTHON_BAN = (
     ".claude/commands/sdd-spec.md",
     ".agent/workflows/sdd-spec.md",
     ".claude/commands/sdd-task.md",
     ".agent/workflows/sdd-task.md",
     ".agents/skills/sdd-task/SKILL.md",
+    ".claude/agents/sdd-worker.md",
+    ".agents/agents/sdd-worker/agent.md",
+    # rev 0.5 C22 E: the navconfig one-liners became an env-var precondition, so after rules 6 + E these
+    # twins carry no inline Python either:
+    ".claude/commands/sdd-done.md",
+    ".agent/workflows/sdd-done.md",
+    ".claude/commands/sdd-tojira.md",
+    ".agent/workflows/sdd-tojira.md",
 )
 # `python -c "` one-liners and `python - … <<` heredocs; prose mentions of `python -c` in
 # backticks without an opening quote are not invocations and are not matched.

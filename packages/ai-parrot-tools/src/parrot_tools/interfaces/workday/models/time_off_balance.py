@@ -1,6 +1,6 @@
 from typing import Optional, Dict, Any
 from decimal import Decimal
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 
 class TimeOffBalance(BaseModel):
@@ -30,12 +30,14 @@ class TimeOffBalance(BaseModel):
     # Raw payload for debugging
     raw_data: Dict[str, Any] = Field(default_factory=dict, exclude=True)
 
-    @validator("*", pre=True)
+    @field_validator("*", mode="before")
+    @classmethod
     def _convert_decimal(cls, v):
         """Convert Decimal values to float"""
         if isinstance(v, Decimal):
             return float(v)
         return v
 
-    class Config:
-        extra = "ignore"
+    model_config = ConfigDict(
+        extra="ignore",
+    )

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-644 — SchedulerManager base (db | redis | code backends)
 **Spec**: `sdd/specs/scheduler-manager-base.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-4159, TASK-4160, TASK-4161

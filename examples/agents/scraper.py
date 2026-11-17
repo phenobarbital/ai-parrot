@@ -13,7 +13,7 @@ async def check_scrapping_agent():
         driver_type="selenium",  # Using Selenium
         max_tokens=8192,
         temperature=0,
-        model=GoogleModel.GEMINI_2_5_FLASH_PREVIEW,
+        model=GoogleModel.GEMINI_3_8_FLASH,
         user_data_dir=str(Path.home() / ".selenium/profiles/myshop"),
         debugger_address="127.0.0.1:9222",
     )

@@ -6,7 +6,7 @@ failures.
 
 "Offline" here means the WHOLE path — embedding + LLM — is local and
 provisioned in advance, not merely that storage is a local directory (see
-``docs/lancedb-offline-profile.md``).
+``wiki/stores/lancedb-offline-profile.md``).
 
 Run (after provisioning a local embedding model and a local OpenAI-compatible
 LLM server, e.g. Ollama):
@@ -67,7 +67,7 @@ def assert_assets_provisioned(args: argparse.Namespace) -> None:
         raise SystemExit(
             f"Missing embedding model asset at {model_path!s}. This script never "
             f"downloads weights — provision the model locally first (see "
-            f"docs/lancedb-offline-profile.md 'Provisioning')."
+            f"wiki/stores/lancedb-offline-profile.md 'Provisioning')."
         )
 
     parsed = urlparse(args.llm_base_url)

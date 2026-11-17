@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-551 — MS Teams FormDesigner Renderer (Adaptive Card + submit envelope via the Teams bot)
 **Spec**: `sdd/specs/msteams-formdesigner-renderer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3148, TASK-3149, TASK-3151

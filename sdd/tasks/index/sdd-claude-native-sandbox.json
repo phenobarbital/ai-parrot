@@ -1,0 +1,325 @@
+{
+  "feature": "sdd-claude-native-sandbox",
+  "feature_id": "FEAT-768",
+  "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-29T01:52:39+00:00",
+  "completed_at": "2026-11-01T01:16:15+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/flows/dev_loop/test_worktree_environment.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_dispatcher.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_models.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_native_claude_sandbox.py",
+          "tests/sdd/test_launch_worker.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_cli_dispatcher_usage_events.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_dual_publish.py",
+          "packages/ai-parrot/tests/flows/dev_loop/integration/test_concurrency.py",
+          "packages/ai-parrot/tests/flows/dev_flow/test_ideation_graph_search.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_subagent_parity.py",
+          "tests/sdd_scripts/test_feat722_doc_contract.py",
+          "tests/sdd_scripts/test_pr_policy_wording_contract.py",
+          "packages/ai-parrot/tests/cli/devloop/test_click_wiring.py",
+          "packages/ai-parrot/tests/cli/devloop/test_launch_worker_cmd.py",
+          "tests/sdd_scripts/test_sdd_brief_twin_contract.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:2454e7e0e99008d40002aeb343149d6614c52f9b131cd735e7a2242f36bf9809"
+  },
+  "tasks": [
+    {
+      "id": "TASK-4885",
+      "slug": "native-sandbox-policy-compiler",
+      "title": "Native sandbox policy compiler",
+      "feature_id": "FEAT-768",
+      "feature": "sdd-claude-native-sandbox",
+      "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "no dependencies: creates native_claude_sandbox.py and its test file, both new; only reads worktree_environment.py helpers",
+      "assigned_to": null,
+      "started_at": "2026-10-29T22:46:55+00:00",
+      "completed_at": "2026-10-29T23:00:23+00:00",
+      "file": "sdd/tasks/completed/TASK-4885-native-sandbox-policy-compiler.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4886",
+      "slug": "linked-worktree-test-fixtures",
+      "title": "Move Claude-dispatcher tests onto linked-worktree fixtures",
+      "feature_id": "FEAT-768",
+      "feature": "sdd-claude-native-sandbox",
+      "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "exclusive: adds a fixture to packages/ai-parrot/tests/flows/dev_loop/conftest.py, which every dev-loop test loads",
+      "assigned_to": null,
+      "started_at": "2026-10-29T22:46:55+00:00",
+      "completed_at": "2026-10-29T22:53:56+00:00",
+      "file": "sdd/tasks/completed/TASK-4886-linked-worktree-test-fixtures.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4887",
+      "slug": "native-hook-backend",
+      "title": "Native backend in the retained SDD hook",
+      "feature_id": "FEAT-768",
+      "feature": "sdd-claude-native-sandbox",
+      "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4885",
+        "TASK-4886"
+      ],
+      "parallel": true,
+      "parallelism_notes": "imports native_task_cwd/native_command_environment/validate_native_write_path from TASK-4885 (native_claude_sandbox.py); modifies test_worktree_environment.py after TASK-4886 migrated a test in it",
+      "assigned_to": null,
+      "started_at": "2026-10-29T22:46:55+00:00",
+      "completed_at": "2026-10-29T23:07:19+00:00",
+      "file": "sdd/tasks/completed/TASK-4887-native-hook-backend.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4888",
+      "slug": "dispatcher-native-sandbox",
+      "title": "Programmatic launch — dispatcher injects strict native settings",
+      "feature_id": "FEAT-768",
+      "feature": "sdd-claude-native-sandbox",
+      "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4885",
+        "TASK-4886",
+        "TASK-4887"
+      ],
+      "parallel": true,
+      "parallelism_notes": "calls native_sandbox_settings/validate_allowed_domains from TASK-4885; modifies test_dispatcher.py after TASK-4886 and uses its linked_worktree fixture; sets the PARROT_SDD_SANDBOX_BACKEND contract that TASK-4887's hook consumes",
+      "assigned_to": null,
+      "started_at": "2026-10-29T22:46:55+00:00",
+      "completed_at": "2026-10-29T23:16:54+00:00",
+      "file": "sdd/tasks/completed/TASK-4888-dispatcher-native-sandbox.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4889",
+      "slug": "interactive-native-launcher",
+      "title": "Interactive launch — native launcher behind launch_worker.sh",
+      "feature_id": "FEAT-768",
+      "feature": "sdd-claude-native-sandbox",
+      "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4885",
+        "TASK-4887"
+      ],
+      "parallel": true,
+      "parallelism_notes": "modifies native_claude_sandbox.py created by TASK-4885 (same file, serialized) and calls native_sandbox_settings; child env selects TASK-4887's native hook branch",
+      "assigned_to": null,
+      "started_at": "2026-10-29T22:46:55+00:00",
+      "completed_at": "2026-10-29T23:16:58+00:00",
+      "file": "sdd/tasks/completed/TASK-4889-interactive-native-launcher.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4890",
+      "slug": "live-qualification-harness",
+      "title": "Opt-in live qualification harness",
+      "feature_id": "FEAT-768",
+      "feature": "sdd-claude-native-sandbox",
+      "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-4888",
+        "TASK-4889"
+      ],
+      "parallel": true,
+      "parallelism_notes": "drives the real launch paths: dispatcher run options from TASK-4888 (dispatchers/claude.py) and launch_worker.sh/launch_worker from TASK-4889",
+      "assigned_to": null,
+      "started_at": "2026-10-29T22:46:55+00:00",
+      "completed_at": "2026-10-29T23:24:40+00:00",
+      "file": "sdd/tasks/completed/TASK-4890-live-qualification-harness.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4891",
+      "slug": "run-native-qualification",
+      "title": "Run the strict live qualification and write the report",
+      "feature_id": "FEAT-768",
+      "feature": "sdd-claude-native-sandbox",
+      "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4890"
+      ],
+      "parallel": false,
+      "parallelism_notes": "exclusive: spends the bounded provider budget and needs the operator-remediated host; runs test_native_claude_sandbox_live.py from TASK-4890",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-10-30T01:50:47+00:00",
+      "file": "sdd/tasks/completed/TASK-4891-run-native-qualification.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4892",
+      "slug": "native-sandbox-docs",
+      "title": "Operator and agent guidance for the native sandbox",
+      "feature_id": "FEAT-768",
+      "feature": "sdd-claude-native-sandbox",
+      "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4889",
+        "TASK-4891"
+      ],
+      "parallel": true,
+      "parallelism_notes": "documents the launch_worker.sh CLI from TASK-4889 and copies the version/host matrix from TASK-4891's native-sandbox-qualification.md",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-10-30T01:56:13+00:00",
+      "file": "sdd/tasks/completed/TASK-4892-native-sandbox-docs.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4908",
+      "slug": "native-sandbox-mode",
+      "title": "Sandbox mode (required | preferred | off) with declared degraded launch",
+      "feature_id": "FEAT-768",
+      "feature": "sdd-claude-native-sandbox",
+      "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4888",
+        "TASK-4889",
+        "TASK-4892"
+      ],
+      "parallel": false,
+      "parallelism_notes": "touches the dispatcher, launcher and hook that TASK-4888/4889 delivered",
+      "assigned_to": null,
+      "started_at": "2026-10-30T11:51:09+00:00",
+      "completed_at": "2026-10-30T12:04:40+00:00",
+      "file": "sdd/tasks/completed/TASK-4908-native-sandbox-mode.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5086",
+      "slug": "native-sandbox-legacy-mode",
+      "title": "Legacy sandbox mode — explicit Bubblewrap-hook rescue path",
+      "feature_id": "FEAT-768",
+      "feature": "sdd-claude-native-sandbox",
+      "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
+      "status": "done",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": "2026-11-01T00:49:24+00:00",
+      "completed_at": "2026-11-01T00:55:14+00:00",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4908"
+      ],
+      "parallelism_notes": "modifies plan_native_launch/launch_worker/dispatcher sandboxed branch that TASK-4908 delivered",
+      "file": "sdd/tasks/completed/TASK-5086-native-sandbox-legacy-mode.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5087",
+      "slug": "native-sandbox-platform-backends",
+      "title": "Per-platform sandbox probe — macOS Seatbelt, native-Windows refusal, Windows-safe hook",
+      "feature_id": "FEAT-768",
+      "feature": "sdd-claude-native-sandbox",
+      "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
+      "status": "done",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": "2026-11-01T00:49:24+00:00",
+      "completed_at": "2026-11-01T01:02:52+00:00",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5086"
+      ],
+      "parallelism_notes": "same probe/plan functions as TASK-5086; sequential to avoid conflicting edits",
+      "file": "sdd/tasks/completed/TASK-5087-native-sandbox-platform-backends.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5088",
+      "slug": "devloop-launch-worker",
+      "title": "parrot devloop launch-worker <FEAT> [--tmux] — host-prepared feature launcher",
+      "feature_id": "FEAT-768",
+      "feature": "sdd-claude-native-sandbox",
+      "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
+      "status": "done",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": "2026-11-01T00:49:24+00:00",
+      "completed_at": "2026-11-01T01:10:00+00:00",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-5086",
+        "TASK-5087"
+      ],
+      "parallelism_notes": "calls launch_worker with the legacy mode and sandbox_platform() those tasks add",
+      "file": "sdd/tasks/completed/TASK-5088-devloop-launch-worker.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5089",
+      "slug": "launch-worker-deprecation-docs",
+      "title": "Deprecate launch_worker.sh; document legacy mode, platforms and parrot devloop launch-worker",
+      "feature_id": "FEAT-768",
+      "feature": "sdd-claude-native-sandbox",
+      "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
+      "status": "done",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": "2026-11-01T00:49:24+00:00",
+      "completed_at": "2026-11-01T01:16:15+00:00",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5088"
+      ],
+      "parallelism_notes": "documents the code TASK-5086..5088 merged",
+      "file": "sdd/tasks/completed/TASK-5089-launch-worker-deprecation-docs.md",
+      "verification": "verified"
+    }
+  ]
+}

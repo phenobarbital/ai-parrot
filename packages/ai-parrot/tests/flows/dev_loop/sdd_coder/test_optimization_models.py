@@ -378,3 +378,52 @@ def test_canonical_json_roundtrip(tmp_path: Path) -> None:
     reloaded_event = WorkflowEvent.model_validate_json(event.model_dump_json())
     assert reloaded_event == event
     assert reloaded_event.schema_version == 1
+
+
+# ---------------------------------------------------------------------------
+# FEAT-736 / TASK-4674 -- brief task ids (issue:0ea4f0acaefd). `_TASK_ID_PATTERN`
+# feeds two consumers: `_check_optional_task_id` (plain `re`) and
+# `TaskCompletionEvidence.task_id`'s `Field(pattern=...)`, which pydantic
+# compiles with its RUST regex engine -- so the second needs its own proof.
+# ---------------------------------------------------------------------------
+
+_BRIEF_TASK_ID = "HOTFIX-CS-228-3"
+
+
+def _completion_evidence(task_id: str) -> TaskCompletionEvidence:
+    return TaskCompletionEvidence(
+        feature_slug="sdd-coder-models-fixes",
+        task_id=task_id,
+        implementation_sha=_FULL_SHA_A,
+        validation_refs=[_evidence_ref("validation")],
+        review_evidence=_evidence_ref("review"),
+        completion_facts={"tests_green": True},
+    )
+
+
+def test_optimization_validator_accepts_brief_task_id():
+    from parrot.flows.dev_loop.sdd_coder.optimization_models import _check_optional_task_id
+
+    assert _check_optional_task_id(_BRIEF_TASK_ID) == _BRIEF_TASK_ID
+    assert _check_optional_task_id(None) is None
+    assert _check_optional_task_id("TASK-3558") == "TASK-3558"
+
+
+@pytest.mark.parametrize("bad", ["nope", "HOTFIX-", "HOTFIX-CS-228-", "hotfix-cs-228-1"])
+def test_optimization_validator_still_rejects(bad):
+    from parrot.flows.dev_loop.sdd_coder.optimization_models import _check_optional_task_id
+
+    with pytest.raises(ValueError):
+        _check_optional_task_id(bad)
+
+
+def test_optimization_field_pattern_accepts_brief_task_id():
+    """Proves the widened pattern is valid for pydantic's Rust regex engine, not just `re`."""
+    assert _completion_evidence(_BRIEF_TASK_ID).task_id == _BRIEF_TASK_ID
+    assert _completion_evidence("TASK-3558").task_id == "TASK-3558"
+
+
+@pytest.mark.parametrize("bad", ["nope", "HOTFIX-", "BRIEF-CS-228"])
+def test_optimization_field_pattern_still_rejects(bad):
+    with pytest.raises(ValidationError):
+        _completion_evidence(bad)

@@ -1,0 +1,22 @@
+
+The original brainstorm is preserved verbatim at `sdd/state/FEAT-746/source.md`. Excerpt:
+
+> Agent-to-agent traffic across a trust boundary is paying for two things it does not need: human-readable wire formats and an LLM invocation on every hop. The cost unit that matters is tokens in the receiver's context, not bytes on the wire […]
+>
+> What we want instead: a typed remote procedure between two ai-parrot agents that (1) degrades to deterministic RPC with zero tokens whenever the call matches a contract capability, (2) never puts raw data in any agent's context, (3) carries security and provenance as first-class fields, and (4) stays open enough that non-parrot agents can join through adapters.
+>
+> […] None of the following exists in ai-parrot today; the proposal must not assume them. Each is marked VERIFY so the proposal stage checks the codebase before speccing: `RemoteToolkit` and `ContractServer` · catalog tools inside ToolManager · artifact handle type and descriptor registry · capability tokens (Biscuit or macaroons) · policy gate as a reusable component · gRPC transport · envelope on the event bus · three-level telemetry join.
+
+**Initial signals** (extracted, not interpreted):
+- Verbs: "want", "expose", "degrade", "carry", "stay open", "ship", "VERIFY" → additive, a new capability (enrichment)
+- Named entities: RemoteToolkit, ContractServer, ToolManager, WorkingMemory, AgentRegistry, AuditLedger, navigator-auth, navigator-eventbus, PBAC, A2A, MCP, gRPC, protobuf, Arrow IPC, Polars
+- Decisions already taken in the source: D1–D14 (inputs, not open questions)
+- Acceptance criteria provided: no formal ACs; six spike gates S1–S6 with pass criteria, nine open questions, a naming shortlist
+
+---
+
+
+The brainstorm asks for a typed, binary, contract-driven RPC between two ai-parrot agents across a trust boundary, where a call matching a contract capability runs deterministically with no LLM on the serving side and results travel as handle + descriptor + provenance instead of raw data. Research confirms the whole "does not exist yet" list is accurate: today the only cross-network path is A2A over JSON/aiohttp (`parrot/a2a/client.py`), which returns the remote artifact text straight into the caller's context, and the serving side (`A2AServer`) exposes the agent's *tools* as skills behind a credential-shaped gate. Most building blocks the protocol needs do exist in core and are reusable as patterns: ToolManager's category index, search and per-provider schema compile; WorkingMemoryToolkit's "the agent never sees raw frames" summaries and its immutable, checksummed task-memory blob store; the signed append-only `AuditLedger` signers; PBAC enforcement already sitting below the LLM at tool execution; per-call usage/cost records with ContextVar attribution; and a strict Arrow-IPC frame transport. Two of the fourteen decisions rest on wrong premises: D10 (AgentRegistry registers remote agents — it does not; `A2AMeshDiscovery` and `ToolManager.register_a2a_agent` do) and D6 (Polars — absent from every pyproject; the repo is pandas + pyarrow). The gRPC/protobuf half is greenfield inside this repo (a dead `grpc_session.py` stub aside), while the one protobuf + grpc.aio server ever built here was extracted to navigator-eventbus, which also already provides correlation ids, at-least-once Streams with dedup and a DLQ but no request/reply convention. FEAT-704 (semantic layer, 0/26 tasks) has already specified owner-bound result handles, a signed ledger and a guarded hand-off sink with the same semantics — a design overlap the spec must resolve before anything is built. Recommendation: `/sdd-spec FEAT-746`, with the five scope decisions in §5 answered first and S1–S6 carried as gated Lane-0 tasks.
+
+---
+

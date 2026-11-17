@@ -29,6 +29,7 @@ from parrot.handlers.crew.saved_execution_service import (
     SchedulerUnavailableError,
 )
 from ._tenancy import resolve_session_tenant
+from .definition_storage import CrewStorageConflict, CrewStorageUnavailable
 
 
 @is_authenticated()
@@ -299,6 +300,10 @@ class CrewExecutionHistoryHandler(BaseView):
         try:
             result = await self.service.replay_execution(tenant, user_id, execution_id)
             return self.json_response(result)
+        except CrewStorageUnavailable:
+            return self.error(response={"message": "Crew storage is unavailable"}, status=503)
+        except CrewStorageConflict:
+            return self.error(response={"message": "Crew storage conflict"}, status=409)
         except (ExecutionNotFoundError, CrewNotFoundError) as exc:
             return self.error(response={"message": str(exc)}, status=404)
         except ReplayValidationError as exc:

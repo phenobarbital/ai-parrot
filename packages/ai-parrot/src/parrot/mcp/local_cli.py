@@ -77,6 +77,9 @@ async def _serve_with_shutdown(server: "StdioMCPServer") -> None:
         except Exception:  # noqa: BLE001 -- best-effort; we exit regardless
             logger.exception("Error while shutting down mcp-local on SIGTERM")
         finally:
+            # `os._exit(0)` is indistinguishable from a crash in the host's log.
+            # One line separates "we were signalled" from "our stdin closed".
+            logger.info("mcp-local received SIGTERM; exiting immediately")
             os._exit(0)
 
     def _sigterm_callback() -> None:
@@ -105,6 +108,126 @@ def _configure_stderr_logging() -> None:
     handler.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
     root_logger.addHandler(handler)
     root_logger.setLevel(logging.WARNING)
+
+
+#: Files that mark a project root for the walk in ``_project_root_for``: the host configs a portable entry is
+#: written into (``.mcp.json``, ``.codex/config.toml``) and the git work tree marker.
+_PROJECT_MARKERS: tuple[str, ...] = (".mcp.json", ".codex/config.toml", ".git")
+
+
+def _project_root_for(cwd: Path, relative: Path) -> Path:
+    """Return the ancestor of ``cwd`` that holds ``relative``, never walking past the nearest project marker.
+
+    Claude Code finds a project ``.mcp.json`` by walking up from the directory it was launched in, but starts
+    its stdio servers in that launch directory. So a portable entry's relative ``--config`` must be looked up
+    the same way (FEAT-633 S3). The walk checks ``cwd`` and its ancestors and stops at the first one carrying a
+    project marker (``_PROJECT_MARKERS``). Portable entries only live in those host configs, so the project
+    that registered the server is always that boundary. A config further up (e.g. a dotfiles repo in ``$HOME``)
+    is never used. ``cwd`` is returned unchanged when no ancestor up to the boundary holds ``relative``, when
+    there is no boundary at all, or when ``relative`` climbs with ``..``.
+
+    Args:
+        cwd: The process working directory.
+        relative: The relative toolkit config path to look for.
+
+    Returns:
+        The directory to treat as the project root.
+    """
+    if ".." in relative.parts:
+        return cwd
+    try:
+        current = cwd.resolve()
+        chain = (current, *current.parents)
+        boundary = next((p for p in chain if any((p / m).exists() for m in _PROJECT_MARKERS)), None)
+        if boundary is None:
+            return cwd
+        for candidate in chain[: chain.index(boundary) + 1]:
+            if (candidate / relative).is_file():
+                return candidate
+    except OSError:
+        return cwd
+    return cwd
+
+
+#: Default portable toolkit config, relative to the project root.
+_DEFAULT_TOOLKIT_CONFIG = Path(".parrot") / "mcp-toolkits.yaml"
+
+
+def _linked_worktree_config(root: Path, relative: Path) -> Path | None:
+    """Return ``relative`` from the main checkout when ``root`` lies in a linked git worktree.
+
+    ``parrot sdd launch worker`` starts Claude Code inside a feature worktree, so the stdio servers of the
+    main checkout's portable ``.mcp.json`` start there too. ``_project_root_for`` stops at the worktree's own
+    ``.git`` marker, but ``.parrot/mcp-toolkits.yaml`` is gitignored and lives only in the main checkout. A
+    linked worktree's ``.git`` is a file (``gitdir: <common>/worktrees/<name>``) and that gitdir holds a
+    ``commondir`` pointer, so the main work tree is the parent of the common git dir. No ``git`` subprocess is
+    needed. The caller keeps ``root`` (the worktree) as the project root; only the config file is borrowed.
+
+    Args:
+        root: The resolved project root (the worktree, or a directory inside it).
+        relative: The relative toolkit config path that was not found under ``root``.
+
+    Returns:
+        The main checkout's config file when it exists, else ``None``.
+    """
+    try:
+        current = root.resolve()
+        git_entry = next((p / ".git" for p in (current, *current.parents) if (p / ".git").exists()), None)
+        if git_entry is None or not git_entry.is_file():
+            return None
+        text = git_entry.read_text(encoding="utf-8").strip()
+        if not text.startswith("gitdir:"):
+            return None
+        gitdir = Path(text[len("gitdir:") :].strip())
+        if not gitdir.is_absolute():
+            gitdir = git_entry.parent / gitdir
+        gitdir = gitdir.resolve()
+        commondir_file = gitdir / "commondir"
+        common = (
+            (gitdir / commondir_file.read_text(encoding="utf-8").strip()).resolve()
+            if commondir_file.is_file()
+            else gitdir
+        )
+        candidate = common.parent / relative
+        if candidate.is_file():
+            return candidate
+    except (OSError, ValueError):
+        return None
+    return None
+
+
+def _resolve_root_and_config(cwd: Path, config_path: Path | None, pinned: str | None) -> tuple[Path, Path | None]:
+    """Resolve the project root and the toolkit config file for ``parrot mcp-local``.
+
+    ``$PARROT_PROJECT`` (``pinned``) wins outright. Otherwise a relative config is looked up with
+    ``_project_root_for`` and, when the resulting root is a linked git worktree that lacks the file, borrowed
+    from the main checkout via ``_linked_worktree_config`` — the root stays the worktree.
+
+    Args:
+        cwd: The process working directory.
+        config_path: The ``--config`` value, or ``None`` for the default path.
+        pinned: The ``PARROT_PROJECT`` environment value, or ``None``.
+
+    Returns:
+        ``(root, config_path)`` — ``config_path`` is ``None`` only when no explicit ``--config`` was given and
+        no worktree fallback applied, so ``load_toolkits_config`` resolves its default under ``root``.
+    """
+    if pinned:
+        root = Path(pinned)
+        if config_path is not None and not config_path.is_absolute():
+            config_path = root / config_path
+        return root, config_path
+    relative = config_path if config_path is not None else _DEFAULT_TOOLKIT_CONFIG
+    if relative.is_absolute():
+        return cwd, config_path
+    root = _project_root_for(cwd, relative)
+    if config_path is not None:
+        config_path = root / config_path
+    if not (root / relative).is_file():
+        shared = _linked_worktree_config(root, relative)
+        if shared is not None:
+            config_path = shared
+    return root, config_path
 
 
 def _print_toolkit_list(root: Path, config_path: Path | None = None) -> None:
@@ -161,18 +284,29 @@ def _print_toolkit_list(root: Path, config_path: Path | None = None) -> None:
     default=False,
     help="List resolvable toolkit names (sections declared in .parrot/mcp-toolkits.yaml) and exit.",
 )
+@click.option(
+    "--login-file",
+    "login_file",
+    default=None,
+    type=click.Path(path_type=Path),
+    envvar="PARROT_LOGIN_FILE",
+    help="parrot login file to bind the Navigator principal (default ~/.parrot/login.json).",
+)
 def mcp_local(
     name: str | None,
     config_path: Path | None,
     include: tuple[str, ...],
     exclude: tuple[str, ...],
     list_toolkits: bool,
+    login_file: Path | None,
 ) -> None:
     """Serve NAME as a local stdio MCP server.
 
-    The project root is the current working directory — the MCP host
-    (Claude Code, Codex, ...) starts this process inside the project
-    directory, and ``.parrot/mcp-toolkits.yaml`` is resolved relative to it.
+    The project root is ``$PARROT_PROJECT`` when set, else the current working directory or its nearest
+    ancestor (up to the nearest project marker) that holds the config — the MCP host (Claude Code,
+    Codex, ...) starts this process in the directory it was launched from, which may be a subdirectory
+    of the project, and ``.parrot/mcp-toolkits.yaml`` is resolved relative to the root. The process then
+    changes into the root, as a baked entry's ``cwd`` would.
 
     \b
     Examples:
@@ -180,7 +314,7 @@ def mcp_local(
       parrot mcp-local scraping --include scrape_url --include list_plans
       parrot mcp-local --list
     """
-    root = Path.cwd()
+    root, config_path = _resolve_root_and_config(Path.cwd(), config_path, os.environ.get("PARROT_PROJECT"))
 
     if list_toolkits:
         _print_toolkit_list(root, config_path)
@@ -195,7 +329,13 @@ def mcp_local(
     # Heavy import (pulls in toolkit_config + eventually toolkit classes)
     # deferred to here so `parrot --help` / module import stay fast and
     # cannot pollute stdout.
-    from parrot.mcp.toolkit_server import create_toolkit_mcp_server
+    with contextlib.redirect_stdout(sys.stderr):
+        try:
+            from parrot.mcp.toolkit_server import create_toolkit_mcp_server
+        finally:
+            # Configuration imports can chdir to the installed application.
+            # Project-local toolkit modules must still resolve from the host's cwd.
+            os.chdir(root)
 
     overrides: dict[str, object] = {}
     if config_path is not None:
@@ -206,7 +346,7 @@ def mcp_local(
         overrides["exclude"] = list(exclude)
 
     try:
-        server = create_toolkit_mcp_server(name, root, **overrides)
+        server = create_toolkit_mcp_server(name, root, login_file=login_file, **overrides)
     except (ValueError, ImportError) as exc:
         click.echo(f"Error: {exc}", err=True)
         # An unknown name (not a configured section) is the hard cut's only

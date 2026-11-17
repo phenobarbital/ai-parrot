@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-617 — Unpoison `packages/ai-parrot/tests` collection (merge-gate unblock)
 **Spec**: `sdd/specs/manager-test-bot-cleanup-lifecycle-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

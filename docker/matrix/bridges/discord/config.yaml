@@ -1,7 +1,7 @@
 # mautrix-discord bridge config template for the AI-Parrot dev stack
 # (FEAT-463). Copied to /data/config.yaml on first bridge run; the bridge
 # then generates /data/registration.yaml (git-ignored — never commit it).
-# See docs/integrations/matrix/BRIDGES.md for setup instructions (bot
+# See wiki/integrations/matrix/BRIDGES.md for setup instructions (bot
 # token recommended over user-token login).
 
 homeserver:

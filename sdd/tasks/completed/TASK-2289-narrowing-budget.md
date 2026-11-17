@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-434 — Claude Agent Tool Bridge
 **Spec**: `sdd/specs/claude-agent-tool-bridge.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-2285, TASK-2287, TASK-2288

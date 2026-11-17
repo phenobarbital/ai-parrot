@@ -5,10 +5,11 @@ description: Explore a feature idea through structured Q&A, codebase research, o
 
 # SDD Brainstorm
 
-## Full procedure and Codex adaptations
+## Full procedure and host adaptations
 
 Before executing, read the [full sdd-brainstorm procedure](../../../.claude/commands/sdd-brainstorm.md)
-and the [Codex adaptation contract](../../../docs/sdd/CODEX.md#codex-adaptation-contract).
+and your host's adaptation contract: the [Codex adaptation contract](../../../docs/sdd/CODEX.md#codex-adaptation-contract)
+on Codex, or the [Antigravity adaptation contract](../../../docs/sdd/AGY.md#antigravity-adaptation-contract) on Google Antigravity (`agy`).
 Follow the full procedure for details omitted from this summary. The adaptation
 contract and the Codex-specific instructions below override Claude runtime syntax
 and legacy shell examples; retain all workflow gates and evidence requirements.
@@ -39,8 +40,7 @@ $sdd-brainstorm -> review -> $sdd-spec -> $sdd-task -> $sdd-start
   numbers.
 - Verify packages in project dependency files before recommending them.
 - Commit only the brainstorm file unless the user explicitly asks otherwise.
-- Fill frontmatter `projects` (parts of the codebase, vocabulary `KNOWN_PROJECTS` in
-  `scripts/sdd/sdd_meta.py`; unknown values warn) and `tags` (2–6 kebab-case keywords) — FEAT-576.
+- Fill frontmatter `projects` (parts of the codebase, vocabulary: the project areas in `sdd/CONVENTIONS.md` (§ Project areas), or the `projects` list in `sdd/config.json` when set; unknown values warn) and `tags` (2–6 kebab-case keywords) — FEAT-576.
 
 ## Flow Type
 
@@ -51,12 +51,12 @@ Ask these first unless the user already supplied explicit values:
    release freeze or a parent feature branch for sub-features. For `hotfix`,
    base is always `main`.
 
-Defaults when unanswered: `type: feature`, `base_branch: dev`.
+Defaults when unanswered: `type: feature` with the `base_branch` from `sdd/config.json`.
 
 Validation:
 
-- `type: hotfix` requires `base_branch: main`.
-- `type: feature` with `base_branch: main` is invalid. Stop and explain that
+- `type: hotfix` requires `base_branch` to be the `hotfix_base` in `sdd/config.json`.
+- `type: feature` with `base_branch` equal to the `hotfix_base` is invalid. Stop and explain that
   features land on `dev`, `staging`, or a non-main parent feature branch.
 
 ## Workflow

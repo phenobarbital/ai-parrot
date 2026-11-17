@@ -1,6 +1,6 @@
 <#
-AI-Parrot installer (Windows) — automates the AI-Parrot getting-started guide
-(FEAT-586). Never destructive; announces every privileged/network command
+AI-Parrot installer (Windows) — automates the AI-Parrot getting-started guide.
+Never destructive; announces every privileged/network command
 before it runs.
 
 .PARAMETER Provider
@@ -15,7 +15,8 @@ before it runs.
     Virtualenv directory. Default: .venv.
 
 .PARAMETER Python
-    Python interpreter to use. Default: python.
+    Python interpreter to use. Default: python, or the `py -3` launcher when
+    python is not on PATH.
 
 .PARAMETER WithWiki
     Run `wikitoolkit build` after install.
@@ -30,6 +31,19 @@ before it runs.
 .PARAMETER DryRun
     Print every command, with its purpose, without executing anything.
 
+.PARAMETER Global
+    Build the managed runtime under $env:PARROT_HOME (default ~\.parrot):
+    pinned uv, uv-managed Python, venv, shims in bin\ added to the USER PATH.
+
+.PARAMETER Version
+    With -Global: pin ai-parrot and ai-parrot-tools to this version.
+
+.PARAMETER With
+    With -Global: comma-separated components to add via `parrot self add`
+    (installs the packages an MCP toolkit needs, e.g. scraping). One of:
+    bounded-source, browsing, database-query, lsp, memory, pageindex,
+    pageindex-library, querysource, scraping, sdd-coder, targeted-writer.
+
 .PARAMETER Help
     Show this help and exit.
 #>
@@ -40,6 +54,9 @@ param(
   [string]$Venv = '.venv',
   [string]$Python = 'python',
   [switch]$WithWiki,
+  [Alias('Global')][switch]$GlobalMode,
+  [string]$Version = '',
+  [string]$With = '',
   [switch]$InstallCli,
   [switch]$SystemDeps,
   [switch]$DryRun,
@@ -67,14 +84,332 @@ function Run {
   )
   Write-Host "-> $($Why): $($Cmd.ToString().Trim())"
   if (-not $DryRun) {
+    # Native commands never throw on a non-zero exit: reset, run, then turn a failure into a terminating error.
+    $global:LASTEXITCODE = 0
     & $Cmd
+    if ($LASTEXITCODE) { throw "$Why failed (exit $LASTEXITCODE)" }
   }
+}
+
+function Resolve-Extras {
+  # Map provider keys to ai-parrot extras (mirrors install-parrot.sh / guide §3).
+  $script:AllExtras = $Extras
+  $script:CliProviders = @()
+  foreach ($p in ($Provider -split ',')) {
+    switch ($p) {
+      'anthropic' { $extra = 'anthropic' }
+      'openai' { $extra = 'openai' }
+      'google' { $extra = 'google' }
+      'claude-code' { $extra = 'claude-agent'; $script:CliProviders += 'claude-code' }
+      'codex-code' { $extra = 'codex-agent'; $script:CliProviders += 'codex-code' }
+      default {
+        Write-Error "Unknown provider '$p'; expected one of: anthropic|openai|google|claude-code|codex-code"
+        exit 1
+      }
+    }
+    if ([string]::IsNullOrEmpty($script:AllExtras)) {
+      $script:AllExtras = $extra
+    } else {
+      $script:AllExtras = "$script:AllExtras,$extra"
+    }
+  }
+}
+$UvVersion = '0.11.28'
+$UvMin = '0.11.28'; $UvMax = '0.12'
+$MinFreeKB = 2097152   # C14b gate: 2 GiB free under PARROT_HOME (managed CPython + venv + wheel cache)
+$RawBase = 'https://raw.githubusercontent.com/phenobarbital/ai-parrot/main/scripts/install'   # C14a non-piped alternative
+
+function Get-UvPinnedSha256([string]$Asset) {
+  # SHA-256 of uv $UvVersion release assets, pinned in this script (itself covered by SHA256SUMS), so a tampered
+  # release or a MITM cannot swap archive and checksum together. $env:PARROT_UV_SHA256 overrides it (offline
+  # mirrors, tests). Fails closed for an unknown asset.
+  if ($env:PARROT_UV_SHA256) { return $env:PARROT_UV_SHA256 }
+  $pins = @{
+    '0.11.28/uv-x86_64-pc-windows-msvc.zip'  = '0a23463216d09c6a72ff80ef5dc5a795f07dc1575cb84d24596c2f124a441b7b'
+    '0.11.28/uv-aarch64-pc-windows-msvc.zip' = '3248109afad3ec59baad299d324ff53de17e2d9a3b3e21580ffd26744b11e036'
+  }
+  $k = "$UvVersion/$Asset"
+  if (-not $pins.ContainsKey($k)) { throw "no pinned checksum for uv $UvVersion $Asset" }
+  return $pins[$k]
+}
+
+function Test-UvArchive([string]$Path, [string]$Asset) {
+  $want = Get-UvPinnedSha256 $Asset
+  $got = (Get-FileHash -Algorithm SHA256 $Path).Hash
+  if ($want -ine $got) { throw "checksum mismatch for $Asset" }
+}
+
+function ConvertTo-UvVersion([string]$V) {
+  if ($V -notmatch '^\d+(\.\d+){0,3}') { return $null }
+  $parts = @($Matches[0] -split '\.'); while ($parts.Count -lt 3) { $parts += '0' }
+  return [version]($parts -join '.')
+}
+
+function Get-UvVersion([string]$Exe) {
+  try { $out = (& $Exe --version 2>$null) -join ' ' } catch { return $null }
+  if ($LASTEXITCODE -or -not $out) { return $null }
+  foreach ($tok in ($out -split '\s+')) { if ($tok -match '^\d+(\.\d+)*') { return $Matches[0] } }
+  return $null
+}
+
+function Test-UvInRange([string]$V) {
+  $v_ = ConvertTo-UvVersion $V; if ($null -eq $v_) { return $false }
+  return ($v_ -ge (ConvertTo-UvVersion $UvMin)) -and ($v_ -lt (ConvertTo-UvVersion $UvMax))
+}
+
+function Find-SystemUv([string]$Home_) {
+  $excluded = @((Join-Path $Home_ 'bin'), (Join-Path $Home_ 'libexec')) | ForEach-Object {
+    if (Test-Path $_) { (Resolve-Path $_).Path.TrimEnd('\\') } else { $_.TrimEnd('\\') }
+  }
+  foreach ($candidate in (Get-Command uv.exe -All -CommandType Application -ErrorAction SilentlyContinue)) {
+    $directory = Split-Path -Parent $candidate.Source
+    if (Test-Path $directory) { $directory = (Resolve-Path $directory).Path }
+    if ($excluded | Where-Object { $directory.TrimEnd('\\') -ieq $_ }) { continue }
+    return $candidate.Source
+  }
+  return $null
+}
+
+function Select-Uv([string]$Home_) {
+  $managed = Join-Path $Home_ 'libexec\uv.exe'
+  $script:SysUv = Find-SystemUv $Home_; $script:SysUvVer = if ($script:SysUv) { Get-UvVersion $script:SysUv } else { $null }
+  if ((Test-Path $managed) -and (Test-UvInRange (Get-UvVersion $managed))) {
+    $script:UvMode = 'managed'; $script:UvBin = $managed
+  } elseif ($script:SysUv -and (Test-UvInRange $script:SysUvVer)) {
+    $script:UvMode = 'system'; $script:UvBin = $script:SysUv
+  } else {
+    $script:UvMode = 'download'; $script:UvBin = $managed
+  }
+}
+
+function Write-Plan([string]$Url, [string]$Spec, [string]$Home_, [string]$Py, [string]$Mode) {  # C14a — first output; no side effects
+  switch ($Mode) {
+    'download' {
+      Write-Host "This installer will download pinned uv $UvVersion from $Url and verify it against the SHA-256 pinned in this script, into"
+      Write-Host "$Home_\libexec (never on PATH)."
+      if ($script:SysUv) { Write-Host "Your uv $script:SysUvVer at $script:SysUv is outside >=$UvMin,<$UvMax and is left as is." }
+    }
+    'system' { Write-Host "This installer will use your uv $script:SysUvVer at $script:SysUv (inside >=$UvMin,<$UvMax) and record its path in $Home_\libexec\uv-path; no uv is downloaded." }
+    'managed' { Write-Host "This installer will reuse uv at $Home_\libexec\uv.exe." }
+  }
+  Write-Host @"
+create $Home_\{bin,venv,python} (a uv-managed Python $Py and a venv with $Spec),
+and add $Home_\bin to your USER PATH (never Machine).
+If missing, it writes a commented-out credentials file $Home_\env\.env and an empty $Home_\etc\config.ini.
+Your own uv is never modified, moved or removed; uv.exe/uvx.exe that an older parrot installer left in $Home_\bin are removed after a successful install. Existing $Home_ data is never touched.
+Prefer not to pipe a download into PowerShell? Invoke-WebRequest $RawBase/install-parrot.ps1 and
+$RawBase/SHA256SUMS, compare (Get-FileHash install-parrot.ps1).Hash with the SHA256SUMS line, read
+the script, then run it.
+"@
+}
+
+function Test-Preflight([string]$Home_) {  # C14b — read-only gate, in order; never creates PARROT_HOME
+  $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+  if ("$arch" -ne 'X64') { Write-Error "preflight: unsupported platform windows-$arch — fix: -Global needs an x64 Windows (no windows-$arch core wheel yet); use a project install"; exit 1 }
+  # Officially supported: Linux x86_64 only (owner decision 2026-10-29): warn, never block.
+  Write-Warning 'Windows is not officially supported yet (official: Linux x86_64): navigator-auth has no Windows wheel and uvloop (required by proxylists) does not run on Windows, so the install is expected to fail'
+  foreach ($c in @('Invoke-WebRequest', 'Get-FileHash')) { if (-not (Get-Command $c -ErrorAction SilentlyContinue)) { Write-Error "preflight: $c unavailable — fix: use Windows PowerShell 5.1+ or PowerShell 7"; exit 1 } }
+  if (-not (Get-Command git -ErrorAction SilentlyContinue)) { Write-Error 'preflight: git not found — fix: install Git for Windows (the SDD flow and parrot self doctor need it)'; exit 1 }
+  # Safeguard, never a gate: the SDD workflow commands run python3 snippets; the managed runtime does not need it.
+  if (-not (Get-Command python3 -ErrorAction SilentlyContinue) -and -not (Get-Command python -ErrorAction SilentlyContinue)) {
+    Write-Warning 'python3 not found: the managed runtime does not need it, but the SDD workflow commands run python3 snippets; install Python (e.g. winget install Python.Python.3.12)'
+  }
+  $anc = $Home_; while (-not (Test-Path $anc)) { $anc = Split-Path -Parent $anc }   # nearest existing ancestor
+  $probe = Join-Path $anc ".parrot-write-probe-$PID"
+  try { [IO.File]::Create($probe).Dispose(); Remove-Item -Force $probe }
+  catch { Write-Error "preflight: $anc is not writable — fix: set PARROT_HOME to a writable directory"; exit 1 }
+  $freeKB = [math]::Floor(([IO.DriveInfo]::new((Resolve-Path $anc).Path)).AvailableFreeSpace / 1KB)
+  if ($freeKB -lt $MinFreeKB) { Write-Error "preflight: only ${freeKB}KB free under $anc (need $MinFreeKB) — fix: free disk space or set PARROT_HOME elsewhere"; exit 1 }
+  if ($DryRun) { Write-Host 'preflight: network checks skipped (-DryRun)'; return }
+  foreach ($u in @('https://github.com', 'https://pypi.org/simple/')) {
+    try { Invoke-WebRequest -Uri $u -Method Head -UseBasicParsing | Out-Null }
+    catch { Write-Error "preflight: $u unreachable — fix: check your network/proxy"; exit 1 }
+  }
+  Write-Host 'preflight: ok'
+}
+
+$script:OriginalUserPath = $null
+$script:PythonSet = $PSBoundParameters.ContainsKey('Python')   # script-level bound-ness; the function's own $PSBoundParameters differs
+$script:VenvSet = $PSBoundParameters.ContainsKey('Venv')
+
+function Add-UserPath([string]$Dir) {
+  $cur = [Environment]::GetEnvironmentVariable('Path', 'User'); if ($null -eq $cur) { $cur = '' }
+  $parts = $cur -split ';' | Where-Object { $_ -ne '' }
+  if ($parts | Where-Object { $_.TrimEnd('\') -ieq $Dir.TrimEnd('\') }) { return }
+  $script:OriginalUserPath = $cur
+  [Environment]::SetEnvironmentVariable('Path', (@($Dir) + $parts) -join ';', 'User')
+  $env:Path = "$Dir;$env:Path"
+  Write-Host "Added $Dir to your user PATH — reopen your terminal to pick it up."
+}
+
+# Components -With accepts: the packaged toolkit templates (parrot/mcp/_toolkit_templates/*.yaml). Checked before the
+# plan, so a wrong name fails before anything is downloaded, under -DryRun too. Kept equal to the templates by
+# tests/docs/test_install_powershell.py::test_known_components_match_the_packaged_templates.
+$KnownComponents = @('bounded-source', 'browsing', 'database-query', 'lsp', 'memory', 'pageindex', 'pageindex-library', 'querysource', 'scraping', 'sdd-coder', 'targeted-writer')
+
+function Test-Components {
+  foreach ($c in ($With -split ',' | Where-Object { $_ })) {
+    if ($KnownComponents -notcontains $c) {
+      Write-Error "unknown component '$c' for -With; available: $($KnownComponents -join ', ')"; exit 1
+    }
+  }
+}
+
+function Install-Global {
+  if ($script:VenvSet -or $WithWiki -or $SystemDeps) {
+    Write-Error '-Global cannot be combined with -Venv, -WithWiki or -SystemDeps'; exit 1
+  }
+  if ($PSVersionTable.PSVersion.Major -lt 6) {   # Windows PowerShell 5.1 needs TLS 1.2 enabled explicitly
+    try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }
+  }
+  $home_ = if ($env:PARROT_HOME) { $env:PARROT_HOME } else { Join-Path $HOME '.parrot' }
+  $py = if ($script:PythonSet) { $Python } else { '3.12' }
+  Resolve-Extras
+  Test-Components
+  $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+  $target = if ("$arch" -eq 'Arm64') { 'aarch64-pc-windows-msvc' } else { 'x86_64-pc-windows-msvc' }
+  $asset = "uv-$target.zip"
+  $url = "https://github.com/astral-sh/uv/releases/download/$UvVersion/$asset"
+  $spec = "ai-parrot[$AllExtras]"; if ($Version) { $spec = "$spec==$Version" }
+  # rev 0.5 C20 — ai-parrot-tools at the same version pin (wikitoolkit mcp's wiki tools live in parrot_tools.wiki)
+  $tools = 'ai-parrot-tools'; if ($Version) { $tools = "$tools==$Version" }
+  $bin = Join-Path $home_ 'bin'; $venv = Join-Path $home_ 'venv'; $libexec = Join-Path $home_ 'libexec'
+  $dl = Join-Path ([IO.Path]::GetTempPath()) "parrot-uv-$PID"
+  Select-Uv $home_
+  $uv = $script:UvBin
+  Write-Plan $url "$spec $tools" $home_ $py $script:UvMode      # C14a — before anything else
+  Test-Preflight $home_                 # C14b — exits 1 on any failed gate; nothing written yet
+  $script:Created = [System.Collections.Generic.List[string]]::new()
+  try {
+    foreach ($d in @($home_, $bin)) {
+      if (-not (Test-Path $d)) { Run -Why "create $d" -Cmd { New-Item -ItemType Directory -Path $d | Out-Null }; if (-not $DryRun) { $Created.Add($d) } }
+    }
+    switch ($script:UvMode) {
+      'download' {
+        if (-not (Test-Path $libexec)) { Run -Why "create $libexec" -Cmd { New-Item -ItemType Directory -Path $libexec | Out-Null }; if (-not $DryRun) { $Created.Add($libexec) } }
+        Run -Why 'create a scratch download dir' -Cmd { New-Item -ItemType Directory -Force -Path $dl | Out-Null }
+        Run -Why "download pinned uv $UvVersion ($target)" -Cmd { Invoke-WebRequest -Uri $url -OutFile (Join-Path $dl $asset) -UseBasicParsing }
+        Run -Why 'verify the uv checksum against the pinned SHA-256' -Cmd { Test-UvArchive (Join-Path $dl $asset) $asset }
+        Run -Why 'extract uv' -Cmd { Expand-Archive -Path (Join-Path $dl $asset) -DestinationPath $dl -Force }
+        Run -Why "place uv $UvVersion in $libexec (not on PATH)" -Cmd {
+          $f = Get-ChildItem -Path $dl -Filter 'uv.exe' -Recurse -File | Select-Object -First 1
+          if (-not $f) { throw "uv.exe not found in $asset" }
+          if (-not (Test-Path $uv)) { $script:Created.Add($uv) }
+          Copy-Item $f.FullName "$uv.tmp" -Force; Move-Item "$uv.tmp" $uv -Force
+        }
+      }
+      'system' {
+        if (-not (Test-Path $libexec)) { Run -Why "create $libexec" -Cmd { New-Item -ItemType Directory -Path $libexec | Out-Null }; if (-not $DryRun) { $Created.Add($libexec) } }
+        $uvPath = Join-Path $libexec 'uv-path'
+        Run -Why "record your uv $($script:SysUvVer) ($($script:SysUv)) in $libexec\uv-path" -Cmd {
+          if (-not (Test-Path $uvPath)) { $script:Created.Add($uvPath) }
+          [IO.File]::WriteAllText("$uvPath.tmp", "$($script:SysUv)`n", (New-Object Text.UTF8Encoding $false))
+          Move-Item "$uvPath.tmp" $uvPath -Force
+        }
+      }
+      'managed' { Write-Host "Reusing uv at $uv" }
+    }
+    $pyDir = Join-Path $home_ 'python'
+    if (-not $DryRun -and -not (Test-Path $pyDir)) { $Created.Add($pyDir) }
+    $env:UV_PYTHON_INSTALL_DIR = $pyDir
+    if (-not (Test-Path $venv)) {
+      if (-not $DryRun) { $Created.Add($venv) }
+      Run -Why "create the managed venv (Python $py)" -Cmd { & $uv venv $venv --python $py --python-preference only-managed }
+    }
+    Run -Why "install $spec $tools into the managed venv" -Cmd { & $uv pip install --python (Join-Path $venv 'Scripts\python.exe') $spec $tools }
+    if (-not $DryRun) {
+      # PS 5.1 turns native stderr under 2>$null into a NativeCommandError, which 'Stop' would make fatal:
+      # any failure of the probe means "older ai-parrot", never an aborted install.
+      $probeOk = $false
+      $eap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+      try { & (Join-Path $venv 'Scripts\python.exe') -c 'import parrot.self_.uv' 2>$null; $probeOk = ($LASTEXITCODE -eq 0) }
+      catch { $probeOk = $false }
+      finally { $ErrorActionPreference = $eap }
+      if (-not $probeOk) {
+        $script:UvLegacyCompat = $true
+        Write-Warning "this ai-parrot release predates the libexec uv layout: its doctor needs uv $UvVersion in $bin, which shadows any uv on your PATH"
+        Run -Why "place uv $UvVersion in $bin for this older ai-parrot" -Cmd {
+          $legacyUv = Join-Path $bin 'uv.exe'
+          if ((Test-Path $uv) -and ((Get-UvVersion $uv) -eq $UvVersion)) {
+            if (-not (Test-Path $legacyUv)) { $script:Created.Add($legacyUv) }
+            Copy-Item $uv "$legacyUv.tmp" -Force; Move-Item "$legacyUv.tmp" $legacyUv -Force
+          } else {
+            if (-not (Test-Path $dl)) { New-Item -ItemType Directory -Force -Path $dl | Out-Null }
+            Invoke-WebRequest -Uri $url -OutFile (Join-Path $dl $asset) -UseBasicParsing
+            Test-UvArchive (Join-Path $dl $asset) $asset
+            Expand-Archive -Path (Join-Path $dl $asset) -DestinationPath $dl -Force
+            $f = Get-ChildItem -Path $dl -Filter 'uv.exe' -Recurse -File | Select-Object -First 1
+            if (-not $f) { throw "uv.exe not found in $asset" }
+            if (-not (Test-Path $legacyUv)) { $script:Created.Add($legacyUv) }
+            Copy-Item $f.FullName "$legacyUv.tmp" -Force; Move-Item "$legacyUv.tmp" $legacyUv -Force
+          }
+        }
+      }
+    }
+    foreach ($s in @('parrot', 'wikitoolkit', 'bookstore')) {
+      $src = Join-Path $venv "Scripts\$s.exe"; $dst = Join-Path $bin "$s.exe"
+      Run -Why "expose $s" -Cmd {
+        if (-not (Test-Path $dst)) { $script:Created.Add($dst) }
+        Copy-Item $src "$dst.tmp" -Force; Move-Item "$dst.tmp" $dst -Force
+      }
+    }
+    Run -Why "add $bin to the user PATH" -Cmd { Add-UserPath $bin }
+    # C14b — runtime scope only, pinned to the venv just built; native commands never throw on non-zero
+    #        exit, so the explicit check routes a RUNTIME failure to the catch-rollback
+    Run -Why 'verify the managed runtime (parrot self doctor --runtime-only)' -Cmd {
+      $env:PARROT_VENV = $venv
+      try {
+        & (Join-Path $bin 'parrot.exe') self doctor --runtime-only
+        if ($LASTEXITCODE) { throw "parrot self doctor --runtime-only failed (exit $LASTEXITCODE) — see its suggested fixes above" }
+      } finally { Remove-Item Env:PARROT_VENV -ErrorAction SilentlyContinue }
+    }
+    # navconfig's env\.env (credentials) and an empty etc\config.ini under the parrot home (user data: never
+    # overwritten, kept by uninstall).
+    try {
+      Run -Why "create the credentials file and etc\config.ini under the parrot home (kept if present)" -Cmd {
+        $env:PARROT_VENV = $venv
+        try { & (Join-Path $bin 'parrot.exe') self env --init } finally { Remove-Item Env:PARROT_VENV -ErrorAction SilentlyContinue }
+      }
+    }
+    catch { Write-Warning "no credentials file was created: $($_.Exception.Message) (needs an ai-parrot release with 'parrot self env --init'; after 'parrot self update', run 'parrot self env --init')" }
+    if (-not $script:UvLegacyCompat) {
+      foreach ($n in @('uv.exe', 'uvx.exe')) {
+        $p = Join-Path $bin $n; if (Test-Path $p) {
+          try { Run -Why "remove the legacy $p (an older installer put it on PATH, shadowing your uv)" -Cmd { Remove-Item -Force -LiteralPath $p } }
+          catch { Write-Warning "could not remove ${p}: $($_.Exception.Message)" }
+        }
+      }
+    }
+    # The base runtime is verified: a failing component warns and exits non-zero, never rolls it back (as install-parrot.sh).
+    foreach ($c in ($With -split ',' | Where-Object { $_ })) {
+      try { Run -Why "add component $c (parrot self add $c)" -Cmd { & (Join-Path $bin 'parrot.exe') self add $c } }
+      catch { Write-Warning "'parrot self add $c' failed: $($_.Exception.Message); the base runtime stays installed"; $script:ComponentFailed = $true }
+    }
+  } catch {
+    Write-Warning "install failed: $($_.Exception.Message) — rolling back what this run created"
+    for ($i = $Created.Count - 1; $i -ge 0; $i--) { Remove-Item -Recurse -Force -LiteralPath $Created[$i] -ErrorAction SilentlyContinue }
+    if ($null -ne $script:OriginalUserPath) { [Environment]::SetEnvironmentVariable('Path', $script:OriginalUserPath, 'User') }
+    throw
+  } finally {
+    if (-not $DryRun -and (Test-Path $dl)) { Remove-Item -Recurse -Force $dl }
+  }
+}
+
+if ($GlobalMode) { Install-Global; Write-Host 'Done.'; if ($script:ComponentFailed) { exit 1 }; exit 0 }
+if ($With -or $Version) {
+  Write-Error '-With and -Version only apply to -Global (the managed runtime); add -Global or drop them'; exit 1
+}
+
+# Default interpreter: `python`, else the Python Launcher (`py -3`) when only it is on PATH.
+$PythonArgs = @()
+if (-not $script:PythonSet -and -not (Get-Command $Python -ErrorAction SilentlyContinue) -and (Get-Command 'py' -ErrorAction SilentlyContinue)) {
+  $Python = 'py'; $PythonArgs = @('-3')
 }
 
 # Python guard (AC10) — refuse anything outside >=3.11,<3.14 BEFORE any
 # other step (including -DryRun), same as the POSIX installer.
 try {
-  $pyver = (& $Python -c 'import sys;print("%d.%d"%sys.version_info[:2])' 2>$null).Trim()
+  $pyver = (& $Python @PythonArgs -c 'import sys;print("%d.%d"%sys.version_info[:2])' 2>$null).Trim()
 } catch {
   Write-Error "unsupported Python: could not execute '$Python'"
   exit 1
@@ -93,32 +428,12 @@ if ($SystemDeps) {
 if (Test-Path $Venv) {
   Write-Host "Reusing existing virtualenv at $Venv"
 } else {
-  Run -Why 'create the virtualenv' -Cmd { & $Python -m venv $Venv }
+  Run -Why 'create the virtualenv' -Cmd { & $Python @PythonArgs -m venv $Venv }
 }
 $VenvPip = Join-Path $Venv 'Scripts\pip.exe'
 $VenvBin = Join-Path $Venv 'Scripts'
 
-# Map provider keys to ai-parrot extras (mirrors install-parrot.sh / guide §3).
-$AllExtras = $Extras
-$CliProviders = @()
-foreach ($p in ($Provider -split ',')) {
-  switch ($p) {
-    'anthropic' { $extra = 'anthropic' }
-    'openai' { $extra = 'openai' }
-    'google' { $extra = 'google' }
-    'claude-code' { $extra = 'claude-agent'; $CliProviders += 'claude-code' }
-    'codex-code' { $extra = 'codex-agent'; $CliProviders += 'codex-code' }
-    default {
-      Write-Error "Unknown provider '$p'; expected one of: anthropic|openai|google|claude-code|codex-code"
-      exit 1
-    }
-  }
-  if ([string]::IsNullOrEmpty($AllExtras)) {
-    $AllExtras = $extra
-  } else {
-    $AllExtras = "$AllExtras,$extra"
-  }
-}
+Resolve-Extras
 
 # Install ai-parrot + the resolved provider/extra set.
 Run -Why "install ai-parrot with extras: $AllExtras" -Cmd { & $VenvPip install "ai-parrot[$AllExtras]" }

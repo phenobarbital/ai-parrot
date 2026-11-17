@@ -11,7 +11,7 @@ import asyncio
 import contextlib
 from http import HTTPStatus
 from pathlib import Path
-from typing import Dict, Optional, Any, Union
+from typing import Callable, Dict, List, Optional, Any, Union
 
 import aiohttp
 from aiohttp import web
@@ -34,21 +34,39 @@ from .formdesigner_submit import (
     parse_envelope,
     post_submission,
     verify_envelope,
+    resolve_submit_tenant,
 )
 from parrot_formdesigner.renderers.teams import ENVELOPE_KEY
+from .formdesigner_cards import PICKER_ACTION_KEY
 from .adapter import Adapter
 from .handler import MessageHandler
 from ..parser import parse_response, ParsedResponse
 from .dialogs.orchestrator import FormOrchestrator
 from .dialogs.factory import FormDialogFactory
 from .commands import MSTeamsCommandRouter
-from .commands.jira_commands import register_jira_commands
-from .oauth_callback import MSTeamsOAuthNotifier
+from .commands.connect_commands import TeamsConnector, register_connection_commands
+from .commands.auth_commands import register_auth_commands
+from .auth import MSTeamsAuthStrategy, MSTeamsSessionStore
+from .connections import (
+    MSTeamsConversationRefStore,
+    MSTeamsPrincipalSource,
+    build_msteams_permission_context,
+    device_code_card,
+    get_or_create_connection_notifier,
+    send_adaptive_card,
+)
+from parrot.auth.credentials import AuthRequiredPayload
+from parrot.auth.oauth2.registry import OAuth2ProviderRegistry
+from parrot.auth.pending import collect_auth_requirements
+from parrot.auth.context import UserContext
+from parrot.auth.permission import PermissionContext
+from parrot.auth.token_exchange import TokenExchangeClient
 from parrot.forms import FormSchema
 from parrot.interfaces.file.session import SessionFileStore
 from parrot.forms import FormCache
 from parrot.outputs.cards import (
     AutoCollapsePolicy,
+    CardRenderError,
     CardSpec,
     CodeSection,
     ImageEntry,
@@ -57,6 +75,7 @@ from parrot.outputs.cards import (
     TextSection,
     markdown_to_sections,
     render,
+    render_text,
 )
 from .voice import VoiceTranscriber, VoiceTranscriberConfig
 
@@ -70,7 +89,19 @@ logging.getLogger("msrest").setLevel(logging.WARNING)
 
 FORMDESIGNER_API_BASE_PATH: str = "/api/v1"  # fallback only; prefer config.formdesigner_api_base_path
 
+# Teams rejects bot messages over ~28 KB. Cards are shrunk to fit this budget;
+# the plain-text fallback stays well under it to leave room for the envelope.
+TEAMS_MAX_CARD_BYTES: int = 28_000
+TEAMS_MAX_TEXT_BYTES: int = 20_000
+
 _debug_storage_logger = logging.getLogger(__name__)
+
+
+def _default_connection_service() -> Any:
+    """Build a fail-closed connection service until manager wiring injects an evaluator."""
+    from parrot.auth.oauth2.service import IntegrationsService
+
+    return IntegrationsService()
 
 
 class DebugMemoryStorage(MemoryStorage):
@@ -105,6 +136,11 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
     - Post-form tool execution
     """
 
+    # FEAT-729: auth lane is disabled unless __init__ builds a strategy.
+    _auth: Optional[MSTeamsAuthStrategy] = None
+    # Bare names, compared case-sensitively exactly as MSTeamsCommandRouter.try_dispatch resolves them.
+    _AUTH_COMMANDS = frozenset({"login", "logout", "whoami"})
+
     # Supported audio content types for voice notes
     AUDIO_CONTENT_TYPES = {
         "audio/ogg",
@@ -126,6 +162,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         forms_directory: Optional[str] = None,
         voice_config: Optional[VoiceTranscriberConfig] = None,
         oauth_manager: Optional["JiraOAuthManager"] = None,
+        connection_service_factory: Optional[Callable[[], Any]] = None,
     ):
         super().__init__()
         self.agent = agent
@@ -173,8 +210,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         # Initialize Adapter
         self.adapter = Adapter(config=self.config, logger=self.logger, conversation_state=self.conversation_state)
 
-        # Command router — always created for agent commands;
-        # Jira commands added only when oauth_manager is provided (FEAT-225).
+        # Command router is always created for agent commands.
         from .commands.agent_commands import AgentCommandHandler
 
         self._command_router: MSTeamsCommandRouter = MSTeamsCommandRouter()
@@ -188,21 +224,50 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
 
             self._knowledge_upload = register_knowledge_upload_commands(self._command_router, self)
 
-        if oauth_manager is not None:
-            register_jira_commands(self._command_router, oauth_manager)
-            # Register the OAuth notifier for proactive messaging after callback.
-            # continue_conversation needs a valid App ID, so skip (with a
-            # warning) when client_id is not configured rather than registering
-            # a notifier that will always fail.
-            if config.client_id:
-                app["msteams_jira_oauth_notifier"] = MSTeamsOAuthNotifier(
-                    adapter=self.adapter,
-                    app_id=config.client_id,
-                )
-            else:
-                self.logger.warning(
-                    "No client_id configured — MS Teams proactive notification " "after Jira OAuth will be skipped"
-                )
+        from .commands.queued_commands import register_queued_commands
+
+        self._queued_commands = register_queued_commands(self._command_router, self)
+
+        # FEAT-729: user authentication lane (opt-in via config.auth_required)
+        self._session_store = MSTeamsSessionStore(agent_name=config.name, store=getattr(self, "_state_store", None))
+        if config.auth_required and not config.navigator_auth_url:
+            # Fail closed: a deployment that demands auth must not silently serve everyone.
+            raise ValueError(f"MSTeams[{config.name}]: auth_required=True needs navigator_auth_url to be configured")
+        self._auth: Optional[MSTeamsAuthStrategy] = None
+        if config.navigator_auth_url:
+            self._auth = MSTeamsAuthStrategy(
+                config=config,
+                store=self._session_store,
+                exchange=TokenExchangeClient(
+                    config.navigator_auth_url,
+                    prefer_id_token=config.prefer_id_token,
+                ),
+            )
+            register_auth_commands(self._command_router, self._auth)
+        else:
+            self.logger.info("MSTeams[%s]: no navigator_auth_url — auth lane disabled", config.name)
+
+        self._principal_source = MSTeamsPrincipalSource(self._session_store)
+        # Providers register lazily (some after bot startup), so the connector and its commands are
+        # always wired; ``provider_ids`` reads the registry at call time.
+        self._connector: Optional[TeamsConnector] = TeamsConnector(
+            principal_source=self._principal_source,
+            service_factory=connection_service_factory or _default_connection_service,
+            provider_ids=lambda: [provider.provider_id for provider in OAuth2ProviderRegistry().all()],
+            bot_app_id=config.client_id or "",
+            auth_enabled=self._auth is not None,
+        )
+        register_connection_commands(self._command_router, connector=self._connector)
+
+        redis = self.app.get("redis")
+        self._convref_store = MSTeamsConversationRefStore(redis) if redis is not None else None
+        if config.client_id:
+            get_or_create_connection_notifier(app, self._convref_store).attach(config.client_id, self.adapter)
+        else:
+            self.logger.warning("No client_id configured — Teams connection notifications are disabled for this bot")
+
+        # FEAT-734: TeamsFormDesignerMixin seams (no-op for agents without the mixin)
+        self._wire_formdesigner_agent()
 
         # Route
         # Clean chatbot_id to be safe for URL
@@ -308,6 +373,168 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
     # Authorization
     # =========================================================================
 
+    async def _effective_user_id(self, turn_context: TurnContext, fallback: str) -> str:
+        """Return the Navigator id for an authenticated Teams user, else ``fallback``.
+
+        Never triggers an exchange: it only reads the cached/rehydrated session.
+
+        Args:
+            turn_context: The current Bot Framework turn context.
+            fallback: The value used today when the user is not authenticated.
+
+        Returns:
+            The Navigator user id when the session is authenticated and unexpired,
+            otherwise ``fallback``.
+        """
+        if self._auth is None:
+            return fallback
+        session = await self._session_store.get_or_create(turn_context)
+        if session.authenticated and session.nav_user_id and not self._session_store.is_expired(session):
+            return session.nav_user_id
+        return fallback
+
+    async def _permission_context_for_turn(self, turn_context: TurnContext) -> Optional[PermissionContext]:
+        """Return a Teams PBAC context for an authenticated turn, else ``None``."""
+        source = getattr(self, "_principal_source", None)
+        if source is None or self._auth is None:
+            return None
+        try:
+            session = await source.session_for_turn(turn_context)
+        except Exception:  # noqa: BLE001 -- optional principal lookup must not break message handling
+            self.logger.warning("Unable to resolve Teams permission context", exc_info=True)
+            return None
+        return build_msteams_permission_context(session) if session is not None else None
+
+    async def _agent_context(
+        self,
+        turn_context: TurnContext,
+        fallback_user_id: str,
+        session_id: str,
+        **extra: Any,
+    ) -> Dict[str, Any]:
+        """Build orchestrator context, including PBAC data only for authenticated turns."""
+        context: Dict[str, Any] = {
+            "user_id": await self._effective_user_id(turn_context, fallback_user_id),
+            "session_id": session_id,
+            **extra,
+        }
+        permission_context = await self._permission_context_for_turn(turn_context)
+        if permission_context is not None:
+            context["permission_context"] = permission_context
+        return context
+
+    async def _remember_conversation(self, turn_context: TurnContext) -> None:
+        """Refresh a validated user's personal conversation reference without failing the turn."""
+        store = getattr(self, "_convref_store", None)
+        conversation = getattr(turn_context.activity, "conversation", None)
+        if store is None or getattr(conversation, "conversation_type", None) != "personal":
+            return
+        source = getattr(self, "_principal_source", None)
+        if source is None:
+            return
+        try:
+            session = await source.session_for_turn(turn_context)
+            if session is None or not session.nav_user_id:
+                return
+            reference = TurnContext.get_conversation_reference(turn_context.activity).serialize()
+            await store.save(str(session.nav_user_id), reference)
+        except Exception:  # noqa: BLE001 -- reference caching is an optional notifier fallback
+            self.logger.warning("Unable to store Teams conversation reference", exc_info=True)
+
+    async def _offer_connections(self, turn_context: TurnContext, pending: List[AuthRequiredPayload]) -> None:
+        """After the response: guard once, then one connect/device-code card per provider (spec §2 M6)."""
+        if not pending:
+            return
+        if self._connector is None:
+            self.logger.info("Needs-auth in a Teams turn but no connection providers are registered")
+            return
+        guard = await self._connector.require_guard(turn_context)
+        if guard is None:
+            return
+        by_provider: Dict[str, List[AuthRequiredPayload]] = {}
+        for payload in pending:
+            by_provider.setdefault(payload.provider, []).append(payload)
+        for provider_id, payloads in by_provider.items():
+            kinds = {payload.auth_kind == "device_code" for payload in payloads}
+            provider = OAuth2ProviderRegistry().get(provider_id)
+            provider_display = getattr(provider, "display_name", provider_id)
+            safe_reply = f"Couldn't start {provider_display} sign-in — please try again."
+            if len(kinds) > 1:
+                await turn_context.send_activity(safe_reply)
+                continue
+            if True in kinds:
+                challenge = next(
+                    (
+                        payload
+                        for payload in payloads
+                        if payload.user_code is not None and payload.verification_uri is not None
+                    ),
+                    None,
+                )
+                if challenge is None:
+                    await turn_context.send_activity(safe_reply)
+                    continue
+                await send_adaptive_card(
+                    turn_context,
+                    device_code_card(
+                        provider_display,
+                        challenge.user_code,
+                        challenge.verification_uri,
+                        challenge.expires_in,
+                    ),
+                )
+            else:
+                scopes = sorted({scope for payload in payloads for scope in payload.scopes})
+                await self._connector.connect_guarded(
+                    turn_context,
+                    guard,
+                    provider_id,
+                    scopes=scopes or None,
+                )
+
+    def _build_user_context(self, turn_context: TurnContext, session: Any) -> UserContext:
+        """Build the channel-agnostic identity snapshot for an authenticated session.
+
+        Args:
+            turn_context: The current Bot Framework turn context.
+            session: The authenticated ``MSTeamsUserSession``.
+
+        Returns:
+            A ``UserContext`` with ``channel="msteams"`` and the Navigator id.
+        """
+        metadata: Dict[str, Any] = {"teams_user_id": session.teams_user_id}
+        if session.aad_object_id:
+            metadata["aad_object_id"] = session.aad_object_id
+        if session.tenant_id:
+            metadata["tenant_id"] = session.tenant_id
+        return UserContext(
+            channel="msteams",
+            user_id=session.nav_user_id,
+            display_name=session.display_name,
+            email=session.nav_email,
+            session_id=turn_context.activity.conversation.id,
+            metadata=metadata,
+        )
+
+    async def _run_post_login(self, turn_context: TurnContext, session: Any) -> None:
+        """Run the agent's ``post_login`` once per authenticated session.
+
+        Args:
+            turn_context: The current Bot Framework turn context.
+            session: The authenticated ``MSTeamsUserSession``.
+        """
+        async with self._auth.lock_for(session.user_key):
+            if session.post_login_ran:  # another concurrent turn of this user already ran it
+                return
+            user_context = self._build_user_context(turn_context, session)
+            target_agent = self.agent
+            if not getattr(self.config, "singleton_agent", True):
+                session.user_agent = await self.agent.clone_for_user(user_context)
+                target_agent = session.user_agent
+            await target_agent.post_login(user_context)
+            session.post_login_ran = True
+            await self._session_store.save(session)
+
     def _is_authorized(self, conversation_id: str, user_id: str) -> bool:
         """Check if a conversation and user are authorized for this bot.
 
@@ -412,13 +639,18 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         if a2ui_token:
             resume_helper = self._get_deeplink_resume()
             if resume_helper is not None:
+                pending: List[AuthRequiredPayload] = []
 
                 async def inject(*, session_id, user_id, agent_id, query):
-                    result = await self.form_orchestrator.process_message(
-                        message=query,
-                        conversation_id=conversation_id,
-                        context={"user_id": user_id, "session_id": session_id},
-                    )
+                    with collect_auth_requirements() as collected:
+                        async with self._formdesigner_turn(turn_context):
+                            result = await self.form_orchestrator.process_message(
+                                message=query,
+                                conversation_id=conversation_id,
+                                context=await self._agent_context(turn_context, user_id, session_id),
+                            )
+                            await self._flush_formdesigner_cards_if_ok(turn_context, result)
+                    pending.extend(collected)
                     return result
 
                 outcome = await resume_helper.resume(a2ui_token, inject=inject)
@@ -433,6 +665,8 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                         await self.send_text("Action resumed.", turn_context)
                 else:
                     await self.send_text(outcome["reply"], turn_context)
+                if not (outcome.get("ok") and outcome.get("result") and outcome["result"].needs_form):
+                    await self._offer_connections(turn_context, pending)
                 return
             self.logger.warning("A2UI deep-link token in card submission but Redis unavailable.")
 
@@ -454,11 +688,14 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                 {"type": "a2ui_action", "action": a2ui_action, "values": values},
                 sort_keys=True,
             )
-            result = await self.form_orchestrator.process_message(
-                message=query,
-                conversation_id=conversation_id,
-                context={"user_id": user_id, "session_id": conversation_id},
-            )
+            with collect_auth_requirements() as pending:
+                async with self._formdesigner_turn(turn_context):
+                    result = await self.form_orchestrator.process_message(
+                        message=query,
+                        conversation_id=conversation_id,
+                        context=await self._agent_context(turn_context, user_id, conversation_id),
+                    )
+                    await self._flush_formdesigner_cards_if_ok(turn_context, result)
             if result and result.raw_response is not None:
                 parsed = self._parse_response(result.raw_response)
                 await self._send_parsed_response(parsed, turn_context)
@@ -466,7 +703,15 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                 await self.send_text(result.response_text, turn_context)
             else:
                 await self.send_text("Action processed.", turn_context)
+            if not (result and result.needs_form):
+                await self._offer_connections(turn_context, pending)
             return
+
+        # FEAT-734: a TeamsFormDesignerMixin agent handles its picker, wizard and envelope cards first.
+        fd_agent = self._formdesigner_agent()
+        if fd_agent is not None and (ENVELOPE_KEY in submitted_data or PICKER_ACTION_KEY in submitted_data):
+            if await fd_agent.handle_formdesigner_card(turn_context, submitted_data):
+                return
 
         # FormDesigner standalone card (FEAT-551): card Submit carries {"_formdesigner": <envelope>, "_action": "submit",
         # **{field_id: value}}. Verified and forwarded to POST .../forms/{uid}/data — never routed to dialogs.
@@ -570,16 +815,38 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         # The mention-stripped text is cached on `mention_stripped_text` so the
         # later "Clean message" step can reuse it instead of stripping twice.
         mention_stripped_text = None
+        clean_text = ""
         if turn_context.activity.text:
             raw_text = turn_context.activity.text
             mention_stripped_text = self._remove_mentions(turn_context.activity, raw_text)
             clean_text = mention_stripped_text.strip()
+
+        # FEAT-729: authentication gate. Runs after the allow-list (which keeps first
+        # refusal) and BEFORE command dispatch, so no other command (knowledge upload,
+        # Jira, agent commands) is reachable unauthenticated under auth_required.
+        # Only /login, /logout and /whoami are exempt.
+        if self._auth is not None:
+            first_token = clean_text.split(None, 1)[0] if clean_text else ""
+            # Exempt only what the router would really dispatch as an auth command. A differently-cased
+            # "/LOGIN" is not a registered command, so it must stay gated instead of falling through to the agent.
+            is_auth_command = first_token.startswith("/") and first_token.lstrip("/") in self._AUTH_COMMANDS
+            if not is_auth_command:
+                session = await self._auth.ensure_authenticated(turn_context)
+                if self.config.auth_required and not session.authenticated:
+                    await self._auth.send_signin_card(turn_context)
+                    return
+                if session.authenticated and not session.post_login_ran:
+                    await self._run_post_login(turn_context, session)
+
+        await self._remember_conversation(turn_context)
+
+        if clean_text:
             dispatched = await self._command_router.try_dispatch(clean_text, turn_context)
             if not dispatched:
                 # Secondary plain-text dispatch for discoverability keywords
                 # like "jira" or "integrations" that don't carry a "/" prefix.
                 plain = clean_text.lower().strip()
-                if plain in ("jira", "integrations"):
+                if plain in ("jira", "integrations", "connections"):
                     dispatched = await self._command_router.try_dispatch_plain(plain, turn_context)
             if dispatched:
                 return  # command handled — skip agent processing
@@ -668,18 +935,23 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
 
         # Process message with form orchestrator
         # (Orchestrator now handles trigger phrase detection for YAML forms)
-        result = await self.form_orchestrator.process_message(
-            message=text,
-            conversation_id=conversation_id,
-            context={
-                "user_id": turn_context.activity.from_property.id,
-                "session_id": conversation_id,
-            },
-        )
+        with collect_auth_requirements() as pending:
+            async with self._formdesigner_turn(turn_context):
+                result = await self.form_orchestrator.process_message(
+                    message=text,
+                    conversation_id=conversation_id,
+                    context=await self._agent_context(
+                        turn_context,
+                        turn_context.activity.from_property.id,
+                        conversation_id,
+                    ),
+                )
+                await self._flush_formdesigner_cards_if_ok(turn_context, result)
 
         # Handle result
         if result.has_error:
             await self.send_text(result.error, turn_context)
+            await self._offer_connections(turn_context, pending)
             return
 
         if result.needs_form:
@@ -714,6 +986,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         elif result.response_text:
             # Fallback to plain text if no raw response
             await self.send_text(result.response_text, turn_context)
+        await self._offer_connections(turn_context, pending)
 
     # async def on_message_activity(self, turn_context: TurnContext):
     #     """
@@ -1018,19 +1291,24 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         await self.send_typing(turn_context)
 
         # Process message with form orchestrator (same as text messages)
-        result = await self.form_orchestrator.process_message(
-            message=text,
-            conversation_id=conversation_id,
-            context={
-                "user_id": turn_context.activity.from_property.id,
-                "session_id": conversation_id,
-                "source": "voice_note",  # Mark source for analytics
-            },
-        )
+        with collect_auth_requirements() as pending:
+            async with self._formdesigner_turn(turn_context):
+                result = await self.form_orchestrator.process_message(
+                    message=text,
+                    conversation_id=conversation_id,
+                    context=await self._agent_context(
+                        turn_context,
+                        turn_context.activity.from_property.id,
+                        conversation_id,
+                        source="voice_note",
+                    ),
+                )
+                await self._flush_formdesigner_cards_if_ok(turn_context, result)
 
         # Handle result (same as text flow)
         if result.has_error:
             await self.send_text(result.error, turn_context)
+            await self._offer_connections(turn_context, pending)
             return
 
         if result.needs_form:
@@ -1053,6 +1331,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             await self._send_parsed_response(parsed, turn_context)
         elif result.response_text:
             await self.send_text(result.response_text, turn_context)
+        await self._offer_connections(turn_context, pending)
 
     async def _handle_formdesigner_submit(self, turn_context: TurnContext, submitted_data: Dict[str, Any]) -> None:
         """Forward a FormDesigner Teams-card submission (spec §3 M4). Never raises; never continues the dialog."""
@@ -1067,7 +1346,25 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                 allowed_hosts=allowed,
                 secret=self.config.formdesigner_submit_secret,
                 api_base_path=getattr(self.config, "formdesigner_api_base_path", FORMDESIGNER_API_BASE_PATH),
+                require_signature=not self.config.formdesigner_allow_unsigned_submissions,
             )
+            # Tenant derivation runs AFTER verification: resolve_submit_tenant can rewrite
+            # submit_url, and a rewrite before the SSRF/path guard would launder the envelope.
+            channel_data = getattr(turn_context.activity, "channel_data", None)
+            tenant_info = channel_data.get("tenant") if isinstance(channel_data, dict) else None
+            asserted_tenant_id = tenant_info.get("id") if isinstance(tenant_info, dict) else None
+            env, tenant_overridden = resolve_submit_tenant(
+                env,
+                asserted_tenant_id=asserted_tenant_id,
+                tenant_map=self.config.formdesigner_tenant_map,
+                api_base_path=getattr(self.config, "formdesigner_api_base_path", FORMDESIGNER_API_BASE_PATH),
+            )
+            if tenant_overridden:
+                self.logger.info(
+                    "formdesigner submit: tenant claim overridden by the bot-asserted tenant (form=%s, tenant=%s)",
+                    env.form_uid,
+                    env.tenant,
+                )
             activity_id = getattr(turn_context.activity, "id", None)
             if activity_id and self._formdesigner_recent.seen(activity_id):
                 self.logger.info("formdesigner submit: duplicate activity %s ignored", activity_id)
@@ -1100,11 +1397,46 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             await self._formdesigner_session.close()
         self._formdesigner_session = None
 
+    def _formdesigner_agent(self) -> Any | None:
+        """Return the marked FormDesigner agent, or ``None`` for ordinary agents."""
+        agent = getattr(self, "agent", None)
+        if agent is not None and getattr(type(agent), "formdesigner_serving", False) is True:
+            return agent
+        return None
+
+    def _wire_formdesigner_agent(self) -> None:
+        """Wire the wrapper's config, store, and TurnContext commands into the mixin."""
+        agent = self._formdesigner_agent()
+        if agent is None:
+            return
+        agent.apply_teams_config(self.config)
+        agent.bind_teams_identity(self._session_store)
+        for name, handler in agent.teams_commands().items():
+            self._command_router.register(name, handler)
+        self.logger.info("MSTeams[%s]: FormDesigner serving enabled", self.config.name)
+
+    def _formdesigner_turn(self, turn_context: TurnContext) -> Any:
+        """Return the mixin's request-local context manager or a no-op context."""
+        agent = self._formdesigner_agent()
+        return agent.formdesigner_turn(turn_context) if agent is not None else contextlib.nullcontext()
+
+    async def _flush_formdesigner_cards_if_ok(self, turn_context: TurnContext, result: Any) -> None:
+        """Flush cards queued by FormDesigner tools after a successful result."""
+        agent = self._formdesigner_agent()
+        if agent is None or result is None or getattr(result, "has_error", False):
+            return
+        await agent.flush_formdesigner_cards(turn_context)
+
     async def close_voice_transcriber(self) -> None:
         """Close voice transcriber and release resources."""
         if self._voice_transcriber:
             await self._voice_transcriber.close()
             self._voice_transcriber = None
+
+    async def close_queued_commands(self) -> None:
+        """Stop queued commands if this wrapper registered any."""
+        if self._queued_commands is not None:
+            await self._queued_commands.shutdown()
 
     def _extract_adaptive_card_json(self, text: str) -> Optional[Dict[str, Any]]:
         """
@@ -1390,16 +1722,39 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
 
         Delegates to the shared card builder via ``_parsed_to_card_spec``
         and ``render()``. Produces AC 1.5 JSON with native Table elements
-        and auto-collapse for oversized content.
+        and auto-collapse for oversized content. A card over the Teams
+        size limit is shrunk (fewer table rows, embedded images dropped,
+        long text cut) until it fits.
 
         Args:
             parsed: The parsed response content.
 
         Returns:
             Adaptive Card JSON structure.
+
+        Raises:
+            CardRenderError: If even the smallest version of the card is
+                over the Teams size limit.
         """
         spec = self._parsed_to_card_spec(parsed)
-        return render(spec)
+        return render(spec, max_card_bytes=TEAMS_MAX_CARD_BYTES, fit=True)
+
+    def _build_fallback_text(self, parsed: ParsedResponse) -> str:
+        """Build a plain-text reply for a response whose card cannot fit.
+
+        Args:
+            parsed: The parsed response content.
+
+        Returns:
+            The response as plain text, cut to ``TEAMS_MAX_TEXT_BYTES``.
+        """
+        text = render_text(self._parsed_to_card_spec(parsed)) or parsed.text or ""
+        encoded = text.encode("utf-8")
+        if len(encoded) <= TEAMS_MAX_TEXT_BYTES:
+            return text
+        marker = "\n\n… (response truncated to fit the message size limit)"
+        keep = TEAMS_MAX_TEXT_BYTES - len(marker.encode("utf-8"))
+        return encoded[:keep].decode("utf-8", errors="ignore").rstrip() + marker
 
     async def _send_parsed_response(
         self, parsed: Union[ParsedResponse, Dict[str, Any]], turn_context: TurnContext
@@ -1426,8 +1781,16 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         # Standard ParsedResponse handling
         # Build and send Adaptive Card for main content
         if parsed.text or parsed.has_code or parsed.has_table:
-            card = self._build_adaptive_card(parsed)
-            await self.send_card(card, turn_context)
+            try:
+                card = self._build_adaptive_card(parsed)
+            except CardRenderError as exc:
+                self.logger.warning(
+                    "Adaptive Card does not fit even after shrinking (%s); sending plain text instead",
+                    exc,
+                )
+                await self.send_text(self._build_fallback_text(parsed), turn_context)
+            else:
+                await self.send_card(card, turn_context)
 
         # Send document attachments
         for doc_path in parsed.documents:

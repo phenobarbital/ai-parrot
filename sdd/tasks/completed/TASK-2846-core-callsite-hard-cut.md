@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-523 — PEP 420 LLM Client Extraction
 **Spec**: `sdd/specs/pep-420-llm-clients.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M
 **Depends-on**: TASK-2842, TASK-2843, TASK-2844, TASK-2845

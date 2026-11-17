@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-388 — `parrot devloop` CLI Homologation
 **Spec**: `sdd/specs/devloop-cli-homologation.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none *(external gate: the in-flight Google/agy dispatcher WIP

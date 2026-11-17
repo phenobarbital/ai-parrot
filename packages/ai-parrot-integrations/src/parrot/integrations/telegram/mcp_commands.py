@@ -28,9 +28,9 @@ A minimal example::
 ``name`` is used as the DocumentDB compound key and as the MCP client id,
 so callers can later remove or re-add the server by that name.
 
-Persistence is opt-in via ``USE_DOCUMENTDB`` (``parrot.conf``, default
-``False``). When disabled, ``/add_mcp`` registers the server for the current
-session only (neither DocumentDB nor the DocumentDB-backed Vault is touched),
+Persistence uses Redis by default. With ``TELEGRAM_MCP_STORE=documentdb``, it
+remains opt-in via ``USE_DOCUMENTDB``. When persistence is disabled,
+``/add_mcp`` registers the server for the current session only,
 ``/list_mcp`` reports that saved servers are unavailable, and login-time
 rehydration is skipped.
 """
@@ -50,7 +50,7 @@ from .mcp_persistence import (
     TelegramMCPPersistenceService,
     TelegramMCPPublicParams,
     UserTelegramMCPConfig,  # noqa: F401 — re-exported for callers
-    documentdb_enabled,
+    persistence_enabled,
 )
 from parrot.handlers.vault_utils import (
     delete_vault_credential,
@@ -259,7 +259,7 @@ async def rehydrate_user_mcp_servers(
     Returns:
         Number of MCP servers successfully registered.
     """
-    if tool_manager is None or not documentdb_enabled():
+    if tool_manager is None or not persistence_enabled():
         return 0
 
     persistence = TelegramMCPPersistenceService()
@@ -380,7 +380,7 @@ async def add_mcp_handler(
 
     user_id = f"tg:{message.from_user.id}"
     name = config.name
-    persist = documentdb_enabled()
+    persist = persistence_enabled()
     vault_name: Optional[str] = f"tg_mcp_{name}" if secret_params and persist else None
     persistence = TelegramMCPPersistenceService()
 
@@ -446,7 +446,7 @@ async def list_mcp_handler(message: Message) -> None:
     if await _reject_non_private(message):
         return
 
-    if not documentdb_enabled():
+    if not persistence_enabled():
         await message.reply(
             "Saved MCP servers are unavailable: server persistence is disabled.",
             parse_mode=None,

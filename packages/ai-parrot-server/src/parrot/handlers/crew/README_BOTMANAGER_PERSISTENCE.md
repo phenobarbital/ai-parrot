@@ -1,42 +1,49 @@
-# AgentsCrew Redis Persistence - Integrated into BotManager
+# AgentCrew Definition Persistence in BotManager
 
 ## Overview
 
-Redis persistence for AgentsCrew has been **fully integrated into BotManager**. Crews are automatically saved to and loaded from Redis, making persistence completely transparent to users of the API.
+`BotManager` integrates crew definition persistence with its in-memory cache. Redis is the backward-compatible
+default. PostgreSQL can be selected as the authoritative definition store; execution-result storage is a separate
+subsystem with separate configuration.
 
 ## How It Works
 
 ### Automatic Persistence
 
-The BotManager now handles all Redis persistence automatically:
+The behavior depends on the configured definition backend:
 
 1. **On Startup** (`on_startup`):
-   - All crews are loaded from Redis into memory
-   - Similar to how bots are loaded from the database
+   - The configured store is initialized and active definitions are loaded into memory.
+   - PostgreSQL mode may migrate verified Redis sources when migration is enabled and both services are healthy.
 
 2. **When Creating/Updating a Crew** (`add_crew`):
-   - Crew is added to in-memory cache
-   - Automatically saved to Redis (key: `crew:{name}`)
-   - If Redis fails, crew remains in memory with a warning
+   - Redis mode keeps its historic cache-first, best-effort persistence behavior.
+   - PostgreSQL mode persists before publishing the new definition to the cache. A failed write reaches the caller
+     and leaves the previous cache and authoritative row unchanged.
 
 3. **When Getting a Crew** (`get_crew`):
    - First checks in-memory cache
-   - If not found, loads from Redis
+   - If not found, loads through the configured definition store
    - Reconstructs the crew and caches it in memory
 
 4. **When Deleting a Crew** (`remove_crew`):
-   - Removes from in-memory cache
-   - Automatically deletes from Redis
-   - If Redis fails, crew is still removed from memory
+   - Redis mode removes from memory and attempts Redis cleanup best-effort.
+   - PostgreSQL mode commits a durable tombstone before evicting the cache. Redis cleanup happens afterward; a
+     cleanup failure does not revive the deleted definition.
 
 ## Key Format
 
-Crews are stored in Redis with the following key structure:
+New Redis writes are tenant-scoped:
 
-- **Crew Definition**: `crew:{name}` - Full CrewDefinition as JSON
-- **Crew List**: `crew:list` - Set of all crew names
-- **ID Mapping**: `crew:id:{crew_id}` - Maps crew_id to crew name
+- **Crew Definition**: `crew:{tenant}:{name}` — full `CrewDefinition` JSON
+- **Crew List**: `crew:{tenant}:list` — set of names for one tenant
+- **ID Mapping**: `crew:{tenant}:id:{crew_id}` — maps a tenant/ID to a name
+- **Tenant List**: `crew:tenants` — set of known tenants
 - **Redis Database**: DB 2 (separate from conversation history on DB 3)
+
+An absent tenant normalizes to `global`. For that tenant, reads also recognize legacy `crew:{name}`, `crew:list`,
+and `crew:id:{crew_id}` keys. Migration captures both namespaced and legacy values; differing values are retained as
+a conflict rather than cleaned up.
 
 ## Usage
 
@@ -110,13 +117,17 @@ await bot_manager.remove_crew("my_crew")
 
 ## Configuration
 
-Redis configuration is in `parrot/conf.py`:
+Definition storage configuration is read from `parrot/conf.py`:
 
-```python
-REDIS_HOST = 'localhost'  # Default
-REDIS_PORT = 6379         # Default
-REDIS_DB = 2              # CrewRedis uses DB 2
+```bash
+export CREW_DEFINITION_STORAGE=postgres       # default: redis
+export CREW_DEFINITION_PG_DSN='postgres://app:secret@db/parrot'
+export CREW_DEFINITION_MIGRATION=false
 ```
+
+`BotManager(crew_storage_backend=..., crew_migration=...)` overrides the backend and migration flag for one manager;
+the DSN remains application configuration. Explicit PostgreSQL mode without a usable DSN stays PostgreSQL mode and
+fails closed. It never downgrades writes to Redis.
 
 ## Startup Behavior
 
@@ -147,9 +158,9 @@ INFO :: Crews loaded successfully. Total active crews: 3
 - Crews survive server restarts
 - Automatically restored on startup
 
-### 3. **Graceful Degradation**
-- If Redis is unavailable, crews still work in-memory
-- Warnings logged for Redis failures
+### 3. **Backend-specific failure behavior**
+- Redis-only mode retains best-effort cache-first writes.
+- PostgreSQL mode returns storage failures to callers and preserves the last acknowledged cache state.
 
 ### 4. **Performance**
 - In-memory cache for fast access
@@ -186,7 +197,7 @@ INFO :: Crews loaded successfully. Total active crews: 3
 
 ## Error Handling
 
-The system handles Redis failures gracefully:
+Redis-only mode handles Redis failures with the legacy best-effort policy:
 
 ```python
 # If Redis is down during startup
@@ -203,6 +214,11 @@ ERROR Failed to delete crew 'my_crew' from Redis: Connection refused
 INFO Crew 'my_crew' removed from memory only
 # → Crew removed from memory but remains in Redis (manual cleanup needed)
 ```
+
+PostgreSQL mode is intentionally different. Unavailable authoritative storage maps to HTTP `503`; identity conflicts
+map to `409`. Same-name updates are persisted as one upsert and preserve the crew ID and creation time. Rename
+updates return `409` before mutation. Deletes commit tombstones before cache eviction; retrying a committed tombstone
+is safe.
 
 ## Monitoring
 
@@ -249,13 +265,22 @@ crew_names = await crew_redis.list_crews()
 # Get crew metadata
 metadata = await crew_redis.get_crew_metadata("my_crew")
 
-# Clear all crews (caution!)
-deleted_count = await crew_redis.clear_all_crews()
+# Inspect one source before operator reconciliation
+snapshot = await crew_redis.snapshot_crew("my_crew", tenant="global")
 ```
 
 ## Migration
 
-If you have crews in the old standalone CrewRedis system, they're automatically accessible via BotManager's `get_crew()` method, which will load them from Redis on first access.
+With `CREW_DEFINITION_MIGRATION=true`, PostgreSQL mode runs a guarded Redis migration when both stores are healthy.
+The report separates newly `migrated`, `already_present`, tombstone `deleted_sources`, `conflicts`, per-key `failed`
+outcomes and `redis_cleanup_failed` outcomes. Conflicting, unreadable, concurrently changed, or cleanup-failed
+sources remain in Redis for operator reconciliation; never purge them unconditionally. Tombstones are not
+auto-purged because a legacy source could otherwise reappear.
+
+Run a reviewed dry run first with `await manager.crew_storage.migrate_from_redis(dry_run=True)`. Dry runs do not
+create schema or mutate data. Migration cleanup requires single-instance Redis; Redis Cluster is rejected. Upgrade
+all workers before relying on PostgreSQL acknowledged-write behavior, and do not treat skipped live-service tests as
+proof that destructive cleanup is safe.
 
 ## Troubleshooting
 
@@ -291,13 +316,6 @@ await bot_manager.crew_redis.ping()
 
 ## Summary
 
-Redis persistence for crews is now **fully automatic**:
-
-✅ Crews are saved to Redis when created
-✅ Crews are loaded from Redis on startup
-✅ Crews are loaded from Redis on first access
-✅ Crews are deleted from Redis when removed
-✅ All transparent to API users
-✅ Graceful fallback if Redis is unavailable
-
-No manual Redis operations needed - just use the CrewHandler API!
+Crew definitions use tenant-scoped identities in either backend. Redis mode preserves the legacy best-effort policy.
+PostgreSQL mode persists before cache publication, fails closed on unavailable authority, uses durable tombstones,
+and retains unverified Redis sources for explicit operator reconciliation.

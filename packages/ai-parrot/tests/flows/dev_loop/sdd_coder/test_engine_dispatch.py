@@ -26,6 +26,7 @@ class FakeDispatcher:
       - "extra": also writes an unlisted file (for fidelity-violation coverage elsewhere).
       - "banned": writes a banned import (`import httpx`) into the task's listed file (FEAT-553).
       - "empty": returns a DevelopmentOutput claiming the file but writes/commits nothing (FEAT-597).
+      - "blocked": reports a task-contract blocker without changing any files.
     """
 
     def __init__(self, behaviour: str = "ok", *, gate: asyncio.Event | None = None) -> None:
@@ -48,6 +49,13 @@ class FakeDispatcher:
             await self.gate.wait()
         if self.behaviour == "fail":
             raise RuntimeError("boom")
+        if self.behaviour == "blocked":
+            return DevelopmentOutput(
+                files_changed=[],
+                commit_shas=[],
+                summary=f"Blocked in {Path(cwd).name}: requires an out-of-scope store contract change.",
+                incomplete_tasks=[brief.task_id],
+            )
         if self.behaviour == "empty":
             # Claims the file in its output but writes and commits nothing (FEAT-597 / issue:ee4d4879fc89).
             n_empty = brief.task_id.rsplit("-", 1)[-1].lstrip("0") or "0"
@@ -229,6 +237,25 @@ async def test_prepare_native_writes_attempt_context(git_sandbox_feature, noop_p
     assert context.task_id == native_id
     assert context.task_file == prep.task_file
     assert context.base_ref == feature_branch
+
+
+async def test_prepare_native_carries_seat_effort(git_sandbox_feature, noop_probe):
+    """issue:43d1039c2717: a native seat's effort reaches NativePrep for the sdd-worker Agent call."""
+    worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+    roster = RosterConfig(
+        seats=[
+            RosterSeat(label="h", kind="native", effort="high"),
+            RosterSeat(label="a", backend="nova", model="model-a"),
+            RosterSeat(label="b", backend="codex", model="model-b"),
+        ]
+    )
+    engine = SddCoderEngine(
+        roster=roster, probe=noop_probe, worktree_base_path=str(base_path), dispatcher_builder=fake_builder_factory({})
+    )
+    plan = await engine.plan("demo", str(worktree))
+    native_id = next(t.task_id for t in plan.chunks[0].tasks if t.native)
+    prep = await engine.prepare_native("demo", str(worktree), native_id)
+    assert prep.effort == "high"
 
 
 async def test_engine_run_chunk_returns_before_dispatch(git_sandbox_feature, noop_probe):
@@ -422,8 +449,8 @@ async def test_telemetry_collector_captures_usage():
 
 class TestAttemptIdentity:
     async def test_uid_unique_across_jobs(self, git_sandbox_feature, noop_probe):
-        """Test that two _run_task invocations for the same task in different jobs
-        both produce attempt=1 and DIFFERENT attempt_uids."""
+        """Two _run_task invocations for the same task in different jobs produce
+        DIFFERENT attempt_uids, and the second takes the next free attempt slot."""
         worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
         builder = fake_builder_factory({})
         engine = SddCoderEngine(
@@ -458,9 +485,12 @@ class TestAttemptIdentity:
         job2 = await engine.run_chunk("demo", str(worktree), ["TASK-0001"])
         result2 = await engine.wait(job2.job_id, 5)
 
-        # Both should have attempt=1
+        # job1's attempt-1 sub-worktree is still live, so job2 starts at attempt 2
+        # instead of colliding on `git worktree add` (issue:3b913ffd77cd). Before
+        # that fix job2's attempt 1 failed with the collision and only its retry ran.
         assert result1.tasks[0].attempts[0].attempt == 1
-        assert result2.tasks[0].attempts[0].attempt == 1
+        assert result2.tasks[0].attempts[0].attempt == 2
+        assert not result2.tasks[0].attempts[0].error
 
         # But different attempt_uids
         assert result1.tasks[0].attempts[0].attempt_uid != result2.tasks[0].attempts[0].attempt_uid
@@ -1395,6 +1425,80 @@ async def test_run_task_empty_delivery_twice_is_failed(git_sandbox_feature, noop
     assert before == after
 
 
+@pytest.mark.parametrize("retry_behaviour", ["ok", "blocked", "fail"])
+async def test_blocked_delivery_preserves_response_across_retry(
+    git_sandbox_feature: tuple, noop_probe: object, retry_behaviour: str
+) -> None:
+    """A valid no-change response retains its reason even if the next seat replaces or lacks output."""
+    from parrot.flows.dev_loop.sdd_coder.models import CoderJob
+    from parrot.flows.dev_loop.sdd_coder.telemetry import build_attempt_row
+
+    worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+    engine = SddCoderEngine(
+        roster=_roster(("a", "codex"), ("b", "nova")),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+        dispatcher_builder=fake_builder_factory({"codex": "blocked", "nova": retry_behaviour}),
+    )
+    job = await engine.run_chunk("demo", str(worktree), ["TASK-0001"])
+    result = await engine.wait(job.job_id, 5)
+    # Exercise the public JSON contract, including recovery of nested outputs.
+    task = CoderJob.model_validate_json(result.model_dump_json()).tasks[0]
+    assert task.outcome == ("merged" if retry_behaviour == "ok" else "failed")
+    assert len(task.attempts) == 2
+    first, second = task.attempts
+    output = first.development_output
+    assert output is not None
+    journal = CoderJob.model_validate_json((worktree / ".sdd-coder" / "jobs" / f"{job.job_id}.json").read_text())
+    assert journal.tasks[0].attempts[0].development_output == output
+    assert output.files_changed == output.commit_shas == []
+    assert output.incomplete_tasks == ["TASK-0001"]
+    assert "out-of-scope store contract change" in output.summary
+    assert first.error.startswith("empty_delivery:")
+    assert f"Coder-reported summary: {output.summary}" in first.error
+    assert "Coder-reported incomplete_tasks: ['TASK-0001']" in first.error
+    assert first.terminal == "failed"
+    assert first.error_class == "EmptyDelivery"
+    assert task.development_output == second.development_output
+    if retry_behaviour == "fail":
+        assert second.development_output is None
+    else:
+        assert second.development_output is not None
+        assert second.development_output != output
+    if task.outcome == "failed":
+        assert output.summary in task.diagnostics
+    # Responses are operator evidence, never calibration dataset content.
+    row = build_attempt_row(first, feature_id="FEAT-549", job_id=job.job_id, task_id=task.task_id, declared_files=1)
+    assert "development_output" not in row.model_dump()
+    assert output.summary not in row.model_dump_json()
+
+
+async def test_empty_delivery_bounds_diagnostic_but_preserves_full_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Long summaries remain recoverable without making the error excerpt unbounded."""
+    from unittest.mock import AsyncMock
+
+    from parrot.flows.dev_loop.sdd_coder.models import AttemptRecord, PlannedTask
+
+    engine = SddCoderEngine(roster=_roster(("a", "codex")))
+    monkeypatch.setattr(engine, "_delivered_paths", AsyncMock(return_value=[]))
+    legacy = AttemptRecord(attempt=1, seat_label="a", started_at="")
+    assert legacy.development_output is None
+    output = DevelopmentOutput(files_changed=[], commit_shas=[], summary="reason " * 2000)
+    rec, error = await engine._check_delivery(
+        None,
+        PlannedTask(task_id="TASK-0001", task_file="task.md", seat_label="a"),
+        engine.roster.seats[0],
+        legacy.model_copy(update={"development_output": output}),
+        branch="branch",
+        path="path",
+    )
+    assert len(error) < 4500
+    assert output.summary not in error
+    assert rec.development_output == output
+
+
 async def test_classify_failure_reason_empty_delivery_not_suspendable(git_sandbox_feature, noop_probe):
     """An empty delivery is not a suspension reason (FEAT-597 AC3)."""
     _worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
@@ -1407,3 +1511,222 @@ async def test_classify_failure_reason_empty_delivery_not_suspendable(git_sandbo
         "empty_delivery: seat a (nova/model-a) delivered no file change for TASK-0001", "EmptyDelivery"
     )
     assert reason is None
+
+
+async def test_engine_applies_seat_effort_to_profile(git_sandbox_feature, noop_probe):
+    """HOTFIX-sdd-coder-seat-effort-2: a seat's effort reaches the dispatched backend profile."""
+    from parrot.flows.dev_loop.models import CodexCodeDispatchProfile
+
+    worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+    inner = fake_builder_factory({})
+
+    def _builder(spec, **kwargs):
+        dispatcher, _ = inner(spec, **kwargs)
+        return dispatcher, CodexCodeDispatchProfile()
+
+    roster = RosterConfig(seats=[RosterSeat(label="b", backend="codex", model="model-b", effort="high")])
+    engine = SddCoderEngine(
+        roster=roster, probe=noop_probe, worktree_base_path=str(base_path), dispatcher_builder=_builder
+    )
+    job = await engine.run_chunk("demo", str(worktree), ["TASK-0001"])
+    await engine.wait(job.job_id, 5)
+    call = next(c for d in inner.dispatchers.values() for c in d.calls)
+    assert call["profile"].reasoning_effort == "high"
+
+
+async def test_run_attempt_skips_a_leftover_attempt_branch(git_sandbox_feature, noop_probe):
+    """issue:3b913ffd77cd: a kept `-a1` branch must not make the re-dispatch collide."""
+    worktree, feature_branch, base_path, _index_path = git_sandbox_feature
+    rc, _out, err = await _git("branch", f"{feature_branch}--TASK-0001-a1", cwd=str(worktree))
+    assert rc == 0, err
+    engine = SddCoderEngine(
+        roster=_roster(("a", "nova"), ("b", "codex")),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+        dispatcher_builder=fake_builder_factory({}),
+    )
+    job = await engine.run_chunk("demo", str(worktree), ["TASK-0001"])
+    result = await engine.wait(job.job_id, 5)
+
+    task = result.tasks[0]
+    assert task.outcome == "merged", task
+    assert task.attempts[0].attempt == 2
+    assert task.worktree_path == str(Path(base_path) / f"{feature_branch}--pool" / "TASK-0001-a2")
+
+
+async def test_run_attempt_keeps_attempt_one_without_leftovers(git_sandbox_feature, noop_probe):
+    """With nothing kept, the first attempt is still attempt 1."""
+    worktree, feature_branch, base_path, _index_path = git_sandbox_feature
+    engine = SddCoderEngine(
+        roster=_roster(("a", "nova"), ("b", "codex")),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+        dispatcher_builder=fake_builder_factory({}),
+    )
+    job = await engine.run_chunk("demo", str(worktree), ["TASK-0001"])
+    result = await engine.wait(job.job_id, 5)
+
+    assert result.tasks[0].attempts[0].attempt == 1
+
+
+def test_attempt_record_accepts_attempt_above_three():
+    """A re-dispatch after three kept attempts is attempt 4 and must validate."""
+    from parrot.flows.dev_loop.sdd_coder.models import AttemptRecord
+
+    assert AttemptRecord(attempt=4, seat_label="a", started_at="2026-11-05T00:00:00+00:00").attempt == 4
+
+
+class _FakeExperienceService:
+    """Stands in for ExperienceService; records every call so attempt identity can be asserted."""
+
+    briefs: list[tuple[str, list[str]]] = []
+    recorded: list[dict] = []
+    refreshed = 0
+    brief_text = "- [experience:abc] known pitfall"
+    fail_record_on: set[str] = set()
+
+    @classmethod
+    def reset(cls) -> None:
+        cls.briefs = []
+        cls.recorded = []
+        cls.refreshed = 0
+        cls.brief_text = "- [experience:abc] known pitfall"
+        cls.fail_record_on = set()
+
+    @classmethod
+    def from_root(cls, root=None):
+        return cls()
+
+    async def refresh(self) -> None:
+        type(self).refreshed += 1
+
+    async def brief(self, title, files, *, max_entries=None) -> str:
+        type(self).briefs.append((title, list(files)))
+        return type(self).brief_text
+
+    async def record(self, draft, *, session, source, seat="") -> str:
+        if draft.solution in type(self).fail_record_on:
+            raise RuntimeError("record boom")
+        type(self).recorded.append({"draft": draft, "session": session, "source": source, "seat": seat})
+        return f"lesson-{len(type(self).recorded)}"
+
+
+def _draft(solution: str):
+    from parrot.knowledge.wiki.experience.models import LessonDraft, LessonTrigger
+
+    return LessonDraft(trigger=LessonTrigger(executable="pytest"), symptom="red", solution=solution)
+
+
+@pytest.fixture
+def fake_experience(monkeypatch):
+    _FakeExperienceService.reset()
+    monkeypatch.setattr("parrot.flows.dev_loop.sdd_coder.engine.ExperienceService", _FakeExperienceService)
+    return _FakeExperienceService
+
+
+def _bare_engine(noop_probe, base_path) -> SddCoderEngine:
+    return SddCoderEngine(
+        roster=_roster(("a", "nova")),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+        dispatcher_builder=fake_builder_factory({}),
+    )
+
+
+@pytest.mark.asyncio
+async def test_record_lessons_from_output(tmp_path: Path, noop_probe, fake_experience, monkeypatch) -> None:
+    """Authored candidates carry the real attempt session and seat; one bad draft never drops the rest."""
+    from types import SimpleNamespace
+
+    engine = _bare_engine(noop_probe, tmp_path)
+    ctx = SimpleNamespace(worktree=str(tmp_path))
+    task = SimpleNamespace(task_id="TASK-0001")
+
+    output = DevelopmentOutput(
+        files_changed=[], commit_shas=[], summary="x", lessons=[_draft("ok-1"), _draft("bad"), _draft("ok-2")]
+    )
+    fake_experience.fail_record_on = {"bad"}
+    stored = await engine._record_lessons(ctx, task, output, session="uid-123", seat="seat-a")
+
+    assert stored == 2
+    assert [r["draft"].solution for r in fake_experience.recorded] == ["ok-1", "ok-2"]
+    assert {(r["session"], r["source"], r["seat"]) for r in fake_experience.recorded} == {
+        ("uid-123", "authored", "seat-a")
+    }
+
+    # No lessons -> no service work; a service that cannot even be built never raises.
+    empty = DevelopmentOutput(files_changed=[], commit_shas=[], summary="x")
+    assert await engine._record_lessons(ctx, task, empty, session="s", seat="t") == 0
+
+    def _boom(cls, root=None):
+        raise RuntimeError("no plane")
+
+    monkeypatch.setattr(fake_experience, "from_root", classmethod(_boom))
+    assert await engine._record_lessons(ctx, task, output, session="s", seat="t") == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("procedure_block", ["", "### Procedure\nNext: Close the task."])
+async def test_engine_briefing_both_seats(
+    git_sandbox_feature, noop_probe, fake_experience, monkeypatch, procedure_block
+) -> None:
+    """The briefing reaches the MCP TaskScopedBrief and NativePrep; failures degrade to empty text."""
+    worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+    builder = fake_builder_factory({})
+    roster = RosterConfig(
+        seats=[
+            RosterSeat(label="h", kind="native"),
+            RosterSeat(label="a", backend="nova", model="model-a"),
+            RosterSeat(label="b", backend="codex", model="model-b"),
+        ]
+    )
+    engine = SddCoderEngine(
+        roster=roster, probe=noop_probe, worktree_base_path=str(base_path), dispatcher_builder=builder
+    )
+
+    async def procedure_for(ctx, task) -> str:
+        return procedure_block
+
+    monkeypatch.setattr(engine, "_procedure_briefing_for", procedure_for)
+    expected_briefing = "\n\n".join(block for block in (fake_experience.brief_text, procedure_block) if block)
+    plan = await engine.plan("demo", str(worktree))
+    native_id = next(t.task_id for t in plan.chunks[0].tasks if t.native)
+    prep = await engine.prepare_native("demo", str(worktree), native_id)
+    assert prep.experience_briefing == expected_briefing
+    assert fake_experience.refreshed >= 1
+
+    mcp_id = next(t.task_id for t in plan.chunks[0].tasks if not t.native)
+    job = await engine.run_chunk("demo", str(worktree), [mcp_id])
+    await engine.wait(job.job_id, 5)
+    calls = [c for d in builder.dispatchers.values() for c in d.calls]
+    assert calls and all(c["brief"].experience_briefing == expected_briefing for c in calls)
+
+    # Service failure: empty briefing, dispatch unaffected.
+    def _down(cls, root=None):
+        raise RuntimeError("down")
+
+    monkeypatch.setattr(fake_experience, "from_root", classmethod(_down))
+    ctx = await engine._resolve_feature("demo", str(worktree))
+    task = next(t for t in plan.chunks[0].tasks if t.task_id == mcp_id)
+    assert await engine._experience_briefing_for(ctx, task) == ""
+
+
+@pytest.mark.asyncio
+async def test_engine_feedback_unchanged(git_sandbox_feature, noop_probe, fake_experience) -> None:
+    """coder_feedback is byte-identical with and without experience; the briefing never leaks into it."""
+    worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+    builder = fake_builder_factory({})
+    engine = SddCoderEngine(
+        roster=_roster(("a", "nova")),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+        dispatcher_builder=builder,
+    )
+    job = await engine.run_chunk("demo", str(worktree), ["TASK-0001"])
+    await engine.wait(job.job_id, 5)
+    call = next(c for d in builder.dispatchers.values() for c in d.calls)
+    brief = call["brief"]
+
+    assert brief.experience_briefing == fake_experience.brief_text
+    assert fake_experience.brief_text not in brief.coder_feedback
+    assert brief.coder_feedback in engine._feedback_contexts.values()

@@ -3,8 +3,8 @@
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
-GUIDE = ROOT / "docs" / "interfaces" / "graph-filemanager.md"
-O365 = ROOT / "docs" / "integrations" / "office365-oauth2.md"
+GUIDE = ROOT / "wiki" / "server" / "interfaces" / "graph-filemanager.md"
+O365 = ROOT / "wiki" / "integrations" / "office365-oauth2.md"
 HEADINGS = [
     "## Install",
     "## Quick start",

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-614 — Odoo JSON-2 — map domain-first ORM methods (`read_group` family)
 **Spec**: `sdd/specs/odoo-json2-domain-first-methods.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

@@ -20,6 +20,7 @@ from parrot.clients.google.reel.profiles import (
     select_generation_duration,
 )
 
+
 @pytest.fixture
 def registry() -> VideoProfileRegistry:
     return VideoProfileRegistry.default()

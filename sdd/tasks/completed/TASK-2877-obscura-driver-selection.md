@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-530 — Supervised Obscura Browser Integration
 **Spec**: sdd/specs/obscura-new-browser-headless.spec.md
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2876

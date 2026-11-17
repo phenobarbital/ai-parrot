@@ -270,6 +270,8 @@ Use `list_available_a2a_agents` to discover remote agents if needed.
         - Auto-connects to configured A2A endpoints
         """
         await super().configure(app)
+        if self.configure_skipped:
+            return
 
         # Add discovery tool
         self._discovery_tool = ListAvailableA2AAgentsTool(self)

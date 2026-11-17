@@ -6,7 +6,7 @@ import pytest
 
 from parrot.knowledge.graphindex.extractors.loader import LoaderExtractor
 from parrot.knowledge.graphindex.models import DocumentLoader, GraphDocument
-from tests.knowledge._support.import_probe import run_import_probe
+from .._support.import_probe import run_import_probe
 
 
 class _Loader:

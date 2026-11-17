@@ -1,0 +1,33 @@
+- **Plain `Enum` alias collapse.** Duplicate values are silent aliases; `test_google_model_alias_count`
+  pins 49 names / 31 values. *Implication*: every deletion updates that test in the same task; three
+  of the 2.5 names vanish with their canonical member. *Evidence*: F003, F022
+- **Load-bearing names.** `GEMINI_2_5_FLASH` ×16 (client.py, analysis.py, generation.py),
+  `GEMINI_2_5_PRO` ×1, `GEMINI_2_5_FLASH_TTS` ×1. *Implication*: rewrite the call sites in the same
+  commit as (or before) the deletion, or `client.py` fails at import. *Evidence*: F002
+- **Routing is by string prefix, not enum membership.** `_requires_thinking`, `_is_computer_use_model`,
+  `_default_combined_call_prefixes`, `_model_class_key`. *Implication*: drop the `gemini-2.5-pro` and
+  `gemini-2.5-computer-use` prefixes with the members (FEAT-688: "a dead prefix is worse than a dead
+  member"); unknown ids silently take the legacy two-phase path. *Evidence*: F004, F022
+- **Retirement is pure deletion.** No `deprecated_models` registry (FEAT-688 U2); nothing remaps a
+  retired id at runtime. *Implication*: a caller still passing `gemini-2.5-flash` is not redirected by
+  parrot — Google auto-routes it after 2026-12-01. *Evidence*: F016, F022, F013
+- **`GET /models` publishes `[m.value for m in GoogleModel]`.** *Implication*: a public payload change;
+  the admin UI lists are not generated from it. *Evidence*: F013, F023, F001
+- **Argon has no `createCachedContent`** (live `models.list` and the FEAT-688 spec agree); FEAT-781
+  (PR #1890) made the Gemini cache path fail-open. *Implication*: components moved to Argon lose
+  context caching silently; the spec must assert the fail-open path. *Evidence*: F029, F022, F020
+- **Google's schedule ≠ the request's scope.** 2.5-pro → `gemini-3.8-flash`, 2.5-flash →
+  `gemini-3.5-flash-lite`; `gemini-2.5-flash-lite` not deprecated; 2.5 TTS / native-audio previews shut
+  down 2026-11-17; 2.5 computer-use shut down 2026-07-28; flash-image lives to 2027-03-15.
+  *Implication*: flash-lite pins stay; the voice/TTS defaults are the more urgent cut. *Evidence*: F028, F029
+- **Floor policy: declare only an exercised version.** TASK-4371's isolated-venv introspection gate;
+  PyPI latest 2.34.0 vs declared/locked 2.31.0, weekly cadence. *Evidence*: F007, F021, F027
+- **The 2.5 builtins are two days old** (FEAT-796, PR #1949) and four test modules assert them.
+  *Implication*: three string edits + docs table + tests move together. *Evidence*: F009, F019, F012
+- **`client.py` is hot** (15 commits / 90 days, four lanes); `conf.py` 15 commits / 60 days.
+  *Implication*: FEAT-688 anchors are stale; the spec's Codebase Contract must be re-probed at HEAD.
+  *Evidence*: F018, F019
+- **A zero-code mitigation exists**: `DEFAULT_LLM`, `AGENT_LLM`, `CREW_LLM`, `EXPERT_*_LLM` override every
+  builtin today. *Evidence*: F025, F009
+- **The pricing table has no GA 2.5 rows and no Argon row** and is already flagged stale by
+  `CostCalculator`. *Evidence*: F011

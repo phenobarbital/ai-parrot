@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-134 — Flow Primitives — Shared Core for AgentCrew & AgentsFlow
 **Spec**: `sdd/specs/flow-primitives.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-913, TASK-914, TASK-915, TASK-916, TASK-917, TASK-918, TASK-919

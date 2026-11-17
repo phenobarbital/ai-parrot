@@ -19,6 +19,7 @@ from parrot.outputs.a2ui.catalog.parrot import (
     infographic,  # noqa: F401
     kpicard,  # noqa: F401
     map,  # noqa: F401
+    mermaiddiagram,  # noqa: F401
     report,  # noqa: F401
     timeline,  # noqa: F401
 )

@@ -94,3 +94,53 @@ class TestRegisterOffice365Commands:
         )
         after = len(router.message.handlers)
         assert after - before == 3
+
+    @pytest.mark.asyncio
+    async def test_office365_alias_only_when_registered(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A connectable o365 provider makes the legacy names generic aliases."""
+        from aiogram import Router
+        from parrot.integrations.telegram import connection_commands
+
+        connect = AsyncMock()
+        disconnect = AsyncMock()
+        status = AsyncMock()
+        monkeypatch.setattr(connection_commands, "connect_handler", connect)
+        monkeypatch.setattr(connection_commands, "disconnect_handler", disconnect)
+        monkeypatch.setattr(connection_commands, "connections_handler", status)
+        commands = MagicMock()
+        commands.resolve_provider.return_value = SimpleNamespace(provider_id="o365")
+        router = Router()
+        message = _make_message()
+        message.chat = SimpleNamespace(type="private")
+
+        register_office365_commands(
+            router,
+            lambda telegram_id: TelegramUserSession(telegram_id=telegram_id),
+            commands=commands,
+            principal_source=AsyncMock(),
+            context_source=MagicMock(),
+            extra_state_factory=MagicMock(),
+        )
+
+        handlers = router.message.handlers[-3:]
+        await handlers[0].callback(message)
+        await handlers[1].callback(message)
+        await handlers[2].callback(message)
+
+        assert connect.await_args.args == (message, "o365")
+        assert disconnect.await_args.args == (message, "o365")
+        assert status.await_args.kwargs["only"] == "o365"
+
+    def test_office365_fallback_keeps_session_handlers(self) -> None:
+        """An unavailable o365 provider leaves the historical session flow intact."""
+        from aiogram import Router
+
+        commands = MagicMock()
+        commands.resolve_provider.return_value = None
+        router = Router()
+        register_office365_commands(
+            router,
+            lambda telegram_id: TelegramUserSession(telegram_id=telegram_id),
+            commands=commands,
+        )
+        assert len(router.message.handlers) == 3

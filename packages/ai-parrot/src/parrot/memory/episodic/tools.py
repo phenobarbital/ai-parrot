@@ -4,17 +4,17 @@ Exposes episodic memory operations as agent-callable tools via AbstractToolkit.
 LLM agents can search past experiences, record lessons, and retrieve warnings
 during their reasoning loop.
 """
+
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
 
+from parrot.memory.agent_memory.runtime import current_memory_exposure, current_memory_scope
 from parrot.tools.toolkit import AbstractToolkit
 
-from .models import EpisodeCategory, EpisodeOutcome, MemoryNamespace
-
-if TYPE_CHECKING:
-    from .store import EpisodicMemoryStore
+from .models import EpisodeCategory, EpisodeOutcome, EpisodeSearchResult, MemoryNamespace
+from .store import EpisodicMemoryStore, _EXPLICIT_LESSON_KEY, _EXPLICIT_REFLECTION_KEY
+from .visibility import recall_scopes, visible_to_scope
 
 logger = logging.getLogger(__name__)
 
@@ -22,10 +22,11 @@ logger = logging.getLogger(__name__)
 class EpisodicMemoryToolkit(AbstractToolkit):
     """Toolkit exposing episodic memory as agent-callable tools.
 
-    Provides three tools for LLM agents:
+    Provides four tools for LLM agents:
     - search_episodic_memory: Semantic search over past experiences.
     - record_lesson: Explicitly record a lesson for future reference.
     - get_warnings: Retrieve relevant past failure warnings.
+    - cite_memory: Attribute delivered memories without reinforcing them.
 
     Args:
         store: The EpisodicMemoryStore instance.
@@ -64,21 +65,14 @@ class EpisodicMemoryToolkit(AbstractToolkit):
             Formatted list of relevant past experiences with lessons learned.
         """
         try:
-            results = await self._store.recall_similar(
-                query=query,
-                namespace=self._namespace,
-                top_k=top_k,
-                include_failures_only=failures_only,
-            )
+            results = await self._search(query, top_k=top_k, failures_only=failures_only)
 
             if not results:
                 return "No relevant past experiences found."
 
             lines = []
             for i, ep in enumerate(results, 1):
-                outcome_icon = (
-                    "FAIL" if ep.is_failure else "OK"
-                )
+                outcome_icon = "FAIL" if ep.is_failure else "OK"
                 line = f"{i}. [{outcome_icon}] {ep.situation[:120]}"
                 line += f"\n   Action: {ep.action_taken[:120]}"
                 if ep.lesson_learned:
@@ -136,19 +130,135 @@ class EpisodicMemoryToolkit(AbstractToolkit):
                 category=cat,
                 importance=max(1, min(10, importance)),
                 generate_reflection=False,
+                metadata={
+                    _EXPLICIT_LESSON_KEY: lesson,
+                    _EXPLICIT_REFLECTION_KEY: f"Agent explicitly recorded: {lesson}",
+                },
             )
-            # Set the lesson directly since we skipped reflection
-            episode.lesson_learned = lesson
-            episode.reflection = f"Agent explicitly recorded: {lesson}"
 
             return (
-                f"Lesson recorded (id: {episode.episode_id[:8]}). "
-                f"Category: {cat.value}, importance: {importance}."
+                f"Lesson recorded (id: {episode.episode_id[:8]}). " f"Category: {cat.value}, importance: {importance}."
             )
 
         except Exception as e:
             logger.warning("record_lesson failed: %s", e)
             return f"Error recording lesson: {e}"
+
+    async def cite_memory(self, episode_ids: list[str]) -> str:
+        """Cite delivered episode versions without selecting a review grade.
+
+        Args:
+            episode_ids: Episode identifiers present in the runtime-delivered memory exposure.
+
+        Returns:
+            A bounded acknowledgement, or a non-leaking rejection message.
+        """
+        scope = current_memory_scope()
+        exposure_id = current_memory_exposure()
+        if scope is None or exposure_id is None:
+            return "Error citing episodic memory: no runtime memory exposure is bound."
+
+        try:
+            namespace = MemoryNamespace(
+                tenant_id=scope.tenant_id,
+                agent_id=scope.agent_id,
+                user_id=scope.user_id,
+                session_id=scope.session_id,
+                room_id=scope.room_id,
+                crew_id=scope.crew_id,
+                model_id=scope.model_id,
+            )
+            if not self._namespace_allows(namespace):
+                raise ValueError("runtime memory scope does not match the toolkit namespace")
+            citation = await self._store.cite(episode_ids, namespace=namespace, exposure_id=exposure_id)
+            return f"Cited {len(citation.refs)} delivered episodic memories."
+        except Exception as exc:
+            logger.warning("cite_memory rejected runtime references: %s", exc)
+            return "Error citing episodic memory: one or more references are unavailable."
+
+    async def _search(self, query: str, *, top_k: int, failures_only: bool) -> list[EpisodeSearchResult]:
+        """Search what the caller may read.
+
+        Inside a request the bound memory scope decides: the requester's own episodes plus the
+        agent-level ones, never another user's, whatever the configured namespace is. Each scope is
+        filtered by the backend before its top-k and every returned episode is checked again. A
+        request outside the configured namespace gets nothing.
+        Outside a request the configured namespace is the caller's own choice and is used as is.
+        """
+        scope = current_memory_scope()
+        if scope is None:
+            return await self._store.recall_similar(
+                query=query,
+                namespace=self._namespace,
+                top_k=top_k,
+                include_failures_only=failures_only,
+            )
+
+        if not self._request_allowed(scope):
+            return []
+        visible: dict[str, EpisodeSearchResult] = {}
+        for namespace, null_dimensions in recall_scopes(scope):
+            rows = await self._store.recall_similar(
+                query=query,
+                namespace=namespace,
+                top_k=top_k,
+                include_failures_only=failures_only,
+                null_dimensions=null_dimensions,
+            )
+            for row in rows:
+                if visible_to_scope(row, scope):
+                    visible.setdefault(row.episode_id, row)
+
+        def _rank(row: EpisodeSearchResult) -> float:
+            return row.ranking_score if row.ranking_score is not None else row.score
+
+        return sorted(visible.values(), key=lambda row: (-_rank(row), row.episode_id))[:top_k]
+
+    def _warnings_namespace(self) -> MemoryNamespace | None:
+        """Pick the namespace whose failures the caller may read as warnings.
+
+        Inside a request that is the identified user's own episodes across sessions. A request
+        without a user gets none here: the cached failure lookup cannot require an unset user, and
+        the automatic context already carries the agent-level warnings. Outside a request the
+        configured namespace is used as is.
+        """
+        scope = current_memory_scope()
+        if scope is None:
+            return self._namespace
+        if scope.user_id is None or not self._request_allowed(scope):
+            return None
+        return recall_scopes(scope)[0][0]
+
+    def _request_allowed(self, scope: object) -> bool:
+        """Tell whether the bound request falls inside the toolkit's configured namespace.
+
+        The check is made once, on the request's own identity, the way ``cite_memory`` does. A
+        request that passes gets its whole recall visibility; one that fails gets nothing.
+        """
+        return self._namespace_allows(
+            MemoryNamespace(
+                tenant_id=scope.tenant_id,
+                agent_id=scope.agent_id,
+                user_id=scope.user_id,
+                session_id=scope.session_id,
+                room_id=scope.room_id,
+                crew_id=scope.crew_id,
+                model_id=scope.model_id,
+            )
+        )
+
+    def _namespace_allows(self, runtime_namespace: MemoryNamespace) -> bool:
+        """Require configured scope dimensions to agree with the runtime-derived scope."""
+        if (
+            self._namespace.tenant_id != runtime_namespace.tenant_id
+            or self._namespace.agent_id != runtime_namespace.agent_id
+        ):
+            return False
+        for field in ("user_id", "session_id", "room_id", "crew_id", "model_id"):
+            configured = getattr(self._namespace, field)
+            if configured is not None and configured != getattr(runtime_namespace, field):
+                return False
+        return True
 
     async def get_warnings(
         self,
@@ -167,8 +277,11 @@ class EpisodicMemoryToolkit(AbstractToolkit):
             or a message if no relevant warnings exist.
         """
         try:
+            namespace = self._warnings_namespace()
+            if namespace is None:
+                return "No relevant warnings from past experiences."
             warnings = await self._store.get_failure_warnings(
-                namespace=self._namespace,
+                namespace=namespace,
                 current_query=context if context else None,
             )
 

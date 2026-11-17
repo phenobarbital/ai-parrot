@@ -7,11 +7,12 @@ from typing import Any
 from parrot.security.credentials_utils import credential_context, decrypt_credential, encrypt_credential
 from parrot.security.vault_utils import get_vault_keyring, set_vault_credential_store
 
-from .repositories import _fetch_one
+from .repositories import _fetch_all, _fetch_one
 
 logger = logging.getLogger("Parrot.AgentStudio.Storage")
 
 _GET_SQL = "SELECT credential FROM navigator.ai_user_credentials WHERE user_id = $1 AND name = $2"
+_LIST_SQL = "SELECT name, credential FROM navigator.ai_user_credentials WHERE user_id = $1 ORDER BY name"
 _PUT_SQL = (
     "INSERT INTO navigator.ai_user_credentials (user_id, name, credential) VALUES ($1, $2, $3) "
     "ON CONFLICT (user_id, name) DO UPDATE SET credential = EXCLUDED.credential, updated_at = now() "
@@ -44,6 +45,26 @@ class PgVaultCredentialStore:
         """Hard-delete; absent is not an error."""
         async with self._pool.acquire() as conn:
             await _fetch_one(conn, _DELETE_SQL, str(user_id), vault_name)
+
+    async def list_credentials(self, user_id: Any) -> dict[str, dict[str, Any]]:
+        """Return decryptable credentials for one user, skipping invalid rows."""
+        async with self._pool.acquire() as conn:
+            rows = await _fetch_all(conn, _LIST_SQL, str(user_id))
+        credentials: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            name = row["name"]
+            try:
+                credentials[name] = decrypt_credential(
+                    row["credential"], credential_context(user_id, name), get_vault_keyring()
+                )
+            except Exception as exc:  # pylint: disable=broad-except
+                logger.warning("Skipping undecryptable credential '%s': %s", name, type(exc).__name__)
+        return credentials
+
+    async def exists(self, user_id: Any, vault_name: str) -> bool:
+        """Return whether a credential exists without decrypting it."""
+        async with self._pool.acquire() as conn:
+            return await _fetch_one(conn, _GET_SQL, str(user_id), vault_name) is not None
 
 
 _REGISTERED: "PgVaultCredentialStore | None" = None

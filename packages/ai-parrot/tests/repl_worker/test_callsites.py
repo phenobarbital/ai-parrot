@@ -58,11 +58,11 @@ def test_callsites_use_namespace_api():
 class TestPythonPandasToolWorkerSeeding:
     """`PythonPandasTool`'s `df_locals` -> worker-seeding port (TASK-1944)."""
 
-    async def test_dataframes_seeded_into_worker(self, tmp_path):
+    async def test_dataframes_seeded_into_worker(self, repl_output_dir):
         from parrot.tools.pythonpandas import PythonPandasTool
 
         df = pd.DataFrame({"a": [1, 2, 3]})
-        tool = PythonPandasTool(dataframes={"my_df": df}, report_dir=str(tmp_path))
+        tool = PythonPandasTool(dataframes={"my_df": df}, report_dir=str(repl_output_dir))
         try:
             names = await tool.list_vars()
             assert "my_df" in names
@@ -74,11 +74,11 @@ class TestPythonPandasToolWorkerSeeding:
             if tool._worker_pool is not None:
                 await tool._worker_pool.shutdown()
 
-    async def test_reset_environment_reseeds_dataframes(self, tmp_path):
+    async def test_reset_environment_reseeds_dataframes(self, repl_output_dir):
         from parrot.tools.pythonpandas import PythonPandasTool
 
         df = pd.DataFrame({"a": [1, 2, 3]})
-        tool = PythonPandasTool(dataframes={"my_df": df}, report_dir=str(tmp_path))
+        tool = PythonPandasTool(dataframes={"my_df": df}, report_dir=str(repl_output_dir))
         try:
             await tool.list_vars()  # trigger first seed
             tool.reset_environment()
@@ -89,11 +89,11 @@ class TestPythonPandasToolWorkerSeeding:
             if tool._worker_pool is not None:
                 await tool._worker_pool.shutdown()
 
-    async def test_session_clone_gets_isolated_worker(self, tmp_path):
+    async def test_session_clone_gets_isolated_worker(self, repl_output_dir):
         from parrot.tools.pythonpandas import PythonPandasTool
 
         df = pd.DataFrame({"a": [1, 2, 3]})
-        source = PythonPandasTool(dataframes={"my_df": df}, report_dir=str(tmp_path))
+        source = PythonPandasTool(dataframes={"my_df": df}, report_dir=str(repl_output_dir))
         clone = source.create_session_clone()
         try:
             assert clone._session_id != source._session_id
@@ -128,12 +128,12 @@ class TestE2EPandasAgent:
     """PandasAgent's ported methods (data.py) operate end-to-end over the
     namespace API against a real PythonPandasTool + worker (AC13)."""
 
-    async def test_get_repl_locals_snapshot(self, tmp_path):
+    async def test_get_repl_locals_snapshot(self, repl_output_dir):
         from parrot.bots.data import PandasAgent
         from parrot.tools.pythonpandas import PythonPandasTool
 
         df = pd.DataFrame({"a": [1, 2, 3]})
-        tool = PythonPandasTool(dataframes={"my_df": df}, report_dir=str(tmp_path))
+        tool = PythonPandasTool(dataframes={"my_df": df}, report_dir=str(repl_output_dir))
         host = _FakePandasAgentHost(tool)
         try:
             repl_locals = await PandasAgent._get_repl_locals(host)
@@ -143,14 +143,14 @@ class TestE2EPandasAgent:
             if tool._worker_pool is not None:
                 await tool._worker_pool.shutdown()
 
-    async def test_inject_data_from_variable(self, tmp_path):
+    async def test_inject_data_from_variable(self, repl_output_dir):
         from parrot.bots.data import PandasAgent
         from parrot.models.basic import CompletionUsage
         from parrot.models.responses import AIMessage
         from parrot.tools.pythonpandas import PythonPandasTool
 
         df = pd.DataFrame({"a": [1, 2, 3]})
-        tool = PythonPandasTool(dataframes={"my_df": df}, report_dir=str(tmp_path))
+        tool = PythonPandasTool(dataframes={"my_df": df}, report_dir=str(repl_output_dir))
         host = _FakePandasAgentHost(tool)
         response = AIMessage(
             input="q", output="a", model="test-model", provider="test", usage=CompletionUsage()

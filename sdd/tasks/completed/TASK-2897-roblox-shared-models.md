@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-532 - Luau/Roblox support for wikitoolkit
 **Spec**: `sdd/specs/wikitoolkit-luau-roblox.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (1-2h)
 **Depends-on**: none

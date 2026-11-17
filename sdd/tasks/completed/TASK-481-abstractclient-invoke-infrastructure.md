@@ -2,7 +2,7 @@
 
 **Feature**: lightweight-invoke-client-method
 **Spec**: `sdd/specs/lightweight-invoke-client-method.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-480

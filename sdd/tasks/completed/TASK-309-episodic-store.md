@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-045 (Episodic Memory Store v2)
 **Spec**: `sdd/specs/episodicmemorystore.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Effort**: L
 **Depends on**: TASK-304, TASK-305, TASK-306, TASK-307, TASK-308

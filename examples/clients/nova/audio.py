@@ -58,7 +58,7 @@ Then open http://localhost:8080 and hold the button (or the spacebar) to talk.
 
 Protocol reference
 ------------------
-See ``docs/nova_voice_protocol.md`` (FEAT-408) for the full Nova Sonic event
+See ``wiki/integrations/nova_voice_protocol.md`` (FEAT-408) for the full Nova Sonic event
 sequence this client drives, including how ``LiveVoiceResponse.role``
 distinguishes your transcription from the assistant's reply.
 """

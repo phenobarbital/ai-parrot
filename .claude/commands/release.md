@@ -66,7 +66,7 @@ judgment around it (CHANGELOG wording, safety gates, the publish decision).
    git rev-parse --abbrev-ref HEAD && git rev-parse --show-toplevel
    ```
    If HEAD is not `dev`/`staging`/`main`, or the toplevel is under
-   `.claude/worktrees/`, **abort** and say why.
+   the worktree root, **abort** and say why.
 4. The working tree must be clean:
    ```bash
    git status --porcelain

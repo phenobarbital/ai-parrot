@@ -1,5 +1,5 @@
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 class Applicant(BaseModel):
     """
@@ -117,5 +117,6 @@ class Applicant(BaseModel):
     # Raw SOAP response (excluded from DataFrame exports)
     raw_data: Optional[Dict[str, Any]] = Field(default_factory=dict, exclude=True)
     
-    class Config:
-        arbitrary_types_allowed = True 
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+    )

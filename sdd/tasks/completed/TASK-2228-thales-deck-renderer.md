@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-425 — "Thales" Research Flow with Structured Citations, Decks & Final Report
 **Spec**: `sdd/specs/agentcrew-tales-research.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2226

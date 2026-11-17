@@ -119,6 +119,9 @@ async def run_local_scenario(
                     predicted=predicted_label(case, result, config) if result.status == "ok" else None,
                     status=result.status,
                     error_code=result.error_code,
+                    error_message=result.error_message,
+                    answers=result.answers,
+                    split=case.split,
                     timings_ms={
                         "inference_ms": result.inference_ms,
                         "roundtrip_ms": result.roundtrip_ms,

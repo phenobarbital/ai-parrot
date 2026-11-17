@@ -1,0 +1,20 @@
+## 0. Origin
+
+The full source is at `sdd/state/FEAT-773/source.md` (338 lines). Excerpt of the problem statement:
+
+> Users cannot connect their own Office 365, Jira or any other OAuth2 (3LO) service from the AgentChat UI, and the delegated-auth logic that does exist is implemented three times, each tied to one channel. […] 1. No single place to add a provider or a channel. 2. Connections are channel-bound. A Jira account connected from Telegram is invisible to the same user on the web, because the vault key carries the channel, not the platform principal. 3. Two "needs auth" protocols. Toolkits raise `AuthorizationRequired`; the MCP path was designed around `NeedsAuthorizationError`.
+
+**Initial signals** (extracted, not interpreted):
+- Verbs: "connect", "add", "implement", "migrate", "retire", "verify" → additive, feature-shaped (enrichment)
+- Named entities: `JiraOAuthManager`, `CredentialResolver`, `AuthorizationRequired`, `OAuthManager`, `WebOAuthManager`, `NeedsAuthorizationError`, `O365AuthMode`, `user_socket_manager`, `navigator-eventbus`, `PermissionContext`, `add_oauth_mcp_server`, `/connect_jira`, "session vault"
+- Components: core (`ai-parrot`), server, integrations, tools, Svelte UI
+- Acceptance criteria provided: yes — per-spec exit criteria in the brainstorm's §8 (S-1 … S-3b)
+- Research mandate provided: yes — R1 (vault/identity), R2 (Jira path), R3 (MCP), R4 (server), R5 (UI), R6 (external provider facts)
+
+---
+
+## 1. Synthesis Summary
+
+The brainstorm asks for one generic OAuth2 3LO "connections" implementation keyed by platform principal, consumed by web, Telegram and MS Teams, with one needs-auth contract and event-driven completion. The codebase already contains the generic engine (`parrot/auth/oauth2_base.py::AbstractOAuth2Manager` — PKCE S256, Redis nonce state, vault+Redis persistence, lock-protected rotating refresh), the provider registry (`parrot/auth/oauth2/registry.py::OAuth2ProviderRegistry`), a web connections service and its API contracts (`parrot/auth/oauth2/service.py::IntegrationsService`, `models.py`), a generic per-provider callback (`parrot/auth/oauth2_routes.py::make_oauth2_callback`), a per-user credential broker (`parrot/auth/broker/core.py::CredentialBroker`), a principal-keyed durable store for Jira (navigator-auth Identity Vault via `services/identity_credential_sink.py`, decided 2026-10-23), and channel commands plus notifiers for Telegram, Slack **and** Teams. What is genuinely missing is the *principal keying* (every hot cache and vault name still embeds the channel), the Jira manager sitting outside the generic engine, a user-level (not agent-scoped, not web-only) connections view, a single needs-auth conversion for both `AuthorizationRequired` and `CredentialRequired`, and a notification path that does not call channel code from the callback. With the five decisions taken in §5 (Navigator `user_id` as primary key with OID/email as secondary, full reversal of FEAT-144's per-agent model, forced re-connect for unlinked Telegram users, evolve `parrot.auth.oauth2` in place, notifier registry plus publish-only bus), the recommendation is to proceed to `/sdd-spec` with the four-spec split re-mapped onto the existing modules (§3).
+
+---

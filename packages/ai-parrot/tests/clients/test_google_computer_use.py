@@ -17,10 +17,8 @@ class _MockComputerUseConfig:
 class TestIsComputerUseModel:
     """Tests for GoogleGenAIClient._is_computer_use_model()."""
 
-    def test_computer_use_preview_model(self):
-        assert GoogleGenAIClient._is_computer_use_model(
-            "gemini-2.5-computer-use-preview-10-2025"
-        ) is True
+    def test_retired_computer_use_preview_model(self):
+        assert GoogleGenAIClient._is_computer_use_model("gemini-2.5-computer-use-preview-10-2025") is False
 
     def test_gemini_3_flash_preview(self):
         assert GoogleGenAIClient._is_computer_use_model("gemini-3-flash-preview") is True
@@ -41,16 +39,18 @@ class TestIsComputerUseModel:
 class TestRequiresThinkingComputerUse:
     """Tests that computer-use models require thinking mode."""
 
-    def test_computer_use_requires_thinking(self):
-        assert GoogleGenAIClient._requires_thinking(
-            "gemini-2.5-computer-use-preview-10-2025"
-        ) is True
+    def test_computer_use_model_requires_thinking(self):
+        assert GoogleGenAIClient._requires_thinking("gemini-3-flash-preview") is True
+
+    def test_retired_computer_use_preview_no_longer_forces_thinking(self):
+        """FEAT-798: the shut-down 2.5 computer-use id is no longer routed as computer-use."""
+        assert GoogleGenAIClient._requires_thinking("gemini-2.5-computer-use-preview-10-2025") is False
 
     def test_regular_model_no_thinking(self):
         assert GoogleGenAIClient._requires_thinking("gemini-2.5-flash") is False
 
     def test_pro_model_requires_thinking(self):
-        assert GoogleGenAIClient._requires_thinking("gemini-2.5-pro") is True
+        assert GoogleGenAIClient._requires_thinking("gemini-3.1-pro-preview") is True
 
 
 class TestBuildToolsComputerUse:
@@ -226,18 +226,17 @@ class TestZeroThinkingBudgetRejection:
     def test_pro_family_still_rejects_zero(self):
         """The predicate is a superset of _requires_thinking."""
         from parrot.clients.google.client import GoogleGenAIClient
-        for model in ("gemini-2.5-pro", "gemini-3.1-pro-preview"):
+        for model in ("gemini-3.1-pro-preview",):
             assert GoogleGenAIClient._rejects_zero_thinking_budget(model) is True
 
     def test_other_flash_tiers_accept_zero(self):
         """Every other tested flash tier takes 0 — do not widen this by guess."""
         from parrot.clients.google.client import GoogleGenAIClient
         for model in (
-            "gemini-2.5-flash",
+            "gemini-3.8-flash",
             "gemini-2.5-flash-lite",
             "gemini-3.1-flash-lite",
             "gemini-3.5-flash",
-            "gemini-3.8-flash",
         ):
             assert GoogleGenAIClient._rejects_zero_thinking_budget(model) is False, model
 
@@ -249,7 +248,7 @@ class TestZeroThinkingBudgetRejection:
         """The helper returns None so the caller omits the field entirely."""
         from parrot.clients.google.client import GoogleGenAIClient
         assert GoogleGenAIClient._thinking_off("gemini-3.5-flash-lite") is None
-        assert GoogleGenAIClient._thinking_off("gemini-2.5-pro") is None
+        assert GoogleGenAIClient._thinking_off("gemini-3.1-pro-preview") is None
 
     def test_thinking_off_disables_for_normal_model(self):
         from parrot.clients.google.client import GoogleGenAIClient

@@ -201,7 +201,7 @@ class TestHandlePhotoRefactor:
         wrapper._check_authentication = AsyncMock(return_value=True)
         wrapper._get_or_create_memory = MagicMock(return_value=memory)
         wrapper._get_user_session = MagicMock(return_value=session)
-        wrapper._invoke_agent = AsyncMock(return_value="agent_response")
+        wrapper._invoke_agent = AsyncMock(return_value=("agent_response", []))
         wrapper._parse_response = MagicMock(return_value=MagicMock())
         wrapper._send_parsed_response = AsyncMock()
 

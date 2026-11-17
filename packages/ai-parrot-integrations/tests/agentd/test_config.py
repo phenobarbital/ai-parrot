@@ -20,10 +20,10 @@ class TestConfig:
     def test_yaml_roundtrip(self, tmp_path):
         yaml_path = tmp_path / "agentd.yaml"
         yaml_path.write_text(
-            """
+            f"""
 name: my-agent
 agent:
-  target: "tests.agentd.fakes:EchoAgent"
+  target: "{__package__}.fakes:EchoAgent"
   kwargs:
     name: "yaml-echo"
 scheduler:
@@ -41,7 +41,7 @@ shutdown_grace: 5.0
         cfg = AgentServiceConfig.from_yaml(yaml_path)
 
         assert cfg.name == "my-agent"
-        assert cfg.agent.target == "tests.agentd.fakes:EchoAgent"
+        assert cfg.agent.target == f"{__package__}.fakes:EchoAgent"
         assert cfg.agent.kwargs == {"name": "yaml-echo"}
         assert cfg.scheduler.enabled is True
         assert cfg.scheduler.dsn == "postgres://user:pass@localhost/db"
@@ -54,7 +54,7 @@ shutdown_grace: 5.0
     def test_defaults(self, tmp_path):
         yaml_path = tmp_path / "minimal.yaml"
         yaml_path.write_text(
-            'name: minimal\nagent:\n  target: "tests.agentd.fakes:EchoAgent"\n'
+            f'name: minimal\nagent:\n  target: "{__package__}.fakes:EchoAgent"\n'
         )
 
         cfg = AgentServiceConfig.from_yaml(yaml_path)
@@ -68,25 +68,25 @@ shutdown_grace: 5.0
 
     def test_from_target_builds_config_without_yaml(self):
         cfg = AgentServiceConfig.from_target(
-            "tests.agentd.fakes:EchoAgent", name="cli-agent", log_level="WARNING"
+            f"{__package__}.fakes:EchoAgent", name="cli-agent", log_level="WARNING"
         )
 
         assert cfg.name == "cli-agent"
-        assert cfg.agent.target == "tests.agentd.fakes:EchoAgent"
+        assert cfg.agent.target == f"{__package__}.fakes:EchoAgent"
         assert cfg.log_level == "WARNING"
 
     def test_bad_name_rejected(self):
         with pytest.raises(ValueError):
             AgentServiceConfig(
                 name="bad/name",
-                agent=AgentTargetConfig(target="tests.agentd.fakes:EchoAgent"),
+                agent=AgentTargetConfig(target=f"{__package__}.fakes:EchoAgent"),
             )
 
     def test_empty_name_rejected(self):
         with pytest.raises(ValueError):
             AgentServiceConfig(
                 name="",
-                agent=AgentTargetConfig(target="tests.agentd.fakes:EchoAgent"),
+                agent=AgentTargetConfig(target=f"{__package__}.fakes:EchoAgent"),
             )
 
 
@@ -164,7 +164,7 @@ class TestExpandEnvVars:
         monkeypatch.setenv("MY_LOG_LEVEL", "WARNING")
         yaml_path = tmp_path / "cfg.yaml"
         yaml_path.write_text(
-            'name: test\nagent:\n  target: "tests.agentd.fakes:EchoAgent"\n'
+            f'name: test\nagent:\n  target: "{__package__}.fakes:EchoAgent"\n'
             'log_level: "${MY_LOG_LEVEL:-INFO}"\n'
         )
         cfg = AgentServiceConfig.from_yaml(yaml_path)
@@ -175,7 +175,7 @@ class TestExpandEnvVars:
         monkeypatch.setenv("OBSIDIAN_VAULT_PATH", "/home/test/vault")
         yaml_path = tmp_path / "cfg.yaml"
         yaml_path.write_text(
-            'name: test\nagent:\n  target: "tests.agentd.fakes:EchoAgent"\n'
+            f'name: test\nagent:\n  target: "{__package__}.fakes:EchoAgent"\n'
             "  kwargs:\n    vault_path: OBSIDIAN_VAULT_PATH\n"
         )
         cfg = AgentServiceConfig.from_yaml(yaml_path)
@@ -201,7 +201,7 @@ class TestDefaultSocketPath:
 class TestResolveAgent:
     async def test_class_target(self):
         cfg = AgentTargetConfig(
-            target="tests.agentd.fakes:EchoAgent", kwargs={"name": "class-target"}
+            target=f"{__package__}.fakes:EchoAgent", kwargs={"name": "class-target"}
         )
 
         agent = await resolve_agent(cfg)
@@ -210,7 +210,7 @@ class TestResolveAgent:
         assert agent.configured is True
 
     async def test_instance_target(self):
-        cfg = AgentTargetConfig(target="tests.agentd.fakes:echo_instance")
+        cfg = AgentTargetConfig(target=f"{__package__}.fakes:echo_instance")
 
         agent = await resolve_agent(cfg)
 
@@ -219,7 +219,7 @@ class TestResolveAgent:
 
     async def test_sync_factory_target(self):
         cfg = AgentTargetConfig(
-            target="tests.agentd.fakes:make_echo_agent",
+            target=f"{__package__}.fakes:make_echo_agent",
             kwargs={"name": "sync-factory"},
         )
 
@@ -230,7 +230,7 @@ class TestResolveAgent:
 
     async def test_async_factory_target(self):
         cfg = AgentTargetConfig(
-            target="tests.agentd.fakes:make_echo_agent_async",
+            target=f"{__package__}.fakes:make_echo_agent_async",
             kwargs={"name": "async-factory"},
         )
 
@@ -240,13 +240,13 @@ class TestResolveAgent:
         assert agent.configured is True
 
     async def test_missing_module_raises(self):
-        cfg = AgentTargetConfig(target="tests.agentd.does_not_exist:EchoAgent")
+        cfg = AgentTargetConfig(target=f"{__package__}.does_not_exist:EchoAgent")
 
         with pytest.raises(AgentTargetError):
             await resolve_agent(cfg)
 
     async def test_missing_attr_raises(self):
-        cfg = AgentTargetConfig(target="tests.agentd.fakes:DoesNotExist")
+        cfg = AgentTargetConfig(target=f"{__package__}.fakes:DoesNotExist")
 
         with pytest.raises(AgentTargetError):
             await resolve_agent(cfg)

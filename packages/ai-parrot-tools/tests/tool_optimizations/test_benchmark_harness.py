@@ -22,7 +22,7 @@ from benchmarks.tool_optimizations.runner import run, summarize, write_reports  
 from benchmarks.tool_optimizations.scenarios import SCENARIOS  # noqa: E402
 from parrot_tools.tool_optimizations.hooks import coverage_matrix  # noqa: E402
 
-DOC = ROOT / "docs" / "tool-optimizations.md"
+DOC = ROOT / "wiki" / "tools" / "tool-optimizations.md"
 REPORT_DIR = ROOT / "artifacts" / "tool-optimizations" / "benchmarks"
 
 
@@ -166,7 +166,7 @@ def test_docs_record_tested_host_versions_and_bypasses():
 
 def test_docs_are_linked_from_the_mcp_page():
     """The new page must be discoverable from the existing one."""
-    assert "tool-optimizations.md" in (ROOT / "docs" / "mcp-local-toolkits.md").read_text()
+    assert "tool-optimizations.md" in (ROOT / "wiki" / "tools" / "mcp-local-toolkits.md").read_text()
 
 
 def test_docs_state_the_codex_release_blocker():

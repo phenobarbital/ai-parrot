@@ -5,15 +5,11 @@ Data models for Telegram bot configuration.
 import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Dict, List, Optional, Any
+from urllib.parse import urlsplit
 from navconfig import config
 from parrot.integrations.knowledge_upload.models import KnowledgeUploadConfig
 
 logger = logging.getLogger(__name__)
-
-# Known providers that can be referenced from YAML ``post_auth_actions``.
-# This is a soft allow-list used only by ``TelegramBotsConfig.validate()`` to
-# emit a warning; the actual registry of providers is populated at runtime.
-_KNOWN_POST_AUTH_PROVIDERS = frozenset({"jira"})
 
 if TYPE_CHECKING:
     from parrot.voice.transcriber import VoiceTranscriberConfig
@@ -95,6 +91,14 @@ class TelegramAgentConfig:
     # FEAT-109: multi-method list. When set, takes priority over auth_method.
     # Populated by __post_init__ from auth_method when not explicitly set.
     auth_methods: List[str] = field(default_factory=list)
+    # FEAT-854: auth presentation mode. "webview" (default) = WebApp button +
+    # Telegram.WebApp.sendData(); "browser" = inline URL button opened in the
+    # system browser + server-side completion endpoints.
+    auth_open_mode: str = "webview"
+    # FEAT-854: public base URL of the parrot server (e.g. "https://parrot.example").
+    # Required in browser mode to build absolute completion URLs. Formalizes the
+    # getattr(config, "public_base_url", "") reads in wrapper.py.
+    public_base_url: Optional[str] = None
     # OAuth2 settings (used when auth_method="oauth2")
     oauth2_provider: str = "google"
     oauth2_client_id: Optional[str] = None
@@ -109,6 +113,8 @@ class TelegramAgentConfig:
     voice_config: Optional["VoiceTranscriberConfig"] = None
     # Post-authentication actions (secondary auth providers chained after primary)
     post_auth_actions: List[PostAuthAction] = field(default_factory=list)
+    # FEAT-776: optional allowlist of connectable providers for /connect (None = every connectable provider).
+    connection_providers: Optional[List[str]] = None
     # Per-user agent isolation.
     # True  (default): the wrapper keeps one shared agent instance and
     #                  hands each user a private clone of the agent's
@@ -137,6 +143,9 @@ class TelegramAgentConfig:
     knowledge_upload: KnowledgeUploadConfig = field(default_factory=KnowledgeUploadConfig)
     # Reply context enrichment (FEAT-120)
     enable_reply_context: bool = True
+    # Follow-up suggestion chips as inline buttons (FEAT-752) — opt-in.
+    suggestion_buttons: bool = False
+    suggestion_button_ttl_s: int = 86400
     # Operator commands (FEAT-210)
     # Allowlist of chat IDs that may execute operator commands.
     # Fail-closed: None (or empty) means NO chat is an operator.
@@ -223,6 +232,21 @@ class TelegramAgentConfig:
                     base = base.rsplit("/", 1)[0]
                 self.google_auth_url = f"{base}/google/"
 
+        # FEAT-854: validate the auth presentation mode.
+        _ALLOWED_OPEN_MODES = {"webview", "browser"}
+        if self.auth_open_mode not in _ALLOWED_OPEN_MODES:
+            raise ValueError(
+                f"Agent '{self.name}': auth_open_mode must be one of "
+                f"{sorted(_ALLOWED_OPEN_MODES)}, got {self.auth_open_mode!r}"
+            )
+        if self.auth_open_mode == "browser":
+            public_base_url = self.public_base_url.strip() if isinstance(self.public_base_url, str) else ""
+            parsed_public_base_url = urlsplit(public_base_url)
+            if parsed_public_base_url.scheme not in {"http", "https"} or not parsed_public_base_url.netloc:
+                raise ValueError(
+                    f"Agent '{self.name}': browser mode requires public_base_url to be an absolute http(s) URL"
+                )
+
     @property
     def voice_enabled(self) -> bool:
         """Return True if voice transcription is configured and enabled."""
@@ -285,6 +309,8 @@ class TelegramAgentConfig:
             force_authentication=data.get("force_authentication", False),
             auth_method=data.get("auth_method", "basic"),
             auth_methods=auth_methods,
+            auth_open_mode=data.get("auth_open_mode", "webview"),
+            public_base_url=data.get("public_base_url"),
             oauth2_provider=data.get("oauth2_provider", "google"),
             oauth2_client_id=data.get("oauth2_client_id"),
             oauth2_client_secret=data.get("oauth2_client_secret"),
@@ -294,11 +320,16 @@ class TelegramAgentConfig:
             google_auth_url=data.get("google_auth_url"),
             voice_config=voice_config,
             post_auth_actions=post_auth_actions,
+            connection_providers=(
+                list(data["connection_providers"]) if data.get("connection_providers") is not None else None
+            ),
             singleton_agent=bool(data.get("singleton_agent", True)),
             agent_timeout=float(data.get("agent_timeout", 120.0)),
             max_document_size_mb=int(data.get("max_document_size_mb", 20)),
             knowledge_upload=KnowledgeUploadConfig.model_validate(data.get("knowledge_upload") or {}),
             enable_reply_context=bool(data.get("enable_reply_context", True)),
+            suggestion_buttons=bool(data.get("suggestion_buttons", False)),
+            suggestion_button_ttl_s=int(data.get("suggestion_button_ttl_s", 86400)),
             operator_chat_ids=[int(x) for x in data["operator_chat_ids"]] if data.get("operator_chat_ids") else None,
             enable_operator_commands=bool(data.get("enable_operator_commands", True)),
             # FEAT-213: TTS voice reply (opt-in, defaults match dataclass defaults)
@@ -404,12 +435,13 @@ class TelegramBotsConfig:
 
             # Soft warning for unknown post_auth_actions providers.
             # Providers are registered at runtime, so we can't hard-fail here.
+            from parrot.auth.oauth2.registry import OAuth2ProviderRegistry
+
+            provider_registry = OAuth2ProviderRegistry()
             for action in agent_config.post_auth_actions:
-                if action.provider not in _KNOWN_POST_AUTH_PROVIDERS:
+                if provider_registry.get(action.provider) is None:
                     logger.warning(
-                        "Agent '%s': post_auth_actions references unknown "
-                        "provider '%s'. Ensure a PostAuthProvider is "
-                        "registered for it at runtime.",
+                        "Agent '%s': post_auth_actions provider '%s' is not a " "registered provider at startup.",
                         name,
                         action.provider,
                     )

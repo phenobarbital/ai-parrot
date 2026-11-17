@@ -9,6 +9,7 @@ FEAT-111 addition: ``TraceEntry`` gains an optional ``store_rankings`` field
 store-level detail when the ``StoreRouter`` is active.  The field defaults to
 ``None`` so all existing code that builds ``TraceEntry`` objects is unaffected.
 """
+
 from __future__ import annotations
 
 from enum import Enum
@@ -19,7 +20,7 @@ from pydantic import BaseModel, Field
 if TYPE_CHECKING:
     # Forward reference only — avoids a runtime circular import between
     # parrot.registry.capabilities.models and parrot.registry.routing.
-    from parrot.registry.routing.models import StoreScore as _StoreScore
+    pass
 
 
 class ResourceType(str, Enum):
@@ -30,6 +31,7 @@ class ResourceType(str, Enum):
     GRAPH_NODE = "graph_node"
     PAGEINDEX = "pageindex"
     VECTOR_COLLECTION = "vector_collection"
+    AGENT = "agent"  # FEAT-747: a registered agent's advertised capability (Roost directory)
 
 
 class RoutingType(str, Enum):
@@ -58,13 +60,9 @@ class CapabilityEntry(BaseModel):
     """
 
     name: str = Field(..., description="Unique name of the capability")
-    description: str = Field(
-        ..., description="Human-readable description (used for embedding)"
-    )
+    description: str = Field(..., description="Human-readable description (used for embedding)")
     resource_type: ResourceType
-    embedding: Optional[list[float]] = Field(
-        default=None, description="Pre-computed embedding vector"
-    )
+    embedding: Optional[list[float]] = Field(default=None, description="Pre-computed embedding vector")
     metadata: dict[str, Any] = Field(default_factory=dict)
     not_for: list[str] = Field(
         default_factory=list,
@@ -215,9 +213,14 @@ class IntentRouterConfig(BaseModel):
     )
     output_mode_routes: dict[str, list[str]] = Field(
         default_factory=dict,
+        description="Phrase bank: OutputMode value (str) or 'a2ui:<Component>' -> reference utterances.",
+    )
+    tenant_output_mode_routes: dict[str, dict[str, list[str]]] = Field(
+        default_factory=dict,
         description=(
-            "Phrase bank: OutputMode value (str) -> reference utterances. "
-            "Keys are OutputMode *values* (e.g. 'structured_chart')."
+            "FEAT-755: per-tenant phrase banks, tenant id -> (label -> utterances). "
+            "Built by route_bank.resolve_route_banks(); each entry becomes its own "
+            "EmbeddingIntentRouter sharing the global router's encoder."
         ),
     )
     output_mode_threshold: float = Field(

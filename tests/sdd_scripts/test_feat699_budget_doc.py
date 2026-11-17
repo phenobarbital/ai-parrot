@@ -5,7 +5,7 @@ import re
 
 
 def test_measured_budgets_reported():
-    doc_path = Path(__file__).resolve().parents[2] / "docs/sdd/test-selection-validation-contract.md"
+    doc_path = Path(__file__).resolve().parents[2] / "wiki/sdd-tooling/sdd/test-selection-validation-contract.md"
     assert doc_path.exists(), f"Documentation file {doc_path} missing"
 
     content = doc_path.read_text(encoding="utf-8")

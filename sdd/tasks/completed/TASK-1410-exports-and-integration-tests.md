@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-213 — Telegram Voice Reply (TTS Output)
 **Spec**: `sdd/specs/FEAT-213-telegram-voice-reply-tts.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-1407, TASK-1408, TASK-1409

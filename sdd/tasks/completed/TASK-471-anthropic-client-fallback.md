@@ -2,7 +2,7 @@
 
 **Feature**: abstractbot-ask-clientretry
 **Spec**: `sdd/specs/abstractbot-ask-clientretry.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-469

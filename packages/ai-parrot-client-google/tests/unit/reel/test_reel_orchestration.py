@@ -20,6 +20,7 @@ from parrot.clients.google.generation import GoogleGeneration
 from parrot.clients.google.reel.clip import GeneratedReelClip
 from parrot.clients.google.reel.errors import ReelErrorCode, ReelValidationError
 from parrot.clients.google.reel.music import MusicOutcome
+from parrot.clients.google.reel.profiles import VideoModelProfile, VideoProfileRegistry
 from parrot.models.google import VideoReelRequest, VideoReelScene
 
 
@@ -168,8 +169,24 @@ class TestDirectorUsageAndWarnings:
             assert call.kwargs["model"] == "gemini-3.1-flash-image-preview"
 
 
+@pytest.fixture
+def veo_and_omni_registry(veo_test_profile: VideoModelProfile):
+    """Patches ``VideoProfileRegistry.default`` to add the test Veo profile.
+
+    The production registry has no enabled Veo profile any more, so a mixed
+    Veo/Omni reel is only expressible with the test-only Veo entry next to
+    the real default Omni profile.
+    """
+    omni = VideoProfileRegistry.default().resolve("gemini-omni-1.1-flash", "gemini_developer")
+    registry = VideoProfileRegistry([veo_test_profile, omni])
+    with patch.object(VideoProfileRegistry, "default", return_value=registry):
+        yield registry
+
+
 class TestMixedVeoOmniDispatch:
-    async def test_scene_video_model_override_dispatches_to_omni(self, gg, tmp_path, fake_file_manager, mock_assemble):
+    async def test_scene_video_model_override_dispatches_to_omni(
+        self, gg, tmp_path, fake_file_manager, mock_assemble, veo_and_omni_registry
+    ):
         scenes = [
             VideoReelScene(background_prompt="a", video_prompt="x", duration=5.0),
             VideoReelScene(background_prompt="b", video_prompt="y", duration=5.0, video_model="gemini-omni-1.1-flash"),

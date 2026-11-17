@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-468 — UI Server Backend — Embedded Admin UI Foundation
 **Spec**: `sdd/specs/ui-server-backend.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: none

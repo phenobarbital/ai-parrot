@@ -11,7 +11,7 @@
   (no client-side flow implemented yet) render disabled with a tooltip.
 
   BasicAuth is always excluded — the login form on this page already
-  covers it.
+  covers it. PasskeyAuth is likewise rendered by PasskeySignIn.
 -->
 <script lang="ts">
   import { config } from "$lib/config";
@@ -38,11 +38,17 @@
     return typeof header === "string" && header.toLowerCase() === "basicauth";
   }
 
+  /** PasskeyAuth gets its own control (PasskeySignIn) — never a generic provider button (FEAT-772). */
+  function isPasskeyAuth(info: AuthMethodInfo): boolean {
+    const header = info.headers?.["x-auth-method"];
+    return typeof header === "string" && header.toLowerCase() === "passkeyauth";
+  }
+
   const providers = $derived(
     methods
       ? Object.entries(methods)
           .map(([key, info]) => ({ key, info }))
-          .filter(({ info }) => !isBasicAuth(info))
+          .filter(({ info }) => !isBasicAuth(info) && !isPasskeyAuth(info))
       : [],
   );
 </script>

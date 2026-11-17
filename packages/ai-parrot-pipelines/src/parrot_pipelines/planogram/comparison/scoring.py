@@ -344,6 +344,12 @@ def score_shelves(
     scores: List[ShelfScore] = []
     for shelf in definition.shelves:
         scoped = [b for b in bindings if target_shelf.get(b.target_id) == shelf.shelf_id]
+        zones = [zone for zone in definition.zones if zone.shelf_id == shelf.shelf_id]
+        if not shelf.facings and not scoped and zones and all(not zone.required for zone in zones):
+            # An optional zone with no bound requirements contributes no score.
+            # Its synthetic empty shelf must not turn an otherwise compliant
+            # promotional display into a failure.
+            continue
         # fact_tag_present is informative (FEAT-624): it never enters a score, coverage or status term.
         shelf_bindings = [b for b in scoped if b.kind != "fact_tag_present"]
         info_results = [

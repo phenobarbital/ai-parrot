@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-525 — Per-Turn Conversation Compaction
 **Spec**: `sdd/specs/per-turn-conversation-compaction.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2823, TASK-2824, TASK-2826, TASK-2828, TASK-2829

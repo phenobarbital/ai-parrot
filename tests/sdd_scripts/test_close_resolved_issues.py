@@ -98,7 +98,7 @@ def test_closes_only_when_both_keys_hold(worktree: Path) -> None:
     # Spec-linked issue covers TASK-12, which is only "partial".
     assert by_id[ISSUE_SPEC].outcome == "skipped" and "TASK-12" in by_id[ISSUE_SPEC].detail
     assert [c[1] for c in ledger.closed] == [ISSUE_A]
-    assert ledger.closed[0][-2:] == ["--resolved-by", "task:TASK-10"]
+    assert ledger.closed[0][-3:] == ["--resolved-by", "task:TASK-10", "--force"]
 
 
 def test_already_closed_issue_is_left_alone(worktree: Path) -> None:

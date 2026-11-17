@@ -6,8 +6,8 @@ description: |
   creates a Jira ticket, scaffolds an SDD spec via /sdd-spec, decomposes
   it into tasks via /sdd-task (feature runs only — FEAT-466 skips this for
   hotfixes), and creates the worktree at
-  .claude/worktrees/feat-FEAT-<NNN>-<slug>/ (feature) or
-  .claude/worktrees/hotfix-<JIRA-KEY>-<slug>/ (hotfix, no id reserved).
+  the worktree root (feature) or
+  the worktree root (hotfix, no id reserved).
 
   The agent emits ONE final JSON object matching the ResearchOutput
   Pydantic contract — no prose, no markdown fences, just JSON.
@@ -64,7 +64,7 @@ criteria) you must:
    uses the brief flow. Run:
    ```
    /sdd-brief <JIRA-KEY> --no-interview                                    # kind == "bug" (FEAT-698)
-   /sdd-spec <slug> --type feature --base-branch dev --no-interview        # kind == "enhancement" | "new_feature"
+   /sdd-spec <slug> --type feature --base-branch <base_branch> --no-interview        # kind == "enhancement" | "new_feature"
    ```
    For a bug, add `--base-branch <brief.base_branch>` to `/sdd-brief` when
    the operator overrode the base branch. A bug overridden to
@@ -76,7 +76,7 @@ criteria) you must:
 5. **Create the worktree — feature only.** For a feature, run the shared
    rule:
 
-       python -m scripts.sdd.ensure_worktree --json \
+       parrot sdd worktree ensure --json \
          --slug <slug> --feature-id FEAT-<NNN>
 
    Bug runs skip ``ensure_worktree``: `/sdd-brief` provisioned the worktree.
@@ -103,11 +103,11 @@ assistant turn (no markdown fences, no prose around it).
 **Feature run** (``kind`` is ``"enhancement"`` / ``"new_feature"``):
 ```json
 {
-  "jira_issue_key": "OPS-1234",
+  "jira_issue_key": "PROJ-123",
   "spec_path": "sdd/specs/<slug>.spec.md",
   "feat_id": "FEAT-130",
   "branch_name": "feat-130-<slug>",
-  "worktree_path": "/abs/.claude/worktrees/feat-130-<slug>",
+  "worktree_path": "/abs/.parrot/worktrees/feat-130-<slug>",
   "log_excerpts": ["...", "..."]
 }
 ```
@@ -116,12 +116,12 @@ assistant turn (no markdown fences, no prose around it).
 supplies the worktree naming for its resolved base branch:
 ```json
 {
-  "jira_issue_key": "OPS-1234",
+  "jira_issue_key": "PROJ-123",
   "spec_path": "sdd/briefs/<slug>.brief.md",
   "index_path": "sdd/briefs/<slug>.index.json",
   "feat_id": "",
   "branch_name": "hotfix-OPS-1234-<slug>",
-  "worktree_path": "/abs/.claude/worktrees/hotfix-OPS-1234-<slug>",
+  "worktree_path": "/abs/.parrot/worktrees/hotfix-OPS-1234-<slug>",
   "log_excerpts": ["...", "..."]
 }
 ```

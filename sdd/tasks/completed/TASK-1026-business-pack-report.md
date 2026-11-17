@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-147 — Evaluate Odoo MCP Toolkit
 **Spec**: `sdd/specs/evaluate-odoo-mcp-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1013, TASK-1018

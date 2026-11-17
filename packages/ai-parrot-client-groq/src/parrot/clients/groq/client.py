@@ -733,6 +733,7 @@ class GroqClient(OpenAIBaseClient):
             input_tokens=getattr(_lc_groq_usage, "prompt_tokens", None) if _lc_groq_usage else None,
             output_tokens=getattr(_lc_groq_usage, "completion_tokens", None) if _lc_groq_usage else None,
             finish_reason=None,
+            usage=_lc_groq_usage,
         )
         return ai_message
 
@@ -873,6 +874,7 @@ class GroqClient(OpenAIBaseClient):
             input_tokens=getattr(_lc_groqs_usage, "prompt_tokens", None) if _lc_groqs_usage else None,
             output_tokens=getattr(_lc_groqs_usage, "completion_tokens", None) if _lc_groqs_usage else None,
             finish_reason=None,
+            usage=_lc_groqs_usage,
         )
         yield ai_message
 

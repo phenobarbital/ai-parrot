@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-439 — ONNX Backend for the Prompt-Injection Guardrail
 **Spec**: `sdd/specs/onnx-injection-guardrail-backend.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: none

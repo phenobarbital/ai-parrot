@@ -11,11 +11,12 @@ from typing import Dict, Any, List, Optional, Union, TYPE_CHECKING
 from pydantic import ValidationError
 from navconfig.logging import logging
 from ..tools.manager import ToolManager
-from ..tools.dataset_manager import DatasetManager
+from ..tools.dataset_manager import DatasetEntry, DatasetManager
+from ..tools.dataset_manager.sources import request_scoped_copy
 from ..models import ToolConfig
 from ..mcp.integration import MCPServerConfig
 from parrot.auth.oauth2.registry import OAuth2ProviderRegistry
-from parrot.auth.oauth2.persistence import list_user_agent_toolkits
+from parrot.auth.oauth2.persistence import list_users_integrations
 from ..auth.credentials import OAuthCredentialResolver
 
 if TYPE_CHECKING:
@@ -122,7 +123,7 @@ class UserObjectsHandler:
             agent_name: Agent name used to namespace the session key
             user_id: Authenticated user identifier used for cold-session
                 hydration (optional; hydration skipped when absent).
-            agent_id: Agent identifier used to query ``user_agent_toolkits``
+            agent_id: Agent identifier retained for caller compatibility
                 (optional; hydration skipped when absent).
 
         Returns:
@@ -191,6 +192,12 @@ class UserObjectsHandler:
                 user_id, agent_id, session_key, request_session
             )
 
+        if tool_manager is None and not (user_id and agent_id):
+            self.logger.warning(
+                "Skipping OAuth toolkit hydration: missing %s",
+                "user_id" if not user_id else "agent_id",
+            )
+
         return tool_manager, mcp_servers
 
     async def _hydrate_oauth_toolkits(
@@ -202,8 +209,8 @@ class UserObjectsHandler:
     ) -> Optional[ToolManager]:
         """Re-populate OAuth toolkits from DocumentDB on a cold session.
 
-        Reads ``user_agent_toolkits`` rows for the given ``(user_id, agent_id)``
-        pair and registers each enabled toolkit via the provider's
+        Reads active principal connection rows for *user_id* and registers each
+        provider toolkit via the provider's
         :meth:`~parrot.integrations.oauth2.registry.OAuth2Provider.toolkit_factory`.
 
         The resulting :class:`~parrot.tools.manager.ToolManager` is persisted
@@ -212,33 +219,53 @@ class UserObjectsHandler:
 
         Returns:
             A populated :class:`~parrot.tools.manager.ToolManager`, or ``None``
-            if DocumentDB returned no enablements or an error occurred.
+            if DocumentDB returned no active connections or an error occurred.
         """
         try:
-            enablements = await list_user_agent_toolkits(user_id, agent_id)
-            if not enablements:
+            connections = [row for row in await list_users_integrations(user_id) if row.status == "active"]
+            if not connections:
                 return None
 
             tool_manager = ToolManager(debug=True)
             registry = OAuth2ProviderRegistry()
-            for row in enablements:
+            for row in connections:
                 provider = registry.get(row.provider)
                 if provider is None:
                     self.logger.warning(
-                        "Unknown OAuth provider %r in user_agent_toolkits "
-                        "(user=%s agent=%s) — skipping",
-                        row.provider, user_id, agent_id,
+                        "Unknown OAuth provider %r in principal connections " "(user=%s agent=%s) — skipping",
+                        row.provider,
+                        user_id,
+                        agent_id,
                     )
                     continue
-                # Skip if toolkit already registered (idempotency guard).
-                if tool_manager.get_tool(row.toolkit_id) is not None:
+                toolkit_factory = provider.toolkit_factory
+                if toolkit_factory is None:
+                    self.logger.warning(
+                        "OAuth provider %r has no toolkit factory (user=%s agent=%s) — skipping",
+                        row.provider,
+                        user_id,
+                        agent_id,
+                    )
+                    continue
+                # The connection provider is the toolkit name for hydration.
+                if tool_manager.get_tool(row.provider) is not None:
                     continue
                 resolver = OAuthCredentialResolver(provider.manager)
-                toolkit = provider.toolkit_factory(resolver)
+                toolkit = toolkit_factory(resolver)
+                if toolkit is None:
+                    self.logger.warning(
+                        "OAuth provider %r toolkit factory returned None (user=%s agent=%s) — skipping",
+                        row.provider,
+                        user_id,
+                        agent_id,
+                    )
+                    continue
                 tool_manager.register_toolkit(toolkit)
                 self.logger.debug(
                     "Hydrated toolkit %r for user=%s agent=%s",
-                    row.toolkit_id, user_id, agent_id,
+                    row.provider,
+                    user_id,
+                    agent_id,
                 )
 
             if request_session is not None:
@@ -313,7 +340,23 @@ class UserObjectsHandler:
                     # holds a source object (TableSource, InMemorySource, …)
                     # and optionally a loaded DataFrame.  Sharing the entry
                     # means fetches in the user DM see the same cache/source.
-                    user_dm._datasets[name] = entry
+                    if getattr(entry.source, "self_governed", False):
+                        # FEAT-880: never share a governed entry or its rows across sessions.
+                        user_dm._datasets[name] = DatasetEntry(
+                            name=name,
+                            description=entry.description,
+                            source=request_scoped_copy(entry.source),
+                            metadata=dict(entry.metadata or {}),
+                            is_active=entry.is_active,
+                            auto_detect_types=entry.auto_detect_types,
+                            cache_ttl=entry.cache_ttl,
+                            no_cache=entry.no_cache,
+                            computed_columns=list(entry._computed_columns),
+                            usage_guidance={k: list(v) for k, v in (entry.usage_guidance or {}).items()},
+                            protected=entry.protected,
+                        )
+                    else:
+                        user_dm._datasets[name] = entry
                     self.logger.debug(
                         "Copied dataset entry '%s' (%s, loaded=%s) "
                         "from agent to user DatasetManager",

@@ -389,3 +389,35 @@ class TestImportOKFBundle:
         )
         result = toolkit_with_store.import_okf_bundle(str(bundle))
         assert result["nodes_created"] == 1
+
+
+def test_okf_alias_resolution(enriched_tree, tmp_path):
+    """get_concept/cite resolve an absorbed concept_id (alias) to the absorber (AC-11)."""
+    from parrot.knowledge.pageindex.okf.projection import flatten_concept_id_for_filename
+
+    absorber = enriched_tree["structure"][1]  # controls/nist-ir-4
+    absorber["aliases"] = ["controls/nist-ir-4-old", "", "evidence/ir-plan"]
+    content_store = NodeContentStore(tmp_path)
+    content_store.save(
+        "test_tree",
+        flatten_concept_id_for_filename("controls/nist-ir-4"),
+        "# NIST IR-4 body\n",
+    )
+    tk = OKFToolkit(enriched_tree, KnowledgeGraph(enriched_tree), content_store, "test_tree")
+
+    concept = tk.get_concept("controls/nist-ir-4-old")
+    assert concept["concept_id"] == "controls/nist-ir-4"
+    assert concept["title"] == "NIST IR-4"
+    assert "NIST IR-4 body" in concept["body"]
+    cited = tk.cite("controls/nist-ir-4-old")
+    assert cited["concept_id"] == "controls/nist-ir-4"
+    assert cited["pages"] == [6, 10]
+
+    # A live concept_id always wins over an equal alias.
+    assert tk.get_concept("evidence/ir-plan")["title"] == "IR Plan"
+    assert tk.cite("evidence/ir-plan")["pages"] == [11, 15]
+    # Empty aliases are ignored; unknown ids still raise.
+    with pytest.raises(KeyError):
+        tk.get_concept("")
+    with pytest.raises(KeyError):
+        tk.cite("controls/unknown")

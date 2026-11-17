@@ -164,6 +164,7 @@ class OpenAICodexClient(AbstractClient):
             input_tokens=result.usage.prompt_tokens,
             output_tokens=result.usage.completion_tokens,
             finish_reason=result.finish_reason,
+            usage=result.usage,
         )
         return self._to_ai_message(prompt, result, duration)
 

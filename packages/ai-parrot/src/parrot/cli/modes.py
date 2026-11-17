@@ -14,6 +14,8 @@ from typing import Optional
 
 from pydantic import BaseModel, Field  # verified: parrot/cli/repl.py:18
 
+from parrot.launcher import parrot_home  # FEAT-633: single PARROT_HOME authority
+
 logger = logging.getLogger(__name__)
 _SLUG_RE = re.compile(r"[^a-z0-9._-]+")
 
@@ -66,9 +68,8 @@ def resolve_ui_mode(requested: UIMode, *, stdin_isatty: bool, stdout_isatty: boo
 
 
 def cli_state_dir() -> Path:
-    """``$PARROT_HOME`` or ``~/.parrot`` (wiki/project.py:1009 convention) + ``cli``; created ``0o700``."""
-    raw = os.environ.get("PARROT_HOME") or "~/.parrot"
-    path = Path(raw).expanduser() / "cli"
+    """``parrot.launcher.parrot_home()`` (``$PARROT_HOME`` or ``~/.parrot``) + ``cli``; created ``0o700``."""
+    path = parrot_home() / "cli"
     path.mkdir(parents=True, exist_ok=True)
     os.chmod(path, 0o700)
     return path

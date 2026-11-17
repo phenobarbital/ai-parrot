@@ -1,697 +1,108 @@
-<!DOCTYPE html>
-<html lang="en">
-
+<!doctype html>
+<html lang="en" data-theme="light">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI-Parrot | Async-First AI Agent Framework</title>
-    <meta name="description"
-        content="AI-Parrot is a powerful, async-first Python framework for building, extending, and orchestrating AI Agents and Chatbots.">
-
-    <!-- Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
-        rel="stylesheet">
-
-    <!-- Icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-
-    <!-- Styles -->
-    <link rel="stylesheet" href="css/style.css">
-
-    <!-- Syntax Highlighting (Prism) -->
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Build production-ready, async-first AI agents in Python with AI-Parrot.">
+  <meta name="theme-color" content="#0f6b45">
+  <title>AI-Parrot — Async-first AI Agents for Python</title>
+  <link rel="icon" href="docs/branding/favicon.ico">
+  <meta property="og:title" content="AI-Parrot">
+  <meta property="og:description" content="Async-first AI agents, tools, memory, and orchestration for Python.">
+  <meta property="og:image" content="https://phenobarbital.github.io/ai-parrot/docs/branding/social-card.png">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet" href="css/style.css">
 </head>
-
 <body>
-
-    <!-- Nav -->
-    <header>
-        <div class="container">
-            <nav>
-                <div class="logo">
-                    <i class="fa-solid fa-parrot"></i> AI-Parrot
-                </div>
-                <div class="nav-links">
-                    <a href="#features">Features</a>
-                    <a href="#install">Install</a>
-                    <a href="#quickstart">Quick Start</a>
-                    <a href="#architecture">Architecture</a>
-                    <a href="#providers">Providers</a>
-                    <a href="docs/">Docs</a>
-                    <a href="https://github.com/phenobarbital/ai-parrot" class="github-btn" target="_blank">
-                        <i class="fa-brands fa-github"></i> GitHub
-                    </a>
-                </div>
-            </nav>
+  <header id="hero" class="hero">
+    <nav class="site-nav container" aria-label="Primary navigation">
+      <a class="brand" href="#hero" aria-label="AI-Parrot home">
+        <img src="docs/branding/parrot.svg" alt="AI-Parrot logo" width="40" height="40">
+        <span>AI-Parrot</span>
+      </a>
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="nav-links">
+        <span class="sr-only">Open navigation</span><i class="fa-solid fa-bars" aria-hidden="true"></i>
+      </button>
+      <div id="nav-links" class="nav-links">
+        <a href="#why">Why AI-Parrot</a>
+        <a href="#providers">Providers</a>
+        <a href="docs/">Docs</a>
+        <a href="https://github.com/phenobarbital/ai-parrot/wiki">Wiki</a>
+        <button class="theme-toggle" type="button" aria-label="Use dark theme" title="Toggle color theme"><i class="fa-solid fa-moon" aria-hidden="true"></i></button>
+      </div>
+    </nav>
+    <div class="hero-content container">
+      <p class="eyebrow"><i class="fa-solid fa-feather-pointed" aria-hidden="true"></i> Async-first AI framework</p>
+      <h1>Build agents that are ready to <span>take flight.</span></h1>
+      <p class="lead">AI-Parrot gives Python teams one clear path from a conversational bot to a tool-using, multi-agent application.</p>
+      <div class="cta-group">
+        <a class="button button-primary" href="docs/">Read the docs <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+        <a class="button button-secondary" href="https://github.com/phenobarbital/ai-parrot/wiki">Explore the Wiki</a>
+      </div>
+      <div class="hero-proof" aria-label="AI-Parrot capabilities">
+        <span><i class="fa-solid fa-bolt" aria-hidden="true"></i> Async native</span>
+        <span><i class="fa-solid fa-plug" aria-hidden="true"></i> Provider agnostic</span>
+        <span><i class="fa-solid fa-cubes" aria-hidden="true"></i> Built for tools</span>
+      </div>
+    </div>
+  </header>
+  <main>
+    <section id="why" class="section">
+      <div class="container">
+        <p class="eyebrow">Why AI-Parrot</p>
+        <h2>Keep the hard parts composable.</h2>
+        <p class="section-intro">Start with a focused API, then add the capabilities your agent needs without rebuilding its foundation.</p>
+        <div class="card-grid">
+          <article class="value-card"><i class="fa-solid fa-gauge-high card-icon" aria-hidden="true"></i><h3>Async by default</h3><p>Build responsive applications on aiohttp with an async-first model for clients, tools, and workflows.</p></article>
+          <article class="value-card"><i class="fa-solid fa-arrows-rotate card-icon" aria-hidden="true"></i><h3>One API, many models</h3><p>Switch between leading providers while preserving a consistent interface for your application code.</p></article>
+          <article class="value-card"><i class="fa-solid fa-screwdriver-wrench card-icon" aria-hidden="true"></i><h3>Tools that fit your code</h3><p>Expose ordinary Python functions or organize richer integrations into reusable toolkits.</p></article>
+          <article class="value-card"><i class="fa-solid fa-diagram-project card-icon" aria-hidden="true"></i><h3>Orchestrate with intent</h3><p>Coordinate agents in sequential, parallel, flow, or loop execution modes when one model is not enough.</p></article>
         </div>
-    </header>
-
-    <!-- Hero -->
-    <section class="hero">
-        <div class="container">
-            <h1>Build <span style="color: var(--primary-color);">Intelligent Agents</span><br>with Async Python.</h1>
-            <p class="tagline">
-                Async-first Python framework for building, extending, and orchestrating AI Agents and Chatbots.
-                Vendor-agnostic, production-ready, and built for speed.
-            </p>
-            <div class="cta-group">
-                <a href="#quickstart" class="btn btn-primary">Get Started</a>
-                <a href="https://github.com/phenobarbital/ai-parrot" class="btn btn-secondary" target="_blank">
-                    <i class="fa-brands fa-github"></i> Star on GitHub
-                </a>
-                <a href="https://pypi.org/project/ai-parrot/" class="btn btn-secondary" target="_blank">
-                    <i class="fa-brands fa-python"></i> PyPI
-                </a>
-            </div>
-            <div style="margin-top: 2rem;">
-                <code>pip install ai-parrot</code>
-            </div>
-        </div>
+      </div>
     </section>
-
-    <!-- Monorepo Structure -->
-    <section id="packages">
-        <div class="container">
-            <h2 style="text-align: center;">Monorepo Packages</h2>
-            <p style="text-align: center; color: #8b949e; margin-bottom: 2rem;">
-                Install only what you need. Heavy tools and loaders are split into their own packages.
-            </p>
-            <div class="features-grid" style="grid-template-columns: repeat(3, 1fr);">
-                <div class="feature-card">
-                    <i class="fa-solid fa-cube feature-icon"></i>
-                    <h3>ai-parrot</h3>
-                    <p>Core framework: agents, LLM clients, memory, orchestration, A2A, MCP.</p>
-                    <code style="font-size: 0.85rem;">pip install ai-parrot</code>
-                </div>
-                <div class="feature-card">
-                    <i class="fa-solid fa-screwdriver-wrench feature-icon"></i>
-                    <h3>ai-parrot-tools</h3>
-                    <p>Tool and toolkit implementations: Jira, AWS, Slack, Google, finance, and more.</p>
-                    <code style="font-size: 0.85rem;">pip install ai-parrot-tools</code>
-                </div>
-                <div class="feature-card">
-                    <i class="fa-solid fa-file-lines feature-icon"></i>
-                    <h3>ai-parrot-loaders</h3>
-                    <p>Document loaders for RAG pipelines: PDF, YouTube, audio, video, EPUB, web.</p>
-                    <code style="font-size: 0.85rem;">pip install ai-parrot-loaders</code>
-                </div>
-            </div>
-        </div>
+    <section id="install" class="section section-tonal">
+      <div class="container install-layout">
+        <div><p class="eyebrow">Quick install</p><h2>From zero to first agent in one command.</h2><p class="section-intro">Install the core package, then follow the docs for provider extras, tools, memory, and deployment.</p><a class="text-link" href="docs/">See installation options <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
+        <div class="code-panel"><div class="code-panel-header"><span>terminal</span><button class="copy-button" type="button" data-copy-target="install-command">Copy</button></div><pre><code id="install-command" class="language-bash">uv pip install ai-parrot</code></pre></div>
+      </div>
     </section>
-
-    <!-- Features -->
-    <section id="features">
-        <div class="container">
-            <h2 style="text-align: center;">Why AI-Parrot?</h2>
-            <div class="features-grid">
-                <div class="feature-card">
-                    <i class="fa-solid fa-robot feature-icon"></i>
-                    <h3>Unified Agent API</h3>
-                    <p>Simple <code>Chatbot</code> interface to create agents with built-in memory, vector store
-                        support, and conversation history management.</p>
-                </div>
-                <div class="feature-card">
-                    <i class="fa-solid fa-screwdriver-wrench feature-icon"></i>
-                    <h3>Powerful Tooling</h3>
-                    <p>Use the <code>@tool</code> decorator, class-based <code>AbstractToolkit</code>, or instantly
-                        convert OpenAPI specs into tools with <code>OpenAPIToolkit</code>.</p>
-                </div>
-                <div class="feature-card">
-                    <i class="fa-solid fa-people-group feature-icon"></i>
-                    <h3>Orchestration</h3>
-                    <p>Manage multi-agent workflows with <code>AgentCrew</code>. Support for Sequential, Parallel, Flow,
-                        and Loop execution modes.</p>
-                </div>
-                <div class="feature-card">
-                    <i class="fa-solid fa-network-wired feature-icon"></i>
-                    <h3>A2A &amp; MCP</h3>
-                    <p>Native <strong>Agent-to-Agent (A2A)</strong> protocol and first-class support for <strong>Model
-                            Context Protocol (MCP)</strong>.</p>
-                </div>
-                <div class="feature-card">
-                    <i class="fa-solid fa-layer-group feature-icon"></i>
-                    <h3>Multi-Provider</h3>
-                    <p>Switch seamlessly between OpenAI, Anthropic, Google Gemini, Groq, X.AI, HuggingFace, vLLM, and OpenRouter without
-                        changing your code.</p>
-                </div>
-                <div class="feature-card">
-                    <i class="fa-solid fa-clock feature-icon"></i>
-                    <h3>Scheduling</h3>
-                    <p>Give your agents agency with the <code>@schedule</code> decorator to run background tasks like
-                        daily briefings or monitoring.</p>
-                </div>
-                <div class="feature-card">
-                    <i class="fa-solid fa-server feature-icon"></i>
-                    <h3>Application Server</h3>
-                    <p>Full <strong>aiohttp-based server</strong> that exposes agents as REST APIs, WebSocket endpoints, with built-in bot management.</p>
-                </div>
-                <div class="feature-card">
-                    <i class="fa-brands fa-telegram feature-icon"></i>
-                    <h3>Platform Integrations</h3>
-                    <p>Expose agents natively to <strong>Telegram</strong>, <strong>MS Teams</strong>, <strong>Slack</strong>,
-                        and <strong>WhatsApp</strong> with minimal config.</p>
-                </div>
-                <div class="feature-card">
-                    <i class="fa-solid fa-terminal feature-icon"></i>
-                    <h3>CLI Tooling</h3>
-                    <p>Interactive <code>parrot setup</code> wizard, MCP server launcher, autonomous agent deployer, and
-                        Docker-based security tool installer.</p>
-                </div>
-            </div>
-        </div>
+    <section id="providers" class="section">
+      <div class="container">
+        <p class="eyebrow">Providers</p><h2>Choose the models that suit the job.</h2><p class="section-intro">Use a unified client interface across cloud, hosted, and local model providers.</p>
+        <div class="table-scroll"><table><thead><tr><th scope="col">Provider</th><th scope="col">Extra</th><th scope="col">Client key</th><th scope="col">Example model</th></tr></thead><tbody>
+          <tr><td>OpenAI</td><td><code>openai</code></td><td><code>openai</code></td><td>GPT models</td></tr>
+          <tr><td>Anthropic</td><td><code>anthropic</code></td><td><code>anthropic</code></td><td>Claude models</td></tr>
+          <tr><td>Google</td><td><code>google</code></td><td><code>google</code></td><td>Gemini models</td></tr>
+          <tr><td>Groq</td><td><code>groq</code></td><td><code>groq</code></td><td>Llama models</td></tr>
+          <tr><td>VertexAI</td><td><code>vertexai</code></td><td><code>vertex</code></td><td>Gemini models</td></tr>
+          <tr><td>HuggingFace</td><td>included</td><td><code>hf</code></td><td>Open models</td></tr>
+        </tbody></table></div>
+      </div>
     </section>
-
-    <!-- Installation -->
-    <section id="install">
-        <div class="container">
-            <h2 style="text-align: center;">Installation</h2>
-
-            <h3>LLM Providers</h3>
-            <p>Install only the providers you need:</p>
-            <div class="code-wrapper">
-                <div class="code-header">
-                    <div class="dot red"></div>
-                    <div class="dot yellow"></div>
-                    <div class="dot green"></div>
-                    <span style="margin-left: 10px; font-size: 0.9rem; color: #8b949e;">terminal</span>
-                </div>
-                <pre><code class="language-bash"># Google Gemini
-pip install "ai-parrot[google]"
-
-# OpenAI / GPT
-pip install "ai-parrot[openai]"
-
-# Anthropic / Claude
-pip install "ai-parrot[anthropic]"
-
-# Groq
-pip install "ai-parrot[groq]"
-
-# X.AI / Grok
-pip install "ai-parrot[xai]"
-
-# All LLM providers at once
-pip install "ai-parrot[llms]"</code></pre>
-            </div>
-
-            <p style="margin-top: 1rem;">Additional providers supported out of the box (no extra install):
-                <strong>HuggingFace</strong>, <strong>vLLM</strong>, <strong>OpenRouter</strong>, <strong>Ollama</strong>.
-            </p>
-
-            <h3>Tools &amp; Loaders</h3>
-            <div class="code-wrapper">
-                <div class="code-header">
-                    <div class="dot red"></div>
-                    <div class="dot yellow"></div>
-                    <div class="dot green"></div>
-                    <span style="margin-left: 10px; font-size: 0.9rem; color: #8b949e;">terminal</span>
-                </div>
-                <pre><code class="language-bash"># Tools with specific extras
-pip install "ai-parrot-tools[jira]"
-pip install "ai-parrot-tools[aws]"
-pip install "ai-parrot-tools[slack]"
-pip install "ai-parrot-tools[finance]"
-pip install "ai-parrot-tools[all]"
-
-# Document loaders
-pip install "ai-parrot-loaders[youtube]"
-pip install "ai-parrot-loaders[pdf]"
-pip install "ai-parrot-loaders[audio]"
-pip install "ai-parrot-loaders[all]"</code></pre>
-            </div>
-
-            <h3>Embeddings &amp; Vector Stores</h3>
-            <div class="code-wrapper">
-                <div class="code-header">
-                    <div class="dot red"></div>
-                    <div class="dot yellow"></div>
-                    <div class="dot green"></div>
-                    <span style="margin-left: 10px; font-size: 0.9rem; color: #8b949e;">terminal</span>
-                </div>
-                <pre><code class="language-bash"># Sentence transformers, FAISS, ChromaDB, etc.
-pip install "ai-parrot[embeddings]"</code></pre>
-            </div>
-
-            <h3>CLI Quick Setup</h3>
-            <div class="code-wrapper">
-                <div class="code-header">
-                    <div class="dot red"></div>
-                    <div class="dot yellow"></div>
-                    <div class="dot green"></div>
-                    <span style="margin-left: 10px; font-size: 0.9rem; color: #8b949e;">terminal</span>
-                </div>
-                <pre><code class="language-bash"># Interactive setup wizard
-parrot setup
-
-# Initialize config directory
-parrot conf init
-
-# Start an MCP server
-parrot mcp --config server.yaml
-
-# Deploy an autonomous agent as a systemd service
-parrot autonomous create --agent my_agent.py
-parrot autonomous install --agent my_agent.py --name my-agent</code></pre>
-            </div>
+    <section id="links" class="section section-tonal">
+      <div class="container"><p class="eyebrow">Find your way</p><h2>Pages for direction. Wiki for depth.</h2>
+        <div class="link-grid">
+          <a href="docs/" class="resource-link"><i class="fa-solid fa-book-open" aria-hidden="true"></i><span><strong>Documentation</strong><small>Get started with AI-Parrot</small></span><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
+          <a href="https://github.com/phenobarbital/ai-parrot/wiki" class="resource-link"><i class="fa-solid fa-compass" aria-hidden="true"></i><span><strong>Technical Wiki</strong><small>Explore detailed reference material</small></span><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
+          <a href="https://github.com/phenobarbital/ai-parrot" class="resource-link"><i class="fa-brands fa-github" aria-hidden="true"></i><span><strong>GitHub</strong><small>Browse source and contribute</small></span><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
+          <a href="https://pypi.org/project/ai-parrot/" class="resource-link"><i class="fa-brands fa-python" aria-hidden="true"></i><span><strong>PyPI</strong><small>Install the latest release</small></span><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
         </div>
+      </div>
     </section>
-
-    <!-- Quick Start -->
-    <section id="quickstart">
-        <div class="container">
-            <h2 style="text-align: center;">Quick Start</h2>
-
-            <h3>Simple Weather Bot</h3>
-            <div class="code-wrapper">
-                <div class="code-header">
-                    <div class="dot red"></div>
-                    <div class="dot yellow"></div>
-                    <div class="dot green"></div>
-                    <span style="margin-left: 10px; font-size: 0.9rem; color: #8b949e;">weather_bot.py</span>
-                </div>
-                <pre><code class="language-python">import asyncio
-from parrot.bots import Chatbot
-from parrot.tools import tool
-
-# 1. Define a tool with type hints
-@tool
-def get_weather(location: str) -> str:
-    """Get the current weather for a location."""
-    return f"The weather in {location} is Sunny, 25C"
-
-async def main():
-    # 2. Create the Agent
-    bot = Chatbot(
-        name="WeatherBot",
-        llm="openai:gpt-4o",
-        tools=[get_weather],
-        system_prompt="You are a helpful weather assistant."
-    )
-
-    # 3. Configure & Chat
-    await bot.configure()
-    response = await bot.ask("What's the weather like in Madrid?")
-    print(response)
-
-if __name__ == "__main__":
-    asyncio.run(main())</code></pre>
-            </div>
-
-            <h3>Using LLM Clients Directly</h3>
-            <div class="code-wrapper">
-                <div class="code-header">
-                    <div class="dot red"></div>
-                    <div class="dot yellow"></div>
-                    <div class="dot green"></div>
-                    <span style="margin-left: 10px; font-size: 0.9rem; color: #8b949e;">image_gen.py</span>
-                </div>
-                <pre><code class="language-python">import asyncio
-from parrot.clients.google.client import GoogleGenAIClient
-from parrot.models.outputs import ImageGenerationPrompt
-from parrot.models.google import GoogleModel
-
-async def main():
-    prompt = ImageGenerationPrompt(
-        prompt="A realistic passport-style photo with white background",
-        styles=["photorealistic", "high resolution"],
-        model=GoogleModel.IMAGEN_3.value,
-        aspect_ratio="16:9",
-    )
-
-    client = GoogleGenAIClient()
-    async with client:
-        response = await client.image_generation(prompt_data=prompt)
-        for img_path in response.images:
-            print(f"Image saved to: {img_path}")
-
-if __name__ == "__main__":
-    asyncio.run(main())</code></pre>
-            </div>
-        </div>
-    </section>
-
-    <!-- Core Concepts -->
-    <section id="concepts">
-        <div class="container">
-            <h2 style="text-align: center;">Core Concepts</h2>
-
-            <h3><i class="fa-solid fa-robot" style="color: var(--primary-color);"></i> Tools</h3>
-
-            <h4>Functional Tools (<code>@tool</code>)</h4>
-            <p>The simplest way to create a tool. The docstring and type hints are automatically used to generate the schema for the LLM.</p>
-            <div class="code-wrapper">
-                <div class="code-header">
-                    <div class="dot red"></div><div class="dot yellow"></div><div class="dot green"></div>
-                    <span style="margin-left: 10px; font-size: 0.9rem; color: #8b949e;">tools.py</span>
-                </div>
-                <pre><code class="language-python">from parrot.tools import tool
-
-@tool
-def calculate_vat(amount: float, rate: float = 0.20) -> float:
-    """Calculate VAT for a given amount."""
-    return amount * rate</code></pre>
-            </div>
-
-            <h4>Class-Based Toolkits (<code>AbstractToolkit</code>)</h4>
-            <p>Group related tools into a reusable class. All public async methods become tools.</p>
-            <div class="code-wrapper">
-                <div class="code-header">
-                    <div class="dot red"></div><div class="dot yellow"></div><div class="dot green"></div>
-                    <span style="margin-left: 10px; font-size: 0.9rem; color: #8b949e;">toolkit.py</span>
-                </div>
-                <pre><code class="language-python">from parrot.tools import AbstractToolkit
-
-class MathToolkit(AbstractToolkit):
-    async def add(self, a: int, b: int) -> int:
-        """Add two numbers."""
-        return a + b
-
-    async def multiply(self, a: int, b: int) -> int:
-        """Multiply two numbers."""
-        return a * b</code></pre>
-            </div>
-
-            <h4>OpenAPI Toolkit</h4>
-            <p>Dynamically generate tools from any OpenAPI/Swagger specification.</p>
-            <div class="code-wrapper">
-                <div class="code-header">
-                    <div class="dot red"></div><div class="dot yellow"></div><div class="dot green"></div>
-                    <span style="margin-left: 10px; font-size: 0.9rem; color: #8b949e;">openapi_tools.py</span>
-                </div>
-                <pre><code class="language-python">from parrot.tools import OpenAPIToolkit
-
-petstore = OpenAPIToolkit(
-    spec="https://petstore.swagger.io/v2/swagger.json",
-    service="petstore"
-)
-
-# Now your agent can call petstore_get_pet_by_id, etc.
-bot = Chatbot(name="PetBot", tools=petstore.get_tools())</code></pre>
-            </div>
-
-            <h3><i class="fa-solid fa-people-group" style="color: var(--primary-color);"></i> Orchestration (<code>AgentCrew</code>)</h3>
-            <p>Orchestrate multiple agents with Sequential, Parallel, Flow (DAG), and Loop modes.</p>
-            <div class="code-wrapper">
-                <div class="code-header">
-                    <div class="dot red"></div><div class="dot yellow"></div><div class="dot green"></div>
-                    <span style="margin-left: 10px; font-size: 0.9rem; color: #8b949e;">crew.py</span>
-                </div>
-                <pre><code class="language-python">from parrot.bots.orchestration import AgentCrew
-
-crew = AgentCrew(
-    name="ResearchTeam",
-    agents=[researcher_agent, writer_agent]
-)
-
-# Define a Flow - Writer waits for Researcher to finish
-crew.task_flow(researcher_agent, writer_agent)
-
-await crew.run_flow("Research the latest advancements in Quantum Computing")</code></pre>
-            </div>
-
-            <h3><i class="fa-solid fa-clock" style="color: var(--primary-color);"></i> Scheduling</h3>
-            <div class="code-wrapper">
-                <div class="code-header">
-                    <div class="dot red"></div><div class="dot yellow"></div><div class="dot green"></div>
-                    <span style="margin-left: 10px; font-size: 0.9rem; color: #8b949e;">scheduled_agent.py</span>
-                </div>
-                <pre><code class="language-python">from parrot.scheduler import schedule, ScheduleType
-
-class DailyBot(Chatbot):
-    @schedule(schedule_type=ScheduleType.DAILY, hour=9, minute=0)
-    async def morning_briefing(self):
-        news = await self.ask("Summarize today's top tech news")
-        await self.send_notification(news)</code></pre>
-            </div>
-        </div>
-    </section>
-
-    <!-- Connectivity -->
-    <section id="connectivity">
-        <div class="container">
-            <h2 style="text-align: center;">Connectivity &amp; Exposure</h2>
-            <div class="features-grid" style="grid-template-columns: repeat(2, 1fr);">
-                <div class="feature-card">
-                    <h3><i class="fa-solid fa-arrows-left-right" style="color: var(--primary-color);"></i> Agent-to-Agent (A2A)</h3>
-                    <p>Agents can discover and talk to each other using the A2A protocol.</p>
-                    <div class="code-wrapper" style="margin-top: 1rem;">
-                        <pre><code class="language-python"># Expose an Agent
-from parrot.a2a import A2AServer
-a2a = A2AServer(my_agent)
-a2a.setup(app, url="https://my-agent.com")
-
-# Consume an Agent
-from parrot.a2a import A2AClient
-async with A2AClient("https://remote-agent.com") as client:
-    response = await client.send_message("Hello!")</code></pre>
-                    </div>
-                </div>
-                <div class="feature-card">
-                    <h3><i class="fa-solid fa-plug" style="color: var(--primary-color);"></i> Model Context Protocol (MCP)</h3>
-                    <p>First-class MCP support. Consume external MCP servers or expose your agent as one.</p>
-                    <div class="code-wrapper" style="margin-top: 1rem;">
-                        <pre><code class="language-python"># Consume MCP Servers
-mcp_servers = [
-    MCPServerConfig(
-        name="filesystem",
-        command="npx",
-        args=["-y", "@modelcontextprotocol/server-filesystem", "/home"]
-    )
-]
-await bot.setup_mcp_servers(mcp_servers)</code></pre>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Running as Server -->
-    <section id="server">
-        <div class="container">
-            <h2 style="text-align: center;">Running as a Server</h2>
-            <p style="text-align: center; color: #8b949e; margin-bottom: 2rem;">
-                AI-Parrot is also a full aiohttp-based application server powered by
-                <a href="https://github.com/phenobarbital/navigator-api">Navigator</a>.
-            </p>
-
-            <div class="code-wrapper">
-                <div class="code-header">
-                    <div class="dot red"></div><div class="dot yellow"></div><div class="dot green"></div>
-                    <span style="margin-left: 10px; font-size: 0.9rem; color: #8b949e;">app.py</span>
-                </div>
-                <pre><code class="language-python">from parrot.manager import BotManager
-from parrot.conf import STATIC_DIR
-from parrot.handlers import AppHandler
-from agents.my_agent import MyAgent
-
-class Main(AppHandler):
-    app_name: str = "Parrot"
-    enable_static: bool = True
-    staticdir: str = STATIC_DIR
-
-    def configure(self) -> None:
-        self.bot_manager = BotManager()
-        self.bot_manager.register(MyAgent())
-        self.bot_manager.setup(self.app)</code></pre>
-            </div>
-
-            <h3>Built-in Endpoints</h3>
-            <div class="table-wrapper">
-                <table>
-                    <thead>
-                        <tr><th>Endpoint</th><th>Method</th><th>Description</th></tr>
-                    </thead>
-                    <tbody>
-                        <tr><td><code>/api/v1/agents/chat/{agent_id}</code></td><td>POST</td><td>Chat with an agent (JSON, HTML, or Markdown)</td></tr>
-                        <tr><td><code>/api/v1/agents/chat/{agent_id}</code></td><td>PATCH</td><td>Configure tools/MCP servers for a session</td></tr>
-                        <tr><td><code>/api/v1/bot_management</code></td><td>GET</td><td>List registered bots</td></tr>
-                        <tr><td><code>/api/v1/bot_management/{bot}</code></td><td>GET/POST/PATCH/DELETE</td><td>CRUD operations on bots</td></tr>
-                        <tr><td><code>/api/v1/agent_tools</code></td><td>GET</td><td>List available tools</td></tr>
-                        <tr><td><code>/ws/userinfo</code></td><td>WebSocket</td><td>Real-time user notifications</td></tr>
-                    </tbody>
-                </table>
-            </div>
-
-            <h3>Production Deployment</h3>
-            <div class="code-wrapper">
-                <div class="code-header">
-                    <div class="dot red"></div><div class="dot yellow"></div><div class="dot green"></div>
-                    <span style="margin-left: 10px; font-size: 0.9rem; color: #8b949e;">terminal</span>
-                </div>
-                <pre><code class="language-bash"># Development (single process, auto-reload)
-python run.py
-
-# Production (Gunicorn with async workers)
-pip install "ai-parrot[deploy]"
-
-gunicorn run:app \
-    --worker-class aiohttp.worker.GunicornUVLoopWebWorker \
-    --workers 4 \
-    --bind 0.0.0.0:5000 \
-    --timeout 360</code></pre>
-            </div>
-        </div>
-    </section>
-
-    <!-- Architecture -->
-    <section id="architecture">
-        <div class="container">
-            <h2 style="text-align: center;">Architecture</h2>
-            <p style="text-align: center; color: #8b949e; margin-bottom: 2rem;">
-                Modular design enabling agents to act as both consumers and providers.
-            </p>
-            <div class="mermaid">
-                graph TD
-                User["User / Client"] --> API["AgentTalk Handlers"]
-                API --> Bot["Chatbot / BaseBot"]
-
-                subgraph Core["Agent Core"]
-                Bot --> Memory["Memory / Vector Store"]
-                Bot --> LLM["LLM Client"]
-                Bot --> TM["Tool Manager"]
-                end
-
-                subgraph Tools["Tools & Capabilities"]
-                TM --> LocalTools["Local Tools (@tool)"]
-                TM --> Toolkits["Toolkits (OpenAPI/Custom)"]
-                TM --> MCPServer["External MCP Servers"]
-                end
-
-                subgraph Connect["Connectivity"]
-                Bot -.-> A2A["A2A Protocol"]
-                Bot -.-> MCP["MCP Protocol"]
-                Bot -.-> Integrations["Telegram / Teams / Slack / WhatsApp"]
-                end
-
-                subgraph Orch["Orchestration"]
-                Crew["AgentCrew"] --> Bot
-                Crew --> OtherBots["Other Agents"]
-                end
-            </div>
-        </div>
-    </section>
-
-    <!-- Providers Table -->
-    <section id="providers">
-        <div class="container">
-            <h2 style="text-align: center;">Supported LLM Providers</h2>
-            <div class="table-wrapper">
-                <table>
-                    <thead>
-                        <tr><th>Provider</th><th>Extra</th><th>Identifier</th><th>Example</th></tr>
-                    </thead>
-                    <tbody>
-                        <tr><td>OpenAI</td><td><code>openai</code></td><td><code>openai</code></td><td><code>openai:gpt-4o</code></td></tr>
-                        <tr><td>Anthropic</td><td><code>anthropic</code></td><td><code>anthropic</code>, <code>claude</code></td><td><code>anthropic:claude-sonnet-4-20250514</code></td></tr>
-                        <tr><td>Google Gemini</td><td><code>google</code></td><td><code>google</code></td><td><code>google:gemini-3.1-flash-lite-preview</code></td></tr>
-                        <tr><td>Groq</td><td><code>groq</code></td><td><code>groq</code></td><td><code>groq:llama-3.3-70b-versatile</code></td></tr>
-                        <tr><td>X.AI / Grok</td><td><code>xai</code></td><td><code>grok</code></td><td><code>grok:grok-3</code></td></tr>
-                        <tr><td>HuggingFace</td><td><em>included</em></td><td><code>hf</code></td><td><code>hf:meta-llama/Llama-3-8B</code></td></tr>
-                        <tr><td>vLLM</td><td><em>included</em></td><td><code>vllm</code></td><td><code>vllm:model-name</code></td></tr>
-                        <tr><td>OpenRouter</td><td><em>included</em></td><td><code>openrouter</code></td><td><code>openrouter:anthropic/claude-sonnet-4</code></td></tr>
-                        <tr><td>Ollama</td><td><em>included</em></td><td colspan="2">via OpenAI-compatible endpoint</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </section>
-
-    <!-- Contributing -->
-    <section id="contributing">
-        <div class="container">
-            <h2 style="text-align: center;">Contributing</h2>
-
-            <h3>Development Setup</h3>
-            <div class="code-wrapper">
-                <div class="code-header">
-                    <div class="dot red"></div><div class="dot yellow"></div><div class="dot green"></div>
-                    <span style="margin-left: 10px; font-size: 0.9rem; color: #8b949e;">terminal</span>
-                </div>
-                <pre><code class="language-bash">git clone https://github.com/phenobarbital/ai-parrot.git
-cd ai-parrot
-
-# Create venv (Python 3.11)
-make venv
-source .venv/bin/activate
-
-# Full dev install
-make develop
-
-# Run tests
-make test</code></pre>
-            </div>
-
-            <h3>Project Layout</h3>
-            <div class="code-wrapper">
-                <pre><code>ai-parrot/
-├── packages/
-│   ├── ai-parrot/           # Core framework
-│   │   └── src/parrot/
-│   ├── ai-parrot-tools/     # Tool implementations
-│   │   └── src/parrot_tools/
-│   └── ai-parrot-loaders/   # Document loaders
-│       └── src/parrot_loaders/
-├── tests/
-├── examples/
-├── Makefile                  # Build, install, test, release shortcuts
-└── pyproject.toml            # Workspace root</code></pre>
-            </div>
-
-            <h3>Makefile Targets</h3>
-            <div class="table-wrapper">
-                <table>
-                    <thead>
-                        <tr><th>Target</th><th>Description</th></tr>
-                    </thead>
-                    <tbody>
-                        <tr><td><code>make develop</code></td><td>All packages + all extras + dev tools</td></tr>
-                        <tr><td><code>make develop-fast</code></td><td>All packages, base deps only (no torch/tensorflow)</td></tr>
-                        <tr><td><code>make install</code></td><td>All packages, base deps only</td></tr>
-                        <tr><td><code>make install-core</code></td><td>Core with LLM clients + vector stores</td></tr>
-                        <tr><td><code>make install-tools</code></td><td>Core + tools with common extras</td></tr>
-                        <tr><td><code>make install-all</code></td><td>Everything with ALL extras</td></tr>
-                        <tr><td><code>make format</code></td><td>Format code with black</td></tr>
-                        <tr><td><code>make lint</code></td><td>Lint with pylint + black --check</td></tr>
-                        <tr><td><code>make test</code></td><td>Run pytest + mypy</td></tr>
-                        <tr><td><code>make build</code></td><td>Build all packages (sdist + wheel)</td></tr>
-                        <tr><td><code>make bump-patch</code></td><td>Bump patch version across all packages</td></tr>
-                    </tbody>
-                </table>
-            </div>
-
-            <h3>Guidelines</h3>
-            <ul style="margin-top: 1rem; padding-left: 1.5rem; color: #8b949e;">
-                <li>All code must be <strong>async-first</strong> &mdash; no blocking I/O in async contexts</li>
-                <li>Use <strong>type hints</strong> and <strong>Google-style docstrings</strong> on all public APIs</li>
-                <li>Use <strong>Pydantic</strong> models for structured data</li>
-                <li>Run <code>pytest</code> after any logic change</li>
-                <li>Tools with heavy dependencies must use <strong>lazy imports</strong></li>
-            </ul>
-        </div>
-    </section>
-
-    <!-- Footer -->
-    <footer>
-        <div class="container">
-            <p>&copy; 2025 Navigator Team. Open Source under MIT License.</p>
-            <div style="margin-top: 1rem;">
-                <a href="https://github.com/phenobarbital/ai-parrot">GitHub</a>
-                <a href="https://github.com/phenobarbital/ai-parrot/issues">Issues</a>
-                <a href="https://github.com/phenobarbital/ai-parrot/discussions">Discussions</a>
-                <a href="https://pypi.org/project/ai-parrot/">PyPI</a>
-            </div>
-        </div>
-    </footer>
-
-    <!-- Scripts -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
-    <script src="js/main.js"></script>
+  </main>
+  <footer id="footer"><div class="container footer-content">
+    <a class="brand" href="#hero"><img src="docs/branding/parrot.svg" alt="" width="32" height="32"><span>AI-Parrot</span></a>
+    <div class="footer-links"><a href="https://github.com/phenobarbital/ai-parrot">GitHub</a><a href="https://github.com/phenobarbital/ai-parrot/issues">Issues</a><a href="https://github.com/phenobarbital/ai-parrot/discussions">Discussions</a><a href="https://pypi.org/project/ai-parrot/">PyPI</a></div>
+    <small>Open source AI infrastructure for Python.</small>
+  </div></footer>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"></script>
+  <script src="js/main.js" defer></script>
 </body>
-
 </html>

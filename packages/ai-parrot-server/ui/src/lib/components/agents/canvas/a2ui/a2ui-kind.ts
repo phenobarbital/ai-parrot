@@ -1,7 +1,7 @@
 /**
  * A2UI surface-kind heuristic (FEAT-527).
  *
- * There is no `kind` field on the wire (docs/frontend/agentdashboard-a2ui-reference.md
+ * There is no `kind` field on the wire (wiki/bots/frontend/agentdashboard-a2ui-reference.md
  * §6.2) — the kind is an attribute of how a surface was produced / persisted
  * (`UISurfaceKind` in the `ui_surfaces` plane), never the `createSurface`
  * message itself. This is the reference `inferKind()` from that doc, ported
@@ -9,6 +9,7 @@
  * `-infographic` surfaceId suffix).
  */
 import type { A2UIEnvelope, CreateSurface, WireComponent } from './a2ui-types';
+import { getPresentation } from './a2ui-presentation';
 import { getDataSources } from './linked/types';
 
 export type SurfaceKind = 'widget' | 'infographic' | 'dashboard';
@@ -28,6 +29,8 @@ const INFOGRAPHIC_LIKE_ROOTS = new Set(['Infographic', 'Report']);
  *   Timeline/any single primitive), or when there is no `root` component.
  */
 export function inferSurfaceKind(surface: CreateSurface): SurfaceKind {
+  const declared = getPresentation(surface);
+  if (declared) return declared.kind;
   const root = surface.components.find((c) => c.id === 'root');
   if (!root) return 'widget';
   if (INFOGRAPHIC_LIKE_ROOTS.has(root.component)) {

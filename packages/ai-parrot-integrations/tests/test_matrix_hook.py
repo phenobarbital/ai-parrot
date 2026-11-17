@@ -134,8 +134,8 @@ class TestMatrixHook:
     """Tests for the MatrixHook BaseHook subclass."""
 
     def _make_hook(self, config):
-        """Import and instantiate MatrixHook."""
-        from parrot.core.hooks.matrix import MatrixHook
+        """Import and instantiate the concrete MatrixHook."""
+        from parrot.integrations.matrix.hook import MatrixHook
         return MatrixHook(config)
 
     def test_hook_type(self, matrix_config):

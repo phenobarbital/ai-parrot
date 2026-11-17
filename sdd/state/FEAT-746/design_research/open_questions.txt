@@ -1,0 +1,2 @@
+- [ ] **Shared-contract import path under U1**: FEAT-704 plans its models inside `ai-parrot-semantic`; the spec must decide whether they move to core or to a neutral package so the Squawk satellite can import them without depending on the whole semantic layer. — *Owner*: `/sdd-spec FEAT-746`, with FEAT-704's owner.
+- [ ] **navigator-eventbus change request for U4/S6**: bytes-safe payload serializer and a `reply_to` request/reply convention — outside this repo. — *Owner*: tbd.

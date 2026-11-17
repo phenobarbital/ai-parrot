@@ -1,0 +1,76 @@
+{
+  "feature": "services-plausibility-tech-debt",
+  "feature_id": "FEAT-737",
+  "spec": "sdd/specs/services-plausibility-tech-debt.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-24T00:00:00+00:00",
+  "completed_at": "2026-10-23T23:17:56+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/parrot-formdesigner/tests/formdesigner/test_plausibility_checker.py",
+          "packages/parrot-formdesigner/tests/unit/test_plausibility_wire_report.py",
+          "packages/parrot-formdesigner/tests/formdesigner/test_audio_ws_adapter.py",
+          "packages/parrot-formdesigner/tests/formdesigner/test_audio_engine_review_resume.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:18441713895cc6b9b973d17fd9ac74c5799e8b512e58ae004b7bda6202e10078"
+  },
+  "tasks": [
+    {
+      "id": "TASK-4676",
+      "slug": "plausibility-coverage-and-cap-models",
+      "title": "Declare the coverage field, the length caps and the reason codes",
+      "feature_id": "FEAT-737",
+      "feature": "services-plausibility-tech-debt",
+      "spec": "sdd/specs/services-plausibility-tech-debt.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies. Owns core/llm_validation.py and tests/unit/test_plausibility_wire_report.py exclusively; no file is shared with TASK-4677.",
+      "assigned_to": null,
+      "started_at": "2026-10-23T23:12:04.211211+00:00",
+      "completed_at": "2026-10-23T23:13:23+00:00",
+      "file": "sdd/tasks/completed/TASK-4676-plausibility-coverage-and-cap-models.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4677",
+      "slug": "plausibility-coverage-and-prompt-caps",
+      "title": "Record unexamined fields and cap the prompt answer and verdict reason",
+      "feature_id": "FEAT-737",
+      "feature": "services-plausibility-tech-debt",
+      "spec": "sdd/specs/services-plausibility-tech-debt.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4676"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Imports NOT_EXAMINED_MAX_FIELDS and NOT_EXAMINED_UNRENDERABLE from TASK-4676 (core/llm_validation.py), and reads cfg.max_answer_chars / cfg.max_reason_chars plus sets PlausibilityReport.not_examined — all four created by TASK-4676. Owns services/plausibility.py and tests/formdesigner/test_plausibility_checker.py exclusively.",
+      "assigned_to": null,
+      "started_at": "2026-10-23T23:13:52.701101+00:00",
+      "completed_at": "2026-10-23T23:17:56+00:00",
+      "file": "sdd/tasks/completed/TASK-4677-plausibility-coverage-and-prompt-caps.md",
+      "verification": "verified"
+    }
+  ]
+}

@@ -150,6 +150,8 @@ class FirefliesInsightsAgent(SkillRegistryMixin, Agent):
     async def configure(self, app=None) -> None:
         """Resolve the inbox dir and load file-only skills (S6)."""
         await super().configure(app)
+        if self.configure_skipped:
+            return
         await self._configure_skill_file_registry()
         root = self.wiki_root or find_project_root()
         if root is None:
@@ -160,10 +162,20 @@ class FirefliesInsightsAgent(SkillRegistryMixin, Agent):
         self.wiki_root = root
 
     async def post_configure(self) -> None:
-        """Wire WorkingMemoryToolkit and JiraToolkit once self.app exists."""
+        """Wire WorkingMemoryToolkit and JiraToolkit once self.app exists.
+
+        Re-entrant: adopts the registered toolkits instead of constructing new ones, so
+        ``self.working_memory`` is always the instance the manager serves (FEAT-721).
+        """
         await super().post_configure()
-        self.working_memory = WorkingMemoryToolkit(session_id=f"{self.name}-meetings")
-        self.jira_toolkit = self._build_jira_toolkit()
+        working_memory = self.tool_manager.find_registered_toolkit(WorkingMemoryToolkit)
+        if working_memory is None:
+            working_memory = WorkingMemoryToolkit(session_id=f"{self.name}-meetings")
+        self.working_memory = working_memory
+        jira_toolkit = self.tool_manager.find_registered_toolkit(JiraToolkit)
+        if jira_toolkit is None:
+            jira_toolkit = self._build_jira_toolkit()
+        self.jira_toolkit = jira_toolkit
         for toolkit in (self.working_memory, self.jira_toolkit):
             if toolkit is not None:
                 self.tool_manager.register_toolkit(toolkit)

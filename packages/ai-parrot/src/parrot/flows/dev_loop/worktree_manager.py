@@ -32,6 +32,7 @@ from typing import Awaitable, Callable, Dict, List, Optional, Set, Tuple
 from pydantic import BaseModel, Field
 
 from parrot.flows.dev_loop.procs import git_env, run_bounded
+from parrot.flows.dev_loop.native_artifacts import main_checkout_root, sync_native_artifacts
 
 #: Wall-clock cap for one manager-owned ``git`` child (see `parrot.flows.dev_loop.procs`).
 GIT_TIMEOUT_S: float = 300.0
@@ -171,7 +172,35 @@ class SubWorktreeManager:
             )
 
         self._created[worker_id] = (path, branch)
+        await self._sync_native_artifacts(path)
         return path
+
+    async def _sync_native_artifacts(self, path: str) -> None:
+        """Copy declared native build artifacts into a fresh sub-worktree.
+
+        A ``git worktree add`` tree carries no compiled extension (they are all
+        gitignored), so a coder seat in it cannot even ``import parrot.utils``
+        (FEAT-722). Blocking I/O, so it runs in a thread. Never raises: a
+        native-sync problem must not fail a coder attempt.
+        """
+        main_root = await asyncio.to_thread(main_checkout_root, Path(self.base_worktree))
+        if main_root is None:
+            self.logger.debug("native sync skipped: no main checkout for %s", self.base_worktree)
+            return
+        try:
+            report = await asyncio.to_thread(sync_native_artifacts, main_root=main_root, target=Path(path))
+        except Exception:  # noqa: BLE001 — a sync problem must never fail the attempt
+            self.logger.warning("native artifact sync failed for %s", path, exc_info=True)
+            return
+        for warning in report.warnings:
+            self.logger.warning("native artifacts: %s", warning)
+        self.logger.debug(
+            "native artifacts for %s: %d copied, %d skipped, built=%s",
+            path,
+            len(report.copied),
+            len(report.skipped),
+            report.built,
+        )
 
     async def merge_sequential(self, *, resolver: Optional[Resolver] = None) -> MergeReport:
         """Merge every worker branch into the feature branch, in order.

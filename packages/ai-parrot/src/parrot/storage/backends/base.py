@@ -5,11 +5,21 @@ ABC. The shared contract test suite in tests/storage/test_backend_contract.py
 validates that all backends exhibit identical observable behavior.
 
 FEAT-116: dynamodb-fallback-redis — Module 1 (ConversationBackend ABC).
-See docs/storage-backends.md for the backend selection matrix.
+See wiki/stores/storage-backends.md for the backend selection matrix.
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Optional
+from dataclasses import dataclass
+from typing import List, Optional, Sequence, Set, Tuple
+
+
+@dataclass(frozen=True)
+class BackfillBatch:
+    """Result of one :meth:`ConversationBackend.backfill_batch` call."""
+
+    processed: int
+    next_cursor: Optional[str]  # None when the scan is complete
+    invalid_sessions: Tuple[str, ...]
 
 
 class ConversationBackend(ABC):
@@ -86,8 +96,18 @@ class ConversationBackend(ABC):
         session_id: str,
         turn_id: str,
         data: dict,
-    ) -> None:
-        """Store a conversation turn."""
+    ) -> dict:
+        """Idempotent upsert by ``turn_id``, atomic with the deletion guard and the chronological entry.
+
+        Ordering fields (timestamp, sequence) of an existing turn are never changed.
+        Returns the committed payload with those canonical ordering fields, so downstream
+        caches do not insert updates using the incoming (possibly changed) ordering.
+
+        Raises:
+            StorageUnavailableError: When the backend is disconnected.
+            StorageWriteError: When the durable write fails.
+            ConversationDeletedError: When the session or the turn is tombstoned.
+        """
 
     @abstractmethod
     async def query_turns(
@@ -98,7 +118,11 @@ class ConversationBackend(ABC):
         limit: int = 10,
         newest_first: bool = True,
     ) -> List[dict]:
-        """Query conversation turns for a session."""
+        """Query conversation turns for a session.
+
+        Raises:
+            StorageUnavailableError: When disconnected or the read fails — never returns ``[]`` for a failure.
+        """
 
     @abstractmethod
     async def delete_turn(
@@ -125,6 +149,79 @@ class ConversationBackend(ABC):
 
         Returns:
             Number of items deleted.
+        """
+
+    # ------------------------------------------------------------------
+    # Durable conversation operations (FEAT-886)
+    # ------------------------------------------------------------------
+
+    @abstractmethod
+    async def query_turn_window(self, user_id: str, agent_id: str, session_id: str, limit: int) -> List[dict]:
+        """The newest ``limit`` turns by ``(timestamp, sequence, turn_id)``.
+
+        ``limit`` is applied DESCENDING at the backend; the window is returned ASCENDING.
+
+        Raises:
+            StorageUnavailableError: Disconnected or the read failed.
+            ConversationDeletedError: The session is tombstoned.
+            IndexNotReadyError: The chronological index is not ready (no full scan is performed).
+
+        An active session with no turns returns ``[]``.
+        """
+
+    @abstractmethod
+    async def max_sequence(self, user_id: str, agent_id: str, session_id: str) -> int:
+        """Highest stored ``sequence`` for the session, ``0`` when none."""
+
+    @abstractmethod
+    async def put_tombstone(self, user_id: str, agent_id: str, session_id: str, turn_id: Optional[str] = None) -> None:
+        """Durably record a session (``turn_id=None``) or turn deletion. Idempotent.
+
+        Not subject to transcript TTL or :meth:`delete_thread_cascade`.
+        """
+
+    @abstractmethod
+    async def deleted_turn_ids(self, user_id: str, agent_id: str, session_id: str) -> Set[str]:
+        """The ids of every TURN tombstoned in the session, in ONE bounded read (session tombstone excluded).
+
+        Raises:
+            StorageUnavailableError: If it cannot be determined — never returns an empty set on failure.
+        """
+
+    @abstractmethod
+    async def deleted_session_ids(self, user_id: str, agent_id: str, session_ids: Sequence[str]) -> Set[str]:
+        """The members of ``session_ids`` that carry a SESSION tombstone, in one bounded read.
+
+        Turn tombstones are ignored. An empty ``session_ids`` returns ``set()`` without touching the store;
+        duplicates in ``session_ids`` are harmless and only ids taken from it are returned.
+
+        Raises:
+            StorageUnavailableError: If it cannot be determined — never returns an empty set on failure
+                (also when the backend is disconnected).
+        """
+
+    @abstractmethod
+    async def is_deleted(self, user_id: str, agent_id: str, session_id: str, turn_id: Optional[str] = None) -> bool:
+        """Whether the identity is tombstoned.
+
+        Without ``turn_id``: whether the SESSION is tombstoned. With ``turn_id``: whether the session OR that
+        turn is tombstoned — a session tombstone deletes every turn of the session, so one call answers
+        "may this turn exist?".
+
+        Raises:
+            StorageUnavailableError: If it cannot be determined — never returns ``False`` on failure.
+        """
+
+    @abstractmethod
+    async def get_index_state(self, user_id: str, agent_id: str, session_id: str) -> str:
+        """``'ready'`` | ``'pending'`` | ``'invalid'``. Sessions created after FEAT-886 are ``'ready'``."""
+
+    @abstractmethod
+    async def backfill_batch(self, cursor: Optional[str], batch_size: int) -> BackfillBatch:
+        """Index up to ``batch_size`` legacy turns after ``cursor``; resumable and safe alongside new writes.
+
+        Marks a session ``'ready'`` once all its turns are indexed, ``'invalid'`` when a turn has a
+        missing or unparseable timestamp.
         """
 
     # ------------------------------------------------------------------
@@ -215,7 +312,4 @@ class ConversationBackend(ABC):
             Key prefix string, e.g.
             ``"artifacts/USER#u#AGENT#a/THREAD#s/aid"``.
         """
-        return (
-            f"artifacts/USER#{user_id}#AGENT#{agent_id}"
-            f"/THREAD#{session_id}/{artifact_id}"
-        )
+        return f"artifacts/USER#{user_id}#AGENT#{agent_id}" f"/THREAD#{session_id}/{artifact_id}"

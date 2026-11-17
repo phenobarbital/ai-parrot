@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-210 — Telegram Operator Commands
 **Spec**: `sdd/specs/FEAT-210-telegram-operator-commands.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1394, TASK-1395, TASK-1396, TASK-1397

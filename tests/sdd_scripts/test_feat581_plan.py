@@ -44,6 +44,7 @@ if str(_SERVER_SRC) not in sys.path:
     sys.path.insert(0, str(_SERVER_SRC))
 
 from parrot.e2e.evidence import verify_evidence  # noqa: E402
+from parrot.e2e.models import E2EVerdict  # noqa: E402
 from parrot.e2e.plan import load_plan  # noqa: E402
 from parrot.e2e.runner import run_plan  # noqa: E402
 
@@ -222,6 +223,60 @@ async def test_frozen_plan_with_no_persisted_evidence_reports_missing_never_a_fa
     assert result.gate_satisfied is False
 
 
+def _run_diagnostics(verdict: E2EVerdict, *, worktree: Path) -> str:
+    """Render everything a failed allow-path run needs in order to explain itself.
+
+    The allow-path test drives a REAL `run_plan` -- a child `python -m pytest`
+    process plus a live `E2ESupervisor` -- so a bare `assert verdict.status ==
+    "PASS"` reports only `'FAIL' == 'PASS'` and discards every field that
+    identifies the cause: the per-node `reason_code` (`scenario_timeout` under a
+    loaded machine looks identical to a genuine assertion failure), the pytest
+    phase outcomes, the child's exit code, and the on-disk evidence the run just
+    wrote. That is what made issue:578e0c770341's intermittent red run
+    undiagnosable, so keep the evidence attached to the assertion.
+
+    Args:
+        verdict: The `E2EVerdict` returned by `run_plan`.
+        worktree: The checkout `run_plan` executed against; locates the
+            evidence directory written under `sdd/state/<feature>/e2e/runs/`.
+
+    Returns:
+        A multi-line diagnostic block for an assertion message.
+    """
+    lines = [
+        f"status={verdict.status} exit_code={verdict.exit_code} "
+        f"gate_satisfied={verdict.gate_satisfied} counts={verdict.counts}",
+        f"selected_node_ids={verdict.selected_node_ids}",
+        f"collected_node_ids={verdict.collected_node_ids}",
+        f"cleanup_results={verdict.cleanup_results}",
+    ]
+    for result in verdict.results:
+        lines.append(
+            f"  - {result.scenario_id}::{result.node_id} outcome={result.outcome} "
+            f"reason_code={result.reason_code} setup={result.setup_outcome} "
+            f"call={result.call_outcome} teardown={result.teardown_outcome} "
+            f"exit_code={result.exit_code} duration_s={result.duration_s}"
+        )
+
+    # The child pytest's own per-node report ("the bridge") is the only record of
+    # what it actually did; `run_plan` writes it next to the verdict and nothing
+    # else surfaces it. pytest retains `tmp_path` for the last few runs, so name
+    # the directory too -- it stays readable after the failure.
+    evidence_dir = worktree / "sdd" / "state" / verdict.feature_id / "e2e" / "runs" / verdict.run_id
+    lines.append(f"evidence_dir={evidence_dir}")
+    if evidence_dir.is_dir():
+        for artifact in sorted(evidence_dir.iterdir()):
+            try:
+                body = artifact.read_text(encoding="utf-8")
+            except OSError as exc:  # unreadable evidence is itself a finding
+                lines.append(f"  [{artifact.name}] unreadable: {exc}")
+                continue
+            lines.append(f"  [{artifact.name}] {body.strip()}")
+    else:
+        lines.append("  (evidence directory absent -- the run failed before writing any)")
+    return "\n".join(lines)
+
+
 async def test_a_genuinely_executed_required_plan_reaches_the_allow_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -270,11 +325,12 @@ async def test_a_genuinely_executed_required_plan_reaches_the_allow_path(
     _run(["git", "commit", "-m", "seed real allow-path checkout"], cwd=worktree)
 
     verdict = await run_plan(plan_path, worktree=worktree, owner_id=f"pytest-plan-test-{uuid.uuid4().hex}")
-    assert verdict.status == "PASS"
+    diagnostics = _run_diagnostics(verdict, worktree=worktree)
+    assert verdict.status == "PASS", diagnostics
 
     result = await verify_evidence(plan_path, worktree=worktree)
-    assert result.status == "PASS"
-    assert result.gate_satisfied is True
+    assert result.status == "PASS", f"reason_codes={result.reason_codes}\n{diagnostics}"
+    assert result.gate_satisfied is True, f"reason_codes={result.reason_codes}\n{diagnostics}"
 
 
 def _run(argv: list[str], *, cwd: Path) -> None:

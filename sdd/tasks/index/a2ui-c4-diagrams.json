@@ -1,0 +1,270 @@
+{
+  "feature": "a2ui-c4-diagrams",
+  "feature_id": "FEAT-754",
+  "spec": "sdd/specs/a2ui-c4-diagrams.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-27T00:00:00Z",
+  "completed_at": "2026-10-27T12:25:56+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/outputs/a2ui/graph/test_models.py",
+          "packages/ai-parrot/tests/outputs/a2ui/graph/test_mermaid.py",
+          "packages/ai-parrot/tests/outputs/a2ui/graph/test_layout.py",
+          "packages/ai-parrot/tests/outputs/a2ui/graph/test_models_c4.py",
+          "packages/ai-parrot/tests/outputs/a2ui/graph/test_mermaid_c4.py",
+          "packages/ai-parrot/tests/outputs/a2ui/graph/test_layout_c4.py",
+          "packages/ai-parrot/tests/outputs/a2ui/test_components_graph.py",
+          "packages/ai-parrot/tests/outputs/a2ui/test_components_graph_c4.py",
+          "packages/ai-parrot/tests/outputs/a2ui/test_builders_graph.py",
+          "packages/ai-parrot/tests/outputs/a2ui/test_builders_c4.py",
+          "packages/ai-parrot/tests/outputs/a2ui/test_catalog_parity.py",
+          "packages/ai-parrot/tests/outputs/a2ui/conformance/test_all_emitters.py",
+          "packages/ai-parrot-visualizations/tests/outputs/a2ui_renderers/test_graph_svg.py",
+          "packages/ai-parrot-visualizations/tests/outputs/a2ui_renderers/test_echarts_graph.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      },
+      {
+        "kind": "vitest",
+        "targets": [
+          "src/lib/components/agents/canvas/a2ui/A2UIGraph.test.ts",
+          "src/lib/components/visualizations/ECharts.test.ts"
+        ],
+        "settings": {
+          "cwd": "packages/ai-parrot-server/ui"
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:600feb83718059199ab637a090217c1b0743ef9d7f756a694df037d9d14c8e27"
+  },
+  "tasks": [
+    {
+      "id": "TASK-4784",
+      "slug": "c4-graph-vocabulary",
+      "title": "C4 vocabulary on the GraphSpec models (V1–V7) + shared fixture",
+      "feature_id": "FEAT-754",
+      "feature": "a2ui-c4-diagrams",
+      "spec": "sdd/specs/a2ui-c4-diagrams.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "root: creates C4 fields/Literals in graph/models.py and the shared fixture every Python task loads",
+      "assigned_to": null,
+      "started_at": "2026-10-27T02:39:28+00:00",
+      "completed_at": "2026-10-27T12:07:21+00:00",
+      "file": "sdd/tasks/completed/TASK-4784-c4-graph-vocabulary.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4785",
+      "slug": "mermaid-c4-emitter",
+      "title": "Mermaid C4 emitter + to_mermaid dispatch",
+      "feature_id": "FEAT-754",
+      "feature": "a2ui-c4-diagrams",
+      "spec": "sdd/specs/a2ui-c4-diagrams.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4784"
+      ],
+      "parallel": true,
+      "parallelism_notes": "reads GraphSpec.level / GraphNode.c4_type from TASK-4784 (graph/models.py) and loads its fixture",
+      "assigned_to": null,
+      "started_at": "2026-10-27T02:39:28+00:00",
+      "completed_at": "2026-10-27T12:14:17+00:00",
+      "file": "sdd/tasks/completed/TASK-4785-mermaid-c4-emitter.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4786",
+      "slug": "mermaid-c4-parser",
+      "title": "Mermaid C4 parser + from_mermaid dispatch + round-trip",
+      "feature_id": "FEAT-754",
+      "feature": "a2ui-c4-diagrams",
+      "spec": "sdd/specs/a2ui-c4-diagrams.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-4785"
+      ],
+      "parallel": true,
+      "parallelism_notes": "modifies graph/mermaid_c4.py, graph/mermaid.py and test_mermaid_c4.py created/edited by TASK-4785; inverts its _ELEMENT_MACRO tables",
+      "assigned_to": null,
+      "started_at": "2026-10-27T02:39:28+00:00",
+      "completed_at": "2026-10-27T12:19:18+00:00",
+      "file": "sdd/tasks/completed/TASK-4786-mermaid-c4-parser.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4787",
+      "slug": "c4-layout",
+      "title": "C4 layout + nested-aware _group_boxes",
+      "feature_id": "FEAT-754",
+      "feature": "a2ui-c4-diagrams",
+      "spec": "sdd/specs/a2ui-c4-diagrams.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-4784"
+      ],
+      "parallel": true,
+      "parallelism_notes": "needs GraphGroup.parent and GraphLayout.shape_in_row/boundary_in_row from TASK-4784 (graph/models.py)",
+      "assigned_to": null,
+      "started_at": "2026-10-27T02:39:28+00:00",
+      "completed_at": "2026-10-27T12:14:17+00:00",
+      "file": "sdd/tasks/completed/TASK-4787-c4-layout.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4788",
+      "slug": "graph-c4-lowering",
+      "title": "Catalog — C4 lowering, instructions, authoring notes, utterances",
+      "feature_id": "FEAT-754",
+      "feature": "a2ui-c4-diagrams",
+      "spec": "sdd/specs/a2ui-c4-diagrams.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4785"
+      ],
+      "parallel": true,
+      "parallelism_notes": "graph-source node calls to_mermaid on a c4 spec, which needs to_mermaid_c4 from TASK-4785 (graph/mermaid_c4.py)",
+      "assigned_to": null,
+      "started_at": "2026-10-27T02:39:28+00:00",
+      "completed_at": "2026-10-27T12:19:18+00:00",
+      "file": "sdd/tasks/completed/TASK-4788-graph-c4-lowering.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4789",
+      "slug": "build-c4-diagram",
+      "title": "Builder — build_graph(level=) + build_c4_diagram",
+      "feature_id": "FEAT-754",
+      "feature": "a2ui-c4-diagrams",
+      "spec": "sdd/specs/a2ui-c4-diagrams.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4787"
+      ],
+      "parallel": true,
+      "parallelism_notes": "build_graph calls compute_positions, whose c4 dispatch to compute_c4_positions is created by TASK-4787 (graph/layout_c4.py)",
+      "assigned_to": null,
+      "started_at": "2026-10-27T02:39:28+00:00",
+      "completed_at": "2026-10-27T12:19:18+00:00",
+      "file": "sdd/tasks/completed/TASK-4789-build-c4-diagram.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4790",
+      "slug": "echarts-chart-ready-hook",
+      "title": "ECharts.svelte optional onChartReady lifecycle callback",
+      "feature_id": "FEAT-754",
+      "feature": "a2ui-c4-diagrams",
+      "spec": "sdd/specs/a2ui-c4-diagrams.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "independent: only ECharts.svelte and its new test file",
+      "assigned_to": null,
+      "started_at": "2026-10-27T02:39:28+00:00",
+      "completed_at": "2026-10-27T12:07:21+00:00",
+      "file": "sdd/tasks/completed/TASK-4790-echarts-chart-ready-hook.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4791",
+      "slug": "a2uigraph-c4-option",
+      "title": "A2UIGraph.svelte C4 types, symbols and pure frame computation",
+      "feature_id": "FEAT-754",
+      "feature": "a2ui-c4-diagrams",
+      "spec": "sdd/specs/a2ui-c4-diagrams.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "independent: frozen wire shape from spec §2; touches only A2UIGraph.svelte/.test.ts",
+      "assigned_to": null,
+      "started_at": "2026-10-27T02:39:28+00:00",
+      "completed_at": "2026-10-27T12:07:22+00:00",
+      "file": "sdd/tasks/completed/TASK-4791-a2uigraph-c4-option.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4792",
+      "slug": "a2uigraph-frame-projection",
+      "title": "A2UIGraph.svelte projected boundary frames + rendered gate",
+      "feature_id": "FEAT-754",
+      "feature": "a2ui-c4-diagrams",
+      "spec": "sdd/specs/a2ui-c4-diagrams.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "L",
+      "depends_on": [
+        "TASK-4790",
+        "TASK-4791"
+      ],
+      "parallel": true,
+      "parallelism_notes": "uses onChartReady prop from TASK-4790 (ECharts.svelte) and computeBoundaryFrames from TASK-4791; both edit A2UIGraph.svelte/.test.ts",
+      "assigned_to": null,
+      "started_at": "2026-10-27T02:39:28+00:00",
+      "completed_at": "2026-10-27T12:14:18+00:00",
+      "file": "sdd/tasks/completed/TASK-4792-a2uigraph-frame-projection.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4793",
+      "slug": "c4-conformance-and-docs",
+      "title": "C4 re-exports, conformance sweep and documentation",
+      "feature_id": "FEAT-754",
+      "feature": "a2ui-c4-diagrams",
+      "spec": "sdd/specs/a2ui-c4-diagrams.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4786",
+        "TASK-4787",
+        "TASK-4788",
+        "TASK-4789",
+        "TASK-4792"
+      ],
+      "parallel": true,
+      "parallelism_notes": "re-exports from_mermaid_c4 (TASK-4786) and compute_c4_positions (TASK-4787); conformance needs lowering (TASK-4788) and build_c4_diagram (TASK-4789); docs describe the renderer from TASK-4792",
+      "assigned_to": null,
+      "started_at": "2026-10-27T02:39:28+00:00",
+      "completed_at": "2026-10-27T12:25:56+00:00",
+      "file": "sdd/tasks/completed/TASK-4793-c4-conformance-and-docs.md",
+      "verification": "verified"
+    }
+  ]
+}

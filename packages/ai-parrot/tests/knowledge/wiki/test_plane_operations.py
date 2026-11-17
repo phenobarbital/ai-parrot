@@ -21,8 +21,8 @@ from parrot.knowledge.wiki.structural.tools import create_structural_tools
 from parrot.knowledge.wiki.symbols import SymbolKind, SymbolRecord
 
 # Fixtures live in the decisions/ and schema/ conftests, which do not apply to this directory.
-from tests.knowledge.wiki.decisions.conftest import adr_store  # noqa: F401
-from tests.knowledge.wiki.schema.conftest import plane_dir, sales_metadata  # noqa: F401
+from .decisions.conftest import adr_store  # noqa: F401
+from .schema.conftest import plane_dir, sales_metadata  # noqa: F401
 
 
 def _without_age(payload: object) -> object:

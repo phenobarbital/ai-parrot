@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-162 — Cross-Session Security Report Catalog
 **Spec**: `sdd/specs/security-report-catalog.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-1105

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-647 — Chat-driven document upload into Bookstore / LLM Wiki
 **Spec**: `sdd/specs/teams-telegram-uploader-bookstore.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

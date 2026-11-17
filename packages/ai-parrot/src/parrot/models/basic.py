@@ -93,6 +93,18 @@ class CompletionUsage(BaseModel):
     # Provider-specific additional fields
     extra_usage: Dict[str, Any] = Field(default_factory=dict)
 
+    # FEAT-783: first-class cache / reasoning counters (previously only in extra_usage).
+    cache_read_tokens: int = Field(
+        0, validation_alias=AliasChoices("cache_read_tokens", "cache_read_input_tokens", "cached_input_tokens")
+    )
+    cache_creation_tokens: int = Field(
+        0,
+        validation_alias=AliasChoices(
+            "cache_creation_tokens", "cache_creation_input_tokens", "cache_write_input_tokens"
+        ),
+    )
+    reasoning_output_tokens: int = 0
+
     # GenAI SemConv aliases. The canonical fields use the OpenAI naming
     # (prompt/completion); these computed fields expose the OTel GenAI naming
     # (input/output) for read access AND serialization, so callers and the
@@ -137,10 +149,12 @@ class CompletionUsage(BaseModel):
     def from_claude(cls, usage: Dict[str, Any]) -> "CompletionUsage":
         """Create from Claude usage dict."""
         return cls(
-            prompt_tokens=usage.get('input_tokens', 0),
-            completion_tokens=usage.get('output_tokens', 0),
-            total_tokens=usage.get('input_tokens', 0) + usage.get('output_tokens', 0),
-            extra_usage=usage
+            prompt_tokens=usage.get("input_tokens", 0),
+            completion_tokens=usage.get("output_tokens", 0),
+            total_tokens=usage.get("input_tokens", 0) + usage.get("output_tokens", 0),
+            cache_read_tokens=usage.get("cache_read_input_tokens", 0) or 0,
+            cache_creation_tokens=usage.get("cache_creation_input_tokens", 0) or 0,
+            extra_usage=usage,
         )
 
     @classmethod
@@ -158,10 +172,12 @@ class CompletionUsage(BaseModel):
             prompt_tokens=input_tokens,
             completion_tokens=output_tokens,
             total_tokens=input_tokens + output_tokens,
+            cache_read_tokens=usage.get("cacheReadInputTokens", 0) or 0,
+            cache_creation_tokens=usage.get("cacheWriteInputTokens", 0) or 0,
             extra_usage={
                 "cacheReadInputTokens": usage.get("cacheReadInputTokens", 0),
                 "cacheWriteInputTokens": usage.get("cacheWriteInputTokens", 0),
-            }
+            },
         )
 
     @classmethod
@@ -283,6 +299,8 @@ class CompletionUsage(BaseModel):
         Semantics:
             - ``prompt_tokens`` / ``completion_tokens`` / ``total_tokens``:
               plain integer sum.
+            - ``cache_read_tokens`` / ``cache_creation_tokens`` /
+              ``reasoning_output_tokens``: plain integer sum.
             - Timing fields (``completion_time``, ``prompt_time``,
               ``queue_time``, ``total_time``): summed when either side is
               set (they represent cumulative time spent across rounds);
@@ -303,6 +321,9 @@ class CompletionUsage(BaseModel):
             prompt_tokens=self.prompt_tokens + other.prompt_tokens,
             completion_tokens=self.completion_tokens + other.completion_tokens,
             total_tokens=self.total_tokens + other.total_tokens,
+            cache_read_tokens=self.cache_read_tokens + other.cache_read_tokens,
+            cache_creation_tokens=self.cache_creation_tokens + other.cache_creation_tokens,
+            reasoning_output_tokens=self.reasoning_output_tokens + other.reasoning_output_tokens,
             completion_time=_add_optional(self.completion_time, other.completion_time),
             prompt_time=_add_optional(self.prompt_time, other.prompt_time),
             queue_time=_add_optional(self.queue_time, other.queue_time),

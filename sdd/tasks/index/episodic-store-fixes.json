@@ -1,0 +1,106 @@
+{
+  "feature": "episodic-store-fixes",
+  "feature_id": "FEAT-903",
+  "spec": "sdd/specs/episodic-store-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-16T11:24:20.606848+00:00",
+  "completed_at": "2026-11-16T12:47:45+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/memory/dynamics/test_models.py",
+          "packages/ai-parrot/tests/memory/dynamics/test_evidence_models.py",
+          "packages/ai-parrot/tests/memory/dynamics/test_store_reviews.py",
+          "packages/ai-parrot/tests/memory/dynamics/test_sqlite_backend.py",
+          "packages/ai-parrot/tests/memory/dynamics/test_attribution.py",
+          "packages/ai-parrot/tests/memory/dynamics/test_reviews.py",
+          "packages/ai-parrot/tests/memory/unified/test_models.py",
+          "packages/ai-parrot/tests/memory/unified/test_context.py",
+          "packages/ai-parrot/tests/memory/unified/test_manager.py",
+          "packages/ai-parrot/tests/memory/unified/test_manager_real_store.py",
+          "packages/ai-parrot/tests/memory/agent_memory/test_review_fixes.py",
+          "packages/ai-parrot/tests/memory/agent_memory/test_documentation.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:5dcb8d8fae37bd5d2a29f422fc4b63ae4e38832db6939392f0a977154e5a93a5"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5720",
+      "slug": "visible-episode-review-admission",
+      "title": "Preserve episode identity through visible citation and review admission",
+      "feature_id": "FEAT-903",
+      "feature": "episodic-store-fixes",
+      "spec": "sdd/specs/episodic-store-fixes.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No predecessor: consumes existing visible_to_scope and recall_scopes in episodic/visibility.py.",
+      "assigned_to": "agent:sdd-fix:5d23ba57",
+      "started_at": "2026-11-16T12:22:33.160505+00:00",
+      "completed_at": "2026-11-16T12:32:10+00:00",
+      "file": "sdd/tasks/completed/TASK-5720-visible-episode-review-admission.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5721",
+      "slug": "original-refs-in-final-exposure",
+      "title": "Carry original episode refs through final packed exposure",
+      "feature_id": "FEAT-903",
+      "feature": "episodic-store-fixes",
+      "spec": "sdd/specs/episodic-store-fixes.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5720"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-5720 provides visible citation/review admission in episodic/store.py and full-ref attribution in agent_memory/attribution.py consumed by the manager.",
+      "assigned_to": "agent:sdd-fix:5d23ba57",
+      "started_at": "2026-11-16T12:34:31.853983+00:00",
+      "completed_at": "2026-11-16T12:45:14+00:00",
+      "file": "sdd/tasks/completed/TASK-5721-original-refs-in-final-exposure.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5722",
+      "slug": "document-cross-scope-episode-reviews",
+      "title": "Document original episode identity and request-scoped review evidence",
+      "feature_id": "FEAT-903",
+      "feature": "episodic-store-fixes",
+      "spec": "sdd/specs/episodic-store-fixes.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5720",
+        "TASK-5721"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-5720 defines review admission and scoped outcome semantics; TASK-5721 defines packed typed refs and final exposures. Documentation describes both delivered contracts.",
+      "assigned_to": "agent:sdd-fix:5d23ba57",
+      "started_at": "2026-11-16T12:46:29.217414+00:00",
+      "completed_at": "2026-11-16T12:47:45+00:00",
+      "file": "sdd/tasks/completed/TASK-5722-document-cross-scope-episode-reviews.md",
+      "verification": "verified"
+    }
+  ]
+}

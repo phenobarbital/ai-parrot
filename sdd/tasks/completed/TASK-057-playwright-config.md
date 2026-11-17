@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-015 — PlaywrightDriver
 **Spec**: `sdd/specs/scraping-playwrightdriver.spec.md`
-**Status**: in-progress
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

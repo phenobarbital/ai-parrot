@@ -90,7 +90,7 @@ ENV=dev python examples/agents/a2ui/linked_e2e/server.py --port 5002 --guard-mod
 ```
 
 Other flags are `--host` (default `127.0.0.1`) and `--llm` (an agent LLM string, such as
-`google:gemini-2.5-flash`). `--llm` is needed only for `--via-agent` and for S4.
+`google:gemini-3.8-flash`). `--llm` is needed only for `--via-agent` and for S4.
 
 The agent is added with `add_bot` **before** startup, because the guard is injected only into bots that are
 registered at startup. `none` mode sets `PARROT_PBAC_POLICY_DIR` before `parrot` is imported, so it needs a

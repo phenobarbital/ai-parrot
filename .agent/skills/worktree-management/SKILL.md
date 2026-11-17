@@ -8,13 +8,13 @@ description: Single source of truth for git worktrees in this repo — where the
 Worktrees isolate **features** from each other: one worktree per feature (or
 hotfix); the tasks of a feature run sequentially inside that same worktree.
 Branch *policy* (which base each flow type uses, sync-down, `/sdd-done` never
-targeting `main`) lives in `CLAUDE.md` § Git Configuration — this file is the
+targeting the hotfix base) lives in `sdd/WORKFLOW.md` § Git Configuration — this file is the
 how-to.
 
 ## 1. Where they live, how they are named
 
-- Always under `.claude/worktrees/` (git-ignored). Never `.worktrees/`, never a global directory.
-- Names come from `scripts.sdd.sdd_meta.plan_worktree`, never invented:
+- Always under the worktree root (default `.parrot/worktrees/`, override with an exported `WORKTREE_BASE_PATH`).
+- Names come from `parrot.sdd.scripts.sdd_meta.plan_worktree`, never invented:
   - feature → `feat-<FEAT-ID>-<slug>` (the doubled `feat-FEAT-` prefix is intentional — `/sdd-done` greps on it)
   - hotfix → `hotfix-<JIRA-KEY>-<slug>`
 - Base ref is **always `origin/<base_branch>`** — `dev` (or `staging` during a freeze) for features, `main` for hotfixes — never `HEAD`, so a worktree can never inherit an unpushed local commit (FEAT-466).
@@ -22,12 +22,12 @@ how-to.
 ## 2. Create (idempotent)
 
 ```bash
-source .venv/bin/activate
-python -m scripts.sdd.ensure_worktree --slug <slug> --feature-id FEAT-<NNN>   # feature → origin/dev
-python -m scripts.sdd.ensure_worktree --slug <slug> --jira-key <JIRA-KEY>     # hotfix  → origin/main
+if [ -f .venv/bin/activate ]; then source .venv/bin/activate; fi   # only a repo with a project venv
+parrot sdd worktree ensure --slug <slug> --feature-id FEAT-<NNN>   # feature → origin/<base_branch>
+parrot sdd worktree ensure --slug <slug> --jira-key <JIRA-KEY>     # hotfix  → origin/<hotfix_base>
 ```
 
-- Created by whoever implements: `/sdd-start`, `sdd-worker`, and the dev-loop orchestrators (`sdd-planner`, `sdd-research`, `sdd-autopilot`). `/sdd-task` creates none (FEAT-552).
+- Created by whoever implements: `/sdd-start`, `sdd-worker`, `/sdd-fix` (Fast lane, via `--brief-key <ledger-short-id> --base-branch dev`), and the dev-loop orchestrators (`sdd-planner`, `sdd-research`, `sdd-autopilot`). `/sdd-task` creates none (FEAT-552).
 - **Never** `claude --worktree` (it branches from `main`, which has no SDD artifacts) and never hand-build `git worktree add` for SDD work.
 - Skip the worktree entirely for docs-only changes, single-commit fixes, single-task specs and brainstorms — work on a plain branch.
 
@@ -46,25 +46,39 @@ inside `<path>`* — never in the primary checkout.
 
 ## 4. Work inside
 
-- Run git as `git -C <path> ...` (or `cd` in). Small commits, one task per commit, and **push early** (`git push -u origin <branch>`): other sessions may merge or `reset --hard` the shared tree, and only pushed commits are safe.
+- Run git as `git -C <path> ...` (or `cd` in). Use small commits, one task per commit. From a trusted host shell, **push early** (`git push origin <branch>`): other sessions may merge or `reset --hard` the shared tree, and only pushed commits are safe. The interactive launcher, `parrot devloop launch-worker FEAT-<NNN>`, creates/reuses the worktree and sets its upstream on the host. Never push from a worker sandbox.
 - The shared `.venv` is editable-installed against the **main checkout**, so a bare `pytest` inside a worktree imports the wrong branch. Prefix with `PYTHONPATH=packages/ai-parrot/src` (one entry per changed package). Never `uv sync` inside a worktree — it repoints the shared venv's `.pth` and breaks `import parrot` for every session once the worktree is removed.
+- Compiled artifacts arrive with the worktree (FEAT-722): every `.so` is gitignored, so `ensure_worktree` copies the ones declared in the root `pyproject.toml` (`[tool.parrot.worktree]`) from the main checkout on create **and** on reuse, and the `sdd-coder` pool does the same for each attempt sub-worktree. A missing artifact is built automatically in the main checkout, under a per-group lock. Do NOT hand-copy `.so` files and never run `maturin develop` to repair a tree — it rewrites the shared `.venv`. If a warning says a build was refused or failed, run it yourself: `cd packages/ai-parrot && python setup.py build_ext --inplace` or `make -C packages/navrules build-rust-wheel`. Opt out with `--no-native-sync` / `--no-autobuild`, or `PARROT_WORKTREE_SYNC_NATIVE=0` / `PARROT_WORKTREE_AUTOBUILD=0`.
+- Sandboxed sessions never load the `user` setting source: a `PreToolUse` hook in `~/.claude` that rewrites Bash input (RTK's global hook included) can replace the Bubblewrap wrapper (`issue:6756c929a450`). Launch a worker with `parrot sdd launch worker <FEAT-ID|KEY>` (features and briefs; add `--tmux [--detach]` to run it unattended). With `PARROT_SDD_SANDBOX_BACKEND` unset the hook runs each command natively when Claude Code's native sandbox is active and through Bubblewrap otherwise; `PARROT_SDD_SANDBOX_BACKEND=bubblewrap` forces the legacy wrapper.
 - Run the tests your task names; do not start with a full baseline sweep.
+- Need a tree of the base ref (e.g. to check a failure is pre-existing)? `parrot sdd worktree baseline create --base origin/<base_branch>` — never `git archive` / a hand-built `git worktree add --detach`: those carry no gitignored `.so` files. Remove it with `parrot sdd worktree baseline remove <path>`.
+- Need a base fix inside the sandbox? Run `parrot sdd worktree sync-base <FEAT-ID|KEY|name|path> --cherry-pick <sha>`. Never run `git fetch`, `git pull` or `git push` inside the worker sandbox. Full-base sync is a host operator action before starting the worker. If push-protection prerequisites are missing, ask the host operator to provision them; never change protected Git config. The host entry point prints the stale-base advisory; do not run that check inside the sandbox.
 
 ## 5. Finish
 
 - Working tree clean, branch pushed.
 - SDD lane: `/sdd-done <FEAT-ID>` verifies the tasks, stamps the index, pushes, opens a PR feature → `base_branch` (`main` included for a hotfix brief; `--merge` merges directly, but it never merges into `main`) and cleans up.
 - Ad-hoc lane: `gh pr create --base <base_branch> --head <branch> --title "..." --body "..."` — never against `main` for a feature. If `gh` is missing or unauthenticated, hand the user the exact commands instead.
+- Changing an open PR (base, title, body): never `gh pr edit` — on repositories that still carry "Projects (classic)" data it fails with a GraphQL `Projects (classic)` deprecation error, a `gh` CLI bug and not an SDD-flow problem. Go straight to the REST API: `gh api -X PATCH "repos/{owner}/{repo}/pulls/<number>" -f base=<base_branch>` (`-f title=...` / `-f body=...` for the other fields; `gh` fills in `{owner}/{repo}` itself). Do not try `gh pr edit` first and do not retry it.
 
 ## 6. Clean up
 
 ```bash
 /remove-worktree                          # list first; refuses worktrees with a live sdd-worker
-git worktree remove .claude/worktrees/<name>
+git worktree remove "$WORKTREES_DIR/<name>"
 git worktree prune                        # drop stale admin data
 ```
 
 Never remove a worktree with uncommitted changes, never `--force` unless the
 user explicitly asks, and look for orphan directories under
-`.claude/worktrees/` that `git worktree list` no longer knows about —
+the worktree root that `git worktree list` no longer knows about —
 `/remove-worktree` handles those; `prune` does not.
+
+If you still have worktrees under the legacy location, run the migration recipe
+`parrot self doctor` prints (it moves them to the new worktree root and ends with
+`git worktree repair`) and update your workflows.
+
+Untracked leftovers (logs or scratch files a tool left behind) are not uncommitted
+changes, but `git worktree remove` refuses them too unless the path is gitignored. Park
+them aside first — `/sdd-done` moves them to `${SDD_HOOKS_ARTIFACT_ROOT:-/tmp/claude-$(id -u)/sdd-hooks}/<FEAT-ID>/worktree-leftovers/` —
+instead of forcing (issue:4a534ef4f3ee).

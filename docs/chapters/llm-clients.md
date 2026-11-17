@@ -1,49 +1,19 @@
 # LLM Clients
 
-AI-Parrot talks to every LLM provider through a single
-`AbstractClient` interface, so the same agent code can run on OpenAI,
-Anthropic, Google GenAI, Groq, VertexAI or HuggingFace without changes.
+AI-Parrot talks to every LLM provider through a single `AbstractClient` interface, so the same agent code can run on OpenAI, Anthropic, Google GenAI, Groq, VertexAI or HuggingFace without changes. This abstraction layer is the key to building vendor-agnostic applications that can switch providers or add new ones without rewriting your core logic. The client layer handles all the complexity of different API formats, authentication methods, and response structures, presenting a unified interface to the rest of the framework.
 
-## What lives here
+## Key Concepts
 
-- **`AbstractClient`** — async base class with `completion()`,
-  `stream()` and `embed()`. Every provider wrapper inherits from it.
-- **Provider clients** — concrete implementations under
-  `parrot.clients.*` (one module per vendor).
-- **`LLM_PRESETS`** — opinionated configurations for the most common
-  models (temperature, max tokens, retry budget).
-- **`StreamingRetryConfig`** — retry policy applied around streaming
-  completions, including back-off and partial-response handling.
-- **Embeddings** — `parrot.embeddings` covers dense and sparse
-  embedding back-ends used by the RAG pipeline.
+- **AbstractClient** — an async base class with `completion()`, `stream()` and `embed()` methods that every provider wrapper inherits from. This interface defines the contract that all clients must implement.
+- **Streaming and retries** — the client layer handles streaming responses and retry policies with configurable back-off and partial-response handling. This ensures robustness when dealing with network issues or rate limits.
+- **Embeddings** — dense and sparse embedding back-ends used by the RAG pipeline, accessible through the same client interface. These embeddings enable semantic search and retrieval over your documents.
 
-```mermaid
-flowchart LR
-    Agent --> AbstractClient
-    AbstractClient --> OpenAI
-    AbstractClient --> Anthropic
-    AbstractClient --> Groq
-    AbstractClient --> VertexAI
-    AbstractClient --> HuggingFace
-```
+## What You Can Build
 
-## Golden rules
+- Build a single agent that can switch between different LLM providers at runtime without changing your code, making it easy to experiment with different models or handle provider outages.
+- Create a custom client wrapper for a new provider that follows the same async interface, extending the framework's support for additional LLM services.
+- Implement a caching layer that stores completions per loop to avoid redundant API calls, reducing costs and improving response times.
 
-1. **Never call a provider SDK directly** — always go through
-   `AbstractClient`. This is the seam that keeps the framework vendor
-   agnostic.
-2. **`await` everything** — clients are async only. Wrapping them with
-   `asyncio.run` inside another coroutine will block the event loop.
-3. **Don't subclass `AbstractClient` lightly** — discuss the change
-   first; it's the foundation that all bots and crews assume.
+## Deep Dive
 
-## Read next
-
-- [Per-loop Caching](../clients/per-loop-cache.md) — how the client
-  layer caches completions inside a single agent turn.
-- [Contextual Embedding](../contextual-embedding.md)
-- [Matryoshka Embeddings](../matryoshka-embeddings.md)
-
-## API reference
-
-[API Reference → Clients](../api-reference/clients.md)
+For API reference, class signatures, and implementation details, see the [Clients section in the Wiki](https://github.com/phenobarbital/ai-parrot/wiki/Home).

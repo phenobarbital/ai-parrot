@@ -1,0 +1,272 @@
+[
+ {
+  "id": "c88",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/core/events/lifecycle/subscribers/opentelemetry.py",
+  "symbol": "OTel",
+  "expected_line": 22
+ },
+ {
+  "id": "c142",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/core/events/lifecycle/subscribers/opentelemetry.py",
+  "line": null
+ },
+ {
+  "id": "c135",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/mcp/",
+  "line": null
+ },
+ {
+  "id": "c120",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/mcp/_quic.py",
+  "symbol": "load_quic",
+  "expected_line": 1
+ },
+ {
+  "id": "c121",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/mcp/registry.py",
+  "symbol": "transport",
+  "expected_line": 292
+ },
+ {
+  "id": "c140",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/observability/",
+  "line": null
+ },
+ {
+  "id": "c96",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/observability/__init__.py",
+  "symbol": "exports",
+  "expected_line": 63
+ },
+ {
+  "id": "c171",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/observability/__init__.py",
+  "line": null
+ },
+ {
+  "id": "c95",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/observability/attributes.py",
+  "symbol": "cost",
+  "expected_line": 240
+ },
+ {
+  "id": "c93",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/observability/context.py",
+  "symbol": "module",
+  "expected_line": 1
+ },
+ {
+  "id": "c94",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/observability/context.py",
+  "symbol": "agent_identity",
+  "expected_line": 86
+ },
+ {
+  "id": "c175",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/observability/cost.py",
+  "symbol": "ensure_shared_cost_calculator",
+  "expected_line": null
+ },
+ {
+  "id": "c97",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/observability/exporters.py",
+  "symbol": "OTLP",
+  "expected_line": 52
+ },
+ {
+  "id": "c91",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/observability/fanout.py",
+  "symbol": "ensure_shared_cost_calculator",
+  "expected_line": 24
+ },
+ {
+  "id": "c166",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/observability/fanout.py",
+  "symbol": "setup_event_fanout",
+  "expected_line": null
+ },
+ {
+  "id": "c100",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/observability/provider.py",
+  "symbol": "provider",
+  "expected_line": 9
+ },
+ {
+  "id": "c98",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/observability/recorders/base.py",
+  "symbol": "recorder",
+  "expected_line": 17
+ },
+ {
+  "id": "c99",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/observability/recorders/logging_recorder.py",
+  "symbol": "LoggingUsageRecorder",
+  "expected_line": 17
+ },
+ {
+  "id": "c92",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/observability/recorders/models.py",
+  "symbol": "UsageRecord",
+  "expected_line": 22
+ },
+ {
+  "id": "c173",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/observability/recorders/openlit_recorder.py",
+  "symbol": "OpenLitUsageRecorder",
+  "expected_line": null
+ },
+ {
+  "id": "c101",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/observability/recorders/run_ledger.py",
+  "line": 1
+ },
+ {
+  "id": "c174",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/observability/setup.py",
+  "symbol": "setup_telemetry",
+  "expected_line": null
+ },
+ {
+  "id": "c176",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/observability/subscribers/metrics.py",
+  "line": null
+ },
+ {
+  "id": "c172",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/observability/subscribers/trace.py",
+  "symbol": "GenAIOpenTelemetrySubscriber",
+  "expected_line": null
+ },
+ {
+  "id": "c144",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/outputs/",
+  "line": null
+ },
+ {
+  "id": "c137",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/registry/",
+  "line": null
+ },
+ {
+  "id": "c54",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/capabilities/models.py",
+  "symbol": "module",
+  "expected_line": 1
+ },
+ {
+  "id": "c55",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/capabilities/models.py",
+  "symbol": "CapabilityEntry",
+  "expected_line": 48
+ },
+ {
+  "id": "c56",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/capabilities/models.py",
+  "symbol": "ResourceType",
+  "expected_line": 25
+ },
+ {
+  "id": "c57",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/capabilities/models.py",
+  "symbol": "RoutingDecision",
+  "expected_line": 91
+ },
+ {
+  "id": "c58",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/registry/capabilities/registry.py",
+  "line": 1
+ },
+ {
+  "id": "c46",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "symbol": "BotMetadata",
+  "expected_line": 50
+ },
+ {
+  "id": "c47",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "symbol": "AgentRegistry",
+  "expected_line": 258
+ },
+ {
+  "id": "c48",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "symbol": "register",
+  "expected_line": 526
+ },
+ {
+  "id": "c49",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "symbol": "register_instance",
+  "expected_line": 586
+ },
+ {
+  "id": "c50",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "symbol": "_collect_and_register_policies",
+  "expected_line": 379
+ },
+ {
+  "id": "c51",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "symbol": "register_bot_decorator",
+  "expected_line": 1324
+ },
+ {
+  "id": "c52",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "symbol": "instantiate_startup_agents",
+  "expected_line": 1471
+ },
+ {
+  "id": "c53",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "symbol": "AgentFactory",
+  "expected_line": 43
+ },
+ {
+  "id": "c139",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/security/",
+  "line": null
+ }
+]

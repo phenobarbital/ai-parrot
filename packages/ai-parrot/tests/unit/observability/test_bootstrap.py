@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from navigator_eventbus.lifecycle.global_registry import get_global_registry, scope
@@ -266,3 +268,130 @@ def test_shutdown_observability_swallows_errors(monkeypatch) -> None:
     boot.shutdown_observability()  # must not raise
 
     assert usage_called["n"] == 1
+
+
+def test_bootstrap_failure_logs_at_error(monkeypatch, caplog) -> None:
+    """A failing _do_bootstrap() is loud (ERROR) but never breaks construction.
+
+    FEAT-725 AC4: the navigator-eventbus hook site that calls the bootstrap
+    logs at DEBUG, so this record is the only signal an operator gets.
+    """
+
+    def _boom() -> None:
+        raise RuntimeError("bootstrap exploded")
+
+    monkeypatch.delenv("PARROT_EVENT_FANOUT_ENABLED", raising=False)
+    monkeypatch.setattr(boot, "_do_bootstrap", _boom)
+    monkeypatch.setattr(boot, "_BOOTSTRAPPED", False)
+
+    with caplog.at_level(logging.ERROR, logger="parrot.observability.bootstrap"):
+        boot.ensure_observability_bootstrapped()  # must NOT raise
+
+    assert any(
+        record.levelno == logging.ERROR and "Observability auto-boot failed" in record.getMessage()
+        for record in caplog.records
+    )
+    assert boot._BOOTSTRAPPED is True
+
+
+def _patch_failing_fanout(monkeypatch) -> list[int]:
+    """Patch setup_event_fanout to raise, returning a one-slot call counter.
+
+    The bootstrap imports setup_event_fanout lazily, INSIDE the function, so
+    the patch must land on the fanout module, not on ``boot``.
+    """
+    from parrot.observability import fanout
+
+    calls = [0]
+
+    def _boom(bus=None) -> None:
+        calls[0] += 1
+        raise RuntimeError("bad fan-out config")
+
+    monkeypatch.setenv("PARROT_EVENT_FANOUT_ENABLED", "true")
+    monkeypatch.setattr(fanout, "setup_event_fanout", _boom)
+    monkeypatch.setattr(boot, "_BOOTSTRAPPED", False)
+    monkeypatch.setattr(boot, "_FANOUT_ERROR", None)
+    monkeypatch.setattr(boot, "_FANOUT_ERROR_TB", None)
+    return calls
+
+
+def test_fanout_setup_failure_logs_error_and_raises(monkeypatch, caplog) -> None:
+    """A failing setup_event_fanout() is logged at ERROR and still propagates.
+
+    TASK-4615 / issue:bd94e0afa8e6: the raise is deliberate — a durable fan-out
+    misconfiguration stays a startup error — but it no longer leaves
+    ``_BOOTSTRAPPED`` False, and ``_do_bootstrap()`` still runs so the local
+    observability layer is not collateral damage.
+    """
+    _patch_failing_fanout(monkeypatch)
+    did_bootstrap = []
+    monkeypatch.setattr(boot, "_do_bootstrap", lambda: did_bootstrap.append(True))
+
+    with caplog.at_level(logging.ERROR, logger="parrot.observability.bootstrap"):
+        with pytest.raises(RuntimeError, match="bad fan-out config"):
+            boot.ensure_observability_bootstrapped()
+
+    assert any(
+        record.levelno == logging.ERROR and "Durable event fan-out setup failed" in record.getMessage()
+        for record in caplog.records
+    )
+    assert boot._BOOTSTRAPPED is True
+    assert did_bootstrap == [True]
+
+
+def test_fanout_failure_is_cached_and_not_retried(monkeypatch, caplog) -> None:
+    """TASK-4615: the setup is attempted once; later calls re-raise the cache.
+
+    Every construction still raises (it is a startup error), but
+    ``setup_event_fanout()`` runs exactly once, ``_do_bootstrap()`` is not
+    re-entered, nothing is logged again, and re-raising the same exception
+    object does not grow its traceback without bound.
+    """
+    calls = _patch_failing_fanout(monkeypatch)
+    bootstrap_calls = []
+    monkeypatch.setattr(boot, "_do_bootstrap", lambda: bootstrap_calls.append(True))
+
+    with pytest.raises(RuntimeError) as first:
+        boot.ensure_observability_bootstrapped()
+
+    def _tb_length(exc) -> int:
+        length, tb = 0, exc.__traceback__
+        while tb is not None:
+            length += 1
+            tb = tb.tb_next
+        return length
+
+    first_len = _tb_length(first.value)
+
+    caplog.clear()  # drop the first call's ERROR; only later calls matter here
+    with caplog.at_level(logging.ERROR, logger="parrot.observability.bootstrap"):
+        for _ in range(5):
+            with pytest.raises(RuntimeError) as again:
+                boot.ensure_observability_bootstrapped()
+            assert again.value is first.value
+
+    assert calls == [1], "setup_event_fanout must not be retried"
+    assert bootstrap_calls == [True], "_do_bootstrap must not be re-entered"
+    assert caplog.records == [], "the failure is diagnosed exactly once"
+    assert _tb_length(first.value) <= first_len + 1
+
+
+def test_reset_clears_cached_fanout_error(monkeypatch) -> None:
+    """TASK-4615: reset_bootstrap_for_tests() drops the cached fan-out error."""
+    _patch_failing_fanout(monkeypatch)
+    monkeypatch.setattr(boot, "_do_bootstrap", lambda: None)
+
+    with pytest.raises(RuntimeError):
+        boot.ensure_observability_bootstrapped()
+    assert boot._FANOUT_ERROR is not None
+
+    boot.reset_bootstrap_for_tests()
+
+    assert boot._FANOUT_ERROR is None
+    assert boot._FANOUT_ERROR_TB is None
+    assert boot._BOOTSTRAPPED is False
+
+    monkeypatch.delenv("PARROT_EVENT_FANOUT_ENABLED", raising=False)
+    boot.ensure_observability_bootstrapped()  # must not raise
+    assert boot._BOOTSTRAPPED is True

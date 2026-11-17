@@ -1,0 +1,15 @@
+The request is a declarative **expert bundle** plus a **stage binding** layer, and the codebase already holds most of the primitives it names, with four surprises. The skills subsystem (`SkillsDirectoryLoader`, `SkillDefinition`, `SkillView`) is a near-exact precedent for a directory bundle with frontmatter validation, token counting and workspace-over-package shadowing; the `AgentRegistry` already discovers YAML `BotConfig` manifests under `AGENTS_DIR/agents/`; and the ADR decision plane, GraphIndex L2 retrieval and bookstore cards cover the knowledge sources the manifest declares. The surprises: FEAT-321 (approved) already ships file-based identity and **rejected** a sectioned single `persona.md`; the KB path the source wants to replace is a dormant retrieval-only list with no inline-layer equivalent; the AHP gates are typed to the dev-loop by closed Literals; and no deny-list or `spawn_agent` tool exists (the tool is `spawn_sub_agent`, allowlist-only). What is genuinely new is the `ExpertManifest` + `ExpertRegistry`, the `KnowledgeResolver`/`KnowledgeContext`, the governance rules chain, a stage node type compiled into `FlowDefinition`, a generic gate host lifted from `ApprovalGate`, and the blind-contribution protocol. The recommendation is to spec FEAT-778 as phases 1–2 of the source (bundle, resolver, rules, ADR, wiki) with the five forks resolved in §5, and to route phases 3–4 (stages, dispatch modes, scope grid) to a follow-up brainstorm once the resolver exists.
+
+---
+
+Original request (verbatim excerpt):
+> Se propone introducir en ai-parrot el concepto de **Domain Expert**: un agente declarativo compuesto por una
+> identidad (`persona.md`), una knowledge base propia en dos tiers, un conjunto de reglas de gobierno y acceso
+> obligatorio al LLM Wiki (OKF) y al bookstore. Un expert es inerte hasta que un stage de un Flow SDD lo nombra
+> como lead o support; la delegación siempre la hace el conductor del Flow, nunca otro expert.
+>
+> El patrón se toma de los *domain experts* de AWS AI-DLC (11 agentes de dominio, knowledge en dos tiers, orden
+> de carga determinista, binding a stages) y se adapta a lo que ai-parrot ya tiene: PromptBuilder por capas,
+> AgentRegistry/AgentCrew, LLM Wiki OKF, GraphIndex, soporte ADR y gates de sesión AHP. […]
+>
+> Este documento es un brainstorm para abrir el research; las decisiones quedan abiertas en la sección de preguntas.

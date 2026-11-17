@@ -1,0 +1,13 @@
+{
+  "pricing": {
+    "last_updated": "2026-01-01",
+    "source": "frozen-revision-a",
+    "currency": "USD"
+  },
+  "models": {
+    "claude-revision-test": {
+      "input_per_1m": 2.0,
+      "output_per_1m": 4.0
+    }
+  }
+}

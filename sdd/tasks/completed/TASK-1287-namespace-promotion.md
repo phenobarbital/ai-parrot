@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-188 — Skills Directory Loader + PromptBuilder Integration
 **Spec**: `sdd/specs/skill-registry.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: none

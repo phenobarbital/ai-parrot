@@ -436,11 +436,16 @@ class JiraSpecialist(Agent):
         hook (override it in subclasses to change auth). This method then
         registers the resulting tools with ``self.tool_manager``, syncs
         them back to the LLM so schemas are visible for the first user
-        turn, and wires the reminder toolkit.
+        turn, and wires the reminder toolkit. Re-entrant (FEAT-721):
+        already-registered Jira and Reminder toolkits are adopted, and
+        ``self.tools`` never gains duplicate names.
         """
         await super().post_configure()
 
-        self.jira_toolkit = self._configure_jira()
+        jira_toolkit = self.tool_manager.find_registered_toolkit(JiraToolkit)
+        if jira_toolkit is None:
+            jira_toolkit = self._configure_jira()
+        self.jira_toolkit = jira_toolkit
         if self.jira_toolkit is None:
             return
 
@@ -453,9 +458,7 @@ class JiraSpecialist(Agent):
         if not tools:
             return
 
-        if not hasattr(self, "tools") or self.tools is None:
-            self.tools = []
-        self.tools.extend(tools)
+        self._extend_unique_tools(tools)
 
         # Re-sync so the LLM client sees the newly-registered tool schemas.
         if self._llm is not None and hasattr(self._llm, "tool_manager"):
@@ -484,7 +487,9 @@ class JiraSpecialist(Agent):
             )
             return
 
-        reminder_toolkit = ReminderToolkit(scheduler_manager=scheduler_manager)
+        reminder_toolkit = self.tool_manager.find_registered_toolkit(ReminderToolkit)
+        if reminder_toolkit is None:
+            reminder_toolkit = ReminderToolkit(scheduler_manager=scheduler_manager)
         try:
             reminder_tools = self.tool_manager.register_toolkit(reminder_toolkit)
         except Exception as exc:  # noqa: BLE001 - mirror JiraToolkit tolerance
@@ -492,7 +497,14 @@ class JiraSpecialist(Agent):
             return
 
         if reminder_tools:
-            self.tools.extend(reminder_tools)
+            self._extend_unique_tools(reminder_tools)
+
+    def _extend_unique_tools(self, tools: list) -> None:
+        """Append ``tools`` to ``self.tools``, skipping names already present (FEAT-721)."""
+        if not hasattr(self, "tools") or self.tools is None:
+            self.tools = []
+        present = {getattr(tool, "name", None) for tool in self.tools}
+        self.tools.extend(tool for tool in tools if getattr(tool, "name", None) not in present)
 
     async def clone_for_user(self, user_context: UserContext) -> "JiraSpecialist":
         """Return a fully isolated per-user clone of this agent.

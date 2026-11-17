@@ -1,0 +1,123 @@
+{
+  "feature": "test-scope-report-fixes",
+  "feature_id": "FEAT-830",
+  "spec": "sdd/specs/test-scope-report-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-06T23:17:53+00:00",
+  "completed_at": "2026-11-06T23:22:04+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/flows/dev_loop/test_scope/test_contract.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_scope/test_spec_contract.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_scope/test_contract_schema2.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_scope/test_select.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_scope/test_select_contract_mode.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_scope/test_green_cache.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_scope/test_report.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_scope/test_baseline.py",
+          "packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_background_contract.py",
+          "packages/ai-parrot/tests/sdd/test_select_tests_base_ref.py",
+          "tests/sdd_scripts/test_check_task_graph.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:4d973dc3bab17a995af2821eaf94c2acc7c61fa1d32af52cb9d04aff24a271b5"
+  },
+  "discovered_from": "issue:bfb29d4ffe49",
+  "tasks": [
+    {
+      "id": "TASK-5272",
+      "slug": "directory-operands",
+      "title": "Reject directory contract operands; drop declared directory targets",
+      "feature_id": "FEAT-830",
+      "feature": "test-scope-report-fixes",
+      "spec": "sdd/specs/test-scope-report-fixes.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "no dependency: owns contract.py + select.py and their tests exclusively; no shared files with TASK-5273/5274",
+      "assigned_to": "claude-session-sdd-fix-c0b83d30",
+      "started_at": "2026-11-06T23:19:05+00:00",
+      "completed_at": "2026-11-06T23:21:20+00:00",
+      "file": "sdd/tasks/completed/TASK-5272-directory-operands.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5273",
+      "slug": "one-cache-namespace",
+      "title": "One green-cache namespace for CLI and supervisor; null-safe base ref",
+      "feature_id": "FEAT-830",
+      "feature": "test-scope-report-fixes",
+      "spec": "sdd/specs/test-scope-report-fixes.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "no dependency: owns green_cache.py, select_tests.py, background.py and their tests; creates namespace_for used by TASK-5275's docs",
+      "assigned_to": "claude-session-sdd-fix-c0b83d30",
+      "started_at": "2026-11-06T23:19:05+00:00",
+      "completed_at": "2026-11-06T23:21:20+00:00",
+      "file": "sdd/tasks/completed/TASK-5273-one-cache-namespace.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5274",
+      "slug": "cached-count-baseline",
+      "title": "Union cached count; baseline imports from its own checkout and never prunes globally",
+      "feature_id": "FEAT-830",
+      "feature": "test-scope-report-fixes",
+      "spec": "sdd/specs/test-scope-report-fixes.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "no dependency: owns report.py, baseline.py and their tests; independent of the namespace and operand changes",
+      "assigned_to": "claude-session-sdd-fix-c0b83d30",
+      "started_at": "2026-11-06T23:19:05+00:00",
+      "completed_at": "2026-11-06T23:21:20+00:00",
+      "file": "sdd/tasks/completed/TASK-5274-cached-count-baseline.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5275",
+      "slug": "docs-green-cache",
+      "title": "Documentation — green cache depth-1 limit, namespace and file name",
+      "feature_id": "FEAT-830",
+      "feature": "test-scope-report-fixes",
+      "spec": "sdd/specs/test-scope-report-fixes.spec.md",
+      "status": "done",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5272",
+        "TASK-5273"
+      ],
+      "parallel": true,
+      "parallelism_notes": "documents namespace_for created by TASK-5273 (green_cache.py) and the .py operand rule created by TASK-5272 (contract.py)",
+      "assigned_to": "claude-session-sdd-fix-c0b83d30",
+      "started_at": "2026-11-06T23:21:46+00:00",
+      "completed_at": "2026-11-06T23:22:04+00:00",
+      "file": "sdd/tasks/completed/TASK-5275-docs-green-cache.md",
+      "verification": "verified"
+    }
+  ]
+}

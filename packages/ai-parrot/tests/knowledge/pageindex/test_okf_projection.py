@@ -6,7 +6,7 @@ Tests verify:
 - project_sidecars regenerates all sidecars byte-deterministically.
 - generate_index_md produces a deterministic root-level index.
 - Sidecar filenames are <flattened_concept_id>.md not <node_id>.md.
-- Old node_id.md sidecars are cleaned up when renamed.
+- Legacy node_id.md sidecars are retained for the generation grace period.
 """
 
 import pytest
@@ -160,14 +160,32 @@ class TestProjectSidecars:
         content = store.load("test_tree", "intro")
         assert "Original body content." in content
 
-    def test_old_node_id_sidecar_removed(self, store, enriched_tree):
-        """Old node_id.md sidecar is removed when concept_id sidecar is written."""
+    def test_projection_reads_body_ref(self, store, tmp_path):
+        """A body_ref blob is authoritative when projecting a sidecar."""
+        store.save_body("t", "intro.0123456789abcdef", "BLOB BODY")
+        tree = {
+            "structure": [
+                {
+                    "node_id": "0001",
+                    "concept_id": "intro",
+                    "type": "Section",
+                    "title": "Intro",
+                    "body_ref": "intro.0123456789abcdef",
+                }
+            ]
+        }
+
+        project_sidecars(tree, "t", store)
+
+        assert "BLOB BODY" in (tmp_path / "t" / "intro.md").read_text()
+
+    def test_projection_keeps_legacy_node_file(self, store, enriched_tree):
+        """Projection leaves legacy node_id.md sidecars for the grace-period sweep."""
         # Pre-populate an old node_id-keyed sidecar
         store.save("test_tree", "0000", "Body for node 0000")
         report = project_sidecars(enriched_tree, "test_tree", store)
-        # Old file removed
-        assert not store.has("test_tree", "0000")
-        assert "0000" in report.old_files_removed
+        assert store.has("test_tree", "0000")
+        assert report.old_files_removed == []
 
     def test_sidecar_has_frontmatter(self, store, enriched_tree):
         """Written sidecars start with YAML frontmatter."""

@@ -1,0 +1,1124 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-798",
+  "mode": "enrichment",
+  "summary_oneline": "Retire gemini-2.5-{pro,flash} before the 2026-12-01 shutdown: FEAT-688 already shipped Argon and the 2.31.0 floor, so the remaining work is a sweep of ~25 hardcoded 2.5 defaults (FEAT-796 builtins, bots, handlers, loaders, plugins, docs, UI), the enum + prefix gates + catalogue tests, and a verified floor bump to google-genai 2.34.0",
+  "localization": [
+    {
+      "path": "packages/ai-parrot-client-google/src/parrot/clients/google/models.py",
+      "symbol": "GoogleModel",
+      "lines": "41-49, 59",
+      "role": "the 2.5 block to delete: GEMINI_2_5_FLASH(+_PREVIEW alias), _FLASH_LITE(+_PREVIEW alias), _PRO, _FLASH_TTS, _PRO_TTS, _FLASH_IMAGE(+_PREVIEW alias), GEMINI_COMPUTER_USE",
+      "evidence": [
+        "F003",
+        "F017"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-client-google/src/parrot/clients/google/models.py",
+      "symbol": "VertexAIModel",
+      "lines": "91-93",
+      "role": "Vertex catalogue still lists GEMINI_2_5_FLASH/_FLASH_LITE/_PRO (untouched by FEAT-688)",
+      "evidence": [
+        "F003",
+        "F022"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-client-google/src/parrot/clients/google/client.py",
+      "symbol": "GoogleGenAIClient._requires_thinking",
+      "lines": "303-314",
+      "role": "thinking gate still prefix-matches gemini-2.5-pro (dead prefix once the member goes)",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-client-google/src/parrot/clients/google/client.py",
+      "symbol": "GoogleGenAIClient._is_computer_use_model",
+      "lines": "403-420",
+      "role": "computer-use gate still matches gemini-2.5-computer-use (id shut down 2026-07-28)",
+      "evidence": [
+        "F004",
+        "F028"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-client-google/src/parrot/clients/google/client.py",
+      "symbol": "GoogleGenAIClient (fallback chains)",
+      "lines": "3370, 4253, 4792, 4935, 5227, 5330, 5636",
+      "role": "seven secondary fallbacks on GoogleModel.GEMINI_2_5_FLASH.value — AttributeError at import if the member is deleted first",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-client-google/src/parrot/clients/google/client.py",
+      "symbol": "GoogleGenAIClient._default_model",
+      "lines": "128-133, 151-160, 171",
+      "role": "class defaults already 2.5-free (gemini-flash-latest / 3.1-flash-lite / 3.5-flash) and Argon leads the combined-call whitelist",
+      "evidence": [
+        "F004",
+        "F010"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-client-google/src/parrot/clients/google/analysis.py",
+      "symbol": "(method defaults)",
+      "lines": "64, 139, 631, 815, 914, 1075, 1130, 1185",
+      "role": "six GEMINI_2_5_FLASH defaults, one GEMINI_2_5_PRO default, one literal gemini-2.5-flash",
+      "evidence": [
+        "F002",
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-client-google/src/parrot/clients/google/generation.py",
+      "symbol": "(method defaults)",
+      "lines": "405, 572, 2321",
+      "role": "GEMINI_2_5_FLASH defaults and the speech default GEMINI_2_5_FLASH_TTS (TTS id dies 2026-11-17)",
+      "evidence": [
+        "F002",
+        "F014",
+        "F028"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/llm_defaults.py",
+      "symbol": "resolve_component_llm",
+      "lines": "47-59",
+      "role": "FEAT-796 resolver <COMPONENT>_LLM -> DEFAULT_LLM -> builtin; hardcodes no model, so it needs no change",
+      "evidence": [
+        "F009",
+        "F019"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/handlers/agents/abstract.py",
+      "symbol": "AgentHandler._create_agent",
+      "lines": "797-802",
+      "role": "AGENT builtin 'google:gemini-2.5-pro' plus a second literal 'gemini-2.5-pro' fallback",
+      "evidence": [
+        "F009",
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py",
+      "symbol": "_CREW_BUILTIN_LLM",
+      "lines": "121, 135, 1834",
+      "role": "CREW builtin 'google:gemini-2.5-pro'",
+      "evidence": [
+        "F009",
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/experts/policy.py",
+      "symbol": "DEFAULT_TIER_POLICY",
+      "lines": "10-14",
+      "role": "EXPERT tier builtins: judgment gemini-2.5-pro, balanced/templated gemini-2.5-flash",
+      "evidence": [
+        "F009"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/conf.py",
+      "symbol": "ONTOLOGY_AQL_MODEL",
+      "lines": "165-166",
+      "role": "the only literal 2.5 fallback left in parrot.conf (gemini-2.5-flash)",
+      "evidence": [
+        "F005",
+        "F024"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/conf.py",
+      "symbol": "DEFAULT_LLM_MODEL",
+      "lines": "456-459",
+      "role": "global bare-model default already gemini-flash-latest; DEFAULT_LLM (250) unset by design",
+      "evidence": [
+        "F005",
+        "F023"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/base.py",
+      "symbol": "BasicBot (ask-path model fallback)",
+      "lines": "487-495",
+      "role": "hard fallback to gemini-2.5-flash for Google clients",
+      "evidence": [
+        "F006",
+        "F024"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/voice.py",
+      "symbol": "(VoiceBot text LLM)",
+      "lines": "437-438",
+      "role": "text LLM default gemini-2.5-flash",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/scraper/scraper.py",
+      "symbol": "(scraper model resolution)",
+      "lines": "94-99",
+      "role": "last-resort gemini-2.5-flash",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/factory/builders/rag_builder.py",
+      "symbol": "(builder prompt)",
+      "lines": "29",
+      "role": "LLM prompt instructs generated agent configs to default to gemini-2.5-flash (same in tool_agent_builder.py:31)",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/factory/builders/tool_agent_builder.py",
+      "symbol": "(builder prompt)",
+      "lines": "31",
+      "role": "LLM prompt default gemini-2.5-flash",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/loaders/abstract.py",
+      "symbol": "AbstractLoader (summary/translation defaults)",
+      "lines": "984-1103",
+      "role": "four gemini-2.5-flash-lite defaults — an id Google has NOT deprecated",
+      "evidence": [
+        "F001",
+        "F028"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/interfaces/images/plugins/classifybase.py",
+      "symbol": "(image plugin ctor)",
+      "lines": "26",
+      "role": "model_name default gemini-2.5-flash (same in classify.py:55, analisys.py:16)",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/interfaces/images/plugins/classify.py",
+      "symbol": "(image plugin ctor)",
+      "lines": "55",
+      "role": "model_name default gemini-2.5-flash",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/interfaces/images/plugins/analisys.py",
+      "symbol": "(image plugin ctor)",
+      "lines": "16",
+      "role": "model_name default gemini-2.5-flash",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/memory/episodic/reflection.py",
+      "symbol": "(reflection ctor)",
+      "lines": "94",
+      "role": "model default gemini-2.5-flash",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/setup/providers/google.py",
+      "symbol": "default_model",
+      "lines": "16",
+      "role": "installer provider default gemini-2.5-flash",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/models/google.py",
+      "symbol": "GoogleVoiceModel",
+      "lines": "13-28, 602",
+      "role": "core Live/TTS catalogue defaulting to gemini-2.5-flash-native-audio-preview-12-2025 (dies 2026-11-17) and the video-reel director fallback gemini-2.5-flash",
+      "evidence": [
+        "F014",
+        "F028"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/handlers/google_generation.py",
+      "symbol": "list_models / post",
+      "lines": "38-44, 107-115",
+      "role": "public /models payload iterates the enum verbatim; POST default model gemini-2.5-flash",
+      "evidence": [
+        "F013",
+        "F023"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/autonomous/deploy/templates.py",
+      "symbol": "(deploy templates)",
+      "lines": "188-199",
+      "role": "generated deploy config pins llm=google:gemini-2.5-flash",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/e2e/models.py",
+      "symbol": "LiveBudget.model",
+      "lines": "131",
+      "role": "e2e budget model google:gemini-2.5-flash-lite (not deprecated)",
+      "evidence": [
+        "F001",
+        "F028"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/factory.py",
+      "symbol": "LLMFactory.list_models",
+      "lines": "231-253",
+      "role": "publishes active/deprecated; GoogleGenAIClient defines no deprecated_models",
+      "evidence": [
+        "F013",
+        "F016"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-client-google/pyproject.toml",
+      "symbol": "(dependencies)",
+      "lines": "34",
+      "role": "google-genai>=2.31.0 floor (same in ai-parrot-embeddings/pyproject.toml:55); uv.lock resolves 2.31.0",
+      "evidence": [
+        "F007",
+        "F021"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-embeddings/pyproject.toml",
+      "symbol": "(dependencies)",
+      "lines": "49-55",
+      "role": "google-genai>=2.31.0 floor in the google extra",
+      "evidence": [
+        "F007",
+        "F021"
+      ]
+    },
+    {
+      "path": "uv.lock",
+      "symbol": "(package google-genai)",
+      "lines": "6704-6705",
+      "role": "resolved google-genai == 2.31.0",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/observability/cost/pricing/google.json",
+      "symbol": "(pricing rows)",
+      "lines": "3, 57-63",
+      "role": "stale (2026-06-10); only 2.5 *preview* rows, no gemini-4-argon row",
+      "evidence": [
+        "F011"
+      ]
+    },
+    {
+      "path": "docs/configuration/llm-defaults.md",
+      "symbol": "(builtin defaults table)",
+      "lines": "8-12",
+      "role": "normative docs publishing the five 2.5 builtins",
+      "evidence": [
+        "F008",
+        "F025"
+      ]
+    },
+    {
+      "path": "docs/config.md",
+      "symbol": "(configuration reference)",
+      "lines": "224-225, 331",
+      "role": "documents DEFAULT_LLM_MODEL=gemini-2.5-flash and a LLM_MODEL_NAME alias that no longer exists",
+      "evidence": [
+        "F008",
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/ui/src/lib/config/regeneration-models.ts",
+      "symbol": "DEFAULT_MODEL",
+      "lines": "22-62",
+      "role": "admin UI hand-maintained model list defaulting to google:gemini-2.5-flash (also ChatInput.svelte:203-204)",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/ui/src/lib/components/agents/ChatInput.svelte",
+      "symbol": "(model picker options)",
+      "lines": "203-204",
+      "role": "model picker lists gemini-2.5-flash / -pro",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/tests/clients/test_google_models.py",
+      "symbol": "(catalogue assertions)",
+      "lines": "11-26",
+      "role": "asserts GEMINI_2_5_PRO/FLASH values and GEMINI_COMPUTER_USE; test_google_model_alias_count pins 49/31",
+      "evidence": [
+        "F012",
+        "F003",
+        "F022"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/tests/test_google_models.py",
+      "symbol": "catalogue assertions",
+      "lines": "7-39, 56-59",
+      "role": "second catalogue test module (FEAT-688 edited both)",
+      "evidence": [
+        "F023",
+        "F010",
+        "F017"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/tests/unit/test_llm_defaults.py",
+      "symbol": "(resolver tests)",
+      "lines": "21-22, 29, 47-51",
+      "role": "FEAT-796 tests asserting the 2.5 builtins",
+      "evidence": [
+        "F012",
+        "F019"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/tests/experts/test_expert_llm_defaults.py",
+      "symbol": "(tier policy tests)",
+      "lines": "21-23, 49",
+      "role": "asserts judgment tier == gemini-2.5-pro",
+      "evidence": [
+        "F012"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/tests/handlers/test_agent_handler_llm_defaults.py",
+      "symbol": "(AGENT default tests)",
+      "lines": "63, 77-92, 129-134",
+      "role": "asserts gemini-2.5-pro as the AGENT default",
+      "evidence": [
+        "F012"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/tests/bots/flows/crew/test_crew_llm_defaults.py",
+      "symbol": "(crew default tests)",
+      "lines": "72, 87",
+      "role": "uses gemini-2.5-flash as the CREW_LLM example",
+      "evidence": [
+        "F012"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-client-google/tests/unit/test_unopened_client_lifecycle.py",
+      "symbol": "(lifecycle tests)",
+      "lines": "48-100",
+      "role": "uses GEMINI_2_5_FLASH / GEMINI_2_5_PRO by name",
+      "evidence": [
+        "F002",
+        "F012"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/tests/test_google_client.py",
+      "symbol": "(negative whitelist cases)",
+      "lines": "370-376, 404, 408, 420-426",
+      "role": "2.5 ids used as non-whitelisted examples; Argon gate tests",
+      "evidence": [
+        "F012",
+        "F010"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "statement": "GoogleModel is a plain Enum: duplicate values collapse into silent aliases, and test_google_model_alias_count pins the exact 49-name / 31-value count",
+      "evidence": [
+        "F003",
+        "F022"
+      ],
+      "implication": "every catalogue deletion must update the alias-count test in the same task; three of the 2.5 names are aliases that vanish with their canonical member"
+    },
+    {
+      "statement": "GEMINI_2_5_FLASH is referenced by name 16 times (client.py x7, analysis.py x6, generation.py x1), GEMINI_2_5_PRO once (analysis.py:815) and GEMINI_2_5_FLASH_TTS once (generation.py:572)",
+      "evidence": [
+        "F002"
+      ],
+      "implication": "deleting the members before rewriting those call sites is an AttributeError at import of client.py; the call-site rewrite must land in the same commit or an earlier task"
+    },
+    {
+      "statement": "Capability routing in GoogleGenAIClient is by string prefix, not by enum membership (_requires_thinking, _is_computer_use_model, _default_combined_call_prefixes, _model_class_key)",
+      "evidence": [
+        "F004",
+        "F022"
+      ],
+      "implication": "the gemini-2.5-pro / gemini-2.5-computer-use prefixes must be dropped with the members (FEAT-688 rule: a dead prefix is worse than a dead member); an unknown id is not rejected, it silently takes the legacy two-phase path"
+    },
+    {
+      "statement": "FEAT-688 decided retirement is pure deletion: no deprecated_models registry, and nothing in the factory or client redirects a retired id to a successor at runtime",
+      "evidence": [
+        "F016",
+        "F022",
+        "F013"
+      ],
+      "implication": "a caller that still passes 'gemini-2.5-flash' after the deletion is not remapped by parrot; Google itself will auto-route API requests after 2026-12-01"
+    },
+    {
+      "statement": "GET /models in google_generation.py publishes [m.value for m in GoogleModel] verbatim",
+      "evidence": [
+        "F013",
+        "F023"
+      ],
+      "implication": "deleting members is a public HTTP payload change; the hand-maintained admin UI lists (regeneration-models.ts, ChatInput.svelte) are not generated from it and need their own edit"
+    },
+    {
+      "statement": "gemini-4-argon has no createCachedContent (live models.list, confirmed by the FEAT-688 spec); FEAT-781 (PR #1890) added Gemini CachedContent handling that is fail-open",
+      "evidence": [
+        "F029",
+        "F022",
+        "F020"
+      ],
+      "implication": "making Argon the default silently disables context caching for those components; the proposal must say so and the spec should assert the fail-open path"
+    },
+    {
+      "statement": "Google's own replacement guidance is gemini-2.5-pro -> gemini-3.8-flash and gemini-2.5-flash -> gemini-3.5-flash-lite; gemini-2.5-flash-lite is NOT deprecated; the 2.5 TTS and native-audio previews shut down 2026-11-17, two weeks before the chat models; gemini-2.5-computer-use-preview already shut down 2026-07-28",
+      "evidence": [
+        "F028",
+        "F029"
+      ],
+      "implication": "choosing Argon as the replacement is a product decision, not Google's migration path; the loaders' flash-lite pins need not change; the voice/TTS defaults are the more urgent cut"
+    },
+    {
+      "statement": "The google-genai floor policy declares only a version that was actually exercised (isolated-venv introspection gate, TASK-4371 blueprint); PyPI latest is 2.34.0 vs the declared/locked 2.31.0",
+      "evidence": [
+        "F007",
+        "F021",
+        "F027"
+      ],
+      "implication": "the 'upgrade' half of the request is a bump from 2.31.0 to a gate-verified 2.34.0 (or the newest that passes), re-run at implementation time because releases are weekly"
+    },
+    {
+      "statement": "The 2.5 component defaults the request targets were introduced two days ago by FEAT-796 (PR #1949) as builtin= strings at three call sites, and four FEAT-796 test modules assert those literals",
+      "evidence": [
+        "F009",
+        "F019",
+        "F012"
+      ],
+      "implication": "changing the builtins is three string edits plus the docs table, but the FEAT-796 tests and docs/configuration/llm-defaults.md must move with them"
+    },
+    {
+      "statement": "client.py received 15 commits in 90 days from four lanes (FEAT-688, FEAT-719, FEAT-781, unified-usage); conf.py 15 commits in 60 days",
+      "evidence": [
+        "F018",
+        "F019"
+      ],
+      "implication": "FEAT-688 task anchors are stale; the spec's Codebase Contract must be re-probed at HEAD and edits kept surgical"
+    },
+    {
+      "statement": "Operators can already escape every 2.5 builtin by env (DEFAULT_LLM, AGENT_LLM, CREW_LLM, EXPERT_*_LLM) without code changes",
+      "evidence": [
+        "F025",
+        "F009"
+      ],
+      "implication": "a zero-code mitigation exists for deployments that cannot wait for the release; the proposal should state it as the interim path"
+    },
+    {
+      "statement": "The bundled Google pricing table (last_updated 2026-06-10) has no GA gemini-2.5-flash/pro rows and no gemini-4-argon row",
+      "evidence": [
+        "F011"
+      ],
+      "implication": "cost attribution for the new defaults is a miss until Argon pricing (external input) is added; CostCalculator already warns the table is stale"
+    }
+  ],
+  "investigation": null,
+  "enrichment": {
+    "new": [
+      {
+        "item": "gemini-4-argon (and any other new default id) rows in observability/cost/pricing/google.json",
+        "evidence": [
+          "F011"
+        ]
+      },
+      {
+        "item": "a regression guard test asserting no 'gemini-2.5-pro' / 'gemini-2.5-flash' literal survives under packages/*/src (excluding flash-lite / flash-image, which are not deprecated)",
+        "evidence": [
+          "F001",
+          "F028"
+        ]
+      },
+      {
+        "item": "an introspection-gated google-genai floor bump (2.31.0 -> 2.34.0 candidate) reusing the TASK-4371 blueprint, plus uv.lock refresh",
+        "evidence": [
+          "F007",
+          "F021",
+          "F027"
+        ]
+      }
+    ],
+    "modified": [
+      {
+        "path": "packages/ai-parrot-client-google/src/parrot/clients/google/models.py",
+        "symbol": "GoogleModel / VertexAIModel",
+        "change": "delete GEMINI_2_5_PRO, GEMINI_2_5_FLASH (+_PREVIEW alias), GEMINI_2_5_FLASH_TTS, GEMINI_2_5_PRO_TTS, GEMINI_COMPUTER_USE; scope of _FLASH_LITE(+alias), _FLASH_IMAGE(+alias) and the Vertex members is U2/U3",
+        "evidence": [
+          "F003",
+          "F028"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-client-google/src/parrot/clients/google/client.py",
+        "symbol": "_requires_thinking / _is_computer_use_model / 7 fallback chains / docstrings",
+        "change": "drop the gemini-2.5-pro and gemini-2.5-computer-use prefixes; replace the seven GEMINI_2_5_FLASH.value fallbacks with self._default_model (gemini-flash-latest) or the chosen flash successor; refresh the 2.5-pro docstrings",
+        "evidence": [
+          "F004",
+          "F002"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-client-google/src/parrot/clients/google/analysis.py",
+        "symbol": "(method defaults)",
+        "change": "eight 2.5 defaults -> successor (flash-class for the six FLASH sites, pro-class for :815)",
+        "evidence": [
+          "F002",
+          "F001"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-client-google/src/parrot/clients/google/generation.py",
+        "symbol": "(method defaults)",
+        "change": "GEMINI_2_5_FLASH -> successor; speech default GEMINI_2_5_FLASH_TTS -> gemini-3.8-flash-tts (Google's replacement, dies 2026-11-17)",
+        "evidence": [
+          "F002",
+          "F014",
+          "F028"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-server/src/parrot/handlers/agents/abstract.py",
+        "symbol": "AgentHandler._create_agent",
+        "change": "AGENT builtin + literal fallback -> pro-class successor (U1)",
+        "evidence": [
+          "F009"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py",
+        "symbol": "_CREW_BUILTIN_LLM",
+        "change": "CREW builtin -> pro-class successor (U1)",
+        "evidence": [
+          "F009"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/experts/policy.py",
+        "symbol": "DEFAULT_TIER_POLICY",
+        "change": "judgment -> pro-class successor; balanced/templated -> flash-class successor (U1)",
+        "evidence": [
+          "F009"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/conf.py",
+        "symbol": "ONTOLOGY_AQL_MODEL",
+        "change": "fallback gemini-2.5-flash -> flash-class successor (or DEFAULT_LLM_MODEL, the FEAT-188 intent)",
+        "evidence": [
+          "F005",
+          "F024"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/bots/base.py",
+        "symbol": "BasicBot fallback",
+        "change": "gemini-2.5-flash -> DEFAULT_LLM_MODEL / client default (same for voice.py:438, scraper.py:98, the two builder prompts, abstract.py/model_switching.py docstrings)",
+        "evidence": [
+          "F006",
+          "F024"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/interfaces/images/plugins/classifybase.py",
+        "symbol": "(image plugin ctors)",
+        "change": "gemini-2.5-flash -> flash-class successor in classifybase.py, classify.py, analisys.py; same for memory/episodic/reflection.py:94, setup/providers/google.py:16, models/google.py:602 (reel director)",
+        "evidence": [
+          "F001",
+          "F014"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/models/google.py",
+        "symbol": "GoogleVoiceModel",
+        "change": "DEFAULT and the 2.5 native-audio/TTS members -> gemini-3.8-live / gemini-3.8-flash-tts (U2 decides whether this feature or a voice follow-up owns it; the ids die 2026-11-17)",
+        "evidence": [
+          "F014",
+          "F028",
+          "F029"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-server/src/parrot/handlers/google_generation.py",
+        "symbol": "post",
+        "change": "POST default gemini-2.5-flash -> successor; /models shrinks automatically",
+        "evidence": [
+          "F013"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-server/src/parrot/autonomous/deploy/templates.py",
+        "symbol": "(deploy templates)",
+        "change": "generated llm= default -> successor",
+        "evidence": [
+          "F001"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-client-google/pyproject.toml",
+        "symbol": "(dependencies)",
+        "change": "google-genai>=2.31.0 -> gate-verified newer floor, mirrored in ai-parrot-embeddings/pyproject.toml and uv.lock",
+        "evidence": [
+          "F007",
+          "F021",
+          "F027"
+        ]
+      },
+      {
+        "path": "docs/configuration/llm-defaults.md",
+        "symbol": "(builtin defaults table)",
+        "change": "rewrite the five builtin rows; fix docs/config.md DEFAULT_LLM_MODEL and remove the phantom LLM_MODEL_NAME alias",
+        "evidence": [
+          "F025",
+          "F008",
+          "F005"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-server/ui/src/lib/config/regeneration-models.ts",
+        "symbol": "DEFAULT_MODEL",
+        "change": "UI model lists and default -> successor ids (also ChatInput.svelte:203-204); U3 decides whether UI/examples are in scope",
+        "evidence": [
+          "F001"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/tests/clients/test_google_models.py",
+        "symbol": "(catalogue assertions)",
+        "change": "drop 2.5 assertions, re-pin alias count; mirror in tests/test_google_models.py, test_llm_factory.py, test_google_client.py (negative cases may switch to 2.0 ids), test_unopened_client_lifecycle.py, and the four FEAT-796 default tests",
+        "evidence": [
+          "F012",
+          "F002",
+          "F017"
+        ]
+      }
+    ],
+    "untouched": [
+      {
+        "item": "parrot/llm_defaults.py resolver logic and the <COMPONENT>_LLM / DEFAULT_LLM cascade (it hardcodes no model)",
+        "evidence": [
+          "F009"
+        ]
+      },
+      {
+        "item": "GoogleGenAIClient class defaults (_default_model, _fallback_model, _lightweight_model, _default_reformat_model) — already 3.x / flash-latest",
+        "evidence": [
+          "F004"
+        ]
+      },
+      {
+        "item": "ai-parrot-embeddings, -loaders, -tools, -integrations src — no 2.5 ids",
+        "evidence": [
+          "F015"
+        ]
+      },
+      {
+        "item": "gemini-2.5-flash-lite pins (loaders/abstract.py x4, e2e/models.py:131) and gemini-2.5-flash-image — not deprecated / shut down 2027-03-15",
+        "evidence": [
+          "F028",
+          "F001"
+        ]
+      },
+      {
+        "item": "parrot/clients/base.py (AbstractClient) and the prefix-gate architecture (no capability-metadata refactor, per FEAT-688 non-goal)",
+        "evidence": [
+          "F022"
+        ]
+      },
+      {
+        "item": "a deprecated_models registry — rejected by FEAT-688 U2; nothing consults it",
+        "evidence": [
+          "F016",
+          "F022"
+        ]
+      }
+    ],
+    "patterns": [
+      {
+        "pattern": "FEAT-688 shape: enum edit + prefix-gate edit + both catalogue test modules in one stroke, verified against a live models.list before deciding what is dead (0137c6595d, c76b846670)",
+        "evidence": [
+          "F017",
+          "F018",
+          "F022"
+        ]
+      },
+      {
+        "pattern": "TASK-4371 floor blueprint: isolated-venv introspection one-liner, declare only the exercised version, uv lock --upgrade-package, operator uv sync after merge",
+        "evidence": [
+          "F007",
+          "F021"
+        ]
+      },
+      {
+        "pattern": "FEAT-188 design rule: runtime/agent fallbacks read conf.DEFAULT_LLM_MODEL (gemini-flash-latest), client-internal defaults read GEMINI_FLASH_LATEST.value — replacing literals with the alias avoids the next deprecation sweep",
+        "evidence": [
+          "F024",
+          "F005"
+        ]
+      },
+      {
+        "pattern": "FEAT-796 builtin= strings are the single place a component's shipped default lives; docs table mirrors them",
+        "evidence": [
+          "F009",
+          "F025"
+        ]
+      }
+    ],
+    "risks": [
+      {
+        "risk": "Argon lacks createCachedContent: components switched to Argon lose Gemini context caching (FEAT-781 path is fail-open, so no crash, but silent cost/latency change)",
+        "evidence": [
+          "F029",
+          "F022"
+        ]
+      },
+      {
+        "risk": "Silent alias collapse / alias-count test: deleting GEMINI_2_5_FLASH also removes GEMINI_2_5_FLASH_PREVIEW; the pinned 49/31 count fails on every edit",
+        "evidence": [
+          "F003",
+          "F022"
+        ]
+      },
+      {
+        "risk": "Load-bearing names: 18 by-name references across client.py / analysis.py / generation.py — wrong task ordering breaks import of the Google client",
+        "evidence": [
+          "F002"
+        ]
+      },
+      {
+        "risk": "Voice/TTS ids die 2026-11-17, before the chat ids; leaving GoogleVoiceModel.DEFAULT and GEMINI_2_5_FLASH_TTS for a follow-up means a two-week window of broken voice defaults",
+        "evidence": [
+          "F014",
+          "F028"
+        ]
+      },
+      {
+        "risk": "Stale build/lib artifacts and ~75 docs/examples mentions over-count the sweep; the regression guard must scope to src/",
+        "evidence": [
+          "F001",
+          "F008"
+        ]
+      },
+      {
+        "risk": "Pricing table has no Argon row and is already flagged stale; usage/cost dashboards will under-report the new default",
+        "evidence": [
+          "F011"
+        ]
+      },
+      {
+        "risk": "Google auto-routes 2.5 requests after 2026-12-01 (pro -> 3.8-flash billing): any pin missed by the sweep keeps working but changes model and bill silently",
+        "evidence": [
+          "F028"
+        ]
+      }
+    ]
+  },
+  "confidence_map": [
+    {
+      "id": "C1",
+      "statement": "FEAT-688 (PR #1685, merged 2026-10-16) already added GEMINI_4_ARGON, whitelisted it in the combined-call prefixes and raised google-genai to >=2.31.0; it did not touch gemini-2.5 or any default",
+      "evidence": [
+        "F022",
+        "F017",
+        "F020",
+        "F010"
+      ],
+      "confidence": "high",
+      "reasoning": "spec Goals/Non-Goals read directly; git log shows the merge and the TASK-4371 floor commit"
+    },
+    {
+      "id": "C2",
+      "statement": "The current google-genai floor is >=2.31.0 in both consuming pyprojects with uv.lock at exactly 2.31.0, while PyPI latest is 2.34.0 (2026-10-29)",
+      "evidence": [
+        "F007",
+        "F021",
+        "F027"
+      ],
+      "confidence": "high",
+      "reasoning": "grep of both pyprojects and uv.lock plus the PyPI JSON"
+    },
+    {
+      "id": "C3",
+      "statement": "GoogleModel carries nine 2.5 names (three aliases) plus GEMINI_COMPUTER_USE; VertexAIModel carries three 2.5 members",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "high",
+      "reasoning": "line-exact read of models.py:41-49, 59, 91-93"
+    },
+    {
+      "id": "C4",
+      "statement": "Three 2.5 members are load-bearing by name: GEMINI_2_5_FLASH x16, GEMINI_2_5_PRO x1, GEMINI_2_5_FLASH_TTS x1, all inside the client satellite",
+      "evidence": [
+        "F002"
+      ],
+      "confidence": "high",
+      "reasoning": "grep with file:line for every site; no hits in core/server/tools/loaders src"
+    },
+    {
+      "id": "C5",
+      "statement": "The 'parrot.conf defaults' the request names are, in practice, the FEAT-796 builtin= strings (AGENT, CREW, EXPERT_* tiers) plus conf.ONTOLOGY_AQL_MODEL; DEFAULT_LLM_MODEL is already gemini-flash-latest",
+      "evidence": [
+        "F009",
+        "F005",
+        "F025"
+      ],
+      "confidence": "high",
+      "reasoning": "llm_defaults.py read in full; conf.py grep; docs table matches"
+    },
+    {
+      "id": "C6",
+      "statement": "Seven parrot.bots sites pin a 2.5 id (base.py, crew.py, voice.py, scraper.py, two builder prompts, docstrings) while search/jira/github/a2a bots already use 3.x ids",
+      "evidence": [
+        "F006",
+        "F026"
+      ],
+      "confidence": "high",
+      "reasoning": "literal grep of bots/ with excerpts"
+    },
+    {
+      "id": "C7",
+      "statement": "Beyond bots and conf, ~15 further src defaults pin gemini-2.5-flash/pro (handlers x2, image plugins x3, reflection, setup provider, reel director, deploy templates, analysis.py) and four pin flash-lite",
+      "evidence": [
+        "F001",
+        "F014",
+        "F013"
+      ],
+      "confidence": "high",
+      "reasoning": "grep inventory with file:line excerpts"
+    },
+    {
+      "id": "C8",
+      "statement": "Google shuts down gemini-2.5-pro and gemini-2.5-flash on 2026-12-01 with auto-routing to gemini-3.8-flash / gemini-3.5-flash-lite; gemini-2.5-flash-lite is not deprecated; 2.5 TTS/native-audio previews shut down 2026-11-17",
+      "evidence": [
+        "F028"
+      ],
+      "confidence": "high",
+      "reasoning": "official deprecation page fetched 2026-11-04"
+    },
+    {
+      "id": "C9",
+      "statement": "gemini-4-argon is live but does not support createCachedContent",
+      "evidence": [
+        "F029",
+        "F022"
+      ],
+      "confidence": "high",
+      "reasoning": "live models.list today and the FEAT-688 spec's models.get record agree"
+    },
+    {
+      "id": "C10",
+      "statement": "Retirement is pure deletion with no runtime remap: GoogleGenAIClient defines no deprecated_models and the factory only getattr's it",
+      "evidence": [
+        "F016",
+        "F013",
+        "F022"
+      ],
+      "confidence": "high",
+      "reasoning": "grep proves absence; factory.py read; FEAT-688 U2 decision"
+    },
+    {
+      "id": "C11",
+      "statement": "Deleting the members changes the public GET /models payload and requires separate edits to the hand-maintained admin UI lists",
+      "evidence": [
+        "F013",
+        "F023",
+        "F001"
+      ],
+      "confidence": "medium",
+      "reasoning": "handler read confirms the enum iteration; that the UI lists are hand-maintained is inferred from their literal content, not from a build step read"
+    },
+    {
+      "id": "C12",
+      "statement": "Eight test modules assert 2.5 values or use the members by name and must move with the enum and the builtins",
+      "evidence": [
+        "F012",
+        "F002",
+        "F019"
+      ],
+      "confidence": "high",
+      "reasoning": "grep with line numbers of each assertion"
+    },
+    {
+      "id": "C13",
+      "statement": "The pricing table has no GA 2.5 rows and no Argon row, so cost attribution misses both today's and tomorrow's defaults unless CostCalculator prefix-matches",
+      "evidence": [
+        "F011"
+      ],
+      "confidence": "medium",
+      "reasoning": "JSON keys read; CostCalculator matching logic was not read"
+    },
+    {
+      "id": "C14",
+      "statement": "The natural mapping is 2.5-pro -> gemini-4-argon (only pro-class 4.x id) and 2.5-flash -> a 3.x flash tier or the gemini-flash-latest alias; no 4.x flash/lite id exists",
+      "evidence": [
+        "F010",
+        "F029",
+        "F003"
+      ],
+      "confidence": "medium",
+      "reasoning": "catalogue + live list show a single 4.x id; which tier replaces flash is a product choice (U1)"
+    },
+    {
+      "id": "C15",
+      "statement": "FEAT-188 (centralize-google-default-model) is a draft that was never implemented; its map of literals is stale but its design rule (use DEFAULT_LLM_MODEL / GEMINI_FLASH_LATEST) remains the intended pattern",
+      "evidence": [
+        "F024",
+        "F005",
+        "F006"
+      ],
+      "confidence": "medium",
+      "reasoning": "spec status draft and the same literals surviving at new line numbers; no task index was found, inferred from absence"
+    },
+    {
+      "id": "C16",
+      "statement": "The scope boundary 'only pro/flash' excludes flash-lite (not deprecated) but should include the TTS/native-audio defaults because they die earlier",
+      "evidence": [
+        "F028",
+        "F014"
+      ],
+      "confidence": "medium",
+      "reasoning": "deprecation page is explicit; whether this feature owns the voice path is a product decision (U2)"
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Which ids replace the two retired defaults? Google's guidance is 2.5-pro -> gemini-3.8-flash and 2.5-flash -> gemini-3.5-flash-lite, but the request names Gemini 4 Argon, which has no context caching and no flash/lite tier.",
+      "blocks_claims": [
+        "C14",
+        "C9"
+      ],
+      "plausible_answers": [
+        "a) pro-class (AGENT, CREW, EXPERT judgment, analysis.py:815) -> gemini-4-argon; flash-class -> gemini-3.8-flash (recommended)",
+        "b) follow Google exactly: gemini-3.8-flash for pro sites, gemini-3.5-flash-lite for flash sites; Argon stays opt-in",
+        "c) gemini-4-argon everywhere",
+        "d) flash-class -> the gemini-flash-latest alias (conf.DEFAULT_LLM_MODEL) so the next sweep is a one-line change; pro-class -> Argon"
+      ],
+      "ask_user": true,
+      "user_answer": "Argon for pro-class, gemini-3.8-flash for flash-class: AGENT, CREW, EXPERT judgment and the analysis.py pro site -> gemini-4-argon; every flash-class default -> gemini-3.8-flash (accepting that Argon components lose context caching).",
+      "resolved_at": "2026-11-04T01:59:22Z"
+    },
+    {
+      "id": "U2",
+      "question": "Does the retirement cover the whole 2.5 family or only pro/flash? The TTS previews (GEMINI_2_5_FLASH_TTS/_PRO_TTS, GoogleVoiceModel native-audio DEFAULT) die 2026-11-17; GEMINI_COMPUTER_USE died 2026-07-28; flash-lite is not deprecated; flash-image lives until 2027.",
+      "blocks_claims": [
+        "C16",
+        "C3"
+      ],
+      "plausible_answers": [
+        "a) pro, flash, both TTS members, computer-use and the GoogleVoiceModel 2.5 defaults (everything already dead or dying in November); keep flash-lite and flash-image (recommended)",
+        "b) only gemini-2.5-pro and gemini-2.5-flash, exactly as requested; voice/TTS in a separate brief",
+        "c) every 2.5 id including flash-lite and flash-image"
+      ],
+      "ask_user": true,
+      "user_answer": "pro, flash, both TTS members, computer-use and the voice defaults: delete GEMINI_2_5_PRO / GEMINI_2_5_FLASH (+_PREVIEW alias) / GEMINI_2_5_FLASH_TTS / GEMINI_2_5_PRO_TTS / GEMINI_COMPUTER_USE and move GoogleVoiceModel + speech defaults to gemini-3.8-live / gemini-3.8-flash-tts; keep gemini-2.5-flash-lite and gemini-2.5-flash-image.",
+      "resolved_at": "2026-11-04T01:59:22Z"
+    },
+    {
+      "id": "U3",
+      "question": "Are VertexAIModel's 2.5 members, the admin UI model lists, deploy templates and examples/docs in scope, or only the Python src defaults?",
+      "blocks_claims": [
+        "C11",
+        "C3"
+      ],
+      "plausible_answers": [
+        "a) src + normative docs (llm-defaults.md, config.md) + UI lists + deploy templates; VertexAIModel 2.5 members deleted too; examples/ left alone (recommended)",
+        "b) src + normative docs only; UI, Vertex and examples in follow-ups",
+        "c) everything including examples/ and plugins/"
+      ],
+      "ask_user": true,
+      "user_answer": "Everything, including examples/ and plugins/: src, normative docs (llm-defaults.md, config.md), admin UI lists (regeneration-models.ts, ChatInput.svelte), deploy templates, VertexAIModel 2.5 members, and the ~75 example/plugin/doc mentions.",
+      "resolved_at": "2026-11-04T01:59:22Z"
+    },
+    {
+      "id": "U4",
+      "question": "For the SDK half: bump the floor to the newest google-genai that passes the introspection gate (2.34.0 today), or keep 2.31.0 since FEAT-688 already raised it three weeks ago?",
+      "blocks_claims": [
+        "C2"
+      ],
+      "plausible_answers": [
+        "a) bump to the newest gate-verified version at implementation time (2.34.0 candidate), both pyprojects + uv.lock (recommended)",
+        "b) keep 2.31.0; the SDK half is already satisfied",
+        "c) pin an exact version instead of a floor"
+      ],
+      "ask_user": true,
+      "user_answer": "Bump to the newest gate-verified google-genai at implementation time (2.34.0 today) via the TASK-4371 isolated-venv introspection; declare in both pyprojects and refresh uv.lock.",
+      "resolved_at": "2026-11-04T01:59:22Z"
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization is high-confidence with a one-month-old precedent (FEAT-688) for the exact edit shape; the four unknowns are product choices (replacement ids, family scope, surface scope, floor target) that the Q&A resolves, not architectural forks."
+  },
+  "overall_confidence": "high",
+  "meta": {
+    "findings_used": [
+      "F001",
+      "F002",
+      "F003",
+      "F004",
+      "F005",
+      "F006",
+      "F007",
+      "F008",
+      "F009",
+      "F010",
+      "F011",
+      "F012",
+      "F013",
+      "F014",
+      "F015",
+      "F016",
+      "F017",
+      "F018",
+      "F019",
+      "F020",
+      "F021",
+      "F022",
+      "F023",
+      "F024",
+      "F025",
+      "F026",
+      "F027",
+      "F028",
+      "F029"
+    ],
+    "findings_unused": [],
+    "notes": "overall_confidence is bounded to medium by scope confidence (U1/U2 are product decisions), not by evidence quality; after the Q&A the spec can carry high confidence. F027-F029 are external (PyPI, Google deprecation page, live models.list) and are cited for facts, never for codebase paths. Follow-up query worth running in /sdd-spec: read CostCalculator's key matching to settle C13; check whether search.py:71 'google:gemini-3-flash' is a pre-existing drift (outside this feature). Citation probe (FEAT-708 §4d): 150 checks over 29 findings at HEAD c63e0798b3; 126 verified, 5 ambiguous-but-consistent, 19 missing of which all were sheet artifacts (annotated/paraphrased excerpts) or explicitly historical citations (F007 pre-task pins, F024 FEAT-188 line numbers) — see [citation-check] notes in F002/F007/F020/F022/F024. No localization or constraint path rests on a stale citation. Q&A 2026-11-04: U1-U4 resolved by the operator (recorded in unknowns[].user_answer); scope confidence is now high, so overall_confidence is promoted to high (median claim confidence high, localization high)."
+  }
+}

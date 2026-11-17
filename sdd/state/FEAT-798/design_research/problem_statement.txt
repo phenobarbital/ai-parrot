@@ -1,0 +1,26 @@
+Actualmente Google Gemini ha lanzado un deprecated de gemini-2.5-{pro,flash} para 1 de
+diciembre de 2026 (falta un mes), pero además gemini 4 argon ha sido lanzado, entonces
+necesitamos hacer un upgrade de la actual librería google-genai y a su vez hacer un retiro
+de gemini-2.5-{pro,flash} no solo del GoogleModel enum, sino como default en parrot.conf y
+en agentes pre-hechos en parrot.bots
+
+Half of the request has already shipped: FEAT-688 (PR #1685, merged 2026-10-16) added
+`GoogleModel.GEMINI_4_ARGON`, whitelisted it in the client's combined-call prefixes and raised
+the `google-genai` floor to `>=2.31.0`, while explicitly leaving gemini-2.5 and every default
+untouched. What remains is the retirement itself. The "defaults in parrot.conf" the request names
+are, in practice, the FEAT-796 `builtin=` strings merged two days ago (AGENT and CREW on
+`google:gemini-2.5-pro`, the EXPERT tiers on 2.5-pro/2.5-flash, resolved by
+`packages/ai-parrot/src/parrot/llm_defaults.py`) plus one literal left in
+`packages/ai-parrot/src/parrot/conf.py` (`ONTOLOGY_AQL_MODEL`); the global `DEFAULT_LLM_MODEL`
+is already `gemini-flash-latest`. Around those sit seven `parrot.bots` sites, ~15 further src
+defaults (handlers, image plugins, episodic reflection, the installer, the video-reel director,
+deploy templates), the 2.5 block of the catalogue in
+`packages/ai-parrot-client-google/src/parrot/clients/google/models.py` with 18 by-name
+references inside the Google client satellite, two prefix gates in `client.py`, the public
+`GET /models` payload, the hand-maintained admin UI lists, eight test modules and two normative
+docs. Google's own schedule reshapes the scope: the 2.5 TTS and native-audio previews die on
+2026-11-17 (two weeks earlier), the 2.5 computer-use id died in July, `gemini-2.5-flash-lite` is
+not deprecated, and Google's recommended replacements are 3.x models — choosing Argon is a
+product decision, now taken (U1), with the known cost that Argon has no context caching. The
+recommendation is `/sdd-spec FEAT-798` following the FEAT-688 edit shape, with a gate-verified
+`google-genai` bump (2.34.0 today) as the SDK half.

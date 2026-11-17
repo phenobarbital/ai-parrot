@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-612 — Refactor Planogram Compliance
 **Spec**: `sdd/specs/refactor-planogram-compliance.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-3873

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-611 — A2UI Linked Surfaces E2E (parallel track)
 **Spec**: `sdd/specs/a2ui-linked-e2e-parallel.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3833, TASK-3834

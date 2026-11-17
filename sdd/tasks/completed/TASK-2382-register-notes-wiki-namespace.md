@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-452 — Audio Notes → Obsidian + LLM Wiki
 **Spec**: `sdd/specs/audio-notes-obsidian.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-2379

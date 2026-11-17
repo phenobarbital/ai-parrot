@@ -43,7 +43,7 @@ from parrot_tools.business_automation.toolkit import BusinessAutomationToolkit
 from parrot_tools.scraping import FlowNode, ScrapingFlow, TemplatePlan
 from playwright.async_api import async_playwright
 
-from tests.scraping.fixtures.local_site import local_fixture_site
+from ..scraping.fixtures.local_site import local_fixture_site
 
 __all__ = ["local_fixture_site"]  # re-exported fixture
 

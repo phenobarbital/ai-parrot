@@ -2,7 +2,7 @@
 
 **Feature**: long-term-memory
 **Spec**: `sdd/specs/long-term-memory.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-382

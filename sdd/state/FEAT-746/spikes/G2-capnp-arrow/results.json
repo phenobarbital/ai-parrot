@@ -1,0 +1,84 @@
+{
+  "command": "python sdd/state/FEAT-746/spikes/G2-capnp-arrow/spike.py 1500000",
+  "date": "2026-10-30",
+  "runs": [
+    {
+      "full": {
+        "status": "OK",
+        "frames": 106,
+        "frames_valid": true,
+        "max_frame_bytes": 1048512,
+        "bytes_received": 109733536,
+        "throughput_mib_s": 117.57402886026209,
+        "peer_san": "squawk://external/caller",
+        "hello_peer_san": "squawk://external/caller",
+        "hello_token_observed": true,
+        "hello_agent_id": "external/caller"
+      },
+      "cancelled": {
+        "status": "PARTIAL",
+        "frames": 11,
+        "frames_valid": true,
+        "max_frame_bytes": 1048512,
+        "bytes_received": 11083752,
+        "throughput_mib_s": 23.586502136879563,
+        "peer_san": "squawk://external/caller",
+        "hello_peer_san": "squawk://external/caller",
+        "hello_token_observed": true,
+        "hello_agent_id": "external/caller"
+      }
+    },
+    {
+      "full": {
+        "status": "OK",
+        "frames": 106,
+        "frames_valid": true,
+        "max_frame_bytes": 1048512,
+        "bytes_received": 109733536,
+        "throughput_mib_s": 171.74735463646195,
+        "peer_san": "squawk://external/caller",
+        "hello_peer_san": "squawk://external/caller",
+        "hello_token_observed": true,
+        "hello_agent_id": "external/caller"
+      },
+      "cancelled": {
+        "status": "PARTIAL",
+        "frames": 11,
+        "frames_valid": true,
+        "max_frame_bytes": 1048512,
+        "bytes_received": 11083752,
+        "throughput_mib_s": 25.69025786816268,
+        "peer_san": "squawk://external/caller",
+        "hello_peer_san": "squawk://external/caller",
+        "hello_token_observed": true,
+        "hello_agent_id": "external/caller"
+      }
+    },
+    {
+      "full": {
+        "status": "OK",
+        "frames": 106,
+        "frames_valid": true,
+        "max_frame_bytes": 1048512,
+        "bytes_received": 109733536,
+        "throughput_mib_s": 145.92522401652695,
+        "peer_san": "squawk://external/caller",
+        "hello_peer_san": "squawk://external/caller",
+        "hello_token_observed": true,
+        "hello_agent_id": "external/caller"
+      },
+      "cancelled": {
+        "status": "PARTIAL",
+        "frames": 11,
+        "frames_valid": true,
+        "max_frame_bytes": 1048512,
+        "bytes_received": 11083752,
+        "throughput_mib_s": 24.127497332285785,
+        "peer_san": "squawk://external/caller",
+        "hello_peer_san": "squawk://external/caller",
+        "hello_token_observed": true,
+        "hello_agent_id": "external/caller"
+      }
+    }
+  ]
+}

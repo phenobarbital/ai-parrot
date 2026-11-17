@@ -9,6 +9,7 @@ another's.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -115,18 +116,39 @@ class TestDoneTwins:
             content = read_workflow_file(path)
             assert "ledger blockers" in content, path
 
-    def test_snapshot_uses_throwaway_worktree_and_excludes_hotfix(self):
-        """Snapshot runs from a throwaway base-branch worktree; hotfixes skip it."""
+    def test_delivery_uses_outbox_for_every_flow(self):
+        """Every twin delivers through the outbox, to the configured ledger branch, without rotation or a hotfix skip.
+
+        FEAT-758; FEAT-633 makes the destination ``ledger_branch`` / ``base_branch`` from ``sdd/config.json``.
+        """
         for path in (self.CLAUDE, self.ANTIGRAVITY, self.CODEX):
             content = read_workflow_file(path)
-            assert "ledger export" in content, path
-            assert "hotfix" in content.lower(), path
+            assert "ledger outbox prepare" in content, path
+            assert "ledger outbox integrate" in content, path
+            assert "`ledger_branch` in `sdd/config.json`" in content, path
+            assert "rotate-log" not in content, path
+            assert "export-log" not in content, path
+            assert "Skip the snapshot entirely for hotfixes" not in content, path
+
+    def test_pending_delivery_blocks_cleanup(self):
+        """Every twin retains the worktree and reports an exact retry when delivery remains pending."""
+        for path in (self.CLAUDE, self.ANTIGRAVITY, self.CODEX):
+            content = read_workflow_file(path)
+            assert "ledger outbox integrate --repo-root" in content, path
+            assert "ledger delivery pending" in content.lower(), path
+
+    def test_contamination_is_reported_not_dropped(self):
+        """Every twin reports legacy contamination and delegates reviewed recovery to the outbox guide."""
+        for path in (self.CLAUDE, self.ANTIGRAVITY, self.CODEX):
+            content = read_workflow_file(path)
+            assert "ledger outbox status" in content, path
+            assert "wiki/sdd-tooling/sdd/ledger-outbox.md" in content, path
 
     def test_closes_issues_resolved_by_verified_tasks(self):
         """The /sdd-fix SDD lane hands issue closure to /sdd-done; every twin must run it."""
         for path in (self.CLAUDE, self.ANTIGRAVITY, self.CODEX):
             content = read_workflow_file(path)
-            assert "scripts.sdd.close_resolved_issues" in content, path
+            assert "parrot sdd closeout resolve-issues" in content, path
             assert "shared ledger is read-only" in content, path
 
 
@@ -176,7 +198,7 @@ class TestStartNextTwins:
         for platform, path in self.TASK.items():
             content = read_workflow_file(path)
             assert "--from-issue" in content, (platform, path)
-            assert "reserve_ids" in content, (platform, path)
+            assert "sdd ids reserve" in content, (platform, path)
             assert "**Discovered-from**: `issue:<id>`" in content, (platform, path)
 
 
@@ -200,8 +222,11 @@ class TestFixTwins:
             content = read_workflow_file(path)
             if content.startswith("---\n"):
                 content = content.split("---\n", 2)[2].lstrip()
-            # Host adaptations are limited to the title and skill invocation prefix.
+            # Host adaptations are limited to the title, the skill invocation prefix and the shared-skill
+            # "Full procedure and host adaptations" header (FEAT-847) that links the host contracts.
             body = content.split("\n", 1)[1].replace("$sdd-", "/sdd-").strip()
+            body = re.sub(r"## Full procedure and host adaptations\n.*?(?=\n## )", "", body, flags=re.DOTALL)
+            body = re.sub(r"\n{3,}", "\n\n", body)
             bodies.append(body)
         assert bodies[0] == bodies[1] == bodies[2]
 
@@ -242,7 +267,7 @@ class TestFixTwins:
     def test_all_twins_require_a_pr_on_the_fast_lane(self):
         for path in self.ALL:
             content = read_workflow_file(path)
-            assert "gh pr create --base dev" in content, path
+            assert "gh pr create --base <base_branch>" in content, path
             assert "git push origin dev" not in content, path
             assert "--no-pr" not in content, path
 
@@ -254,8 +279,8 @@ class TestFixTwins:
         for path in self.ALL:
             content = read_workflow_file(path)
             assert "parents" in content, path
-            assert "reserve_ids" in content, path
-            assert "ensure_worktree" in content, path
+            assert "sdd ids reserve" in content, path
+            assert "sdd worktree ensure" in content, path
 
     def test_read_only_ledger_exits_without_claiming(self):
         for path in self.ALL:

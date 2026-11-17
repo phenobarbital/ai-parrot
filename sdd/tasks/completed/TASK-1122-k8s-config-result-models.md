@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-214 — Kubernetes Toolkit
 **Spec**: `sdd/specs/FEAT-214-kubernetes-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

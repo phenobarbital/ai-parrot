@@ -1,0 +1,160 @@
+{
+  "description": "Describes one OAuth2-capable integration for the menu listing.\n\nAttributes:\n    provider: Provider identifier, e.g. ``\"jira\"``.\n    display_name: Human-readable name, e.g. ``\"Jira\"``.\n    icon: Icon identifier (Material Design Icons key) or URL.\n    default_scopes: Scopes requested during the OAuth consent screen.\n    connected: Whether the integration is usable (``status == \"connected\"``).\n    status: ``connected`` (row + readable tokens), ``disconnected`` (no row)\n        or ``needs_reconnect`` (row exists but its vault tokens are missing\n        or unreadable \u2014 the user must re-link the provider).\n    account_id: Provider-side account identifier (available when connected).\n    display_account_name: Human-readable account name.\n    email: Account email (if the provider exposes it).\n    connected_at: Timestamp when the credential was first stored.\n    grant_origin: ``authorization_code`` | ``device_code``; display/audit\n        only (FEAT-777 M3).",
+  "properties": {
+    "account_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Account Id"
+    },
+    "channels": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Channels",
+      "type": "array"
+    },
+    "connected": {
+      "default": false,
+      "title": "Connected",
+      "type": "boolean"
+    },
+    "connected_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Connected At"
+    },
+    "default_scopes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Default Scopes",
+      "type": "array"
+    },
+    "display_account_name": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Display Account Name"
+    },
+    "display_name": {
+      "title": "Display Name",
+      "type": "string"
+    },
+    "email": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Email"
+    },
+    "expires_at": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Expires At"
+    },
+    "grant_origin": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Grant Origin"
+    },
+    "icon": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Icon"
+    },
+    "provider": {
+      "title": "Provider",
+      "type": "string"
+    },
+    "scopes_granted": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Scopes Granted",
+      "type": "array"
+    },
+    "status": {
+      "anyOf": [
+        {
+          "enum": [
+            "connected",
+            "disconnected",
+            "needs_reconnect"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Status"
+    },
+    "updated_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Updated At"
+    }
+  },
+  "required": [
+    "provider",
+    "display_name"
+  ],
+  "title": "IntegrationDescriptor",
+  "type": "object"
+}

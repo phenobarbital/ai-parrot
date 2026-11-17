@@ -1,0 +1,128 @@
+{
+  "feature": "pageindex-toolkit-tech-debt",
+  "feature_id": "FEAT-849",
+  "spec": "sdd/specs/pageindex-toolkit-tech-debt.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-09T00:00:00+00:00",
+  "completed_at": "2026-11-09T12:32:48+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/knowledge/pageindex/test_segment_import.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_agentic_retrieval.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_agentic_snapshot.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_agentic_docs.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_read_tools.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_read_ledger.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_citations.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_toolkit.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_toolkit_no_llm.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_segment_integration.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_layout_import.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_folder_import.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_generation.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_locks.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:c2bae7e59bd9e486e5303e6ac94b6e0f4fd06e50f42e10dd16a6afad888ea1c9"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5385",
+      "slug": "idempotent-same-source-reimport",
+      "title": "Idempotent same-source re-import on every PageIndex import path",
+      "feature_id": "FEAT-849",
+      "feature": "pageindex-toolkit-tech-debt",
+      "spec": "sdd/specs/pageindex-toolkit-tech-debt.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependency: creates _reused_document and edits the three apply bodies in toolkit.py; no other task's symbols are needed.",
+      "assigned_to": null,
+      "started_at": "2026-11-09T12:19:55.826508+00:00",
+      "completed_at": "2026-11-09T12:22:33+00:00",
+      "file": "sdd/tasks/completed/TASK-5385-idempotent-same-source-reimport.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5386",
+      "slug": "agentic-max-chars-and-provider-error",
+      "title": "Agentic retrieval — max_chars=None coercion and a provider_error stop reason",
+      "feature_id": "FEAT-849",
+      "feature": "pageindex-toolkit-tech-debt",
+      "spec": "sdd/specs/pageindex-toolkit-tech-debt.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependency: touches only agentic.py and test_agentic_retrieval.py, which no other task in this feature declares.",
+      "assigned_to": null,
+      "started_at": "2026-11-09T12:23:05.238727+00:00",
+      "completed_at": "2026-11-09T12:28:01+00:00",
+      "file": "sdd/tasks/completed/TASK-5386-agentic-max-chars-and-provider-error.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5387",
+      "slug": "agentic-retrieve-deadline-bound-snapshot",
+      "title": "Move the agentic_retrieve tree snapshot off-loop and under the deadline",
+      "feature_id": "FEAT-849",
+      "feature": "pageindex-toolkit-tech-debt",
+      "spec": "sdd/specs/pageindex-toolkit-tech-debt.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5385"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Serialized after TASK-5385: both modify packages/ai-parrot/src/parrot/knowledge/pageindex/toolkit.py (same-file edit, lower id first). No symbol from TASK-5385 is used.",
+      "assigned_to": null,
+      "started_at": "2026-11-09T12:28:57.982299+00:00",
+      "completed_at": "2026-11-09T12:30:41+00:00",
+      "file": "sdd/tasks/completed/TASK-5387-agentic-retrieve-deadline-bound-snapshot.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5388",
+      "slug": "documentation-agentic-retrieval-page",
+      "title": "Documentation — PageIndex agentic retrieval page",
+      "feature_id": "FEAT-849",
+      "feature": "pageindex-toolkit-tech-debt",
+      "spec": "sdd/specs/pageindex-toolkit-tech-debt.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5385",
+        "TASK-5386",
+        "TASK-5387"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Documents behaviour the other three tasks create: provider_error (TASK-5386, agentic.py StopReason), the agentic_retrieve lock/snapshot note (TASK-5387) and the reused: true import result (TASK-5385).",
+      "assigned_to": null,
+      "started_at": "2026-11-09T12:31:06.511166+00:00",
+      "completed_at": "2026-11-09T12:32:48+00:00",
+      "file": "sdd/tasks/completed/TASK-5388-documentation-agentic-retrieval-page.md",
+      "verification": "verified"
+    }
+  ]
+}

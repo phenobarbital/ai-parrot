@@ -1,4 +1,5 @@
 """Unit tests for parrot_tools.computer.agent (TASK-1478)."""
+
 from unittest.mock import MagicMock, patch
 
 import pytest

@@ -12,6 +12,7 @@ policies/
 ├── agents.yaml     # Agent access control (who can chat/configure which agents)
 ├── tools.yaml      # Tool visibility and execution (which tools each group sees)
 ├── mcp.yaml        # MCP server access (which external servers each group can use)
+├── connections.yaml # OAuth2 connections from Slack/Teams/CLI/Telegram (integration:*)
 └── README.md       # This file
 ```
 
@@ -78,6 +79,7 @@ policies:
 | `dataset`   | `dataset:sales_2024`      | DatasetManager dataset             |
 | `kb`        | `kb:product_docs`         | Knowledge base                     |
 | `vector`    | `vector:embeddings`       | Vector store collection            |
+| `integration` | `integration:jira`      | OAuth2 provider connection (non-web channels) |
 
 ## Action Types
 
@@ -95,6 +97,9 @@ policies:
 | `kb:query`         | kb         | Query / search a knowledge base               |
 | `kb:write`         | kb         | Add documents to a knowledge base             |
 | `kb:admin`         | kb         | Manage knowledge base settings                |
+| `integration:list` | integration | List connections / provider status           |
+| `integration:connect` | integration | Start an OAuth2 connection                 |
+| `integration:disconnect` | integration | Revoke a provider connection            |
 
 ## Priority and Conflict Resolution
 

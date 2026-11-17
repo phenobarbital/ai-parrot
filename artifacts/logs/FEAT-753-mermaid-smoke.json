@@ -1,0 +1,25 @@
+{
+  "flowchart": {
+    "raw_svg_len": 11886,
+    "clean_svg_len": 11852,
+    "labels_visible": {
+      "Start": true,
+      "End": true,
+      "go": true
+    },
+    "has_foreignObject": false,
+    "has_script": false
+  },
+  "class": {
+    "raw_svg_len": 18430,
+    "clean_svg_len": 18396,
+    "labels_visible": {
+      "Animal": true,
+      "Dog": true,
+      "name": true
+    },
+    "has_foreignObject": false,
+    "has_script": false
+  },
+  "page_errors": []
+}

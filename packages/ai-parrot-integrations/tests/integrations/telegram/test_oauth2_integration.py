@@ -5,32 +5,44 @@ force authentication, callback endpoint, and logout behavior.
 All HTTP calls to external providers are mocked.
 """
 
+import asyncio
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+import time
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
 from aiohttp import web
-from aiohttp.test_utils import TestClient, TestServer
+from aiohttp.test_utils import TestClient, TestServer, make_mocked_request
 
 from parrot.integrations.telegram.auth import (
     BasicAuthStrategy,
+    CompositeAuthStrategy,
     OAuth2AuthStrategy,
     TelegramUserSession,
 )
+from parrot.integrations.telegram.browser_login import (
+    BROWSER_LOGIN_APP_KEY,
+    BrowserLoginEntry,
+    new_browser_state,
+    register_browser_identity_verifier,
+)
 from parrot.integrations.telegram.models import TelegramAgentConfig
-from parrot.integrations.telegram.oauth2_callback import setup_oauth2_routes
-
+from parrot.integrations.telegram.oauth2_callback import oauth2_callback_handler, setup_oauth2_routes
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_wrapper(config: TelegramAgentConfig):
+
+def _make_wrapper(config: TelegramAgentConfig, *, app: web.Application | None = None):
     """Create a TelegramAgentWrapper with mocked bot/agent dependencies."""
     mock_agent = MagicMock()
     mock_agent.get_available_tools = MagicMock(return_value=[])
     mock_bot = MagicMock()
+    mock_bot.id = 7001
+    mock_bot.get_me = AsyncMock(return_value=MagicMock(username="browser_bot"))
+    mock_bot.send_message = AsyncMock()
 
     with patch(
         "parrot.integrations.telegram.wrapper.CallbackRegistry"
@@ -43,6 +55,7 @@ def _make_wrapper(config: TelegramAgentConfig):
             agent=mock_agent,
             bot=mock_bot,
             config=config,
+            app=app,
         )
     return wrapper
 
@@ -68,6 +81,25 @@ def _oauth2_config() -> TelegramAgentConfig:
         chatbot_id="test_bot",
         bot_token="test:token",
         auth_method="oauth2",
+        oauth2_provider="google",
+        oauth2_client_id="test-client-id.apps.googleusercontent.com",
+        oauth2_client_secret="test-secret",
+        oauth2_redirect_uri="https://example.com/oauth2/callback",
+    )
+
+
+def _browser_oauth2_config(*, composite: bool = False) -> TelegramAgentConfig:
+    """Create a browser-mode OAuth2 config, optionally wrapped in a composite strategy."""
+    return TelegramAgentConfig(
+        name="TestBot",
+        chatbot_id="test_bot",
+        bot_token="7001:test-token",
+        auth_method="oauth2",
+        auth_methods=["basic", "oauth2"] if composite else ["oauth2"],
+        auth_open_mode="browser",
+        public_base_url="https://example.com",
+        auth_url="https://nav.example.com/api/auth",
+        login_page_url="https://example.com/login_multi.html" if composite else None,
         oauth2_provider="google",
         oauth2_client_id="test-client-id.apps.googleusercontent.com",
         oauth2_client_secret="test-secret",
@@ -467,3 +499,209 @@ class TestLogoutClearsOAuth2Session:
         answer_text = message.answer.call_args[0][0]
         assert "Logged out" in answer_text
         assert "Google User" in answer_text
+
+
+class TestOAuth2BrowserBranch:
+    """Browser-return-channel coverage for the OAuth2 callback endpoint."""
+
+    @staticmethod
+    def _oauth2_strategy(wrapper) -> OAuth2AuthStrategy:
+        """Return the OAuth2 strategy from a single or composite wrapper."""
+        strategy = wrapper._auth_strategy
+        if isinstance(strategy, CompositeAuthStrategy):
+            strategy = strategy.strategies["oauth2"]
+        assert isinstance(strategy, OAuth2AuthStrategy)
+        return strategy
+
+    @staticmethod
+    def _build_browser_app(*, composite: bool = False):
+        """Build a routed app and real browser-mode wrapper with mocked side effects."""
+        app = web.Application()
+        if composite:
+            register_browser_identity_verifier(
+                app,
+                bot_id="7001",
+                auth_method="basic",
+                verifier=MagicMock(),
+            )
+        wrapper = _make_wrapper(_browser_oauth2_config(composite=composite), app=app)
+        wrapper._persist_principal_link = AsyncMock(return_value=True)
+        wrapper._initialize_user_context = AsyncMock()
+        wrapper._typing_indicator = AsyncMock()
+        setup_oauth2_routes(app)
+        return app, wrapper
+
+    @staticmethod
+    def _register_attempt(
+        wrapper, state: str, *, created_at: float | None = None, chat_id: int = 54321
+    ) -> BrowserLoginEntry:
+        """Register a browser correlation and matching OAuth2 PKCE state."""
+        entry = BrowserLoginEntry(
+            state=state,
+            telegram_id=12345,
+            chat_id=chat_id,
+            bot_id="7001",
+            bot_username="browser_bot",
+            created_at=time.monotonic() if created_at is None else created_at,
+        )
+        wrapper.app[BROWSER_LOGIN_APP_KEY].register(entry)
+        TestOAuth2BrowserBranch._oauth2_strategy(wrapper)._store_state(state, "pkce-verifier")
+        return entry
+
+    @staticmethod
+    def _mock_provider_success(wrapper) -> OAuth2AuthStrategy:
+        """Mock the two provider calls while retaining real callback/session behavior."""
+        strategy = TestOAuth2BrowserBranch._oauth2_strategy(wrapper)
+        strategy.exchange_code = AsyncMock(return_value=MOCK_GOOGLE_TOKEN_RESPONSE)
+        strategy.fetch_userinfo = AsyncMock(return_value=MOCK_GOOGLE_USERINFO)
+        return strategy
+
+    async def _start_login(self, wrapper) -> str:
+        """Drive /login and return its registered browser state."""
+        message = _make_message(chat_id=54321)
+        await wrapper.handle_login(message)
+        strategy = self._oauth2_strategy(wrapper)
+        assert len(strategy._pending_states) == 1
+        return next(iter(strategy._pending_states))
+
+    @staticmethod
+    async def _request(app: web.Application, query: str) -> web.Response:
+        """Invoke the callback through an aiohttp request without opening a test socket."""
+        request = make_mocked_request("GET", f"/oauth2/callback?{query}", app=app)
+        return await oauth2_callback_handler(request)
+
+    @pytest.mark.asyncio
+    async def test_oauth2_callback_browser_branch(self):
+        """A browser callback completes server-side and renders only the browser result page."""
+        app, wrapper = self._build_browser_app()
+        strategy = self._mock_provider_success(wrapper)
+        state = await self._start_login(wrapper)
+
+        response = await self._request(app, f"code=auth-code&state={state}")
+
+        assert response.status == 200
+        text = response.text
+        assert "sendData" not in text
+        assert "https://t.me/browser_bot" in text
+        assert wrapper._user_sessions[12345].authenticated is True
+        assert wrapper._user_sessions[12345].display_name == "Test GoogleUser"
+        strategy.exchange_code.assert_awaited_once_with("auth-code", ANY)
+        strategy.fetch_userinfo.assert_awaited_once_with("ya29.mock-access-token")
+
+    @pytest.mark.asyncio
+    async def test_oauth2_callback_legacy_branch_unchanged(self):
+        """Unprefixed success and provider errors retain their legacy pages and statuses."""
+        app = web.Application()
+        setup_oauth2_routes(app)
+
+        success = await self._request(app, "code=legacy-code&state=legacy-state")
+        provider_error = await self._request(app, "error=access_denied&error_description=User+cancelled")
+
+        assert success.status == 200
+        assert "sendData" in success.text
+        assert provider_error.status == 200
+        error_text = provider_error.text
+        assert "User cancelled" in error_text
+        assert "WebApp.close()" in error_text
+
+    @pytest.mark.asyncio
+    async def test_oauth2_browser_replay_expiry_410(self):
+        """Consumed, expired, unknown, and restart-lost browser states all fail closed."""
+        app, wrapper = self._build_browser_app()
+        strategy = self._mock_provider_success(wrapper)
+        consumed_state = new_browser_state()
+        self._register_attempt(wrapper, consumed_state)
+        wrapper.app[BROWSER_LOGIN_APP_KEY].consume(consumed_state)
+        expired_state = new_browser_state()
+        self._register_attempt(wrapper, expired_state, created_at=time.monotonic() - 601)
+        unknown_state = new_browser_state()
+
+        responses = [
+            await self._request(app, f"code=x&state={state}")
+            for state in (consumed_state, expired_state, unknown_state)
+        ]
+
+        restart_app = web.Application()
+        setup_oauth2_routes(restart_app)
+        responses.append(await self._request(restart_app, f"code=x&state={new_browser_state()}"))
+
+        assert [response.status for response in responses] == [410, 410, 410, 410]
+        assert all("sendData" not in response.text for response in responses)
+        strategy.exchange_code.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_oauth2_browser_callback_exactly_once(self):
+        """Single and composite OAuth2 callbacks run each completion stage exactly once."""
+        for composite in (False, True):
+            app, wrapper = self._build_browser_app(composite=composite)
+            strategy = self._mock_provider_success(wrapper)
+            consume_state = MagicMock(wraps=strategy._consume_state)
+            strategy._consume_state = consume_state
+            wrapper._persist_principal_link = AsyncMock(return_value=True)
+            wrapper._initialize_user_context = AsyncMock()
+            state = new_browser_state()
+            self._register_attempt(wrapper, state)
+
+            response = await self._request(app, f"code=auth-code&state={state}")
+
+            assert response.status == 200
+            strategy.exchange_code.assert_awaited_once()
+            strategy.fetch_userinfo.assert_awaited_once()
+            consume_state.assert_called_once_with(state)
+            wrapper._persist_principal_link.assert_awaited_once()
+            wrapper._initialize_user_context.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_oauth2_browser_concurrent_callbacks(self):
+        """Atomic registry consumption admits only one of two concurrent callbacks."""
+        app, wrapper = self._build_browser_app()
+        strategy = self._mock_provider_success(wrapper)
+        state = new_browser_state()
+        self._register_attempt(wrapper, state)
+
+        first, second = await asyncio.gather(
+            self._request(app, f"code=one&state={state}"),
+            self._request(app, f"code=two&state={state}"),
+        )
+
+        assert sorted((first.status, second.status)) == [200, 410]
+        strategy.exchange_code.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_oauth2_browser_error_no_legacy_fallback(self):
+        """Provider errors and missing codes consume browser attempts without strategy fallback."""
+        app, wrapper = self._build_browser_app()
+        strategy = self._mock_provider_success(wrapper)
+        error_state = new_browser_state()
+        missing_code_state = new_browser_state()
+        self._register_attempt(wrapper, error_state)
+        self._register_attempt(wrapper, missing_code_state, chat_id=54322)
+
+        provider_error = await self._request(app, f"error=access_denied&state={error_state}")
+        missing_code = await self._request(app, f"state={missing_code_state}")
+        replay = await self._request(app, f"code=x&state={error_state}")
+
+        assert provider_error.status == 400
+        assert missing_code.status == 400
+        assert replay.status == 410
+        assert "sendData" not in provider_error.text
+        assert "sendData" not in missing_code.text
+        strategy.exchange_code.assert_not_awaited()
+        assert wrapper._user_sessions == {}
+
+    @pytest.mark.asyncio
+    async def test_browser_mode_full_flow_oauth2(self):
+        """The /login-to-callback flow authenticates the session and proactively notifies Telegram."""
+        app, wrapper = self._build_browser_app()
+        self._mock_provider_success(wrapper)
+        state = await self._start_login(wrapper)
+
+        response = await self._request(app, f"code=full-flow-code&state={state}")
+
+        assert response.status == 200
+        session = wrapper._user_sessions[12345]
+        assert session.authenticated is True
+        assert session.nav_user_id == "google-user-123456"
+        wrapper.bot.send_message.assert_awaited_once()
+        assert wrapper.bot.send_message.await_args.kwargs["chat_id"] == 54321
+        assert "Authenticated" in wrapper.bot.send_message.await_args.kwargs["text"]

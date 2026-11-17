@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-390 — Dream Cycle — Episodic→Wiki Brain Consolidation
 **Spec**: `sdd/specs/dream-cycle-brain-consolidation.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1983, TASK-1984, TASK-1985

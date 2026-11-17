@@ -8,7 +8,7 @@ model from the HF Hub on first use. Run::
 
 Gated repos (``meta-llama/*``) are skipped unless ``huggingface-cli login``
 was done and access granted. Results that drove the wolf-defender default
-are recorded in ``docs/security/onnx-injection-guardrail.md``.
+are recorded in ``wiki/security/onnx-injection-guardrail.md``.
 """
 import json
 import os

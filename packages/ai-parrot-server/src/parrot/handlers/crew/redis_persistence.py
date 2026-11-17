@@ -4,14 +4,81 @@ Redis Persistence for AgentsCrew Definitions.
 Provides async-based persistence layer for storing and retrieving
 Crew definitions from Redis using JSON serialization.
 """
+from enum import Enum
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 import json
+from pydantic import BaseModel, Field
 from redis.asyncio import Redis
 from navconfig.logging import logging
 
+from .definition_codec import crew_definition_from_dict, strip_unknown_keys
 from .models import CrewDefinition
-from ...conf import REDIS_URL
+
+
+class CrewRedisSnapshot(BaseModel):
+    """Exact source states and parsed definition captured for one tenant/name."""
+
+    tenant: str
+    name: str
+    namespaced_raw: str | None
+    legacy_raw: str | None
+    definition: CrewDefinition
+    mapping_ids: list[str] = Field(default_factory=list)
+
+
+class CrewRedisCleanupResult(str, Enum):
+    """Outcome of an atomic source cleanup attempt."""
+
+    deleted = "deleted"
+    source_changed = "source_changed"
+    already_absent = "already_absent"
+
+
+_DELETE_SNAPSHOT_SCRIPT = """
+local function matches(key, expected_present, expected_value)
+    local value = redis.call('GET', key)
+    if expected_present == '1' then
+        return value == expected_value
+    end
+    return value == false
+end
+
+if not matches(KEYS[1], ARGV[1], ARGV[2]) then
+    return 0
+end
+if ARGV[3] == '1' and not matches(KEYS[2], ARGV[4], ARGV[5]) then
+    return 0
+end
+
+local has_source = redis.call('EXISTS', KEYS[1]) == 1
+if ARGV[3] == '1' then
+    has_source = has_source or redis.call('EXISTS', KEYS[2]) == 1
+end
+if not has_source then
+    return 2
+end
+
+redis.call('DEL', KEYS[1])
+redis.call('SREM', KEYS[3], ARGV[6])
+if ARGV[3] == '1' then
+    redis.call('DEL', KEYS[2])
+    redis.call('SREM', KEYS[4], ARGV[6])
+end
+
+local mapping_start = tonumber(ARGV[7])
+for index = 1, tonumber(ARGV[8]) do
+    local mapping_key = KEYS[mapping_start + index - 1]
+    if redis.call('GET', mapping_key) == ARGV[6] then
+        redis.call('DEL', mapping_key)
+    end
+end
+
+if redis.call('SCARD', KEYS[3]) == 0 then
+    redis.call('SREM', KEYS[5], ARGV[9])
+end
+return 1
+"""
 
 
 class CrewRedis:
@@ -123,59 +190,8 @@ class CrewRedis:
             raise
 
     def _strip_unknown_keys(self, crew_dict: dict, crew_id: str) -> dict:
-        """Drop keys no ``CrewDefinition`` model declares, root and nested.
-
-        ``CrewDefinition``, ``AgentDefinition``, ``ToolNodeDefinition`` and
-        ``FlowRelation`` are all ``extra="forbid"``, so a single obsolete key
-        anywhere in a stored document makes the whole crew unloadable. Every
-        dropped key is logged with its path so the drift stays visible instead
-        of being silently absorbed.
-
-        Args:
-            crew_dict: The decoded stored document.
-            crew_id: Crew identifier, for the log message.
-
-        Returns:
-            A copy carrying only declared fields.
-        """
-        from .models import (  # noqa: PLC0415
-            AgentDefinition,
-            FlowRelation,
-            ToolNodeDefinition,
-        )
-
-        dropped: List[str] = []
-
-        def _prune(payload: Any, model: Any, path: str) -> Any:
-            if not isinstance(payload, dict):
-                return payload
-            known = set(model.model_fields)
-            dropped.extend(f"{path}{key}" for key in sorted(set(payload) - known))
-            return {
-                key: value for key, value in payload.items() if key in known
-            }
-
-        cleaned = _prune(crew_dict, CrewDefinition, "")
-        for field, model in (
-            ("agents", AgentDefinition),
-            ("tool_nodes", ToolNodeDefinition),
-            ("flow_relations", FlowRelation),
-        ):
-            entries = cleaned.get(field)
-            if isinstance(entries, list):
-                cleaned[field] = [
-                    _prune(entry, model, f"{field}[{index}].")
-                    for index, entry in enumerate(entries)
-                ]
-
-        if dropped:
-            self.logger.warning(
-                "Ignoring unknown key(s) %s in stored crew %r; the field(s) "
-                "are not part of the crew definition models and were never "
-                "applied.",
-                dropped, crew_id,
-            )
-        return cleaned
+        """Delegate legacy compatibility cleanup to the shared codec."""
+        return strip_unknown_keys(crew_dict, crew_id, self.logger)
 
     def _deserialize_crew(self, data: str) -> CrewDefinition:
         """
@@ -188,34 +204,127 @@ class CrewRedis:
             CrewDefinition instance
         """
         try:
-            crew_dict = json.loads(data)
-
-            # Convert ISO format strings back to datetime
-            if 'created_at' in crew_dict and isinstance(crew_dict['created_at'], str):
-                crew_dict['created_at'] = datetime.fromisoformat(crew_dict['created_at'])
-            if 'updated_at' in crew_dict and isinstance(crew_dict['updated_at'], str):
-                crew_dict['updated_at'] = datetime.fromisoformat(crew_dict['updated_at'])
-
-            # CrewDefinition rejects unknown keys, but rows written before it
-            # did may carry some (a stray "tasks": [] shipped in the bundled
-            # examples for a long time). Refusing to load historical data is
-            # not the job of strictness — its job is to stop *new* definitions
-            # from silently dropping a field. Drop and log instead, so an
-            # already-stored crew stays loadable and the drift stays visible.
-            #
-            # The nested models are strict too, so stripping only the root
-            # would still fail on an obsolete key inside an agent entry —
-            # which is exactly where drift accumulates, since agents carry the
-            # most fields.
-            crew_dict = self._strip_unknown_keys(
-                crew_dict, crew_dict.get('crew_id', '<unknown>')
-            )
-
-            return CrewDefinition(**crew_dict)
+            return crew_definition_from_dict(json.loads(data), self.logger)
         except Exception as e:
             self.logger.error("Deserialization error: %s", e)
             self.logger.error("Problematic data: %s", data[:200])
             raise
+
+    async def snapshot_crew(self, name: str, tenant: Optional[str] = None) -> Optional[CrewRedisSnapshot]:
+        """Read both raw key states while preserving Redis and parse failures.
+
+        Args:
+            name: Crew name to snapshot.
+            tenant: Tenant identifier, defaulting to ``"global"``.
+
+        Returns:
+            A complete source snapshot, or ``None`` when neither source key exists.
+
+        Raises:
+            ValueError: If global namespaced and legacy sources disagree.
+        """
+        normalized_tenant = self._normalize_tenant(tenant)
+        namespaced_raw = await self.redis.get(self._get_key(name, normalized_tenant))
+        legacy_raw = None
+        if normalized_tenant == "global":
+            legacy_raw = await self.redis.get(self._get_legacy_key(name))
+
+        if namespaced_raw is None and legacy_raw is None:
+            return None
+        if namespaced_raw is not None and legacy_raw is not None and namespaced_raw != legacy_raw:
+            raise ValueError(f"Conflicting namespaced and legacy Redis definitions for {normalized_tenant}/{name}")
+
+        definition = self._deserialize_crew(namespaced_raw if namespaced_raw is not None else legacy_raw)
+        return CrewRedisSnapshot(
+            tenant=normalized_tenant,
+            name=name,
+            namespaced_raw=namespaced_raw,
+            legacy_raw=legacy_raw,
+            definition=definition,
+            mapping_ids=[definition.crew_id],
+        )
+
+    async def delete_snapshot(self, snapshot: CrewRedisSnapshot) -> CrewRedisCleanupResult:
+        """Atomically remove unchanged snapshot sources and owned index entries.
+
+        Args:
+            snapshot: Exact Redis state captured by :meth:`snapshot_crew`.
+
+        Returns:
+            The outcome of the conditional cleanup.
+
+        Raises:
+            RuntimeError: If the configured client targets Redis Cluster.
+        """
+        client_module = type(self.redis).__module__
+        connection_kwargs = getattr(getattr(self.redis, "connection_pool", None), "connection_kwargs", {})
+        if (
+            client_module.startswith("redis.asyncio.cluster")
+            or type(self.redis).__name__ == "RedisCluster"
+            or getattr(self.redis, "is_cluster", False)
+            or connection_kwargs.get("cluster")
+        ):
+            raise RuntimeError("Conditional crew cleanup is unsupported on Redis Cluster")
+
+        is_global = snapshot.tenant == "global"
+        namespaced_key = self._get_key(snapshot.name, snapshot.tenant)
+        legacy_key = self._get_legacy_key(snapshot.name) if is_global else namespaced_key
+        namespaced_list_key = self._get_list_key(snapshot.tenant)
+        legacy_list_key = self._get_legacy_list_key() if is_global else namespaced_list_key
+        mapping_keys = [self._get_id_mapping_key(crew_id, snapshot.tenant) for crew_id in snapshot.mapping_ids]
+        if is_global:
+            mapping_keys.extend(self._get_legacy_id_mapping_key(crew_id) for crew_id in snapshot.mapping_ids)
+
+        keys = [
+            namespaced_key,
+            legacy_key,
+            namespaced_list_key,
+            legacy_list_key,
+            self._get_tenants_key(),
+            *mapping_keys,
+        ]
+        result = await self.redis.eval(
+            _DELETE_SNAPSHOT_SCRIPT,
+            len(keys),
+            *keys,
+            "1" if snapshot.namespaced_raw is not None else "0",
+            snapshot.namespaced_raw or "",
+            "1" if is_global else "0",
+            "1" if snapshot.legacy_raw is not None else "0",
+            snapshot.legacy_raw or "",
+            snapshot.name,
+            "6",
+            str(len(mapping_keys)),
+            snapshot.tenant,
+        )
+        outcomes = {
+            0: CrewRedisCleanupResult.source_changed,
+            1: CrewRedisCleanupResult.deleted,
+            2: CrewRedisCleanupResult.already_absent,
+        }
+        try:
+            return outcomes[int(result)]
+        except (KeyError, TypeError, ValueError) as error:
+            raise RuntimeError(f"Unexpected conditional cleanup result: {result!r}") from error
+
+    async def list_all_crews_strict(self) -> List[Dict[str, str]]:
+        """List all crew identities while propagating every Redis failure.
+
+        Returns:
+            Tenant/name entries from namespaced and legacy inventory sets.
+        """
+        tenants = set(await self.redis.smembers(self._get_tenants_key()))
+        legacy_global = await self.redis.smembers(self._get_legacy_list_key())
+        if legacy_global:
+            tenants.add("global")
+
+        entries = []
+        for tenant in sorted(tenants):
+            names = set(await self.redis.smembers(self._get_list_key(tenant)))
+            if tenant == "global":
+                names.update(legacy_global)
+            entries.extend({"tenant": tenant, "name": name} for name in sorted(names))
+        return entries
 
     async def save_crew(self, crew: CrewDefinition) -> bool:
         """
@@ -389,7 +498,7 @@ class CrewRedis:
             crews = set(await self.redis.smembers(self._get_list_key(tenant)))
             if tenant == "global":
                 crews.update(await self.redis.smembers(self._get_legacy_list_key()))
-            return sorted(list(crews))
+            return sorted(crews)
         except Exception as e:
             self.logger.error("Error listing crews: %s", e)
             return []
@@ -671,7 +780,7 @@ async def test_crew_redis():
         print("\n=== Test 6: Get Crew Metadata ===")
         metadata = await crew_redis.get_crew_metadata("test_crew")
         if metadata:
-            print(f"Crew metadata:")
+            print("Crew metadata:")
             for key, value in metadata.items():
                 print(f"  - {key}: {value}")
 

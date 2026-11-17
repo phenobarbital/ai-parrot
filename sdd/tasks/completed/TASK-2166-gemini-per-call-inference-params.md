@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-418 — Google Gemini Live ↔ Nova 2 Sonic Homologation
 **Spec**: `sdd/specs/googlelive-nova2-audiobot-homologation.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M
 **Depends-on**: TASK-2164

@@ -56,6 +56,27 @@ def test_extract_markdown_per_page_unchanged_without_images_dir(tmp_path: Path) 
     assert "pages" not in call_kwargs
 
 
+def test_hdr_info_forwarded(tmp_path: Path) -> None:
+    """``hdr_info`` reaches ``to_markdown`` by keyword; ``None`` keeps the old call shape (AC-12)."""
+    pdf = _two_image_pdf(tmp_path / "c.pdf")
+    detector = object()
+    with mock.patch.object(p2m.pymupdf4llm, "to_markdown", return_value=[{"text": "z"}]) as tm:
+        assert p2m.extract_markdown_per_page(pdf, hdr_info=detector) == [(1, "z")]
+    tm.assert_called_once_with(str(pdf), page_chunks=True, hdr_info=detector)
+
+    with mock.patch.object(p2m.pymupdf4llm, "to_markdown", return_value=[{"text": "w"}]) as tm2:
+        assert p2m.extract_markdown_per_page(pdf, hdr_info=None) == [(1, "w")]
+    tm2.assert_called_once_with(str(pdf), page_chunks=True)
+
+    images_dir = tmp_path / "img"
+    with mock.patch.object(p2m.pymupdf4llm, "to_markdown", return_value=[{"text": "v"}]) as tm3:
+        assert p2m.extract_markdown_per_page(pdf, images_dir=images_dir, hdr_info=detector) == [(1, "v")]
+    _, call_kwargs = tm3.call_args
+    assert call_kwargs["hdr_info"] is detector
+    assert call_kwargs["write_images"] is True
+    assert "pages" not in call_kwargs
+
+
 def test_extract_page_images_bbox(tmp_path: Path) -> None:
     pdf = _two_image_pdf(tmp_path / "b.pdf")
     images = p2m.extract_page_images(pdf, tmp_path / "img")

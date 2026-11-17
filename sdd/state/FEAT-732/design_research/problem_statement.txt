@@ -1,0 +1,12 @@
+parrot-formdesigner validates every form submission on two paths: a deterministic
+validator (FormValidator) and an optional LLM answer-plausibility checker. The audit
+trail of what was validated has two holes.
+
+1. The deterministic result is not stored. Only the fact that it passed (is_valid) is
+   saved. Which rules ran and what they checked is never written down. For a billing
+   dispute that reads as "it passed validation", not "it passed these 14 checks".
+
+2. The model can end up unidentified. LLMValidationConfig.model is `str | None`, and
+   when it is None the client's default model is used -- so report.model ends up null.
+   At that point the record does not say which model answered. For a finance team that
+   is exactly the hole they anticipate.

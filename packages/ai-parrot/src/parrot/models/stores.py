@@ -34,13 +34,14 @@ class SearchOriginKind(Enum):
     Distinct from :class:`StoreType`, which stays DB-store-only.
     ``SearchOriginKind`` classifies the retrieval *plane* a
     ``SearchOrigin`` adapter wraps (vector-store, PageIndex, GraphIndex,
-    or the ParrotWiki/LLM-Wiki store).
+    the ParrotWiki/LLM-Wiki store, or the Bookstore personal library).
     """
 
     VECTOR = "vector"
     PAGEINDEX = "pageindex"
     GRAPHINDEX = "graphindex"
     WIKI = "wiki"
+    BOOKSTORE = "bookstore"
 
 
 class SearchResult(BaseModel):

@@ -423,3 +423,54 @@ async def test_supervisor_unwritable_report_root_keeps_outcome(tmp_path: Path, m
     await _settle(supervisor, execution_id, "rec-3")
     status = await registry.status(execution_id, "rec-3")
     assert (status.outcome, status.exit_code) == ("completed", 0)
+
+
+# ---------------------------------------------------------------------------
+# FEAT-736 / TASK-4674 -- brief task ids (issue:0ea4f0acaefd). A brief's tasks
+# carry local, unreserved ids `HOTFIX-<KEY>-<n>`; `BRIEF-<KEY>` is a FEATURE id
+# and must stay foreign here.
+# ---------------------------------------------------------------------------
+
+
+async def test_run_validation_accepts_brief_task_id(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A HOTFIX-<KEY>-<n> id clears the id guard and launches like a TASK-<NNN> one."""
+    supervisor, _registry, _store, worktree = _make_supervisor(tmp_path)
+
+    def _fake_plan_tests(
+        *, worktree: Path, changed_files: list[str], tier: str, declared=(), contract=None, policy=None, registry=None
+    ) -> ScopePlan:
+        return _single_invocation_plan((sys.executable, "-c", "import sys; sys.exit(0)"), tier=tier)
+
+    monkeypatch.setattr(background_module, "plan_tests", _fake_plan_tests)
+    monkeypatch.setattr(background_module, "protected_argv", lambda cwd, argv: list(argv))
+
+    registration = await supervisor.start(
+        feature="BRIEF-CS-228",
+        worktree=worktree,
+        execution_id=str(uuid.uuid4()),
+        task_ids=["HOTFIX-CS-228-1"],
+        tier="merge",
+        timeout_seconds=5,
+        request_id="req-brief-1",
+    )
+    assert registration.handle == "req-brief-1"
+
+
+@pytest.mark.parametrize("bad", ["BRIEF-CS-228", "nope", "HOTFIX-", "hotfix-cs-228-1"])
+async def test_run_validation_rejects_foreign_task_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bad: str
+) -> None:
+    """A feature id or a malformed id is still refused before anything is admitted."""
+    supervisor, _registry, _store, worktree = _make_supervisor(tmp_path)
+    monkeypatch.setattr(background_module, "protected_argv", lambda cwd, argv: list(argv))
+
+    with pytest.raises(ValueError, match="invalid task id"):
+        await supervisor.start(
+            feature="BRIEF-CS-228",
+            worktree=worktree,
+            execution_id=str(uuid.uuid4()),
+            task_ids=[bad],
+            tier="merge",
+            timeout_seconds=5,
+            request_id="req-brief-bad",
+        )

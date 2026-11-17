@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 from pathlib import Path
 import shlex
@@ -16,6 +17,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from parrot.flows.dev_loop import worktree_environment as policy
+from parrot.sdd.scripts import native_claude_sandbox as native
 from parrot.flows.dev_loop.dispatchers.llm import LLMCodeDispatcher
 from parrot.flows.dev_loop.dispatchers.claude import ClaudeCodeDispatcher
 from parrot.flows.dev_loop.models import ClaudeCodeDispatchProfile, LLMCodeDispatchProfile
@@ -26,7 +28,37 @@ def scratch_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Point the sandbox's Claude scratchpad root at a private directory instead of the real ``/tmp/claude-<uid>``."""
     root = tmp_path / "claude-scratch"
     monkeypatch.setattr(policy, "CLAUDE_SCRATCH_ROOT", root)
+    monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
     return root
+
+
+@pytest.fixture(autouse=True)
+def rtk_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the wrapped command independent of whether the host has RTK installed; RTK tests opt back in."""
+    monkeypatch.setenv(policy.RTK_ENV_SWITCH, "0")
+
+
+#: Variables a sandboxed launch (``parrot sdd launch worker``, the dev-loop dispatcher, the shell prefix)
+#: exports into its session. The policy reads every one of them from ``os.environ``.
+AMBIENT_SANDBOX_VARIABLES = (
+    "PARROT_SDD_SANDBOX_BACKEND",
+    *policy.LAUNCHER_MARKERS,
+    "PARROT_SDD_SANDBOX_DEGRADED",
+    "PARROT_SDD_SHELL_PREFIX_POLICY",
+    "PARROT_SDD_SHELL_PREFIX_TOKEN",
+)
+
+
+@pytest.fixture(autouse=True)
+def ambient_sandbox_cleared(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Start every test outside a sandboxed launch, whatever session runs the suite.
+
+    A worker's own ``PARROT_SDD_SANDBOX_ROOTS`` names its real worktree, which never matches a test's
+    ``tmp_path`` checkout, so an inherited value silently invalidates a test's shell-prefix proof. Tests
+    that model a launch set the variables they need themselves.
+    """
+    for name in AMBIENT_SANDBOX_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
 
 
 @pytest.fixture
@@ -105,10 +137,23 @@ def test_explicit_install_requires_local_environment(checkout: tuple[Path, Path]
 
 def test_missing_bubblewrap_fails_closed(checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(policy.shutil, "which", lambda _: None)
-    with pytest.raises(RuntimeError, match="refusing unsandboxed"):
+    with pytest.raises(RuntimeError, match="legacy SDD hook.*refusing unsandboxed") as error:
         policy.protected_argv(checkout[0], ["true"])
+    assert "parrot sdd launch worker <FEAT-ID>" in str(error.value)
     response = policy.hook_response({"cwd": str(checkout[0]), "tool_name": "Bash", "tool_input": {"command": "true"}})
     assert response["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+def test_module_imports_without_os_getuid() -> None:
+    """The hook module must be importable by a native Windows Python process."""
+    code = (
+        "import os, runpy; "
+        "del os.getuid; "
+        f"module = runpy.run_path({str(Path(policy.__file__))!r}); "
+        "assert module['claude_scratch_root']().name.startswith('claude-')"
+    )
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr
 
 
 def test_hook_preserves_shell_text_and_other_fields(
@@ -272,7 +317,9 @@ def test_scope_guard_import_error_allows(checkout: tuple[Path, Path], monkeypatc
 
 
 def test_standalone_loader_resolves_kernel_by_path() -> None:
-    hook_dir = str(Path(policy.__file__).parent)
+    from parrot.sdd.scripts import worktree_environment as moved
+
+    hook_dir = str(Path(moved.__file__).parent)
     code = (
         f"import sys; sys.path.insert(0, {hook_dir!r}); "
         "import worktree_environment as we; "
@@ -284,15 +331,22 @@ def test_standalone_loader_resolves_kernel_by_path() -> None:
 
 
 @pytest.mark.parametrize("subagent", ["sdd-worker", "sdd-coder"])
-def test_programmatic_claude_protection_does_not_depend_on_project_settings(tmp_path: Path, subagent: str) -> None:
+def test_programmatic_claude_protection_does_not_depend_on_project_settings(
+    linked_worktree: Path, monkeypatch: pytest.MonkeyPatch, subagent: str
+) -> None:
     """Programmatic prompts lose frontmatter, so protection must be injected."""
+    # The assertion concerns hook injection, not whether this host can create
+    # Bubblewrap namespaces.  Keep the launch planner deterministic on hosts
+    # where the configured legacy backend cannot start Bubblewrap.
+    monkeypatch.setenv("PARROT_SDD_SANDBOX_MODE", "off")
     dispatcher = ClaudeCodeDispatcher(max_concurrent=1, redis_url="redis://unused", stream_ttl_seconds=1)
     profile = ClaudeCodeDispatchProfile(subagent=subagent, setting_sources=[])
-    options = dispatcher._resolve_run_options(profile, str(tmp_path))
+    options = dispatcher._resolve_run_options(profile, str(linked_worktree))
     hook = json.loads(options.extra_args["settings"])["hooks"]["PreToolUse"][0]
     assert "Bash" in hook["matcher"]
     command = hook["hooks"][0]["command"]
-    assert "worktree_environment.py" in command
+    assert "-m parrot.sdd.scripts.worktree_environment --hook" in command
+    assert "packages/" not in command and "flows/dev_loop" not in command
     assert command.endswith(" || exit 2")
 
 
@@ -316,14 +370,16 @@ def test_real_native_hook_keeps_primary_environment_read_only(tmp_path: Path) ->
     assert target.read_text() == "original\n"
 
 
-def _registered_feature_worktree(tmp_path: Path) -> tuple[Path, Path]:
-    """Model a feature worktree registered under the primary checkout's ``.claude/worktrees``."""
+def _registered_feature_worktree(
+    tmp_path: Path, relative_root: Path = Path(".parrot") / "worktrees"
+) -> tuple[Path, Path]:
+    """Model a feature worktree registered under the primary checkout's resolved worktree root."""
     main = tmp_path / "main"
     git_dir = main / ".git"
     admin = git_dir / "worktrees" / "feat-x"
     admin.mkdir(parents=True)
     (admin / "commondir").write_text("../..\n")
-    worktree = main / ".claude" / "worktrees" / "feat-x"
+    worktree = main / relative_root / "feat-x"
     worktree.mkdir(parents=True)
     (worktree / ".git").write_text(f"gitdir: {admin}\n")
     return main, worktree
@@ -338,7 +394,7 @@ def test_feature_worktree_binds_primary_worktree_admin_dir(tmp_path: Path, monke
     monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
     main, worktree = _registered_feature_worktree(tmp_path)
     binds = _writable_binds(policy.protected_argv(worktree, ["true"]))
-    assert (main / ".claude" / "worktrees").resolve() in binds
+    assert (main / ".parrot" / "worktrees").resolve() in binds
     assert (main / ".git").resolve() in binds
     assert main.resolve() not in binds
 
@@ -349,7 +405,7 @@ def test_primary_checkout_has_no_extra_worktree_admin_bind(
     monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
     main = tmp_path / "main"
     (main / ".git").mkdir(parents=True)
-    (main / ".claude" / "worktrees").mkdir(parents=True)
+    (main / ".parrot" / "worktrees").mkdir(parents=True)
     assert _writable_binds(policy.protected_argv(main, ["true"])) == [scratch_root.resolve(), main.resolve()]
 
 
@@ -368,6 +424,15 @@ def test_sandbox_binds_claude_scratch_root_after_private_tmp(
     bind_index = argv.index(str(scratch.resolve()))
     assert argv[bind_index - 1] == "--bind" and argv[bind_index + 1] == str(scratch.resolve())
     assert bind_index > tmpfs_index, "the bind must come after the tmpfs mount or the tmpfs shadows it"
+
+
+def test_feature_worktree_binds_custom_in_repo_worktree_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A repository-relative WORKTREE_BASE_PATH controls the writable worktree bind."""
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+    monkeypatch.setenv("WORKTREE_BASE_PATH", ".custom/worktrees")
+    main, worktree = _registered_feature_worktree(tmp_path, Path(".custom") / "worktrees")
+    binds = _writable_binds(policy.protected_argv(worktree, ["true"]))
+    assert (main / ".custom" / "worktrees").resolve() in binds
 
 
 def test_real_scratchpad_survives_between_sandboxed_commands(tmp_path: Path, scratch_root: Path) -> None:
@@ -401,7 +466,13 @@ def test_linked_checkout_without_admin_dir_binds_nothing_extra(
     monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
     worktree, env = checkout
     binds = _writable_binds(policy.protected_argv(worktree, ["true"]))
-    assert binds == [scratch_root.resolve(), worktree.resolve(), (env.parent / ".git").resolve()]
+    assert binds == [
+        scratch_root.resolve(),
+        worktree.resolve(),
+        (env.parent / ".git").resolve(),
+        (env.parent / "artifacts" / "logs" / "sdd-coder-usage").resolve(),
+        (env.parent / ".parrot" / "experience").resolve(),
+    ]
 
 
 def test_real_feature_worktree_can_administer_worktrees_but_not_primary_checkout(tmp_path: Path) -> None:
@@ -412,7 +483,7 @@ def test_real_feature_worktree_can_administer_worktrees_but_not_primary_checkout
     git = ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid"]
     subprocess.run(["git", "init"], cwd=main, capture_output=True, check=True)
     subprocess.run([*git, "commit", "--allow-empty", "-m", "initial"], cwd=main, capture_output=True, check=True)
-    admin_dir = main / ".claude" / "worktrees"
+    admin_dir = main / ".parrot" / "worktrees"
     admin_dir.mkdir(parents=True)
     feature = admin_dir / "feat-x"
     subprocess.run(["git", "worktree", "add", "-b", "feat-x", str(feature)], cwd=main, capture_output=True, check=True)
@@ -470,7 +541,7 @@ def test_real_feature_worktree_can_write_shared_ledger_but_not_wiki_plane(tmp_pa
     subprocess.run([*git, "commit", "--allow-empty", "-m", "initial"], cwd=main, capture_output=True, check=True)
     ledger_dir = main / ".parrot" / "ledger"
     ledger_dir.mkdir(parents=True)
-    feature = main / ".claude" / "worktrees" / "feat-x"
+    feature = main / ".parrot" / "worktrees" / "feat-x"
     feature.parent.mkdir(parents=True)
     subprocess.run(["git", "worktree", "add", "-b", "feat-x", str(feature)], cwd=main, capture_output=True, check=True)
 
@@ -499,6 +570,127 @@ def test_real_feature_worktree_can_write_shared_ledger_but_not_wiki_plane(tmp_pa
         policy.protected_argv(feature, ["touch", str(main / ".parrot" / "wiki.db")]), capture_output=True, timeout=20
     )
     assert not (main / ".parrot" / "wiki.db").exists()
+
+
+def test_feature_worktree_binds_primary_coder_evidence_dir_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The evidence store is writable; the rest of ``artifacts/`` is not."""
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+    main, worktree = _registered_feature_worktree(tmp_path)
+    (main / "artifacts" / "laya").mkdir(parents=True)
+    binds = _writable_binds(policy.protected_argv(worktree, ["true"]))
+    assert (main / "artifacts" / "logs" / "sdd-coder-usage").resolve() in binds
+    assert (main / "artifacts").resolve() not in binds
+    assert (main / "artifacts" / "laya").resolve() not in binds
+    assert main.resolve() not in binds
+
+
+def test_coder_evidence_dir_is_created_when_absent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """First run: Bubblewrap cannot bind a missing path, so the helper creates it."""
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+    main, worktree = _registered_feature_worktree(tmp_path)
+    assert not (main / "artifacts" / "logs" / "sdd-coder-usage").exists()
+    policy.protected_argv(worktree, ["true"])
+    assert (main / "artifacts" / "logs" / "sdd-coder-usage").is_dir()
+
+
+def test_primary_checkout_gets_no_evidence_bind_and_no_mkdir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scratch_root: Path
+) -> None:
+    """The primary is already writable: no bind and no filesystem side effect."""
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+    main = tmp_path / "main"
+    (main / ".git").mkdir(parents=True)
+    assert _writable_binds(policy.protected_argv(main, ["true"])) == [scratch_root.resolve(), main.resolve()]
+    assert not (main / "artifacts").exists()
+
+
+def test_coder_evidence_dirs_degrades_when_mkdir_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A mkdir failure must not raise: ``protected_argv`` wraps every Bash call."""
+    main, worktree = _registered_feature_worktree(tmp_path)
+    git_dir = (main / ".git").resolve()
+
+    def _boom(*args: object, **kwargs: object) -> None:
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(policy.Path, "mkdir", _boom)
+    assert policy.coder_evidence_dirs(worktree, git_dir) == ()
+
+
+def test_real_feature_worktree_can_write_evidence_store_but_not_laya(tmp_path: Path) -> None:
+    """Real Bubblewrap: the store is writable, the executable corner of ``artifacts/`` is not."""
+    _require_bubblewrap()
+    main = tmp_path / "main"
+    main.mkdir()
+    git = ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid"]
+    subprocess.run(["git", "init"], cwd=main, capture_output=True, check=True)
+    subprocess.run([*git, "commit", "--allow-empty", "-m", "initial"], cwd=main, capture_output=True, check=True)
+    (main / "artifacts" / "laya").mkdir(parents=True)
+    feature = main / ".parrot" / "worktrees" / "feat-x"
+    feature.parent.mkdir(parents=True)
+    subprocess.run(["git", "worktree", "add", "-b", "feat-x", str(feature)], cwd=main, capture_output=True, check=True)
+
+    store = main / "artifacts" / "logs" / "sdd-coder-usage"
+    result = subprocess.run(
+        policy.protected_argv(feature, ["touch", str(store / "probe")]), capture_output=True, text=True, timeout=20
+    )
+    assert result.returncode == 0, result.stderr
+    assert (store / "probe").is_file()
+
+    for forbidden in (main / "artifacts" / "laya" / "probe", main / "artifacts" / "probe"):
+        subprocess.run(policy.protected_argv(feature, ["touch", str(forbidden)]), capture_output=True, timeout=20)
+        assert not forbidden.exists(), forbidden
+
+
+def test_coder_evidence_dir_matches_resolve_durable_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Drift guard: the stdlib-only policy module duplicates telemetry's default path."""
+    from parrot.flows.dev_loop.sdd_coder.telemetry import resolve_durable_root
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, capture_output=True, check=True)
+    resolved = resolve_durable_root(None, worktree_base_path=str(repo / ".parrot" / "worktrees"))
+    assert resolved == (repo / policy.CODER_EVIDENCE_DIR).resolve()
+
+
+def test_experience_dirs_contract(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Create only the external linked worktree's primary experience plane and degrade on errors."""
+    main, worktree = _registered_feature_worktree(tmp_path)
+    git_dir = (main / ".git").resolve()
+    experience = (main / ".parrot" / "experience").resolve()
+
+    assert policy.experience_dirs(main, git_dir) == ()
+    assert policy.experience_dirs(worktree, None) == ()
+    assert not experience.exists()
+    assert policy.experience_dirs(worktree, git_dir) == (experience,)
+    assert experience.is_dir()
+
+    failed_main, failed_worktree = _registered_feature_worktree(tmp_path / "mkdir-failure")
+
+    def raise_os_error(*args: object, **kwargs: object) -> None:
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(policy.Path, "mkdir", raise_os_error)
+    assert policy.experience_dirs(failed_worktree, (failed_main / ".git").resolve()) == ()
+
+
+def test_control_files_include_experience_hook(tmp_path: Path) -> None:
+    """Deny worktree and installed copies of every experience hook control file."""
+    _main, worktree = _registered_feature_worktree(tmp_path)
+    deny = set(native.native_sandbox_settings(worktree)["sandbox"]["filesystem"]["denyWrite"])
+    worktree_parrot = worktree / "packages" / "ai-parrot" / "src" / "parrot"
+    installed_parrot = Path(native.__file__).resolve().parents[2]
+
+    expected = {
+        worktree_parrot / "sdd" / "scripts" / "experience_hook.py",
+        worktree_parrot / "knowledge" / "wiki" / "experience" / "fastpath.py",
+        worktree_parrot / "launcher.py",
+        installed_parrot / "sdd" / "scripts" / "experience_hook.py",
+        installed_parrot / "knowledge" / "wiki" / "experience" / "fastpath.py",
+        installed_parrot / "launcher.py",
+    }
+    assert {str(path.resolve()) for path in expected} <= deny
 
 
 # ---------------------------------------------------------------------------
@@ -627,7 +819,7 @@ def test_real_self_removal_leaves_a_usable_shell(tmp_path: Path) -> None:
     git = ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid"]
     subprocess.run(["git", "init"], cwd=main, capture_output=True, check=True)
     subprocess.run([*git, "commit", "--allow-empty", "-m", "initial"], cwd=main, capture_output=True, check=True)
-    admin_dir = main / ".claude" / "worktrees"
+    admin_dir = main / ".parrot" / "worktrees"
     admin_dir.mkdir(parents=True)
     feature = admin_dir / "feat-x"
     subprocess.run(["git", "worktree", "add", "-b", "feat-x", str(feature)], cwd=main, capture_output=True, check=True)
@@ -671,6 +863,421 @@ def test_scope_guard_verdict_is_returned_unchanged(
     assert policy._scope_guard("pytest x.py", checkout[1]) == ("verdict", verdict)
 
 
+def _native_hook_worktrees(tmp_path: Path) -> tuple[Path, Path, Path]:
+    """Create linked session and task worktrees accepted by native hook helpers."""
+    main = tmp_path / "main"
+    feature = main / ".parrot" / "worktrees" / "feature"
+    task = main / ".parrot" / "worktrees" / "task"
+    for name, worktree in (("feature", feature), ("task", task)):
+        admin = main / ".git" / "worktrees" / name
+        admin.mkdir(parents=True)
+        (admin / "commondir").write_text("../..\n")
+        worktree.mkdir(parents=True)
+        (worktree / ".git").write_text(f"gitdir: {admin}\n")
+        (worktree / "packages" / "test-package" / "src").mkdir(parents=True)
+    environment = main / ".venv"
+    environment.mkdir()
+    (environment / "pyvenv.cfg").write_text("home = /usr/bin\n")
+    feature.joinpath(".venv").symlink_to(environment, target_is_directory=True)
+    task.joinpath(".venv").symlink_to(environment, target_is_directory=True)
+    return feature, task, main
+
+
+def _native_argv(command: str) -> list[str]:
+    """argv of the native branch of a (fail-closed) ``claude-native`` wrapper; plain commands pass through."""
+    head = f"if {policy._native_check()}; then "
+    if command.startswith(head):
+        body = command[len(head) : -len(policy._FI)]
+        command = body[: body.rindex(policy._ELSE)]
+    return shlex.split(command)
+
+
+def test_native_hook_retains_operational_guards(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Scope/RTK/backstop/environment behavior without an inserted bwrap wrapper."""
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    seen: list[tuple[str, Path]] = []
+
+    def guard(command: str, cwd: Path) -> tuple[str, str]:
+        seen.append((command, cwd))
+        return "rewrite", "pytest tests/test_native.py -q"
+
+    monkeypatch.setattr(policy, "_scope_guard", guard)
+    monkeypatch.setattr(policy, "rtk_rewrite", lambda command: f"rtk {command}")
+    response = policy.hook_response(
+        {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": "pytest", "timeout": 30_000}},
+        backend="claude-native",
+    )
+    command = _native_argv(response["hookSpecificOutput"]["updatedInput"]["command"])
+    assert seen == [("pytest", feature.resolve())]
+    assert command[0] == "env"
+    assert "bwrap" not in command
+    assert next(value for value in command if value.startswith("PYTHONPATH=")).split(os.pathsep)[0] == (
+        f"PYTHONPATH={feature / 'packages' / 'test-package' / 'src'}"
+    )
+    assert command[-7:] == [
+        "/usr/bin/timeout",
+        "-k",
+        "5",
+        "38",
+        "/bin/bash",
+        "-c",
+        "rtk pytest tests/test_native.py -q",
+    ]
+
+
+def test_native_hook_uses_cd_prefix_task_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`cd <pool worktree> && pytest x` uses the task worktree for guards and PYTHONPATH."""
+    feature, task, _main = _native_hook_worktrees(tmp_path)
+    seen: list[Path] = []
+    monkeypatch.setattr(policy, "_scope_guard", lambda command, cwd: (seen.append(cwd), ("allow", None))[1])
+    response = policy.hook_response(
+        {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": f"cd {task} && pytest x.py"}},
+        backend="claude-native",
+    )
+    command = _native_argv(response["hookSpecificOutput"]["updatedInput"]["command"])
+    assert seen == [task.resolve()]
+    assert next(value for value in command if value.startswith("PYTHONPATH=")).split(os.pathsep)[0] == (
+        f"PYTHONPATH={task / 'packages' / 'test-package' / 'src'}"
+    )
+
+
+def test_native_hook_prepends_degraded_banner_only_with_marker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": "true"}}
+
+    normal = policy.hook_response(payload, backend="claude-native")
+    assert "degraded sandbox" not in normal["hookSpecificOutput"]["updatedInput"]["command"]
+
+    monkeypatch.setenv("PARROT_SDD_SANDBOX_DEGRADED", "1")
+    degraded = policy.hook_response(payload, backend="claude-native")
+    assert shlex.split(degraded["hookSpecificOutput"]["updatedInput"]["command"])[-1] == (
+        "echo '[sdd] degraded sandbox: no OS write boundary' >&2; true"
+    )
+
+
+def test_legacy_hook_output_unchanged(checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    """The omitted backend and explicit Bubblewrap backend produce identical output."""
+    monkeypatch.setattr(policy.shutil, "which", lambda name: f"/usr/bin/{name}")
+    payload = {"cwd": str(checkout[0]), "tool_name": "Bash", "tool_input": {"command": "true"}}
+    implicit = policy.hook_response(payload)
+    explicit = policy.hook_response(payload, backend="bubblewrap")
+    assert implicit == explicit
+    assert "bwrap" in explicit["hookSpecificOutput"]["updatedInput"]["command"]
+
+
+def _idempotent_rtk(command: str) -> str:
+    """Mirror real ``rtk rewrite``: an already-rewritten command comes back unchanged."""
+    return command if command.startswith("rtk ") else f"rtk {command}"
+
+
+def _resend(response: dict[str, Any], payload: dict[str, Any], backend: str) -> dict[str, Any]:
+    """Resend the hook's rewritten input, as auto mode asks the agent to do."""
+    resent = {**payload, "tool_input": response["hookSpecificOutput"]["updatedInput"]}
+    return policy.hook_response(resent, backend=backend)
+
+
+@pytest.mark.parametrize("degraded", [False, True])
+def test_native_hook_is_idempotent_on_own_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, degraded: bool
+) -> None:
+    """Resending the wrapped command leaves it unchanged, so auto mode can review it (issue 66f1d6a06162)."""
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    monkeypatch.setattr(policy, "rtk_rewrite", _idempotent_rtk)
+    if degraded:
+        monkeypatch.setenv("PARROT_SDD_SANDBOX_DEGRADED", "1")
+    payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": "git status", "timeout": 30_000}}
+    first = policy.hook_response(payload, backend="claude-native")
+    assert first["hookSpecificOutput"]["updatedInput"]["command"] != "git status"
+    second = _resend(first, payload, "claude-native")
+    assert second == {"hookSpecificOutput": {"hookEventName": "PreToolUse"}}
+
+
+def test_bubblewrap_hook_is_idempotent_on_own_output(
+    checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The legacy Bubblewrap wrapper is a fixed point too."""
+    monkeypatch.setattr(policy.shutil, "which", lambda name: f"/usr/bin/{name}")
+    payload = {"cwd": str(checkout[0]), "tool_name": "Bash", "tool_input": {"command": "printf '%s' 'a; b'"}}
+    first = policy.hook_response(payload, backend="bubblewrap")
+    second = _resend(first, payload, "bubblewrap")
+    assert second == {"hookSpecificOutput": {"hookEventName": "PreToolUse"}}
+
+
+def _write_prefix_policy(tmp_path: Path, worktree: Path, **overrides: object) -> Path:
+    """Write a complete shell-prefix policy with launcher-like permissions."""
+    document: dict[str, object] = {
+        "schema_version": 1,
+        "mode": "legacy",
+        "worktree": str(worktree),
+        "hook_commands": [],
+        "mcp_argv": [],
+        "rtk": False,
+    }
+    document.update(overrides)
+    policy_path = tmp_path / "policy.json"
+    policy_path.write_text(json.dumps(document))
+    policy_path.chmod(0o600)
+    return policy_path
+
+
+def _prefix_token(policy_path: Path) -> str:
+    """Return the token the prefix would hand to a hook for ``policy_path``."""
+    return hashlib.sha256(policy_path.read_bytes()).hexdigest()
+
+
+@pytest.mark.parametrize("defect", ["schema", "group-writable", "symlink", "other-worktree"])
+def test_bubblewrap_hook_rejects_unvalidated_prefix_policy(
+    checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path, defect: str
+) -> None:
+    """A matching token is not enough: the policy must validate and describe this session's worktree."""
+    worktree, _environment = checkout
+    policy_path = _write_prefix_policy(tmp_path, worktree)
+    if defect == "schema":
+        policy_path.write_text(json.dumps({"schema_version": 1, "mode": "legacy"}))
+    elif defect == "group-writable":
+        policy_path.chmod(0o620)
+    elif defect == "symlink":
+        link = tmp_path / "link.json"
+        link.symlink_to(policy_path)
+        policy_path = link
+    else:
+        monkeypatch.setenv("PARROT_SDD_SANDBOX_ROOTS", os.pathsep.join((str(tmp_path / "other"), "git", "primary")))
+    monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_POLICY", str(policy_path))
+    monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_TOKEN", _prefix_token(policy_path))
+    monkeypatch.setattr(policy.shutil, "which", lambda name: f"/usr/bin/{name}")
+
+    assert policy._shell_prefix_policy() is None
+    payload = {"cwd": str(worktree), "tool_name": "Bash", "tool_input": {"command": "git status"}}
+    wrapped = policy.hook_response(payload, backend="bubblewrap")["hookSpecificOutput"]["updatedInput"]["command"]
+    assert "bwrap" in wrapped
+
+
+def test_prefix_policy_accepted_for_the_frozen_worktree(
+    checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The launcher's frozen root and the policy worktree agree for a genuine session."""
+    worktree, _environment = checkout
+    policy_path = _write_prefix_policy(tmp_path, worktree)
+    monkeypatch.setenv("PARROT_SDD_SANDBOX_ROOTS", os.pathsep.join((str(worktree), "git", "primary")))
+    monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_POLICY", str(policy_path))
+    monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_TOKEN", _prefix_token(policy_path))
+
+    loaded = policy._shell_prefix_policy()
+
+    assert loaded is not None and loaded.mode == "legacy" and loaded.worktree == str(worktree)
+
+
+def test_script_mode_hook_validates_prefix_policy_without_parrot(checkout: tuple[Path, Path], tmp_path: Path) -> None:
+    """Run as a script (how Claude invokes it), the hook loads its ``shell_prefix`` sibling and honours the policy."""
+    worktree, _environment = checkout
+    policy_path = _write_prefix_policy(tmp_path, worktree, rtk=True)
+    result = subprocess.run(
+        [sys.executable, "-E", "-s", str(Path(policy.__file__).resolve()), "--hook"],
+        input=json.dumps({"cwd": str(worktree), "tool_name": "Bash", "tool_input": {"command": "git status"}}),
+        env={
+            "PATH": os.environ["PATH"],
+            "PARROT_SDD_SANDBOX_BACKEND": "bubblewrap",
+            "PARROT_SDD_SHELL_PREFIX_POLICY": str(policy_path),
+            "PARROT_SDD_SHELL_PREFIX_TOKEN": _prefix_token(policy_path),
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {"hookSpecificOutput": {"hookEventName": "PreToolUse"}}
+
+
+def test_bubblewrap_hook_skips_wrap_only_with_valid_prefix_token(
+    checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Legacy prefix proof avoids a redundant rewrite; absent or forged proof still fails closed to bwrap."""
+    worktree, _environment = checkout
+    policy_path = _write_prefix_policy(tmp_path, worktree)
+    payload = {"cwd": str(worktree), "tool_name": "Bash", "tool_input": {"command": "git status"}}
+    monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_POLICY", str(policy_path))
+    monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_TOKEN", hashlib.sha256(policy_path.read_bytes()).hexdigest())
+    assert policy.hook_response(payload, backend="bubblewrap") == {
+        "hookSpecificOutput": {"hookEventName": "PreToolUse"}
+    }
+
+    monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_TOKEN", "forged")
+    monkeypatch.setattr(policy.shutil, "which", lambda name: f"/usr/bin/{name}")
+    wrapped = policy.hook_response(payload, backend="bubblewrap")["hookSpecificOutput"]["updatedInput"]["command"]
+    assert "bwrap" in wrapped
+
+
+def test_bubblewrap_prefix_output_is_fixed_point(
+    checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The bounded explicit-call shape emitted under the prefix is idempotent."""
+    worktree, _environment = checkout
+    policy_path = _write_prefix_policy(tmp_path, worktree)
+    monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_POLICY", str(policy_path))
+    monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_TOKEN", hashlib.sha256(policy_path.read_bytes()).hexdigest())
+    payload = {"cwd": str(worktree), "tool_name": "Bash", "tool_input": {"command": "sleep 1", "timeout": 30_000}}
+    first = policy.hook_response(payload, backend="bubblewrap")
+    assert "bwrap" not in first["hookSpecificOutput"]["updatedInput"]["command"]
+    assert _resend(first, payload, "bubblewrap") == {"hookSpecificOutput": {"hookEventName": "PreToolUse"}}
+
+
+def test_hook_skips_rtk_under_prefix_policy(
+    checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An authenticated RTK prefix owns the rewrite after the scope guard."""
+    worktree, _environment = checkout
+    policy_path = _write_prefix_policy(tmp_path, worktree, rtk=True)
+    monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_POLICY", str(policy_path))
+    monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_TOKEN", hashlib.sha256(policy_path.read_bytes()).hexdigest())
+    monkeypatch.setattr(policy, "rtk_rewrite", lambda command: pytest.fail(f"unexpected RTK rewrite: {command}"))
+
+    response = policy.hook_response(
+        {"cwd": str(worktree), "tool_name": "Bash", "tool_input": {"command": "git status --short"}},
+        backend="bubblewrap",
+    )
+
+    assert response == {"hookSpecificOutput": {"hookEventName": "PreToolUse"}}
+
+
+def test_scope_guard_still_blocks_under_prefix_policy(
+    checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Prefix RTK suppression does not run before the raw-command scope guard."""
+    worktree, _environment = checkout
+    policy_path = _write_prefix_policy(tmp_path, worktree, rtk=True)
+    monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_POLICY", str(policy_path))
+    monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_TOKEN", hashlib.sha256(policy_path.read_bytes()).hexdigest())
+    seen: list[str] = []
+    monkeypatch.setattr(policy, "_scope_guard", lambda command, cwd: (seen.append(command), ("block", "blocked"))[1])
+    monkeypatch.setattr(policy, "rtk_rewrite", lambda command: pytest.fail(f"unexpected RTK rewrite: {command}"))
+
+    response = policy.hook_response(
+        {"cwd": str(worktree), "tool_name": "Bash", "tool_input": {"command": "pytest"}}, backend="bubblewrap"
+    )
+
+    assert seen == ["pytest"]
+    assert response["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+def test_lookalike_wrapper_is_still_guarded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A hand-written wrapper whose inner command the guard rewrites is wrapped again, never passed through."""
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    seen: list[str] = []
+
+    def guard(command: str, cwd: Path) -> tuple[str, str | None]:
+        seen.append(command)
+        return ("rewrite", "pytest tests/test_a.py -q") if command == "pytest" else ("allow", None)
+
+    monkeypatch.setattr(policy, "_scope_guard", guard)
+    forged = shlex.join(["env", "UV_NO_SYNC=1", "/bin/bash", "-c", "pytest"])
+    response = policy.hook_response(
+        {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": forged}}, backend="claude-native"
+    )
+    assert "pytest" in seen
+    assert response["hookSpecificOutput"]["updatedInput"]["command"] != forged
+
+
+def test_lookalike_wrapper_with_blocked_inner_is_wrapped_not_allowed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A guard block on the inner command never lets the look-alike through unchanged."""
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    monkeypatch.setattr(
+        policy, "_scope_guard", lambda command, cwd: ("block", "no") if command == "pytest" else ("allow", None)
+    )
+    forged = shlex.join(["env", "UV_NO_SYNC=1", "/bin/bash", "-c", "pytest"])
+    response = policy.hook_response(
+        {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": forged}}, backend="claude-native"
+    )
+    assert response["hookSpecificOutput"]["updatedInput"]["command"] != forged
+
+
+@pytest.mark.parametrize("backend", ["", "none", "CLAUDE-NATIVE", "docker"])
+def test_unknown_backend_denies(checkout: tuple[Path, Path], backend: str) -> None:
+    """Only the explicit native backend value opts out of Bubblewrap."""
+    response = policy.hook_response(
+        {"cwd": str(checkout[0]), "tool_name": "Bash", "tool_input": {"command": "true"}}, backend=backend
+    )
+    assert response["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+def test_native_file_tool_denies_control_paths(tmp_path: Path) -> None:
+    """Native file tools allow task files but reject Git, environment, and hook controls."""
+    feature, _task, main = _native_hook_worktrees(tmp_path)
+    allowed = policy.hook_response(
+        {"cwd": str(feature), "tool_name": "Write", "tool_input": {"file_path": "task.py"}}, backend="claude-native"
+    )
+    assert "permissionDecision" not in allowed["hookSpecificOutput"]
+    denied_paths = [
+        main / ".git" / "config",
+        feature / ".venv" / "editable.pth",
+        feature / "packages" / "ai-parrot" / "src" / "parrot" / "flows" / "dev_loop" / "worktree_environment.py",
+    ]
+    for target in denied_paths:
+        response = policy.hook_response(
+            {"cwd": str(feature), "tool_name": "Edit", "tool_input": {"file_path": str(target)}},
+            backend="claude-native",
+        )
+        assert response["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+def test_main_reads_backend_from_environment(tmp_path: Path) -> None:
+    """The standalone hook selects native wrapping from its child environment (backend plus launcher markers)."""
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    environment = {
+        **os.environ,
+        "PARROT_SDD_SANDBOX_BACKEND": "claude-native",
+        "PARROT_SDD_CACHE_DIR": str(tmp_path / "cache"),
+        "PARROT_SDD_SANDBOX_ROOTS": os.pathsep.join((str(feature), str(_main / ".git"), str(_main))),
+        policy.RTK_ENV_SWITCH: "0",
+    }
+    payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": "true"}}
+    result = subprocess.run(
+        [sys.executable, policy.__file__, "--hook"],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        timeout=10,
+        env=environment,
+    )
+    assert result.returncode == 0, result.stderr
+    command = _native_argv(json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"])
+    assert command[0] == "env"
+    assert "bwrap" not in command
+
+
+def test_main_uses_bubblewrap_backend_with_launcher_markers(tmp_path: Path) -> None:
+    """An explicit Bubblewrap backend remains valid beside native launcher markers."""
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    bwrap = bin_dir / "bwrap"
+    bwrap.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    bwrap.chmod(0o755)
+    environment = {
+        **os.environ,
+        "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+        "PARROT_SDD_SANDBOX_BACKEND": "bubblewrap",
+        "PARROT_SDD_CACHE_DIR": str(tmp_path / "cache"),
+        "PARROT_SDD_SANDBOX_ROOTS": os.pathsep.join((str(feature), str(_main / ".git"), str(_main))),
+        policy.RTK_ENV_SWITCH: "0",
+    }
+    payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": "true"}}
+    result = subprocess.run(
+        [sys.executable, policy.__file__, "--hook"],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        timeout=10,
+        env=environment,
+    )
+    assert result.returncode == 0, result.stderr
+    output = json.loads(result.stdout)["hookSpecificOutput"]
+    assert "permissionDecision" not in output
+    assert shlex.split(output["updatedInput"]["command"])[0] == str(bwrap)
+
+
 def test_hook_applies_verdict_command(checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(policy.shutil, "which", lambda _: "/usr/bin/bwrap")
     monkeypatch.setattr(policy, "_scope_guard", lambda command, cwd: ("verdict", "cd /w && python v.py"))
@@ -679,3 +1286,887 @@ def test_hook_applies_verdict_command(checkout: tuple[Path, Path], monkeypatch: 
     )
     updated = response["hookSpecificOutput"]["updatedInput"]
     assert shlex.split(updated["command"])[-3:] == ["/bin/bash", "-c", "cd /w && python v.py"]
+
+
+def test_module_imports_without_os_getuid() -> None:
+    """Windows has no os.getuid: the installed hook must still import (it used to crash before reading its payload)."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    src = Path(__file__).resolve().parents[3] / "src"
+    code = "import os; del os.getuid; import parrot.sdd.scripts.worktree_environment as m; print(m.CLAUDE_SCRATCH_ROOT)"
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=False, env={"PYTHONPATH": str(src)}
+    )
+    assert result.returncode == 0, result.stderr
+
+
+# ---------------------------------------------------------------------------
+# RTK: the host keeps only one hook's rewrite, usually the sandbox wrapper's, so
+# the wrapper applies RTK's rewrite itself (issue:fa2d5a89771e). RTK's data
+# directory, which holds its filter trust store, stays read-only.
+# ---------------------------------------------------------------------------
+
+
+def _fake_rtk(tmp_path: Path, body: str) -> Path:
+    """Install a stand-in ``rtk`` executable whose ``rewrite`` behaves as ``body``."""
+    executable = tmp_path / "bin" / "rtk"
+    executable.parent.mkdir(parents=True, exist_ok=True)
+    executable.write_text(f"#!/bin/sh\n{body}\n")
+    executable.chmod(0o755)
+    return executable
+
+
+def _which_with_rtk(rtk: Path | None) -> Any:
+    return lambda name: (str(rtk) if rtk else None) if name == "rtk" else f"/usr/bin/{name}"
+
+
+def test_rtk_rewrite_trusts_printed_command_not_exit_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Exit 3 is RTK's "ask" verdict, not a failure: the printed rewrite is still used."""
+    monkeypatch.delenv(policy.RTK_ENV_SWITCH)
+    rtk = _fake_rtk(tmp_path, 'printf "rtk %s\\n" "$3"; exit 3')
+    monkeypatch.setattr(policy.shutil, "which", _which_with_rtk(rtk))
+    assert policy.rtk_rewrite("git status") == "rtk git status"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "exit 1",  # no RTK equivalent: nothing printed
+        "printf '  \\n'; exit 0",  # whitespace only
+        "echo 'thread main panicked' >&2; exit 101",  # crash
+        "sleep 5",  # hangs past the timeout
+    ],
+)
+def test_rtk_rewrite_keeps_command_without_usable_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, body: str
+) -> None:
+    monkeypatch.delenv(policy.RTK_ENV_SWITCH)
+    monkeypatch.setattr(policy, "RTK_REWRITE_TIMEOUT_SECONDS", 1)
+    monkeypatch.setattr(policy.shutil, "which", _which_with_rtk(_fake_rtk(tmp_path, body)))
+    assert policy.rtk_rewrite("git status") is None
+
+
+def test_rtk_rewrite_is_skipped_when_absent_unrunnable_or_disabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rtk = _fake_rtk(tmp_path, 'printf "rtk %s\\n" "$3"')
+    monkeypatch.setattr(policy.shutil, "which", _which_with_rtk(rtk))
+    assert policy.rtk_rewrite("git status") is None, "PARROT_SANDBOX_RTK=0 turns the rewrite off"
+    monkeypatch.delenv(policy.RTK_ENV_SWITCH)
+    monkeypatch.setattr(policy.shutil, "which", _which_with_rtk(None))
+    assert policy.rtk_rewrite("git status") is None
+    rtk.chmod(0o644)
+    monkeypatch.setattr(policy.shutil, "which", _which_with_rtk(rtk))
+    assert policy.rtk_rewrite("git status") is None
+
+
+def test_rtk_rewrite_ends_rtk_options_before_the_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The command follows ``--``, so a fake RTK sees it as the third argument."""
+    monkeypatch.delenv(policy.RTK_ENV_SWITCH)
+    rtk = _fake_rtk(tmp_path, '[ "$2" = "--" ] || exit 64; printf "rtk %s\\n" "$3"')
+    monkeypatch.setattr(policy.shutil, "which", _which_with_rtk(rtk))
+    assert policy.rtk_rewrite("git status") == "rtk git status"
+
+
+def test_real_rtk_reads_dash_leading_command_as_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Without ``--``, ``rtk rewrite --help`` printed RTK's help, which the hook would have run as the command."""
+    if shutil.which("rtk") is None:
+        pytest.skip("RTK is not installed on this host")
+    monkeypatch.delenv(policy.RTK_ENV_SWITCH)
+    assert policy.rtk_rewrite("--help") is None
+    assert policy.rtk_rewrite("git status") == "rtk git status"
+
+
+def test_hook_applies_rtk_after_scope_guard(checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    """The guard must see the raw runner; RTK then rewrites the guard's scoped command."""
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+    seen: list[tuple[str, str]] = []
+
+    def guard(command: str, cwd: Path) -> tuple[str, str]:
+        seen.append(("guard", command))
+        return "rewrite", "pytest a.py"
+
+    def rewrite(command: str) -> str:
+        seen.append(("rtk", command))
+        return f"rtk {command}"
+
+    monkeypatch.setattr(policy, "_scope_guard", guard)
+    monkeypatch.setattr(policy, "rtk_rewrite", rewrite)
+    response = policy.hook_response({"cwd": str(checkout[0]), "tool_name": "Bash", "tool_input": {"command": "pytest"}})
+    assert seen == [("guard", "pytest"), ("rtk", "pytest a.py")]
+    assert _sandboxed_argv(response)[-3:] == ["/bin/bash", "-c", "rtk pytest a.py"]
+
+
+def test_hook_never_binds_rtk_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scratch_root: Path) -> None:
+    """An RTK command gets exactly the binds of a plain one: RTK's data dir is never made writable."""
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+    main = tmp_path / "main"
+    (main / ".git").mkdir(parents=True)
+    (tmp_path / "xdg" / "rtk").mkdir(parents=True)
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
+    payload = {"cwd": str(main), "tool_name": "Bash", "tool_input": {"command": "git status"}}
+
+    monkeypatch.setattr(policy, "rtk_rewrite", lambda command: f"rtk {command}")
+    argv = _sandboxed_argv(policy.hook_response(payload))
+    assert argv[-1] == "rtk git status"
+    assert _writable_binds(argv) == [scratch_root.resolve(), main.resolve()]
+
+
+def test_real_rtk_cannot_write_its_trust_store_from_the_sandbox(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RTK runs in the sandbox, but a seat must not trust its own ``.rtk/filters.toml`` for the host.
+
+    RTK keeps the trust store for project-local filters in its data dir; a
+    trusted filter changes what RTK shows outside the sandbox too.
+    """
+    _require_bubblewrap()
+    if shutil.which("rtk") is None:
+        pytest.skip("RTK is not installed on this host")
+    monkeypatch.delenv(policy.RTK_ENV_SWITCH)
+    for name in ("RTK_DB_PATH", "RTK_TEE_DIR"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
+    data_dir = tmp_path / "xdg" / "rtk"
+    data_dir.mkdir(parents=True)
+    main = tmp_path / "main"
+    main.mkdir()
+    subprocess.run(["git", "init"], cwd=main, capture_output=True, check=True)
+    (main / ".rtk").mkdir()
+    (main / ".rtk" / "filters.toml").write_text(
+        'schema_version = 1\n\n[filters.hide]\nmatch_command = "^pytest"\nstrip_lines_matching = ["FAILED"]\n'
+    )
+
+    def hooked(command: str) -> list[str]:
+        return _sandboxed_argv(
+            policy.hook_response({"cwd": str(main), "tool_name": "Bash", "tool_input": {"command": command}})
+        )
+
+    argv = hooked("git status")
+    assert argv[-1].startswith("rtk "), argv[-3:]
+    result = subprocess.run(argv, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr
+    # pytest's tmp_path lives under /tmp, which the sandbox replaces with a
+    # private tmpfs, so only the host view proves nothing reached the data dir.
+    subprocess.run(hooked("rtk trust -y"), capture_output=True, text=True, timeout=30)
+    assert list(data_dir.iterdir()) == []
+    # Control: outside the sandbox the same command writes the trust store, so the check above is not vacuous.
+    subprocess.run(["rtk", "trust", "-y"], cwd=main, capture_output=True, text=True, timeout=30)
+    assert (data_dir / "trusted_filters.json").is_file()
+
+
+def test_hook_refuses_legacy_fallback_when_native_markers_are_present(tmp_path: Path) -> None:
+    """A native launch without PARROT_SDD_SANDBOX_BACKEND is a broken launch, never a Bubblewrap session."""
+    import json as _json
+    import os as _os
+    import subprocess as _subprocess
+    import sys as _sys
+
+    hook = Path(policy.__file__).resolve()
+    env = {k: v for k, v in _os.environ.items() if not k.startswith("PARROT_SDD_")}
+    env["PARROT_SDD_CACHE_DIR"] = str(tmp_path)
+    payload = _json.dumps({"cwd": str(tmp_path), "tool_name": "Bash", "tool_input": {"command": "true"}})
+    result = _subprocess.run(
+        [_sys.executable, str(hook), "--hook"], input=payload, capture_output=True, text=True, env=env, timeout=20
+    )
+    output = _json.loads(result.stdout)["hookSpecificOutput"]
+    assert output["permissionDecision"] == "deny"
+    assert "PARROT_SDD_SANDBOX_BACKEND is unset" in output["permissionDecisionReason"]
+
+
+def _fake_bwrap(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A ``bwrap`` stand-in that prints ``BWRAP`` so tests can tell which branch ran."""
+    bin_dir = tmp_path / "fakebin"
+    bin_dir.mkdir(exist_ok=True)
+    bwrap = bin_dir / "bwrap"
+    bwrap.write_text("#!/bin/sh\necho BWRAP\n", encoding="utf-8")
+    bwrap.chmod(0o755)
+    monkeypatch.setattr(policy.shutil, "which", lambda name: str(bwrap) if name == "bwrap" else None)
+    return bwrap
+
+
+def _run_emitted(command: str, *, sandbox: bool, tmp_path: Path, extra: dict[str, str] | None = None) -> Any:
+    """Run the hook's emitted shell text, as the native Bash tool would, inside or outside a 'sandbox'."""
+    env = {k: v for k, v in os.environ.items() if k != "SANDBOX_RUNTIME" and not k.startswith("PARROT_SDD_")}
+    if sandbox:
+        env["SANDBOX_RUNTIME"] = "1"
+    env.update(extra or {})
+    return subprocess.run(["/bin/bash", "-c", command], capture_output=True, text=True, timeout=20, env=env)
+
+
+@pytest.mark.parametrize(
+    ("uid_map", "sandbox", "expected"),
+    [
+        ("      1000       1000          1\n", True, "NATIVE"),
+        ("         0          0 4294967295\n", True, "BWRAP"),
+        ("      1000       1000          1\n", False, "BWRAP"),
+        ("         0          1          1\n         5         10          2\n", True, "BWRAP"),
+    ],
+)
+def test_auto_backend_runs_exactly_one_branch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, uid_map: str, sandbox: bool, expected: str
+) -> None:
+    """Native path only when SANDBOX_RUNTIME=1 and a single non-identity uid_map; otherwise bwrap; never both."""
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    _fake_bwrap(tmp_path, monkeypatch)
+    uid_file = tmp_path / "uid_map"
+    uid_file.write_text(uid_map, encoding="utf-8")
+    monkeypatch.setattr(policy, "UID_MAP_PATH", str(uid_file))
+    response = policy.hook_response(
+        {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": "echo NATIVE"}}, backend="auto"
+    )
+    command = response["hookSpecificOutput"]["updatedInput"]["command"]
+    result = _run_emitted(command, sandbox=sandbox, tmp_path=tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split() == [expected]
+
+
+def test_auto_backend_derives_pythonpath_at_run_time(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The auto wrapper does not list package `src` dirs; the shell computes them (short resend, same result)."""
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    second = feature / "packages" / "other-package" / "src"
+    second.mkdir(parents=True)
+    _fake_bwrap(tmp_path, monkeypatch)
+    uid_file = tmp_path / "uid_map"
+    uid_file.write_text("      1000       1000          1\n", encoding="utf-8")
+    monkeypatch.setattr(policy, "UID_MAP_PATH", str(uid_file))
+    payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": 'printf %s "$PYTHONPATH"'}}
+    first = policy.hook_response(payload, backend="auto")
+    command = first["hookSpecificOutput"]["updatedInput"]["command"]
+    assert "test-package" not in command and "other-package" not in command
+    result = _run_emitted(command, sandbox=True, tmp_path=tmp_path, extra={"PYTHONPATH": "/inherited"})
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split(os.pathsep) == [
+        str(feature / "packages" / "other-package" / "src"),
+        str(feature / "packages" / "test-package" / "src"),
+        "/inherited",
+    ]
+    assert _resend(first, payload, "auto") == {"hookSpecificOutput": {"hookEventName": "PreToolUse"}}
+
+
+def test_auto_backend_without_uid_map_relies_on_sandbox_runtime(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A platform without /proc/self/uid_map (macOS Seatbelt) trusts SANDBOX_RUNTIME alone."""
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    _fake_bwrap(tmp_path, monkeypatch)
+    monkeypatch.setattr(policy, "UID_MAP_PATH", str(tmp_path / "missing_uid_map"))
+    payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": "echo NATIVE"}}
+    command = policy.hook_response(payload, backend="auto")["hookSpecificOutput"]["updatedInput"]["command"]
+    assert _run_emitted(command, sandbox=True, tmp_path=tmp_path).stdout.split() == ["NATIVE"]
+    assert _run_emitted(command, sandbox=False, tmp_path=tmp_path).stdout.split() == ["BWRAP"]
+
+
+def test_main_defaults_to_auto_backend(tmp_path: Path) -> None:
+    """Unset PARROT_SDD_SANDBOX_BACKEND selects the runtime-branch wrapper, not the legacy one."""
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    bwrap = bin_dir / "bwrap"
+    bwrap.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    bwrap.chmod(0o755)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("PARROT_SDD_")}
+    env.update({"PATH": f"{bin_dir}{os.pathsep}{env.get('PATH', '')}", policy.RTK_ENV_SWITCH: "0"})
+    payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": "true"}}
+    result = subprocess.run(
+        [sys.executable, policy.__file__, "--hook"],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        timeout=10,
+        env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    output = json.loads(result.stdout)["hookSpecificOutput"]
+    assert "permissionDecision" not in output
+    command = output["updatedInput"]["command"]
+    assert command.startswith("if ") and "SANDBOX_RUNTIME" in command and str(bwrap) in command
+
+
+@pytest.mark.parametrize(
+    "markers",
+    [{}, {"PARROT_SDD_CACHE_DIR": "cache"}, {"PARROT_SDD_SANDBOX_ROOTS": "roots"}],
+    ids=["no-markers", "cache-only", "roots-only"],
+)
+def test_main_hand_exported_claude_native_falls_back_to_auto(tmp_path: Path, markers: dict[str, str]) -> None:
+    """`claude-native` without both launcher markers is not trusted: the hook emits the runtime-branch wrapper."""
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    bwrap = bin_dir / "bwrap"
+    bwrap.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    bwrap.chmod(0o755)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("PARROT_SDD_")}
+    env.update(
+        {
+            "PATH": f"{bin_dir}{os.pathsep}{env.get('PATH', '')}",
+            "PARROT_SDD_SANDBOX_BACKEND": "claude-native",
+            policy.RTK_ENV_SWITCH: "0",
+        }
+    )
+    env.update({key: str(tmp_path / value) for key, value in markers.items()})
+    payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": "true"}}
+    result = subprocess.run(
+        [sys.executable, policy.__file__, "--hook"],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        timeout=10,
+        env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    output = json.loads(result.stdout)["hookSpecificOutput"]
+    assert "permissionDecision" not in output
+    command = output["updatedInput"]["command"]
+    assert command.startswith("if ") and "SANDBOX_RUNTIME" in command and str(bwrap) in command
+
+
+@pytest.mark.parametrize("backend", ["auto", "claude-native", "bubblewrap"])
+def test_all_backends_are_idempotent_and_keep_rtk(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, backend: str
+) -> None:
+    """hook(hook(x)) rewrites nothing, and the RTK rewrite of the inner command survives in every backend."""
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    _fake_bwrap(tmp_path, monkeypatch)
+    monkeypatch.setattr(policy, "rtk_rewrite", _idempotent_rtk)
+    payload = {
+        "cwd": str(feature),
+        "tool_name": "Bash",
+        "tool_input": {"command": "printf '%s' 'a ; else b'; git status", "timeout": 30_000},
+    }
+    first = policy.hook_response(payload, backend=backend)
+    command = first["hookSpecificOutput"]["updatedInput"]["command"]
+    assert "rtk printf" in command
+    assert _resend(first, payload, backend) == {"hookSpecificOutput": {"hookEventName": "PreToolUse"}}
+
+
+def test_auto_lookalike_wrapper_is_still_guarded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A hand-edited auto wrapper is rebuilt, never passed through."""
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    _fake_bwrap(tmp_path, monkeypatch)
+    payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": "true"}}
+    first = policy.hook_response(payload, backend="auto")["hookSpecificOutput"]["updatedInput"]["command"]
+    forged = first.replace("/bin/bash -c true", "/bin/bash -c 'true; rm x'", 1)
+    assert forged != first
+    response = policy.hook_response({**payload, "tool_input": {"command": forged}}, backend="auto")
+    assert response["hookSpecificOutput"]["updatedInput"]["command"] != forged
+
+
+def _launcher_environment(monkeypatch: pytest.MonkeyPatch, session: Path) -> dict[str, str]:
+    """Inherit what ``launch_worker`` exports for ``session``, as the hook process sees it."""
+    from parrot.sdd.scripts import native_claude_sandbox as native
+
+    env = native.native_command_environment(session, os.environ)
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    return env
+
+
+def test_launcher_environment_is_a_fixed_point(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Re-deriving the environment from what the launcher exported changes nothing (no duplicated PYTHONPATH)."""
+    from parrot.sdd.scripts import native_claude_sandbox as native
+
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    exported = _launcher_environment(monkeypatch, feature)
+    assert {"UV_NO_SYNC", "PYTHONDONTWRITEBYTECODE", "PYTHONPATH", "XDG_CACHE_HOME", "UV_CACHE_DIR"} <= set(exported)
+    assert native.native_command_environment(feature) == exported
+
+
+def test_claude_native_plain_command_passes_through_unchanged(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """With the launcher's environment inherited, a plain command with nothing to change gets no rewrite."""
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    _launcher_environment(monkeypatch, feature)
+    monkeypatch.setattr(policy, "rtk_rewrite", lambda command: None)
+    payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": "git status"}}
+    assert policy.hook_response(payload, backend="claude-native") == {
+        "hookSpecificOutput": {"hookEventName": "PreToolUse"}
+    }
+
+
+def test_claude_native_sub_worktree_gets_only_its_own_pythonpath(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A task cwd outside the session worktree is the one case that still needs an env prefix, and only for that."""
+    feature, task, _main = _native_hook_worktrees(tmp_path)
+    _launcher_environment(monkeypatch, feature)
+    monkeypatch.setattr(policy, "rtk_rewrite", lambda command: None)
+    payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": f"cd {task} && pytest x.py"}}
+    argv = shlex.split(
+        policy.hook_response(payload, backend="claude-native")["hookSpecificOutput"]["updatedInput"]["command"]
+    )
+    assignments = [item for item in argv if "=" in item and not item.startswith("/")]
+    assert [item.split("=", 1)[0] for item in assignments] == ["PYTHONPATH"]
+    assert assignments[0].split("=", 1)[1].split(os.pathsep)[0] == str(task / "packages" / "test-package" / "src")
+
+
+@pytest.mark.parametrize("field", [{"timeout": 30_000}, {"run_in_background": True}])
+def test_claude_native_explicit_timeout_or_background_keeps_the_backstop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, field: dict[str, Any]
+) -> None:
+    """The in-sandbox backstop is kept where the host would not bound the call; the rewrite is idempotent."""
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    _launcher_environment(monkeypatch, feature)
+    monkeypatch.setattr(policy, "rtk_rewrite", _idempotent_rtk)
+    payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": "sleep 1", **field}}
+    first = policy.hook_response(payload, backend="claude-native")
+    argv = shlex.split(first["hookSpecificOutput"]["updatedInput"]["command"])
+    assert argv[:1] == ["env"] and argv[-3:-1] == ["/bin/bash", "-c"]
+    assert _resend(first, payload, "claude-native") == {"hookSpecificOutput": {"hookEventName": "PreToolUse"}}
+
+
+def test_claude_native_degraded_runs_outside_the_sandbox_with_banner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Degraded launches keep the banner (so they are rewritten) and run the command."""
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    _launcher_environment(monkeypatch, feature)
+    monkeypatch.setenv("PARROT_SDD_SANDBOX_DEGRADED", "1")
+    payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": "echo RAN"}}
+    command = policy.hook_response(payload, backend="claude-native")["hookSpecificOutput"]["updatedInput"]["command"]
+    result = _run_emitted(command, sandbox=False, tmp_path=tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split() == ["RAN"]
+    assert "degraded sandbox" in result.stderr
+
+
+@pytest.mark.parametrize("command", ["bwrap --ro-bind / / true", "/usr/bin/bwrap --ro-bind / / true"])
+def test_handwritten_bwrap_denied_in_native_mode_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: str
+) -> None:
+    """A hand-written bwrap command cannot nest inside the native sandbox, but stays valid for the legacy backend."""
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    _fake_bwrap(tmp_path, monkeypatch)
+    payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": command}}
+    denied = policy.hook_response(payload, backend="claude-native")["hookSpecificOutput"]
+    assert denied["permissionDecision"] == "deny"
+    assert denied["permissionDecisionReason"] == policy.NATIVE_BWRAP_DENIAL
+    assert "updatedInput" not in denied
+    legacy = policy.hook_response(payload, backend="bubblewrap")["hookSpecificOutput"]
+    assert "permissionDecision" not in legacy
+    assert "updatedInput" in legacy
+
+
+def test_packaged_hook_entry_point_denies_in_native_mode_without_import_error(tmp_path: Path) -> None:
+    """``python -m parrot.sdd.scripts.worktree_environment --hook`` loads the sibling native module (TASK-5093)."""
+    feature, _task, main = _native_hook_worktrees(tmp_path)
+    payload = {
+        "cwd": str(feature),
+        "tool_name": "Write",
+        "tool_input": {"file_path": str(feature / ".claude" / "settings.local.json")},
+    }
+    # `claude-native` is trusted only beside both launcher markers; without them the hook falls back to `auto`.
+    env = {k: v for k, v in os.environ.items() if not k.startswith("PARROT_SDD_")}
+    env.update(
+        {
+            "PARROT_SDD_SANDBOX_BACKEND": "claude-native",
+            "PARROT_SDD_SANDBOX_ROOTS": os.pathsep.join((str(feature), str(main / ".git"), str(main))),
+            "PARROT_SDD_CACHE_DIR": str(tmp_path / "cache"),
+        }
+    )
+    result = subprocess.run(
+        [sys.executable, "-m", "parrot.sdd.scripts.worktree_environment", "--hook"],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+    output = json.loads(result.stdout)["hookSpecificOutput"]
+    assert output["permissionDecision"] == "deny"
+    assert "Shared-environment guard failed" not in output["permissionDecisionReason"]
+    assert "No module named" not in output["permissionDecisionReason"]
+
+
+def _agy(workspaces: list[Path] | None, name: str = "run_command", **args: Any) -> dict[str, Any]:
+    """Build an Antigravity PreToolUse event as captured from agy 1.5.3."""
+    payload: dict[str, Any] = {"conversationId": "c1", "stepIdx": 1, "toolCall": {"name": name, "args": args}}
+    if workspaces is not None:
+        payload["workspacePaths"] = [str(workspace) for workspace in workspaces]
+    return payload
+
+
+def test_worktree_env_agy_verdict_rewrite(tmp_path: Path) -> None:
+    """Interactive commands receive only a literal package-source rewrite."""
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    (repo / "packages" / "core" / "src").mkdir(parents=True)
+    decision, _reason, overwrite = policy.agy_verdict(
+        _agy([repo], CommandLine="pytest tests/test_x.py -q"), root=repo, backend="bubblewrap", unattended=False
+    )
+    assert decision == "ask"
+    assert overwrite is not None and set(overwrite) == {"CommandLine"}
+    assert overwrite["CommandLine"].startswith("PYTHONPATH=")
+    assert overwrite["CommandLine"].endswith("pytest tests/test_x.py -q")
+    assert "printf" not in overwrite["CommandLine"]
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "uv sync",
+        "cd sub && uv pip install x",
+        "echo a\nuv pip install foo",
+        "echo a & uv pip install foo",
+        "(uv pip install foo)",
+        "echo $(uv pip install foo)",
+        "echo `uv pip install foo`",
+        "{ uv pip install foo; }",
+        "if true; then uv pip install foo; fi",
+        "echo don't\nuv pip install foo",
+    ],
+)
+def test_worktree_env_agy_verdict_denies_shared_environment_mutations(tmp_path: Path, command: str) -> None:
+    """Every simple command in an AGY compound is checked for uv mutation."""
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    decision, reason, overwrite = policy.agy_verdict(
+        _agy([repo], CommandLine=command), root=repo, backend="bubblewrap", unattended=False
+    )
+    assert (decision, overwrite) == ("deny", None)
+    assert reason == policy.POLICY_MESSAGE
+
+
+def test_worktree_env_agy_quoted_separator_is_not_a_command_boundary(tmp_path: Path) -> None:
+    """A separator inside quotes is data, so an echoed command name never triggers the policy."""
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    decision, _reason, _overwrite = policy.agy_verdict(
+        _agy([repo], CommandLine="echo 'a; uv pip install foo' && ls"),
+        root=repo,
+        backend="bubblewrap",
+        unattended=False,
+    )
+    assert decision == "ask"
+
+
+def test_worktree_env_agy_verdict_leaves_no_source_or_existing_rewrite(tmp_path: Path) -> None:
+    """No source tree and an idempotent rewrite both leave the command untouched."""
+    plain = tmp_path / "plain"
+    (plain / ".git").mkdir(parents=True)
+    assert policy.agy_verdict(
+        _agy([plain], CommandLine="pytest tests/test_x.py -q"), root=plain, backend="bubblewrap", unattended=False
+    ) == ("ask", "", None)
+
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    (repo / "packages" / "core" / "src").mkdir(parents=True)
+    prefix = policy._literal_pythonpath(repo)
+    assert prefix is not None
+    assert policy.agy_verdict(
+        _agy([repo], CommandLine=f"{prefix} pytest tests/test_x.py -q"),
+        root=repo,
+        backend="bubblewrap",
+        unattended=False,
+    ) == ("ask", "", None)
+
+
+def test_worktree_env_agy_verdict_bwrap(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unattended workers wrap only through reachable Bubblewrap."""
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    (repo / "packages" / "core" / "src").mkdir(parents=True)
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap" if name == "bwrap" else None)
+    decision, _reason, overwrite = policy.agy_verdict(
+        _agy([repo], CommandLine="pytest tests/test_x.py -q"), root=repo, backend="bubblewrap", unattended=True
+    )
+    assert decision == "ask"
+    assert overwrite is not None
+    assert shlex.split(overwrite["CommandLine"])[-3:] == ["/bin/bash", "-c", "pytest tests/test_x.py -q"]
+    assert "/usr/bin/bwrap" in overwrite["CommandLine"]
+
+    monkeypatch.setattr(policy.shutil, "which", lambda _name: None)
+    assert (
+        policy.agy_verdict(
+            _agy([repo], CommandLine="pytest tests/test_x.py -q"), root=repo, backend="bubblewrap", unattended=True
+        )[0]
+        == "deny"
+    )
+    assert (
+        policy.agy_verdict(
+            _agy([repo], CommandLine="pytest tests/test_x.py -q"), root=repo, backend="auto", unattended=True
+        )[0]
+        == "deny"
+    )
+    interactive = policy.agy_verdict(
+        _agy([repo], CommandLine="pytest tests/test_x.py -q"), root=repo, backend="bubblewrap", unattended=False
+    )
+    assert interactive[2] is not None and "bwrap" not in interactive[2]["CommandLine"]
+
+
+def test_worktree_env_agy_write_containment(checkout: tuple[Path, Path], tmp_path: Path) -> None:
+    """AGY file tools stay in their checkout and cannot reach protected targets."""
+    worktree, _environment = checkout
+    inside = worktree / "notes.txt"
+    assert policy.agy_verdict(
+        _agy([worktree], "write_file", Path="notes.txt", Content="ok", Overwrite=True),
+        root=worktree,
+        backend="bubblewrap",
+        unattended=False,
+    ) == ("ask", "", None)
+    assert policy.agy_verdict(
+        _agy([worktree], "edit_file", Path=str(inside)), root=worktree, backend="bubblewrap", unattended=False
+    ) == ("ask", "", None)
+
+    external = tmp_path / "outside.txt"
+    escaped_parent = worktree / "linked-parent"
+    escaped_parent.symlink_to(tmp_path, target_is_directory=True)
+    for path in ("../outside.txt", str(external), "linked-parent/new-file.txt", ".venv/editable.pth", ".git/config"):
+        decision, _reason, overwrite = policy.agy_verdict(
+            _agy([worktree], "write_file", Path=path, Content="bad", Overwrite=True),
+            root=worktree,
+            backend="bubblewrap",
+            unattended=False,
+        )
+        assert (decision, overwrite) == ("deny", None)
+    assert (
+        policy.agy_verdict(_agy([worktree], "edit_file"), root=worktree, backend="bubblewrap", unattended=False)[0]
+        == "deny"
+    )
+
+
+def test_worktree_env_agy_write_denies_primary_shared_environment(tmp_path: Path) -> None:
+    """A primary checkout's real virtual environment remains protected."""
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    environment = repo / ".venv"
+    environment.mkdir()
+    (environment / "pyvenv.cfg").write_text("home = /usr/bin\n")
+    assert (
+        policy.agy_verdict(
+            _agy([repo], "write_file", Path=".venv/editable.pth", Content="bad", Overwrite=True),
+            root=repo,
+            backend="bubblewrap",
+            unattended=False,
+        )[0]
+        == "deny"
+    )
+
+
+@pytest.mark.parametrize("workspaces", [None, [], [Path("relative")]])
+def test_worktree_env_agy_workspace_context_is_required(tmp_path: Path, workspaces: list[Path] | None) -> None:
+    """Missing and non-absolute AGY workspace contexts are denied."""
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    assert (
+        policy.agy_verdict(_agy(workspaces, CommandLine="true"), root=repo, backend="bubblewrap", unattended=False)[0]
+        == "deny"
+    )
+
+
+def test_worktree_env_agy_workspace_context_rejects_ambiguity_and_other_repositories(tmp_path: Path) -> None:
+    """The payload can name only the root checkout supplied to the hook."""
+    repo = tmp_path / "repo"
+    other = tmp_path / "other"
+    (repo / ".git").mkdir(parents=True)
+    (other / ".git").mkdir(parents=True)
+    assert (
+        policy.agy_verdict(_agy([repo, other], CommandLine="true"), root=repo, backend="bubblewrap", unattended=False)[
+            0
+        ]
+        == "deny"
+    )
+    assert (
+        policy.agy_verdict(_agy([other], CommandLine="true"), root=repo, backend="bubblewrap", unattended=False)[0]
+        == "deny"
+    )
+
+
+def test_worktree_env_agy_outside_cwd_and_non_agy_tools_are_unchanged(tmp_path: Path) -> None:
+    """Policy leaves force-ask classification to AGY permissions for outside Cwds."""
+    repo = tmp_path / "repo"
+    external = tmp_path / "external"
+    (repo / ".git").mkdir(parents=True)
+    external.mkdir()
+    assert policy.agy_verdict(
+        _agy([repo], CommandLine="uv sync", Cwd=str(external)), root=repo, backend="bubblewrap", unattended=False
+    ) == ("ask", "", None)
+    assert policy.agy_verdict(
+        _agy([repo], "view_file", Path="outside.txt"), root=repo, backend="bubblewrap", unattended=False
+    ) == ("ask", "", None)
+
+
+@pytest.mark.parametrize("command", ["uv pip install foo", "rm -rf .", "echo hi"])
+def test_worktree_env_agy_unattended_outside_cwd_is_denied(tmp_path: Path, command: str) -> None:
+    """Unattended runs have no operator and would skip the wrapper: an outside Cwd must deny, never ask."""
+    repo = tmp_path / "repo"
+    external = tmp_path / "external"
+    (repo / ".git").mkdir(parents=True)
+    external.mkdir()
+    decision, reason, overwrite = policy.agy_verdict(
+        _agy([repo], CommandLine=command, Cwd=str(external)), root=repo, backend="bubblewrap", unattended=True
+    )
+    assert decision == "deny"
+    assert "outside the checkout" in reason
+    assert overwrite is None
+
+
+def test_worktree_env_agy_verdict_does_not_change_claude_hook(
+    checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The AGY policy is separate from Claude's existing Bash response shape."""
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap" if name == "bwrap" else None)
+    response = policy.hook_response({"cwd": str(checkout[0]), "tool_name": "Bash", "tool_input": {"command": "true"}})
+    output = response["hookSpecificOutput"]
+    assert output["hookEventName"] == "PreToolUse"
+    assert "permissionDecision" not in output
+    assert shlex.split(output["updatedInput"]["command"])[-3:] == ["/bin/bash", "-c", "true"]
+
+
+@pytest.mark.parametrize("valid", [True, False])
+def test_wrap_bash_loads_prefix_policy_once(
+    checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path, valid: bool
+) -> None:
+    """RTK and sandbox decisions share one validated policy, including a failed validation."""
+    worktree, _environment = checkout
+    policy_path = _write_prefix_policy(tmp_path, worktree, rtk=True)
+    monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_POLICY", str(policy_path))
+    monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_TOKEN", _prefix_token(policy_path) if valid else "invalid")
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap" if name == "bwrap" else None)
+    monkeypatch.setattr(policy, "_scope_guard", lambda command, cwd: ("allow", None))
+    real_load = policy._shell_prefix_policy
+    calls = []
+
+    def counted_load() -> object:
+        calls.append(True)
+        return real_load()
+
+    monkeypatch.setattr(policy, "_shell_prefix_policy", counted_load)
+    command = policy._wrap_bash("git status", worktree, {}, None, backend="bubblewrap")
+
+    assert calls == [True]
+    assert (command == "git status") is valid
+    if not valid:
+        assert "bwrap" in command
+
+
+def _declare_extra_write_paths(checkout_root: Path, *paths: str | Path) -> None:
+    """Write a ``pyproject.toml`` that declares ``sandbox_extra_write_paths`` in ``checkout_root``."""
+    body = json.dumps([str(path) for path in paths])
+    (checkout_root / "pyproject.toml").write_text(f"[tool.parrot.sdd]\nsandbox_extra_write_paths = {body}\n")
+
+
+@pytest.fixture
+def fake_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Pin the home directory, so the home guard does not depend on where pytest keeps tmp_path."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr(policy.Path, "home", classmethod(lambda cls: home))
+    return home
+
+
+def test_feature_worktree_binds_declared_extra_write_dir_after_private_tmp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake_home: Path
+) -> None:
+    """An operator-declared directory is created and bound back through the private tmpfs."""
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+    main, worktree = _registered_feature_worktree(tmp_path)
+    extra = tmp_path / "navigator"
+    _declare_extra_write_paths(main, extra, extra)
+    argv = policy.protected_argv(worktree, ["true"])
+    assert extra.is_dir(), "Bubblewrap cannot bind a missing path, so the helper creates it"
+    assert _writable_binds(argv).count(extra.resolve()) == 1
+    assert argv.index(str(extra.resolve())) > argv.index("--tmpfs")
+    assert Path("/tmp") not in _writable_binds(argv)
+
+
+@pytest.mark.parametrize(
+    "entry",
+    ["/", "/tmp", "/home", "relative/dir", "/tmp/../etc/x", "/tmp/navigator/", "{main}", "{main}/sub", "{home}",
+     "{home}/.cache/x", "{env}", "{env}/lib", "{parent}"],
+)  # fmt: skip
+def test_extra_write_paths_reject_unsafe_entries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake_home: Path, entry: str
+) -> None:
+    """Roots, top-level directories, non-normalized paths and anything overlapping a protected root are refused."""
+    main, _worktree = _registered_feature_worktree(tmp_path)
+    environment = tmp_path / "shared" / "env"
+    environment.mkdir(parents=True)
+    monkeypatch.setattr(policy, "shared_environments", lambda cwd: (environment.resolve(),))
+    value = entry.format(main=main, home=fake_home, env=environment, parent=tmp_path)
+    _declare_extra_write_paths(main, value)
+    with pytest.raises(ValueError, match="sandbox_extra_write_paths"):
+        policy.load_extra_write_paths(main)
+
+
+def test_extra_write_path_symlink_is_validated_by_its_target(tmp_path: Path, fake_home: Path) -> None:
+    """A symlink cannot smuggle a protected directory in: the resolved target is what is checked and granted."""
+    main, _worktree = _registered_feature_worktree(tmp_path)
+    (tmp_path / "into-main").symlink_to(main / ".git", target_is_directory=True)
+    _declare_extra_write_paths(main, tmp_path / "into-main")
+    with pytest.raises(ValueError, match="overlaps the protected path"):
+        policy.load_extra_write_paths(main)
+    target = tmp_path / "real-logs"
+    target.mkdir()
+    (tmp_path / "logs").symlink_to(target, target_is_directory=True)
+    _declare_extra_write_paths(main, tmp_path / "logs")
+    assert policy.load_extra_write_paths(main) == (target.resolve(),)
+
+
+@pytest.mark.parametrize("body", ['"/tmp/navigator"', '["/tmp"]', "[1]", "["])
+def test_invalid_extra_write_paths_never_raise_and_bind_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scratch_root: Path, body: str
+) -> None:
+    """``protected_argv`` wraps every Bash call: a bad declaration grants nothing instead of raising."""
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+    main, worktree = _registered_feature_worktree(tmp_path)
+    (main / "pyproject.toml").write_text(f"[tool.parrot.sdd]\nsandbox_extra_write_paths = {body}\n")
+    git_dir = (main / ".git").resolve()
+    assert policy.sandbox_extra_write_dirs(worktree.resolve(), git_dir) == ()
+    binds = _writable_binds(policy.protected_argv(worktree, ["true"]))
+    assert Path("/tmp") not in binds
+    assert Path("/tmp/navigator") not in binds
+
+
+def test_primary_checkout_and_worktree_pyproject_cannot_declare_extra_write_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scratch_root: Path, fake_home: Path
+) -> None:
+    """Only a primary checkout the session cannot write is a trusted source."""
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+    main, worktree = _registered_feature_worktree(tmp_path)
+    extra = tmp_path / "navigator"
+    _declare_extra_write_paths(worktree, extra)
+    assert extra.resolve() not in _writable_binds(policy.protected_argv(worktree, ["true"]))
+    _declare_extra_write_paths(main, extra)
+    assert extra.resolve() not in _writable_binds(policy.protected_argv(main, ["true"]))
+    assert not extra.exists()
+
+
+def test_extra_write_dir_that_cannot_be_created_is_skipped(tmp_path: Path, fake_home: Path) -> None:
+    """A path that is not a directory is not bound, and the other declared directories still are."""
+    main, worktree = _registered_feature_worktree(tmp_path)
+    (tmp_path / "a-file").write_text("not a directory")
+    _declare_extra_write_paths(main, tmp_path / "a-file", tmp_path / "logs")
+    git_dir = (main / ".git").resolve()
+    assert policy.sandbox_extra_write_dirs(worktree.resolve(), git_dir) == ((tmp_path / "logs").resolve(),)
+
+
+def test_real_extra_write_dir_reaches_the_host_and_the_rest_of_tmp_stays_private(
+    tmp_path: Path, fake_home: Path
+) -> None:
+    """The navconfig case: a log written under the declared directory survives the command."""
+    _require_bubblewrap()
+    main = tmp_path / "main"
+    main.mkdir()
+    subprocess.run(["git", "init"], cwd=main, capture_output=True, check=True)
+    worktree = main / ".parrot" / "worktrees" / "feat-x"
+    subprocess.run(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--allow-empty", "-m", "init"],
+        cwd=main,
+        capture_output=True,
+        check=True,
+    )
+    subprocess.run(["git", "worktree", "add", str(worktree)], cwd=main, capture_output=True, check=True)
+    extra = tmp_path / "navigator"
+    _declare_extra_write_paths(main, extra)
+    log_file = extra / "log" / "navigator.log"
+    stray = tmp_path / "stray-tmp-file"
+    command = f"mkdir -p {shlex.quote(str(log_file.parent))} && echo line > {shlex.quote(str(log_file))}"
+    command += f"; touch {shlex.quote(str(stray))}"
+    argv = policy.protected_argv(worktree, ["/bin/bash", "-c", command])
+    result = subprocess.run(argv, capture_output=True, text=True, timeout=20)
+    assert result.returncode == 0, result.stderr
+    assert log_file.read_text().strip() == "line"
+    assert not stray.exists()

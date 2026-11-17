@@ -62,6 +62,12 @@ dependencies = [
     "marko>=2.0",
     "xmltodict>=0.14.2",
     "tiktoken>=0.9.0",
+    # FEAT-761: PromptLeakageGuardrail (parrot.bots.guardrails.builtin.prompt_leakage)
+    # runs rapidfuzz partial-ratio alignment on the core OUTPUT path. Deliberately
+    # promoted from the `graphindex` extra (removed there: an extra must not
+    # duplicate a core dependency). Also serves the graphindex contract matching
+    # (FEAT-539). Imported lazily.
+    "rapidfuzz>=3.0",
     # FEAT-523 (TASK-2854): OpenAIBaseClient (parrot/clients/openai_base.py,
     # stays in core) is subclassed by seven satellites (openai, groq, zai,
     # moonshot, openrouter, local, nvidia) — its SDK moves from an opt-in
@@ -107,7 +113,7 @@ dependencies = [
     # Python 3.13+; 0.28.3 keeps abac_middleware after the auth middlewares
     # when PDP.setup() runs before AuthHandler.setup() (BotManager.setup()
     # builds PBAC first). Loose upper bound on purpose; only the floor is enforced.
-    "navigator-auth>=0.28.3",
+    "navigator-auth>=0.28.8",
     "navigator-session>=1.0.1",
     # navigator-auth>=0.28 pulls pysaml2; pysaml2 7.5.1+ caps pyopenssl<24.3,
     # which lets a plain pip resolve down to pyopenssl 22.0 — broken against
@@ -122,7 +128,11 @@ dependencies = [
     # against. Floor at 3.2.2 (loose upper bound) so a stray resolver run
     # can never drop back to a 2.x that has no `navigator.utils.file` at all
     # (that downgrade broke `parrot.tools.pythonrepl` imports on 2026-09-03).
-    "navigator-api[uvloop,locale,google]>=3.2.2",
+    # uvloop and google are gated off Windows and macOS: uvloop ships no Windows
+    # wheels, and navigator-api[google] has no usable wheels on macOS, so the
+    # smoke install on those platforms failed to resolve (2.1.3 release run).
+    "navigator-api[locale]>=3.2.2",
+    "navigator-api[uvloop,google]>=3.2.2; sys_platform != 'win32' and sys_platform != 'darwin'",
     # Async DB — base only (asyncpg, aiosqlite, pandas, pgvector)
     "asyncdb>=2.16.2",
     # AgentsFlow state checkpointing (FEAT-399) — binary checkpoint encoding,
@@ -141,13 +151,13 @@ dependencies = [
     "aiohttp-swagger3==0.10.0",
     "aiohttp-sse-client==0.2.1",
     "aiohttp-cors>=0.8.1",
-    "brotli==1.2.0",
+    "brotli==1.2.1",
     "urllib3==2.8.0",
-    # parrot.interfaces.http imports proxylists.proxies unconditionally at
-    # module level, so HTTPService (the base of most HTTP toolkits) cannot be
-    # imported without it. It was previously undeclared — a bare install of
-    # ai-parrot could not `import parrot.interfaces.http`.
-    "proxylists>=0.12.0",
+    # parrot.interfaces.http imports proxylists.proxies at module level, which
+    # is guarded (proxies become empty on Windows). proxylists pulls uvloop
+    # unconditionally, and uvloop ships no Windows wheels, so it is gated off
+    # Windows. A bare install of ai-parrot on Linux/macOS still gets it.
+    "proxylists>=0.12.0; sys_platform != 'win32'",
     # aioquic and pylsqpack moved to ai-parrot-server[mcp] extra in FEAT-203
     # API / OpenAPI tools
     "prance>=25.4.8.0",
@@ -180,11 +190,15 @@ dependencies = [
     "pyarrow>=25.0",
     # SQL validation for DatabaseToolkit (FEAT-062)
     "sqlglot>=20.0",
-    "numexpr==2.10.2",
+    # Floor raised to >=2.11.0: newer pandas releases (3.1.0+) hard-require
+    # numexpr>=2.11.0 (previously just silently disabled numexpr below that
+    # floor); a hard ==2.10.2 pin here breaks any consumer whose resolver
+    # picks a newer pandas than this repo's own locked 3.0.6.
+    "numexpr>=2.11.0",
     # Episodic memory default backend (FAISS) — required whenever an agent
     # enables episodic memory without an explicit pgvector DSN.
     "faiss-cpu>=1.9.0",
-    "navigator-eventbus>=0.2.1",
+    "navigator-eventbus>=0.4.0",
     # wikitoolkit ships in core (project.scripts) and its import chain
     # (wiki/cli.py → graphindex/__init__.py → signals.py / communities.py /
     # builder.py / sqlite_reader.py) imports these unconditionally at module
@@ -197,13 +211,13 @@ dependencies = [
 ]
 
 [project.scripts]
-parrot = "parrot.cli:cli"
+parrot = "parrot.launcher:main_parrot"
 # GraphIndex CLI — build an interactive knowledge graph from a code repo.
 parrot-graphindex = "parrot.knowledge.graphindex.cli:main"
 # LLM Wiki CLI — machine-first codebase KB for coding assistants (FEAT-260).
-wikitoolkit = "parrot.knowledge.wiki.entry:main"
+wikitoolkit = "parrot.launcher:main_wikitoolkit"
 # Bookstore CLI — personal indexed book library over PageIndex trees.
-bookstore = "parrot.knowledge.bookstore.cli:main"
+bookstore = "parrot.launcher:main_bookstore"
 # parrot-fs moved to ai-parrot-server in FEAT-203
 
 [project.optional-dependencies]
@@ -251,6 +265,9 @@ audio = [
     "pydub==0.25.1",
 ]
 
+# In-process DuckDB engine (parrot.interfaces.duckdb_engine)
+duckdb = ["duckdb>=1.0"]
+
 # Financial analysis (ta-lib requires libta-lib-dev)
 finance = [
     "ta-lib==0.6.8",
@@ -276,10 +293,9 @@ graphindex = [
     # sdist, ever) and unused — nothing in the codebase imports it, the
     # per-language grammar wheels below (`wiki-languages`) already replaced
     # it for the same reason.
-    # FEAT-539: deterministic fuzzy matching for contract parent resolution
-    # and party/title reconciliation. Also covers the previously undeclared
-    # lazy import in `knowledge/ontology/discovery.py`.
-    "rapidfuzz>=3.0",
+    # FEAT-539 used rapidfuzz here for contract parent resolution and party/title
+    # reconciliation; FEAT-761 promoted it to a core dependency (see `dependencies`),
+    # so it is deliberately NOT repeated in this extra (the extra must not duplicate core).
 ]
 
 # GraphIndex Postgres backend (FEAT-520) — bitemporal graph + wiki plane over
@@ -287,6 +303,16 @@ graphindex = [
 graphindex-postgres = [
     "asyncpg>=0.29",
     "pgvector>=0.2",
+]
+
+# Ontology vocabulary store (FEAT-824) — PostgreSQL OntologyStore, Turtle publication,
+# SHACL validation and SQLite snapshots.
+ontology-store = [
+    "asyncpg>=0.29",
+    "pgvector>=0.2",
+    "rdflib>=7.0",
+    "pyshacl>=0.26",
+    "numpy>=1.26",
 ]
 
 # LLM Wiki pluggable per-language scanners (FEAT-394) — accurate
@@ -341,6 +367,18 @@ wiki = [
     "ai-parrot-loaders[documents]>=0.4.1",
 ]
 
+# TechWiki — GitHub Wiki technical reference pipeline (FEAT-801).
+# griffe powers the API-reference generator, jinja2 renders its page templates;
+# the mkdocs set validates the legacy mkdocs.yml after migration. Heavy, so opt-in.
+techwiki = [
+    "griffe>=2.4,<3",
+    "jinja2>=3.1",
+    "mkdocs>=1.6",
+    "mkdocs-material>=9.6",
+    "mkdocstrings[python]>=0.29",
+    "mkdocs-glightbox>=0.4",
+]
+
 # Bookstore — personal indexed book library (`bookstore` CLI + MCP server).
 # bm25s powers the no-LLM lexical in-book search; pymupdf/pymupdf4llm power
 # native PDF ingestion via PageIndex.
@@ -351,7 +389,7 @@ bookstore = [
 ]
 
 # Procedure Graph — field-training agent over assembly manuals (FEAT-601).
-# Self-reference so rapidfuzz stays declared only in `graphindex` (test_dependency_boundary.py).
+# Self-reference to the graphindex/bookstore extras (rapidfuzz now comes from core, FEAT-761).
 manuals = ["ai-parrot[graphindex,bookstore]"]
 
 # Task scheduling moved to ai-parrot-server[scheduler] in FEAT-203.
@@ -921,6 +959,11 @@ all-fast = [
 [project.entry-points."navigator_session.vault_targets"]
 parrot_user_credentials = "parrot.vault_targets:user_credentials_factory"
 parrot_user_llm_keys = "parrot.vault_targets:user_llm_keys_factory"
+parrot_redis_user_credentials = "parrot.vault_targets:redis_user_credentials_factory"
+parrot_redis_user_llm_keys = "parrot.vault_targets:redis_user_llm_keys_factory"
+
+[project.entry-points."parrot.migrations"]
+bots = "parrot.migrations.providers:bots_set"
 
 [project.urls]
 Homepage = "https://github.com/phenobarbital/ai-parrot"
@@ -969,6 +1012,7 @@ namespaces = true
 
 [tool.setuptools.package-data]
 parrot = ["py.typed", "templates/*.tpl", "**/*.pyx", "**/*.pxd"]
+"parrot.migrations" = ["sql/*/*.sql"]
 "parrot.auth" = ["templates/*.html"]
 # parrot.integrations.telegram moved to ai-parrot-integrations
 # parrot.voice moved to ai-parrot-integrations
@@ -981,10 +1025,32 @@ parrot = ["py.typed", "templates/*.tpl", "**/*.pyx", "**/*.pxd"]
 "parrot.forms.renderers" = ["templates/*.j2"]
 # FEAT-553: coder rule files read via importlib.resources by parrot.flows.conventions.
 "parrot.flows" = ["_rules_data/*.md"]
+# FEAT-633: packaged SDD flow assets deployed by `parrot sdd install`, read via importlib.resources.
+# Explicit per-subdir patterns (one per _assets/ subtree); test_check_asset_sync asserts they cover
+# every manifest entry, so a new subtree fails CI instead of silently missing from the wheel.
+"parrot.sdd" = [
+    "_assets/manifest.json",
+    "_assets/claude/commands/*.md",
+    "_assets/claude/agents/*.md",
+    "_assets/claude/hooks/*.sh",
+    "_assets/claude/rules/*.md",
+    "_assets/claude/skills/*/SKILL.md",
+    "_assets/agents/skills/*/SKILL.md",
+    "_assets/agents/agents/*/agent.md",
+    "_assets/agent/workflows/*.md",
+    "_assets/codex/agents/*.toml",
+    "_assets/sdd/sdd_templates/*",
+    "_assets/sdd/WORKFLOW.md",
+    "_assets/sdd/procedures/*.yaml",
+    "_assets/sdd/CONVENTIONS.md",
+    "_assets/sdd/CODEX.md",
+    "_assets/sdd/AGY.md",
+    "techwiki/templates/*.j2",
+    "techwiki/templates/*.md.j2",
+]
 "parrot.flows.dev_loop" = ["_subagent_data/*.md"]
-# FEAT-412: dev_flow ships its own prompt set (sdd-ideation); the loader
-# reads it via importlib.resources, so it MUST be in the wheel.
-"parrot.flows.dev_flow" = ["_subagent_data/*.md"]
+# FEAT-778: package-bundled domain experts, read via importlib.resources by parrot.experts.loader.
+"parrot.experts.bundled" = ["*/expert.yaml", "*/persona.md", "*/identity/*.md", "*/knowledge/*.md", "*/rules/*.md", "*/adr/*.md", "scopes/*.yaml"]
 # FEAT-556: `parrot <host> install --toolkits` seeds .parrot/mcp-toolkits.yaml
 # from these templates, read via importlib.resources — they MUST be in the wheel.
 "parrot.mcp" = ["_toolkit_templates/*.yaml"]
@@ -1056,11 +1122,16 @@ markers = [
 ]
 
 [tool.cibuildwheel]
-build = "cp3{11,12,13,14}-*"
-skip = "pp* *-musllinux* *-manylinux_i686 *-manylinux_aarch64 *-win32"
+# cp314 is NOT built while requires-python is "<3.14" (spec §7) — keep both in sync.
+build = "cp3{11,12,13}-*"
+skip = "pp* *-musllinux* *-manylinux_i686 *-win32"
 
 [tool.cibuildwheel.linux]
+# Linux aarch64 dropped (FEAT-633, owner decision 2026-10-29): x86_64 only.
 archs = ["x86_64"]
 
 [tool.cibuildwheel.windows]
 archs = ["AMD64"]
+
+[tool.cibuildwheel.macos]
+archs = ["arm64"]

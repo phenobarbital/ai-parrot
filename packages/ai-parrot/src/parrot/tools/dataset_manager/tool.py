@@ -13,6 +13,7 @@ from __future__ import annotations
 import io
 import re
 import warnings
+from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Awaitable, Callable, Dict, List, Literal, Optional, Any, Sequence, Set, Tuple, Union, TYPE_CHECKING
@@ -57,6 +58,83 @@ try:
     logger = logging.getLogger(__name__)
 except Exception:
     logger = logging
+
+
+_MISSING_RELATION_PATTERNS: Tuple[re.Pattern[str], ...] = (
+    re.compile(r'relation "(?P<table>[^"]+)" does not exist', re.IGNORECASE),
+    re.compile(r"Table '(?P<table>[^']+)' doesn't exist", re.IGNORECASE),
+    re.compile(r"Not found: Table (?P<table>\S+)", re.IGNORECASE),
+)
+_PERMISSION_PATTERN: re.Pattern[str] = re.compile(r"permission denied|access denied", re.IGNORECASE)
+_CONNECTION_PATTERN: re.Pattern[str] = re.compile(
+    r"connection refused|could not connect|connection (?:was )?closed|timeout expired|name or service not known",
+    re.IGNORECASE,
+)
+
+
+def _normalize_table_name(value: str) -> str:
+    """Lower-case a table reference and strip quoting characters."""
+    return value.strip().strip("\"'`[]").replace('"', "").replace("`", "").lower()
+
+
+def _classify_fetch_failure(exc: BaseException, table: Optional[str]) -> Optional[str]:
+    """Classify a materialize() failure the LLM cannot fix by rewriting its query.
+
+    Args:
+        exc: The exception raised while fetching the dataset.
+        table: The entry's own table name, or None when the source has no table.
+
+    Returns:
+        "missing_table", "permission_denied" or "connection" for terminal failures;
+        None when the failure is correctable by the caller.
+    """
+    text = str(exc)
+    if table:
+        own = _normalize_table_name(table)
+        for pattern in _MISSING_RELATION_PATTERNS:
+            for match in pattern.finditer(text):
+                named = _normalize_table_name(match.group("table"))
+                if named == own or named.rsplit(".", 1)[-1] == own.rsplit(".", 1)[-1]:
+                    return "missing_table"
+    if _PERMISSION_PATTERN.search(text):
+        return "permission_denied"
+    if isinstance(exc, (ConnectionError, OSError)) or _CONNECTION_PATTERN.search(text):
+        return "connection"
+    return None
+
+
+_TERMINAL_CAUSES: Dict[str, str] = {
+    "missing_table": "its underlying table does not exist",
+    "permission_denied": "access to its underlying table is denied",
+    "connection": "the data source is not reachable",
+}
+
+
+def _terminal_fetch_error(name: str, kind: str, detail: str) -> Dict[str, Any]:
+    """Build the ToolResult-shaped error dict for a terminal fetch failure.
+
+    Args:
+        name: Dataset name as the caller passed it.
+        kind: One of the kinds returned by ``_classify_fetch_failure``.
+        detail: The underlying error text.
+
+    Returns:
+        A dict with status/result/success/error plus ``retryable`` and ``error_kind``.
+    """
+    cause = _TERMINAL_CAUSES.get(kind, "the data source failed")
+    message = (
+        f"Dataset '{name}' is unavailable: {cause}. This is not a SQL problem. "
+        f"Do NOT retry and do NOT rewrite the query or try other parameters for this dataset. "
+        f"Tell the user that this data is currently unavailable. Detail: {detail}"
+    )
+    return {
+        "status": "error",
+        "success": False,
+        "result": None,
+        "error": message,
+        "retryable": False,
+        "error_kind": kind,
+    }
 
 
 class DatasetInfo(BaseModel):
@@ -112,6 +190,8 @@ class DatasetInfo(BaseModel):
     )
 
     is_active: bool = Field(default=True, description="Whether dataset is currently active")
+    available: bool = Field(default=True, description="False when the source failed terminally; do not fetch")
+    unavailable_reason: Optional[str] = Field(default=None, description="Why the dataset is unavailable")
     cache_ttl: int = Field(default=3600, description="Per-entry TTL in seconds for Redis cache")
     cache_key: str = Field(default="", description="Stable Redis cache key (from source.cache_key)")
 
@@ -124,6 +204,9 @@ class DatasetInfo(BaseModel):
         default_factory=list,
         description="What this dataset should NOT be used for (e.g. 'Do not use for headcount')",
     )
+
+
+GOVERNED_FRAME_SLOTS: int = 32  # FEAT-880: max subjects whose governed frames one entry keeps (LRU)
 
 
 class DatasetEntry:
@@ -167,6 +250,8 @@ class DatasetEntry:
         raw_desc = description or self.metadata.get("description", "")
         self.description: str = raw_desc[:300] if raw_desc else ""
         self.is_active = is_active
+        self.unavailable_reason: Optional[str] = None
+        self._unavailable_kind: Optional[str] = None
         self.auto_detect_types = auto_detect_types
         self.cache_ttl = cache_ttl
         self.no_cache = no_cache
@@ -194,14 +279,81 @@ class DatasetEntry:
         self._computed_columns: List[Any] = list(computed_columns) if computed_columns else []
 
         # Internal state
-        self._df: Optional[pd.DataFrame] = df  # pre-load when df provided directly
-        self._column_types: Optional[Dict[str, str]] = None
+        self._frame: Optional[pd.DataFrame] = None
+        self._frame_types: Optional[Dict[str, str]] = None
+        self._frame_slots: "OrderedDict[str, tuple[Optional[pd.DataFrame], Optional[Dict[str, str]]]]" = OrderedDict()
+        self._df = df  # pre-load when df provided directly (routes through the property)
+        self._column_types = None
         if df is not None:
             # Apply computed columns before type detection
             if self._computed_columns:
                 self._apply_computed_columns()
-            if auto_detect_types:
+            if auto_detect_types and self._df is not None:
                 self._column_types = DatasetManager.categorize_columns(self._df)
+
+    # ─────────────────────────────────────────────────────────────
+    # FEAT-880: per-subject storage for self-governed sources
+    # ─────────────────────────────────────────────────────────────
+
+    def _governed(self) -> bool:
+        """Return True when the entry's source is self-governed (frames are per subject)."""
+        source = getattr(self, "source", None)
+        return bool(source is not None and getattr(source, "self_governed", False))
+
+    def _owner(self) -> Optional[str]:
+        """Return the subject that owns the current request (``source.current_owner()``)."""
+        return self.source.current_owner()
+
+    @property
+    def _df(self) -> Optional[pd.DataFrame]:
+        """Loaded frame: the single frame for ordinary sources, the caller's slot for governed ones."""
+        if not self._governed():
+            return self._frame
+        owner = self._owner()
+        if owner is None or owner not in self._frame_slots:
+            return None
+        self._frame_slots.move_to_end(owner)
+        return self._frame_slots[owner][0]
+
+    @_df.setter
+    def _df(self, value: Optional[pd.DataFrame]) -> None:
+        if not self._governed():
+            self._frame = value
+            return
+        owner = self._owner()
+        if owner is None:
+            # No subject → nothing is ever stored for a governed source.
+            return
+        if value is None:
+            self._frame_slots.pop(owner, None)
+            return
+        previous = self._frame_slots.get(owner)
+        types = previous[1] if previous is not None else None
+        self._frame_slots[owner] = (value, types)
+        self._frame_slots.move_to_end(owner)
+        while len(self._frame_slots) > GOVERNED_FRAME_SLOTS:
+            self._frame_slots.popitem(last=False)
+
+    @property
+    def _column_types(self) -> Optional[Dict[str, str]]:
+        """Column types: single value for ordinary sources, the caller's slot for governed ones."""
+        if not self._governed():
+            return self._frame_types
+        owner = self._owner()
+        if owner is None or owner not in self._frame_slots:
+            return None
+        return self._frame_slots[owner][1]
+
+    @_column_types.setter
+    def _column_types(self, value: Optional[Dict[str, str]]) -> None:
+        if not self._governed():
+            self._frame_types = value
+            return
+        owner = self._owner()
+        if owner is None or owner not in self._frame_slots:
+            # Never create a slot that has no frame.
+            return
+        self._frame_slots[owner] = (self._frame_slots[owner][0], value)
 
     # ─────────────────────────────────────────────────────────────
     # Computed columns
@@ -220,7 +372,17 @@ class DatasetEntry:
         """
         if self._df is None or not self._computed_columns:
             return
+        self._df = self._compute_columns_on(self._df)
 
+    def _compute_columns_on(self, frame: pd.DataFrame) -> pd.DataFrame:
+        """Apply all registered computed columns to ``frame`` and return the result.
+
+        Args:
+            frame: The DataFrame to extend.
+
+        Returns:
+            The DataFrame with every resolvable computed column applied.
+        """
         from .computed import get_computed_function
 
         for col_def in self._computed_columns:
@@ -234,8 +396,8 @@ class DatasetEntry:
                 )
                 continue
             try:
-                self._df = fn(
-                    self._df,
+                frame = fn(
+                    frame,
                     col_def.name,
                     col_def.columns,
                     **col_def.kwargs,
@@ -248,6 +410,7 @@ class DatasetEntry:
                     col_def.func,
                     exc,
                 )
+        return frame
 
     # ─────────────────────────────────────────────────────────────
     # Source-based lifecycle
@@ -267,11 +430,15 @@ class DatasetEntry:
             The loaded DataFrame.
         """
         if self._df is None or force:
-            self._df = await self.source.fetch(**params)
-            if self._df is not None and self._computed_columns:
-                self._apply_computed_columns()
-            if self.auto_detect_types and self._df is not None:
-                self._column_types = DatasetManager.categorize_columns(self._df)
+            frame = await self.source.fetch(**params)
+            self._df = frame
+            if frame is not None and self._computed_columns:
+                frame = self._compute_columns_on(frame)
+                self._df = frame
+            if self.auto_detect_types and frame is not None:
+                self._column_types = DatasetManager.categorize_columns(frame)
+            # FEAT-880: return the fetched frame — a governed source with no owner stores nothing.
+            return frame
         return self._df
 
     def evict(self) -> None:
@@ -472,6 +639,8 @@ class DatasetEntry:
             row_count_estimate=row_count,
             table_size_warning=size_warning,
             is_active=self.is_active,
+            available=self.unavailable_reason is None,
+            unavailable_reason=self.unavailable_reason,
             cache_ttl=self.cache_ttl,
             cache_key=self.source.cache_key,
             usage_do=self.usage_guidance.get("do", []),
@@ -533,7 +702,11 @@ class DatasetManager(AbstractToolkit):
         "1. **Loaded DataFrames are ready now.** Datasets shown as *loaded* already "
         "exist in the `python_repl_pandas` environment under their name and `dfN` "
         "alias — use them directly (e.g. `df1.groupby(...)`). Never re-fetch a "
-        "loaded dataset.\n"
+        "loaded dataset. Exception — **semantic datasets** hold the result of ONE "
+        "semantic query: call `fetch_dataset` again with new `conditions` whenever the "
+        "metrics, dimensions, grain, filters, ordering, limit, offset or saved query "
+        "change, and aggregate through semantic metrics — not raw SQL and not by "
+        "re-aggregating a previous result in pandas.\n"
         "2. **Aggregate tables in SQL, not pandas.** For a count / sum / ranking / "
         "filter over an *unloaded* table, call `fetch_dataset` with a SQL query that "
         "does the work in the database (`GROUP BY` / `WHERE` / `LIMIT`). Do NOT pull "
@@ -621,6 +794,9 @@ class DatasetManager(AbstractToolkit):
         from .sources.memory import InMemorySource
 
         if isinstance(source, InMemorySource):
+            return source
+        if source.self_governed:
+            # Self-governed sources enforce PBAC/RLS/masking themselves (FEAT-880).
             return source
         from .sources.authorizing import AuthorizingDataSource
 
@@ -1396,6 +1572,92 @@ class DatasetManager(AbstractToolkit):
                 pass
         self.logger.debug("DataSource '%s' registered via add_source()", name)
         return f"DataSource '{name}' registered."
+
+    def add_semantic(
+        self,
+        name: str,
+        *,
+        model: str,
+        toolkit: Optional[Any] = None,
+        models_dir: Optional[Union[str, Path]] = None,
+        dialect: Optional[str] = None,
+        default_query: Optional[Dict[str, Any]] = None,
+        description: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        is_active: bool = True,
+        usage_guidance: Optional[Dict[str, List[str]]] = None,
+        **toolkit_kwargs: Any,
+    ) -> str:
+        """Register a dataset backed by a governed Semantic Layer model (FEAT-880).
+
+        Exactly one of ``toolkit`` or (``models_dir`` and ``dialect``) is required.
+        When the toolkit is built here and ``toolkit_kwargs`` carries no
+        ``dataplane_guard``, the manager's own guard is passed to it.
+
+        Args:
+            name: Name/identifier for the dataset.
+            model: Semantic model the dataset is bound to.
+            toolkit: An existing ``SemanticLayerToolkit`` to bind.
+            models_dir: Directory of semantic model definitions (builds a toolkit).
+            dialect: SQL dialect of the toolkit built from ``models_dir``.
+            default_query: Query used when ``fetch_dataset`` gets no conditions.
+            description: Optional description (defaults to the source's own text).
+            metadata: Optional metadata dictionary.
+            is_active: Whether dataset is active (default True).
+            usage_guidance: Optional ``do``/``dont`` lists for the LLM.
+            **toolkit_kwargs: Extra keyword arguments for the built toolkit.
+
+        Returns:
+            Confirmation message.
+
+        Raises:
+            ImportError: when ai-parrot-semantic is not installed.
+            ValueError: when both or neither source of the toolkit is given.
+        """
+        try:
+            from parrot.semantic.dataset_source import SemanticDataSource
+        except ImportError as exc:
+            raise ImportError("add_semantic requires the 'ai-parrot-semantic' package") from exc
+
+        from_dir = models_dir is not None or dialect is not None
+        if toolkit is not None and from_dir:
+            raise ValueError("add_semantic: pass either 'toolkit' or 'models_dir' and 'dialect', not both")
+        if toolkit is None and (models_dir is None or dialect is None):
+            raise ValueError("add_semantic: 'toolkit' or both 'models_dir' and 'dialect' are required")
+
+        if toolkit is not None:
+            source = SemanticDataSource(
+                name=name,
+                toolkit=toolkit,
+                model=model,
+                default_query=default_query,
+                description=description,
+            )
+        else:
+            if "dataplane_guard" not in toolkit_kwargs:
+                toolkit_kwargs["dataplane_guard"] = self._dataplane_guard
+            source = SemanticDataSource.from_models_dir(
+                name=name,
+                model=model,
+                models_dir=Path(models_dir),
+                dialect=dialect,
+                default_query=default_query,
+                description=description,
+                **toolkit_kwargs,
+            )
+        entry = DatasetEntry(
+            name=name,
+            description=description or source.describe(),
+            source=self._make_source(source),
+            metadata=metadata or {},
+            is_active=is_active,
+            auto_detect_types=self.auto_detect_types,
+            usage_guidance=usage_guidance,
+            protected=True,
+        )
+        self._datasets[name] = entry
+        self.logger.debug("Semantic dataset '%s' registered (model: %s)", name, model)
+        return f"Semantic dataset '{name}' registered (model: {model})"
 
     def add_query(
         self,
@@ -2303,6 +2565,8 @@ class DatasetManager(AbstractToolkit):
             resolved = self._resolve_name(name)
             if resolved in self._datasets:
                 self._datasets[resolved].is_active = True
+                self._datasets[resolved].unavailable_reason = None
+                self._datasets[resolved]._unavailable_kind = None
                 activated.append(resolved)
 
         # Regenerate guide when activation changes
@@ -3391,6 +3655,15 @@ class DatasetManager(AbstractToolkit):
                 the question involves summaries, averages, or rankings.
                 NEVER fetch all rows to aggregate in pandas.
             conditions: Dict of {param: value} pairs for SQLQuerySource templates.
+                For a semantic dataset, ``conditions`` IS the semantic query:
+                ``metrics``, ``dimensions``, ``time_dimensions``, ``filters``,
+                ``order_by``, ``limit``, ``offset`` and ``saved_query`` (``sql``
+                is ignored). A semantic dataset holds the result of ONE query —
+                call fetch_dataset again with new ``conditions`` whenever any of
+                those fields change, instead of re-aggregating the previous
+                result in pandas. When the response has ``semantic.truncated``
+                set, the policy row limit was reached: aggregate further in the
+                semantic query.
             force_refresh: If True, bypass caches and re-fetch from source.
 
         Returns:
@@ -3406,6 +3679,11 @@ class DatasetManager(AbstractToolkit):
                 "available": list(self._datasets.keys()),
                 "hint": "Call list_datasets() to see all datasets.",
             }
+
+        if entry.unavailable_reason is not None:
+            return _terminal_fetch_error(
+                name, entry._unavailable_kind or "missing_table", entry.unavailable_reason
+            )
 
         # Validate conditions type — LLMs sometimes pass a string instead of dict.
         if conditions is not None and not isinstance(conditions, dict):
@@ -3432,6 +3710,9 @@ class DatasetManager(AbstractToolkit):
             # These sources do not accept sql or conditions — ignore them
             # to prevent the LLM from accidentally injecting invalid QS conditions.
             pass
+        elif entry.source.self_governed:
+            # FEAT-880: `conditions` carries the source's query (e.g. semantic fields); sql is ignored.
+            params = dict(conditions or {})
         elif isinstance(entry.source, TableSource):
             # TableSource requires sql — reject calls without an explicit SQL
             # so the LLM is forced to write targeted queries (GROUP BY, WHERE,
@@ -3586,8 +3867,27 @@ class DatasetManager(AbstractToolkit):
 
         try:
             df = await self.materialize(name, force_refresh=force_refresh, **params)
+            semantic_meta = dict(df.attrs.get("semantic") or {})
         except Exception as exc:
             self.logger.error("fetch_dataset '%s' failed: %s", name, exc)
+            if entry.source.self_governed:
+                # A denial is per subject: never mark the shared entry unavailable.
+                message = f"Error fetching dataset '{name}': {exc}"
+                return {
+                    "status": "error",
+                    "success": False,
+                    "result": None,
+                    "error": message,
+                }
+            kind = _classify_fetch_failure(exc, getattr(entry.source, "table", None))
+            if kind is not None:
+                if kind in ("missing_table", "permission_denied"):
+                    entry.unavailable_reason = str(exc)
+                    entry._unavailable_kind = kind
+                    self.logger.warning(
+                        "fetch_dataset '%s' marked unavailable (%s)", name, kind
+                    )
+                return _terminal_fetch_error(name, kind, str(exc))
             # Provide source-aware guidance so the LLM can self-correct.
             source_type = type(entry.source).__name__
             if isinstance(entry.source, TableSource):
@@ -3619,8 +3919,12 @@ class DatasetManager(AbstractToolkit):
                     "with no extra parameters. "
                     "For SQLQuerySource provide conditions=."
                 )
+            message = f"Error fetching dataset '{name}': {exc}"
             return {
-                "error": f"Error fetching dataset '{name}': {exc}",
+                "status": "error",
+                "success": False,
+                "result": None,
+                "error": f"{message} {hint}",
                 "hint": hint,
             }
 
@@ -3712,11 +4016,18 @@ class DatasetManager(AbstractToolkit):
             result["eda_summary"] = self._generate_eda_summary(df)
             result["sample_rows"] = data_records
             result["complete"] = False
-            result["note"] = (
-                f"Dataset has {n_rows:,} rows — only {sample_size} shown here as preview. "
-                f"The FULL dataset ({n_rows:,} rows) is loaded in memory as "
-                f"`{resolved}` (or `{alias}`)."
-            )
+            if semantic_meta:
+                result["note"] = (
+                    f"Dataset has {n_rows:,} rows — only {sample_size} shown here as preview. "
+                    f"The materialized result ({n_rows:,} rows) is loaded in memory as "
+                    f"`{resolved}` (or `{alias}`)."
+                )
+            else:
+                result["note"] = (
+                    f"Dataset has {n_rows:,} rows — only {sample_size} shown here as preview. "
+                    f"The FULL dataset ({n_rows:,} rows) is loaded in memory as "
+                    f"`{resolved}` (or `{alias}`)."
+                )
             result["action_required"] = (
                 f"DO NOT print or repeat all {n_rows:,} rows in your response. "
                 f"Instead, set data_variable='{resolved}' in your structured output "
@@ -3726,6 +4037,17 @@ class DatasetManager(AbstractToolkit):
                 f"and set data_variable to that variable name."
             )
 
+        if semantic_meta:
+            semantic = {k: semantic_meta.get(k) for k in ("model", "audit_id", "truncated", "row_count")}
+            result["semantic"] = semantic
+            result["inline_complete"] = bool(return_all)
+            result["complete"] = bool(return_all) and not bool(semantic["truncated"])
+            if semantic["truncated"]:
+                nan_warnings = list(nan_warnings or [])
+                nan_warnings.append(
+                    f"- Dataset '{resolved}' is a TRUNCATED semantic result: the policy row limit was reached "
+                    f"({semantic['row_count']} rows materialized). Aggregate further in the semantic query."
+                )
         if nan_warnings:
             result["warnings"] = nan_warnings
         return result
@@ -4199,6 +4521,13 @@ class DatasetManager(AbstractToolkit):
         entry = self._datasets.get(resolved)
         if entry is None:
             raise ValueError(f"Dataset '{name}' not found. Available: {list(self._datasets.keys())}")
+
+        if entry.source.self_governed:
+            # FEAT-880: rows are query- and subject-specific — always re-fetch, never cache.
+            df = await entry.materialize(force=True, **params)
+            if self.generate_guide:
+                self.df_guide = self._generate_dataframe_guide()
+            return df
 
         # Already in memory and no refresh needed
         if entry.loaded and not force_refresh:

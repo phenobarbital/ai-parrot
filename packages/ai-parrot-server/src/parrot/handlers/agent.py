@@ -35,20 +35,22 @@ except ImportError:
     ResourceType = None
 from navigator.views import BaseView
 from ..bots.abstract import AbstractBot
+from ..memory.hydration import HydrationUnavailableError, SessionDeletedError
 from ..bots.search import WebSearchAgent
 from ..models.responses import AIMessage, AgentResponse
 from ..outputs import OutputMode, OutputFormatter
 from ..mcp.integration import MCPServerConfig
-from ..memory import RedisConversation
-from ..interfaces.documentdb import DocumentDb
 from ..tools.manager import ToolManager, get_toolkit_owner
 from .user_objects import UserObjectsHandler
+from .scope import resolve_request_tenant
 from ..mcp.registry import get_factory_map as _get_factory_map
 from .mcp_persistence import MCPPersistenceService as _MCPPersistenceService
-from .credentials_utils import decrypt_credential as _decrypt_credential
 from .toolkit_persistence import ToolkitConfigService
+from parrot.auth.credentials import AuthRequiredPayload, CredentialRequired
 from ..auth.exceptions import AuthorizationRequired
 from parrot.auth.oauth2.models import AuthRequiredEnvelope
+from parrot.auth.pending import collect_auth_requirements
+from parrot.auth.retry_safety import current_turn_tracker, track_turn
 from parrot.security.vault_utils import retrieve_vault_credential
 from parrot.tools.spec import agent_tooling_ref, hydrate_params
 
@@ -109,6 +111,19 @@ class PausedEnvelope(BaseModel):
     default_response: Any = None
     deadline: Optional[str] = None
     source_agent: Optional[str] = None
+
+
+def _suggestions_payload(message: Any) -> Optional[list[dict[str, Any]]]:
+    """JSON-ready follow-up chips (FEAT-752), or None when absent/empty so the key is omitted."""
+    chips = getattr(message, "suggestions", None)
+    if not chips:
+        return None
+    return [c.model_dump(mode="json") if hasattr(c, "model_dump") else dict(c) for c in chips]
+
+
+def _auth_required_from(pending: List[AuthRequiredPayload]) -> Optional[AuthRequiredPayload]:
+    """Return the first needs-auth payload collected during the current turn."""
+    return pending[0] if pending else None
 
 
 @is_authenticated()
@@ -691,7 +706,12 @@ class AgentTalk(BaseView):
                 self.logger.error("Failed to add MCP server to ToolManager: %s", e)
 
     async def _configure_tool_manager(
-        self, data: Dict[str, Any], request_session: Any, agent_name: str = None
+        self,
+        data: Dict[str, Any],
+        request_session: Any,
+        agent_name: str = None,
+        user_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
     ) -> tuple[Union[ToolManager, None], List[Dict[str, Any]]]:
         """
         Configure a ToolManager from request payload or session.
@@ -706,7 +726,27 @@ class AgentTalk(BaseView):
         Returns:
             Tuple of (ToolManager or None, remaining mcp_servers list)
         """
-        return await self.user_objects_handler.configure_tool_manager(data, request_session, agent_name)
+        return await self.user_objects_handler.configure_tool_manager(
+            data, request_session, agent_name, user_id=user_id, agent_id=agent_id
+        )
+
+    async def _hydrate_cold_session(
+        self, agent: AbstractBot, request_session: Any, user_id: Optional[str]
+    ) -> Optional[ToolManager]:
+        """Hydrate OAuth toolkits for a cold session (no ToolManager stored yet).
+
+        Returns the hydrated ToolManager, or ``None`` when nothing was hydrated.
+        Never overwrites an existing session ToolManager.
+        """
+        if request_session is None or not user_id:
+            return None
+        ref = agent_tooling_ref(agent)
+        session_key = f"{ref}_tool_manager"
+        if request_session.get(session_key) is not None:
+            return None
+        return await self.user_objects_handler._hydrate_oauth_toolkits(
+            str(user_id), ref, session_key, request_session
+        )
 
     def _check_methods(self, bot: AbstractBot, method_name: str):
         """Check if the method exists in the bot and is callable."""
@@ -985,8 +1025,13 @@ class AgentTalk(BaseView):
         The resulting ToolManager is saved under '{tooling_ref}_tool_manager'.
         """
         ref = agent_tooling_ref(agent)
+        user_id, _ = await self._get_user_session(data)
         try:
-            tool_manager, mcp_servers = await self._configure_tool_manager(data, request_session, agent_name=ref)
+            # Hydrate OAuth toolkits first so tool config extends them (cold session).
+            await self._hydrate_cold_session(agent, request_session, user_id)
+            tool_manager, mcp_servers = await self._configure_tool_manager(
+                data, request_session, agent_name=ref, user_id=user_id, agent_id=ref
+            )
         except ValueError as exc:
             return self.error(str(exc), status=400)
 
@@ -1018,67 +1063,7 @@ class AgentTalk(BaseView):
         # FEAT-593: per-user toolkit overrides (always on)
         tool_manager = await self._apply_user_toolkit_overrides(agent, request_session, tool_manager)
 
-        # Optional Jira OAuth 2.0 (3LO) session bootstrap.  Agents that want
-        # per-user Jira tokens expose ``jira_credential_resolver`` (and an
-        # optional ``jira_toolkit_factory``).  When present, we register
-        # either the full toolkit (tokens already on file) or the
-        # ``JiraConnectTool`` placeholder (user has not authorised yet).
-        await self._bootstrap_jira_oauth_session(
-            agent=agent,
-            tool_manager=tool_manager,
-            request_session=request_session,
-        )
-
         return tool_manager
-
-    async def _bootstrap_jira_oauth_session(
-        self,
-        agent: AbstractBot,
-        tool_manager: Any,
-        request_session: Any,
-    ) -> None:
-        """Register Jira OAuth 2.0 (3LO) tools on the session's ToolManager.
-
-        Opt-in: this only runs when the agent exposes a
-        ``jira_credential_resolver`` attribute (e.g., an
-        ``OAuthCredentialResolver`` wrapping a ``JiraOAuthManager``).  It is
-        safe to call unconditionally — agents without the attribute are
-        left untouched.
-        """
-        resolver = getattr(agent, "jira_credential_resolver", None)
-        if resolver is None or tool_manager is None:
-            return
-
-        user_id = None
-        for attr in ("user_id", "id", "username"):
-            if hasattr(request_session, attr):
-                user_id = getattr(request_session, attr)
-                break
-        if not user_id:
-            self.logger.debug(
-                "Jira OAuth bootstrap skipped: no user_id on request_session",
-            )
-            return
-
-        from ..tools.jira_connect_tool import setup_jira_oauth_session
-
-        try:
-            await setup_jira_oauth_session(
-                tool_manager,
-                resolver,
-                channel="agentalk",
-                user_id=str(user_id),
-                build_full_toolkit=getattr(
-                    agent,
-                    "jira_toolkit_factory",
-                    None,
-                ),
-            )
-        except Exception:  # noqa: BLE001 - must never break session setup
-            self.logger.exception(
-                "Failed to bootstrap Jira OAuth session for user %s",
-                user_id,
-            )
 
     async def _apply_user_toolkit_overrides(
         self, agent: AbstractBot, request_session: Any, tool_manager: Optional[ToolManager]
@@ -1148,7 +1133,7 @@ class AgentTalk(BaseView):
         Runs during :meth:`_setup_agent_tools` for agents that opt in by setting
         ``enable_mcp_restore = True``.  For each saved :class:`UserMCPServerConfig`:
 
-        1. Retrieves the Vault credential (if any) from DocumentDB.
+        1. Retrieves the Vault credential (if any) through the configured Vault store.
         2. Calls the appropriate ``create_*`` factory function.
         3. Registers the resulting config on the session ToolManager.
 
@@ -1167,7 +1152,7 @@ class AgentTalk(BaseView):
         if tool_manager is None:
             return
 
-        # Extract user_id from session (same pattern as _bootstrap_jira_oauth_session)
+        # Extract user_id from the request session
         user_id = None
         for attr in ("user_id", "id", "username"):
             if hasattr(request_session, attr):
@@ -1205,10 +1190,9 @@ class AgentTalk(BaseView):
 
         # Load the vault key ring once for all secrets retrieval
         try:
-            from parrot.security.credentials_utils import credential_context
             from parrot.security.vault_utils import get_vault_keyring
 
-            keyring = get_vault_keyring()
+            get_vault_keyring()
         except Exception as exc:
             self.logger.warning("MCP restore: vault unavailable, skipping restore: %s", exc)
             return
@@ -1227,26 +1211,14 @@ class AgentTalk(BaseView):
                 secret_params: Dict[str, Any] = {}
                 if config.vault_credential_name:
                     try:
-                        async with DocumentDb() as db:
-                            doc = await db.read_one(
-                                "user_credentials",
-                                {
-                                    "user_id": user_id,
-                                    "name": config.vault_credential_name,
-                                },
-                            )
-                        if doc is None:
-                            self.logger.warning(
-                                "MCP restore: Vault credential '%s' missing " "for server '%s', skipping",
-                                config.vault_credential_name,
-                                config.server_name,
-                            )
-                            continue
-                        secret_params = _decrypt_credential(
-                            doc["credential"],
-                            credential_context(user_id, config.vault_credential_name),
-                            keyring,
+                        secret_params = await retrieve_vault_credential(user_id, config.vault_credential_name)
+                    except KeyError:
+                        self.logger.warning(
+                            "MCP restore: Vault credential '%s' missing " "for server '%s', skipping",
+                            config.vault_credential_name,
+                            config.server_name,
                         )
+                        continue
                     except Exception as exc:
                         self.logger.warning(
                             "MCP restore: failed to decrypt Vault credential " "'%s' for server '%s': %s",
@@ -1618,6 +1590,11 @@ class AgentTalk(BaseView):
             agent_name = self._get_agent_name(data) or "<unknown>"
             return self.error(f"Agent '{agent_name}' not found.", status=404)
         agent: AbstractBot = agent_or_response
+        agent_name = agent.name
+
+        if data.pop("tenant", None) is not None:
+            self.logger.warning("Ignoring client-supplied 'tenant' for agent %s (FEAT-707)", agent_name)
+        tenant = await resolve_request_tenant(app, self.request)
 
         # Load user's tool_manager from session (configured via PATCH).
         # User-defined bots own their own ToolManager in the session cache
@@ -1627,6 +1604,8 @@ class AgentTalk(BaseView):
         if request_session and not is_user_bot:
             session_key = f"{agent_tooling_ref(agent)}_tool_manager"
             user_tool_manager = request_session.get(session_key)
+            if user_tool_manager is None:
+                user_tool_manager = await self._hydrate_cold_session(agent, request_session, user_id)
             user_tool_manager = await self._apply_user_toolkit_overrides(agent, request_session, user_tool_manager)
 
         # PBAC tool filtering — filter session-scoped ToolManager by policy
@@ -1686,6 +1665,8 @@ class AgentTalk(BaseView):
         # transport to the /ws/userinfo channel keyed by session_id.  Default
         # False — frontend-driven path is unchanged when this flag is absent.
         avatar_bifurcate: bool = bool(data.pop("avatar_bifurcate", False))
+        # FEAT-752 rev 0.3: opt-in trailing chips frame on the stream path; popped so it never reaches the bot.
+        suggestions_trailer: bool = bool(data.pop("suggestions_trailer", False))
 
         # FEAT-204: HITL resume branch — detect hitl_response tag in the body.
         # Shape: {"hitl_response": {"turn_id": "<interaction_id>", "value": ...,
@@ -1747,14 +1728,6 @@ class AgentTalk(BaseView):
                     agent.name,
                     list(_ws_originals.keys()),
                 )
-
-        # Use RedisConversation for history management if session_id is present
-        memory = None
-        if user_id and session_id:
-            try:
-                memory = RedisConversation()
-            except Exception as ex:
-                self.logger.warning(f"Failed to initialize RedisConversation: {ex}")
 
         # Temporarily swap in user's ToolManager if configured via PATCH
         original_tool_manager = agent.tool_manager
@@ -1821,6 +1794,10 @@ class AgentTalk(BaseView):
                 )
 
         upload_errors = None
+        turn_scope = contextlib.ExitStack()
+        self._turn_auth_pending = turn_scope.enter_context(collect_auth_requirements())
+        turn_scope.enter_context(track_turn())
+        turn_auth = None
         try:
             async with agent.session(request=self.request, app=app, user_id=user_id, session_id=user_session) as bot:
                 if method_name:
@@ -1852,11 +1829,12 @@ class AgentTalk(BaseView):
                         use_conversation_history=use_conversation_history,
                         output_mode=output_mode,
                         format_kwargs=format_kwargs,
-                        memory=memory,
                         llm=llm,
-                        agent_name=agent.name,
+                        agent_name=agent_name,
                         client_message_id=client_message_id,
                         avatar_bifurcate=avatar_bifurcate,
+                        suggestions_trailer=suggestions_trailer,
+                        tenant=tenant,
                         **data,
                     )
                 if followup_turn_id and followup_data is not None:
@@ -1871,7 +1849,6 @@ class AgentTalk(BaseView):
                         use_conversation_history=use_conversation_history,
                         output_mode=output_mode,
                         format_kwargs=format_kwargs,
-                        memory=memory,
                         **data,
                     )
                 else:
@@ -1889,22 +1866,34 @@ class AgentTalk(BaseView):
                         use_vector_context=use_vector_context,
                         use_conversation_history=use_conversation_history,
                         output_mode=output_mode,
+                        turn_id=client_message_id,
                         format_kwargs=format_kwargs,
-                        memory=memory,
                         llm=llm,
+                        tenant=tenant,
                         **data,
                     )
-        except AuthorizationRequired as exc:
+                turn_auth = self._turn_auth_requirement(response)
+        except SessionDeletedError:
+            return self.error(response={"message": "This conversation was deleted"}, status=410)
+        except HydrationUnavailableError as exc:
+            self.logger.error("AgentTalk: conversation history unavailable (fail closed): %s", exc)
+            return self.error(response={"message": "Conversation history is temporarily unavailable"}, status=503)
+        except (AuthorizationRequired, CredentialRequired) as exc:
             # Translate the exception into a structured envelope so the web
             # frontend can render a "Connect" pill.  HTTP 200 — the chat call
             # succeeded; the envelope IS the agent's reply.
-            envelope = AuthRequiredEnvelope(
-                provider=exc.provider,
-                tool_name=exc.tool_name,
-                auth_url=exc.auth_url,
-                scopes=exc.scopes or [],
-                message=str(exc),
+            payload = exc.to_payload() if isinstance(exc, AuthorizationRequired) else exc.to_payload(tool_name=None)
+            pending = getattr(self, "_turn_auth_pending", None) or []
+            if not any(item.provider == payload.provider and item.tool_name == payload.tool_name for item in pending):
+                auth_count = len(pending) + 1
+            else:
+                auth_count = len(pending)
+            tracker = current_turn_tracker()
+            retry_safe = self._retry_safe(
+                auth_requirements=auth_count,
+                reported_tool_calls=tracker.dispatches if tracker is not None else 0,
             )
+            envelope = AuthRequiredEnvelope(**payload.model_dump(), retry_safe=retry_safe)
             return web.json_response(envelope.model_dump(), status=200)
         except HumanInteractionInterrupt as exc:
             # FEAT-204: SUSPEND path — the agent's SuspendingWebHumanTool raised
@@ -2038,7 +2027,10 @@ class AgentTalk(BaseView):
             for key, original_value in _ws_originals.items():
                 setattr(agent, key, original_value)
             # FEAT-146: Reset the current_web_session ContextVar
-            reset_current_web_session(_hitl_token)
+            try:
+                reset_current_web_session(_hitl_token)
+            finally:
+                turn_scope.close()
         response_time_ms = int((time.perf_counter() - start_time) * 1000)
 
         # Notify WebSocket channel if requested
@@ -2063,6 +2055,11 @@ class AgentTalk(BaseView):
             elif meta is None and hasattr(response, "metadata"):
                 response.metadata = {"upload_errors": upload_errors}
 
+        if turn_auth is not None:
+            payload, retry_safe = turn_auth
+            envelope = AuthRequiredEnvelope(**payload.model_dump(), retry_safe=retry_safe)
+            return web.json_response(envelope.model_dump(), status=200)
+
         # Return formatted response
         return self._format_response(
             response,
@@ -2074,6 +2071,7 @@ class AgentTalk(BaseView):
             agent_name=agent.name,
             session_id=session_id,
             client_message_id=client_message_id,
+            tenant=tenant,
         )
 
     async def patch(self):
@@ -2595,6 +2593,77 @@ class AgentTalk(BaseView):
             turn_id,
         )
 
+    @staticmethod
+    def _cancel_suggestions_task(ai_message: Optional[AIMessage]) -> None:
+        """FEAT-752 rev 0.3: never leak a running chip LLM call when the stream is cancelled or fails."""
+        task = getattr(ai_message, "_suggestions_task", None)
+        if task is not None and not task.done():
+            task.cancel()
+
+    def _retry_safe(self, *, auth_requirements: int, reported_tool_calls: int) -> bool:
+        """Return server-authored retry safety from the active turn tracker."""
+        tracker = current_turn_tracker()
+        return tracker is not None and tracker.retry_safe(
+            auth_requirements=auth_requirements,
+            reported_tool_calls=reported_tool_calls,
+        )
+
+    def _turn_auth_requirement(self, ai_message: Optional[AIMessage]) -> Optional[tuple]:
+        """Return the first collected auth payload and this turn's retry safety."""
+        pending = getattr(self, "_turn_auth_pending", None) or []
+        payload = _auth_required_from(pending)
+        if payload is None:
+            return None
+        reported_tool_calls = len(getattr(ai_message, "tool_calls", None) or [])
+        return payload, self._retry_safe(
+            auth_requirements=len(pending),
+            reported_tool_calls=reported_tool_calls,
+        )
+
+    async def _write_auth_required_trailer(self, stream_resp: web.StreamResponse, ai_message: AIMessage) -> None:
+        """Write the collected auth payload after a streaming response envelope."""
+        auth = self._turn_auth_requirement(ai_message)
+        if auth is None:
+            return
+        payload, retry_safe = auth
+        trailer = {
+            "auth_required": payload.model_dump(mode="json"),
+            "turn_id": str(getattr(ai_message, "turn_id", "") or ""),
+            "retry_safe": bool(retry_safe),
+        }
+        try:
+            await stream_resp.write(b"\n\x00" + json_encoder(trailer).encode("utf-8"))
+            await stream_resp.drain()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - auth trailer is best-effort
+            self.logger.warning("Auth-required trailer skipped: %s", exc)
+
+    async def _write_suggestions_trailer(
+        self, stream_resp: web.StreamResponse, bot: Any, ai_message: AIMessage
+    ) -> None:
+        """FEAT-752 rev 0.3: await the deferred chip task and write ``\\n\\x00{"suggestions", "turn_id"}``.
+
+        Writes nothing when there is no task, it times out/fails, or the list is empty. Never raises
+        (client cancellation excepted: that propagates so the caller can cancel the task).
+        """
+        task = getattr(ai_message, "_suggestions_task", None)
+        if task is None:
+            return
+        timeout = float(getattr(bot, "suggestion_timeout_s", 4.0)) + 1.0
+        try:
+            await asyncio.wait_for(asyncio.shield(task), timeout=timeout)
+        except Exception as exc:  # noqa: BLE001 — chips are best-effort
+            task.cancel()
+            self.logger.warning("Suggestions trailer skipped: %s", exc)
+            return
+        payload = _suggestions_payload(ai_message)
+        if payload is None:
+            return
+        trailer = {"suggestions": payload, "turn_id": str(getattr(ai_message, "turn_id", "") or "")}
+        await stream_resp.write(b"\n\x00" + json_encoder(trailer).encode("utf-8"))
+        await stream_resp.drain()
+
     async def _handle_stream_response(
         self,
         bot: AbstractBot,
@@ -2607,11 +2676,12 @@ class AgentTalk(BaseView):
         use_conversation_history: bool,
         output_mode: OutputMode,
         format_kwargs: Dict[str, Any],
-        memory: Optional[Any],
         llm: Optional[Any],
         agent_name: str = "",
         client_message_id: Optional[str] = None,
         avatar_bifurcate: bool = False,
+        suggestions_trailer: bool = False,
+        tenant: Optional[str] = None,
         **kwargs,
     ) -> web.StreamResponse:
         """Stream bot response via HTTP chunked transfer encoding.
@@ -2629,18 +2699,18 @@ class AgentTalk(BaseView):
         holds the WebSocket connection.  ``avatar_bifurcate`` is a no-op for
         non-streaming callers (``bot.ask`` path) — FULL mode always streams.
         """
-        stream_resp = web.StreamResponse(
-            status=200,
-            reason="OK",
-            headers={
-                "Content-Type": "text/plain; charset=utf-8",
-                "Transfer-Encoding": "chunked",
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Parrot-Stream": "chunked-aimessage",
-                "X-Accel-Buffering": "no",
-            },
-        )
+        stream_headers = {
+            "Content-Type": "text/plain; charset=utf-8",
+            "Transfer-Encoding": "chunked",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Parrot-Stream": "chunked-aimessage",
+            "X-Accel-Buffering": "no",
+        }
+        if suggestions_trailer:
+            # FEAT-752 rev 0.3: opt-in framing — the literal above stays the public default.
+            stream_headers["X-Parrot-Stream"] = "chunked-aimessage+suggestions"
+        stream_resp = web.StreamResponse(status=200, reason="OK", headers=stream_headers)
         await stream_resp.prepare(self.request)
         start_time = time.perf_counter()
         ai_message: Optional[AIMessage] = None
@@ -2659,8 +2729,10 @@ class AgentTalk(BaseView):
                 use_vector_context=use_vector_context,
                 use_conversation_history=use_conversation_history,
                 output_mode=output_mode,
-                memory=memory,
+                turn_id=client_message_id,
                 llm=llm,
+                tenant=tenant,
+                defer_suggestions=suggestions_trailer,
                 **kwargs,
             ):
                 if isinstance(chunk, AIMessage):
@@ -2716,60 +2788,15 @@ class AgentTalk(BaseView):
                 a2ui_envelope = getattr(ai_message, "a2ui_envelope", None)
                 if a2ui_envelope is not None:
                     envelope["a2ui_envelope"] = a2ui_envelope
+                _suggestions = _suggestions_payload(ai_message)
+                if _suggestions is not None and not suggestions_trailer:
+                    envelope["suggestions"] = _suggestions
                 separator = b"\n\x00"
                 await stream_resp.write(separator + json_encoder(envelope).encode("utf-8"))
                 await stream_resp.drain()
-
-            # Persist chat turn via ChatStorage
-            try:
-                chat_storage = self.request.app.get("chat_storage")
-                if chat_storage and user_id and session_id and ai_message:
-                    loop = asyncio.get_running_loop()
-                    _task = loop.create_task(
-                        chat_storage.save_turn(
-                            turn_id=client_message_id,
-                            user_id=user_id,
-                            session_id=session_id,
-                            agent_id=agent_name,
-                            user_message=ai_message.input or "",
-                            assistant_response=ai_message.response or "",
-                            output=ai_message.response or str(ai_message.output),
-                            output_mode=str(output_mode),
-                            data=ai_message.data,
-                            code=str(ai_message.code) if ai_message.code else None,
-                            model=getattr(ai_message, "model", None),
-                            provider=getattr(ai_message, "provider", None),
-                            response_time_ms=response_time_ms,
-                            tool_calls=[
-                                {
-                                    "name": getattr(t, "name", "unknown"),
-                                    "status": getattr(t, "status", "completed"),
-                                    "output": getattr(t, "output", None),
-                                    "arguments": getattr(t, "arguments", None),
-                                }
-                                for t in getattr(ai_message, "tool_calls", [])
-                            ],
-                            sources=[
-                                s if isinstance(s, dict) else s.to_dict()
-                                for s in getattr(ai_message, "source_documents", [])
-                            ],
-                        )
-                    )
-                    # Log any exception raised inside the background save so it is
-                    # not silently swallowed when the task is garbage-collected.
-                    _task.add_done_callback(
-                        lambda t: (
-                            self.logger.warning(
-                                "Streamed chat-turn save failed for agent '%s': %s",
-                                agent_name,
-                                t.exception(),
-                            )
-                            if not t.cancelled() and t.exception()
-                            else None
-                        )
-                    )
-            except Exception as ex:
-                self.logger.warning("Error scheduling streamed chat turn save: %s", ex)
+                await self._write_auth_required_trailer(stream_resp, ai_message)
+                if suggestions_trailer:
+                    await self._write_suggestions_trailer(stream_resp, bot, ai_message)
 
             # FEAT-249 Mode B: publish structured outputs via the Redis transport
             # when avatar_bifurcate is enabled and a FULL session is active.
@@ -2792,7 +2819,9 @@ class AgentTalk(BaseView):
 
         except asyncio.CancelledError:
             self.logger.info("Stream cancelled by client for agent '%s'.", agent_name)
+            self._cancel_suggestions_task(ai_message)
         except Exception as e:
+            self._cancel_suggestions_task(ai_message)
             error_payload = json_encoder({"error": str(e)})
             await stream_resp.write(f"\n\x00{error_payload}".encode("utf-8"))
             self.logger.error("Error in stream response for agent '%s': %s", agent_name, e)
@@ -2813,6 +2842,7 @@ class AgentTalk(BaseView):
         agent_name: str = None,
         session_id: str = None,
         client_message_id: str = None,
+        tenant: Optional[str] = None,
     ) -> web.Response:
         """
         Format the response based on the requested output format.
@@ -2848,16 +2878,18 @@ class AgentTalk(BaseView):
                     "response_time": response_time_ms,
                 }
             )
-            return self.json_response(
-                {
-                    "input": getattr(response, "input", None),
-                    "output": response.response or "",
-                    "output_mode": OutputMode.A2UI.value,
-                    "a2ui_envelope": getattr(response, "a2ui_envelope", None),
-                    "artifact_id": getattr(response, "artifact_id", None),
-                    "metadata": a2ui_metadata,
-                }
-            )
+            a2ui_body = {
+                "input": getattr(response, "input", None),
+                "output": response.response or "",
+                "output_mode": OutputMode.A2UI.value,
+                "a2ui_envelope": getattr(response, "a2ui_envelope", None),
+                "artifact_id": getattr(response, "artifact_id", None),
+                "metadata": a2ui_metadata,
+            }
+            _suggestions = _suggestions_payload(response)
+            if _suggestions is not None:
+                a2ui_body["suggestions"] = _suggestions
+            return self.json_response(a2ui_body)
 
         # FEAT-197: Infographic mode — return the documented JSON envelope
         # (or text/html for Accept: text/html / ?format=html requests).
@@ -2957,45 +2989,10 @@ class AgentTalk(BaseView):
             _a2ui_envelope = getattr(response, "a2ui_envelope", None)
             if _a2ui_envelope is not None:
                 obj_response["a2ui_envelope"] = _a2ui_envelope
+            _suggestions = _suggestions_payload(response)
+            if _suggestions is not None:
+                obj_response["suggestions"] = _suggestions
             # self.logger.debug('Agent response: %s', obj_response)
-
-            # Persist chat turn via ChatStorage (hot + cold)
-            try:
-                chat_storage = self.request.app.get("chat_storage")
-                if chat_storage and user_id and session_id:
-                    loop = asyncio.get_running_loop()
-                    loop.create_task(
-                        chat_storage.save_turn(
-                            turn_id=client_message_id,
-                            user_id=user_id,
-                            session_id=session_id,
-                            agent_id=agent_name or "",
-                            user_message=response.input or "",
-                            assistant_response=response.response or "",
-                            output=output,
-                            output_mode=output_mode,
-                            data=response.data,
-                            code=str(response.code) if response.code else None,
-                            model=getattr(response, "model", None),
-                            provider=getattr(response, "provider", None),
-                            response_time_ms=response_time_ms,
-                            tool_calls=[
-                                {
-                                    "name": getattr(t, "name", "unknown"),
-                                    "status": getattr(t, "status", "completed"),
-                                    "output": getattr(t, "output", None),
-                                    "arguments": getattr(t, "arguments", None),
-                                }
-                                for t in getattr(response, "tool_calls", [])
-                            ],
-                            sources=[
-                                s if isinstance(s, dict) else s.to_dict()
-                                for s in getattr(response, "source_documents", [])
-                            ],
-                        )
-                    )
-            except Exception as ex:
-                self.logger.warning("Error scheduling chat turn save: %s", ex)
 
             # FEAT-103: Auto-save data artifact if response includes structured data.
             # FEAT-224 (G5): Extended to recognise structured_* modes and persist the
@@ -3258,6 +3255,9 @@ class AgentTalk(BaseView):
         _a2ui_envelope = getattr(response, "a2ui_envelope", None)
         if _a2ui_envelope is not None:
             obj_response["a2ui_envelope"] = _a2ui_envelope
+        _suggestions = _suggestions_payload(response)
+        if _suggestions is not None:
+            obj_response["suggestions"] = _suggestions
         return web.json_response(
             obj_response,
             dumps=json_encoder,

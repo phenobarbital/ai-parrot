@@ -1,0 +1,29 @@
+{
+  "description": "Read-only preview of a pending channel link (FEAT-777 M2/M5).\n\nReturned by ``GET /api/v1/channel-links/{nonce}`` before the user confirms.\nNever carries the nonce or any credential material.\n\nAttributes:\n    channel: Channel being linked (``\"slack\"`` in v1).\n    channel_user_id: Team-qualified channel id, ``\"{team_id}:{slack_user_id}\"``.\n    team_id: Slack workspace id shown to the user.\n    nav_user_id: Navigator user id of the logged-in session that would own the link.",
+  "properties": {
+    "channel": {
+      "title": "Channel",
+      "type": "string"
+    },
+    "channel_user_id": {
+      "title": "Channel User Id",
+      "type": "string"
+    },
+    "nav_user_id": {
+      "title": "Nav User Id",
+      "type": "string"
+    },
+    "team_id": {
+      "title": "Team Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "channel",
+    "channel_user_id",
+    "team_id",
+    "nav_user_id"
+  ],
+  "title": "ChannelLinkPreview",
+  "type": "object"
+}

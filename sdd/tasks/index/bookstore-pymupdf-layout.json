@@ -1,0 +1,32 @@
+{
+  "feature": "bookstore-pymupdf-layout",
+  "feature_id": "FEAT-875",
+  "spec": "sdd/specs/bookstore-pymupdf-layout.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-10T15:30:00Z",
+  "completed_at": "2026-11-10T15:38:37+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "TASK-5469",
+      "slug": "layout-dependency-compatibility",
+      "title": "PyMuPDF Layout dependency compatibility gate",
+      "feature_id": "FEAT-875",
+      "feature": "bookstore-pymupdf-layout",
+      "spec": "sdd/specs/bookstore-pymupdf-layout.spec.md",
+      "status": "done-with-issues",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "exclusive: edits packages/ai-parrot/pyproject.toml and regenerates uv.lock (shared dependency manifest/lockfile); runs package experiments in an isolated environment",
+      "assigned_to": null,
+      "started_at": "2026-11-10T15:18:45+00:00",
+      "completed_at": "2026-11-10T15:22:04+00:00",
+      "file": "sdd/tasks/completed/TASK-5469-layout-dependency-compatibility.md",
+      "verification": "partial"
+    }
+  ]
+}

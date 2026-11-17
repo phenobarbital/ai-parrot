@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-389 — Stable UUID-Based Form Identity
 **Spec**: `sdd/specs/form-uid-stable-identity.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1972

@@ -27,7 +27,7 @@ Usage::
         pass
 
     agent = ResearchAgent(
-        llm="google:gemini-2.5-flash",
+        llm="google:gemini-3.8-flash",
         secondary_llm="anthropic:claude-sonnet-5",
         model_switch_mode=ModelSwitchMode.CONTRASTIVE,
     )

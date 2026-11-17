@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-240 — GraphIndex Odoo-aware Extractor + SQLite Persistence + Graph Reader
 **Spec**: `sdd/specs/odoo-graphindex-code.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1573

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-461 — wikitoolkit Environment Support (env-aware config + memory sync)
 **Spec**: `sdd/specs/wikitoolkit-env-support.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2462, TASK-2465

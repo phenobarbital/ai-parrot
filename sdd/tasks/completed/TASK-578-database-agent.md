@@ -2,7 +2,7 @@
 
 **Feature**: sqlagent-repair
 **Spec**: `sdd/specs/sqlagent-repair.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: XL (> 8h)
 **Depends-on**: TASK-568, TASK-569, TASK-570, TASK-571, TASK-576, TASK-577

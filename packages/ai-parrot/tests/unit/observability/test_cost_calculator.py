@@ -196,3 +196,17 @@ def test_gemini_provider_resolved_via_google_file() -> None:
     # gemini-1.5-pro: input=1.25/1M, output=5.00/1M
     # 1000*1.25/1e6 + 500*5/1e6 = 0.00125 + 0.0025 = 0.00375
     assert cost == pytest.approx(0.00375, rel=1e-4)
+
+
+def test_gemini_4_argon_priced() -> None:
+    """Gemini 4 Argon has an exact pricing row."""
+    cc = CostCalculator(today=date.today())
+    cost = cc.cost_usd(
+        provider="gemini",
+        model="gemini-4-argon",
+        input_tokens=1000,
+        output_tokens=500,
+    )
+
+    assert cost == pytest.approx(0.007, rel=1e-4)
+    assert cc.revision_for("gemini", "gemini-4-argon") != (None, None)

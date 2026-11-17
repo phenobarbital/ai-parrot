@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-255 — Ontology RAG + Employee Knowledge Base
 **Spec**: `sdd/specs/ontology-rag-kb.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-1624

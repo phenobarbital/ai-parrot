@@ -1,0 +1,305 @@
+{
+  "feature": "bookstore-agentic-retrieval",
+  "feature_id": "FEAT-858",
+  "spec": "sdd/specs/bookstore-agentic-retrieval.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-09T17:12:18.890007+00:00",
+  "completed_at": "2026-11-09T21:09:09Z",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/knowledge/bookstore/test_library.py",
+          "packages/ai-parrot/tests/knowledge/bookstore/test_toolkit.py",
+          "packages/ai-parrot/tests/knowledge/bookstore/test_mcp_server.py",
+          "packages/ai-parrot/tests/knowledge/bookstore/test_segment_reads.py",
+          "packages/ai-parrot/tests/knowledge/bookstore/test_cli.py",
+          "packages/ai-parrot/tests/knowledge/bookstore/test_catalog.py",
+          "packages/ai-parrot/tests/knowledge/bookstore/test_relations.py",
+          "packages/ai-parrot/tests/knowledge/bookstore/test_agentic_retrieval.py",
+          "packages/ai-parrot/tests/knowledge/bookstore/test_revision_guard.py",
+          "packages/ai-parrot/tests/knowledge/bookstore/test_reindex_hardening.py",
+          "packages/ai-parrot/tests/knowledge/bookstore/test_doctor.py",
+          "packages/ai-parrot/tests/knowledge/bookstore/test_agentic_cli.py",
+          "packages/ai-parrot/tests/knowledge/bookstore/test_agentic_eval.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_agentic_retrieval.py",
+          "packages/ai-parrot-tools/tests/multistoresearch/test_toolkit.py",
+          "packages/ai-parrot-tools/tests/multistoresearch/test_pageindex_origin.py",
+          "packages/ai-parrot-tools/tests/multistoresearch/test_wiki_origin.py",
+          "packages/ai-parrot-tools/tests/multistoresearch/test_bookstore_origin.py",
+          "packages/ai-parrot-tools/tests/multistoresearch/test_origin_sections.py",
+          "packages/ai-parrot/tests/sdd/test_techwiki_check.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:ceccab32d3d64c3d108bb76285d7dc53605421ecb237f67bb618293d66e7edd0"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5427",
+      "slug": "bookstore-revision-guard",
+      "title": "Guard Bookstore segment reads by returned revision",
+      "feature_id": "FEAT-858",
+      "feature": "bookstore-agentic-retrieval",
+      "spec": "sdd/specs/bookstore-agentic-retrieval.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Independent guarded-read contract; no prerequisite symbols are created by another task.",
+      "assigned_to": null,
+      "started_at": "2026-11-09T17:17:43+00:00",
+      "completed_at": "2026-11-09T17:24:50+00:00",
+      "file": "sdd/tasks/completed/TASK-5427-bookstore-revision-guard.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5428",
+      "slug": "bookstore-agentic-facade",
+      "title": "Delegate agentic retrieval and decorate pinned citations",
+      "feature_id": "FEAT-858",
+      "feature": "bookstore-agentic-retrieval",
+      "spec": "sdd/specs/bookstore-agentic-retrieval.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5427"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-5427: serializes overlapping writes to packages/ai-parrot/src/parrot/knowledge/bookstore/library.py",
+      "assigned_to": null,
+      "started_at": "2026-11-09T17:17:43+00:00",
+      "completed_at": "2026-11-09T17:33:56+00:00",
+      "file": "sdd/tasks/completed/TASK-5428-bookstore-agentic-facade.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5429",
+      "slug": "bookstore-scope-recovery",
+      "title": "Add awaited scope recovery and operation-lock primitives",
+      "feature_id": "FEAT-858",
+      "feature": "bookstore-agentic-retrieval",
+      "spec": "sdd/specs/bookstore-agentic-retrieval.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5428"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-5428: serializes overlapping writes to packages/ai-parrot/src/parrot/knowledge/bookstore/library.py",
+      "assigned_to": null,
+      "started_at": "2026-11-09T17:17:43+00:00",
+      "completed_at": "2026-11-09T17:47:54+00:00",
+      "file": "sdd/tasks/completed/TASK-5429-bookstore-scope-recovery.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5430",
+      "slug": "bookstore-atomic-reindex",
+      "title": "Serialize import identity and preserve graph only with equal source and TOC",
+      "feature_id": "FEAT-858",
+      "feature": "bookstore-agentic-retrieval",
+      "spec": "sdd/specs/bookstore-agentic-retrieval.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5429"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-5429: serializes overlapping writes to packages/ai-parrot/src/parrot/knowledge/bookstore/library.py, packages/ai-parrot/tests/knowledge/bookstore/test_reindex_hardening.py",
+      "assigned_to": null,
+      "started_at": "2026-11-09T17:17:43+00:00",
+      "completed_at": "2026-11-09T17:59:52+00:00",
+      "file": "sdd/tasks/completed/TASK-5430-bookstore-atomic-reindex.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5431",
+      "slug": "bookstore-doctor",
+      "title": "Report and repair library drift and missing judgements",
+      "feature_id": "FEAT-858",
+      "feature": "bookstore-agentic-retrieval",
+      "spec": "sdd/specs/bookstore-agentic-retrieval.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5430"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-5430: serializes overlapping writes to packages/ai-parrot/src/parrot/knowledge/bookstore/library.py",
+      "assigned_to": null,
+      "started_at": "2026-11-09T17:17:43+00:00",
+      "completed_at": "2026-11-09T18:08:46+00:00",
+      "file": "sdd/tasks/completed/TASK-5431-bookstore-doctor.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5432",
+      "slug": "bookstore-agentic-tools",
+      "title": "Expose agentic retrieval and revision guard through toolkit and MCP",
+      "feature_id": "FEAT-858",
+      "feature": "bookstore-agentic-retrieval",
+      "spec": "sdd/specs/bookstore-agentic-retrieval.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5428"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-5428: consumes Bookstore.agentic_retrieve and inherited read revision guard",
+      "assigned_to": null,
+      "started_at": "2026-11-09T17:17:43+00:00",
+      "completed_at": "2026-11-09T17:47:54+00:00",
+      "file": "sdd/tasks/completed/TASK-5432-bookstore-agentic-tools.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5433",
+      "slug": "origin-section-diagnostics",
+      "title": "Add request-local successful origin section diagnostics",
+      "feature_id": "FEAT-858",
+      "feature": "bookstore-agentic-retrieval",
+      "spec": "sdd/specs/bookstore-agentic-retrieval.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Independent origin protocol task; modifies only base/toolkit and its own tests.",
+      "assigned_to": null,
+      "started_at": "2026-11-09T17:17:43+00:00",
+      "completed_at": "2026-11-09T17:24:51+00:00",
+      "file": "sdd/tasks/completed/TASK-5433-origin-section-diagnostics.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5434",
+      "slug": "bookstore-search-origin",
+      "title": "Implement BookstoreOrigin with validated bounded excerpts",
+      "feature_id": "FEAT-858",
+      "feature": "bookstore-agentic-retrieval",
+      "spec": "sdd/specs/bookstore-agentic-retrieval.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5428",
+        "TASK-5433"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-5428: consumes Bookstore._decorate_citations and guarded read_segments; TASK-5433: consumes SearchOrigin.search_section and toolkit section normalization",
+      "assigned_to": null,
+      "started_at": "2026-11-09T17:17:43+00:00",
+      "completed_at": "2026-11-09T17:47:55+00:00",
+      "file": "sdd/tasks/completed/TASK-5434-bookstore-search-origin.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5435",
+      "slug": "bookstore-ask-doctor-cli",
+      "title": "Add ask and doctor command-line workflows",
+      "feature_id": "FEAT-858",
+      "feature": "bookstore-agentic-retrieval",
+      "spec": "sdd/specs/bookstore-agentic-retrieval.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5431"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-5431: consumes Bookstore.doctor; agentic_retrieve is available transitively",
+      "assigned_to": null,
+      "started_at": "2026-11-09T17:17:43+00:00",
+      "completed_at": "2026-11-09T18:15:37+00:00",
+      "file": "sdd/tasks/completed/TASK-5435-bookstore-ask-doctor-cli.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5436",
+      "slug": "bookstore-evaluation-harness",
+      "title": "Build pinned-question agentic evaluation harness",
+      "feature_id": "FEAT-858",
+      "feature": "bookstore-agentic-retrieval",
+      "spec": "sdd/specs/bookstore-agentic-retrieval.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5428"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-5428: consumes Bookstore.agentic_retrieve for the evaluation harness",
+      "assigned_to": null,
+      "started_at": "2026-11-09T17:17:43+00:00",
+      "completed_at": "2026-11-09T17:47:55+00:00",
+      "file": "sdd/tasks/completed/TASK-5436-bookstore-evaluation-harness.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5437",
+      "slug": "bookstore-host-evaluation",
+      "title": "Run reviewed host corpus evaluation and promote measured defaults",
+      "feature_id": "FEAT-858",
+      "feature": "bookstore-agentic-retrieval",
+      "spec": "sdd/specs/bookstore-agentic-retrieval.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5431",
+        "TASK-5436"
+      ],
+      "parallel": false,
+      "parallelism_notes": "TASK-5431: serializes overlapping writes to packages/ai-parrot/src/parrot/knowledge/bookstore/library.py; TASK-5436: serializes overlapping writes to packages/ai-parrot/tests/knowledge/bookstore/test_agentic_eval.py; Exclusive host-only execution mutates shared corpus EPUB trees/catalog and calls the provider outside declared committed files.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-11-09T19:13:17+00:00",
+      "file": "sdd/tasks/completed/TASK-5437-bookstore-host-evaluation.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5438",
+      "slug": "bookstore-agentic-documentation",
+      "title": "Documentation \u2014 Bookstore retrieval, graph, Codex and PageIndex pages",
+      "feature_id": "FEAT-858",
+      "feature": "bookstore-agentic-retrieval",
+      "spec": "sdd/specs/bookstore-agentic-retrieval.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5432",
+        "TASK-5434",
+        "TASK-5435",
+        "TASK-5437"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-5432: documents toolkit/MCP retrieval and guarded read symbols; TASK-5434: documents BookstoreOrigin and section diagnostics; TASK-5435: documents ask_cmd/doctor_cmd and their doctor facade dependency; TASK-5437: consumes the reviewed question fixture, actual report and measured defaults",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-11-09T19:19:07+00:00",
+      "file": "sdd/tasks/completed/TASK-5438-bookstore-agentic-documentation.md",
+      "verification": "verified"
+    }
+  ]
+}

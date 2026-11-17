@@ -7,7 +7,7 @@ credential ownership on ``TelegramUserSession``.
 """
 from __future__ import annotations
 
-from typing import Callable
+from typing import Any, Callable, Optional
 
 from aiogram import Router
 from aiogram.filters import Command
@@ -106,8 +106,52 @@ async def office365_status_handler(
 def register_office365_commands(
     router: Router,
     session_provider: SessionProvider,
+    *,
+    commands: Optional[Any] = None,
+    principal_source: Optional[Any] = None,
+    context_source: Optional[Any] = None,
+    extra_state_factory: Optional[Any] = None,
 ) -> None:
-    """Register Office365 command handlers on the router."""
+    """Alias generic handlers when ``o365`` is connectable, else use session handlers."""
+    if commands is not None and commands.resolve_provider("o365") is not None:
+        from parrot.integrations.telegram.connection_commands import (
+            connect_handler,
+            connections_handler,
+            disconnect_handler,
+        )
+
+        async def _connect(message: Message) -> None:
+            await connect_handler(
+                message,
+                "o365",
+                commands=commands,
+                principal_source=principal_source,
+                context_source=context_source,
+                extra_state_factory=extra_state_factory,
+            )
+
+        async def _disconnect(message: Message) -> None:
+            await disconnect_handler(
+                message,
+                "o365",
+                commands=commands,
+                principal_source=principal_source,
+                context_source=context_source,
+            )
+
+        async def _status(message: Message) -> None:
+            await connections_handler(
+                message,
+                commands=commands,
+                principal_source=principal_source,
+                context_source=context_source,
+                only="o365",
+            )
+
+        router.message.register(_connect, Command("connect_office365"))
+        router.message.register(_disconnect, Command("disconnect_office365"))
+        router.message.register(_status, Command("office365_status"))
+        return
 
     async def _connect(message: Message) -> None:
         await connect_office365_handler(message, session_provider)

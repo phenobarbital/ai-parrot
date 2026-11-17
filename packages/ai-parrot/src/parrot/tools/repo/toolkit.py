@@ -359,6 +359,7 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
         limit = timeout if timeout is not None else self._command_timeout
         proc = await asyncio.create_subprocess_exec(
             *argv,
+            stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=str(self._repo_root),

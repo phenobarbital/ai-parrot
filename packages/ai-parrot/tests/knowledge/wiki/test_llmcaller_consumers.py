@@ -2,7 +2,7 @@
 
 import pytest
 
-from tests.knowledge._support.import_probe import run_import_probe
+from .._support.import_probe import run_import_probe
 
 MODULES = [
     "parrot.knowledge.wiki.triage",

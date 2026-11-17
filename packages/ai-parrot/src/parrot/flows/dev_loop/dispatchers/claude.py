@@ -34,10 +34,10 @@ import json
 import logging
 import os
 from pathlib import Path
-import shlex
-import sys
+import shutil
 import time
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Type
+from uuid import uuid4
 
 from pydantic import BaseModel, ValidationError
 
@@ -63,7 +63,7 @@ from parrot.flows.dev_loop.dispatchers._shared import (
 )
 from parrot.flows.dev_loop.models import ClaudeCodeDispatchProfile, DispatchEvent, DispatchLabels
 from parrot.flows.dev_loop.session_state import SessionHost
-from parrot.flows.dev_loop import worktree_environment
+from parrot.flows.dev_loop import native_claude_sandbox, worktree_environment
 from parrot.observability.context import usage_attribution
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -84,6 +84,30 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 # here: plan mode gates command execution to read-only behaviour, and the
 # read-only QA/code-review gates legitimately need a shell.
 _WRITE_CAPABLE_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit"})
+
+# Subagents whose Bash calls are wrapped in Bubblewrap by the
+# ``worktree_environment.py --hook`` PreToolUse hook. Another hook that also
+# returns ``updatedInput`` (e.g. a user-level RTK hook in ~/.claude) can
+# replace that wrapper — Claude Code does not define which rewrite wins — so
+# these sessions must never load the ``user`` setting source
+# (issue:6756c929a450).
+_SANDBOXED_SUBAGENTS = frozenset({"sdd-worker", "sdd-coder"})
+
+
+def _remove_owned_cache_dir(cache_dir: Path) -> None:
+    """Remove a per-dispatch cache directory, but only one this process allocated under the scratch root.
+
+    Runs in a worker thread: ``Path.resolve`` and ``rmtree`` are blocking.
+    """
+    cache_root = worktree_environment.claude_scratch_root() / "parrot-sdd-cache"
+    try:
+        resolved_root = cache_root.resolve()
+        owned = cache_dir.parent.resolve() == resolved_root and cache_dir.resolve().is_relative_to(resolved_root)
+    except (OSError, RuntimeError):
+        owned = False
+    if owned:
+        shutil.rmtree(cache_dir, True)
+
 
 # FEAT-496: per-dispatch tool_use_id -> tool_name correlation map. Bound in
 # dispatch() alongside _SESSION_HOST_CTX/_DISPATCH_LABELS_CTX — NEVER instance
@@ -282,6 +306,7 @@ class ClaudeCodeDispatcher:
             raise
 
         async with self._semaphore:
+            run_options: Optional[ClaudeAgentRunOptions] = None
             try:
                 # A JSON-schema path is intentionally never generated for
                 # this dispatcher: the SDK's subprocess transport pins
@@ -503,6 +528,10 @@ class ClaudeCodeDispatcher:
                 )
                 return result
             finally:
+                if run_options is not None and run_options.env is not None:
+                    cache_dir_value = run_options.env.get(native_claude_sandbox.CACHE_DIR_ENV)
+                    if cache_dir_value:
+                        await asyncio.to_thread(_remove_owned_cache_dir, Path(cache_dir_value))
                 _SESSION_HOST_CTX.reset(_host_token)
                 _DISPATCH_LABELS_CTX.reset(_labels_token)
                 _TOOL_NAMES_CTX.reset(_tools_token)
@@ -618,27 +647,41 @@ class ClaudeCodeDispatcher:
         # JSON parsing of the final ``ResultMessage`` payload — see
         # ``_validate_output`` — and leave ``extra_args`` unset.
         extra_args: Optional[Dict[str, Optional[str]]] = None
-        if profile.subagent in {"sdd-worker", "sdd-coder"}:
-            # Programmatic AgentDefinitions strip prompt frontmatter. Supply
-            # the protection independently of project settings and prompt hooks.
-            hook_command = (
-                shlex.join([sys.executable, str(Path(worktree_environment.__file__).resolve()), "--hook"])
-                + " || exit 2"
-            )
-            extra_args = {
-                "settings": json.dumps(
-                    {
-                        "hooks": {
-                            "PreToolUse": [
-                                {
-                                    "matcher": "Bash|Write|Edit|MultiEdit|NotebookEdit",
-                                    "hooks": [{"type": "command", "command": hook_command, "timeout": 10}],
-                                }
-                            ]
-                        }
-                    }
+        env: Optional[Dict[str, str]] = self._resolve_dispatch_env() or None
+        if profile.subagent in _SANDBOXED_SUBAGENTS:
+            # FEAT-768: the native Claude sandbox is the enforcement boundary; the retained
+            # hook (guard → RTK → bounded shell) rides in the same settings object.
+            try:
+                mode, degraded, reason, settings = native_claude_sandbox.plan_native_launch(
+                    Path(cwd), allowed_domains=profile.sandbox_allowed_domains
                 )
-            }
+            except (ValueError, RuntimeError) as exc:
+                raise DispatchExecutionError(f"Native sandbox refused cwd {cwd!r}: {exc}") from exc
+            extra_args = {"settings": json.dumps(settings)}
+            env = dict(env or {})
+            env[native_claude_sandbox.BACKEND_ENV] = native_claude_sandbox.launch_backend(mode)
+            env.update(native_claude_sandbox.native_root_env(Path(cwd)))
+            env.update(native_claude_sandbox.experience_isolation_env())
+            if mode == "legacy":
+                self.logger.warning(
+                    "native sandbox LEGACY for %s: Bubblewrap hook boundary, no network isolation", profile.subagent
+                )
+                env.pop(native_claude_sandbox.DEGRADED_ENV, None)
+            elif degraded:
+                self.logger.warning("native sandbox DEGRADED for %s (mode=%s): %s", profile.subagent, mode, reason)
+                env[native_claude_sandbox.DEGRADED_ENV] = "1"
+            else:
+                env.pop(native_claude_sandbox.DEGRADED_ENV, None)
+                if native_claude_sandbox.sandbox_platform() == "macos":
+                    self.logger.warning(
+                        "launch_worker: NOTICE macOS Seatbelt backend is implemented but not certified "
+                        "(see wiki/sdd-tooling/dev_loop/claude-native-sandbox.md)"
+                    )
+                self.logger.info("native sandbox ready for %s (mode=%s)", profile.subagent, mode)
+            cache_dir = worktree_environment.claude_scratch_root() / "parrot-sdd-cache" / uuid4().hex
+            env[native_claude_sandbox.CACHE_DIR_ENV] = str(cache_dir)
+            if mode != "legacy":
+                env.update(native_claude_sandbox.native_command_environment(Path(cwd), env))
 
         return ClaudeAgentRunOptions(
             cwd=cwd,
@@ -646,9 +689,9 @@ class ClaudeCodeDispatcher:
             permission_mode=profile.permission_mode,
             allowed_tools=list(profile.allowed_tools) or None,
             agents=agents_dict,
-            setting_sources=list(profile.setting_sources) if profile.setting_sources else None,
+            setting_sources=self._effective_setting_sources(profile),
             strict_mcp_config=profile.strict_mcp_config,
-            env=self._resolve_dispatch_env() or None,
+            env=env,
             extra_args=extra_args,
             system_prompt=system_prompt,
             model=profile.model,
@@ -658,6 +701,32 @@ class ClaudeCodeDispatcher:
             # byte-identical to pre-Module-6 behavior.
             mcp_servers=profile.mcp_servers,
         )
+
+    def _effective_setting_sources(self, profile: ClaudeCodeDispatchProfile) -> Optional[List[str]]:
+        """Resolve the setting sources forwarded to the dispatched CLI.
+
+        Sandboxed subagents (``sdd-worker`` / ``sdd-coder``) always get an
+        explicit list without ``"user"``: ``None`` would let the CLI load its
+        default sources, user hooks included, and a user-level ``PreToolUse``
+        hook that rewrites Bash input can replace the Bubblewrap wrapper.
+        Every other subagent keeps the historical mapping (empty → ``None``).
+
+        Args:
+            profile: The dispatch profile being translated.
+
+        Returns:
+            The sources to forward, or ``None`` to defer to the SDK default.
+        """
+        if profile.subagent not in _SANDBOXED_SUBAGENTS:
+            return list(profile.setting_sources) if profile.setting_sources else None
+        sources = [source for source in profile.setting_sources if source != "user"]
+        if "user" in profile.setting_sources:
+            self.logger.warning(
+                "Dropping the 'user' setting source for sandboxed subagent %s: user-level "
+                "PreToolUse hooks could replace the Bubblewrap wrapper",
+                profile.subagent,
+            )
+        return sources or ["project"]
 
     @staticmethod
     def _effective_max_turns(profile: ClaudeCodeDispatchProfile) -> Optional[int]:
@@ -918,7 +987,7 @@ class ClaudeCodeDispatcher:
             try:
                 usage = getattr(msg, "usage", None)
 
-                def _usage_get(key: str) -> Any:
+                def _usage_get(key: str, usage: Any = usage) -> Any:  # bind now, not at call time (B023)
                     if usage is None:
                         return None
                     if isinstance(usage, dict):
@@ -961,7 +1030,8 @@ class ClaudeCodeDispatcher:
 
         No-ops when there is nothing to report (no harvest, or no
         registry resolver wired) — never fabricates zeros, and never lets
-        a telemetry failure break the dispatch.
+        a telemetry failure break the dispatch. Cache counters and the
+        provider-reported cost are forwarded for reconciliation (FEAT-783 S5).
 
         Forwards to the global registry explicitly after the awaited
         per-run emit, mirroring ``AbstractClient._emit_after_call``
@@ -986,6 +1056,10 @@ class ClaudeCodeDispatcher:
                     output_tokens=usage_detail.get("output_tokens"),
                     source_type="dispatcher",
                     source_name="claude-code",
+                    cache_read_tokens=usage_detail.get("cache_read_input_tokens"),
+                    cache_creation_tokens=usage_detail.get("cache_creation_input_tokens"),
+                    source_cost_usd=usage_detail.get("total_cost_usd"),
+                    pricing_policy=self._claude_pricing_policy(profile),
                 )
                 await registry.emit(event)
                 registry.forward_to_global(event)
@@ -996,6 +1070,25 @@ class ClaudeCodeDispatcher:
                 node_id,
                 exc_info=True,
             )
+
+    def _claude_pricing_policy(self, profile: ClaudeCodeDispatchProfile) -> Optional[str]:
+        """Derive billed vs subscription pricing for the Agent SDK seat.
+
+        Args:
+            profile: Dispatch profile for the seat emitting the usage event.
+
+        Returns:
+            ``"subscription"`` when the child environment blanks the API key,
+            ``"billed"`` when it inherits a non-empty API key, or ``None``
+            when the active credential cannot be determined.
+        """
+        del profile  # Authentication is currently dispatcher-wide, not profile-configured.
+        dispatch_env = self._resolve_dispatch_env()
+        if dispatch_env.get("ANTHROPIC_API_KEY") == "":
+            return "subscription"
+        if os.environ.get("ANTHROPIC_API_KEY"):
+            return "billed"
+        return None
 
     async def _emit_failure_event(
         self,

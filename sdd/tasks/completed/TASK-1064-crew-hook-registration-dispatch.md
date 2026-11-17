@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-157 — AgentCrew Lifecycle Hooks
 **Spec**: `sdd/specs/agentcrew-hooks.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1063

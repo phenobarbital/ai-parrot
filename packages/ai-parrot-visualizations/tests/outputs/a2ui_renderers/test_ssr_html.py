@@ -267,6 +267,30 @@ class TestNewChartTypesDegradation:
         assert art.metadata.get("degraded", []) == []
 
 
+SRC = 'flowchart TD\n    a["a < b & c"] --> b\n'
+
+
+class TestMermaidDiagramDegradesToCodeBlock:
+    """FEAT-753: ssr-html shows MermaidDiagram source as a code block, one degraded record."""
+
+    async def test_ssr_html_mermaid_source_code_block_and_degraded(self):
+        env = CreateSurface(
+            surfaceId="s",
+            catalogId="c",
+            components=[Component(id="root", component="MermaidDiagram", source=SRC, diagramType="flowchart")],
+            dataModel={},
+        )
+        art = await SSRHTMLRenderer().render(env)
+        doc = art.content.decode()
+        assert '<pre class="a2ui-mermaid-source"><code class="language-mermaid"' in doc
+        assert 'data-diagram-type="flowchart"' in doc
+        assert "a &lt; b &amp; c" in doc
+        assert "a < b" not in doc
+        mermaid = [d for d in art.metadata["degraded"] if "Mermaid" in d.get("reason", "")]
+        assert len(mermaid) == 1
+        assert mermaid[0]["reason"] == "ssr-html has no Mermaid engine; source shown as a code block"
+
+
 class TestHtmlDocumentDegradesToLink:
     """FEAT-527: ssr-html can never embed HtmlDocument (static renderer) —
     always a titled link (srcUrl) or placeholder text (inline html only),

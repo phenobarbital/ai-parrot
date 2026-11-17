@@ -1,0 +1,404 @@
+"""Stdlib-only launch-time venv resolution for parrot console scripts (FEAT-633 M1).
+
+HARD RULE: import nothing but the standard library here — this module fronts every
+``wikitoolkit claude-hook`` call. Enforced by tests/launcher/test_launcher_stdlib_only.py (TASK-4072).
+"""
+from __future__ import annotations
+
+import os
+import dataclasses
+import shutil
+import sys
+import tempfile
+from collections.abc import Callable, Mapping, Sequence
+from pathlib import Path
+from typing import Any
+
+PARROT_HOME_ENV = "PARROT_HOME"            # existing convention: knowledge/wiki/project.py:1382
+PARROT_VENV_ENV = "PARROT_VENV"            # new explicit override
+PARROT_PROJECT_ENV = "PARROT_PROJECT"      # new project-root pin
+LOOP_GUARD_ENV = "PARROT_LAUNCHER_RESOLVED"
+MANAGED_PYTHON = "3.12"                    # owner decision (spec §8)
+_DEFAULT_HOME = "~/.parrot"
+_WARNED: set[str] = set()                  # warn-once-per-process registry (keys: "project:<venv>", "PARROT_VENV")
+
+
+def parrot_home(env: Mapping[str, str] | None = None) -> Path:
+    """``$PARROT_HOME`` or ``~/.parrot``, ``~``-expanded, NOT resolved; read on every call."""
+    source = os.environ if env is None else env
+    return Path(source.get(PARROT_HOME_ENV) or _DEFAULT_HOME).expanduser()
+
+
+def is_managed(prefix: str | None = None, *, env: Mapping[str, str] | None = None) -> bool:
+    """True iff ``prefix`` (default ``sys.prefix``) is inside ``parrot_home()/'venv'`` (realpaths)."""
+    managed = os.path.realpath(parrot_home(env) / "venv")
+    current = os.path.realpath(prefix if prefix is not None else sys.prefix)
+    return current == managed or current.startswith(managed + os.sep)
+
+
+def _is_temp_root(candidate: Path) -> bool:
+    """True when ``candidate`` is the system temp dir itself (rev 0.5 C24).
+
+    Mirrors ``wiki.project._is_temp_root`` (project.py:1026-1046); the ``.git`` walk-ups stop
+    there.  Only the temp dir itself is excluded — not its ancestors, which may legitimately
+    contain project checkouts (e.g. ``TMPDIR=/home/u/tmp`` must not stop the walk at ``/home/u``).
+    """
+    try:
+        temp_root = Path(tempfile.gettempdir()).resolve()
+    except (OSError, RuntimeError):
+        return False
+    return candidate == temp_root
+
+
+def _existing_directory(path: Path) -> Path:
+    """Port of worktree_environment.existing_directory (:27): nearest existing ancestor, resolved."""
+    candidate = Path(os.path.abspath(path))
+    for parent in (candidate, *candidate.parents):
+        if parent.is_dir():
+            return parent.resolve()
+    return Path(candidate.anchor or os.sep)
+
+
+def repository_paths(cwd: Path) -> tuple[Path, Path | None]:
+    """(repo_root, common_git_dir_or_None). Port of worktree_environment.py:53-71.
+
+    Deviation: a malformed ``.git`` file yields ``(cwd, None)`` instead of raising.
+    The walk stops at ``_is_temp_root`` (rev 0.5 C24) → ``(cwd, None)``.
+    The main checkout of a linked worktree is ``common_git_dir.parent``.
+    """
+    cwd = _existing_directory(cwd)
+    for root in (cwd, *cwd.parents):
+        if _is_temp_root(root):
+            break
+        marker = root / ".git"
+        try:
+            if marker.is_dir():
+                return root, marker.resolve()
+            if marker.is_file():
+                content = marker.read_text(encoding="utf-8").strip()
+                if not content.startswith("gitdir: "):
+                    return cwd, None
+                git_dir = Path(os.path.abspath(root / content.removeprefix("gitdir: ")))
+                common = git_dir / "commondir"
+                if common.is_file():
+                    git_dir = Path(os.path.abspath(git_dir / common.read_text(encoding="utf-8").strip()))
+                return root, git_dir.resolve() if git_dir.is_dir() else None
+        except (OSError, UnicodeDecodeError):
+            return cwd, None
+    return cwd, None
+
+
+@dataclasses.dataclass(frozen=True)
+class InstallRoot:
+    """Install target and shared wiki state location, with explicit-pin provenance."""
+
+    root: Path
+    shared_root: Path
+    linked: bool
+    explicit: bool
+
+
+class LinkedWorktreeError(RuntimeError):
+    """An implicit installation target is a linked worktree."""
+
+
+def managed_launcher_on_path(env: Mapping[str, str] | None = None) -> bool:
+    """Test found/resolved parrot paths against found/resolved parrot_home; never raise."""
+    source = os.environ if env is None else env
+    try:
+        found = shutil.which("parrot", path=source.get("PATH"))
+        if not found:
+            return False
+        home = parrot_home(source)
+        homes = (home, home.resolve())
+        candidates = (Path(found), Path(found).resolve())
+        return any(candidate == base or base in candidate.parents for candidate in candidates for base in homes)
+    except (OSError, RuntimeError):
+        return False
+
+
+def explicit_project_pin(argv: Sequence[str], env: Mapping[str, str], cwd: Path) -> Path | None:
+    """Return a valid CLI/environment pin, never the repository-discovery fallback."""
+    pinned: list[str] = []
+    if argv:
+        first = argv[0]
+        if first == "--project" and len(argv) > 1:
+            pinned.append(argv[1])
+        elif first.startswith("--project="):
+            pinned.append(first.split("=", 1)[1])
+    pinned.extend(value for value in (env.get(PARROT_PROJECT_ENV), env.get("CLAUDE_PROJECT_DIR")) if value)
+    for value in pinned:
+        candidate = Path(value).expanduser()
+        if not candidate.is_absolute():
+            candidate = cwd / candidate
+        try:
+            if candidate.is_dir():
+                return candidate.resolve()
+        except OSError:
+            continue
+    return None
+
+
+def install_root(cwd: Path, *, explicit: Path | None = None) -> InstallRoot:
+    """Resolve target and classify actual commondir metadata without changing wiki discovery."""
+    target = _existing_directory(explicit if explicit is not None else cwd)
+    checkout, _ = repository_paths(target)
+    root = target if explicit is not None else checkout
+    marker = checkout / ".git"
+    try:
+        if not marker.is_file():
+            return InstallRoot(root, root, False, explicit is not None)
+        content = marker.read_text(encoding="utf-8").strip()
+        if not content.startswith("gitdir: "):
+            return InstallRoot(root, root, False, explicit is not None)
+        git_dir = Path(os.path.abspath(checkout / content.removeprefix("gitdir: ")))
+        common = git_dir / "commondir"
+        if not common.is_file():
+            return InstallRoot(root, root, False, explicit is not None)
+        shared_git_dir = Path(os.path.abspath(git_dir / common.read_text(encoding="utf-8").strip()))
+        if not shared_git_dir.is_dir():
+            return InstallRoot(root, root, False, explicit is not None)
+        return InstallRoot(root, shared_git_dir.resolve().parent, True, explicit is not None)
+    except (OSError, RuntimeError, UnicodeDecodeError):
+        return InstallRoot(root, root, False, explicit is not None)
+
+
+def shared_state_root(root: Path) -> Path:
+    """Shorthand for the shared wiki-state directory derived from ``root``."""
+    return install_root(root, explicit=root).shared_root
+
+
+def require_primary_checkout(resolved: InstallRoot) -> InstallRoot:
+    """Refuse implicit linked-worktree writes; retain deliberate explicit overrides."""
+    if resolved.linked and not resolved.explicit:
+        raise LinkedWorktreeError(
+            f"{resolved.root} is a linked worktree of {resolved.shared_root}; installers "
+            f"write to the checkout you run them in — run this from {resolved.shared_root}, "
+            f"or pass --path {resolved.root} to install into the worktree on purpose"
+        )
+    return resolved
+
+
+def find_project_root(argv: Sequence[str], env: Mapping[str, str], cwd: Path) -> Path | None:
+    """Leading ``--project <p>``/``--project=<p>`` → PARROT_PROJECT → CLAUDE_PROJECT_DIR → walk-up to ``.git``."""
+    if pinned := explicit_project_pin(argv, env, cwd):
+        return pinned
+    try:
+        current = _existing_directory(cwd)
+        for candidate in (current, *current.parents):
+            if _is_temp_root(candidate):
+                break
+            if (candidate / ".git").exists():
+                return candidate
+    except OSError:
+        return None
+    return None
+
+
+def script_path(venv: Path, name: str, *, os_name: str | None = None) -> Path:
+    """``venv/bin/<name>`` on POSIX; ``venv/Scripts/<name>.exe`` on Windows."""
+    if (os_name or os.name) == "nt":
+        return venv / "Scripts" / f"{name}.exe"
+    return venv / "bin" / name
+
+
+def _warn_once(key: str, message: str) -> None:
+    """Write ``message`` to stderr at most once per process for ``key``."""
+    if key in _WARNED:
+        return
+    _WARNED.add(key)
+    sys.stderr.write(f"parrot: {message}\n")
+
+
+def _project_venv_trusted(venv: Path, script: str) -> bool:
+    """Trust gate for a PROJECT venv before the shim executes its script (``resolve_venv`` rule ``project``).
+
+    A cloned, untrusted repository can commit ``.venv/pyvenv.cfg`` + ``.venv/bin/<script>``; the automatic
+    ``wikitoolkit claude-hook`` call would then run attacker code. The venv is trusted only when (POSIX) it is
+    owned by the current user AND nothing under it is tracked by git — a venv a developer created locally is
+    ignored/untracked, a committed one arrives with the clone. Fails closed when the repo cannot be queried.
+    The ``git`` call runs with ``LC_ALL=C`` and without ``LANGUAGE``: git localizes its messages, and the fallback
+    below matches the English "not a git repository".
+    """
+    import subprocess
+
+    try:
+        if os.name != "nt":
+            uid = os.getuid()
+            for path in (venv, venv / "pyvenv.cfg", script_path(venv, script)):
+                if os.lstat(path).st_uid != uid:
+                    return False
+        work_tree = venv.parent
+        if not (work_tree / ".git").exists():
+            return True  # not a git checkout (e.g. an explicit PARROT_PROJECT dir): nothing can be tracked
+        git_env = {key: value for key, value in os.environ.items() if key != "LANGUAGE"}
+        git_env["LC_ALL"] = "C"
+        tracked = subprocess.run(
+            ["git", "-C", str(work_tree), "ls-files", "-z", "--", venv.name],
+            capture_output=True, check=False, timeout=5, env=git_env,
+        )
+        if tracked.returncode != 0:
+            # a `.git` that git itself rejects as a repository cannot be a clone's tracked content
+            return b"not a git repository" in tracked.stderr.lower()
+        return not tracked.stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def resolve_venv(script: str, *, argv: Sequence[str], env: Mapping[str, str], cwd: Path) -> tuple[Path, str]:
+    """Return ``(venv, rule)``; rule ∈ {'PARROT_VENV','project','VIRTUAL_ENV','managed'}.
+
+    A candidate is valid iff it has ``pyvenv.cfg`` and ``script_path(venv, script)`` exists and it
+    is not the managed venv itself. A project ``.venv`` lacking the script warns once (stderr) and
+    is skipped. Never raises: any OSError while probing a candidate skips that candidate.
+    """
+    managed = parrot_home(env) / "venv"
+    managed_real = os.path.realpath(managed)
+    candidates: list[tuple[Path, str]] = []
+    explicit = env.get(PARROT_VENV_ENV)
+    if explicit:
+        candidates.append((Path(explicit).expanduser(), "PARROT_VENV"))
+    root = find_project_root(argv, env, cwd)
+    if root is not None:
+        candidates.append((root / ".venv", "project"))
+        common = repository_paths(root)[1]
+        if common is not None and common.parent != root:
+            candidates.append((common.parent / ".venv", "project"))
+    if env.get("VIRTUAL_ENV"):
+        candidates.append((Path(env["VIRTUAL_ENV"]).expanduser(), "VIRTUAL_ENV"))
+    for venv, rule in candidates:
+        try:
+            if os.path.realpath(venv) == managed_real:
+                continue
+            valid = (venv / "pyvenv.cfg").is_file() and script_path(venv, script).exists()
+            exists = venv.is_dir()
+        except OSError:
+            continue
+        if valid and rule == "project" and not _project_venv_trusted(venv, script):
+            _warn_once(
+                f"untrusted:{venv}",
+                f"project venv {venv} is tracked by git or not owned by you; refusing to run '{script}' from it "
+                "(untrusted repository?) — using the next candidate instead",
+            )
+            continue
+        if valid:
+            return venv, rule
+        if rule == "PARROT_VENV":
+            _warn_once("PARROT_VENV", f"PARROT_VENV={venv} is not a venv providing '{script}'; ignoring it")
+        elif rule == "project" and exists:
+            _warn_once(f"project:{venv}", f"project venv {venv} has no '{script}'; using the next candidate instead")
+    return managed, "managed"
+
+
+def _strip_project(argv: list[str]) -> list[str]:
+    """Remove a LEADING ``--project p`` / ``--project=p`` (launcher-only option)."""
+    if argv[:1] == ["--project"]:
+        return argv[2:]
+    if argv and argv[0].startswith("--project="):
+        return argv[1:]
+    return argv
+
+
+def _resolved_target(script: str, argv: list[str]) -> Path | None:
+    """Return the script to re-exec into, or None to run in this interpreter."""
+    # Consume the guard: it only protects THIS exec hop. Left in the environment it would be inherited by every
+    # grandchild, and a nested managed `parrot` run for another project would skip venv resolution.
+    guarded = os.environ.pop(LOOP_GUARD_ENV, None)
+    if guarded or not is_managed():
+        return None
+    try:
+        venv, rule = resolve_venv(script, argv=argv, env=os.environ, cwd=Path.cwd())
+    except OSError:
+        return None
+    return None if rule == "managed" else script_path(venv, script)
+
+
+def reexec(target: Path, argv: list[str]) -> int:
+    """Run ``target`` with ``argv`` (argv[0] included) under the loop guard.
+
+    POSIX: ``os.execv`` (never returns). Windows: child process with inherited stdio;
+    returns its exit code (spike S2).
+    """
+    os.environ[LOOP_GUARD_ENV] = "1"
+    sys.stdout.flush()
+    sys.stderr.flush()
+    if os.name != "nt":
+        os.execv(str(target), argv)
+    import signal
+    import subprocess
+
+    previous = signal.signal(signal.SIGINT, signal.SIG_IGN)
+    try:
+        proc = subprocess.Popen([str(target), *argv[1:]])  # inherited stdio; same console receives Ctrl-C
+        try:
+            return proc.wait()
+        except BaseException:
+            proc.terminate()
+            raise
+    finally:
+        signal.signal(signal.SIGINT, previous)
+
+
+def _dispatch(script: str, load_entry: Callable[[], Callable[[], Any]]) -> int:
+    """Shared wrapper body: decide → maybe re-exec → else import and call the real entry."""
+    argv = _strip_project(sys.argv[1:])
+    target = _resolved_target(script, sys.argv[1:])
+    if target is not None:
+        return reexec(target, [str(target), *argv])
+    sys.argv[1:] = argv
+    result = load_entry()()
+    return result if isinstance(result, int) else 0
+
+
+SDD_HOOK_ARGV = ["sdd", "worktree", "guard", "--hook"]
+DANGEROUS_HOOK_ARGV = ["sdd", "hooks", "dangerous-actions", "--hook"]  # FEAT-633 C32
+EXPERIENCE_HOOK_ARGV = ["sdd", "experience", "hook"]
+
+
+def main_parrot() -> int:
+    """``parrot`` console script (real entry ``parrot.cli:cli``; keeps the C16 sdd-hook fast path)."""
+    def load() -> Callable[[], Any]:
+        if sys.argv[1:4] == EXPERIENCE_HOOK_ARGV:
+            try:
+                from parrot.sdd.scripts.experience_hook import main
+
+                return lambda: main(sys.argv[4:])
+            except Exception:
+                return lambda: 0
+        if sys.argv[1:] == SDD_HOOK_ARGV:
+            from parrot.sdd.scripts.worktree_environment import main as hook_main
+
+            def run_hook() -> int:
+                sys.argv[1:] = ["--hook"]
+                hook_main()
+                return 0
+
+            return run_hook
+        if sys.argv[1:] == DANGEROUS_HOOK_ARGV:
+            from parrot.sdd.scripts.dangerous_actions import main as dangerous_main
+
+            def run_dangerous() -> int:
+                sys.argv[1:] = ["--hook"]
+                dangerous_main()
+                return 0
+
+            return run_dangerous
+        from parrot.cli import cli
+        return cli
+    return _dispatch("parrot", load)
+
+
+def main_wikitoolkit() -> int:
+    """``wikitoolkit`` console script (``parrot.knowledge.wiki.entry:main``; keeps the claude-hook fast path)."""
+    def load() -> Callable[[], Any]:
+        from parrot.knowledge.wiki.entry import main
+        return main
+    return _dispatch("wikitoolkit", load)
+
+
+def main_bookstore() -> int:
+    """``bookstore`` console script (``parrot.knowledge.bookstore.cli:main``)."""
+    def load() -> Callable[[], Any]:
+        from parrot.knowledge.bookstore.cli import main
+        return main
+    return _dispatch("bookstore", load)

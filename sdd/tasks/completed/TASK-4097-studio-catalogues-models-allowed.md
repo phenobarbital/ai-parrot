@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-634 — Agent Studio — UI Backend Gaps
 **Spec**: `sdd/specs/agentstudio-ui-backend-gaps.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M
 **Depends-on**: none

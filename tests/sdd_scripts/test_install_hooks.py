@@ -128,6 +128,7 @@ def test_block_never_fails_git(block: str) -> None:
     """Test that the rendered block contains safety guards so it never fails git operations."""
     assert "[ -d .git ]" in block
     assert "--daily --apply" in block
+    assert "-m parrot.sdd.scripts.prune_intake" in block
     assert "|| true" in block
 
 

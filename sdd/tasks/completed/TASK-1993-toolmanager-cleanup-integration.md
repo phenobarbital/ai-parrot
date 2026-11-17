@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-391 — Per-Tool Connection Lifecycle
 **Spec**: `sdd/specs/per-tool-connection.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-1991, TASK-1992

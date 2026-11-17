@@ -14,7 +14,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
-UsageBackend = Literal["none", "logging", "prometheus", "otel", "traceloop"]
+UsageBackend = Literal["none", "logging", "prometheus", "otel", "traceloop", "spec_usage"]
 
 logger = logging.getLogger(__name__)
 
@@ -98,11 +98,14 @@ class ObservabilityConfig(BaseModel):
         pricing_override_path: Path to a directory whose ``<provider>.json``
             files are deep-merged over bundled pricing. When ``None``,
             ``setup_telemetry`` reads the ``PARROT_PRICING_PATH`` env var.
+        spec_usage_root: Explicit absolute durable root for the ``spec_usage``
+            backend, or ``None`` to derive it from the main checkout.
         usage_backend: Selects the pluggable usage/token/cost recording path.
             ``"none"`` (default) records nothing. ``"logging"`` emits one
             structured log line per LLM call (zero infra). ``"prometheus"``
             exposes counters/histograms on an HTTP endpoint. ``"otel"`` delegates
-            to ``setup_telemetry`` (full OTLP traces + metrics). The auto-boot
+            to ``setup_telemetry`` (full OTLP traces + metrics). ``"spec_usage"``
+            appends attributed rows to a durable per-feature JSONL file. The auto-boot
             (``ensure_observability_bootstrapped``) resolves ``"none"`` to
             ``"logging"`` when ``enabled`` is ``True``.
         usage_log_level: Logging level for the ``logging`` backend's per-call
@@ -213,6 +216,7 @@ class ObservabilityConfig(BaseModel):
 
     # Cost pricing override (mirrors PARROT_PRICING_PATH env var)
     pricing_override_path: Optional[str] = None
+    spec_usage_root: Optional[str] = None  # FEAT-783: absolute durable root for SpecUsageRecorder
 
     # Pluggable usage/token/cost recording layer
     usage_backend: UsageBackend = "none"

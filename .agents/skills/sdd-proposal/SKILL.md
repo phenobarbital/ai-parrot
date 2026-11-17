@@ -5,10 +5,11 @@ description: Convert a thin Jira issue, inline request, or notes file into a res
 
 # SDD Proposal
 
-## Full procedure and Codex adaptations
+## Full procedure and host adaptations
 
 Before executing, read the [full sdd-proposal procedure](../../../.claude/commands/sdd-proposal.md)
-and the [Codex adaptation contract](../../../docs/sdd/CODEX.md#codex-adaptation-contract).
+and your host's adaptation contract: the [Codex adaptation contract](../../../docs/sdd/CODEX.md#codex-adaptation-contract)
+on Codex, or the [Antigravity adaptation contract](../../../docs/sdd/AGY.md#antigravity-adaptation-contract) on Google Antigravity (`agy`).
 Follow the full procedure for details omitted from this summary. The adaptation
 contract and the Codex-specific instructions below override Claude runtime syntax
 and legacy shell examples; retain all workflow gates and evidence requirements.
@@ -39,8 +40,7 @@ source -> research plan -> budgeted research -> synthesis -> review gate -> targ
 - Persist state under `sdd/state/<FEAT-ID>/`.
 - Do not write implementation code.
 - Commit only proposal and state files.
-- Fill frontmatter `projects` (parts of the codebase, vocabulary `KNOWN_PROJECTS` in
-  `scripts/sdd/sdd_meta.py`; unknown values warn) and `tags` (2–6 kebab-case keywords) — FEAT-576.
+- Fill frontmatter `projects` (parts of the codebase, vocabulary: the project areas in `sdd/CONVENTIONS.md` (§ Project areas), or the `projects` list in `sdd/config.json` when set; unknown values warn) and `tags` (2–6 kebab-case keywords) — FEAT-576.
 
 ## Inputs
 
@@ -96,7 +96,23 @@ forks (Claude Code). Codex has no forks: research always runs sequentially and
    - Read files before citing symbols.
    - Persist compact findings as
      `sdd/state/<FEAT-ID>/findings/FNNN-<slug>.md` using
-     `sdd/templates/finding.md`.
+     `sdd/templates/finding.md`; `<slug>` is lowercase `[a-z0-9-]` only
+     (`:`, `*`, `|`, quotes break Windows checkouts and fail
+     the repository's portable-path CI check).
+5b. Consult experts (optional, advisory — FEAT-890):
+   - Run `parrot sdd experts consult --doc <source-doc> [--feature <FEAT-ID>]`, where `<source-doc>` is the existing document the proposal is built from; skip this step when the request has no document yet.
+   - This is optional and non-blocking — it gathers advisory contributions from domain experts
+     before synthesis. The command writes findings to `sdd/state/.contributions/<doc-slug>/`.
+   - List findings: read each `<expert>.json` in the contributions directory.
+   - Record each decision with `parrot sdd experts triage <contribution> <finding-id> confirm|reject|escalate --reason "..."`;
+     a confirmed finding can later become an unreviewed decision with `parrot sdd experts promote <contribution> <finding-id>`.
+   - Triage each finding as CONFIRM, REJECT, or ESCALATE:
+     - CONFIRM: fold the finding into the synthesis with a reference to the contribution file.
+     - REJECT: note the rejection reason in a brief comment; do not include in synthesis.
+     - ESCALATE: move the finding to Open Questions — it requires human clarification.
+   - Promote contributions (if FEAT-ID is known): after triage, promote
+     `sdd/state/.contributions/<doc-slug>/` to `sdd/state/<FEAT-ID>/contributions/`
+     like design research.
 6. Synthesize:
    - Use source, plan, findings, and budget status.
    - Produce `sdd/state/<FEAT-ID>/synthesis.json`.

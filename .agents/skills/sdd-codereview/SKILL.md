@@ -5,10 +5,11 @@ description: Code review a completed SDD task against acceptance criteria, code 
 
 # SDD Code Review
 
-## Full procedure and Codex adaptations
+## Full procedure and host adaptations
 
 Before executing, read the [full sdd-codereview procedure](../../../.claude/commands/sdd-codereview.md)
-and the [Codex adaptation contract](../../../docs/sdd/CODEX.md#codex-adaptation-contract).
+and your host's adaptation contract: the [Codex adaptation contract](../../../docs/sdd/CODEX.md#codex-adaptation-contract)
+on Codex, or the [Antigravity adaptation contract](../../../docs/sdd/AGY.md#antigravity-adaptation-contract) on Google Antigravity (`agy`).
 Follow the full procedure for details omitted from this summary. The adaptation
 contract and the Codex-specific instructions below override Claude runtime syntax
 and legacy shell examples; retain all workflow gates and evidence requirements.
@@ -61,7 +62,7 @@ do not run task closure again on base_branch and do not clean worktrees with unk
    - **Documentation**: Docstrings, type annotations, clarity.
    - **Testing**: Test coverage against criteria, assertions, failure modes.
 4. Adversarial cross-check:
-   - Run external reviewer (`codex exec review`) or spawn a dedicated read-only subagent.
+   - Run the external reviewer (`codex exec review`) only when `reviewer` in `sdd/config.json` is `codex` and the `second-opinion` skill is installed; otherwise spawn a dedicated read-only subagent.
    - Supply only neutral brief: requirements, diff/commit, question.
    - Synthesize agreements and disagreements.
 5. Generate report:

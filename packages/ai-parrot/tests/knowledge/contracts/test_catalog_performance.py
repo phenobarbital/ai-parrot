@@ -11,7 +11,7 @@ Run it explicitly::
       python -m pytest packages/ai-parrot/tests/knowledge/contracts/test_catalog_performance.py -q -s
 
 Results are appended to ``artifacts/logs/task-3055.log`` and summarised in
-``docs/knowledge/contracts-performance.md``.
+``wiki/knowledge/contracts-performance.md``.
 """
 
 from __future__ import annotations

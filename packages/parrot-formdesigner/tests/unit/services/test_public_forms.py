@@ -1,7 +1,7 @@
 """Unit tests for public_form_paths helper (FEAT-241 M5, FEAT-421 tenant-qualified).
 
 Tests cover:
-- Returns exactly 5 paths
+- Returns exactly 7 paths (FEAT-730: + availability, + fields/*/file-upload)
 - Default base_path /api/v1
 - Custom base_path
 - Trailing slash stripped from base_path
@@ -16,13 +16,13 @@ from parrot_formdesigner.services.public_forms import public_form_paths
 
 
 class TestPublicFormPaths:
-    def test_returns_five_paths(self):
+    def test_returns_seven_paths(self):
         paths = public_form_paths("contact", "flexroc")
-        assert len(paths) == 5
+        assert len(paths) == 7
 
     def test_paths_are_tenant_qualified(self):
         paths = public_form_paths("abc-uid", "flexroc")
-        assert len(paths) == 5
+        assert len(paths) == 7
         assert all("/flexroc/forms/abc-uid" in p for p in paths)
         assert paths[0].endswith("/forms/abc-uid")
         assert any(p.endswith("/render/*") for p in paths)
@@ -59,6 +59,8 @@ class TestPublicFormPaths:
         assert paths[2] == f"{bp}/render/*"
         assert paths[3] == f"{bp}/data"
         assert paths[4] == f"{bp}/validate"
+        assert paths[5] == f"{bp}/availability"
+        assert paths[6] == f"{bp}/fields/*/file-upload"
 
     def test_different_form_ids(self):
         """Different form IDs produce different path sets with no overlap."""

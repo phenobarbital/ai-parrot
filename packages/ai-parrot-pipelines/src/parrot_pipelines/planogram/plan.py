@@ -52,7 +52,7 @@ from .types import (
 )
 
 ImageInput = Union[str, Path, Image.Image]
-MIGRATION_RUNBOOK = "docs/pipelines/planogram-cycle-migration.md"
+MIGRATION_RUNBOOK = "wiki/flows/pipelines/planogram-cycle-migration.md"
 _PRODUCT_TYPE_BY_KIND: Dict[ShapeKind, str] = {
     ShapeKind.PRODUCT: "product",
     ShapeKind.BOX: "product_box",

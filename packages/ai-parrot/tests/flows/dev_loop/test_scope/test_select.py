@@ -127,3 +127,19 @@ def test_merge_tier_tolerates_non_package_changed_files(repo):
         tier="merge",
     )
     assert any(t.path.startswith("packages/a/tests") for inv in plan.invocations for t in inv.targets)
+
+
+def test_declared_directory_operand_is_dropped_with_note(repo):
+    """A non-broad directory in a Validation Command never becomes a target (FEAT-830)."""
+    (repo / "packages/a/tests/unit").mkdir()
+    (repo / "packages/a/tests/unit/test_x.py").write_text("\n")
+    plan = plan_tests(
+        worktree=repo,
+        changed_files=[],
+        tier="task",
+        declared=[["pytest", "packages/a/tests/unit", "packages/a/tests/test_leaf.py", "-q"]],
+    )
+    paths = {t.path for inv in plan.invocations for t in inv.targets}
+    assert "packages/a/tests/unit" not in paths
+    assert "packages/a/tests/test_leaf.py" in paths
+    assert "declared path is a directory, dropped: packages/a/tests/unit" in plan.notes

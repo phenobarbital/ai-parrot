@@ -17,6 +17,7 @@ from parrot.flows.dev_loop.sdd_coder.complexity_collectors import (
     _collect_dependency_metrics,
     _collect_ruff_cyclomatic,
     _collect_wiki_blast,
+    _extract_task_id,
     _git_common_dir,
     _resolve_wiki_plane_root,
     _run_subprocess,
@@ -897,3 +898,24 @@ async def test_blast_resolves_a_real_linked_worktree_to_its_main_checkout(tmp_pa
         )
 
     assert metrics["blast_symbols"].state == "ok"
+
+
+@pytest.mark.parametrize(
+    ("header", "expected"),
+    [
+        ("# TASK-4424: route the blast collector", "TASK-4424"),
+        (
+            "# HOTFIX-NAV-7762-1: Commit the new-cycle rows for the two EcoTank End Cap planograms",
+            "HOTFIX-NAV-7762-1",
+        ),
+        ("# HOTFIX-97d065c34ef4-1 — honor all four credential signals", "HOTFIX-97d065c34ef4-1"),
+    ],
+)
+def test_extract_task_id_accepts_reserved_and_brief_ids(header, expected):
+    """Brief tasks (`HOTFIX-<KEY>-<n>`, FEAT-698) must not fail the complexity audit."""
+    assert _extract_task_id(f"{header}\n\nbody\n") == expected
+
+
+def test_extract_task_id_without_an_id_still_raises():
+    with pytest.raises(ValueError, match="Could not extract task ID"):
+        _extract_task_id("# Some title without an id\n\nbody\n")

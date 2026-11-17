@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import warnings
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 from typing import Annotated, Literal
@@ -111,10 +112,41 @@ class CoderFeedbackStore:
         await asyncio.to_thread(self.log.append, event)
         return CoderFeedbackReceipt(feedback_id=event.subject)
 
+    async def retract(self, feedback_id: str, reason: str, actor: str) -> bool:
+        """Withdraw a recorded correction by appending an ``insight.superseded`` tombstone.
+
+        The event log is append-only, so a misattributed lesson is never rewritten
+        out; replay simply drops every recording of ``feedback_id`` made before the
+        tombstone. A later recording of the same occurrence counts again.
+
+        Args:
+            feedback_id: The ``coder-feedback:<digest>`` subject to withdraw.
+            reason: Why the correction is wrong; kept for the audit trail.
+            actor: Who withdraws it, e.g. ``human:jesus``.
+
+        Returns:
+            ``True`` when a live record was retracted; ``False`` (nothing appended)
+            when ``feedback_id`` is unknown or already retracted.
+        """
+        live = {fb.feedback_id() for _ts, fb in await asyncio.to_thread(self._read)}
+        if feedback_id not in live:
+            return False
+        event = LedgerEvent(
+            kind="insight.superseded",
+            subject=feedback_id,
+            actor=actor,
+            payload={"category": "coder_feedback", "reason": reason, "retracted_by": actor},
+        )
+        await asyncio.to_thread(self.log.append, event)
+        return True
+
     def _read(self) -> list[tuple[str, CoderFeedback]]:
-        """Replay this plane only; duplicate recordings count once."""
+        """Replay this plane only; duplicate recordings count once; retractions drop earlier records."""
         records: dict[str, tuple[str, CoderFeedback]] = {}
         for event, _offset in self.log.iter_events():
+            if event.kind == "insight.superseded" and event.payload.get("category") == "coder_feedback":
+                records.pop(event.subject, None)
+                continue
             if event.kind != "insight.recorded" or event.payload.get("category") != "coder_feedback":
                 continue
             try:
@@ -126,6 +158,20 @@ class CoderFeedbackStore:
             records.setdefault(feedback.feedback_id(), (event.ts, feedback))
         return list(records.values())
 
+    def retracted_feedback_ids(self) -> set[str]:
+        """Return IDs whose current replay state is a feedback retraction.
+
+        A later record for the same stable occurrence restores it, matching
+        the append-only replay semantics used by :meth:`_read`.
+        """
+        active_ids = {feedback.feedback_id() for _timestamp, feedback in self._read()}
+        retracted_ids = {
+            event.subject
+            for event, _offset in self.log.iter_events()
+            if event.kind == "insight.superseded" and event.payload.get("category") == "coder_feedback"
+        }
+        return retracted_ids - active_ids
+
     async def context(
         self, backend: str, model: str, files: list[str], max_tokens: int = 1800, max_age_days: int = 90
     ) -> str:
@@ -135,6 +181,12 @@ class CoderFeedbackStore:
         can be prevented in newly created modules as well. Keep whole lessons
         within the estimated budget; never truncate their verification step.
         """
+        warnings.warn(
+            "max_age_days is deprecated; dynamics will own feedback ageing in a future release. "
+            "Its current filtering effect remains unchanged.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         if max_tokens <= 0 or max_age_days <= 0:
             return ""
         cutoff = datetime.now(timezone.utc) - timedelta(days=max_age_days)

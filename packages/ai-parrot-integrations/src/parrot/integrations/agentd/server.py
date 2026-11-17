@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
 import logging
 import os
 import pwd
@@ -24,6 +25,7 @@ import uuid
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from parrot.auth.permission import PermissionContext, build_principal_context
 from pydantic import ValidationError
@@ -211,6 +213,21 @@ class EventBroker:
                 self._subscribers.discard(session)
 
 
+def _normalize_server_url(url: str) -> str:
+    """Comparable form of a server base URL: lowercase scheme/host, no trailing slash."""
+    parts = urlsplit(url.strip())
+    return f"{parts.scheme.lower()}://{parts.netloc.lower()}{parts.path.rstrip('/')}"
+
+
+def _peer_login_file_exists(uid: int) -> bool:
+    """Whether ``uid``'s ``~/.parrot/login.json`` exists (symlinks count; they are rejected later)."""
+    try:
+        home = pwd.getpwuid(uid).pw_dir
+    except KeyError:
+        return False
+    return os.path.lexists(os.path.join(home, ".parrot", "login.json"))
+
+
 class JsonRpcUnixServer:
     """JSON-RPC 2.0 / NDJSON server over a Unix domain socket.
 
@@ -344,7 +361,8 @@ class JsonRpcUnixServer:
 
         Returns:
             A `(permission_context, identity_source)` tuple, where
-            `identity_source` is `"peercred"` or `"service_identity"`.
+            `identity_source` is `"login_file"`, `"peercred"` or
+            `"service_identity"`.
         """
         try:
             sock = writer.get_extra_info("socket")
@@ -352,6 +370,10 @@ class JsonRpcUnixServer:
                 raise OSError("no underlying socket available on this transport")
             _pid, uid, _gid = await asyncio.to_thread(_read_peercred, sock)
             username = await asyncio.to_thread(_uid_to_username, uid)
+            if self.service_identity.login_file_enabled:
+                resolved = await self._login_file_identity(uid, username)
+                if resolved is not None:
+                    return resolved, "login_file"
             return build_principal_context(username, channel="agentd"), "peercred"
         except (AttributeError, OSError, KeyError) as exc:
             self.logger.debug(
@@ -359,6 +381,47 @@ class JsonRpcUnixServer:
                 exc,
             )
             return self.service_identity.to_permission_context(), "service_identity"
+
+    async def _login_file_identity(self, uid: int, username: str) -> PermissionContext | None:
+        """Navigator principal from the peer's own login file (S11); ``None`` keeps peercred.
+
+        The login file is user-writable, so nothing in it is trusted beyond the bearer:
+        requests always go to the operator-configured ``login_file_server_url``, a record
+        naming any other server is ignored, and the store is read-only (no refresh, no
+        lock or temp file is ever created in the peer's directory).
+        """
+        trusted_url = self.service_identity.login_file_server_url
+        if not trusted_url:
+            return None
+        # Cheap pre-check so peers without a login file never pay for (or
+        # trigger) the heavy CLI/aiohttp imports below.
+        if not await asyncio.to_thread(_peer_login_file_exists, uid):
+            return None
+        from parrot.auth.oauth2.remote_client import ServerConnectionsClient
+        from parrot.cli.login import LoginFileError, LoginStore
+        from parrot.cli.principal import CliPrincipalResolver, build_cli_permission_context
+
+        try:
+            store = await asyncio.to_thread(functools.partial(LoginStore.for_uid, uid, read_only=True))
+            record = await asyncio.to_thread(store.load_optional, expected_uid=uid)
+        except (LoginFileError, KeyError, OSError) as exc:
+            self.logger.warning("Ignoring login file for uid %s: %s", uid, type(exc).__name__)
+            return None
+        if record is None:
+            return None
+        if _normalize_server_url(record.server_url) != _normalize_server_url(trusted_url):
+            self.logger.warning("Ignoring login file for uid %s: it names an untrusted server", uid)
+            return None
+        try:
+            async with ServerConnectionsClient(store, server_url=trusted_url) as client:
+                resolved = await CliPrincipalResolver(store, client).resolve_with_roles("agentd", username)
+        except Exception as exc:  # any failure keeps the peercred identity (AC-11)
+            self.logger.warning("Login-file principal lookup failed for uid %s: %s", uid, type(exc).__name__)
+            return None
+        if resolved is None:
+            return None
+        principal, roles = resolved
+        return build_cli_permission_context(principal, roles=roles)
 
     async def _handle_connection(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter

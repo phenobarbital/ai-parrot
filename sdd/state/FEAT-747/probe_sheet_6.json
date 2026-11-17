@@ -1,0 +1,286 @@
+[
+ {
+  "id": "c114",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/agent.py",
+  "name": "AgentContext",
+  "expected": "class AgentContext:  # Context passed between agents in orchestration.",
+  "expected_line": 20
+ },
+ {
+  "id": "c115",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/agent.py",
+  "name": "QuestionInput",
+  "expected": "class QuestionInput(BaseModel):",
+  "expected_line": 20
+ },
+ {
+  "id": "c116",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/agent.py",
+  "name": "AgentTool",
+  "expected": "class AgentTool(AbstractTool):  # Wraps any BasicAgent/AbstractBot as a tool",
+  "expected_line": 20
+ },
+ {
+  "id": "c40",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/execution_plan/models.py",
+  "name": "PlanRunMetadata",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c192",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/executors/policy.py",
+  "name": "ExecutionPolicy",
+  "expected": "class ExecutionPolicy(BaseModel):",
+  "expected_line": 147
+ },
+ {
+  "id": "c193",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "set_resolver",
+  "expected": "def set_resolver(self, resolver: \"AbstractPermissionResolver\") -> None:",
+  "expected_line": 443
+ },
+ {
+  "id": "c194",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "set_grant_guard",
+  "expected": "def set_grant_guard(self, guard: \"GrantGuard\") -> None:",
+  "expected_line": 528
+ },
+ {
+  "id": "c197",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "__init__",
+  "expected": "def __init__(self, logger=None, debug=False, include_search_tool=False,",
+  "expected_line": 289
+ },
+ {
+  "id": "c198",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "add_tool",
+  "expected": "def add_tool(self, tool: Union[ToolDefinition, AbstractTool], name: Optional[str] = None",
+  "expected_line": 827
+ },
+ {
+  "id": "c199",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "register_tool",
+  "expected": null,
+  "expected_line": 827
+ },
+ {
+  "id": "c200",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "register_toolkit",
+  "expected": "def register_toolkit(self, toolkit: Union[str, \"AbstractToolkit\", type], **kwargs)",
+  "expected_line": 1190
+ },
+ {
+  "id": "c201",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "unregister_tool",
+  "expected": "def unregister_tool(self, tool_name: str) -> bool:",
+  "expected_line": 1434
+ },
+ {
+  "id": "c202",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "clear_tools",
+  "expected": null,
+  "expected_line": 1434
+ },
+ {
+  "id": "c203",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "remove_tool",
+  "expected": "def remove_tool(self, tool_name: str) -> None:",
+  "expected_line": 1434
+ },
+ {
+  "id": "c204",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "execute_tool",
+  "expected": "async def execute_tool(",
+  "expected_line": 1787
+ },
+ {
+  "id": "c205",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "register_a2a_agent",
+  "expected": null,
+  "expected_line": 2302
+ },
+ {
+  "id": "c206",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "get_by_skill",
+  "expected": "def get_by_skill(self, skill: str) -> List[RegisteredAgent]:",
+  "expected_line": 2342
+ },
+ {
+  "id": "c207",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "get_by_tag",
+  "expected": null,
+  "expected_line": 2342
+ },
+ {
+  "id": "c208",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "search_a2a_agents",
+  "expected": null,
+  "expected_line": 2342
+ },
+ {
+  "id": "c209",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "execute_tool_call",
+  "expected": "async def execute_tool_call(",
+  "expected_line": 2403
+ },
+ {
+  "id": "c210",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "clone",
+  "expected": "def clone(self, *, include_search_tool: bool = False) -> \"ToolManager\":",
+  "expected_line": 2824
+ },
+ {
+  "id": "c211",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "list_shared_dataframes",
+  "expected": null,
+  "expected_line": 2934
+ },
+ {
+  "id": "c212",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "add_result_hook",
+  "expected": "def add_result_hook(self, fn: Callable[[str, Any, Dict[str, Any]], None])",
+  "expected_line": 2934
+ },
+ {
+  "id": "c213",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "cleanup_toolkits",
+  "expected": null,
+  "expected_line": 2934
+ },
+ {
+  "id": "c264",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "ToolManager",
+  "expected": "class ToolManager: __init__(self, logger, debug, include_search_tool, resolver, execution_policy)",
+  "expected_line": null
+ },
+ {
+  "id": "c265",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "ToolSchemaAdapter",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c266",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "ToolDefinition",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c267",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+  "name": "ToolNameCollisionError",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c275",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/pythonrepl.py",
+  "name": "inject_dataframe",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c274",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/repl_worker/handle.py",
+  "name": "inject_dataframe",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c271",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/repl_worker/transport.py",
+  "name": "encode_dataframe",
+  "expected": null,
+  "expected_line": 1
+ },
+ {
+  "id": "c272",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/repl_worker/transport.py",
+  "name": "decode_dataframe_from_shm",
+  "expected": null,
+  "expected_line": 1
+ },
+ {
+  "id": "c273",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/repl_worker/transport.py",
+  "name": "unlink_shm",
+  "expected": null,
+  "expected_line": 1
+ },
+ {
+  "id": "c291",
+  "kind": "absent",
+  "name": "polars",
+  "scope": "packages/ai-parrot/src/parrot/tools/working_memory"
+ },
+ {
+  "id": "c292",
+  "kind": "absent",
+  "name": "shared_memory",
+  "scope": "packages/ai-parrot/src/parrot/tools/working_memory"
+ },
+ {
+  "id": "c156",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/tools/working_memory/internals.py",
+  "name": "WorkingMemoryCatalog",
+  "expected": null,
+  "expected_line": null
+ }
+]

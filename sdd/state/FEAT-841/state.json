@@ -1,0 +1,163 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-841",
+  "feature_slug": "monitor-agent",
+  "started_at": "2026-11-07T01:13:33Z",
+  "updated_at": "2026-11-07T01:59:05Z",
+  "source": {
+    "kind": "file",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": "sdd/proposals/sdd-escrow.brainstorm.md",
+    "raw_path": "sdd/state/FEAT-841/source.md",
+    "fetched_at": "2026-11-07T01:13:33Z",
+    "summary_oneline": "Escrow monitor agent: hold the worktree until an external signed APPROVED verdict releases it; sdd-worker emits work.completed, /sdd-done refuses without it"
+  },
+  "mode": "auto",
+  "phase": "proposal_drafted",
+  "phases": {
+    "source": {
+      "status": "completed",
+      "started_at": "2026-11-07T01:13:33Z",
+      "completed_at": "2026-11-07T01:13:33Z"
+    },
+    "plan": {
+      "status": "completed",
+      "started_at": "2026-11-07T01:16:26Z",
+      "completed_at": "2026-11-07T01:16:26Z",
+      "queries_total": 48,
+      "approved_by_user": true,
+      "edited_by_user": false,
+      "plan_path": "sdd/state/FEAT-841/research_plan.json",
+      "wiki_available": true,
+      "user_notes": "gate auto-approved: unattended session (/sdd-proposal launched without an operator at the terminal); plan printed in the transcript"
+    },
+    "research": {
+      "status": "completed",
+      "started_at": "2026-11-07T01:16:26Z",
+      "completed_at": "2026-11-07T01:27:56Z",
+      "parallel": {
+        "enabled": true,
+        "fallback_reason": null,
+        "lanes": {
+          "codebase": {
+            "status": "completed",
+            "started_at": "2026-11-07T01:16:26Z",
+            "completed_at": "2026-11-07T01:27:56Z",
+            "duration_seconds": 591,
+            "findings_count": 25,
+            "queries_executed": 27,
+            "queries_skipped": 0,
+            "error": null
+          },
+          "git": {
+            "status": "completed",
+            "started_at": "2026-11-07T01:16:26Z",
+            "completed_at": "2026-11-07T01:27:56Z",
+            "duration_seconds": 134,
+            "findings_count": 7,
+            "queries_executed": 7,
+            "queries_skipped": 0,
+            "error": null
+          },
+          "wiki": {
+            "status": "completed",
+            "started_at": "2026-11-07T01:16:26Z",
+            "completed_at": "2026-11-07T01:27:56Z",
+            "duration_seconds": 424,
+            "findings_count": 12,
+            "queries_executed": 14,
+            "queries_skipped": 0,
+            "error": null
+          }
+        },
+        "merge": {
+          "started_at": "2026-11-07T01:27:03Z",
+          "completed_at": "2026-11-07T01:27:03Z",
+          "input_count": 44,
+          "output_count": 39,
+          "merged_count": 5,
+          "audit_dir": "findings/.audit"
+        }
+      },
+      "duration_seconds": 591,
+      "queries_executed": 48,
+      "queries_skipped": 0,
+      "depth_reached": 2,
+      "files_read": 25,
+      "grep_calls": 13,
+      "git_calls": 10,
+      "truncated": false,
+      "truncation_reason": null,
+      "lane_note": "codebase lane 23 reads + 2 depth-1 follow-ups; wiki lane 2 reads + 3 greps; git lane used all 10 git calls (7 planned + 3 git show)",
+      "citation_probe": {
+        "mode": "inline deterministic script",
+        "checks": 221,
+        "verified": 221,
+        "adjudicated_by_read": 9,
+        "stale": 0,
+        "missing": 0,
+        "report": "findings/.audit/citation_probe.json"
+      }
+    },
+    "synthesis": {
+      "status": "completed",
+      "started_at": "2026-11-07T01:27:56Z",
+      "completed_at": "2026-11-07T01:32:11Z",
+      "synthesis_path": "sdd/state/FEAT-841/synthesis.json",
+      "thinking_path": "sdd/state/FEAT-841/synthesis.thinking.log",
+      "overall_confidence": "medium",
+      "claims_total": 18,
+      "claims_high_conf": 15,
+      "claims_medium_conf": 3,
+      "claims_low_conf": 0,
+      "unknowns_count": 5,
+      "lint_passed": true,
+      "lint_iterations": 1,
+      "review_gate": {
+        "status": "completed",
+        "completed_at": "2026-11-07T01:32:11Z",
+        "decision": "auto-passed: unattended session, summary printed in the transcript; not validated by the user"
+      }
+    },
+    "qa": {
+      "status": "completed",
+      "started_at": "2026-11-07T01:32:11Z",
+      "completed_at": "2026-11-07T01:59:05Z",
+      "questions_total": 5,
+      "questions_answered": 5,
+      "skipped_reason": null,
+      "note": "answered interactively by the owner after the unattended research run"
+    },
+    "output": {
+      "status": "completed",
+      "started_at": "2026-11-07T01:34:32Z",
+      "completed_at": "2026-11-07T01:34:32Z",
+      "proposal_path": "sdd/proposals/monitor-agent.proposal.md",
+      "commit_sha": "af145e5201",
+      "commit_note": "proposal introduced by af145e5201; Q&A resolution commit follows",
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "brainstorm already settled the architecture; U1-U5 are policy decisions for the spec's Open Questions"
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 25,
+    "grep_calls": 13,
+    "git_calls": 10,
+    "wall_seconds": 591
+  },
+  "errors": [],
+  "resume_hint": {
+    "next_phase": "committed",
+    "next_action": "commit Q&A resolution, then /sdd-spec FEAT-841"
+  },
+  "detected_mode": "enrichment"
+}

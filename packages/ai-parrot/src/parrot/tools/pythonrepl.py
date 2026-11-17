@@ -219,7 +219,7 @@ class PythonREPLTool(AbstractTool):
         sanitize_input_enabled: bool = True,
         debug: bool = False,
         policy=None,  # FEAT-252 (TASK-1614): PythonExecutionPolicy | None
-        executor_max_workers: int = 4,
+        executor_max_workers: Optional[int] = None,
         worker_config=None,  # FEAT-380 Module 5: repl_worker.protocol.WorkerConfig | None
         execution_mode: Optional[str] = None,
         **kwargs,
@@ -236,6 +236,9 @@ class PythonREPLTool(AbstractTool):
             policy: ``PythonExecutionPolicy`` for the allowlist-first AST gate.
                 Defaults to ``general_profile()``.
             executor_max_workers: Size of the dedicated thread pool used to run
+                (``None`` auto-sizes it to the ``WorkerPool`` capacity:
+                ``_effective_ceiling(cfg) + cfg.prewarm_pool_size`` with
+                ``cfg = worker_config or WorkerConfig()``; an explicit int is used as-is)
                 generated code (FEAT-380 Module 1 / AC1). A runaway loop then
                 only exhausts this REPL-scoped pool instead of the framework's
                 shared default executor. Kept for the palliative that shipped
@@ -283,6 +286,15 @@ class PythonREPLTool(AbstractTool):
         # FEAT-380 Module 1 (AC1): dedicated, bounded executor for generated
         # code — a runaway loop then only hijacks this REPL-scoped pool
         # instead of the framework's shared default ThreadPoolExecutor.
+        if executor_max_workers is None:
+            # Lazy imports: avoid import cycles with the repl_worker package.
+            from parrot.tools.repl_worker import WorkerPool
+            from parrot.tools.repl_worker.protocol import WorkerConfig
+
+            _cfg = worker_config or WorkerConfig()
+            executor_max_workers = (
+                WorkerPool._effective_ceiling(_cfg) + _cfg.prewarm_pool_size
+            )
         self._repl_executor = ThreadPoolExecutor(
             max_workers=executor_max_workers,
             thread_name_prefix="python-repl",

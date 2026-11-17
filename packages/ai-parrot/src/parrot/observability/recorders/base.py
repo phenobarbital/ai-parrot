@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from parrot.observability.recorders.models import UsageRecord
+from parrot.observability.recorders.models import CapabilityCallRecord, UsageRecord
 
 
 class AbstractLogger(ABC):
@@ -35,6 +35,14 @@ class AbstractLogger(ABC):
             record: The per-call ``UsageRecord`` to persist/emit.
         """
         raise NotImplementedError
+
+    async def record_capability(self, record: CapabilityCallRecord) -> None:
+        """Record one capability call (FEAT-746). Default is a no-op; backends opt in.
+
+        Args:
+            record: The ``CapabilityCallRecord`` to persist/emit.
+        """
+        return None
 
     async def aclose(self) -> None:
         """Flush and release any resources. Default implementation is a no-op.

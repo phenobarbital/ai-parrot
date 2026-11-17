@@ -4,24 +4,22 @@ from pkgutil import extend_path
 
 __path__ = extend_path(__path__, __name__)
 
-# FEAT-403: local MCP server hierarchy (tool adapter, resources, JSON-RPC
-# server base, and the stdio transport) — zero external deps, always
-# available in core, and always imported eagerly (unlike everything below).
-from .adapter import MCPToolAdapter
-from .resources import MCPResource
-from .server_base import MCPServerBase, LocalServerConfig
-from .local_server import LocalMCPServerBase, StdioMCPServer
-
-# FEAT-477: agent-method MCP exposure declaration + reification. Core-only
-# (G9) — zero ai-parrot-server deps, so eager alongside the other zero-dep
-# modules above.
-from .agent_tools import (
-    MCP_TOOL_ATTR,
-    AgentMethodTool,
-    MCPToolDeclaration,
-    build_exposure_set,
-    mcp_tool,
-)
+# Resolve local MCP exports lazily too: adapters and agent tools import
+# AbstractTool, whose configuration imports can write to stdout and change cwd.
+# The stdio CLI must capture its project root and redirect diagnostics first.
+_LOCAL_CLASSES = {
+    "MCPToolAdapter": ".adapter",
+    "MCPResource": ".resources",
+    "MCPServerBase": ".server_base",
+    "LocalServerConfig": ".server_base",
+    "LocalMCPServerBase": ".local_server",
+    "StdioMCPServer": ".local_server",
+    "MCP_TOOL_ATTR": ".agent_tools",
+    "AgentMethodTool": ".agent_tools",
+    "MCPToolDeclaration": ".agent_tools",
+    "build_exposure_set": ".agent_tools",
+    "mcp_tool": ".agent_tools",
+}
 
 # Consumer-side classes (stay in core) — resolved lazily via __getattr__
 # below. `.integration` imports `navconfig` (which chdir()s to the
@@ -75,10 +73,11 @@ _SERVER_CLASSES = {
 
 
 def __getattr__(name: str):
-    if name in _CORE_CLASSES:
+    if name in _LOCAL_CLASSES or name in _CORE_CLASSES:
         import importlib
 
-        mod = importlib.import_module(_CORE_CLASSES[name], package=__name__)
+        module_path = (_LOCAL_CLASSES | _CORE_CLASSES)[name]
+        mod = importlib.import_module(module_path, package=__name__)
         return getattr(mod, name)
     if name in _SERVER_CLASSES:
         from parrot._imports import load_satellite_attr

@@ -61,6 +61,14 @@ mcp = [
     "PyYAML>=6.0.2",
 ]
 
+# E2E screencast recorder (FEAT-762): PyAV encodes CDP screencast frames to
+# WebM (libvpx VP8); Pillow decodes the JPEG frames. Install with
+# `pip install ai-parrot-server[screencast]`.
+screencast = [
+    "av>=13.0.0,<14.0.0",
+    "pillow>=13.0.0",
+]
+
 # A2A server (optional JWT auth)
 a2a = [
     "PyJWT>=2.8.0",
@@ -85,9 +93,15 @@ comm-center = [
     "openpyxl>=3.1.2,<=3.1.5",
 ]
 
+# Passkey (WebAuthn) sign-in for the Admin UI (FEAT-772): navigator-auth's
+# PasskeyAuth backend + py_webauthn. 0.28.9 is the first release shipping it.
+passkey = [
+    "navigator-auth[passkey]>=0.28.9",
+]
+
 # Aggregator: all server extras
 all = [
-    "ai-parrot-server[scheduler,mcp,a2a,autonomous,comm-center]",
+    "ai-parrot-server[scheduler,mcp,a2a,autonomous,comm-center,passkey]",
 ]
 
 [project.scripts]
@@ -100,6 +114,13 @@ parrot-studio-migrate = "parrot.handlers.studio.storage.migrate:main"
 parrot_users_bots = "parrot.handlers.models.vault_target:factory"
 parrot_studio_user_credentials = "parrot.handlers.studio.storage.vault_targets:user_credentials_factory"
 parrot_studio_user_llm_keys = "parrot.handlers.studio.storage.vault_targets:user_llm_keys_factory"
+
+[project.entry-points."parrot.migrations"]
+ui_surfaces = "parrot.server.migrations.providers:ui_surfaces_set"
+crew_definitions = "parrot.server.migrations.providers:crew_definitions_set"
+metric_definitions = "parrot.server.migrations.providers:metric_definitions_set"
+recipes = "parrot.server.migrations.providers:recipes_set"
+scheduler = "parrot.server.migrations.providers:scheduler_set"
 
 [project.urls]
 Homepage = "https://github.com/phenobarbital/ai-parrot"
@@ -120,6 +141,7 @@ namespaces = true
 "parrot.handlers.models" = ["*.sql"]
 "parrot.handlers.studio.storage.migrations" = ["*.sql", "MANIFEST.json"]
 "parrot.mcp.transports" = ["*.proto"]
+"parrot.server.migrations" = ["sql/*/*.sql"]
 # Embedded Admin UI (FEAT-468): built by release CI (Node 24 LTS + pnpm 9)
 # into src/parrot/server/ui/dist/ before `uv build`; never committed to git.
 # Globs are non-recursive per key — list every Vite output dir explicitly

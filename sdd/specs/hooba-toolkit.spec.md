@@ -768,8 +768,16 @@ Pydantic model's `model_dump(mode="json")`.
   def write_manifest(m: ImportManifest) -> Path:
       """Atomic write (tmp + os.replace), mode 0o600, dir 0o700 — same hardening as ingest._write_import_manifest.
       Sync helper; callers await it via asyncio.to_thread (S10)."""
-  def reconcile(m: ImportManifest, planned_rows: int) -> Dict[str, Any]:
-      """{'rows_in', 'drafts_out', 'skipped', 'delta', 'reconciled'} — reconciled iff delta == 0."""
+  def reconcile(m: ImportManifest) -> Dict[str, Any]:
+      """{'rows_in', 'drafts_out', 'skipped', 'delta', 'reconciled'} — reconciled iff delta == 0.
+      `rows_in` MUST come from the manifest/bundle-level stable total (`m.row_count`, persisted once when the
+      manifest is first created), NEVER from a per-call remainder such as this run's newly-planned row count:
+      `m.completed`/`m.skipped` are cumulative across every run, so a remainder-based `rows_in` makes a
+      correctly-resumed or fully-complete re-run falsely report `reconciled=False`. Same convention as
+      business_automation/ingest.py:reconcile() (`bundle.row_count`, never `registrations_out` alone).
+      NOTE (FEAT-602 post-fix): this signature originally declared a second `planned_rows: int` argument, and
+      TASK-3739's implementer faithfully sourced `rows_in` from it — the CRITICAL defect fixed in 9c4ba8f6f2.
+      The argument is gone; any future spec reusing this pattern must not reintroduce it."""
   ```
 
 ### Module 9: Deductibility rule engine and v1 YAML

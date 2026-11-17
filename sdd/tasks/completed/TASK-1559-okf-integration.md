@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-238 — OKF Knowledge Layer over PageIndex
 **Spec**: `sdd/specs/okf-knowledge-layer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: XL (> 8h)
 **Depends-on**: TASK-1552, TASK-1553, TASK-1554, TASK-1555, TASK-1556, TASK-1557, TASK-1558

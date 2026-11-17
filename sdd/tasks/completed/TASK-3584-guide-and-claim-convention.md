@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-586 — Public Install & Getting-Started Guide for AI-Parrot
 **Spec**: `sdd/specs/parrot-install-guide.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: none

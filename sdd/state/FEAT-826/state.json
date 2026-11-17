@@ -1,0 +1,170 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-826",
+  "feature_slug": "fix-planogram-compliance",
+  "started_at": "2026-11-06T15:57:17Z",
+  "updated_at": "2026-11-06T16:51:33Z",
+  "source": {
+    "kind": "jira",
+    "jira_key": "NAV-7762",
+    "jira_url": "https://trocglobal.atlassian.net/browse/NAV-7762",
+    "file_path": null,
+    "raw_path": "sdd/state/FEAT-826/source.md",
+    "fetched_at": "2026-11-06T15:57:17Z",
+    "summary_oneline": "Epson360 Planogram Compliance \u2014 Office Depot EcoTank End Cap Backlit / Not Backlit planograms (Reopened 2026-10-21)"
+  },
+  "mode": "auto",
+  "phase": "committed",
+  "phases": {
+    "source": {
+      "status": "completed",
+      "started_at": "2026-11-06T15:57:17Z",
+      "completed_at": "2026-11-06T15:57:17Z"
+    },
+    "plan": {
+      "status": "completed",
+      "started_at": "2026-11-06T15:58:18Z",
+      "queries_total": 35,
+      "approved_by_user": true,
+      "edited_by_user": false,
+      "plan_path": "sdd/state/FEAT-826/research_plan.json",
+      "wiki_available": true,
+      "completed_at": "2026-11-06T16:01:06Z",
+      "user_notes": "budget raised to loose at the plan gate; reopen cause unknown to the user \u2014 research decides"
+    },
+    "research": {
+      "status": "completed",
+      "started_at": "2026-11-06T16:01:06Z",
+      "parallel": {
+        "enabled": true,
+        "fallback_reason": null,
+        "lanes": {
+          "codebase": {
+            "status": "completed",
+            "started_at": "2026-11-06T16:01:06Z",
+            "completed_at": "2026-11-06T16:12:35Z",
+            "duration_seconds": 689,
+            "findings_count": 23,
+            "queries_executed": 25,
+            "queries_skipped": 0,
+            "error": null
+          },
+          "git": {
+            "status": "completed",
+            "started_at": "2026-11-06T16:01:06Z",
+            "completed_at": "2026-11-06T16:04:16Z",
+            "duration_seconds": 190,
+            "findings_count": 8,
+            "queries_executed": 7,
+            "queries_skipped": 0,
+            "error": null
+          },
+          "wiki": {
+            "status": "completed",
+            "started_at": "2026-11-06T16:01:06Z",
+            "completed_at": "2026-11-06T16:10:51Z",
+            "duration_seconds": 585,
+            "findings_count": 9,
+            "queries_executed": 9,
+            "queries_skipped": 0,
+            "error": null
+          }
+        },
+        "merge": {
+          "started_at": "2026-11-06T16:17:33Z",
+          "completed_at": "2026-11-06T16:17:33Z",
+          "input_count": 40,
+          "output_count": 30,
+          "merged_count": 10,
+          "audit_dir": "findings/.audit"
+        }
+      },
+      "completed_at": "2026-11-06T16:19:37Z",
+      "duration_seconds": 689,
+      "queries_executed": 44,
+      "queries_skipped": 0,
+      "depth_reached": 2,
+      "files_read": 33,
+      "grep_calls": 42,
+      "git_calls": 21,
+      "truncated": true,
+      "truncation_reason": "git budget exhausted (21 of 20 calls: 20 in the git lane plus one `git log -1` in the flowtask repo by the codebase lane); two git follow-ups in the flowtask repository (history of the slots_definition requirement and of the report renderer) were not run. All 35 planned queries executed.",
+      "followups_by_parent": "FC-023 (row columns, backups), F031 (projection fields), F032 (reporting policy) were run by the parent after the lanes",
+      "db_checks": "none: local docker_postgres_1 was stopped; no dev or prod database was contacted",
+      "citation_probe": {
+        "mode": "inline script (deterministic file/line/symbol/excerpt/commit checks) instead of sdd-contract-probe agents",
+        "checks": 299,
+        "verified": 299,
+        "adjudicated_by_read": 8,
+        "stale": 0,
+        "missing": 0,
+        "report": "findings/.audit/citation_probe.json"
+      }
+    },
+    "synthesis": {
+      "status": "completed",
+      "started_at": "2026-11-06T16:19:37Z",
+      "completed_at": "2026-11-06T16:23:17Z",
+      "synthesis_path": "sdd/state/FEAT-826/synthesis.json",
+      "thinking_path": "sdd/state/FEAT-826/synthesis.thinking.log",
+      "overall_confidence": "medium",
+      "claims_total": 20,
+      "claims_high_conf": 13,
+      "claims_medium_conf": 4,
+      "claims_low_conf": 3,
+      "unknowns_count": 5,
+      "lint_passed": true,
+      "lint_iterations": 1,
+      "review_gate": {
+        "status": "completed",
+        "completed_at": "2026-11-06T16:49:16Z",
+        "decision": "validated by user"
+      }
+    },
+    "qa": {
+      "status": "completed",
+      "started_at": "2026-11-06T16:49:16Z",
+      "completed_at": "2026-11-06T16:49:16Z",
+      "questions_total": 5,
+      "questions_answered": 5,
+      "skipped_reason": null
+    },
+    "output": {
+      "status": "completed",
+      "started_at": "2026-11-06T16:51:33Z",
+      "completed_at": "2026-11-06T16:51:33Z",
+      "proposal_path": "sdd/proposals/fix-planogram-compliance.proposal.md",
+      "commit_sha": null,
+      "commit_note": "the commit that introduces this file on dev; pushed from a clean clone of origin/dev",
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "the user's answers closed the three scope forks and confirmed the reopen reason and the production state; localization is high-confidence"
+    }
+  },
+  "budget": {
+    "profile": "loose",
+    "max_files_read": 100,
+    "max_grep_calls": 60,
+    "max_git_calls": 20,
+    "max_depth": 3,
+    "max_wall_seconds": 900
+  },
+  "consumed": {
+    "files_read": 33,
+    "grep_calls": 42,
+    "git_calls": 21,
+    "wall_seconds": 689
+  },
+  "errors": [
+    {
+      "phase": "source",
+      "at": "2026-11-06T15:57:17Z",
+      "recoverable": true,
+      "message": "FEAT-ID reservation was deferred: reserve_ids refused to run in the shared dev checkout (uncommitted changes from another session). State was staged id-less under sdd/state/.intake/ and FEAT-826 was reserved before rendering from a clean scratch clone of origin/dev."
+    }
+  ],
+  "resume_hint": {
+    "next_phase": "done",
+    "next_action": "/sdd-spec FEAT-826"
+  },
+  "detected_mode": "investigation"
+}

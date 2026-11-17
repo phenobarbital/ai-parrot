@@ -8,11 +8,33 @@ from pathlib import Path
 
 import pytest
 
+from parrot.flows.dev_loop.native_artifacts import NativeSyncReport
 from scripts.sdd.ensure_worktree import EnsureWorktreeError, ensure, main
 from scripts.sdd.sdd_meta import FlowMeta, plan_worktree
 
 SLUG = "demo-feature"
 FEATURE_ID = "FEAT-999"
+
+
+def _declare_stub_group(repo: Path, artifact_rel: str) -> None:
+    """Declare one simple native artifact group for an isolated CLI test repo."""
+    (repo / "pyproject.toml").write_text(
+        "\n".join(
+            [
+                "[tool.parrot.worktree]",
+                "enabled = true",
+                "",
+                "[[tool.parrot.worktree.native_group]]",
+                'name = "stub"',
+                f'copy_globs = ["{artifact_rel}"]',
+                "required = true",
+                "autobuild = false",
+                'manual_hint = "build the stub manually"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
 
 
 @pytest.fixture
@@ -57,6 +79,12 @@ def _plan(branch: str = "dev"):
     return plan_worktree(FlowMeta(type="feature", base_branch=branch), slug=SLUG, feature_id=FEATURE_ID)
 
 
+@pytest.fixture(autouse=True)
+def _default_worktree_root(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep plan paths independent of a caller's worktree-root environment."""
+    monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
+
+
 def test_ensure_creates_worktree_when_absent(tmp_git_repo: Path) -> None:
     """First call creates the branch and the directory and reports created=True."""
     path, created = ensure(_plan(), repo_root=tmp_git_repo)
@@ -81,6 +109,54 @@ def test_ensure_is_idempotent(tmp_git_repo: Path) -> None:
     )
     lines = [line.strip() for line in res.stdout.splitlines() if line.strip()]
     assert len(lines) == 1
+
+
+def test_ensure_reuse_exact_target_only(tmp_git_repo: Path) -> None:
+    """Only the configured target is reusable; legacy worktrees are unrelated."""
+    plan = _plan()
+    legacy_path = tmp_git_repo / ".claude" / "worktrees" / "unrelated"
+    subprocess.run(
+        ["git", "worktree", "add", "-q", "-b", "unrelated-branch", str(legacy_path), "origin/dev"],
+        cwd=tmp_git_repo,
+        check=True,
+    )
+
+    created_path, created = ensure(plan, repo_root=tmp_git_repo)
+    assert created is True
+    assert created_path == (tmp_git_repo / ".parrot" / "worktrees" / plan.name).resolve()
+
+    reused_path, reused = ensure(plan, repo_root=tmp_git_repo)
+    assert reused is False
+    assert reused_path == created_path
+
+
+def test_ensure_rejects_legacy_registration(tmp_git_repo: Path) -> None:
+    """The planned branch registered at the legacy path fails before any write."""
+    plan = _plan()
+    legacy_path = tmp_git_repo / ".claude" / "worktrees" / plan.name
+    target_path = (tmp_git_repo / plan.path).resolve()
+    subprocess.run(
+        ["git", "worktree", "add", "-q", "-b", plan.name, str(legacy_path), "origin/dev"],
+        cwd=tmp_git_repo,
+        check=True,
+    )
+
+    for dry_run in (True, False):
+        with pytest.raises(EnsureWorktreeError) as exc_info:
+            ensure(plan, repo_root=tmp_git_repo, dry_run=dry_run)
+        message = str(exc_info.value)
+        assert str(legacy_path.resolve()) in message
+        assert str(target_path) in message
+        assert "parrot self doctor" in message
+    assert not target_path.exists()
+
+
+def test_ensure_worktree_creates_under_parrot(tmp_git_repo: Path) -> None:
+    """The default resolver creates feature worktrees below ``.parrot``."""
+    plan = _plan()
+    path, created = ensure(plan, repo_root=tmp_git_repo)
+    assert created is True
+    assert path == (tmp_git_repo / ".parrot" / "worktrees" / plan.name).resolve()
 
 
 def test_ensure_rejects_path_with_foreign_branch(tmp_git_repo: Path) -> None:
@@ -121,6 +197,89 @@ def test_ensure_requires_paths_visible(tmp_git_repo: Path) -> None:
     # Assert that the half-created worktree is not left behind
     target_path = (tmp_git_repo / plan.path).resolve()
     assert not target_path.exists()
+
+
+def _git_out(repo: Path, *args: str) -> str:
+    return subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+
+
+def _commit_file(repo: Path, rel: str, text: str, message: str) -> None:
+    path = repo / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    subprocess.run(["git", "add", rel], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", message], cwd=repo, check=True)
+
+
+def _diverge_local_dev(work: Path, tmp_path: Path) -> None:
+    """Push a commit to origin/dev from another clone and add a local-only one on dev.
+
+    Local ``dev`` then no longer contains ``origin/dev``, which is the state an
+    unpushed ``/sdd-task`` commit next to a pushed ID reservation leaves behind.
+    """
+    origin = _git_out(work, "remote", "get-url", "origin")
+    other = tmp_path / "other"
+    subprocess.run(["git", "clone", "-q", "-b", "dev", origin, str(other)], check=True)
+    subprocess.run(["git", "config", "user.email", "o@example.com"], cwd=other, check=True)
+    subprocess.run(["git", "config", "user.name", "Other"], cwd=other, check=True)
+    _commit_file(other, "sdd/tasks/.id_ledger.json", "{}", "sdd: reserve ids")
+    subprocess.run(["git", "push", "-q", "origin", "dev"], cwd=other, check=True)
+    _commit_file(work, "sdd/tasks/index/local-only.json", "{}", "sdd: add tasks (unpushed)")
+
+
+def test_failed_verification_with_diverged_base_is_retryable(tmp_git_repo: Path, tmp_path: Path) -> None:
+    """issue:e493230f1b6a — the discarded branch must not survive and block every retry.
+
+    ``git branch -d`` refused it ("not fully merged") because local ``dev`` had
+    diverged from ``origin/dev``, so Step 3 rejected each later attempt.
+    """
+    _diverge_local_dev(tmp_git_repo, tmp_path)
+    plan = _plan()
+
+    for _attempt in range(2):
+        with pytest.raises(EnsureWorktreeError) as exc_info:
+            ensure(plan, repo_root=tmp_git_repo, require_paths=["sdd/tasks/index/absent.json"])
+        assert "Verification failed" in str(exc_info.value)
+        assert "already exists" not in str(exc_info.value)
+        assert _git_out(tmp_git_repo, "branch", "--list", plan.name) == ""
+
+
+def test_discard_keeps_branch_that_gained_commits(tmp_git_repo: Path) -> None:
+    """The cleanup is a compare-and-swap: a branch with work of its own is kept."""
+    from scripts.sdd.ensure_worktree import _discard_new_worktree
+
+    plan = _plan()
+    target = (tmp_git_repo / plan.path).resolve()
+    start_sha = _git_out(tmp_git_repo, "rev-parse", "origin/dev")
+    subprocess.run(
+        ["git", "worktree", "add", "-q", "-b", plan.name, str(target), "origin/dev"], cwd=tmp_git_repo, check=True
+    )
+    _commit_file(target, "work.txt", "real work", "own commit")
+    own_sha = _git_out(target, "rev-parse", "HEAD")
+
+    _discard_new_worktree(plan, target, start_sha, repo_root=tmp_git_repo)
+
+    assert not target.exists()
+    assert _git_out(tmp_git_repo, "rev-parse", f"refs/heads/{plan.name}") == own_sha
+
+
+def test_verification_error_names_unpushed_base(tmp_git_repo: Path) -> None:
+    """issue:c34721a5b110 — a path committed only on local dev gets a push hint."""
+    _commit_file(tmp_git_repo, "sdd/tasks/index/new-feature.json", "{}", "sdd: add tasks (unpushed)")
+    with pytest.raises(EnsureWorktreeError) as exc_info:
+        ensure(_plan(), repo_root=tmp_git_repo, require_paths=["sdd/tasks/index/new-feature.json"])
+    message = str(exc_info.value)
+    assert "Verification failed" in message
+    assert "1 commit ahead of origin/dev" in message
+    assert "git push origin dev" in message
+
+
+def test_verification_error_has_no_hint_when_local_base_lacks_path(tmp_git_repo: Path) -> None:
+    """No push hint when local dev is ahead but does not carry the missing path."""
+    _commit_file(tmp_git_repo, "unrelated.txt", "x", "unrelated local commit")
+    with pytest.raises(EnsureWorktreeError) as exc_info:
+        ensure(_plan(), repo_root=tmp_git_repo, require_paths=["sdd/tasks/index/absent.json"])
+    assert "git push" not in str(exc_info.value)
 
 
 def test_ensure_dry_run_mutates_nothing(tmp_git_repo: Path) -> None:
@@ -175,6 +334,106 @@ def test_json_output_includes_worktree_path_alias(tmp_git_repo: Path, capsys, mo
     data = json.loads(out.strip())
     assert "worktree_path" in data
     assert data["worktree_path"] == data["path"]
+
+
+def test_main_syncs_on_create_and_reuse(tmp_git_repo: Path, monkeypatch, capsys) -> None:
+    """The artifact lands in the new worktree, and reuse re-syncs a changed one."""
+    artifact_rel = "native/stub.bin"
+    source = tmp_git_repo / artifact_rel
+    source.parent.mkdir(parents=True)
+    source.write_text("first", encoding="utf-8")
+    _declare_stub_group(tmp_git_repo, artifact_rel)
+    monkeypatch.chdir(tmp_git_repo)
+
+    assert main(["--slug", SLUG, "--feature-id", FEATURE_ID]) == 0
+    created_path = Path(capsys.readouterr().out.strip())
+    copied = created_path / artifact_rel
+    assert copied.read_text(encoding="utf-8") == "first"
+
+    source.write_text("second", encoding="utf-8")
+    assert main(["--slug", SLUG, "--feature-id", FEATURE_ID]) == 0
+    reused_path = Path(capsys.readouterr().out.strip())
+    assert reused_path == created_path
+    assert copied.read_text(encoding="utf-8") == "second"
+
+
+def test_main_stdout_is_only_the_path(tmp_git_repo: Path, monkeypatch, capsys) -> None:
+    """Warnings go to stderr while stdout contains exactly the worktree path."""
+    _declare_stub_group(tmp_git_repo, "native/missing.bin")
+    monkeypatch.chdir(tmp_git_repo)
+
+    assert main(["--slug", SLUG, "--feature-id", FEATURE_ID]) == 0
+    out, err = capsys.readouterr()
+    assert out.count("\n") == 1
+    assert Path(out.strip()).is_dir()
+    assert err.startswith("warning: stub:")
+
+
+def test_main_json_carries_native_report(tmp_git_repo: Path, monkeypatch, capsys) -> None:
+    """--json exposes every documented native report field."""
+    artifact_rel = "native/stub.bin"
+    source = tmp_git_repo / artifact_rel
+    source.parent.mkdir(parents=True)
+    source.write_text("artifact", encoding="utf-8")
+    _declare_stub_group(tmp_git_repo, artifact_rel)
+    monkeypatch.chdir(tmp_git_repo)
+
+    assert main(["--slug", SLUG, "--feature-id", FEATURE_ID, "--json"]) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert set(data["native"]) == {"enabled", "copied", "skipped", "built", "missing", "warnings"}
+    assert data["native"]["enabled"] is True
+    assert data["native"]["copied"] == [artifact_rel]
+
+
+def test_main_no_native_sync_flag(tmp_git_repo: Path, monkeypatch, capsys) -> None:
+    """--no-native-sync returns a worktree without copying declared artifacts."""
+    artifact_rel = "native/stub.bin"
+    source = tmp_git_repo / artifact_rel
+    source.parent.mkdir(parents=True)
+    source.write_text("artifact", encoding="utf-8")
+    _declare_stub_group(tmp_git_repo, artifact_rel)
+    monkeypatch.chdir(tmp_git_repo)
+
+    assert main(["--slug", SLUG, "--feature-id", FEATURE_ID, "--no-native-sync"]) == 0
+    path = Path(capsys.readouterr().out.strip())
+    assert not (path / artifact_rel).exists()
+
+
+def test_main_no_autobuild_flag_is_forwarded(tmp_git_repo: Path, monkeypatch, capsys) -> None:
+    """--no-autobuild keeps sync enabled while forwarding autobuild=False."""
+    seen: dict[str, bool] = {}
+
+    def fake_sync(*, main_root: Path, target: Path, autobuild: bool) -> NativeSyncReport:
+        seen["autobuild"] = autobuild
+        return NativeSyncReport(enabled=True)
+
+    monkeypatch.setattr("scripts.sdd.ensure_worktree.sync_native_artifacts", fake_sync)
+    monkeypatch.chdir(tmp_git_repo)
+
+    assert main(["--slug", SLUG, "--feature-id", FEATURE_ID, "--no-autobuild"]) == 0
+    capsys.readouterr()
+    assert seen == {"autobuild": False}
+
+
+def test_main_dry_run_skips_sync(tmp_git_repo: Path, monkeypatch, capsys) -> None:
+    """--dry-run performs neither native copy nor build."""
+    artifact_rel = "native/stub.bin"
+    source = tmp_git_repo / artifact_rel
+    source.parent.mkdir(parents=True)
+    source.write_text("artifact", encoding="utf-8")
+    _declare_stub_group(tmp_git_repo, artifact_rel)
+    monkeypatch.chdir(tmp_git_repo)
+
+    assert main(["--slug", SLUG, "--feature-id", FEATURE_ID, "--dry-run"]) == 0
+    path = Path(capsys.readouterr().out.strip())
+    assert not path.exists()
+
+
+def test_ensure_signature_unchanged(tmp_git_repo: Path) -> None:
+    """ensure() still returns the two-item tuple expected by existing callers."""
+    result = ensure(_plan(), repo_root=tmp_git_repo, dry_run=True)
+    assert isinstance(result, tuple)
+    assert len(result) == 2
 
 
 def test_main_infers_hotfix_from_jira_key_alone(tmp_git_repo: Path, capsys, monkeypatch) -> None:
@@ -321,3 +580,34 @@ def test_main_brief_key_rejects_feature_id_jira_and_type(
     assert rc == 1
     assert "Error:" in capsys.readouterr().err
     assert after == before
+
+
+def test_native_sync_failure_does_not_fail_worktree_creation(monkeypatch, capsys):
+    """FEAT-722 review: a raising sync degrades to a stderr warning, exit 0."""
+    from scripts.sdd import ensure_worktree as ew
+
+    def boom(**_kwargs):
+        raise ValueError("malformed manifest")
+
+    monkeypatch.setattr(ew, "sync_native_artifacts", boom)
+    monkeypatch.setattr(ew, "ensure", lambda *a, **k: (Path("/tmp/x-wt"), False))
+    code = ew.main(["--slug", "s", "--feature-id", "FEAT-1"])
+    out = capsys.readouterr()
+    assert code == 0
+    assert out.out.strip() == "/tmp/x-wt"
+    assert "native artifact sync failed" in out.err
+
+
+def test_ensure_worktree_import_keeps_cwd_and_skips_parrot_utils():
+    """FEAT-722 review: importing the CLI must not chdir or load parrot.utils (Cython)."""
+    import subprocess
+    import sys
+
+    code = (
+        "import os, sys; c = os.getcwd(); import scripts.sdd.ensure_worktree; "
+        "print(os.getcwd() == c, 'parrot.utils' in sys.modules, 'parrot.flows.dev_loop' in sys.modules)"
+    )
+    res = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, cwd=Path(__file__).resolve().parents[2]
+    )
+    assert res.stdout.strip().splitlines()[-1] == "True False False", res.stderr

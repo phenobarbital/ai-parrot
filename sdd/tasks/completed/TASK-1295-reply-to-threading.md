@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-195 — Matrix Collaborative Multi-Agent Crew
 **Spec**: `sdd/specs/matrix-collaborative-crew.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

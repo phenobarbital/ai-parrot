@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-311 — Moonshot Client (MoonshotClient)
 **Spec**: `sdd/specs/moonshot-client-llm.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1794

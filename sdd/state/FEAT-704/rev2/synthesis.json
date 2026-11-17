@@ -1,0 +1,756 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-704",
+  "revision": 2,
+  "mode": "enrichment",
+  "summary_oneline": "FEAT-704 rev2: make the native sqlglot compiler the only engine, delete sidemantic (AGPL-3.0), salvage the engine-neutral 62% of the unmerged branch, stage SemaFlow-derived Rust later and keep BSL only as a joins-phase option gated on the Ibis NO-GO record.",
+  "localization": [
+    {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/loader.py",
+      "symbol": "SemanticModelLoader.load",
+      "lines": "83-173 (branch)",
+      "role": "sole import site of sidemantic; derives members/schema/scoping from `layer.graph` — rewrite target",
+      "evidence": [
+        "F006",
+        "F009"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/loader.py",
+      "symbol": "LoadedModel",
+      "lines": "58-70 (branch)",
+      "role": "`layer: Any` holds the sidemantic graph; becomes a typed, frozen model graph",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/engines/native.py",
+      "symbol": "NativeCompiler",
+      "lines": "18-236 (branch)",
+      "role": "existing sqlglot compiler for the v1 subset; six `layer.graph` call sites to re-point; becomes the sole engine",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/engines/__init__.py",
+      "symbol": "compile",
+      "lines": "31-50 (branch)",
+      "role": "engine dispatch to collapse to one path",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/engines/sidemantic_engine.py",
+      "symbol": "compile_sidemantic",
+      "lines": "18-169 (branch)",
+      "role": "sidemantic adapter — delete, do not port",
+      "evidence": [
+        "F007",
+        "F009"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/models.py",
+      "symbol": "CompiledQuery.engine",
+      "lines": "148 (branch)",
+      "role": "`Literal[\"sidemantic\",\"native\"]` → single value",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/policy.py",
+      "symbol": "ModelPolicy.engine",
+      "lines": "56 (branch)",
+      "role": "default `\"sidemantic\"` → drop field or fix to native",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/governance/pipeline.py",
+      "symbol": "GovernancePipeline",
+      "lines": "1-126 (branch)",
+      "role": "engine-neutral governance (guard, lineage, masking, pbac, rls) — salvage as-is",
+      "evidence": [
+        "F009"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/toolkit.py",
+      "symbol": "SemanticLayerToolkit",
+      "lines": "1-681 (branch)",
+      "role": "sl_* tool surface — salvage as-is; two open ledger issues attach here",
+      "evidence": [
+        "F009",
+        "F014"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/audit.py",
+      "symbol": "SemanticAuditLedger",
+      "lines": "1-185 (branch)",
+      "role": "signed audit ledger — salvage as-is",
+      "evidence": [
+        "F009"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-semantic/src/parrot/semantic/ossie.py",
+      "symbol": "validate_ossie_document",
+      "lines": "1-53 (branch)",
+      "role": "Ossie 0.1.1 JSON-Schema validation — salvage; an Ossie→typed-graph reader replaces the sidemantic importer",
+      "evidence": [
+        "F009",
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-semantic/tests/test_native_compiler.py",
+      "symbol": "test_native_dialect_snapshots",
+      "lines": "68 (branch)",
+      "role": "golden-SQL oracle that replaces sidemantic parity tests",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/handlers/semantic.py",
+      "symbol": "SemanticLayerHandler",
+      "lines": "1-202 (branch)",
+      "role": "HTTP surface — salvage as-is",
+      "evidence": [
+        "F009",
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/databasequery/sources/duckdb.py",
+      "symbol": "DuckDB source (commit b9f9983d67)",
+      "lines": "1-101 (branch)",
+      "role": "worker-thread execution fix needed by the DuckDB path — salvage, rebase on dev",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "sdd/specs/semantic-layer.spec.md",
+      "symbol": "G5, G7, Non-Goals, §2 Overview, M1, M4, M5, AC1/AC11/AC16/AC18, §8 Q1/Q2",
+      "lines": "60-75, 89-100, 329, 406-444, 762-779, 1099-1100",
+      "role": "spec sections the rev 0.3 amendment rewrites",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "sdd/tasks/index/semantic-layer.json",
+      "symbol": "TASK-4467, TASK-4468, TASK-4482",
+      "lines": "1-20",
+      "role": "tasks to re-scope (4467 → typed model + loader; 4468 → sole engine) or drop (4482, delivered by FEAT-738)",
+      "evidence": [
+        "F003",
+        "F014"
+      ]
+    },
+    {
+      "path": "sdd/specs/accounting-metrics-layer.spec.md",
+      "symbol": "M1, §8 Q10",
+      "lines": "389-402, 1074",
+      "role": "FEAT-713 owns the sidemantic-free skeleton and asks FEAT-704 to extend it",
+      "evidence": [
+        "F011"
+      ]
+    },
+    {
+      "path": "sdd/tasks/completed/TASK-1437-ibis-connection-spike.md",
+      "symbol": "Completion Note",
+      "lines": "124-134",
+      "role": "Ibis NO-GO record (connection mapping) that gates any BSL/Ibis joins phase",
+      "evidence": [
+        "F010"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/spatial/compiler.py",
+      "symbol": "module docstring",
+      "lines": "19",
+      "role": "code citation of the NO-GO",
+      "evidence": [
+        "F010"
+      ]
+    },
+    {
+      "path": "packages/navrules/rust/Cargo.toml",
+      "symbol": "navrules_native",
+      "lines": "1-30",
+      "role": "PyO3 0.29 abi3 / maturin pattern for the Rust phase",
+      "evidence": [
+        "F012"
+      ]
+    },
+    {
+      "path": "pyproject.toml",
+      "symbol": "[tool.parrot.worktree.native_group]",
+      "lines": "294-320",
+      "role": "worktree native-artifact registration a Rust crate must join",
+      "evidence": [
+        "F012"
+      ]
+    },
+    {
+      "path": ".github/workflows/release.yml",
+      "symbol": "PyO3/maturin-action@v1",
+      "lines": "387-392",
+      "role": "release matrix precedent for Rust wheels",
+      "evidence": [
+        "F012"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/pyproject.toml",
+      "symbol": "sqlglot>=20.0",
+      "lines": "182",
+      "role": "core floor; satellite needs a narrow pin for byte-level determinism",
+      "evidence": [
+        "F013"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/common/sql_dialects.py",
+      "symbol": "SQLGLOT_DIALECT_MAP",
+      "lines": "6",
+      "role": "shared driver→dialect map the compiler reuses",
+      "evidence": [
+        "F013",
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/sources/authorizing.py",
+      "symbol": "AuthorizingDataSource._apply_rls",
+      "lines": "1-75",
+      "role": "FEAT-738 already fixed on dev; branch version must not be salvaged",
+      "evidence": [
+        "F014",
+        "F015"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "statement": "Clean-room rule: sidemantic code is never opened or ported; only its public docs and the Cube/dbt/Ossie formats (from their original specs) inform the typed model schema.",
+      "evidence": [
+        "F001"
+      ],
+      "implication": "The new model schema + YAML/Ossie loader are authored from public format docs; the branch's sidemantic-API glue (loader.py, sidemantic_engine.py, Ossie compat shim) is deleted, not adapted."
+    },
+    {
+      "statement": "Owner decision (2026-10-25): the FEAT-704 branch is a salvage source, not a merge base.",
+      "evidence": [
+        "F004"
+      ],
+      "implication": "Rev2 starts a fresh worktree from origin/dev and checks out only zero-reference files from the branch; the 20 `done` stamps on the branch are not carried over."
+    },
+    {
+      "statement": "Ibis is a recorded NO-GO (TASK-1437) codified as a FEAT-704 Non-Goal; the NO-GO concerned connections, not compile-only use.",
+      "evidence": [
+        "F010",
+        "F002"
+      ],
+      "implication": "'BSL reserved for the joins phase' needs an explicit re-scoping of the NO-GO in the spec that opens that phase; rev2 itself adds no Ibis/BSL dependency."
+    },
+    {
+      "statement": "Determinism is a contract: byte-identical SQL per (model digest, canonical query, dialect); no dict/set iteration into SELECT/GROUP BY/IN order (SemaFlow HashMap lesson).",
+      "evidence": [
+        "F001",
+        "F013",
+        "F004"
+      ],
+      "implication": "Satellite pins sqlglot narrowly (branch: `>=30.1,<31`, venv 30.23.0; core floor `>=20.0` is too loose) and ships per-dialect golden SQL tests."
+    },
+    {
+      "statement": "Governance (PBAC gate, lineage, RLS push-down, masking, positive guard, signed audit) operates on the compiled sqlglot AST and is already engine-neutral on the branch.",
+      "evidence": [
+        "F002",
+        "F009"
+      ],
+      "implication": "Nothing in governance/, audit, cache, catalog, execution, results, toolkit or the HTTP handler changes semantically; only the `engine` field disappears from CompiledQuery/ModelPolicy."
+    },
+    {
+      "statement": "FEAT-713 (draft) creates the sidemantic-free satellite skeleton and asks FEAT-704 to 'extend' it (Q10); both target 1.3.0 and neither has landed.",
+      "evidence": [
+        "F011"
+      ],
+      "implication": "Rev2 must fix skeleton ownership and ordering; `parrot.semantic.accounting` must stay importable without the generic layer."
+    },
+    {
+      "statement": "FEAT-738 (merged 2026-10-24) shipped the request-scoped RLS fix that FEAT-704 M12/TASK-4482 also implements; the branch conflicts with dev exactly on those files.",
+      "evidence": [
+        "F014",
+        "F004"
+      ],
+      "implication": "Drop M12/TASK-4482 from rev2; never salvage the branch's authorizing.py / handlers/datasets.py / uv.lock."
+    },
+    {
+      "statement": "Rust/PyO3 precedents exist (navrules pyo3 0.29 abi3-py311 + maturin, parrot_codec, yaml_rs), with worktree native_group copying and a maturin-action release matrix; THIRD_PARTY.md does not exist.",
+      "evidence": [
+        "F012"
+      ],
+      "implication": "The Rust phase follows the navrules layout, registers a native_group and a release job, and creates THIRD_PARTY.md with the SemaFlow MIT header before the first derived line lands."
+    },
+    {
+      "statement": "The native compiler already implements declared one-to-many joins with fan-out rejection, while the decision block says 'no joins in v1'.",
+      "evidence": [
+        "F007",
+        "F001"
+      ],
+      "implication": "Rev2 must choose between keeping the branch's join subset or stripping to single-table (owner decision U4); either way symmetric/cumulative metrics stay out of v1."
+    },
+    {
+      "statement": "Two open ledger issues (issue:3c4d154c0172, issue:46e8f6219bf5) were raised against the branch's toolkit/catalog code.",
+      "evidence": [
+        "F014"
+      ],
+      "implication": "They are claimed and fixed in the tasks that salvage toolkit.py / catalog.py, not left open."
+    },
+    {
+      "statement": "Compile stays CPU-only under asyncio.to_thread; no semantic-layer library is async.",
+      "evidence": [
+        "F001",
+        "F007"
+      ],
+      "implication": "Unchanged pipeline shape: SemanticQuery → RLS rewrite → to_thread(compile) → positive guard → cache → async execution."
+    }
+  ],
+  "investigation": null,
+  "enrichment": {
+    "new": [
+      "`parrot/semantic/model.py` — typed, frozen Pydantic v2 semantic model graph (SemanticModel, Dimension incl. time grain, Metric with `agg`/`sql`/optional `filter`, derived Metric expression, Relationship with cardinality) with sorted, canonical digests; authored from Cube / dbt MetricFlow / Ossie public specs (clean-room).",
+      "`parrot/semantic/loader.py` (rewrite) — reads the own YAML format and Ossie 0.1.1 documents into the typed graph; keeps PhysicalSchema, policy binding, digests and fingerprint logic from the branch; no temp staging, no sidemantic importer shim.",
+      "`engines/native.py` → sole compiler (`compiler.py` or kept path): re-pointed to the typed graph; v1 additions decided in spec — filtered measures lowered to `FILTER (WHERE …)` or `CASE WHEN` per dialect (SemaFlow design reference, attributed), derived metrics over metrics; fan-out rejection kept.",
+      "Golden SQL fixtures per dialect (postgres, bigquery, duckdb) + DuckDB execution oracle replacing the sidemantic parity tests; cross-process determinism test (hash-seed) per brainstorm S2.",
+      "Rust phase (separate FEAT, after the Python compiler stabilises): PyO3 crate deriving SemaFlow `sql_ast.rs` + `dialect/` under MIT with attribution; `THIRD_PARTY.md`; native_group + release matrix entries.",
+      "Spec amendment artefacts: FEAT-704 spec rev 0.3 (engine section, pins, ACs, §8 Q1/Q2 superseded), re-scoped TASK-4467/4468, dropped TASK-4482."
+    ],
+    "modified": [
+      {
+        "path": "sdd/specs/semantic-layer.spec.md",
+        "change": "G5 → 'no AGPL dependency; satellite is MIT-only'; G7 → 'single native compiler'; Non-Goals: keep Ibis NO-GO wording but add 'BSL/Ibis may be re-evaluated compile-only for a later joins phase'; §2 Overview rewritten around the typed graph; M1 pins drop sidemantic/jsonschema-or-keep-jsonschema for Ossie; M4 becomes 'typed model + loader'; M5 'sole compiler'; AC1/AC11/AC16/AC18 lose sidemantic; §8 Q1/Q2 marked superseded.",
+        "evidence": [
+          "F002"
+        ]
+      },
+      {
+        "path": "sdd/tasks/index/semantic-layer.json",
+        "change": "TASK-4467 re-scoped to typed model + loader (no spike); TASK-4468 to sole engine + golden tests; TASK-4482 dropped (FEAT-738); statuses stay pending on dev.",
+        "evidence": [
+          "F003",
+          "F014"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-semantic/pyproject.toml",
+        "change": "dependencies = ai-parrot, sqlglot (narrow pin), pyyaml, jsonschema (Ossie); no sidemantic; extras duckdb/bigquery; README licence notice removed; Layering section per FEAT-713.",
+        "evidence": [
+          "F004",
+          "F005",
+          "F011"
+        ]
+      },
+      {
+        "path": "ruff.toml",
+        "change": "keep the TID251 `sidemantic` ban repo-wide as a permanent guard; remove the per-file ignore for the satellite; test_packaging asserts the ban fires everywhere.",
+        "evidence": [
+          "F005"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-semantic/src/parrot/semantic/models.py + policy.py",
+        "change": "remove the `engine` Literal (or fix to a single value) and its default.",
+        "evidence": [
+          "F008"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-semantic/tests/fixtures/models/orders.yml",
+        "change": "re-express in the own YAML format; orders.policy.yaml drops `engine:`.",
+        "evidence": [
+          "F008"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/tools/databasequery/sources/duckdb.py",
+        "change": "re-apply the branch's worker-thread execution fix on top of dev.",
+        "evidence": [
+          "F004"
+        ]
+      },
+      {
+        "path": "sdd/specs/accounting-metrics-layer.spec.md",
+        "change": "resolve Q10: rev2 names the skeleton owner and the 'extend' rule.",
+        "evidence": [
+          "F011"
+        ]
+      }
+    ],
+    "untouched": [
+      "governance/{guard,lineage,masking,pbac,pipeline,rls}.py, audit.py, cache.py, catalog.py, context.py, errors.py, execution.py, results.py, toolkit.py, ossie.py (validation), handlers/semantic.py — salvaged as-is modulo import re-verification",
+      "SemanticQuery contract, sl_* tool surface, mcp-local YAML section, HTTP routes, result handles, signed audit ledger",
+      "parrot/clients/base.py, DatabaseQueryToolkit, RlsRegistry, DataPlanePolicyGuard (spec Non-Goals)",
+      "Ibis / BSL — no dependency added in rev2; joins phase is a later spec",
+      "Symmetric aggregates, cumulative / time-comparison / cohort metrics (were sidemantic-only; remain out of v1)"
+    ],
+    "patterns": [
+      {
+        "pattern": "PEP 420 satellite with no src/parrot/__init__.py (ai-parrot-embeddings layout), dynamic version, package-data for schemas/sql",
+        "evidence": [
+          "F004",
+          "F011"
+        ]
+      },
+      {
+        "pattern": "maturin/PyO3 sub-project with `extension-module` feature off for cargo test, abi3-py311, serde_json preserve_order for determinism (navrules, parrot_codec)",
+        "evidence": [
+          "F012"
+        ]
+      },
+      {
+        "pattern": "native_group registration so ensure_worktree copies/auto-builds the .so; never `maturin develop` in automated paths",
+        "evidence": [
+          "F012"
+        ]
+      },
+      {
+        "pattern": "Shared SQLGLOT_DIALECT_MAP / driver_to_dialect for driver→dialect mapping",
+        "evidence": [
+          "F013",
+          "F003"
+        ]
+      },
+      {
+        "pattern": "Golden snapshot tests per dialect already exist (test_native_dialect_snapshots) — extend rather than invent",
+        "evidence": [
+          "F008"
+        ]
+      }
+    ],
+    "risks": [
+      {
+        "risk": "Salvage drift: the branch is 1,379 commits behind dev and conflicts on core files.",
+        "impact_mitigation": "Only zero-reference satellite files + handler are checked out from the branch into a fresh worktree off origin/dev; core files are re-applied by hand; CI import boundary tests re-run.",
+        "evidence": [
+          "F004",
+          "F014"
+        ]
+      },
+      {
+        "risk": "Loss of the sidemantic parity oracle for AC11/AC18.",
+        "impact_mitigation": "Replace with golden SQL per dialect + DuckDB execution against hand-computed expectations + cross-process determinism check.",
+        "evidence": [
+          "F008"
+        ]
+      },
+      {
+        "risk": "Skeleton ownership race between FEAT-713 and FEAT-704 rev2 (same pyproject, same 1.3.0).",
+        "impact_mitigation": "Spec names one owner; the other task 'extends' with a byte-level diff check (FEAT-713 already mandates this for version.py).",
+        "evidence": [
+          "F011"
+        ]
+      },
+      {
+        "risk": "'BSL reserved for joins' silently contradicts the recorded Ibis NO-GO.",
+        "impact_mitigation": "Rev2 spec states the NO-GO scope (connections) and that any joins-phase spec must re-open it explicitly; no Ibis dependency now.",
+        "evidence": [
+          "F010",
+          "F002"
+        ]
+      },
+      {
+        "risk": "Scope regression if 'no joins in v1' strips the branch's working one-to-many subset.",
+        "impact_mitigation": "Owner decision U4 in the spec; default recommendation is to keep the already-tested one-to-many subset with fan-out rejection.",
+        "evidence": [
+          "F007",
+          "F001"
+        ]
+      },
+      {
+        "risk": "Rust phase dependency hygiene: SemaFlow LICENSE is an unfilled template and BigQuery pulls a personal git fork / `ring`.",
+        "impact_mitigation": "Derive only sql_ast.rs + dialect/ (serde_json-only); record upstream copyright as best known in THIRD_PARTY.md; open the upstream wheel issue.",
+        "evidence": [
+          "F001",
+          "F012"
+        ]
+      }
+    ]
+  },
+  "confidence_map": [
+    {
+      "id": "C1",
+      "statement": "FEAT-704 is fully implemented (20/20 tasks, 56 satellite files, 16 outside) on the unmerged branch origin/feat-FEAT-704-semantic-layer with no PR.",
+      "evidence": [
+        "F004"
+      ],
+      "confidence": "high",
+      "reasoning": "git log/diff/ls-tree/merge-base/gh read directly."
+    },
+    {
+      "id": "C2",
+      "statement": "On dev the per-spec index shows all 20 tasks pending and no packages/ai-parrot-semantic exists.",
+      "evidence": [
+        "F003",
+        "F005",
+        "F015"
+      ],
+      "confidence": "high",
+      "reasoning": "Index parsed; ls and wiki query confirm absence."
+    },
+    {
+      "id": "C3",
+      "statement": "sidemantic coupling is confined to loader.py, engines/ (dispatch, native graph reads, sidemantic_engine) and two Literal fields.",
+      "evidence": [
+        "F006",
+        "F007",
+        "F008",
+        "F009"
+      ],
+      "confidence": "high",
+      "reasoning": "Per-file grep counts plus direct reads of each coupled file."
+    },
+    {
+      "id": "C4",
+      "statement": "2,264 of 3,630 satellite source lines (62%) have zero sidemantic references; +521 need a one-line edit; the 202-line HTTP handler is clean.",
+      "evidence": [
+        "F009"
+      ],
+      "confidence": "high",
+      "reasoning": "Counted with wc/grep per file on the branch."
+    },
+    {
+      "id": "C5",
+      "statement": "The branch's native compiler already covers sum/count/count_distinct/avg/min/max, DATE_TRUNC grains, WHERE/HAVING split, order/limit and declared one-to-many joins with fan-out rejection.",
+      "evidence": [
+        "F007",
+        "F002"
+      ],
+      "confidence": "high",
+      "reasoning": "Read NATIVE_AGGREGATIONS and the compile/_joins_for paths; matches spec M5."
+    },
+    {
+      "id": "C6",
+      "statement": "Removing sidemantic removes the parity oracle; golden SQL + DuckDB execution tests are the replacement.",
+      "evidence": [
+        "F008"
+      ],
+      "confidence": "medium",
+      "reasoning": "Inference from which tests depend on sidemantic; replacement oracle is a design choice."
+    },
+    {
+      "id": "C7",
+      "statement": "The Ibis NO-GO (TASK-1437) concerned connection mapping; compile-only BSL was never evaluated, yet the spec codified the NO-GO as a Non-Goal.",
+      "evidence": [
+        "F010",
+        "F002"
+      ],
+      "confidence": "high",
+      "reasoning": "Completion Note and spec read directly."
+    },
+    {
+      "id": "C8",
+      "statement": "FEAT-713 plans to create the sidemantic-free skeleton and asks (Q10) for FEAT-704's M1 to become 'extend'.",
+      "evidence": [
+        "F011"
+      ],
+      "confidence": "high",
+      "reasoning": "Spec M1 and Q10 read directly."
+    },
+    {
+      "id": "C9",
+      "statement": "FEAT-704 M12/TASK-4482 is superseded by FEAT-738 (merged 2026-10-24), which is where the branch conflicts with dev.",
+      "evidence": [
+        "F014",
+        "F004"
+      ],
+      "confidence": "high",
+      "reasoning": "git log on the files + merge-tree conflict list coincide."
+    },
+    {
+      "id": "C10",
+      "statement": "A Rust phase can follow navrules (pyo3 0.29 abi3-py311, maturin, native_group, maturin-action release job); THIRD_PARTY.md must be created.",
+      "evidence": [
+        "F012"
+      ],
+      "confidence": "high",
+      "reasoning": "Cargo.toml, pyproject native_group, Makefile, release.yml read; ls shows no THIRD_PARTY/NOTICE."
+    },
+    {
+      "id": "C11",
+      "statement": "Byte-level determinism needs a narrow sqlglot pin in the satellite (branch `>=30.1,<31`, venv 30.23.0; core floor `>=20.0`).",
+      "evidence": [
+        "F013",
+        "F004",
+        "F001"
+      ],
+      "confidence": "high",
+      "reasoning": "Pins read; contract stated in source."
+    },
+    {
+      "id": "C12",
+      "statement": "SemaFlow's sql_ast.rs + dialect/ (~1,150 lines, serde_json-only) is the derivable slice; planner, backends and parse_expr are not.",
+      "evidence": [
+        "F001"
+      ],
+      "confidence": "medium",
+      "reasoning": "Rests on the owner's Appendix A audit; not re-verified against the upstream repo in this run."
+    },
+    {
+      "id": "C13",
+      "statement": "Under the clean-room rule the typed schema is authored from Cube/dbt/Ossie public specs, and the branch's loader glue is deleted rather than adapted.",
+      "evidence": [
+        "F001",
+        "F006"
+      ],
+      "confidence": "medium",
+      "reasoning": "Rule is explicit; applying it to our own glue code is a judgement (the glue contains no sidemantic code, but it mirrors its API)."
+    },
+    {
+      "id": "C14",
+      "statement": "Two open ledger issues from the FEAT-704 review attach to the salvaged toolkit/catalog code.",
+      "evidence": [
+        "F014"
+      ],
+      "confidence": "high",
+      "reasoning": "ledger list output read."
+    },
+    {
+      "id": "C15",
+      "statement": "The decision block's 'no joins in v1' conflicts with the branch native compiler's working one-to-many join subset.",
+      "evidence": [
+        "F001",
+        "F007"
+      ],
+      "confidence": "high",
+      "reasoning": "Both texts read; the resolution is an owner decision (U4)."
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Is origin/feat-FEAT-704-semantic-layer a merge base to fix up, or a salvage source only?",
+      "blocks_claims": [
+        "C1",
+        "C4"
+      ],
+      "plausible_answers": [
+        "rebase and strip sidemantic",
+        "fresh worktree, salvage zero-reference files"
+      ],
+      "ask_user": true,
+      "user_answer": "we can discard that branch because was focused on sidemantic, that is discarded, or re-used the code no related to sidemantic (2026-10-25) → salvage source only",
+      "status": "resolved"
+    },
+    {
+      "id": "U2",
+      "question": "Does rev2 stay inside FEAT-704 (spec rev 0.3, re-scoped TASK-4467/4468, TASK-4482 dropped) or supersede it with a new FEAT id?",
+      "blocks_claims": [
+        "C2"
+      ],
+      "plausible_answers": [
+        "amend FEAT-704 (recommended: 20 TASK ids already reserved, spec 80% unchanged)",
+        "new FEAT superseding 704; 704 closed as abandoned"
+      ],
+      "ask_user": true,
+      "status": "resolved",
+      "user_answer": "amend FEAT-704 (spec rev 0.3; TASK-4467/4468 re-scoped; TASK-4482 dropped); no new FEAT id",
+      "answered_at": "2026-10-25T18:50:54+00:00"
+    },
+    {
+      "id": "U3",
+      "question": "Rust phase: spec it now as its own FEAT (crate location: `packages/ai-parrot-semantic/rust/` à la navrules vs a separate `parrot-semantic-rs` distribution) or defer until the Python compiler ships?",
+      "blocks_claims": [
+        "C10",
+        "C12"
+      ],
+      "plausible_answers": [
+        "defer; rev2 only reserves the IR shape and THIRD_PARTY.md rule (recommended)",
+        "own FEAT now, crate inside the satellite",
+        "own FEAT now, separate distribution"
+      ],
+      "ask_user": true,
+      "status": "unresolved"
+    },
+    {
+      "id": "U4",
+      "question": "v1 join scope: keep the branch's declared one-to-many joins with fan-out rejection, or enforce the decision block's 'no joins in v1' (single-table models only)?",
+      "blocks_claims": [
+        "C5",
+        "C15"
+      ],
+      "plausible_answers": [
+        "keep one-to-many + fan-out rejection (recommended: already tested)",
+        "single-table only; joins wait for the BSL/Rust phase"
+      ],
+      "ask_user": true,
+      "status": "resolved",
+      "user_answer": "keep the branch's declared one-to-many joins with fan-out rejection in v1",
+      "answered_at": "2026-10-25T18:50:54+00:00"
+    },
+    {
+      "id": "U5",
+      "question": "How is 'BSL/Ibis reserved for the joins phase' recorded against the Ibis NO-GO: amend TASK-1437's decision scope in the rev 0.3 spec now, or leave it as research text with no repo commitment?",
+      "blocks_claims": [
+        "C7"
+      ],
+      "plausible_answers": [
+        "add a spec note re-scoping the NO-GO to connections, compile-only re-evaluable later (recommended)",
+        "no repo commitment; research text only"
+      ],
+      "ask_user": true,
+      "status": "unresolved"
+    },
+    {
+      "id": "U6",
+      "question": "Which feature creates `packages/ai-parrot-semantic/` first — FEAT-713 (as its spec says) or FEAT-704 rev2 — and does the other 'extend' with a byte-level check?",
+      "blocks_claims": [
+        "C8"
+      ],
+      "plausible_answers": [
+        "FEAT-704 rev2 creates it (it owns the generic layer); FEAT-713 M1 becomes 'extend'",
+        "FEAT-713 creates it as written; rev2 M1 becomes 'extend' (resolves 713 Q10)"
+      ],
+      "ask_user": true,
+      "status": "resolved",
+      "user_answer": "FEAT-704 rev2 creates `packages/ai-parrot-semantic/`; FEAT-713 M1 becomes \"extend\" (resolves 713 Q10)",
+      "answered_at": "2026-10-25T18:50:54+00:00"
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "The architectural fork is already closed by the owner (2026-10-21 decision block; 2026-10-25 branch disposition): single native compiler, no AGPL, Rust later. Localization is high-confidence and 62% of the code exists; the five open items (U2–U6) are spec-level scoping choices that belong in §8 of a FEAT-704 rev 0.3 amendment, not a new brainstorm."
+  },
+  "overall_confidence": "medium",
+  "meta": {
+    "findings_used": [
+      "F001",
+      "F002",
+      "F003",
+      "F004",
+      "F005",
+      "F006",
+      "F007",
+      "F008",
+      "F009",
+      "F010",
+      "F011",
+      "F012",
+      "F013",
+      "F014",
+      "F015"
+    ],
+    "findings_unused": [],
+    "citation_probe": "inline — every dev-side citation was read directly in this session; branch-side citations are tagged '(branch)' and were read via `git show origin/feat-FEAT-704-semantic-layer:<path>`; no sdd-contract-probe agent launched because branch paths do not exist in the working tree.",
+    "notes": "overall_confidence = min(median claim = high, localization = high, scope = medium) = medium. Scope is medium because U2/U4/U6 change the task graph shape, not because the facts are uncertain. Research ran sequentially (no fork lanes): the source is a research-grade document, so the plan verified assumptions rather than discovered code."
+  }
+}

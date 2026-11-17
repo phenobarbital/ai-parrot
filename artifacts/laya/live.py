@@ -33,6 +33,7 @@ def preflight_live(config: EvaluationConfig, env: Mapping[str, str] | None = Non
     """
     if not config.live:
         return
+    explicit_env = env is not None
     env = os.environ if env is None else env
     missing: list[str] = []
     if not config.primary_api_model:
@@ -41,8 +42,16 @@ def preflight_live(config: EvaluationConfig, env: Mapping[str, str] | None = Non
         missing.append("--cheap-api-model")
     if config.max_live_calls <= 0:
         missing.append("--max-live-calls (> 0)")
-    if not env.get(API_KEY_ENV):
-        missing.append(f"{API_KEY_ENV} (environment)")
+    key_env = "GOOGLE_API_KEY" if config.provider == "google" else API_KEY_ENV
+    credential_present = bool(env.get(key_env))
+    if not credential_present and not explicit_env:
+        # Match the provider client's project-config credential resolution. Never
+        # persist or return the value; only the missing-key name enters errors.
+        from navconfig import config as project_config
+
+        credential_present = bool(project_config.get(key_env))
+    if not credential_present:
+        missing.append(f"{key_env} (environment)")
     if missing:
         raise LivePreflightError(f"live mode requires: {', '.join(missing)}")
 
@@ -92,7 +101,12 @@ class ModelEvidence(BaseModel):
 def extract_model_evidence(message: AIMessage, requested_model: str | None) -> ModelEvidence:
     """Prefer the raw provider model; keep fallback metadata separate; never substitute or 'correct' anything."""
     raw = message.raw_response if isinstance(message.raw_response, dict) else None
-    actual = raw.get("model") if raw and isinstance(raw.get("model"), str) else None
+    model_keys = (
+        ("model_version", "modelVersion")
+        if message.provider in ("google", "google_genai", "gemini", "vertex_ai")
+        else ("model",)
+    )
+    actual = next((raw[key] for key in model_keys if raw and isinstance(raw.get(key), str) and raw[key]), None)
     meta = message.metadata or {}
     fallback = {k: meta[k] for k in ("used_fallback_model", "original_model", "fallback_model") if k in meta} or None
     usage = message.usage.model_dump() if message.usage else None

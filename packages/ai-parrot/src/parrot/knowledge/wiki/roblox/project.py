@@ -15,7 +15,7 @@ Two independent resolution paths, per spec §"Local scanning and resolution":
    strings remain available regardless of mapping mode").
 
 Byte/depth limits are the TASK-2896 reviewed policy
-(``docs/design/luau-parser-resource-policy.md`` §3): a 16 MiB mapping
+(``wiki/knowledge/design/luau-parser-resource-policy.md`` §3): a 16 MiB mapping
 JSON byte cap and a 200-level nesting depth cap, enforced **before**
 ``json.loads`` (bounded pre-scan, not exception-driven) so a hostile or
 corrupted mapping file degrades to a diagnostic instead of an expensive
@@ -39,7 +39,7 @@ from parrot.knowledge.wiki.roblox.models import RobloxInstanceIndex
 
 logger = logging.getLogger(__name__)
 
-#: Reviewed policy (docs/design/luau-parser-resource-policy.md §3).
+#: Reviewed policy (wiki/knowledge/design/luau-parser-resource-policy.md §3).
 MAPPING_JSON_BYTE_LIMIT = 16 * 1024 * 1024
 MAPPING_JSON_DEPTH_LIMIT = 200
 

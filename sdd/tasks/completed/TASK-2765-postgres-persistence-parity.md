@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-520 — GraphIndex Postgres Backend
 **Spec**: `sdd/specs/graphindex-postgres-backend.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: XL (> 8h)
 **Depends-on**: TASK-2764

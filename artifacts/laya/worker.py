@@ -184,38 +184,94 @@ def _peak_rss_kb() -> int | None:
 
 
 class LayaPredictor:
-    """Adapter from our question schema to ``laya.Agent.system_one`` (verify against installed 0.3.5 — TASK-3618)."""
+    """Adapter for the installed Laya 0.3.5 question and answer contracts."""
 
     def __init__(
-        self, agent: Any, max_input_tokens: int | None, count_tokens: Callable[[str], int] | None = None
+        self,
+        agent: Any,
+        max_input_tokens: int | None,
+        count_tokens: Callable[[str], int] | None = None,
+        preflight: Callable[[str, dict[str, dict[str, Any]]], None] | None = None,
     ) -> None:
         self._agent = agent
         self.max_input_tokens = max_input_tokens
         self._count_tokens = count_tokens or (lambda s: len(s.split()))
+        self._preflight = preflight
 
     def predict(self, state: str, questions: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
         """Run ``system_one`` once and map its output back to our answer schema."""
-        problem = check_context_budget(self._count_tokens, state, questions, self.max_input_tokens)
-        if problem:
-            raise ContextOverflow(problem)
         laya_questions = _to_laya_questions(questions)
+        if self._preflight is not None:
+            self._preflight(state, laya_questions)
+        else:
+            problem = check_context_budget(self._count_tokens, state, questions, self.max_input_tokens)
+            if problem:
+                raise ContextOverflow(problem)
         raw = self._agent.system_one(state, laya_questions)
         return _from_laya_answers(questions, raw)
 
 
-def _to_laya_questions(questions: dict[str, dict[str, Any]]) -> Any:
+def _to_laya_questions(questions: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
     """Translate our {qid: {type,text,options}} schema into the shape ``system_one`` expects."""
-    # FILL IN: build from the installed laya/agent.py signature (spec §7 URL) — noul questions carry text only,
-    #          choice questions carry text + options; keep qid order — bounded by spec §2 "one fixed schema per scenario"
-    raise NotImplementedError
+    converted = {}
+    for qid, question in questions.items():
+        item = {"type": question["type"], "instructions": question["text"]}
+        if question["type"] == "choice":
+            item["criteria"] = dict.fromkeys(question["options"])
+        elif question["type"] != "noul":
+            raise ValueError(f"unsupported question type: {question['type']}")
+        converted[qid] = item
+    return converted
 
 
 def _from_laya_answers(questions: dict[str, dict[str, Any]], raw: Any) -> dict[str, dict[str, Any]]:
     """Map Laya output to {qid: answer}; ``noul`` is the POSITIVE probability (spec §2), never its confidence."""
-    # FILL IN: for noul -> {"type":"noul","noul":<positive prob>,"confidence":<conf>};
-    #          for choice -> {"type":"choice","choice":<argmax option>,"probabilities":{opt:p},"confidence":<conf>}
-    #          — bounded by spec §3 M1 answer invariants (finite, [0,1], probabilities over exactly the options)
-    raise NotImplementedError
+    if not isinstance(raw, dict) or not isinstance(raw.get("answers"), dict):
+        raise ValueError("Laya returned no answers mapping")
+    answers = {}
+    for qid, question in questions.items():
+        answer = raw["answers"].get(qid)
+        if not isinstance(answer, dict) or answer.get("type") != question["type"]:
+            raise ValueError(f"Laya returned a missing or mismatched answer for {qid!r}")
+        fields = (
+            ("type", "confidence", "noul")
+            if question["type"] == "noul"
+            else ("type", "confidence", "choice", "probabilities")
+        )
+        answers[qid] = {field: answer[field] for field in fields}
+    return answers
+
+
+def preflight_laya(agent: Any, state: str, questions: dict[str, dict[str, Any]]) -> None:
+    """Reject every truncation performed by Laya 0.3.5's ``build_sequence``.
+
+    Each question gets its own sequence. Count the real tokenizer's instruction,
+    option markers and four delimiters; reject option/head truncation separately.
+    """
+    from laya.common import render_options
+
+    tok = agent.tok
+    max_len = agent.cfg.get("max_len", 512)
+    head_max_len = agent.cfg.get("head_max_len", 192)
+
+    def count(text: str) -> int:
+        """Count tokens after the same mask-token normalization as Laya."""
+        return len(tok(text.replace(tok.mask_token, " "), add_special_tokens=False)["input_ids"])
+
+    state_len = count(state)
+    for qid, definition in questions.items():
+        question = agent._to_internal(definition)
+        head_len = count(f"{question['t']} question: {question['ins']}")
+        option_lengths = [count(f" {option}") for option in render_options(question)]
+        option_total = sum(length + 1 for length in option_lengths)
+        option_budget = head_max_len - option_total
+        if any(length > 48 for length in option_lengths) or option_budget < 16 or head_len > max(8, option_budget):
+            raise ContextOverflow(f"question {qid!r} exceeds Laya's option/head budget; evidence is not truncated")
+        total = 4 + head_len + option_total + state_len
+        if total > max_len:
+            raise ContextOverflow(
+                f"question {qid!r} needs {total} tokens but limit is {max_len}; evidence is not truncated"
+            )
 
 
 def _checkpoint_sha256(checkpoint: str) -> str | None:
@@ -236,7 +292,8 @@ def _checkpoint_sha256(checkpoint: str) -> str | None:
     for rel in sorted(relevant):
         digest.update(rel.encode("utf-8"))
         with open(os.path.join(checkpoint, rel), "rb") as fh:
-            digest.update(fh.read())
+            for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+                digest.update(chunk)
     return digest.hexdigest()
 
 
@@ -269,24 +326,35 @@ def load_predictor(checkpoint: str, revision: str) -> tuple[LayaPredictor, dict[
     """
     if not os.path.isdir(checkpoint):
         raise FileNotFoundError(checkpoint)
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    os.environ["TRANSFORMERS_OFFLINE"] = "1"
     from laya import Agent  # noqa: PLC0415 — optional runtime, worker env only
 
+    # Both tokenizer and encoder must be local: Agent otherwise downloads them.
+    for relative in ("tokenizer/tokenizer.json", "encoder/config.json", "rl_agent_config.json", "model.safetensors"):
+        if not os.path.isfile(os.path.join(checkpoint, relative)):
+            raise FileNotFoundError(os.path.join(checkpoint, relative))
     t0 = time.perf_counter()
-    agent = Agent(
-        checkpoint, device="cpu"
-    )  # FILL IN: exact kwargs per installed laya.Agent.__init__ — bounded by spec §7 "explicit CPU device and local snapshot"
+    checkpoint_hash = _checkpoint_sha256(checkpoint)
+    agent = Agent(checkpoint, device="cpu")
     load_ms = (time.perf_counter() - t0) * 1000.0
-    max_input_tokens = None  # FILL IN: read the tokenizer/model max length from the loaded agent — bounded by spec §3 M2 "checkpoint's actual limits"
+    max_input_tokens = int(agent.cfg.get("max_len", 512))
     ready = {
         "checkpoint_path": checkpoint,
         "checkpoint_revision": revision,
         "checkpoint_sha256": _checkpoint_sha256(checkpoint),
+        "checkpoint_source_sha256": checkpoint_hash,
         "packages": _package_versions(("laya", "torch", "transformers")),
         "max_input_tokens": max_input_tokens,
         "torch_threads": _torch_threads(),
         "load_ms": load_ms,
     }
-    return LayaPredictor(agent, max_input_tokens), ready
+    return (
+        LayaPredictor(
+            agent, max_input_tokens, preflight=lambda state, questions: preflight_laya(agent, state, questions)
+        ),
+        ready,
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -317,7 +385,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 3
     except Exception as exc:
-        print(traceback.format_exc(), file=sys.stderr)
+        sys.stderr.write(traceback.format_exc())
         _emit({"type": "error", "error_code": "worker_failed", "error_message": f"{type(exc).__name__}: {exc}"})
         return 3
     _emit(

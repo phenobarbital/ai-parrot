@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
-
+from parrot.knowledge.pageindex.generation import StaleGenerationError
 
 def _adapter() -> MagicMock:
     a = MagicMock()
@@ -47,22 +47,23 @@ async def test_second_instance_sees_update(tmp_path):
     assert b._load_tree("book")["doc_name"] == "v2"
 
 
-async def test_batch_keeps_cached_tree(tmp_path):
+async def test_open_write_keeps_working_copy(tmp_path):
     tk = PageIndexToolkit(_adapter(), storage_dir=tmp_path)
     await tk.create_tree("book", doc_name="v1")
-    tk._load_tree("book")
-    async with tk._batch("book"):
-        _rewrite(tmp_path / "book.json", {"doc_name": "external", "structure": []})
-        assert tk._load_tree("book")["doc_name"] == "v1"
+    with pytest.raises(StaleGenerationError):
+        async with tk._write("book") as txn:
+            _rewrite(tmp_path / "book.json", {"doc_name": "external", "structure": []})
+            assert txn.tree["doc_name"] == "v1"
 
 
-async def test_own_write_does_not_reload(tmp_path):
+async def test_own_write_replaces_cached_tree(tmp_path):
     tk = PageIndexToolkit(_adapter(), storage_dir=tmp_path)
     await tk.create_tree("book", doc_name="v1")
     first = tk._load_tree("book")
-    first["doc_name"] = "v1b"
-    tk._persist("book")
-    assert tk._load_tree("book") is first
+    async with tk._write("book") as txn:
+        txn.tree["doc_name"] = "v1b"
+    assert tk._load_tree("book")["doc_name"] == "v1b"
+    assert tk._load_tree("book") is not first
 
 
 async def test_missing_and_delete(tmp_path):

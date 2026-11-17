@@ -117,8 +117,15 @@ class TestInheritance:
 
 
 class TestConstructor:
+    def test_record_video_resolves_confined_dir(self, tmp_path) -> None:
+        toolkit = WebScrapingToolkit(record_video=True, plans_dir=tmp_path / "plans")
+        assert toolkit._config.record_video_dir == str(tmp_path / "plans" / "files" / "recordings")
+
+    def test_record_video_disabled_by_default(self, toolkit) -> None:
+        assert toolkit._config.record_video_dir is None
+
     def test_default_config(self, toolkit):
-        assert toolkit._config.driver_type == "selenium"
+        assert toolkit._config.driver_type == "playwright"
         assert toolkit._config.headless is True
         assert toolkit._config.browser == "chrome"
 
@@ -181,14 +188,14 @@ class TestLifecycle:
 
         from parrot.tools.scraping.driver_context import DriverRegistry
 
-        original = DriverRegistry._factories.get("selenium")
-        DriverRegistry.register("selenium", lambda cfg: mock_setup)
+        original = DriverRegistry._factories.get("playwright")
+        DriverRegistry.register("playwright", lambda cfg: mock_setup)
         try:
             await tk.start()
             assert tk._session_driver is mock_driver
         finally:
             if original:
-                DriverRegistry.register("selenium", original)
+                DriverRegistry.register("playwright", original)
             await tk.stop()
 
     @pytest.mark.asyncio
@@ -441,7 +448,8 @@ class TestScrape:
             toolkit._llm_client.complete.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_scrape_no_plan_raises(self, toolkit_no_llm):
+    async def test_scrape_no_plan_raises(self, toolkit_no_llm, mock_driver):
+        toolkit_no_llm._session_driver = mock_driver
         with pytest.raises(ValueError, match="No plan available"):
             await toolkit_no_llm.scrape("https://example.com")
 

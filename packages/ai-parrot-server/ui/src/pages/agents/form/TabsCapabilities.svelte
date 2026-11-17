@@ -13,6 +13,7 @@
   import { Label } from "$lib/ui/internal/shadcn/ui/label/index.js";
   import { Slider } from "$lib/ui/internal/shadcn/ui/slider/index.js";
   import { Switch } from "$lib/ui/internal/shadcn/ui/switch/index.js";
+  import { Input } from "$lib/ui/internal/shadcn/ui/input/index.js";
 
   let {
     state,
@@ -94,6 +95,77 @@
     />
     <Label for="use_kb">Use knowledge base</Label>
   </div>
+
+  <fieldset class="flex flex-col gap-3 rounded-md border p-3" data-testid="group-suggestions">
+    <legend class="px-1 text-sm font-medium">Follow-up suggestions</legend>
+    <div class="flex items-center gap-2">
+      <Switch
+        id="enable_suggestions"
+        checked={state.values.enable_suggestions ?? false}
+        onCheckedChange={(v: boolean) => (state.values.enable_suggestions = v)}
+        data-testid="field-enable_suggestions"
+      />
+      <Label for="enable_suggestions">Suggestion chips</Label>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <Switch
+        id="suggest_followups"
+        checked={state.values.suggest_followups ?? false}
+        onCheckedChange={(v: boolean) => (state.values.suggest_followups = v)}
+        data-testid="field-suggest_followups"
+      />
+      <Label for="suggest_followups">LLM follow-up suggestions</Label>
+    </div>
+
+    <div class="flex flex-col gap-1.5">
+      <Label for="suggestion_timeout_s">Suggestion timeout (seconds)</Label>
+      <Input
+        id="suggestion_timeout_s"
+        type="number"
+        min="0"
+        step="0.5"
+        value={state.values.suggestion_timeout_s ?? 4}
+        disabled={!(state.values.suggest_followups ?? false)}
+        oninput={(e) => (state.values.suggestion_timeout_s = Number(e.currentTarget.value))}
+        data-testid="field-suggestion_timeout_s"
+      />
+      {#if state.errors.suggestion_timeout_s}
+        <p class="text-destructive text-xs" data-testid="error-suggestion_timeout_s">
+          {state.errors.suggestion_timeout_s}
+        </p>
+      {/if}
+    </div>
+
+    <div class="flex flex-col gap-1.5">
+      <Label for="max_suggestions">Maximum suggestions</Label>
+      <Input
+        id="max_suggestions"
+        type="number"
+        min="0"
+        step="1"
+        value={state.values.max_suggestions ?? 6}
+        oninput={(e) => (state.values.max_suggestions = Number(e.currentTarget.value))}
+        data-testid="field-max_suggestions"
+      />
+      {#if state.errors.max_suggestions}
+        <p class="text-destructive text-xs" data-testid="error-max_suggestions">
+          {state.errors.max_suggestions}
+        </p>
+      {/if}
+    </div>
+
+    <div class="flex flex-col gap-1.5">
+      <Label for="suggestion_model">Suggestion model (optional)</Label>
+      <Input
+        id="suggestion_model"
+        value={state.values.suggestion_model ?? ""}
+        disabled={!(state.values.suggest_followups ?? false)}
+        oninput={(e) => (state.values.suggestion_model = e.currentTarget.value || null)}
+        data-testid="field-suggestion_model"
+      />
+    </div>
+  </fieldset>
 
   <JsonEditor
     id="kb"

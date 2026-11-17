@@ -147,3 +147,39 @@ class TestDocDescription:
     def test_valid(self):
         d = DocDescription(description="Annual report for 2023 fiscal year")
         assert "Annual" in d.description
+
+
+def test_page_index_node_segment_fields():
+    node = PageIndexNode(title="t", doc_id="d", revision="0" * 16, span=[0, 3], owned=[[0, 1]])
+    dumped = node.model_dump()
+    assert dumped["span"] == [0, 3] and dumped["owned"] == [[0, 1]]
+    assert dumped["doc_id"] == "d" and dumped["revision"] == "0" * 16
+    bare = PageIndexNode(title="t").model_dump()
+    assert bare["span"] is None and bare["owned"] is None
+
+
+def test_schema_fields_roundtrip():
+    key_items = [{"label": "semantic routing", "kind": "literal", "seq": 7}]
+    optimizer = {"version": "1", "passes": {"key_items": {"status": "complete"}}}
+    node = PageIndexNode(
+        title="Routing",
+        key_items=key_items,
+        locked=True,
+        locked_reason="manual edit",
+        aliases=["legacy-routing"],
+        optimizer=optimizer,
+    )
+
+    restored = PageIndexNode.model_validate_json(node.model_dump_json())
+
+    assert restored.key_items == key_items
+    assert restored.locked is True
+    assert restored.locked_reason == "manual edit"
+    assert restored.aliases == ["legacy-routing"]
+    assert restored.optimizer == optimizer
+    bare = PageIndexNode(title="Routing")
+    assert bare.key_items is None
+    assert bare.locked is None
+    assert bare.locked_reason is None
+    assert bare.aliases is None
+    assert bare.optimizer is None

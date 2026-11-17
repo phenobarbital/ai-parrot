@@ -1,7 +1,7 @@
 /**
  * Infographic Block Types — FEAT-039
  * TypeScript type definitions for the infographic block system.
- * Mirrors the backend API contract (docs/infographic_handler_api.md, section 8).
+ * Mirrors the backend API contract (wiki/server/infographic_handler_api.md, section 8).
  */
 
 import type { A2UIEnvelope } from '../a2ui/a2ui-types';

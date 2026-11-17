@@ -84,3 +84,10 @@ def test_default_agent_mode_is_noop(abstract_bot_cls):
 def test_missing_attribute_is_noop(abstract_bot_cls):
     # Stubbed bots without the attribute must not break the ask() path.
     assert _apply(abstract_bot_cls, object(), OutputMode.DEFAULT) == OutputMode.DEFAULT
+
+
+def test_request_context_has_a2ui_component_default_none():
+    ctx = RequestContext()
+
+    assert hasattr(ctx, "a2ui_component")
+    assert ctx.a2ui_component is None

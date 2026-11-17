@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-144 — Cross-Repository JiraToolkit OAuth2 3LO (Web AgentChat)
 **Spec**: `sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-983, TASK-984, TASK-985, TASK-986, TASK-987, TASK-988, TASK-989

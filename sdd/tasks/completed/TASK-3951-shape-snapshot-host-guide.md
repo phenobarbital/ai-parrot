@@ -3,7 +3,7 @@
 **Feature**: FEAT-621 — Agent Studio — Database-Backed Storage
 **Spec**: `sdd/specs/agentstudio-db-storage.spec.md`
 **Spec wave**: W4 — Shape snapshot + host guide
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3944, TASK-3945, TASK-3946, TASK-3947, TASK-3948, TASK-3949, TASK-3950

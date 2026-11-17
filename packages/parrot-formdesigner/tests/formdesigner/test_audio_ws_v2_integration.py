@@ -101,7 +101,11 @@ class FakeLLM:
             for fid in ("name", "color", "agree", "comment")
         ]
         batch = PlausibilityBatch.model_validate({"items": items})
-        return type("Msg", (), {"structured_output": batch, "output": batch})()
+        return type(
+            "Msg",
+            (),
+            {"structured_output": batch, "output": batch, "model": "fake-model-1", "provider": "fake"},
+        )()
 
 
 class FakeSynth:

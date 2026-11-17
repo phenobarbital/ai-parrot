@@ -50,7 +50,7 @@ class TestPulumiToolkitInit:
     @pytest.mark.asyncio
     async def test_get_tools_returns_expected_tools(self, toolkit):
         """get_tools() returns expected tools."""
-        tools = await toolkit.get_tools()
+        tools = toolkit.get_tools()
         tool_names = [t.name for t in tools]
 
         assert "pulumi_plan" in tool_names
@@ -62,7 +62,7 @@ class TestPulumiToolkitInit:
     @pytest.mark.asyncio
     async def test_get_tools_count(self, toolkit):
         """get_tools() returns at least 4 tools."""
-        tools = await toolkit.get_tools()
+        tools = toolkit.get_tools()
         assert len(tools) >= 4
 
 

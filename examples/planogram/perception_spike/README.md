@@ -19,7 +19,7 @@ population accuracy claims.
 - Never commit photos, annotations, crops, per-photo filenames, store names or
   paths. Keep the private sample **outside** the repository or in this folder
   (where it stays ignored).
-- The report (`docs/pipelines/planogram-perception-spike.md`) contains aggregates
+- The report (`wiki/flows/pipelines/planogram-perception-spike.md`) contains aggregates
   only; photos are referred to by an anonymous index (`photo 1`, `photo 2`, …).
 
 ## Annotation format
@@ -66,12 +66,12 @@ With the worktree sources on the path:
 source .venv/bin/activate
 export PYTHONPATH=packages/ai-parrot-pipelines/src:packages/ai-parrot/src
 # No private sample: synthetic cases only (outcome is "inconclusive").
-python examples/planogram/perception_spike/run_spike.py --out docs/pipelines/planogram-perception-spike.md
+python examples/planogram/perception_spike/run_spike.py --out wiki/flows/pipelines/planogram-perception-spike.md
 # With the private sample and an optional fixture-membership module exposing admit(candidates, image_size):
 python examples/planogram/perception_spike/run_spike.py \
   --photos-dir /private/photos --annotations-dir /private/annotations \
   --membership-module my_membership_module \
-  --out docs/pipelines/planogram-perception-spike.md
+  --out wiki/flows/pipelines/planogram-perception-spike.md
 ```
 
 Other options: `--iou` (matching threshold, default 0.5) and `--work-width`

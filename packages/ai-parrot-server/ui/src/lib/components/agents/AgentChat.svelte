@@ -22,6 +22,7 @@
     InteractiveArtifactResult,
     InteractiveArtifactTabData,
   } from "$lib/types/agent";
+  import type { AgentChatSuggestion } from "$lib/types/generated/AgentChatResponse";
   import type { BotChatRequest } from "$lib/types/bot-chat";
   import {
     stripSourcesFromResponse,
@@ -40,6 +41,7 @@
 
   import Icon from "@iconify/svelte";
   import { toastStore } from "$lib/stores/toast.svelte";
+  import { connectionsStore } from "$lib/stores/connections.svelte";
   import { notificationStore } from "$lib/stores/notifications.svelte";
   import { wsService } from "$lib/services/websocket-service";
   import { onDestroy } from "svelte";
@@ -555,6 +557,7 @@
   let wsUnsubscribe: (() => void) | null = null;
 
   onMount(async () => {
+    connectionsStore.start();
     // Validate the synchronously-hydrated session id (from localStorage)
     // still maps to a real conversation in IndexedDB. If it doesn't (cache
     // cleared, dev DB wiped, …), clear it so the UI shows the empty state
@@ -616,6 +619,7 @@
   });
 
   onDestroy(() => {
+    connectionsStore.stop();
     // Abort all pending requests
     for (const { controller } of pendingQuestions.values()) {
       controller.abort();
@@ -846,6 +850,7 @@
         let streamFailed = false;
         let streamError: unknown = null;
         let finalMessage: AgentMessage | null = null;
+        let authRequiredReceived = false;
 
         try {
           // Build the appropriate payload with stream: true
@@ -924,6 +929,8 @@
               ...(context && { context }),
               ...(llm && { llm }),
               ...(kwargs && kwargs),
+              // FEAT-752 rev 0.3: chips arrive in a trailing frame; the bubble completes on the envelope.
+              suggestions_trailer: true,
               stream: true,
             };
             clearFollowup();
@@ -1031,8 +1038,56 @@
                         : null,
                   sources: resolveAgentSources(agentResult.sources),
                   a2ui_envelope: agentResult.a2ui_envelope,
+                  suggestions: agentResult.suggestions,
                 };
               }
+              // FEAT-752 rev 0.3: the envelope is complete — finish the visible bubble now instead of at EOF so a
+              // slow trailing chips frame never delays it. The after-loop block below stays the single place that
+              // saves, titles and opens canvases.
+              if (finalMessage) {
+                const completed = finalMessage;
+                messages = messages.map((m) =>
+                  m.id === pendingResponseId ? completed : m,
+                );
+                streamingMessageId = null;
+              }
+            } else if (event.type === "suggestions") {
+              // Trailing chips frame: patch the finished bubble and the local copy the after-loop save uses.
+              if (finalMessage) {
+                const withChips = {
+                  ...finalMessage,
+                  suggestions: event.suggestions,
+                };
+                finalMessage = withChips;
+                messages = messages.map((m) =>
+                  m.id === withChips.id ? withChips : m,
+                );
+              }
+            } else if (event.type === "auth_required" && !authRequiredReceived) {
+              authRequiredReceived = true;
+              messages = [
+                ...messages,
+                {
+                  id: uuidv4(),
+                  role: "assistant",
+                  type: "auth_required",
+                  content:
+                    event.payload.message ||
+                    "Authorization required to use this feature.",
+                  provider: event.payload.provider,
+                  scopes: event.payload.scopes ?? [],
+                  retry_safe: event.retry_safe === true,
+                  origin_user_msg_id: userMsgId,
+                  timestamp: new Date(),
+                  metadata: {
+                    session_id: sessionId,
+                    model: "system",
+                    provider: event.payload.provider,
+                    turn_id: event.turn_id ?? "",
+                    response_time: 0,
+                  },
+                },
+              ];
             }
           }
         } catch (err: unknown) {
@@ -1072,9 +1127,16 @@
           const pendingExists = messages.some(
             (m) => m.id === pendingResponseId,
           );
+          // FEAT-752 rev 0.3: the `done` event may already have swapped the pending bubble for the final message
+          // (its id is then the turn id): replace it in place instead of appending a duplicate.
+          const alreadySwapped = messages.some((m) => m.id === finalMessage!.id);
           if (pendingExists) {
             messages = messages.map((m) =>
               m.id === pendingResponseId ? finalMessage! : m,
+            );
+          } else if (alreadySwapped) {
+            messages = messages.map((m) =>
+              m.id === finalMessage!.id ? finalMessage! : m,
             );
           } else {
             messages = [...messages, finalMessage];
@@ -1319,6 +1381,8 @@
             provider: rawResult.provider,
             auth_url: rawResult.auth_url,
             scopes: rawResult.scopes,
+            retry_safe: rawResult.retry_safe === true,
+            origin_user_msg_id: userMsgId,
             timestamp: new Date(),
             metadata: {
               session_id: sessionId,
@@ -1372,6 +1436,7 @@
                   : null,
             sources: resolveAgentSources(result.sources),
             a2ui_envelope: result.a2ui_envelope,
+            suggestions: result.suggestions,
           };
         }
       }
@@ -1557,6 +1622,7 @@
         htmlResponse: isInteractive ? null : isHtml ? responseText : null,
         sources: resolveAgentSources(result.sources),
         a2ui_envelope: result.a2ui_envelope,
+        suggestions: result.suggestions,
         // Spoken answer (present only when TTS succeeded) — kept in-memory only.
         // FEAT-169: in avatar mode, audio comes from the LiveKit room — do not play audio_base64
         audio_base64: avatarLive ? undefined : result.audio_base64,
@@ -1672,6 +1738,15 @@
 
   function handleRepeat(text: string) {
     inputText = text;
+  }
+
+  function handleSuggestion(message: AgentMessage, s: AgentChatSuggestion) {
+    // FEAT-752: explain chips reuse the existing explain flow; everything else is an ordinary chat turn.
+    if (s.kind === "action") {
+      if (s.action === "explain") handleExplain(message.id, message.data);
+      return; // unknown actions are ignored, never sent as a chat turn
+    }
+    handleSend(s.prompt, undefined, s.output_mode ?? undefined);
   }
 
   function handleFollowup(turnId: string, data: any) {
@@ -1899,12 +1974,61 @@
     return pendingQuestions.has(msgId);
   }
 
+  const autoRetried = new Set<string>();
+  let manualRetryMessageIds = $state<string[]>([]);
+
+  function requireManualRetry(msgId: string): void {
+    if (!manualRetryMessageIds.includes(msgId)) {
+      manualRetryMessageIds = [...manualRetryMessageIds, msgId];
+    }
+  }
+
+  async function handleAuthConnected(msg: AgentMessage): Promise<void> {
+    const origin = msg.origin_user_msg_id;
+    if (msg.retry_safe !== true) return;
+    if (!origin || autoRetried.has(origin)) {
+      requireManualRetry(msg.id);
+      return;
+    }
+
+    const originIndex = messages.findIndex((candidate) => candidate.id === origin);
+    if (
+      originIndex === -1 ||
+      messages
+        .slice(originIndex + 1)
+        .some((candidate) => candidate.role === "user")
+    ) {
+      requireManualRetry(msg.id);
+      return;
+    }
+
+    autoRetried.add(origin);
+    await connectionsStore.refresh();
+    const connection = connectionsStore.items.find(
+      (item) => item.provider === msg.provider,
+    );
+    const requiredScopes = msg.scopes ?? [];
+    if (
+      !connection?.connected ||
+      !requiredScopes.every((scope) =>
+        connection.scopes_granted?.includes(scope),
+      )
+    ) {
+      requireManualRetry(msg.id);
+      return;
+    }
+
+    await handleRetry(msg.id);
+  }
+
   async function handleRetry(msgId: string) {
     const msgIndex = messages.findIndex((m) => m.id === msgId);
     if (msgIndex === -1) return;
 
-    // The user message should be immediately before the error message
-    const userMsg = messages[msgIndex - 1];
+    const retryMessage = messages[msgIndex];
+    const userMsg = retryMessage.origin_user_msg_id
+      ? messages.find((message) => message.id === retryMessage.origin_user_msg_id)
+      : messages[msgIndex - 1];
     if (!userMsg || userMsg.role !== "user") {
       console.error(
         "Cannot retry: previous message not found or not from user",
@@ -2424,9 +2548,13 @@
                   {#if msg.type === "auth_required"}
                     <ConnectIntegrationPill
                       provider={msg.provider ?? ""}
-                      authUrl={msg.auth_url ?? ""}
                       message={msg.content}
                       {agentId}
+                      scopes={msg.scopes ?? []}
+                      retrySafe={msg.retry_safe === true &&
+                        !manualRetryMessageIds.includes(msg.id)}
+                      onConnected={() => handleAuthConnected(msg)}
+                      onRetry={() => handleRetry(msg.id)}
                     />
                   {:else}
                     <ChatBubble
@@ -2441,6 +2569,7 @@
                       onRepeat={handleRepeat}
                       onFollowup={handleFollowup}
                       onExplain={handleExplain}
+                      onSuggestion={handleSuggestion}
                       onRetry={handleRetry}
                       onDetailedFeedback={handleDetailedFeedback}
                       onRegenerate={handleRegenerate}

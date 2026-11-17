@@ -3,7 +3,7 @@
 // unmodified by every example that drives a VoiceSession-shaped WebSocket
 // protocol (turn_started / text / audio / tool_call / interrupted /
 // turn_complete / error, canonical lowercase "user"/"assistant" roles —
-// see docs/nova_voice_protocol.md and VoiceSession.build_frames()).
+// see wiki/integrations/nova_voice_protocol.md and VoiceSession.build_frames()).
 //
 // Provider-specific labels come entirely from window.__CONFIG__ (set by the
 // server's templated index.html) — this file itself has no per-provider

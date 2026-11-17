@@ -1,0 +1,53 @@
+{
+  "feature": "interfaces-test-configure-applies-tooling-fixes",
+  "feature_id": "FEAT-727",
+  "spec": "sdd/specs/interfaces-test-configure-applies-tooling-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-22T17:35:00Z",
+  "completed_at": "2026-10-22T17:27:59+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/interfaces/test_configure_applies_tooling.py",
+          "packages/ai-parrot/tests/bots/test_double_configure.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:57c87fc3d5cea51a653df6359541aa765d2cc3b120dc8cde5b9ebc706d1e0f5f"
+  },
+  "tasks": [
+    {
+      "id": "TASK-4622",
+      "slug": "repair-configure-applies-tooling-test",
+      "title": "Repair the test_configure_applies_tooling bot fixture",
+      "feature_id": "FEAT-727",
+      "feature": "interfaces-test-configure-applies-tooling-fixes",
+      "spec": "sdd/specs/interfaces-test-configure-applies-tooling-fixes.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "sole task; owns packages/ai-parrot/tests/interfaces/test_configure_applies_tooling.py exclusively, no shared state outside it",
+      "assigned_to": null,
+      "started_at": "2026-10-22T17:40:00Z",
+      "completed_at": "2026-10-22T17:27:59+00:00",
+      "file": "sdd/tasks/completed/TASK-4622-repair-configure-applies-tooling-test.md",
+      "verification": "verified"
+    }
+  ]
+}

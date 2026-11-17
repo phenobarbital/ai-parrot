@@ -1,0 +1,52 @@
+{
+  "feature": "commands-sdd-start-fixes",
+  "feature_id": "FEAT-870",
+  "spec": "sdd/specs/commands-sdd-start-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-10T00:03:01+00:00",
+  "completed_at": "2026-11-10T00:09:04+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:b87ad89b829cd0493ac4464b1778d8a961d3b3591886846a5d2f78406768b159"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5462",
+      "slug": "review-record-test-placeholders",
+      "title": "Wheel-only foreign-repo test maps the task review record placeholders",
+      "feature_id": "FEAT-870",
+      "feature": "commands-sdd-start-fixes",
+      "spec": "sdd/specs/commands-sdd-start-fixes.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "single task: modifies test_wheel_only_foreign_repo.py only; no other task in this feature",
+      "assigned_to": "sdd-fix session (Claude, agent:sdd-fix:88be2347)",
+      "file": "sdd/tasks/completed/TASK-5462-review-record-test-placeholders.md",
+      "started_at": "2026-11-10T00:03:25+00:00",
+      "completed_at": "2026-11-10T00:06:34+00:00",
+      "verification": "verified"
+    }
+  ]
+}

@@ -20,6 +20,7 @@ Persistence is mandatory (decision recorded in the feature plan): a
 ``storage_dir`` must be supplied and every tree is written to disk via the
 toolkit so it is immediately searchable afterwards.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -68,7 +69,7 @@ class PageIndexLoader(AbstractLoader):
         ValueError: If ``storage_dir`` is not provided.
     """
 
-    extensions: List[str] = ['.pdf', '.md', '.markdown', '.txt', '.text']
+    extensions: List[str] = [".pdf", ".md", ".markdown", ".txt", ".text"]
 
     def __init__(
         self,
@@ -88,11 +89,10 @@ class PageIndexLoader(AbstractLoader):
         super().__init__(source, **kwargs)
         if storage_dir is None:
             raise ValueError(
-                "PageIndexLoader requires a 'storage_dir' — trees are always "
-                "persisted via PageIndexToolkit."
+                "PageIndexLoader requires a 'storage_dir' — trees are always persisted via PageIndexToolkit."
             )
 
-        self.doctype = 'pageindex_node'
+        self.doctype = "pageindex_node"
         self.storage_dir = Path(storage_dir)
         self.tree_name = tree_name
         self.with_summaries = with_summaries
@@ -215,7 +215,7 @@ class PageIndexLoader(AbstractLoader):
 
     async def _import_one(self, path: Path) -> List[str]:
         """Import a single file into the tree; return the new node ids."""
-        if path.suffix.lower() == '.pdf':
+        if path.suffix.lower() == ".pdf":
             result = await self.toolkit.import_pdf(
                 self.tree_name,
                 str(path),
@@ -282,23 +282,14 @@ class PageIndexLoader(AbstractLoader):
         node_id = node.get("node_id")
         body: Optional[str] = None
         if node_id:
-            body = self._content_store.load(self.tree_name, node_id)
+            body = self._content_store.load_node(self.tree_name, node)
         content = (
-            body
-            or node.get("text")
-            or node.get("summary")
-            or node.get("prefix_summary")
-            or node.get("title")
-            or ""
+            body or node.get("text") or node.get("summary") or node.get("prefix_summary") or node.get("title") or ""
         )
-        origin = (
-            str(source_path)
-            if source_path is not None
-            else f"pageindex://{self.tree_name}/{node_id or ''}"
-        )
+        origin = str(source_path) if source_path is not None else f"pageindex://{self.tree_name}/{node_id or ''}"
         metadata = self.create_metadata(
             path=origin,
-            doctype='pageindex_node',
+            doctype="pageindex_node",
             source_type=self._source_type,
             title=node.get("title"),
             node_id=node_id,

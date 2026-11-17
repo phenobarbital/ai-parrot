@@ -18,13 +18,16 @@ from pydantic import ValidationError as PydanticValidationError
 
 from ..core.mime_match import file_type_allowed
 from ..core._location_data import is_valid_iso_country_code
+from ..core.audit_trail import CheckId, CheckOutcome, SkipReason, ValidationTrace
 from ..core.constraints import ConditionOperator, DependencyOperation
 from ..core.schema import FormField, FormSchema, FormSection
 from ..core.types import FieldType, LocalizedString
 from ..core.voice_answer import VoiceAnswerEnvelope, VoiceEvidenceEnvelope, is_voice_envelope
+from ..version import __version__ as _RULESET_VERSION
 from .auth_context import AuthContext
 from .remote_response_resolver import RemoteResponseResolver, RemoteResponseSpec
 from .unknown_fields import compute_extra_data
+from .validation_trace import ValidationTraceCollector, callable_identity, schema_fingerprint
 
 logger = logging.getLogger(__name__)
 
@@ -169,12 +172,15 @@ class ValidationResult(BaseModel):
             reads no policy field. ``{}`` when the payload matches the
             schema exactly, or on the ``__circular__``/``__rules__`` early
             returns.
+        trace: Sealed deterministic evidence (FEAT-732), or ``None`` when no
+            collector was passed.
     """
 
     is_valid: bool
     errors: dict[str, list[str]]
     sanitized_data: dict[str, Any]
     extra_data: dict[str, Any] = Field(default_factory=dict)
+    trace: ValidationTrace | None = None
 
 
 def _summarize_pydantic_errors(exc: PydanticValidationError) -> str:
@@ -227,6 +233,7 @@ class FormValidator:
         auth_context: AuthContext | None = None,
         location_vars: dict[str, Any] | None = None,
         visit_context: dict[str, Any] | None = None,
+        trace: ValidationTraceCollector | None = None,
     ) -> ValidationResult:
         """Validate all form submission data against the schema.
 
@@ -245,6 +252,9 @@ class FormValidator:
                 the renderer used to keep both sides in agreement.
             visit_context: Visit-level metadata, forwarded to rule resolution
                 with the same caveat as ``location_vars``.
+            trace: Optional collector (FEAT-732). When given, the result
+                carries a sealed ``ValidationTrace``; when ``None`` validation
+                is unchanged.
 
         Returns:
             ValidationResult with field-level errors and sanitized data.
@@ -254,15 +264,29 @@ class FormValidator:
 
         # Detect circular dependencies first (includes post_depends and operation edges)
         circular_errors = self._detect_circular_dependencies(form)
+        if trace is not None:
+            trace.record_form(
+                CheckId.FORM_CIRCULAR_DEPENDENCIES,
+                CheckOutcome.FAIL if circular_errors else CheckOutcome.PASS,
+                message="; ".join(circular_errors) or None,
+            )
         if circular_errors:
             errors["__circular__"] = circular_errors
-            return ValidationResult(is_valid=False, errors=errors, sanitized_data=sanitized)
+            if trace is not None:
+                trace.record_form(CheckId.FORM_RULE_INTEGRITY, CheckOutcome.SKIP, skip_reason=SkipReason.EARLY_RETURN)
+            return self._seal(form, trace, ValidationResult(is_valid=False, errors=errors, sanitized_data=sanitized))
 
         # Rule-integrity pass: validate references, ordering, and operator/type compatibility
         rule_errors = self.validate_rules(form)
+        if trace is not None:
+            trace.record_form(
+                CheckId.FORM_RULE_INTEGRITY,
+                CheckOutcome.FAIL if rule_errors else CheckOutcome.PASS,
+                message="; ".join(rule_errors) or None,
+            )
         if rule_errors:
             errors["__rules__"] = rule_errors
-            return ValidationResult(is_valid=False, errors=errors, sanitized_data=sanitized)
+            return self._seal(form, trace, ValidationResult(is_valid=False, errors=errors, sanitized_data=sanitized))
 
         # Collect all fields from all sections
         all_fields: list[FormField] = []
@@ -297,6 +321,9 @@ class FormValidator:
             effective_required = resolution.required.get(field.field_id, field.required) and resolution.visible.get(
                 field.field_id, True
             )
+            visible = resolution.visible.get(field.field_id, True)
+            if trace is not None:
+                trace.record_resolution(field.field_id, visible=visible, required=effective_required)
             field_errors = await self.validate_field(
                 field,
                 data.get(field.field_id),
@@ -304,7 +331,12 @@ class FormValidator:
                 locale=locale,
                 auth_context=auth_context,
                 required=effective_required,
+                trace=trace,
             )
+            if trace is not None and not visible and resolution.required.get(field.field_id, field.required):
+                trace.record(
+                    field.field_id, CheckId.FIELD_REQUIRED, CheckOutcome.SKIP, skip_reason=SkipReason.NOT_DISPLAYED
+                )
             if field_errors:
                 errors[field.field_id] = field_errors
             else:
@@ -357,12 +389,29 @@ class FormValidator:
         declared_ids = self._declared_field_ids_for_extras(all_fields)
         extra_data = compute_extra_data(data, declared_ids)
 
-        return ValidationResult(
-            is_valid=len(errors) == 0,
-            errors=errors,
-            sanitized_data=sanitized,
-            extra_data=extra_data,
+        return self._seal(
+            form,
+            trace,
+            ValidationResult(
+                is_valid=len(errors) == 0,
+                errors=errors,
+                sanitized_data=sanitized,
+                extra_data=extra_data,
+            ),
         )
+
+    @staticmethod
+    def _seal(form: FormSchema, trace: ValidationTraceCollector | None, result: ValidationResult) -> ValidationResult:
+        """Attach the sealed trace to ``result`` (FEAT-732); a no-op without a collector."""
+        if trace is None:
+            return result
+        result.trace = trace.finish(
+            form,
+            fingerprint=schema_fingerprint(form),
+            ruleset_version=_RULESET_VERSION,
+            is_valid=result.is_valid,
+        )
+        return result
 
     async def validate_field(
         self,
@@ -373,6 +422,7 @@ class FormValidator:
         locale: str = "en",
         auth_context: AuthContext | None = None,
         required: bool | None = None,
+        trace: ValidationTraceCollector | None = None,
     ) -> list[str]:
         """Validate a single field value against its constraints.
 
@@ -385,6 +435,8 @@ class FormValidator:
             required: Overrides ``field.required`` for this call. ``validate``
                 passes the rule-resolved value, so a field the form never
                 displayed is not demanded; ``None`` keeps the schema default.
+            trace: Optional collector (FEAT-732), forwarded into the
+                voice-envelope recursion. Never changes the return value.
 
         Returns:
             List of error messages (empty list if valid).
@@ -394,14 +446,60 @@ class FormValidator:
 
         # Resolve label for error messages
         label = _resolve_localized(field.label, locale) or field.field_id
+        fid = field.field_id
+
+        def _rec(
+            check: CheckId,
+            mark: int,
+            *,
+            declared: bool = True,
+            applies: bool = True,
+            bound: str | None = None,
+            skip_reason: SkipReason = SkipReason.WRONG_VALUE_SHAPE,
+        ) -> None:
+            """Record one check, inferring PASS or FAIL from new errors."""
+            if trace is None or not declared:
+                return
+            if not applies:
+                trace.record(fid, check, CheckOutcome.SKIP, bound=bound, skip_reason=skip_reason)
+                return
+            new = errors[mark:]
+            trace.record(
+                fid,
+                check,
+                CheckOutcome.FAIL if new else CheckOutcome.PASS,
+                bound=bound,
+                message=new[0] if new else None,
+            )
+
+        def _skip_rest(reason: SkipReason) -> None:
+            """Record every declared check that validation did not reach."""
+            if trace is not None:
+                trace.skip_remaining(fid, self._declared_checks(field), reason)
 
         # REMOTE_RESPONSE: resolve via external API before standard validation
         if field.field_type == FieldType.REMOTE_RESPONSE:
-            return await self._validate_remote_response(field, value, label, auth_context=auth_context)
+            remote_errors = await self._validate_remote_response(field, value, label, auth_context=auth_context)
+            if trace is not None:
+                trace.record(
+                    fid,
+                    CheckId.FIELD_REMOTE_RESPONSE,
+                    CheckOutcome.FAIL if remote_errors else CheckOutcome.PASS,
+                    message=remote_errors[0] if remote_errors else None,
+                )
+            return remote_errors
 
         # REST: validate the submitted {answer, blob_ref, status?} shape
         if field.field_type == FieldType.REST:
-            return self._validate_rest_field(field, value, label, is_required)
+            rest_errors = self._validate_rest_field(field, value, label, is_required)
+            if trace is not None:
+                trace.record(
+                    fid,
+                    CheckId.FIELD_REST,
+                    CheckOutcome.FAIL if rest_errors else CheckOutcome.PASS,
+                    message=rest_errors[0] if rest_errors else None,
+                )
+            return rest_errors
 
         # FEAT-649: a spoken answer on any field type arrives as a VoiceEvidenceEnvelope —
         # validate its scalar with this field's normal rules (unwrap -> validate -> re-fold at sanitize time).
@@ -410,7 +508,17 @@ class FormValidator:
                 try:
                     VoiceEvidenceEnvelope.model_validate(value)
                 except PydanticValidationError:
+                    if trace is not None:
+                        trace.record(
+                            fid,
+                            CheckId.FIELD_VOICE_ENVELOPE,
+                            CheckOutcome.FAIL,
+                            message=f"{label} has an invalid voice answer",
+                        )
+                    _skip_rest(SkipReason.EARLY_RETURN)
                     return [f"{label} has an invalid voice answer"]
+            if trace is not None:
+                trace.record(fid, CheckId.FIELD_VOICE_ENVELOPE, CheckOutcome.PASS)
             return await self.validate_field(
                 field,
                 value.get("answer") if isinstance(value, dict) else value.answer,
@@ -418,6 +526,7 @@ class FormValidator:
                 locale=locale,
                 auth_context=auth_context,
                 required=required,
+                trace=trace,
             )
 
         # Required check. FEAT-488: a dict answer needs its own emptiness
@@ -429,12 +538,25 @@ class FormValidator:
             or (isinstance(value, str) and not value.strip())
             or (isinstance(value, dict) and self._is_empty_dict_answer(value, field))
         )
+        if trace is not None:
+            if is_required:
+                trace.record(
+                    fid,
+                    CheckId.FIELD_REQUIRED,
+                    CheckOutcome.FAIL if is_empty else CheckOutcome.PASS,
+                    bound="required=True",
+                    message=f"{label} is required" if is_empty else None,
+                )
+            else:
+                trace.record(fid, CheckId.FIELD_REQUIRED, CheckOutcome.SKIP, skip_reason=SkipReason.NOT_APPLICABLE)
         if is_required and is_empty:
             errors.append(f"{label} is required")
+            _skip_rest(SkipReason.EARLY_RETURN)
             return errors
 
         # If not required and empty, skip further validation
         if is_empty:
+            _skip_rest(SkipReason.EMPTY_OPTIONAL)
             return errors
 
         # Relation shape validation (FEAT-456) — reference-mode only,
@@ -448,14 +570,34 @@ class FormValidator:
         if field.relation is not None and field.relation.mode == "reference":
             relation_errors = self._validate_relation_shape(field, value, label)
             if relation_errors:
+                if trace is not None:
+                    trace.record(
+                        fid,
+                        CheckId.FIELD_RELATION_SHAPE,
+                        CheckOutcome.FAIL,
+                        bound=f"cardinality={field.relation.cardinality}",
+                        message=relation_errors[0],
+                    )
+                _skip_rest(SkipReason.EARLY_RETURN)
                 return relation_errors
+            if trace is not None:
+                trace.record(
+                    fid,
+                    CheckId.FIELD_RELATION_SHAPE,
+                    CheckOutcome.PASS,
+                    bound=f"cardinality={field.relation.cardinality}",
+                )
 
         # Type coercion
+        m = len(errors)
         try:
             coerced = self._coerce_value(value, field)
         except (ValueError, TypeError) as exc:
             errors.append(str(exc))
+            _rec(CheckId.FIELD_COERCE, m, bound=f"type={field.field_type.value}")
+            _skip_rest(SkipReason.EARLY_RETURN)
             return errors
+        _rec(CheckId.FIELD_COERCE, m, bound=f"type={field.field_type.value}")
 
         # Apply FieldConstraints.
         #
@@ -468,28 +610,86 @@ class FormValidator:
         text_value = self._constrainable_text(coerced, field)
         if field.constraints:
             c = field.constraints
+            m = len(errors)
             if c.min_length is not None and text_value is not None:
                 if len(text_value) < c.min_length:
                     errors.append(f"{label} must be at least {c.min_length} characters")
+            _rec(
+                CheckId.CONSTRAINT_MIN_LENGTH,
+                m,
+                declared=c.min_length is not None,
+                applies=text_value is not None,
+                bound=f"min_length={c.min_length}",
+            )
+            m = len(errors)
             if c.max_length is not None and text_value is not None:
                 if len(text_value) > c.max_length:
                     errors.append(f"{label} must be at most {c.max_length} characters")
+            _rec(
+                CheckId.CONSTRAINT_MAX_LENGTH,
+                m,
+                declared=c.max_length is not None,
+                applies=text_value is not None,
+                bound=f"max_length={c.max_length}",
+            )
+            m = len(errors)
             if c.min_value is not None and isinstance(coerced, (int, float)):
                 if coerced < c.min_value:
                     errors.append(f"{label} must be at least {c.min_value}")
+            _rec(
+                CheckId.CONSTRAINT_MIN_VALUE,
+                m,
+                declared=c.min_value is not None,
+                applies=isinstance(coerced, (int, float)),
+                bound=f"min_value={c.min_value}",
+            )
+            m = len(errors)
             if c.max_value is not None and isinstance(coerced, (int, float)):
                 if coerced > c.max_value:
                     errors.append(f"{label} must be at most {c.max_value}")
+            _rec(
+                CheckId.CONSTRAINT_MAX_VALUE,
+                m,
+                declared=c.max_value is not None,
+                applies=isinstance(coerced, (int, float)),
+                bound=f"max_value={c.max_value}",
+            )
+            m = len(errors)
             if c.pattern is not None and text_value is not None:
                 if not re.fullmatch(c.pattern, text_value):
                     msg = _resolve_localized(c.pattern_message, locale)
                     errors.append(msg or f"{label} format is invalid")
+            _rec(
+                CheckId.CONSTRAINT_PATTERN,
+                m,
+                declared=c.pattern is not None,
+                applies=text_value is not None,
+                bound=f"pattern={c.pattern}",
+            )
+            m = len(errors)
             if c.min_items is not None and isinstance(coerced, list):
                 if len(coerced) < c.min_items:
                     errors.append(f"{label} must have at least {c.min_items} items")
+            _rec(
+                CheckId.CONSTRAINT_MIN_ITEMS,
+                m,
+                declared=c.min_items is not None,
+                applies=isinstance(coerced, list),
+                bound=f"min_items={c.min_items}",
+            )
+            m = len(errors)
             if c.max_items is not None and isinstance(coerced, list):
                 if len(coerced) > c.max_items:
                     errors.append(f"{label} must have at most {c.max_items} items")
+            _rec(
+                CheckId.CONSTRAINT_MAX_ITEMS,
+                m,
+                declared=c.max_items is not None,
+                applies=isinstance(coerced, list),
+                bound=f"max_items={c.max_items}",
+            )
+            m = len(errors)
+            mime = None
             if (
                 c.allowed_mime_types
                 and field.field_type in (FieldType.FILE, FieldType.IMAGE)
@@ -507,12 +707,41 @@ class FormValidator:
                 # does not match — as it did not before.
                 if mime and not file_type_allowed(c.allowed_mime_types, mime, None):
                     errors.append(f"{label} must be one of: {', '.join(c.allowed_mime_types)}")
+            mime_declared = bool(c.allowed_mime_types) and field.field_type in (FieldType.FILE, FieldType.IMAGE)
+            if _is_file_envelope_shaped(coerced):
+                _rec(
+                    CheckId.CONSTRAINT_ALLOWED_MIME_TYPES,
+                    m,
+                    declared=mime_declared,
+                    applies=False,
+                    bound=f"allowed_mime_types={','.join(c.allowed_mime_types or [])}",
+                    skip_reason=SkipReason.NOT_APPLICABLE,
+                )
+            elif mime is None:
+                _rec(
+                    CheckId.CONSTRAINT_ALLOWED_MIME_TYPES,
+                    m,
+                    declared=mime_declared,
+                    applies=False,
+                    bound=f"allowed_mime_types={','.join(c.allowed_mime_types or [])}",
+                    skip_reason=SkipReason.NO_MIME_SIDECHANNEL,
+                )
+            else:
+                _rec(
+                    CheckId.CONSTRAINT_ALLOWED_MIME_TYPES,
+                    m,
+                    declared=mime_declared,
+                    bound=f"allowed_mime_types={','.join(c.allowed_mime_types or [])}",
+                )
 
         # Built-in type validation
+        m = len(errors)
         type_errors = self._validate_by_type(coerced, field, label)
         errors.extend(type_errors)
+        _rec(CheckId.FIELD_TYPE, m, bound=f"type={field.field_type.value}")
 
         # SELECT/MULTI_SELECT option validation
+        m = len(errors)
         if field.options and field.field_type == FieldType.SELECT:
             allowed = {opt.value for opt in field.options}
             if str(coerced) not in allowed:
@@ -523,18 +752,86 @@ class FormValidator:
             invalid = [v for v in selected if v not in allowed]
             if invalid:
                 errors.append(f"{label} contains invalid choices: {', '.join(invalid)}")
+        _rec(
+            CheckId.FIELD_OPTION_SET,
+            m,
+            declared=bool(field.options) and field.field_type in (FieldType.SELECT, FieldType.MULTI_SELECT),
+            bound=f"options={len(field.options or [])}",
+        )
 
         # Cross-field validation via meta
+        m = len(errors)
         if field.meta and all_data:
             cross_errors = await self._run_cross_field_validation(field, coerced, all_data, label, locale)
             errors.extend(cross_errors)
+        cross_validators = field.meta.get("cross_field_validators", []) if field.meta else []
+        _rec(
+            CheckId.FIELD_CROSS_FIELD,
+            m,
+            declared=bool(cross_validators),
+            applies=bool(all_data),
+            bound=",".join(callable_identity(fn) for fn in cross_validators),
+            skip_reason=SkipReason.NOT_APPLICABLE,
+        )
 
         # Async remote validation via meta
+        m = len(errors)
         if field.meta and "async_validator" in field.meta:
             remote_errors = await self._run_async_validator(field, coerced, all_data, label, locale)
             errors.extend(remote_errors)
+        async_validator = field.meta.get("async_validator") if field.meta else None
+        _rec(
+            CheckId.FIELD_ASYNC_VALIDATOR,
+            m,
+            declared=bool(field.meta and "async_validator" in field.meta),
+            bound=callable_identity(async_validator) if async_validator is not None else None,
+        )
 
         return errors
+
+    _BOUNDED_CONSTRAINTS: tuple[tuple[str, CheckId], ...] = (
+        ("min_length", CheckId.CONSTRAINT_MIN_LENGTH),
+        ("max_length", CheckId.CONSTRAINT_MAX_LENGTH),
+        ("min_value", CheckId.CONSTRAINT_MIN_VALUE),
+        ("max_value", CheckId.CONSTRAINT_MAX_VALUE),
+        ("pattern", CheckId.CONSTRAINT_PATTERN),
+        ("min_items", CheckId.CONSTRAINT_MIN_ITEMS),
+        ("max_items", CheckId.CONSTRAINT_MAX_ITEMS),
+    )
+
+    def _declared_checks(self, field: FormField) -> list[tuple[CheckId, str | None]]:
+        """Return the checks ``validate_field`` would evaluate for a field."""
+        if field.field_type == FieldType.REMOTE_RESPONSE:
+            return [(CheckId.FIELD_REMOTE_RESPONSE, None)]
+        if field.field_type == FieldType.REST:
+            return [(CheckId.FIELD_REST, None)]
+
+        checks: list[tuple[CheckId, str | None]] = [(CheckId.FIELD_REQUIRED, None)]
+        if field.relation is not None and field.relation.mode == "reference":
+            checks.append((CheckId.FIELD_RELATION_SHAPE, f"cardinality={field.relation.cardinality}"))
+        checks.append((CheckId.FIELD_COERCE, f"type={field.field_type.value}"))
+        if field.constraints:
+            for attr, check in self._BOUNDED_CONSTRAINTS:
+                value = getattr(field.constraints, attr)
+                if value is not None:
+                    checks.append((check, f"{attr}={value}"))
+            if field.constraints.allowed_mime_types and field.field_type in (FieldType.FILE, FieldType.IMAGE):
+                checks.append(
+                    (
+                        CheckId.CONSTRAINT_ALLOWED_MIME_TYPES,
+                        f"allowed_mime_types={','.join(field.constraints.allowed_mime_types)}",
+                    )
+                )
+        checks.append((CheckId.FIELD_TYPE, f"type={field.field_type.value}"))
+        if field.options and field.field_type in (FieldType.SELECT, FieldType.MULTI_SELECT):
+            checks.append((CheckId.FIELD_OPTION_SET, f"options={len(field.options)}"))
+        meta = field.meta or {}
+        cross_validators = meta.get("cross_field_validators", [])
+        if cross_validators:
+            checks.append((CheckId.FIELD_CROSS_FIELD, ",".join(callable_identity(fn) for fn in cross_validators)))
+        if "async_validator" in meta:
+            checks.append((CheckId.FIELD_ASYNC_VALIDATOR, callable_identity(meta["async_validator"])))
+        return checks
 
     def _validate_relation_shape(self, field: FormField, value: Any, label: str) -> list[str]:
         """Shape-check a reference-mode relational field's submitted value

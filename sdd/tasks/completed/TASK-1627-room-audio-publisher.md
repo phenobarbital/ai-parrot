@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-256 — LiveKit Direct Audio (avatar-optional livekit voice)
 **Spec**: `sdd/specs/livekit-direct-audio.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

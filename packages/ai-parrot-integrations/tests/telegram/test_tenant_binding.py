@@ -109,7 +109,10 @@ async def test_skill_command_uses_contextvar_and_passes_tenant():
     skill = SimpleNamespace(name="revenue", body="instructions")
     agent = SimpleNamespace(ask=AsyncMock(return_value="ok"))
     wrapper = _wrapper(TelegramAgentConfig(name="finance", chatbot_id="finance", tenant="acme"), agent)
-    message = SimpleNamespace(chat=SimpleNamespace(id=4), text="/skill revenue", answer=AsyncMock())
+    message = SimpleNamespace(
+        chat=SimpleNamespace(id=4), from_user=None, text="/skill revenue", answer=AsyncMock()
+    )
+    wrapper._user_sessions = {}
     wrapper._is_authorized = lambda chat_id: True
     wrapper._check_authentication = AsyncMock(return_value=True)
     wrapper._list_agent_skills = lambda: [{"name": "revenue"}]

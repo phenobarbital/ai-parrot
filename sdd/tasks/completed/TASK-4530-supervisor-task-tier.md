@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-709 — Language-agnostic validation runners and an engine-owned task-tier gate
 **Spec**: `sdd/specs/language-agnostic-validation-runners.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-4529

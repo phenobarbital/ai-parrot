@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-646 — Ink-wall slot recovery and completeness policy
 **Spec**: `sdd/specs/ink-wall-registration-and-completeness.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

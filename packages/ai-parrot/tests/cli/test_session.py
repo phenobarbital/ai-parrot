@@ -288,3 +288,45 @@ async def test_runner_post_turn_hook_after_completed_only(_runner_lifecycle_scop
     cancel_runner.cancel()
     await task
     assert len(calls) == 1
+
+
+def test_string_capabilities_on_bot_fall_back_to_defaults() -> None:
+    """AbstractBot.capabilities is prompt text (a str); it must never be used as BackendCapabilities."""
+    from parrot.cli.events import BackendCapabilities
+
+    bot = _FakeBot(deltas=[])
+    bot.capabilities = "I can answer questions about sales."
+    runner = TurnRunner(bot, _config(), capabilities=bot.capabilities)  # type: ignore[arg-type]
+    assert isinstance(runner.capabilities, BackendCapabilities)
+    assert runner.capabilities.live_tool_events is True
+
+
+@pytest.mark.asyncio
+async def test_stream_closed_in_turn_task_after_final_message() -> None:
+    """The runner `break`s on the final AIMessage; it must aclose() ask_stream in its own task/Context.
+
+    Otherwise the asyncgen finalizer closes it in a new Context and the generator's ContextVar
+    ``reset(token)`` raises "was created in a different Context" (Task exception was never retrieved).
+    """
+    import contextvars
+
+    var: contextvars.ContextVar[str] = contextvars.ContextVar("test_scope", default="none")
+    state: dict = {}
+
+    class _ScopedBot:
+        async def ask_stream(self, question: str, **kwargs):
+            token = var.set("in-call")
+            try:
+                yield "hello"
+                yield SimpleNamespace(output="hello")  # final AIMessage-like chunk
+            finally:
+                try:
+                    var.reset(token)
+                    state["reset"] = "ok"
+                except ValueError as exc:  # pragma: no cover — the bug being guarded against
+                    state["reset"] = repr(exc)
+
+    runner = TurnRunner(_ScopedBot(), _config())
+    events = [evt async for evt in runner.run_turn("hi")]
+    assert isinstance(events[-1], TurnCompleted)
+    assert state.get("reset") == "ok"

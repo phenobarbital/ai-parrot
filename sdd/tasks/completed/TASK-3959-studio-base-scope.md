@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-605 — Agent Studio — Tenant Scope, Owner-Controlled Visibility & Host Mount
 **Spec**: `sdd/specs/agentstudio-tenant-visibility.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3956, TASK-3957

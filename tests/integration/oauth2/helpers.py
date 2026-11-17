@@ -4,8 +4,8 @@ These are plain functions (not pytest fixtures) used by multiple test modules.
 """
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
-
+import os
+from unittest.mock import AsyncMock, MagicMock, patch
 
 def make_mock_db() -> tuple[MagicMock, AsyncMock]:
     """Return (mock_db_cls, mock_db_instance) pair for patching DocumentDb.
@@ -13,7 +13,9 @@ def make_mock_db() -> tuple[MagicMock, AsyncMock]:
     Usage::
 
         mock_db_cls, mock_db = make_mock_db()
-        with patch("parrot.auth.oauth2.persistence.DocumentDb", mock_db_cls):
+        with patch.dict(os.environ, {"INTEGRATIONS_STORE": "documentdb"}), patch(
+            "parrot.auth.oauth2.persistence.DocumentDb", mock_db_cls
+        ):
             ...
         mock_db.update_one.assert_called_once()
     """

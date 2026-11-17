@@ -15,11 +15,13 @@ from parrot_formdesigner.controls.registry import _REGISTRY
 
 @pytest.fixture(autouse=True)
 def _seed_builtin():
+    saved = dict(_REGISTRY)
     _REGISTRY.clear()
     sys.modules.pop("parrot_formdesigner.controls.builtin", None)
     importlib.import_module("parrot_formdesigner.controls.builtin")
     yield
     _REGISTRY.clear()
+    _REGISTRY.update(saved)
 
 
 def test_extension_with_string_type_in_registry():

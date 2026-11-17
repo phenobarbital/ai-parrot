@@ -169,8 +169,9 @@ declaratively in this repo — set via GitHub repo settings.
 
 ## Worktrees
 
-Everything about worktrees — location (`.claude/worktrees/`), naming,
-creation via `python -m scripts.sdd.ensure_worktree` (always from
+Everything about worktrees — location (under the worktree root: default
+`.parrot/worktrees/`, override with an exported `WORKTREE_BASE_PATH`), naming,
+creation via `parrot sdd worktree ensure` (always from
 `origin/<base_branch>`, never `HEAD`, never `claude --worktree`), working
 inside one, finishing and cleanup — lives in **one** rule:
 `.claude/rules/worktree-management.md` (twin: `.agent/skills/worktree-management/`).
@@ -210,7 +211,7 @@ brings them to `base_branch` atomically.
 
 **Note (FEAT-387)**: `sdd/tasks/.id_ledger.json` is a git-tracked
 compare-and-swap counter for `TASK-<NNN>`/`FEAT-<NNN>` numbers, allocated
-via `scripts/sdd/reserve_ids.py` (not scanned-and-incremented by hand). Its
+via `parrot.sdd.scripts.reserve_ids` (not scanned-and-incremented by hand). Its
 reservation commit is independent — pushed to `base_branch` immediately by
 `reserve_ids.py` itself, BEFORE the calling command's own task/spec files
 are written, never bundled into the same commit. `scripts/sdd/
@@ -225,30 +226,30 @@ git checkout dev && git pull origin dev
 /sdd-spec <feature> -- ...                 # spec, committed to dev
 /sdd-task sdd/specs/<feature>.spec.md      # tasks, committed to dev
 /sdd-start TASK-<NNN>                      # creates the worktree, implements the task
-cd .claude/worktrees/feat-FEAT-<NNN>-<slug>
-/sdd-start TASK-<NNN+1> …                  # or: claude --agent sdd-worker
+MAIN_ROOT=$(cd "$(git rev-parse --path-format=absolute --git-common-dir)/.." && pwd)
+WORKTREES_DIR=$(parrot sdd worktree root --root "$MAIN_ROOT") || exit $?
+cd "$WORKTREES_DIR/feat-FEAT-<NNN>-<slug>"
+/sdd-start TASK-<NNN+1> …                  # or: parrot sdd launch worker FEAT-<NNN>
 /sdd-done FEAT-<NNN>                       # verify, push, PR → dev (--merge: direct), clean up
 ```
 
 ## Autonomous Agent (`sdd-worker`)
 
 The `sdd-worker` agent (`.claude/agents/sdd-worker.md`) implements all tasks for
-a feature sequentially. Launch it **inside** a manually-created worktree:
+a feature sequentially. Launch it from the host by feature ID:
 
 ```bash
-cd .claude/worktrees/<feature-worktree>
-claude --agent sdd-worker --model sonnet --verbose
+parrot sdd launch worker FEAT-<NNN>
 ```
 
 Key properties: uses Sonnet, implements EXACTLY what tasks
-specify (no redesigns), commits after each task.
+specify (no redesigns), commits after each task. The worker commits but does not push
+(its sandbox reaches GitHub only through `gh`/`api.github.com`); run `/sdd-done` from the host.
 
 For background execution:
 ```bash
-cd .claude/worktrees/feat-014
-tmux new -s feat-014 \
-  "claude --agent sdd-worker --model sonnet --verbose"
-# Ctrl+B, D to detach — tmux attach -t feat-014 to reconnect
+parrot sdd launch worker FEAT-<NNN> --tmux
+# Add --detach to leave it in the background; run the command again to reattach.
 ```
 
 ## Task Index Schema (FEAT-145 — per-spec)
@@ -284,7 +285,7 @@ Commands resolve features by matching either field (exact, numeric suffix,
 or substring) against the per-spec index headers.
 
 **Migration history**: the legacy `sdd/tasks/.index.json` monolith was
-split per-spec by `scripts/sdd/migrate_index.py`. The monolith is preserved
+split per-spec by `parrot.sdd.scripts.migrate_index`. The monolith is preserved
 as a historical artifact and ignored by all FEAT-145 commands. Tasks the
 migration could not attribute to a feature live in
 `sdd/tasks/index/_orphans.json` and are surfaced (but not assigned) by

@@ -167,14 +167,28 @@ def _extract_section(task_content: str, heading: str) -> Optional[str]:
     return body[: next_heading.start()] if next_heading else body
 
 
+#: Reserved task ids (`TASK-<NNN>`) and a brief's local task ids
+#: (`HOTFIX-<KEY>-<n>`, FEAT-698). Same shape as `models._TASK_ID_RE`, unanchored
+#: so it can be found inside a `# <id> — <title>` header line.
+_TASK_ID_IN_HEADER_RE = re.compile(r"\b(TASK-\d{1,5}|HOTFIX-[A-Za-z0-9][A-Za-z0-9._-]*-\d{1,5})\b")
+
+
 def _extract_task_id(task_content: str) -> str:
-    """Extract task ID from task content."""
-    # Look for task ID in the first few lines
+    """Extract the task id from the task file's `# ` header.
+
+    Args:
+        task_content: Full text of the task file.
+
+    Returns:
+        The `TASK-<NNN>` or `HOTFIX-<KEY>-<n>` id found in the header.
+
+    Raises:
+        ValueError: No header within the first 10 lines carries a task id.
+    """
     lines = task_content.split("\n")[:10]
     for line in lines:
         if line.startswith("# "):
-            # Extract TASK-XXXX from header
-            match = re.search(r"(TASK-\d+)", line)
+            match = _TASK_ID_IN_HEADER_RE.search(line)
             if match:
                 return match.group(1)
     raise ValueError("Could not extract task ID from task content")

@@ -1,0 +1,2469 @@
+{
+ "checks": [
+  {
+   "id": "c0",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/credentials.py",
+   "name": "AuthKind"
+  },
+  {
+   "id": "c1",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/credentials.py",
+   "name": "CredentialRequired"
+  },
+  {
+   "id": "c2",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/credentials.py",
+   "name": "CredentialResolver"
+  },
+  {
+   "id": "c3",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/credentials.py",
+   "name": "OAuthCredentialResolver"
+  },
+  {
+   "id": "c4",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/credentials.py",
+   "name": "NeedsAuth"
+  },
+  {
+   "id": "c5",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/auth/jira_oauth.py",
+   "line": 44
+  },
+  {
+   "id": "c6",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/jira_oauth.py",
+   "name": "CredentialSink"
+  },
+  {
+   "id": "c7",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/jira_oauth.py",
+   "name": "__init__"
+  },
+  {
+   "id": "c8",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/jira_oauth.py",
+   "name": "_token_key"
+  },
+  {
+   "id": "c9",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/jira_oauth.py",
+   "name": "handle_callback"
+  },
+  {
+   "id": "c10",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/jira_oauth.py",
+   "name": "get_valid_token"
+  },
+  {
+   "id": "c11",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/jira_oauth.py",
+   "name": "revoke"
+  },
+  {
+   "id": "c12",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/jira_oauth.py",
+   "name": "_refresh_tokens"
+  },
+  {
+   "id": "c13",
+   "kind": "file",
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/wrapper.py",
+   "line": 1284
+  },
+  {
+   "id": "c14",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/exceptions.py",
+   "name": "AuthorizationRequired"
+  },
+  {
+   "id": "c15",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+   "name": "execute_tool"
+  },
+  {
+   "id": "c16",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/tools/abstract.py",
+   "name": "execute"
+  },
+  {
+   "id": "c17",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/tools/jira_connect_tool.py",
+   "name": "_execute"
+  },
+  {
+   "id": "c18",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/adapters.py",
+   "line": 114
+  },
+  {
+   "id": "c19",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/tools/abstract.py",
+   "line": 1012
+  },
+  {
+   "id": "c20",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/tools/toolkit.py",
+   "line": 315
+  },
+  {
+   "id": "c21",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/tools/jira_connect_tool.py",
+   "line": 1
+  },
+  {
+   "id": "c22",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2_routes.py",
+   "name": "_handle_web_callback"
+  },
+  {
+   "id": "c23",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2_routes.py",
+   "name": "make_oauth2_callback"
+  },
+  {
+   "id": "c24",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2_routes.py",
+   "name": "setup_oauth2_routes"
+  },
+  {
+   "id": "c25",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2_routes.py",
+   "name": "handle_mcp_oauth2_callback"
+  },
+  {
+   "id": "c26",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2_routes.py",
+   "line": 80
+  },
+  {
+   "id": "c27",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/broker/core.py",
+   "name": "CredentialBroker"
+  },
+  {
+   "id": "c28",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/broker/core.py",
+   "name": "register"
+  },
+  {
+   "id": "c29",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/broker/core.py",
+   "name": "from_config"
+  },
+  {
+   "id": "c30",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/broker/core.py",
+   "name": "resolve"
+  },
+  {
+   "id": "c31",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2/registry.py",
+   "name": "module"
+  },
+  {
+   "id": "c32",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2/service.py",
+   "name": "module"
+  },
+  {
+   "id": "c33",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2/models.py",
+   "name": "module"
+  },
+  {
+   "id": "c34",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2/persistence.py",
+   "name": "module"
+  },
+  {
+   "id": "c35",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/broker/factory.py",
+   "name": "module"
+  },
+  {
+   "id": "c36",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2/o365_provider.py",
+   "name": "O365OAuth2Provider"
+  },
+  {
+   "id": "c37",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2/o365_provider.py",
+   "name": "toolkit_factory"
+  },
+  {
+   "id": "c38",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/core/auth/oauth2_providers.py",
+   "name": "OAuth2ProviderConfig"
+  },
+  {
+   "id": "c39",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/services/vault_token_sync.py",
+   "line": 3
+  },
+  {
+   "id": "c40",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-server/src/parrot/services/vault_token_sync.py",
+   "name": "_synth_session_uuid"
+  },
+  {
+   "id": "c41",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-server/src/parrot/services/vault_token_sync.py",
+   "name": "VaultTokenSync"
+  },
+  {
+   "id": "c42",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-server/src/parrot/services/vault_token_sync.py",
+   "name": "_load_vault"
+  },
+  {
+   "id": "c43",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-server/src/parrot/services/vault_token_sync.py",
+   "name": "store_tokens"
+  },
+  {
+   "id": "c44",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/security/vault_utils.py",
+   "name": "set_vault_credential_store"
+  },
+  {
+   "id": "c45",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/security/vault_utils.py",
+   "name": "store_vault_credential"
+  },
+  {
+   "id": "c46",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/security/vault_utils.py",
+   "name": "oauth2_vault_name"
+  },
+  {
+   "id": "c47",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/services/identity_mapping.py",
+   "line": 1
+  },
+  {
+   "id": "c48",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/services/identity_mapping.py",
+   "line": 44
+  },
+  {
+   "id": "c49",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-server/src/parrot/services/identity_mapping.py",
+   "name": "IdentityMappingService"
+  },
+  {
+   "id": "c50",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-server/src/parrot/services/identity_mapping.py",
+   "name": "upsert_identity"
+  },
+  {
+   "id": "c51",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/services/identity_credential_sink.py",
+   "line": 1
+  },
+  {
+   "id": "c52",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-server/src/parrot/services/identity_credential_sink.py",
+   "name": "IdentityVaultCredentialSink"
+  },
+  {
+   "id": "c53",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-server/src/parrot/services/identity_credential_sink.py",
+   "name": "persist_minted"
+  },
+  {
+   "id": "c54",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-server/src/parrot/services/identity_credential_sink.py",
+   "name": "persist"
+  },
+  {
+   "id": "c55",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/permission.py",
+   "name": "UserSession"
+  },
+  {
+   "id": "c56",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/permission.py",
+   "name": "PermissionContext"
+  },
+  {
+   "id": "c57",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/permission.py",
+   "name": "build_principal_context"
+  },
+  {
+   "id": "c58",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/jira_commands.py",
+   "name": "connect_jira_handler"
+  },
+  {
+   "id": "c59",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/jira_commands.py",
+   "name": "register_jira_commands"
+  },
+  {
+   "id": "c60",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/jira_commands.py",
+   "name": "TelegramOAuthNotifier"
+  },
+  {
+   "id": "c61",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-server/src/parrot/manager/manager.py",
+   "name": "setup"
+  },
+  {
+   "id": "c62",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/manager/manager.py",
+   "line": 2459
+  },
+  {
+   "id": "c63",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-server/src/parrot/manager/manager.py",
+   "name": "_register_oauth2_providers"
+  },
+  {
+   "id": "c64",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-server/src/parrot/manager/manager.py",
+   "name": "import"
+  },
+  {
+   "id": "c65",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/mcp/client.py",
+   "name": "token_supplier"
+  },
+  {
+   "id": "c66",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/mcp/client.py",
+   "name": "header_provider"
+  },
+  {
+   "id": "c67",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/mcp/client.py",
+   "name": "user_id"
+  },
+  {
+   "id": "c68",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/mcp/client.py",
+   "name": "get_headers"
+  },
+  {
+   "id": "c69",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/mcp/integration.py",
+   "name": "add_oauth_mcp_server"
+  },
+  {
+   "id": "c70",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/mcp/integration.py",
+   "name": "add_netsuite_mcp_server"
+  },
+  {
+   "id": "c71",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/bots/agent.py",
+   "line": 1038
+  },
+  {
+   "id": "c72",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/mcp/integration.py",
+   "line": 1429
+  },
+  {
+   "id": "c73",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/mcp/oauth.py",
+   "name": "TokenStore"
+  },
+  {
+   "id": "c74",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/mcp/oauth.py",
+   "name": "RedisTokenStore"
+  },
+  {
+   "id": "c75",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/mcp/oauth.py",
+   "name": "VaultTokenStore"
+  },
+  {
+   "id": "c76",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/mcp/oauth.py",
+   "name": "NetSuiteM2MAuth"
+  },
+  {
+   "id": "c77",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/mcp/oauth2_config.py",
+   "name": "MCPOAuth2Config"
+  },
+  {
+   "id": "c78",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/mcp/oauth2_config.py",
+   "name": "MCPOAuth2Preset"
+  },
+  {
+   "id": "c79",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/mcp/oauth2_config.py",
+   "line": 136
+  },
+  {
+   "id": "c80",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/user.py",
+   "name": "__init__"
+  },
+  {
+   "id": "c81",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/user.py",
+   "name": "_validate_token"
+  },
+  {
+   "id": "c82",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/user.py",
+   "name": "_handle_auth"
+  },
+  {
+   "id": "c83",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/user.py",
+   "name": "send_direct_message"
+  },
+  {
+   "id": "c84",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/user.py",
+   "name": "broadcast_to_channel"
+  },
+  {
+   "id": "c85",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-server/src/parrot/autonomous/orchestrator.py",
+   "name": "EventBus"
+  },
+  {
+   "id": "c86",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/hook.py",
+   "name": "MatrixHook"
+  },
+  {
+   "id": "c87",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/core/events/lifecycle/__init__.py",
+   "line": 1
+  },
+  {
+   "id": "c88",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/observability/fanout.py",
+   "line": 1
+  },
+  {
+   "id": "c89",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/observability/fanout.py",
+   "name": "_validate_bus"
+  },
+  {
+   "id": "c90",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/observability/fanout.py",
+   "name": "setup_event_fanout"
+  },
+  {
+   "id": "c91",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/routes.py",
+   "name": "setup_jira_oauth_routes"
+  },
+  {
+   "id": "c92",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/auth/routes.py",
+   "line": 277
+  },
+  {
+   "id": "c93",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/auth/routes.py",
+   "line": 296
+  },
+  {
+   "id": "c94",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-tools/src/parrot_tools/o365/oauth_toolkit.py",
+   "name": "Office365Toolkit"
+  },
+  {
+   "id": "c95",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-tools/src/parrot_tools/o365/oauth_toolkit.py",
+   "name": "_pre_execute"
+  },
+  {
+   "id": "c96",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-tools/src/parrot_tools/o365/base.py",
+   "name": "O365AuthMode"
+  },
+  {
+   "id": "c97",
+   "kind": "file",
+   "path": "packages/ai-parrot-tools/src/parrot_tools/o365/base.py",
+   "line": 141
+  },
+  {
+   "id": "c98",
+   "kind": "file",
+   "path": "packages/ai-parrot-tools/src/parrot_tools/o365/base.py",
+   "line": 247
+  },
+  {
+   "id": "c99",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/ui/src/lib/api/integrations.ts",
+   "line": 1
+  },
+  {
+   "id": "c100",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/ui/src/lib/oauth/popup.ts",
+   "line": 1
+  },
+  {
+   "id": "c101",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/ui/src/lib/components/agents/integrations/IntegrationsMenu.svelte",
+   "line": 1
+  },
+  {
+   "id": "c102",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/ui/src/lib/components/agents/integrations/ConnectIntegrationPill.svelte",
+   "line": 1
+  },
+  {
+   "id": "c103",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/ui/src/lib/types/agent.ts",
+   "line": 39
+  },
+  {
+   "id": "c104",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/ui/src/lib/oauth"
+  },
+  {
+   "id": "c105",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/ui/src/lib/components/agents/integrations"
+  },
+  {
+   "id": "c106",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/ui/src/lib/stores"
+  },
+  {
+   "id": "c107",
+   "kind": "file",
+   "path": "packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py",
+   "line": 927
+  },
+  {
+   "id": "c108",
+   "kind": "file",
+   "path": "packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py",
+   "line": 1054
+  },
+  {
+   "id": "c109",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py",
+   "name": "_pre_execute"
+  },
+  {
+   "id": "c110",
+   "kind": "file",
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/wrapper.py",
+   "line": 603
+  },
+  {
+   "id": "c111",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/manager.py",
+   "name": "_build_credential_sink"
+  },
+  {
+   "id": "c112",
+   "kind": "file",
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/core/auth/post_auth.py",
+   "line": 15
+  },
+  {
+   "id": "c113",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/user.py",
+   "name": "_on_startup"
+  },
+  {
+   "id": "c114",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/auth/templates/web_oauth_success.html"
+  },
+  {
+   "id": "c115",
+   "kind": "file",
+   "path": "docs/auth/jira-credential-ownership.md",
+   "line": 1
+  },
+  {
+   "id": "c116",
+   "kind": "file",
+   "path": "docs/auth/jira-credential-ownership.md",
+   "line": 24
+  },
+  {
+   "id": "c117",
+   "kind": "file",
+   "path": "docs/auth/jira-credential-ownership.md",
+   "line": 60
+  },
+  {
+   "id": "c118",
+   "kind": "file",
+   "path": "docs/integrations/office365-oauth2.md",
+   "line": 13
+  },
+  {
+   "id": "c119",
+   "kind": "file",
+   "path": "docs/integrations/office365-oauth2.md",
+   "line": 148
+  },
+  {
+   "id": "c120",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/tools/toolkit.py",
+   "name": "credential_provider"
+  },
+  {
+   "id": "c121",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/tools/toolkit.py",
+   "line": 491
+  },
+  {
+   "id": "c122",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/tools/toolkit.py",
+   "name": "_generate_tools"
+  },
+  {
+   "id": "c123",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/tools/abstract.py",
+   "name": "credential_provider"
+  },
+  {
+   "id": "c124",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/tools/abstract.py",
+   "name": "current_credential"
+  },
+  {
+   "id": "c125",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+   "line": 80
+  },
+  {
+   "id": "c126",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/auth/audit.py",
+   "line": 65
+  },
+  {
+   "id": "c127",
+   "kind": "file",
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/msagentsdk/wrapper.py",
+   "line": 135
+  },
+  {
+   "id": "c128",
+   "kind": "file",
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/auth.py",
+   "line": 477
+  },
+  {
+   "id": "c129",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/post_auth_jira.py",
+   "name": "build_auth_url"
+  },
+  {
+   "id": "c130",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/post_auth_jira.py",
+   "name": "_write_identity_records"
+  },
+  {
+   "id": "c131",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/msteams/commands/jira_commands.py",
+   "name": "_resolve_nav_user_id"
+  },
+  {
+   "id": "c132",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/msteams/oauth_callback.py",
+   "name": "handle_msteams_jira_callback"
+  },
+  {
+   "id": "c133",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/post_auth_jira.py",
+   "name": "JiraPostAuthProvider"
+  },
+  {
+   "id": "c134",
+   "kind": "file",
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/msteams/oauth_callback.py",
+   "line": 1
+  },
+  {
+   "id": "c135",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/msteams/oauth_callback.py",
+   "name": "MSTeamsOAuthNotifier"
+  },
+  {
+   "id": "c136",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2/models.py",
+   "name": "IntegrationDescriptor"
+  },
+  {
+   "id": "c137",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2/models.py",
+   "name": "ConnectInitResponse"
+  },
+  {
+   "id": "c138",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2/models.py",
+   "name": "AuthRequiredEnvelope"
+  },
+  {
+   "id": "c139",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2/models.py",
+   "name": "UsersIntegrationRow"
+  },
+  {
+   "id": "c140",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2/registry.py",
+   "name": "OAuth2Provider"
+  },
+  {
+   "id": "c141",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2/registry.py",
+   "name": "OAuth2ProviderRegistry"
+  },
+  {
+   "id": "c142",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2/service.py",
+   "name": "IntegrationsService"
+  },
+  {
+   "id": "c143",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2/service.py",
+   "line": 155
+  },
+  {
+   "id": "c144",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2/service.py",
+   "name": "start_connect"
+  },
+  {
+   "id": "c145",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2/service.py",
+   "name": "persist_credential"
+  },
+  {
+   "id": "c146",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2/persistence.py",
+   "name": "upsert_users_integration"
+  },
+  {
+   "id": "c147",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2/persistence.py",
+   "name": "upsert_user_agent_toolkit"
+  },
+  {
+   "id": "c148",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2/persistence.py",
+   "name": "delete_user_agent_toolkits_by_provider"
+  },
+  {
+   "id": "c149",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/integrations.py",
+   "name": "_get_user_id"
+  },
+  {
+   "id": "c150",
+   "kind": "symbol",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/integrations.py",
+   "name": "_post_connect"
+  },
+  {
+   "id": "c151",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/o365_oauth.py",
+   "name": "O365OAuthManager"
+  },
+  {
+   "id": "c152",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/o365_oauth.py",
+   "name": "authorization_url_extra_params"
+  },
+  {
+   "id": "c153",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/auth/o365_oauth.py",
+   "line": 113
+  },
+  {
+   "id": "c154",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/identity.py",
+   "name": "CanonicalIdentityMapper"
+  },
+  {
+   "id": "c155",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/broker/factory.py",
+   "name": "build"
+  },
+  {
+   "id": "c156",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/auth/broker/factory.py",
+   "line": 222
+  },
+  {
+   "id": "c157",
+   "kind": "file",
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/combined_callback.py",
+   "line": 1
+  },
+  {
+   "id": "c158",
+   "kind": "file",
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/office365_commands.py",
+   "line": 4
+  },
+  {
+   "id": "c159",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2_base.py",
+   "line": 38
+  },
+  {
+   "id": "c160",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2_base.py",
+   "name": "__init__"
+  },
+  {
+   "id": "c161",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2_base.py",
+   "line": 289
+  },
+  {
+   "id": "c162",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2_base.py",
+   "line": 354
+  },
+  {
+   "id": "c163",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2_base.py",
+   "line": 461
+  },
+  {
+   "id": "c164",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2_base.py",
+   "name": "_refresh_tokens"
+  },
+  {
+   "id": "c165",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2_base.py",
+   "line": 577
+  },
+  {
+   "id": "c166",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2/jira_provider.py",
+   "name": "JiraOAuth2Provider"
+  },
+  {
+   "id": "c167",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2/mcp_provider.py",
+   "name": "MCPOAuth2Provider"
+  },
+  {
+   "id": "c168",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/ui/src/lib/components/agents/integrations/ConnectIntegrationPill.svelte",
+   "line": 20
+  },
+  {
+   "id": "c169",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/ui/src/lib/components/agents/AgentChat.svelte",
+   "line": 1342
+  },
+  {
+   "id": "c170",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/agent.py",
+   "line": 1916
+  },
+  {
+   "id": "c171",
+   "kind": "file",
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/oauth2_callback.py",
+   "line": 138
+  },
+  {
+   "id": "c172",
+   "kind": "file",
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/wrapper.py",
+   "line": 1280
+  },
+  {
+   "id": "c173",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/auth/broker/core.py"
+  },
+  {
+   "id": "c174",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/auth/broker/__init__.py"
+  },
+  {
+   "id": "c175",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/auth/credentials.py"
+  },
+  {
+   "id": "c176",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/auth/__init__.py"
+  },
+  {
+   "id": "c177",
+   "kind": "file",
+   "path": "sdd/tasks/completed/TASK-1669-tool-loop-seam.md"
+  },
+  {
+   "id": "c178",
+   "kind": "file",
+   "path": "sdd/tasks/index/unified-credential-broker.json"
+  },
+  {
+   "id": "c179",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2/registry.py"
+  },
+  {
+   "id": "c180",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2/__init__.py"
+  },
+  {
+   "id": "c181",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2_routes.py"
+  },
+  {
+   "id": "c182",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/auth/routes.py"
+  },
+  {
+   "id": "c183",
+   "kind": "file",
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/core/auth/oauth2_providers.py"
+  },
+  {
+   "id": "c184",
+   "kind": "file",
+   "path": "sdd/tasks/completed/TASK-983-oauth2-models-and-registry.md"
+  },
+  {
+   "id": "c185",
+   "kind": "file",
+   "path": "sdd/tasks/completed/TASK-1661-mcp-oauth2-provider.md"
+  },
+  {
+   "id": "c186",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/services/identity_mapping.py"
+  },
+  {
+   "id": "c187",
+   "kind": "file",
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/post_auth_jira.py"
+  },
+  {
+   "id": "c188",
+   "kind": "file",
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/auth.py"
+  },
+  {
+   "id": "c189",
+   "kind": "file",
+   "path": "sdd/tasks/completed/TASK-4664-identity-writes-identitystore-and-sql-fix.md"
+  },
+  {
+   "id": "c190",
+   "kind": "file",
+   "path": "sdd/tasks/completed/TASK-760-identity-mapping-service.md"
+  },
+  {
+   "id": "c191",
+   "kind": "file",
+   "path": "sdd/tasks/completed/TASK-4666-slack-oauth-nav-user-id.md"
+  },
+  {
+   "id": "c192",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/security/vault_utils.py"
+  },
+  {
+   "id": "c193",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/services/vault_token_sync.py"
+  },
+  {
+   "id": "c194",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/studio/storage/vault_store.py"
+  },
+  {
+   "id": "c195",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/studio/byok.py"
+  },
+  {
+   "id": "c196",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/security/credentials_utils.py"
+  },
+  {
+   "id": "c197",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/vault_targets.py"
+  },
+  {
+   "id": "c198",
+   "kind": "file",
+   "path": "sdd/tasks/completed/TASK-3953-p2-vault-credentials-postgres.md"
+  },
+  {
+   "id": "c199",
+   "kind": "file",
+   "path": "sdd/specs/user-based-credentials.spec.md"
+  },
+  {
+   "id": "c200",
+   "kind": "file",
+   "path": "sdd/specs/unified-credential-broker.spec.md"
+  },
+  {
+   "id": "c201",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/auth/manifest.py"
+  },
+  {
+   "id": "c202",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/auth/audit.py"
+  },
+  {
+   "id": "c203",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/tools/abstract.py"
+  },
+  {
+   "id": "c204",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/tools/manager.py"
+  },
+  {
+   "id": "c205",
+   "kind": "file",
+   "path": "sdd/specs/services-vault-token-sync-tech-debt.spec.md"
+  },
+  {
+   "id": "c206",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/auth/jira_oauth.py"
+  },
+  {
+   "id": "c207",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/services/identity_credential_sink.py"
+  },
+  {
+   "id": "c208",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2/service.py"
+  },
+  {
+   "id": "c209",
+   "kind": "file",
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/manager.py"
+  },
+  {
+   "id": "c210",
+   "kind": "file",
+   "path": "docs/auth/jira-credential-ownership.md"
+  },
+  {
+   "id": "c211",
+   "kind": "file",
+   "path": "sdd/tasks/index/services-vault-token-sync-tech-debt.json"
+  },
+  {
+   "id": "c212",
+   "kind": "file",
+   "path": "sdd/specs/msteams-user-auth-lane.spec.md"
+  },
+  {
+   "id": "c213",
+   "kind": "file",
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/msteams/auth.py"
+  },
+  {
+   "id": "c214",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/auth/token_exchange.py"
+  },
+  {
+   "id": "c215",
+   "kind": "file",
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/msteams/commands/auth_commands.py"
+  },
+  {
+   "id": "c216",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/auth/session_identity.py"
+  },
+  {
+   "id": "c217",
+   "kind": "file",
+   "path": "sdd/tasks/index/msteams-user-auth-lane.json"
+  },
+  {
+   "id": "c218",
+   "kind": "file",
+   "path": "sdd/specs/o365-auth-homologation.spec.md"
+  },
+  {
+   "id": "c219",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/auth/o365_oauth.py"
+  },
+  {
+   "id": "c220",
+   "kind": "symbol",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2/o365_devicecode_provider.py",
+   "name": "O365DeviceCodeCredentialResolver"
+  },
+  {
+   "id": "c221",
+   "kind": "file",
+   "path": "packages/ai-parrot-tools/src/parrot_tools/o365/oauth_toolkit.py"
+  },
+  {
+   "id": "c222",
+   "kind": "file",
+   "path": "sdd/tasks/index/o365-auth-homologation.json"
+  },
+  {
+   "id": "c223",
+   "kind": "file",
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/msteams/oauth_callback.py"
+  },
+  {
+   "id": "c224",
+   "kind": "file",
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/slack/oauth_callback.py"
+  },
+  {
+   "id": "c225",
+   "kind": "file",
+   "path": "packages/ai-parrot/tests/unit/test_identity_mapping.py"
+  },
+  {
+   "id": "c226",
+   "kind": "file",
+   "path": "sdd/tasks/completed/TASK-1676-mcp-per-user-token-injection.md"
+  },
+  {
+   "id": "c227",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/mcp/client.py"
+  },
+  {
+   "id": "c228",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/tools/mcp_mixin.py"
+  },
+  {
+   "id": "c229",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/mcp/oauth2_config.py"
+  },
+  {
+   "id": "c230",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/mcp/oauth2_state.py"
+  },
+  {
+   "id": "c231",
+   "kind": "file",
+   "path": "sdd/tasks/completed/TASK-1665-oauth-manager-removal.md"
+  },
+  {
+   "id": "c232",
+   "kind": "file",
+   "path": "packages/ai-parrot/tests/unit/test_mcp_per_user_token.py"
+  },
+  {
+   "id": "c233",
+   "kind": "file",
+   "path": "sdd/tasks/completed/TASK-987-oauth-callback-web-branch.md"
+  },
+  {
+   "id": "c234",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/auth/templates/web_oauth_error.html"
+  },
+  {
+   "id": "c235",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/conf.py"
+  },
+  {
+   "id": "c236",
+   "kind": "file",
+   "path": "sdd/tasks/completed/TASK-990-frontend-api-client-and-popup.md"
+  },
+  {
+   "id": "c237",
+   "kind": "file",
+   "path": "sdd/tasks/completed/TASK-991-integrations-menu.md"
+  },
+  {
+   "id": "c238",
+   "kind": "file",
+   "path": "sdd/tasks/completed/TASK-992-connect-integration-pill.md"
+  },
+  {
+   "id": "c239",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/ui/src/lib/oauth/popup.ts"
+  },
+  {
+   "id": "c240",
+   "kind": "file",
+   "path": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md"
+  },
+  {
+   "id": "c241",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2/models.py"
+  },
+  {
+   "id": "c242",
+   "kind": "file",
+   "path": "sdd/tasks/index/cross-repository-jiratoolkit-oauth2-3lo.json"
+  },
+  {
+   "id": "c243",
+   "kind": "file",
+   "path": "sdd/state/FEAT-747/findings/F018-eventbus-navigator.md"
+  },
+  {
+   "id": "c244",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/roost/carriers/bus.py"
+  },
+  {
+   "id": "c245",
+   "kind": "file",
+   "path": "docs/events/eventbus-migration.md"
+  },
+  {
+   "id": "c246",
+   "kind": "file",
+   "path": "sdd/tasks/completed/TASK-4553-event-fanout-wiring.md"
+  },
+  {
+   "id": "c247",
+   "kind": "file",
+   "path": "sdd/specs/jiratoolkit-integrations-oauth2.spec.md"
+  },
+  {
+   "id": "c248",
+   "kind": "file",
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/slack/commands/jira_commands.py"
+  },
+  {
+   "id": "c249",
+   "kind": "file",
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/msteams/commands/jira_commands.py"
+  },
+  {
+   "id": "c250",
+   "kind": "file",
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/core/auth/__init__.py"
+  },
+  {
+   "id": "c251",
+   "kind": "file",
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/jira_commands.py"
+  },
+  {
+   "id": "c252",
+   "kind": "file",
+   "path": "sdd/tasks/index/jiratoolkit-integrations-oauth2.json"
+  },
+  {
+   "id": "c253",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/credentials.py"
+  },
+  {
+   "id": "c254",
+   "kind": "file",
+   "path": "packages/ai-parrot/tests/unit/test_credential_broker.py"
+  },
+  {
+   "id": "c255",
+   "kind": "file",
+   "path": "tests/auth/test_a2a_credential_var.py"
+  },
+  {
+   "id": "c256",
+   "kind": "file",
+   "path": "sdd/tasks/completed/TASK-2389-broker-backed-authenticate.md"
+  },
+  {
+   "id": "c257",
+   "kind": "file",
+   "path": "sdd/state/FEAT-602/findings/F003-credential-broker.md"
+  },
+  {
+   "id": "c258",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2_base.py"
+  },
+  {
+   "id": "c259",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/tests/unit/test_a2a_resume_trigger.py"
+  },
+  {
+   "id": "c260",
+   "kind": "file",
+   "path": "tests/auth/test_mcp_oauth2_callback.py"
+  },
+  {
+   "id": "c261",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/auth/identity.py"
+  },
+  {
+   "id": "c262",
+   "kind": "file",
+   "path": "packages/ai-parrot/tests/unit/test_canonical_identity.py"
+  },
+  {
+   "id": "c263",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/cli/identity.py"
+  },
+  {
+   "id": "c264",
+   "kind": "file",
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/core/auth/post_auth.py"
+  },
+  {
+   "id": "c265",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2/persistence.py"
+  },
+  {
+   "id": "c266",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/handlers/integrations.py"
+  },
+  {
+   "id": "c267",
+   "kind": "file",
+   "path": "sdd/specs/copilot-a2a-percredential.spec.md"
+  },
+  {
+   "id": "c268",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py"
+  },
+  {
+   "id": "c269",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/human/suspended_store.py"
+  },
+  {
+   "id": "c270",
+   "kind": "file",
+   "path": "packages/ai-parrot-server/src/parrot/a2a/server.py"
+  },
+  {
+   "id": "c271",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/integrations/mcp/fireflies_a2a.py"
+  },
+  {
+   "id": "c272",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/auth/oauth2/workiq_provider.py"
+  },
+  {
+   "id": "c273",
+   "kind": "absent",
+   "name": "NeedsAuthorizationError",
+   "scope": "packages/"
+  },
+  {
+   "id": "c274",
+   "kind": "absent",
+   "name": "WebOAuthManager",
+   "scope": "packages/"
+  },
+  {
+   "id": "c275",
+   "kind": "absent",
+   "name": "ConnectionManager",
+   "scope": "packages/"
+  },
+  {
+   "id": "c276",
+   "kind": "absent",
+   "name": "OAuthProviderRegistry",
+   "scope": "packages/"
+  },
+  {
+   "id": "c277",
+   "kind": "absent",
+   "name": "VaultCredentialResolver",
+   "scope": "packages/"
+  },
+  {
+   "id": "c278",
+   "kind": "absent",
+   "name": "CredentialVault",
+   "scope": "packages/"
+  },
+  {
+   "id": "c279",
+   "kind": "absent",
+   "name": "ConnectionChannel",
+   "scope": "packages/"
+  },
+  {
+   "id": "c280",
+   "kind": "absent",
+   "name": "AuthRequirement",
+   "scope": "packages/"
+  },
+  {
+   "id": "c281",
+   "kind": "file",
+   "path": "packages/ai-parrot/src/parrot/connections/__init__.py"
+  }
+ ],
+ "map": {
+  "c0": [
+   "F001"
+  ],
+  "c1": [
+   "F001"
+  ],
+  "c2": [
+   "F001"
+  ],
+  "c3": [
+   "F001"
+  ],
+  "c4": [
+   "F001"
+  ],
+  "c5": [
+   "F002"
+  ],
+  "c6": [
+   "F002"
+  ],
+  "c7": [
+   "F002"
+  ],
+  "c8": [
+   "F002"
+  ],
+  "c9": [
+   "F002"
+  ],
+  "c10": [
+   "F002"
+  ],
+  "c11": [
+   "F002"
+  ],
+  "c12": [
+   "F002"
+  ],
+  "c13": [
+   "F002"
+  ],
+  "c14": [
+   "F003"
+  ],
+  "c15": [
+   "F004"
+  ],
+  "c16": [
+   "F004"
+  ],
+  "c17": [
+   "F004"
+  ],
+  "c18": [
+   "F004"
+  ],
+  "c19": [
+   "F004"
+  ],
+  "c20": [
+   "F004"
+  ],
+  "c21": [
+   "F004"
+  ],
+  "c22": [
+   "F005"
+  ],
+  "c23": [
+   "F005"
+  ],
+  "c24": [
+   "F005"
+  ],
+  "c25": [
+   "F005"
+  ],
+  "c26": [
+   "F005"
+  ],
+  "c27": [
+   "F006"
+  ],
+  "c28": [
+   "F006"
+  ],
+  "c29": [
+   "F006"
+  ],
+  "c30": [
+   "F006"
+  ],
+  "c31": [
+   "F007"
+  ],
+  "c32": [
+   "F007"
+  ],
+  "c33": [
+   "F007"
+  ],
+  "c34": [
+   "F007"
+  ],
+  "c35": [
+   "F007"
+  ],
+  "c36": [
+   "F008",
+   "F055"
+  ],
+  "c37": [
+   "F008"
+  ],
+  "c38": [
+   "F009"
+  ],
+  "c39": [
+   "F010"
+  ],
+  "c40": [
+   "F010"
+  ],
+  "c41": [
+   "F010"
+  ],
+  "c42": [
+   "F010"
+  ],
+  "c43": [
+   "F010"
+  ],
+  "c44": [
+   "F011"
+  ],
+  "c45": [
+   "F011"
+  ],
+  "c46": [
+   "F011"
+  ],
+  "c47": [
+   "F012"
+  ],
+  "c48": [
+   "F012"
+  ],
+  "c49": [
+   "F012"
+  ],
+  "c50": [
+   "F012"
+  ],
+  "c51": [
+   "F013"
+  ],
+  "c52": [
+   "F013"
+  ],
+  "c53": [
+   "F013"
+  ],
+  "c54": [
+   "F013"
+  ],
+  "c55": [
+   "F014"
+  ],
+  "c56": [
+   "F014"
+  ],
+  "c57": [
+   "F014"
+  ],
+  "c58": [
+   "F015"
+  ],
+  "c59": [
+   "F015"
+  ],
+  "c60": [
+   "F015"
+  ],
+  "c61": [
+   "F016"
+  ],
+  "c62": [
+   "F016",
+   "F024"
+  ],
+  "c63": [
+   "F016"
+  ],
+  "c64": [
+   "F016"
+  ],
+  "c65": [
+   "F017"
+  ],
+  "c66": [
+   "F017"
+  ],
+  "c67": [
+   "F017"
+  ],
+  "c68": [
+   "F017"
+  ],
+  "c69": [
+   "F018"
+  ],
+  "c70": [
+   "F018"
+  ],
+  "c71": [
+   "F018"
+  ],
+  "c72": [
+   "F018"
+  ],
+  "c73": [
+   "F019"
+  ],
+  "c74": [
+   "F019"
+  ],
+  "c75": [
+   "F019"
+  ],
+  "c76": [
+   "F019"
+  ],
+  "c77": [
+   "F020"
+  ],
+  "c78": [
+   "F020"
+  ],
+  "c79": [
+   "F020"
+  ],
+  "c80": [
+   "F021"
+  ],
+  "c81": [
+   "F021"
+  ],
+  "c82": [
+   "F021"
+  ],
+  "c83": [
+   "F021"
+  ],
+  "c84": [
+   "F021"
+  ],
+  "c85": [
+   "F022"
+  ],
+  "c86": [
+   "F022"
+  ],
+  "c87": [
+   "F022"
+  ],
+  "c88": [
+   "F023",
+   "F066"
+  ],
+  "c89": [
+   "F023"
+  ],
+  "c90": [
+   "F023"
+  ],
+  "c91": [
+   "F024"
+  ],
+  "c92": [
+   "F024"
+  ],
+  "c93": [
+   "F024"
+  ],
+  "c94": [
+   "F025"
+  ],
+  "c95": [
+   "F025"
+  ],
+  "c96": [
+   "F026"
+  ],
+  "c97": [
+   "F026"
+  ],
+  "c98": [
+   "F026"
+  ],
+  "c99": [
+   "F027",
+   "F046"
+  ],
+  "c100": [
+   "F027",
+   "F046"
+  ],
+  "c101": [
+   "F027"
+  ],
+  "c102": [
+   "F027"
+  ],
+  "c103": [
+   "F027"
+  ],
+  "c104": [
+   "F028"
+  ],
+  "c105": [
+   "F028"
+  ],
+  "c106": [
+   "F028"
+  ],
+  "c107": [
+   "F029"
+  ],
+  "c108": [
+   "F029"
+  ],
+  "c109": [
+   "F029"
+  ],
+  "c110": [
+   "F030"
+  ],
+  "c111": [
+   "F030"
+  ],
+  "c112": [
+   "F030"
+  ],
+  "c113": [
+   "F030"
+  ],
+  "c114": [
+   "F030",
+   "F064"
+  ],
+  "c115": [
+   "F031"
+  ],
+  "c116": [
+   "F031"
+  ],
+  "c117": [
+   "F031"
+  ],
+  "c118": [
+   "F032"
+  ],
+  "c119": [
+   "F032"
+  ],
+  "c120": [
+   "F033"
+  ],
+  "c121": [
+   "F033"
+  ],
+  "c122": [
+   "F033"
+  ],
+  "c123": [
+   "F033"
+  ],
+  "c124": [
+   "F033"
+  ],
+  "c125": [
+   "F034"
+  ],
+  "c126": [
+   "F034"
+  ],
+  "c127": [
+   "F034"
+  ],
+  "c128": [
+   "F035",
+   "F043"
+  ],
+  "c129": [
+   "F035"
+  ],
+  "c130": [
+   "F035"
+  ],
+  "c131": [
+   "F035"
+  ],
+  "c132": [
+   "F035"
+  ],
+  "c133": [
+   "F035"
+  ],
+  "c134": [
+   "F035"
+  ],
+  "c135": [
+   "F035"
+  ],
+  "c136": [
+   "F036"
+  ],
+  "c137": [
+   "F036"
+  ],
+  "c138": [
+   "F036"
+  ],
+  "c139": [
+   "F036"
+  ],
+  "c140": [
+   "F037"
+  ],
+  "c141": [
+   "F037"
+  ],
+  "c142": [
+   "F038"
+  ],
+  "c143": [
+   "F038"
+  ],
+  "c144": [
+   "F038"
+  ],
+  "c145": [
+   "F038"
+  ],
+  "c146": [
+   "F039"
+  ],
+  "c147": [
+   "F039"
+  ],
+  "c148": [
+   "F039"
+  ],
+  "c149": [
+   "F040"
+  ],
+  "c150": [
+   "F040"
+  ],
+  "c151": [
+   "F041"
+  ],
+  "c152": [
+   "F041"
+  ],
+  "c153": [
+   "F041"
+  ],
+  "c154": [
+   "F042"
+  ],
+  "c155": [
+   "F042"
+  ],
+  "c156": [
+   "F042"
+  ],
+  "c157": [
+   "F043"
+  ],
+  "c158": [
+   "F043"
+  ],
+  "c159": [
+   "F044"
+  ],
+  "c160": [
+   "F044"
+  ],
+  "c161": [
+   "F044"
+  ],
+  "c162": [
+   "F044"
+  ],
+  "c163": [
+   "F044"
+  ],
+  "c164": [
+   "F044"
+  ],
+  "c165": [
+   "F044"
+  ],
+  "c166": [
+   "F045"
+  ],
+  "c167": [
+   "F045"
+  ],
+  "c168": [
+   "F046"
+  ],
+  "c169": [
+   "F046"
+  ],
+  "c170": [
+   "F047"
+  ],
+  "c171": [
+   "F048"
+  ],
+  "c172": [
+   "F048"
+  ],
+  "c173": [
+   "F054",
+   "F069"
+  ],
+  "c174": [
+   "F054"
+  ],
+  "c175": [
+   "F054"
+  ],
+  "c176": [
+   "F054"
+  ],
+  "c177": [
+   "F054"
+  ],
+  "c178": [
+   "F054"
+  ],
+  "c179": [
+   "F055"
+  ],
+  "c180": [
+   "F055"
+  ],
+  "c181": [
+   "F055",
+   "F070"
+  ],
+  "c182": [
+   "F055",
+   "F064",
+   "F073"
+  ],
+  "c183": [
+   "F055"
+  ],
+  "c184": [
+   "F055"
+  ],
+  "c185": [
+   "F055"
+  ],
+  "c186": [
+   "F056",
+   "F062",
+   "F074"
+  ],
+  "c187": [
+   "F056",
+   "F073",
+   "F074"
+  ],
+  "c188": [
+   "F056",
+   "F073"
+  ],
+  "c189": [
+   "F056",
+   "F062"
+  ],
+  "c190": [
+   "F056"
+  ],
+  "c191": [
+   "F056"
+  ],
+  "c192": [
+   "F057"
+  ],
+  "c193": [
+   "F057",
+   "F074"
+  ],
+  "c194": [
+   "F057"
+  ],
+  "c195": [
+   "F057"
+  ],
+  "c196": [
+   "F057",
+   "F068"
+  ],
+  "c197": [
+   "F057"
+  ],
+  "c198": [
+   "F057"
+  ],
+  "c199": [
+   "F057",
+   "F068"
+  ],
+  "c200": [
+   "F058"
+  ],
+  "c201": [
+   "F058"
+  ],
+  "c202": [
+   "F058"
+  ],
+  "c203": [
+   "F058"
+  ],
+  "c204": [
+   "F058"
+  ],
+  "c205": [
+   "F059"
+  ],
+  "c206": [
+   "F059"
+  ],
+  "c207": [
+   "F059"
+  ],
+  "c208": [
+   "F059",
+   "F075"
+  ],
+  "c209": [
+   "F059"
+  ],
+  "c210": [
+   "F059"
+  ],
+  "c211": [
+   "F059"
+  ],
+  "c212": [
+   "F060"
+  ],
+  "c213": [
+   "F060"
+  ],
+  "c214": [
+   "F060"
+  ],
+  "c215": [
+   "F060"
+  ],
+  "c216": [
+   "F060",
+   "F072"
+  ],
+  "c217": [
+   "F060"
+  ],
+  "c218": [
+   "F061"
+  ],
+  "c219": [
+   "F061",
+   "F071"
+  ],
+  "c220": [
+   "F061"
+  ],
+  "c221": [
+   "F061"
+  ],
+  "c222": [
+   "F061"
+  ],
+  "c223": [
+   "F062",
+   "F067",
+   "F074"
+  ],
+  "c224": [
+   "F062",
+   "F067"
+  ],
+  "c225": [
+   "F062"
+  ],
+  "c226": [
+   "F063"
+  ],
+  "c227": [
+   "F063"
+  ],
+  "c228": [
+   "F063"
+  ],
+  "c229": [
+   "F063"
+  ],
+  "c230": [
+   "F063",
+   "F070"
+  ],
+  "c231": [
+   "F063"
+  ],
+  "c232": [
+   "F063"
+  ],
+  "c233": [
+   "F064"
+  ],
+  "c234": [
+   "F064"
+  ],
+  "c235": [
+   "F064"
+  ],
+  "c236": [
+   "F065"
+  ],
+  "c237": [
+   "F065"
+  ],
+  "c238": [
+   "F065"
+  ],
+  "c239": [
+   "F065"
+  ],
+  "c240": [
+   "F065"
+  ],
+  "c241": [
+   "F065",
+   "F075"
+  ],
+  "c242": [
+   "F065"
+  ],
+  "c243": [
+   "F066"
+  ],
+  "c244": [
+   "F066"
+  ],
+  "c245": [
+   "F066"
+  ],
+  "c246": [
+   "F066"
+  ],
+  "c247": [
+   "F067"
+  ],
+  "c248": [
+   "F067"
+  ],
+  "c249": [
+   "F067"
+  ],
+  "c250": [
+   "F067"
+  ],
+  "c251": [
+   "F067"
+  ],
+  "c252": [
+   "F067"
+  ],
+  "c253": [
+   "F068"
+  ],
+  "c254": [
+   "F069"
+  ],
+  "c255": [
+   "F069"
+  ],
+  "c256": [
+   "F069"
+  ],
+  "c257": [
+   "F069"
+  ],
+  "c258": [
+   "F070",
+   "F071"
+  ],
+  "c259": [
+   "F070"
+  ],
+  "c260": [
+   "F070"
+  ],
+  "c261": [
+   "F072"
+  ],
+  "c262": [
+   "F072"
+  ],
+  "c263": [
+   "F072"
+  ],
+  "c264": [
+   "F073"
+  ],
+  "c265": [
+   "F075"
+  ],
+  "c266": [
+   "F075"
+  ],
+  "c267": [
+   "F076"
+  ],
+  "c268": [
+   "F076"
+  ],
+  "c269": [
+   "F076"
+  ],
+  "c270": [
+   "F076"
+  ],
+  "c271": [
+   "F076"
+  ],
+  "c272": [
+   "F076"
+  ],
+  "c273": [
+   "F019"
+  ],
+  "c274": [
+   "F019"
+  ],
+  "c275": [
+   "F019"
+  ],
+  "c276": [
+   "F019"
+  ],
+  "c277": [
+   "F019"
+  ],
+  "c278": [
+   "F019"
+  ],
+  "c279": [
+   "F019"
+  ],
+  "c280": [
+   "F019"
+  ],
+  "c281": [
+   "F019"
+  ]
+ }
+}

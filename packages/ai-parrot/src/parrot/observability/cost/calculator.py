@@ -14,12 +14,15 @@ Spec §3 Module 5, §8 D5 (bundled JSON, 90-day stale warning).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import threading
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Optional
+
+from pydantic import BaseModel
 
 logger = logging.getLogger("parrot.observability.cost")
 
@@ -31,6 +34,9 @@ logger = logging.getLogger("parrot.observability.cost")
 _LOADED: Optional[dict[str, dict[str, dict]]] = None
 # Metadata per provider: {provider: {"last_updated": date, "source": str}}
 _META: dict[str, dict] = {}
+# Revision of the file that actually supplied each model's price: {(provider, model): revision}.
+# Per-model so a bundled model absent from an override keeps the bundled file's hash.
+_MODEL_REVISIONS: dict[tuple[str, str], str] = {}
 _BUNDLED_DIR = Path(__file__).parent / "pricing"
 
 # Guards _LOADED mutations: both the initial load and any _apply_override calls.
@@ -39,11 +45,43 @@ _BUNDLED_DIR = Path(__file__).parent / "pricing"
 _PRICING_LOCK = threading.Lock()
 
 
+class PricedCost(BaseModel):
+    """One computed cost plus the price revision that produced it (FEAT-783 S9)."""
+
+    usd: Optional[float] = None
+    price_revision: Optional[str] = None
+    valid_from: Optional[str] = None
+    priced: bool = False
+
+
+def _select_entry(value: "dict | list[dict]", at: Optional[date]) -> Optional[dict]:
+    """Return the price entry in force at *at* (None = latest).
+
+    A bare dict is valid forever. Missing ``valid_from`` values on dated lists
+    represent the earliest possible entry.
+    """
+    if isinstance(value, dict):
+        return value
+
+    selected: Optional[dict] = None
+    selected_from = date.min
+    for entry in value:
+        valid_from_value = entry.get("valid_from")
+        entry_from = date.fromisoformat(valid_from_value) if valid_from_value else date.min
+        if at is not None and entry_from > at:
+            continue
+        if selected is None or entry_from > selected_from:
+            selected = entry
+            selected_from = entry_from
+    return selected
+
+
 def _reset_pricing_cache_for_tests() -> None:
     """Test-only: reset the module-level cache so a fresh load can be attempted."""
-    global _LOADED, _META
+    global _LOADED, _META, _MODEL_REVISIONS
     _LOADED = None
     _META = {}
+    _MODEL_REVISIONS = {}
 
 
 def _load_bundled_pricing() -> dict[str, dict[str, dict]]:
@@ -56,11 +94,15 @@ def _load_bundled_pricing() -> dict[str, dict[str, dict]]:
     result: dict[str, dict[str, dict]] = {}
     for p in _BUNDLED_DIR.glob("*.json"):
         try:
-            raw = json.loads(p.read_text(encoding="utf-8"))
+            raw_text = p.read_text(encoding="utf-8")
+            raw = json.loads(raw_text)
             provider = p.stem
             result[provider] = raw.get("models", {})
             meta = raw.get("pricing", {})
-            _META[provider] = meta
+            revision = f"{provider}@{hashlib.sha256(raw_text.encode('utf-8')).hexdigest()[:12]}"
+            _META[provider] = {**meta, "revision": revision}
+            for model_id in result[provider]:
+                _MODEL_REVISIONS[(provider, model_id)] = revision
         except Exception:
             logger.exception("Failed to load bundled pricing file %s", p)
     return result
@@ -91,15 +133,18 @@ def _apply_override(
         return base
     for p in override_dir.glob("*.json"):
         try:
-            raw = json.loads(p.read_text(encoding="utf-8"))
+            raw_text = p.read_text(encoding="utf-8")
+            raw = json.loads(raw_text)
             provider = p.stem
             models = raw.get("models", {})
             if provider not in base:
                 base[provider] = {}
             base[provider].update(models)  # model-level override wins
-            # Also update metadata if provided
-            if "pricing" in raw:
-                _META[provider] = raw["pricing"]
+            metadata = raw.get("pricing", _META.get(provider, {}))
+            revision = f"{provider}@{hashlib.sha256(raw_text.encode('utf-8')).hexdigest()[:12]}"
+            _META[provider] = {**metadata, "revision": revision}
+            for model_id in models:
+                _MODEL_REVISIONS[(provider, model_id)] = revision
         except Exception:
             logger.exception("Failed to load override pricing file %s", p)
     return base
@@ -195,6 +240,8 @@ class CostCalculator:
         input_tokens: int,
         output_tokens: int,
         cached_input_tokens: int = 0,
+        cache_creation_tokens: int = 0,
+        at: Optional[date] = None,
     ) -> Optional[float]:
         """Compute USD cost for a single LLM API call.
 
@@ -206,36 +253,82 @@ class CostCalculator:
             output_tokens: Number of output tokens billed.
             cached_input_tokens: Number of cached input tokens (discount tier).
                 Default ``0``.
+            cache_creation_tokens: Number of cache-creation tokens, billed as
+                an additive tier. They are never subtracted from input tokens.
+            at: Date for selecting a dated price entry. Defaults to the latest.
 
         Returns:
             USD cost as a float rounded to 6 decimal places, or ``None`` if
             the ``(provider, model)`` pair is not found in any pricing table.
         """
-        # Google gen_ai.system is "gemini" but file key is "google"
+        return self.price_call(
+            provider=provider,
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cached_input_tokens=cached_input_tokens,
+            cache_creation_tokens=cache_creation_tokens,
+            at=at,
+        ).usd
+
+    def price_call(
+        self,
+        *,
+        provider: str,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+        cached_input_tokens: int = 0,
+        cache_creation_tokens: int = 0,
+        at: Optional[date] = None,
+    ) -> PricedCost:
+        """Compute a cost together with its pricing revision and effective date.
+
+        Args:
+            provider: ``gen_ai.system`` value (``"gemini"`` maps to ``google.json``).
+            model: Model identifier matching a key in the pricing JSON.
+            input_tokens: Number of input tokens billed.
+            output_tokens: Number of output tokens billed.
+            cached_input_tokens: Number of cached input tokens (discount tier).
+            cache_creation_tokens: Number of cache-creation tokens (additive tier).
+            at: Date for selecting a dated price entry. Defaults to the latest.
+
+        Returns:
+            The priced cost, or an unpriced ``PricedCost`` for an unknown model.
+        """
         file_key = "google" if provider == "gemini" else provider
-
         provider_pricing = self._pricing.get(file_key)
-        if provider_pricing is None:
-            self._warn_unknown(provider, model)
-            return None
-
-        price = provider_pricing.get(model)
+        price_value = provider_pricing.get(model) if provider_pricing is not None else None
+        price = _select_entry(price_value, at) if price_value is not None else None
         if price is None:
             self._warn_unknown(provider, model)
-            return None
+            return PricedCost()
 
         input_per_1m: float = price["input_per_1m"]
         output_per_1m: float = price["output_per_1m"]
         cached_per_1m: float = price.get("cached_input_per_1m", input_per_1m)
-
+        cache_creation_per_1m: float = price.get("cache_creation_per_1m", input_per_1m)
         # Standard input cost (non-cached portion)
         non_cached = max(0, input_tokens - cached_input_tokens)
         input_cost = non_cached * input_per_1m / 1_000_000
         output_cost = output_tokens * output_per_1m / 1_000_000
         cached_cost = cached_input_tokens * cached_per_1m / 1_000_000
 
-        total = input_cost + output_cost + cached_cost
-        return round(total, 6)
+        cache_creation_cost = cache_creation_tokens * cache_creation_per_1m / 1_000_000
+        total = input_cost + output_cost + cached_cost + cache_creation_cost
+        revision, valid_from = self.revision_for(provider, model, at)
+        return PricedCost(usd=round(total, 6), price_revision=revision, valid_from=valid_from, priced=True)
+
+    def revision_for(self, provider: str, model: str, at: Optional[date] = None) -> tuple[Optional[str], Optional[str]]:
+        """Return the revision and date for a price entry without computing cost."""
+        file_key = "google" if provider == "gemini" else provider
+        provider_pricing = self._pricing.get(file_key)
+        price_value = provider_pricing.get(model) if provider_pricing is not None else None
+        price = _select_entry(price_value, at) if price_value is not None else None
+        if price is None:
+            return None, None
+        revision = _MODEL_REVISIONS.get((file_key, model)) or _META.get(file_key, {}).get("revision")
+        return revision, price.get("valid_from")
 
     def _warn_unknown(self, provider: str, model: str) -> None:
         """Log a one-time WARN for an unknown (provider, model) pair.

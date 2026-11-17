@@ -1,123 +1,166 @@
 {
   "pricing": {
-    "last_updated": "2026-06-10",
-    "source": "https://www.anthropic.com/pricing",
+    "last_updated": "2026-11-01",
+    "source": "https://platform.claude.com/docs/en/about-claude/pricing",
     "currency": "USD"
   },
   "models": {
     "claude-3-5-sonnet-20241022": {
-      "input_per_1m": 3.00,
-      "output_per_1m": 15.00,
-      "cached_input_per_1m": 0.30,
-      "valid_from": "2024-10-22"
+      "input_per_1m": 3.0,
+      "output_per_1m": 15.0,
+      "cached_input_per_1m": 0.3,
+      "valid_from": "2024-10-22",
+      "cache_creation_per_1m": 3.75
     },
     "claude-3-5-sonnet": {
-      "input_per_1m": 3.00,
-      "output_per_1m": 15.00,
-      "cached_input_per_1m": 0.30,
-      "valid_from": "2024-10-22"
+      "input_per_1m": 3.0,
+      "output_per_1m": 15.0,
+      "cached_input_per_1m": 0.3,
+      "valid_from": "2024-10-22",
+      "cache_creation_per_1m": 3.75
     },
     "claude-3-5-haiku-20241022": {
-      "input_per_1m": 0.80,
-      "output_per_1m": 4.00,
+      "input_per_1m": 0.8,
+      "output_per_1m": 4.0,
       "cached_input_per_1m": 0.08,
-      "valid_from": "2024-10-22"
+      "valid_from": "2024-10-22",
+      "cache_creation_per_1m": 1.0
     },
     "claude-3-5-haiku": {
-      "input_per_1m": 0.80,
-      "output_per_1m": 4.00,
+      "input_per_1m": 0.8,
+      "output_per_1m": 4.0,
       "cached_input_per_1m": 0.08,
-      "valid_from": "2024-10-22"
+      "valid_from": "2024-10-22",
+      "cache_creation_per_1m": 1.0
     },
     "claude-3-opus-20240229": {
-      "input_per_1m": 15.00,
-      "output_per_1m": 75.00,
-      "cached_input_per_1m": 1.50,
-      "valid_from": "2024-02-29"
+      "input_per_1m": 15.0,
+      "output_per_1m": 75.0,
+      "cached_input_per_1m": 1.5,
+      "valid_from": "2024-02-29",
+      "cache_creation_per_1m": 18.75
     },
     "claude-3-opus": {
-      "input_per_1m": 15.00,
-      "output_per_1m": 75.00,
-      "cached_input_per_1m": 1.50,
-      "valid_from": "2024-02-29"
+      "input_per_1m": 15.0,
+      "output_per_1m": 75.0,
+      "cached_input_per_1m": 1.5,
+      "valid_from": "2024-02-29",
+      "cache_creation_per_1m": 18.75
     },
     "claude-3-haiku-20240307": {
       "input_per_1m": 0.25,
       "output_per_1m": 1.25,
       "cached_input_per_1m": 0.03,
-      "valid_from": "2024-03-07"
+      "valid_from": "2024-03-07",
+      "cache_creation_per_1m": 0.3125
     },
     "claude-3-haiku": {
       "input_per_1m": 0.25,
       "output_per_1m": 1.25,
       "cached_input_per_1m": 0.03,
-      "valid_from": "2024-03-07"
+      "valid_from": "2024-03-07",
+      "cache_creation_per_1m": 0.3125
     },
     "claude-opus-4-20250514": {
-      "input_per_1m": 15.00,
-      "output_per_1m": 75.00,
-      "cached_input_per_1m": 1.50,
-      "valid_from": "2025-05-14"
+      "input_per_1m": 15.0,
+      "output_per_1m": 75.0,
+      "cached_input_per_1m": 1.5,
+      "valid_from": "2025-05-14",
+      "cache_creation_per_1m": 18.75
     },
     "claude-sonnet-4-20250514": {
-      "input_per_1m": 3.00,
-      "output_per_1m": 15.00,
-      "cached_input_per_1m": 0.30,
-      "valid_from": "2025-05-14"
+      "input_per_1m": 3.0,
+      "output_per_1m": 15.0,
+      "cached_input_per_1m": 0.3,
+      "valid_from": "2025-05-14",
+      "cache_creation_per_1m": 3.75
     },
     "claude-haiku-4-20250514": {
-      "input_per_1m": 0.80,
-      "output_per_1m": 4.00,
+      "input_per_1m": 0.8,
+      "output_per_1m": 4.0,
       "cached_input_per_1m": 0.08,
-      "valid_from": "2025-05-14"
+      "valid_from": "2025-05-14",
+      "cache_creation_per_1m": 1.0
     },
     "claude-fable-5": {
-      "input_per_1m": 10.00,
-      "output_per_1m": 50.00,
-      "cached_input_per_1m": 1.00,
-      "valid_from": "2026-05-26"
+      "input_per_1m": 10.0,
+      "output_per_1m": 50.0,
+      "cached_input_per_1m": 1.0,
+      "valid_from": "2026-05-26",
+      "cache_creation_per_1m": 12.5
     },
     "claude-opus-4-8": {
-      "input_per_1m": 5.00,
-      "output_per_1m": 25.00,
-      "cached_input_per_1m": 0.50,
-      "valid_from": "2026-05-26"
+      "input_per_1m": 5.0,
+      "output_per_1m": 25.0,
+      "cached_input_per_1m": 0.5,
+      "valid_from": "2026-05-26",
+      "cache_creation_per_1m": 6.25
     },
     "claude-opus-4-7": {
-      "input_per_1m": 5.00,
-      "output_per_1m": 25.00,
-      "cached_input_per_1m": 0.50,
-      "valid_from": "2026-03-13"
+      "input_per_1m": 5.0,
+      "output_per_1m": 25.0,
+      "cached_input_per_1m": 0.5,
+      "valid_from": "2026-03-13",
+      "cache_creation_per_1m": 6.25
     },
     "claude-opus-4-6": {
-      "input_per_1m": 5.00,
-      "output_per_1m": 25.00,
-      "cached_input_per_1m": 0.50,
-      "valid_from": "2025-12-01"
+      "input_per_1m": 5.0,
+      "output_per_1m": 25.0,
+      "cached_input_per_1m": 0.5,
+      "valid_from": "2025-12-01",
+      "cache_creation_per_1m": 6.25
     },
     "claude-opus-4-5": {
-      "input_per_1m": 5.00,
-      "output_per_1m": 25.00,
-      "cached_input_per_1m": 0.50,
-      "valid_from": "2025-11-01"
+      "input_per_1m": 5.0,
+      "output_per_1m": 25.0,
+      "cached_input_per_1m": 0.5,
+      "valid_from": "2025-11-01",
+      "cache_creation_per_1m": 6.25
     },
     "claude-sonnet-4-6": {
-      "input_per_1m": 3.00,
-      "output_per_1m": 15.00,
-      "cached_input_per_1m": 0.30,
-      "valid_from": "2025-11-14"
+      "input_per_1m": 3.0,
+      "output_per_1m": 15.0,
+      "cached_input_per_1m": 0.3,
+      "valid_from": "2025-11-14",
+      "cache_creation_per_1m": 3.75
     },
     "claude-sonnet-4-5": {
-      "input_per_1m": 3.00,
-      "output_per_1m": 15.00,
-      "cached_input_per_1m": 0.30,
-      "valid_from": "2025-09-29"
+      "input_per_1m": 3.0,
+      "output_per_1m": 15.0,
+      "cached_input_per_1m": 0.3,
+      "valid_from": "2025-09-29",
+      "cache_creation_per_1m": 3.75
     },
     "claude-haiku-4-5": {
-      "input_per_1m": 1.00,
-      "output_per_1m": 5.00,
-      "cached_input_per_1m": 0.10,
-      "valid_from": "2025-10-01"
+      "input_per_1m": 1.0,
+      "output_per_1m": 5.0,
+      "cached_input_per_1m": 0.1,
+      "valid_from": "2025-10-01",
+      "cache_creation_per_1m": 1.25
+    },
+    "claude-fable-5-1": {
+      "input_per_1m": 10.0,
+      "output_per_1m": 50.0,
+      "cached_input_per_1m": 0.25,
+      "cache_creation_per_1m": 12.5
+    },
+    "claude-opus-5-5": {
+      "input_per_1m": 4.0,
+      "output_per_1m": 20.0,
+      "cached_input_per_1m": 0.2,
+      "cache_creation_per_1m": 5.0
+    },
+    "claude-sonnet-5-5": {
+      "input_per_1m": 2.0,
+      "output_per_1m": 10.0,
+      "cached_input_per_1m": 0.1,
+      "cache_creation_per_1m": 2.5
+    },
+    "claude-haiku-5-5": {
+      "input_per_1m": 0.1,
+      "output_per_1m": 0.5,
+      "cached_input_per_1m": 0.01,
+      "cache_creation_per_1m": 0.125
     }
   }
 }

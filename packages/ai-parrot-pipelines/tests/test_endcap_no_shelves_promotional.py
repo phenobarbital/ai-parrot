@@ -26,6 +26,7 @@ from parrot_pipelines.planogram.contracts import (
     ShapeKind,
 )
 from parrot_pipelines.planogram.plan import PlanogramCompliance
+from parrot_pipelines.planogram.layout import ZoneSelector
 from parrot_pipelines.planogram.types import endcap_no_shelves_promotional as promo_module
 from parrot_pipelines.planogram.types.endcap_no_shelves_promotional import EndcapNoShelvesPromotional
 
@@ -81,8 +82,8 @@ def _layout():
         .model_copy(
             update={
                 "zone_selectors": [
-                    {"zone_id": "header", "profile": "promo_backlit_zone", "kind": "zone", "ordinal": 0},
-                    {"zone_id": "base", "profile": "promo_poster_zone", "kind": "zone", "ordinal": 0},
+                    ZoneSelector(zone_id="header", profile="promo_backlit_zone", kind="zone", ordinal=0),
+                    ZoneSelector(zone_id="base", profile="promo_poster_zone", kind="zone", ordinal=0),
                 ]
             }
         )

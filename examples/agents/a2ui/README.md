@@ -173,8 +173,8 @@ Output lands in `artifacts/a2ui_deterministic_refresh/`.
 
 ## See also
 
-- `docs/outputs/a2ui-v1.md` — the v1.0 wire, the two catalogs, `lower()`, baking.
-- `docs/migration/feat-273-a2ui-deprecations.md` — the dialect → v1.0 migration.
-- `docs/toolkits/infographic_toolkit.md` — the toolkit's full tool surface.
+- `wiki/outputs/a2ui-v1.md` — the v1.0 wire, the two catalogs, `lower()`, baking.
+- `wiki/migration/feat-273-a2ui-deprecations.md` — the dialect → v1.0 migration.
+- `wiki/tools/toolkits/infographic_toolkit.md` — the toolkit's full tool surface.
 - `examples/simple_infographic_agent.py` — the recipe / deterministic-replay
   lane (`publish_recipe` + `RecipeRunner`) this example deliberately skips.

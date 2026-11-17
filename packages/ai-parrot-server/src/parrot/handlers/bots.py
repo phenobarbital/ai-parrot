@@ -96,6 +96,26 @@ class PromptLibraryManagement(ModelView):
             return await self.get_userid(session=self._session)
         return value
 
+    async def _post_updated_at(self, value, column, data):
+        """Every PUT/POST write records when it happened (FEAT-794).
+
+        A ``_post_``/``_patch_`` hook, not ``_set_``: ``ModelView._del_data`` falls back to
+        ``_set_<column>`` hooks, and a timestamp in a DELETE body filter breaks the delete.
+        """
+        return datetime.now()
+
+    _patch_updated_at = _post_updated_at
+
+    async def _set_update(self, model, data):
+        """An update never changes the author (FEAT-794).
+
+        ``ModelView._post_data`` runs ``_set_created_by`` on every write, so by the time
+        ``post()`` applies the body it already carries the editor's id. Dropping the key here,
+        on the update path only, keeps the stored author; inserts still stamp it.
+        """
+        data = {key: value for key, value in data.items() if key != "created_by"}
+        await super()._set_update(model, data)
+
     async def get(self):
         """Override GET to filter by chatbot_id OR agent_id query param.
 
@@ -912,6 +932,33 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
             file_path = registry.create_agent_definition(config, category=category)
         except Exception as exc:
             return self.error(response={"message": f"Failed to write YAML: {exc}"}, status=500)
+
+        from ..registry.registry import AgentKind
+
+        if config.kind != AgentKind.LOCAL:
+            # Remote (a2a / squawk) entries have no factory and are never instantiated
+            # locally: register the protocol endpoint only; BotManager cannot host them.
+            try:
+                registry.register_remote(config)
+            except Exception as exc:
+                self.logger.warning(f"YAML written but remote registration failed: {exc}")
+                return self.error(
+                    response={
+                        "message": f"Agent definition written but remote registration failed: {exc}",
+                        "file_path": str(file_path),
+                    },
+                    status=500,
+                )
+            return self.json_response(
+                {
+                    "message": f"Remote agent '{config.name}' registered",
+                    "name": config.name,
+                    "kind": config.kind.value,
+                    "file_path": str(file_path),
+                    "source": "registry",
+                },
+                status=201,
+            )
 
         # Register into AgentRegistry runtime
         try:

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-205 — TeamsHumanChannel
 **Spec**: `sdd/specs/hitl-teams-channel.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

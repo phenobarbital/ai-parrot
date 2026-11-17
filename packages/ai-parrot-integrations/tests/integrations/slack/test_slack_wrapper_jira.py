@@ -1,13 +1,14 @@
 """Integration tests for Slack wrapper Jira command wiring (FEAT-225 / TASK-1470)."""
+
 from __future__ import annotations
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_minimal_wrapper(oauth_manager=None):
     """Create a SlackAgentWrapper with minimal mocking."""
@@ -51,9 +52,11 @@ def _make_minimal_wrapper(oauth_manager=None):
             wrapper.config = config
             wrapper.app = mock_app
             import logging
+
             wrapper.logger = logging.getLogger("test")
             wrapper.conversations = {}
             import asyncio
+
             wrapper._concurrency_semaphore = asyncio.Semaphore(5)
             wrapper._background_tasks = set()
             wrapper._assistant_handler = None
@@ -65,13 +68,22 @@ def _make_minimal_wrapper(oauth_manager=None):
             wrapper.interactive_route = "/api/slack/test_bot/interactive"
 
             from parrot.integrations.slack.commands import SlackCommandRouter
-            from parrot.integrations.slack.commands.jira_commands import register_jira_commands
+            from parrot.integrations.slack.commands.connection_commands import (
+                AppLinkIssuer,
+                register_connection_commands,
+            )
+            from parrot.auth.oauth2.service import IntegrationsService
 
             wrapper._command_router = SlackCommandRouter()
+            register_connection_commands(
+                wrapper._command_router,
+                link_issuer=AppLinkIssuer(mock_app),
+                service_factory=lambda: IntegrationsService(authorizer=mock_app.get("connection_authorizer")),
+            )
             if oauth_manager is not None:
-                register_jira_commands(wrapper._command_router, oauth_manager)
                 if config.bot_token:
                     from parrot.integrations.slack.oauth_callback import SlackOAuthNotifier
+
                     with patch.object(SlackOAuthNotifier, "__init__", lambda s, bot_token: None):
                         notifier = SlackOAuthNotifier.__new__(SlackOAuthNotifier)
                         notifier._bot_token = config.bot_token
@@ -86,11 +98,13 @@ def _make_minimal_wrapper(oauth_manager=None):
 # Tests
 # ---------------------------------------------------------------------------
 
+
 class TestSlackWrapperJiraWiring:
     def test_command_router_created_on_init(self):
         """Wrapper always creates a SlackCommandRouter during __init__."""
         wrapper, _ = _make_minimal_wrapper()
         from parrot.integrations.slack.commands import SlackCommandRouter
+
         assert isinstance(wrapper._command_router, SlackCommandRouter)
 
     def test_jira_commands_registered_when_oauth_manager_provided(self):
@@ -106,12 +120,13 @@ class TestSlackWrapperJiraWiring:
         assert "disconnect_jira" in wrapper._command_router.registered_commands
         assert "jira_status" in wrapper._command_router.registered_commands
 
-    def test_no_jira_commands_without_oauth_manager(self):
-        """Without oauth_manager, the Jira commands are not registered."""
+    def test_connection_commands_registered_without_oauth_manager(self):
+        """Generic commands and Jira aliases do not require a Jira manager."""
         wrapper, _ = _make_minimal_wrapper(oauth_manager=None)
 
-        assert "connect_jira" not in wrapper._command_router.registered_commands
-        assert "disconnect_jira" not in wrapper._command_router.registered_commands
+        assert "connect_jira" in wrapper._command_router.registered_commands
+        assert "disconnect_jira" in wrapper._command_router.registered_commands
+        assert "login" in wrapper._command_router.registered_commands
 
     @pytest.mark.asyncio
     async def test_handle_command_dispatches_connect_jira(self):
@@ -120,9 +135,7 @@ class TestSlackWrapperJiraWiring:
 
         manager = MagicMock()
         manager.validate_token = AsyncMock(return_value=None)
-        manager.create_authorization_url = AsyncMock(
-            return_value=("https://auth.atlassian.com/authorize", "nonce")
-        )
+        manager.create_authorization_url = AsyncMock(return_value=("https://auth.atlassian.com/authorize", "nonce"))
 
         wrapper, _ = _make_minimal_wrapper(oauth_manager=manager)
 

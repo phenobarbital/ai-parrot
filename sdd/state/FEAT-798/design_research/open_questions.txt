@@ -1,0 +1,3 @@
+- [ ] **Does `CostCalculator` prefix-match model ids (so a missing `gemini-4-argon` row degrades gracefully)?** — *Owner*: tbd (spec research)
+- [ ] **Is `bots/search.py:71` `google:gemini-3-flash` (not a catalogue value) a pre-existing drift to fix in passing?** — *Owner*: tbd
+- [ ] **Argon pricing figures** for `pricing/google.json` — *Owner*: operator (external input)

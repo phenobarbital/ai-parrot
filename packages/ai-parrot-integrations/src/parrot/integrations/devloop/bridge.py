@@ -8,10 +8,31 @@ from typing import Optional, Protocol
 
 from aiohttp import ClientConnectorError, ClientSession, ClientTimeout, UnixConnector
 
+from parrot.bots.flows.core.gates import GateError, GateErrorCode
 from parrot.flows.dev_loop.commands import CancelRunRequest, ResolveGateRequest  # verified: commands.py:46,64
 from parrot.integrations.devloop.models import BridgeResult
 
 _STATUS_REASON = {404: "not_found", 409: "already_resolved", 401: "unauthorized"}
+
+
+def gate_error_result(exc: GateError) -> BridgeResult:
+    """Map a typed ``GateError`` to the user-facing ``BridgeResult`` vocabulary.
+
+    ``NOT_FOUND`` becomes ``404/not_found`` and ``NOT_PENDING`` becomes
+    ``409/already_resolved`` (the reasons the Slack layer already renders);
+    any other code is reported as a 400 carrying the code value.
+
+    Args:
+        exc: The gate failure raised while resolving a gate.
+
+    Returns:
+        A non-ok ``BridgeResult``.
+    """
+    if exc.code == GateErrorCode.NOT_FOUND:
+        return BridgeResult(ok=False, status=404, reason="not_found")
+    if exc.code == GateErrorCode.NOT_PENDING:
+        return BridgeResult(ok=False, status=409, reason="already_resolved")
+    return BridgeResult(ok=False, status=400, reason=exc.code.value)
 
 
 class RunCommandChannel(Protocol):
@@ -89,7 +110,11 @@ class LoopbackRestChannel:
         body = ResolveGateRequest(
             resolution=resolution, resolved_by=resolved_by, comment=comment, answers=dict(answers or {})
         ).model_dump()
-        return await self._post(f"/runs/{run_id}/gates/{gate_id}/resolve", body)
+        try:
+            return await self._post(f"/runs/{run_id}/gates/{gate_id}/resolve", body)
+        except GateError as exc:
+            self.logger.debug("gate resolve failed for %s/%s: %s", run_id, gate_id, exc)
+            return gate_error_result(exc)
 
     async def cancel(self, run_id: str, *, requested_by: str) -> BridgeResult:
         """POST the existing cancel contract to the child."""

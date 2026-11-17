@@ -103,4 +103,28 @@ describe("Login", () => {
     await waitFor(() => expect(getByLabelText("Username")).toBeTruthy());
     expect(queryByTestId("provider-buttons")).toBeNull();
   });
+
+  it("keeps plain autocomplete=username while passkeys are unavailable (AC01)", () => {
+    const { getByLabelText } = render(Login);
+    expect(getByLabelText("Username").getAttribute("autocomplete")).toBe("username");
+  });
+
+  it("never renders the PasskeyAuth discovery entry as a provider button", async () => {
+    vi.spyOn(axios, "get").mockResolvedValue({
+      data: {
+        passkey: {
+          name: "PasskeyAuth",
+          uri: "/api/v1/login",
+          description: "Passkey (WebAuthn) authentication",
+          icon: "",
+          external: false,
+          headers: { "x-auth-method": "PasskeyAuth" },
+        },
+      },
+    });
+    const { queryByText, queryByTestId } = render(Login);
+    await waitFor(() => expect(axios.get).toHaveBeenCalled());
+    expect(queryByText("Passkey (WebAuthn) authentication")).toBeNull();
+    expect(queryByTestId("provider-buttons")).toBeNull();
+  });
 });

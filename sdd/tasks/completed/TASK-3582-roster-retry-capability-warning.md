@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-588 — Make the sdd-coder retry ladder reachable for complex/unknown tasks
 **Spec**: `sdd/specs/fixgroup-47eb801095a6.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3580

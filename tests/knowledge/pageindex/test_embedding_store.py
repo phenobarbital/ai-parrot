@@ -7,47 +7,19 @@ Covers:
   - invalidate_tree removes per-tree matrix but preserves global tier.
   - LRU eviction (basic).
 
-Import note:
-    ``parrot.knowledge.pageindex.__init__.py`` imports ``PageIndexLoader``,
-    which transitively imports ``aiohttp_cors`` (not installed in CI).
-    We therefore load ``embedding_store`` directly via
-    ``importlib.util.spec_from_file_location`` to bypass the package
-    ``__init__.py`` entirely.
+Imports ``parrot.knowledge.pageindex.embedding_store`` normally (FEAT-852).
+It previously loaded the module by file path to "bypass ``aiohttp_cors``",
+which has been a required core dependency all along; the bypass registered a
+stub package whose missing ``__init__`` made the package's own relative imports
+re-enter ``embedding_store`` mid-execution, leaving a half-built module in
+``sys.modules``. See issue:91822a3b8548 and tests/test_stub_isolation.py.
 """
-import importlib.util
-import json
-import sys
-import pytest
-import numpy as np
 from pathlib import Path
 
+import numpy as np
+import pytest
 
-def _load_embedding_store_module():
-    """Load parrot.knowledge.pageindex.embedding_store bypassing __init__.py.
-
-    The ``parrot.knowledge.pageindex`` package ``__init__.py`` triggers a deep
-    import chain that ends in ``aiohttp_cors`` (not installed).  Loading the
-    module file directly avoids that chain.
-
-    Returns:
-        The ``embedding_store`` module object.
-    """
-    module_name = "parrot.knowledge.pageindex.embedding_store"
-    if module_name in sys.modules:
-        return sys.modules[module_name]
-    _file = (
-        Path(__file__).parents[3]
-        / "packages/ai-parrot/src/parrot/knowledge/pageindex/embedding_store.py"
-    )
-    spec = importlib.util.spec_from_file_location(module_name, str(_file))
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_es_mod = _load_embedding_store_module()
-NodeEmbeddingStore = _es_mod.NodeEmbeddingStore
+from parrot.knowledge.pageindex.embedding_store import NodeEmbeddingStore
 
 
 # ---- Fixtures ---------------------------------------------------------

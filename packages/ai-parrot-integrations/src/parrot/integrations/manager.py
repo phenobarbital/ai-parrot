@@ -12,13 +12,17 @@ Loads configuration from {ENV_DIR}/integrations_bots.yaml (or telegram_bots.yaml
 # be imported without the optional ``aiogram`` (Telegram) dependency installed.
 from __future__ import annotations
 import asyncio
+import inspect
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
+from typing import Any, Callable, Dict, List, Optional, Tuple, TYPE_CHECKING
 import yaml
 from aiohttp import web
 
 from navconfig import BASE_DIR
 from navconfig.logging import logging
+from parrot.auth.oauth2.events import ChannelNotifierRegistry, ConnectionEventPublisher, setup_connection_fanout
+from parrot.security.audit_ledger import AuditLedger
+from parrot.auth.principal import set_principal_resolver
 from parrot.conf import AGENTS_DIR, REDIS_URL
 from parrot.human import (
     HumanInteractionManager,
@@ -75,6 +79,159 @@ def _build_jira_toolkit() -> Any:
     except Exception:  # noqa: BLE001 - Jira is optional; never fatal for the Slack bot
         logging.getLogger(__name__).warning("JiraToolkit not available; Slack dev-loop identity resolution degraded.")
         return None
+
+
+def _build_credential_store(app: Any) -> Any:
+    """Build the Identity Vault store for a ``JiraOAuthManager``, else ``None``.
+
+    The durable owner of a Jira grant is navigator-auth's Identity Vault
+    (FEAT-773); the store is the durable owner before Redis is updated. It
+    needs the ``authdb`` pool, so a deployment without one uses the core
+    vault-utils store.
+
+    Returns:
+        An ``IdentityVaultCredentialStore``, or ``None`` when ``app['authdb']``
+        is absent or the server package is not installed.
+    """
+    db_pool = app.get("authdb") if app is not None else None
+    if db_pool is None:
+        return None
+    try:
+        from parrot.services.identity_credential_sink import (  # noqa: PLC0415
+            IdentityVaultCredentialStore,
+        )
+
+        return IdentityVaultCredentialStore(db_pool=db_pool)
+    except Exception:  # noqa: BLE001 - the durable copy is optional, never fatal
+        logging.getLogger(__name__).warning(
+            "IdentityVaultCredentialStore unavailable; Jira will use the default credential store."
+        )
+        return None
+
+
+def _build_principal_resolver(app: Any) -> Any:
+    """Build and register the server principal resolver, else return ``None``."""
+    db_pool = app.get("authdb") if app is not None else None
+    if db_pool is None:
+        return None
+
+    try:
+        from parrot.services.identity_principal import IdentityPrincipalResolver  # noqa: PLC0415
+
+        resolver = IdentityPrincipalResolver(db_pool)
+        set_principal_resolver(resolver)
+        return resolver
+    except Exception:  # noqa: BLE001 - server package is optional for integrations
+        logging.getLogger(__name__).warning("IdentityPrincipalResolver unavailable; non-web channels will fail closed.")
+        return None
+
+
+def _identity_mapping_service(app: Any) -> Any:
+    """Build an identity mapping service when an auth database is available."""
+    db_pool = app.get("authdb") or app.get("database")
+    if db_pool is None:
+        return None
+    try:
+        from parrot.services.identity_mapping import IdentityMappingService  # noqa: PLC0415
+
+        return IdentityMappingService(db_pool)
+    except ImportError:
+        return None
+
+
+def _channel_service_factory(app: Any) -> Callable[[], Any]:
+    """Build IntegrationsService instances for channel callers with the shared connection authorizer.
+
+    Teams uses the same ``app["connection_authorizer"]`` (``NavigatorConnectionAuthorizer``) as Slack and the CLI,
+    so one set of ``integration`` resource policies — with trusted roles and groups — covers every channel. It is
+    read per call because the server installs it at startup; without it every call is denied (fail closed).
+    """
+    from parrot.auth.oauth2.service import IntegrationsService
+
+    def _factory() -> Any:
+        vault = None
+        if app.get("authdb"):
+            try:
+                from parrot.services.vault_token_sync import VaultTokenSync
+
+                vault = VaultTokenSync(db_pool=app["authdb"], redis=app.get("redis"))
+            except ImportError:  # pragma: no cover - server package is optional
+                pass
+        return IntegrationsService(vault, authorizer=app.get("connection_authorizer"))
+
+    return _factory
+
+
+def _register_teams_notifier(app: Any) -> None:
+    """Register the app's single Teams connection notifier for channel "msteams" (idempotent)."""
+    from parrot.integrations.msteams.connections import (
+        MSTeamsConversationRefStore,
+        get_or_create_connection_notifier,
+    )
+
+    redis = app.get("redis")
+    ref_store = MSTeamsConversationRefStore(redis) if redis is not None else None
+    ChannelNotifierRegistry().register(get_or_create_connection_notifier(app, ref_store))
+
+
+def _register_channel_notifiers(app: Any) -> ChannelNotifierRegistry:
+    """Register the Telegram and Teams connection notifiers; Slack registers SlackConnectionNotifier from SlackAgentWrapper."""
+    registry = ChannelNotifierRegistry()
+    if app.get("connection_channel_notifiers_registered"):
+        return registry
+    from parrot.integrations.telegram.connection_notifier import get_or_create_telegram_notifier
+
+    get_or_create_telegram_notifier(app, identity_service=_identity_mapping_service(app))
+    _register_teams_notifier(app)
+    app["connection_channel_notifiers_registered"] = True
+    return registry
+
+
+def attach_telegram_wrapper(app: Any, wrapper: Any, bot: Any) -> None:
+    """Bind a Telegram wrapper to the app's shared connection publisher and notifier (idempotent).
+
+    Creates the publisher/notifier on first use, attaches the bot for deliveries, and re-registers the wrapper's
+    session hook and staged-login coordinator, which the wrapper could not do while the notifier did not exist yet.
+    Both Telegram startup paths (``IntegrationBotManager`` and ``TelegramBotManager``) call this.
+    """
+    _connection_publisher(app)
+    notifier = app.get("telegram_connection_notifier")
+    if notifier is not None and wrapper._bot_id:
+        notifier.attach(wrapper._bot_id, bot)
+    wrapper._register_jira_session_hook()
+    wrapper._attach_login_coordinator()
+    # FEAT-854: browser-mode bots need the completion endpoint in this same app.
+    if getattr(getattr(wrapper, "config", None), "auth_open_mode", "webview") == "browser":
+        from parrot.integrations.telegram.browser_login import setup_browser_auth_routes
+
+        setup_browser_auth_routes(app)
+
+
+def _connection_publisher(app: Any) -> ConnectionEventPublisher:
+    """Return the app's shared publisher with all channel notifiers registered."""
+    registry = _register_channel_notifiers(app)
+    publisher = app.get("connection_event_publisher")
+    if publisher is None:
+        audit_ledger = app.get("connection_audit_ledger")
+        if audit_ledger is None:
+            audit_ledger = AuditLedger()
+            app["connection_audit_ledger"] = audit_ledger
+        publisher = ConnectionEventPublisher(notifiers=registry, audit_ledger=audit_ledger)
+        _attach_fanout_bus(publisher)
+        app["connection_event_publisher"] = publisher
+    return publisher
+
+
+def _attach_fanout_bus(publisher: ConnectionEventPublisher) -> None:
+    """Attach the shared publish-only fan-out bus when observability fan-out is enabled (additive)."""
+    try:
+        from parrot.observability.fanout import get_event_fanout_bus
+
+        bus = get_event_fanout_bus()
+        if bus is not None:
+            setup_connection_fanout(bus, publisher)
+    except Exception:  # noqa: BLE001 — the bus is additive; never block integration startup
+        logging.getLogger(__name__).warning("Connection event fan-out bus not attached", exc_info=True)
 
 
 async def handle_a2a_directory(request: web.Request) -> web.Response:
@@ -260,6 +417,8 @@ class IntegrationBotManager:
         except RuntimeError:
             app = None
         wrapper = TelegramAgentWrapper(agent, bot, config, app=app)
+        if app is not None:
+            attach_telegram_wrapper(app, wrapper, bot)
 
         # Publish the Telegram command menu (setMyCommands + chat menu button)
         # so platform/agent commands (e.g. /connect_jira from JiraSpecialist)
@@ -322,6 +481,8 @@ class IntegrationBotManager:
 
         # Wire JiraOAuthManager if Jira OAuth is configured (FEAT-225).
         app = self.bot_manager.get_app()
+        _build_principal_resolver(app)
+        _register_teams_notifier(app)
         jira_oauth_manager = None
         if getattr(config, "jira_client_id", None):
             existing = app.get("jira_oauth_manager")
@@ -340,6 +501,8 @@ class IntegrationBotManager:
                         client_secret=config.jira_client_secret,
                         redirect_uri=config.jira_redirect_uri,
                         app=app,
+                        credential_store=_build_credential_store(app),
+                        event_publisher=_connection_publisher(app),
                     )
                     self.logger.info("MS Teams bot '%s': initialized JiraOAuthManager", name)
                 except Exception as exc:  # noqa: BLE001
@@ -358,6 +521,7 @@ class IntegrationBotManager:
             app=app,
             forms_directory=config.forms_directory or AGENTS_DIR / "forms",
             oauth_manager=jira_oauth_manager,
+            connection_service_factory=_channel_service_factory(app),
         )
         self.msteams_bots[name] = wrapper
         self.logger.info("Started MS Teams bot '%s'", name)
@@ -883,6 +1047,7 @@ class IntegrationBotManager:
         # Reuse an existing manager on the app if one was already set up by
         # another integration (same Atlassian app registration, single callback).
         app = self.bot_manager.get_app()
+        _build_principal_resolver(app)
         jira_oauth_manager = None
         if getattr(config, "jira_client_id", None):
             existing = app.get("jira_oauth_manager")
@@ -898,6 +1063,8 @@ class IntegrationBotManager:
                         client_secret=config.jira_client_secret,
                         redirect_uri=config.jira_redirect_uri,
                         app=app,
+                        credential_store=_build_credential_store(app),
+                        event_publisher=_connection_publisher(app),
                     )
                     self.logger.info("Slack bot '%s': initialized JiraOAuthManager", name)
                 except Exception as exc:  # noqa: BLE001
@@ -1005,7 +1172,11 @@ class IntegrationBotManager:
                 self.logger.error("Error while cancelling polling tasks: %s", e)
 
         # Now close bot sessions
-        for name, (bot, _dp, _) in self.telegram_bots.items():
+        for name, (bot, _dp, wrapper) in self.telegram_bots.items():
+            try:
+                await wrapper.close()
+            except Exception as exc:
+                self.logger.error("Error closing Telegram wrapper '%s': %s", name, exc)
             try:
                 self.logger.debug("Closing session for bot '%s'", name)
                 await bot.session.close()
@@ -1033,6 +1204,11 @@ class IntegrationBotManager:
         # skips the other.
         for name, wrapper in self.msteams_bots.items():
             try:
+                self.logger.debug("Closing queued commands for MS Teams bot '%s'", name)
+                await wrapper.close_queued_commands()
+            except Exception as exc:
+                self.logger.error("Error closing queued commands for MS Teams bot '%s': %s", name, exc)
+            try:
                 self.logger.debug("Closing FormDesigner client for MS Teams bot '%s'", name)
                 await wrapper.close_formdesigner_client()
             except Exception as e:
@@ -1042,6 +1218,16 @@ class IntegrationBotManager:
                 await wrapper.close_voice_transcriber()
             except Exception as e:
                 self.logger.error("Error closing voice transcriber for MS Teams bot '%s': %s", name, e)
+            # FEAT-734: the agent's own FormDesigner client (TeamsFormDesignerMixin.aclose)
+            try:
+                closer = getattr(getattr(wrapper, "agent", None), "aclose", None)
+                if closer is not None:
+                    result = closer()
+                    if inspect.isawaitable(result):
+                        self.logger.debug("Closing agent FormDesigner client for MS Teams bot '%s'", name)
+                        await result
+            except Exception as e:
+                self.logger.error("Error closing agent resources for MS Teams bot '%s': %s", name, e)
 
         # FEAT-555: stop dev-loop services first (cancels state tails only — children keep running by decision).
         for name, service in self._devloop_services.items():

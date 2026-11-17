@@ -29,6 +29,23 @@
       component: () => import("./pages/agents/AgentChatPage.svelte"),
       requiresAuth: true,
     },
+    // FEAT-772: user-level account pages (passkey management).
+    {
+      path: "/account/security",
+      component: () => import("./pages/account/Security.svelte"),
+      requiresAuth: true,
+    },
+    // FEAT-777: user connections + Slack account linking.
+    {
+      path: "/account/connections",
+      component: () => import("./pages/account/Connections.svelte"),
+      requiresAuth: true,
+    },
+    {
+      path: "/account/link",
+      component: () => import("./pages/account/LinkChannel.svelte"),
+      requiresAuth: true,
+    },
     // --- Administration -------------------------------------------------
     { path: "/admin/home", component: () => import("./pages/Home.svelte"), requiresAuth: true },
     {

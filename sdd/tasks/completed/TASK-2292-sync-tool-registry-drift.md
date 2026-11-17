@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-436 — Sync `TOOL_REGISTRY` / `LOADER_REGISTRY` Drift Revealed by the AnnAssign Fix
 **Spec**: `sdd/specs/sync-tool-registry-drift.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

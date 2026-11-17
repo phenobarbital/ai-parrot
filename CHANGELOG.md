@@ -9,6 +9,358 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.1.3] — 2026-11-10 — PageIndex segment store and optimizer, ontology backend, AGY compatibility
+
+Patch release. Core and its siblings move to `2.1.3`; the fifteen `ai-parrot-client-*`
+satellites and `ai-parrot-openlit-bridge` move to `1.1.3`. Every sibling now pins
+`ai-parrot>=2.1.3`.
+
+### Added
+- **PageIndex segment store:** immutable document revisions, `list_documents` / `outline` /
+  `read_pages` / `read_segments` read tools, and an injection scan on every import path.
+- **PageIndex layout structure builder:** heading detection, outline repair for out-of-order
+  bookmarks, anchored attach, and framed LLM structure prompts.
+- **PageIndex tree optimizer:** `optimize` with an evaluation harness, OKF alias resolution
+  and bundle export rewriting, and bounded LLM inputs.
+- **PageIndex local MCP toolkit:** `PageIndexToolkit` constructible without an LLM, bounded
+  retrieve output (`max_result_chars`), and a packaged template and example.
+- **Agentic retrieval** for PageIndex (deadline-bound snapshot) and for Bookstore
+  (`BookstoreOrigin`, `ask` and `doctor` CLI commands, frozen evaluation fixture).
+- **Ontology backend:** `PostgresOntologyStore`, snapshot store and sources, read-only
+  vocabulary HTTP routes, a shared conformance suite, and a CI job for the vocabulary
+  PostgreSQL tests.
+- **Postgres crew storage** (FEAT-860).
+- **Telegram browser auth and open mode:** dual-mode login pages (FEAT-854).
+- **Queued commands for integrations:** Telegram topic and reply routing for every result
+  type, paginated `GitToolkit` PR context reads, and full-review report rendering.
+- **Client tool loop capability:** a `supports_tool_loop` flag; `AbstractBot` warns once at
+  `configure()` when its client has no tool loop.
+- **Roost:** `RoostEndpoint` runs `WAKE_LLM` / `RUN_TOOL` turns in tracked background tasks.
+- **AGY (Google Antigravity) compatibility for SDD:** launcher preflight (refuses the snap
+  build, fails closed on the worker sandbox), a ported `sdd-autopilot`, Google sub-agents
+  (`sdd-coder`, `code-reviewer`, `qa-runner`), and an AGY permission hook.
+- **Review evidence:** `record_review` publishes a `ReviewArtifact`.
+
+### Changed
+- Installers pin the uv SHA-256, add a PowerShell probe, `--install-cli`, and a `py`
+  launcher; the POSIX and PowerShell installers resolve uv at runtime; the installers accept
+  the `pageindex` component.
+- Test scope: one green-cache namespace; contract runner settings reach the invocation.
+- `parrot doctor` references corrected to `parrot self doctor`.
+
+### Fixed
+- Dangerous-actions guard matches protected branches as whole tokens and refuses to disable
+  push protection over a common push URL.
+- `mcp-local`: a portable `--config` resolves from the main checkout inside a linked worktree.
+- The sandbox binds the sdd-coder evidence store (HOTFIX-c61e28722cca-1).
+- Bookstore `add_book` upserts the card before invalidating the graph.
+- Review-round fixes across PageIndex, ontology, Postgres crew storage, queued commands and
+  AGY: `zip(strict=True)`, JSON parsing when wrapped in prose, the generation grace floor,
+  and stdout purity of the stdio server.
+- CI fails PRs whose `uv.lock` is stale; the `ontology-store` extra is fixed in CI and the
+  lock is regenerated for the ontology extra.
+- Test suite: nine test files realigned after nightly failures; a stub-isolation guard covers
+  the whole `parrot` namespace; the Google installer tests stay out of the real `$HOME`.
+- Wiki: 35 dangling references unlinked.
+
+---
+
+## [2.1.2] — 2026-11-07 — Worktree root under .parrot/, --stale work-loss fixes, A2UI body limits
+
+Patch release. Core and its siblings move to `2.1.2`; the fifteen `ai-parrot-client-*`
+satellites and `ai-parrot-openlit-bridge` move to `1.1.2`. Every sibling now pins
+`ai-parrot>=2.1.2`.
+
+### Changed
+- **Worktree root moves to `.parrot/worktrees/` (FEAT-802, hard cut).** The SDD worktree
+  root is resolved by `parrot.sdd.scripts.worktree_root` (`parrot sdd worktree root` prints
+  it; `WORKTREE_BASE_PATH` overrides it; `conf.WORKTREE_ROOT` / `WORKTREE_DIR` follow).
+  `parrot sdd install` and `parrot self doctor` refuse while worktrees remain registered
+  under the legacy `.claude/worktrees/` and print the migration recipe (`mv` +
+  `git worktree repair`); the dangerous-actions guard, the installer ignore block, the e2e
+  supervisor, every command/agent/rule twin and the human docs name the new default.
+  Orphan directories left under the legacy path are not scanned by `worktree remove --stale`.
+
+### Removed
+- **`/enable` OAuth2 compatibility route and `EnableResponse` (FEAT-821).** Integrations
+  enable through the current endpoint only.
+
+### Fixed
+- **`parrot sdd worktree remove --stale` work-loss holes (FEAT-823):** an orphan pool
+  directory still holding registered worktrees is refused (children listed with their
+  dirty/unpushed counts), a deregistered checkout whose `.git` survives is refused when it
+  has work to lose or its state cannot be read, and symlinks are skipped with a warning;
+  regression tests and the orphan taxonomy are documented in `/remove-worktree`.
+- **A2UI body limits (FEAT-822):** a capped body reader with `413` helpers, bound before the
+  read, so a sub-app's `client_max_size` no longer goes unenforced.
+- **Roost (FEAT-825/827):** `ask_agent` carries the conversation id; `MatrixCarrier` carries
+  `RoostMessage.hops`, with a Matrix crew wake adapter and an endpoint factory seam.
+- **`worktree sync-base` test gaps (FEAT-820):** `resolve_target` / `resolve_base_branch`,
+  the never-push guards and up-to-date advisory, the push-protection truth table, an
+  unrecovered abort and the CLI exit-code mapping are now covered.
+- `parrot sdd launch worker --tmux` crashed under `python -S` when importing `parrot`.
+- `parrot self doctor` gives each bwrap probe level a writable `/proc`.
+- `formdesigner` quotes SQL identifiers as defense in depth.
+- Dependencies: `pypdf` and `pyasn1` Dependabot high alerts patched; `maturin` 1.14.1 → 1.16.0.
+
+---
+
+## [2.1.1] — 2026-11-05 — First published 2.1.x; documentation site and technical-wiki fixes
+
+Patch release. Core and its siblings move to `2.1.1`; the fifteen `ai-parrot-client-*`
+satellites and `ai-parrot-openlit-bridge` move to `1.1.1`. Every sibling now pins
+`ai-parrot>=2.1.1`.
+
+**`2.1.0` never reached PyPI** — its `deploy` job was skipped because the
+`smoke-sdd-foreign` release gate failed. `2.1.1` is therefore the first published
+`2.1.x`: everything listed under `[2.1.0]` ships here as well.
+
+### Added
+- **Informative documentation site (FEAT-803):** a GitHub Pages site with chapter
+  overviews (hub, core, data, integrations), tutorials (first chatbot, first agent,
+  first tool, deployment), a minimal-configuration section and a curated tools page,
+  built strictly with overlay verification.
+
+### Fixed
+- **Release gate (the `2.1.0` blocker):** `remove_worktree`, `techwiki_check`,
+  `worktree_baseline`, `worktree_push_protection` and `worktree_sync` were documented in
+  the installed markdown with no C3 scenario in `test_wheel_only_foreign_repo.py`, which
+  failed `smoke-sdd-foreign` and skipped the PyPI publish.
+- **Technical wiki (FEAT-818/819 + hotfixes):** generated API pages emit Markdown links
+  instead of `[[wiki links]]`; artifact-forbidden characters are sanitized out of page
+  names; a single API Reference index page is linked from the sidebar; links in generated
+  pages are rewritten and validated; a re-export is linked only when its target has a
+  page, and a generated page's final link is no longer re-resolved; a package with no
+  public members of its own still renders an index page.
+- `IdentifiedProduct` tolerates null LLM values.
+
+---
+
+## [2.1.0] — 2026-11-05 — Gemini 2.5 retirement, per-component LLM defaults, worktree sync-base, technical wiki
+
+Minor release. Core and its siblings move to `2.1.0`; the fifteen `ai-parrot-client-*`
+satellites and `ai-parrot-openlit-bridge` move to `1.1.0`. Every sibling now pins
+`ai-parrot>=2.1.0`.
+
+### Breaking changes
+- **Gemini 2.5 retired from the catalogue (FEAT-798).** Google shuts down `gemini-2.5-pro` /
+  `gemini-2.5-flash` on 2026-12-01 (2.5 TTS / native-audio on 2026-11-17). `GoogleModel` drops
+  `GEMINI_2_5_PRO`, `GEMINI_2_5_FLASH` (+ `_PREVIEW`), `GEMINI_2_5_FLASH_TTS`, `GEMINI_2_5_PRO_TTS`
+  and `GEMINI_COMPUTER_USE`; `VertexAIModel` drops its two 2.5 members; `GoogleVoiceModel` loses its
+  2.5 members. Pro-class defaults move to `gemini-4-argon`, flash-class defaults to
+  `gemini-3.8-flash`, Live to `gemini-3.8-live`, TTS to `gemini-3.8-flash-tts`. `flash-lite` and
+  `flash-image` members stay. Code referencing the removed members must switch.
+
+### Added
+- **Per-component LLM defaults (FEAT-796):** `AGENT_LLM`, `CREW_LLM`,
+  `EXPERT_{JUDGMENT,BALANCED,TEMPLATED}_LLM` and `<COMPONENT>_<PROVIDER>_API_KEY` settings, with
+  per-component usage tags.
+- **`parrot sdd worktree sync-base` (FEAT-806)** — cherry-pick a base fix into a sandboxed
+  worktree, with a stale-base advisory; refusal classification and transport hardening
+  (FEAT-813/814). **`parrot sdd worktree baseline`** — a runnable base-ref checkout with native
+  `.so` files synced.
+- **Technical reference wiki (FEAT-801):** technical docs moved to `wiki/` (275 pages), an API
+  reference generator, a `techwiki.yml` sync workflow and the `ai-parrot[techwiki]` extra.
+- **SDD worker lifecycle:** tmux completion receipts and host notifications (FEAT-793);
+  `parrot sdd uninstall --stalled/--keep`, `parrot sdd worktree list|remove` and `/remove-worktree`
+  shipped to all hosts (FEAT-795); `parrot self doctor` detects bwrap nested-userns support; SDD
+  sandbox OS setup guide.
+- **Form designer:** BOOLEAN fields render Yes/No radios in HTML5 and PDF (FEAT-800).
+- **Studio prompt library:** `agent_id` and `sort_order` columns (migration 0009, FEAT-794).
+- GitHub reviewer test matrix completed (FEAT-817).
+
+### Fixed
+- Installer portability: Google config forms inferred per file, shared portable toolkit entries in
+  the user-global Gemini config, no guard hook baked to one machine's venv (FEAT-804).
+- SDD decisions: snapshot compares stored page hashes; ingest re-encodes legacy ADR envelopes
+  (fixes the `SNAPSHOT_UNSTABLE` gate); hashless pages refused (FEAT-807/808/809/810).
+- Native Claude sandbox becomes the default backend when launcher markers are present; the Bash
+  hook is idempotent so auto mode can review it; gh-only worker access with host-side `/sdd-done`;
+  persistent tiktoken cache for sandboxed workers; dirty guard checks tracked changes only.
+- sdd-coder: record tools accept validated review/feedback models; a failed native prepare frees
+  its seat; re-dispatched attempts take the next free slot (FEAT-812).
+- A2UI KPI: linked row-scalar bindings marked optional on empty snapshots (FEAT-816).
+- Ledger outbox sets aside unclaims of terminal issues instead of blocking the batch; wiki prunes
+  stale `wiki.db.bak-*` sidecars and reports malformed frontmatter as one warning.
+- TUI composer awaits `TextArea._on_key`; prompt library keeps `created_by` on update.
+
+### Dependencies
+- `google-genai>=2.34.0`, `pytest-asyncio` 1.4.1, `pytest-mock` 3.17.0.
+
+---
+
+## [2.0.0] — 2026-11-03 — Parrot installer and noun-grouped SDD CLI, Connections, Domain Experts, Squawk
+
+Major release. Core and its siblings move to `2.0.0`; the fifteen `ai-parrot-client-*`
+satellites and `ai-parrot-openlit-bridge` move to `1.0.0`. Every sibling now pins
+`ai-parrot>=2.0.0`.
+
+### Breaking changes
+- **SDD CLI is noun-grouped, with no aliases (FEAT-633 C26/C30).** `parrot sdd run <module>`
+  is gone: use `parrot sdd <noun> <verb>` (`task close|finalize|heal|review validate`,
+  `worktree ensure|guard`, `ids reserve|check`, `tests select|report|e2e-closeout`,
+  `closeout run|resolve-issues`, `docs parse`, `hooks dangerous-actions`).
+  `parrot devloop launch-worker` is now `parrot sdd launch worker` (+ `launch brief|fix`).
+  Repo-local `scripts/sdd/*` invocations move into the package.
+- **`bounded-source` toolkit moved to core** as `parrot.tools.optimizations` (FEAT-633 C35);
+  `parrot_tools.tool_optimizations.*` remain as aliases of the same modules.
+
+### Added
+- **Parrot installer (FEAT-633):** `parrot sdd install|status|uninstall` and
+  `parrot claude install` set up SDD in any git repo — commands, agents, hooks, ledger,
+  a managed `.gitignore` block (navconfig `env/.env`, `/logs/`, `/outputs/`, `.parrot/`),
+  base-branch preparation (`--base-branch`, `--hotfix-base`, `--push-base`), the
+  `sdd-coder` and `bounded-source` MCP toolkits with a seat-availability report, and a
+  portable Python dangerous-actions guard (`--no-dangerous-guard`). `parrot self doctor`
+  checks host configs for cross-repo collisions.
+- **Native Claude sandbox for SDD execution** (FEAT-768) and tmux worker sessions named
+  `sdd-<feat-id>-<slug>`.
+- **Connections** — principal-keyed delegated auth (FEAT-773) for CLI agents and local MCP
+  (FEAT-774), Web + Slack (FEAT-777), MS Teams (FEAT-775) and Telegram (FEAT-776), with a
+  default `allow_connections` policy.
+- **Domain Experts** (FEAT-778) with per-expert model overrides and Roost query traces (FEAT-790).
+- **Squawk**, a typed binary inter-agent protocol — tranche 1 (FEAT-746, `ai-parrot-squawk`).
+- Passkey (WebAuthn) sign-in in the Admin UI (FEAT-772); Semantic Layer example agents
+  (FEAT-769); unified usage and cost metrics per SDD spec (FEAT-783); SDD decision audit
+  (FEAT-784); studio named test conversations.
+
+### Fixed
+- Roost: caller authority, fail-closed serving, runtime budget enforcement and
+  PermissionContext binding (BRIEF-59d1cb0c9814, FEAT-786, FEAT-788).
+- Security: RBAC gate on `POST /forms/export`; `MCPToolAdapter` rejects undeclared and
+  reserved arguments; E2E exploration agents' Write tool confined; guard denies
+  `+refspec` force-pushes to protected branches (FEAT-792).
+- Identity Vault store bound at startup and AgentTalk wired into OAuth hydration;
+  Jira web OAuth2 registration (FEAT-791).
+- Gemini cache+tools 400 and verbatim stream chunks (FEAT-781); OpenAI completion params
+  (FEAT-770); CVE toolkit OSV CVSS scoring and malformed-body handling.
+- SDD: `ensure_worktree` recovers after a failed verification; `/sdd-spec` and `/sdd-task`
+  publish the base branch; parallel `/sdd-fix` sessions cannot close each other's claims.
+- OpenTelemetry and the default executor are torn down on shutdown.
+
+### Dependencies
+- `anthropic` 2.3.0, `claude-agent-sdk` 0.2.174, `sentence-transformers>=6.2.0`, `ruff>=0.17.2`,
+  `pylint` 4.1.3, `mkdocs-material>=9.8.0`.
+
+## [1.2.6] — 2026-10-29 — Follow-up suggestion chips, metric registry, A2UI diagrams, agent security guardrails
+
+Every distribution moves one patch step (`ai-parrot-pipelines` to `1.3.6`, `ai-parrot-server` to `1.3.5`,
+`parrot-formdesigner` to `1.3.2`, `ai-parrot-semantic` to `1.3.2`, the other core-line packages to `1.2.6`,
+satellites to `0.4.6`). Satellites are re-pinned to `ai-parrot>=1.2.6`.
+
+### Security
+
+- **Agent security guardrails (FEAT-761)** — jailbreak classifier on an engine chassis (bake-off-pinned
+  winner, DAN false-positive fixes, off-loop matcher), `PromptLeakageGuardrail` with canary redaction,
+  retrieved vector chunks scanned through the `TOOL_OUTPUT` pipeline, rendered-prompt capture, and
+  content-free security events.
+- **Metric registry tenant isolation** (FEAT-756 review) — per-call tenant isolation, no LLM-supplied
+  tenant argument, private metrics hidden from non-owners.
+- **Browsing recordings** — recording path overrides are confined and symlink escapes rejected.
+
+### Added
+
+- **Follow-up suggestion chips (FEAT-752)** — `SuggestionProvider` protocol + `SuggestionEngine` (skill,
+  presentation, explain and LLM providers, bounded total deadline), deferred suggestions in `ask_stream`
+  with a stream trailer, `AIMessage.suggestions`, a Svelte `SuggestionChips` row in AgentChat, Telegram
+  suggestion keyboards, and Studio configuration fields.
+- **Metric definition registry (FEAT-756)** — Postgres `MetricDefinition` store with compare-and-set
+  versioning, period presets / comparison windows / series buckets, source executors,
+  `MetricDefinitionsHandler` REST lane, Flex `kpi-table.md` importer, and a `MetricSuggestionProvider`.
+- **Inline A2UI component routing (FEAT-755)** — catalog JSON Schema → Pydantic structured output, inline
+  prompt builder and feasibility rules, `a2ui_component` kwarg on `ask()`.
+- **A2UI `MermaidDiagram` (FEAT-753)** — catalog component, builder and `MermaidDiagramTool`, fail-closed
+  source validator, Svelte renderer (mermaid ^11.17.2), degradation for SSR-HTML/PDF, Adaptive Cards and
+  interactive HTML.
+- **A2UI C4 diagrams (FEAT-754)** — `build_graph(level=)` + `build_c4_diagram`, C4 types/symbols and
+  projected boundary frames in `A2UIGraph`.
+- **Browsing session recording** — opt-in recording on both driver paths, finalized recording exposed on
+  close; Playwright is now the default driver.
+- **E2E browser screencast logs (FEAT-762)** — active-page screencast capture for the e2e-ui-tester
+  (`ai-parrot-server[screencast]` extra: `av`, `pillow`).
+- **SDD tooling** — `/sdd-done` closeout hooks (FEAT-764: `jira.transition`, `telegram.send`,
+  `push.send`, `webhook.post`; `--resolve-jira` removed), ledger outbox integration (FEAT-758), ADR-prefixed
+  aliases with exact/local resolution (FEAT-760), per-seat `effort` for sdd-coder seats.
+
+### Fixed
+
+- **Jira** — issue links built from the site URL instead of the API gateway.
+- **GitHub reviewer** — ticket / feature id resolved from branch and title, never the PR body.
+- **Telegram** — suggestion-keyboard guard no longer raises when the store was never set.
+- **Dev-loop sandbox** — sandboxed seats and `sdd-worker` never load the `user` setting source; RTK rewrite
+  applied inside the sandbox hook with its data dir kept read-only.
+- **sdd-coder** — stdin isolated at every MCP-served spawn site; silent exit paths logged.
+- **Semantic layer packaging** — version unpinned in the packaging test; conflicting `--package` flag dropped
+  from the CI sync.
+
+### Dependencies
+
+- `ruff` >=0.17.2 (dev), `mkdocs-material` >=9.8.0.
+
+---
+
+## [1.2.5] — 2026-10-27 — Semantic layer, Roost inter-agent protocol, MS Teams auth/forms hardening, ledger event sync
+
+Every distribution moves one patch step (`ai-parrot-pipelines` to `1.3.5`, `ai-parrot-server` to `1.3.4`,
+`parrot-formdesigner` to `1.3.1`, `ai-parrot-semantic` to `1.3.1`, the other core-line packages to `1.2.5`,
+satellites to `0.4.5`). Satellites are re-pinned to `ai-parrot>=1.2.5`.
+
+### Security
+
+- **Dependency CVE/GHSA bumps**: `dompurify` → 3.4.17 (GHSA-cg2g-xh64-v4q7, `SAFE_FOR_TEMPLATES` shadow-root
+  bypass), `Pillow` → >=13.0.0 (CVE-2026-112900), `pypdf` → 6.21.2 (CVE-2026-115572), `black` → 26.10.1
+  (CVE-2026-114134), `brotli`/`brotlicffi` → 1.2.1 (GHSA-9v8h-qqgm-4m35).
+- **Request-scoped RLS injection and non-shared dataset sources** (FEAT-738) — dataset-manager handlers no
+  longer leak row-level-security context or a shared source instance across requests.
+- **MS Teams submit-envelope fail-closed tenant isolation** (FEAT-733) — unsigned/mis-paired signing secrets
+  are refused rather than silently accepted; documents the escape hatch and tenant resolution.
+- **MS Teams user-auth lane hardening** (FEAT-729) — fail-closed exchange gate and Token Service user-id
+  fixes from code review.
+- **MS Teams FormDesigner mixin hardening** (FEAT-745) — wizard fall-through guard, fail-closed tenant map,
+  state cleanup.
+- **`repl_worker` unpickle allowlist widened** alongside the pandas-3 Arrow value fix (pre-existing allowlist
+  was too narrow for legitimate Arrow-backed DataFrame payloads).
+
+### Added
+
+- **Semantic Layer (FEAT-704)** — new `ai-parrot-semantic` package: governed metric queries for agents, with
+  security-gated raw SQL and guarded hand-off tools (M10b).
+- **Roost — local inter-agent sub-protocol over Squawk (FEAT-747)** — performatives, agent registry,
+  blackboard, Matrix/EventBus/working-memory integration for local inter-agent communication.
+- **A2UI dialect for `parrot-formdesigner` (FEAT-650)** — serve, export, and translate `FormSchema` ⇄ A2UI.
+- **Serve FormDesigner forms from a Teams agent (FEAT-734)** — `/getform` mixin + toolkit.
+- **FormDesigner validation audit trail (FEAT-732)** and **FormBuilder LLM-validation enforcement policy +
+  quota (FEAT-728)**.
+- **Materialize a chat turn as a linked widget (FEAT-757)** — A2UI linked-surface materialization for
+  agent-function/querysource-backed widgets.
+- **Parrot telemetry event fan-out (FEAT-710)** — lifecycle events now fan out to the EventBus.
+- **Shared Ledger Event Log (FEAT-694)** — cross-machine work-ledger sync via git hooks; retractable coder
+  feedback via `insight.superseded` tombstones (FEAT-723).
+- **`GitHubReviewer` — SDD spec as a second acceptance-criteria source (FEAT-759)**.
+- **Double-`configure()` is not a crash (FEAT-721)** and **worktree native artifact sync (FEAT-722)** —
+  `.so` artifacts now sync automatically into feature/attempt worktrees.
+- **Model deprecation follow-ups (FEAT-719)** — Veo → Omni, Computer Use 3.8, `gpt-transcribe`.
+
+### Fixed / Internal
+
+- **One importable identity per package test tree (FEAT-618/720)** — resolves wheel-layout test collection
+  collisions.
+- **Re-armed the observability auto-boot** (`set_bootstrap_hook`, FEAT-725).
+- **Configure-override idempotency & `speech_report` hardening** (FEAT-726); repaired
+  `test_configure_applies_tooling`, red since birth (FEAT-727).
+- **One owner for the Jira credential** (FEAT-735, vault token sync tech debt); `sdd_coder` MCP surface now
+  accepts every id/tier its engine already accepts (FEAT-736); plausibility coverage reporting and prompt
+  length caps (FEAT-737).
+- **Admin UI accepts every upload the backend stores, and reports what it stored** (FEAT-739); formdesigner
+  A2UI import/list membership + leak fixes (FEAT-743).
+- **`/sdd-fix` Fast lane now runs in its own worktree**, never the main checkout (FEAT-740).
+- **Reel unit tests**: repaired stale Veo fixtures and bounded per-test runtime (FEAT-744).
+- **`repl_worker` protocol fixes**: Arrow transport for DataFrame values (FEAT-750); snapshot survives
+  guard-refused values (FEAT-751).
+- Routine dependency bumps: `mkdocstrings`, `onnxruntime`, `aiounittest`.
+
+---
+
 ## [1.2.4] — 2026-10-22 — Per-tenant skills, Fireflies insights agent, Jira CLI, OTLP metrics fan-out
 
 Every distribution moves one patch step (`ai-parrot-pipelines` to `1.3.4`, `ai-parrot-server` to `1.3.3`,

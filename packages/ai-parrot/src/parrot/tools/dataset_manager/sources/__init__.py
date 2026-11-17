@@ -28,6 +28,7 @@ from .table import TableSource
 from .airtable import AirtableSource
 from .smartsheet import SmartsheetSource
 from .composite import CompositeDataSource, JoinSpec
+from .scoped_copy import request_scoped_copy
 
 _logger = _logging.getLogger(__name__)
 
@@ -71,4 +72,5 @@ __all__ = [
     "IcebergSource",
     "MongoSource",
     "DeltaTableSource",
+    "request_scoped_copy",
 ]

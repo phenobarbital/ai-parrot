@@ -1,0 +1,19 @@
+{
+  "flow": "security-patch",
+  "version": "1.0",
+  "description": "Triage a CVE, await approval, then prepare a remediation plan.",
+  "created_at": null,
+  "updated_at": null,
+  "metadata": {"max_parallel_tasks": 10, "default_max_retries": 3, "execution_timeout": null, "truncation_length": null, "enable_execution_memory": true, "embedding_model": null, "vector_dimension": 384, "vector_index_type": "Flat", "checkpoint": false, "checkpoint_retention": null, "checkpoint_history": null, "checkpoint_include_responses": false, "durable": false},
+  "nodes": [
+    {"id": "__start__", "type": "start", "label": null, "agent_ref": null, "instruction": null, "max_retries": 0, "config": {}, "pre_actions": [], "post_actions": [], "metadata": {}, "position": {"x": 0.0, "y": 0.0}},
+    {"id": "intake", "type": "expert_stage", "label": "intake", "agent_ref": null, "instruction": null, "max_retries": 0, "config": {"stage": "intake", "experts": ["cve-analyst"], "mode": "subagent", "gate": {"kind": "approval", "title": "Approve CVE remediation planning", "instructions": "", "questions": [], "ttl_seconds": null, "on_expiry": "fail", "pre_review": null}, "synthesis": null, "strict": false, "conductor": null}, "pre_actions": [], "post_actions": [], "metadata": {}, "position": {"x": 0.0, "y": 0.0}},
+    {"id": "plan", "type": "expert_stage", "label": "plan", "agent_ref": null, "instruction": null, "max_retries": 0, "config": {"stage": "plan", "experts": ["cve-remediation"], "mode": "subagent", "gate": null, "synthesis": null, "strict": false, "conductor": null}, "pre_actions": [], "post_actions": [], "metadata": {}, "position": {"x": 0.0, "y": 0.0}},
+    {"id": "__end__", "type": "end", "label": null, "agent_ref": null, "instruction": null, "max_retries": 0, "config": {}, "pre_actions": [], "post_actions": [], "metadata": {}, "position": {"x": 0.0, "y": 0.0}}
+  ],
+  "edges": [
+    {"id": null, "from": "__start__", "to": "intake", "condition": "always", "predicate": null, "instruction": null, "priority": 0, "label": null},
+    {"id": null, "from": "intake", "to": "plan", "condition": "on_condition", "predicate": "result.metadata.gate.status == \"approved\"", "instruction": null, "priority": 0, "label": null},
+    {"id": null, "from": "plan", "to": "__end__", "condition": "always", "predicate": null, "instruction": null, "priority": 0, "label": null}
+  ]
+}

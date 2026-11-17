@@ -17,7 +17,7 @@ diagnostics (never a raw key/token) into ``artifacts/logs/reel-smoke/`` —
 these are evidence for the still-open evidence gates (§8 Q3-Q6 of the spec:
 Omni URI authentication, image model id, Vertex Veo 3.1 GA capabilities,
 Lyria api_version/PCM format), NOT a claim that this deployment is
-live-ready. See ``docs/migration/video-reel-omni-veo-reliability.md``
+live-ready. See ``wiki/migration/video-reel-omni-veo-reliability.md``
 "Outstanding deployment gates" for what remains unresolved regardless of
 whether this suite has ever been run.
 """

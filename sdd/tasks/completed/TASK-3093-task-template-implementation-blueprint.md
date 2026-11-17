@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-545 — Collaborative Adversarial Spec Design
 **Spec**: `sdd/specs/collaborative-adversarial-spec-design.spec.md` (§2 New Public Interfaces, §3 Module 1)
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

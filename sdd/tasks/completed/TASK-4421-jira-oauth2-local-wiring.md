@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-696 — JiraToolkit upgrades
 **Spec**: `sdd/specs/jiratoolkit-upgrades.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4419, TASK-4420

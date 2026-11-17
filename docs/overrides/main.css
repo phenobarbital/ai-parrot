@@ -1,0 +1,22 @@
+:root {
+  --md-primary-fg-color: #2e7d32;
+  --md-accent-fg-color: #689f38;
+}
+
+.md-header__button.md-logo img,
+.md-header__button.md-logo svg {
+  height: 1.75rem;
+  width: auto;
+}
+
+.md-typeset h1,
+.md-typeset h2 {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.md-typeset a:focus-visible,
+.md-typeset button:focus-visible {
+  outline: 0.15rem solid var(--md-accent-fg-color);
+  outline-offset: 0.15rem;
+}

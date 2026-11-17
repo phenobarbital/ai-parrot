@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-219 — Spatial Filtering for DatasetManager
 **Spec**: `sdd/specs/spatial-dataset-filter.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

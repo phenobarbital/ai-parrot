@@ -1,0 +1,99 @@
+{
+  "feature": "pageindex-layout-fixes",
+  "feature_id": "FEAT-856",
+  "spec": "sdd/specs/pageindex-layout-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-09T16:01:08+00:00",
+  "completed_at": "2026-11-09T16:20:56+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/knowledge/pageindex/test_layout.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_layout_structure.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_builder_layout.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_layout_integration.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_layout_import.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_layout_eval.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_layout_docs.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:5342df12e20542209978641696ca624b663bf4e973bc6647bd6fc871dcf548a1"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5412",
+      "slug": "enumerated-row-headings",
+      "title": "Enumerated caps-row headings with wrapped-title continuations",
+      "feature_id": "FEAT-856",
+      "feature": "pageindex-layout-fixes",
+      "spec": "sdd/specs/pageindex-layout-fixes.spec.md",
+      "status": "done",
+      "assigned_to": null,
+      "started_at": "2026-11-09T16:04:31+00:00",
+      "completed_at": "2026-11-09T16:07:30+00:00",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "no dependency: touches only layout.py and test_layout.py, which TASK-5413 does not modify",
+      "file": "sdd/tasks/completed/TASK-5412-enumerated-row-headings.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5413",
+      "slug": "increasing-level-map",
+      "title": "Strictly increasing hybrid level-to-depth map",
+      "feature_id": "FEAT-856",
+      "feature": "pageindex-layout-fixes",
+      "spec": "sdd/specs/pageindex-layout-fixes.spec.md",
+      "status": "done",
+      "assigned_to": null,
+      "started_at": "2026-11-09T16:07:49+00:00",
+      "completed_at": "2026-11-09T16:08:44+00:00",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "no dependency: touches only layout_structure.py (_level_to_depth) and test_layout_structure.py, disjoint from TASK-5412",
+      "file": "sdd/tasks/completed/TASK-5413-increasing-level-map.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5414",
+      "slug": "evaluation-and-docs",
+      "title": "Evaluation runs and documentation — wiki/knowledge/pageindex-layout-structure.md",
+      "feature_id": "FEAT-856",
+      "feature": "pageindex-layout-fixes",
+      "spec": "sdd/specs/pageindex-layout-fixes.spec.md",
+      "status": "done",
+      "assigned_to": null,
+      "started_at": "2026-11-09T16:08:54+00:00",
+      "completed_at": "2026-11-09T16:17:44+00:00",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5412",
+        "TASK-5413"
+      ],
+      "parallel": false,
+      "parallelism_notes": "measures EnumeratedLine/enumerated_lines from TASK-5412 (layout.py) and the increasing _level_to_depth from TASK-5413 (layout_structure.py); exclusive: host-only run over the git-ignored corpus in the main checkout, writes artifacts/logs/layout_eval and artifacts/logs/optimizer_eval",
+      "file": "sdd/tasks/completed/TASK-5414-evaluation-and-docs.md",
+      "verification": "verified"
+    }
+  ]
+}

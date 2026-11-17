@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-701 — Propagate the E2E plan's live budget to the fixture agent
 **Spec**: `sdd/specs/fixgroup-27d350c92624.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

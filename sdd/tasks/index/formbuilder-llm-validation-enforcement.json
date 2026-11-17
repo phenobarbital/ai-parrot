@@ -1,0 +1,192 @@
+{
+  "feature": "formbuilder-llm-validation-enforcement",
+  "feature_id": "FEAT-728",
+  "spec": "sdd/specs/formbuilder-llm-validation-enforcement.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-22T00:00:00+00:00",
+  "completed_at": "2026-10-22T23:00:36+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/parrot-formdesigner/tests/formdesigner/test_http_plausibility.py",
+          "packages/parrot-formdesigner/tests/formdesigner/test_submission_pipeline_parity.py",
+          "packages/parrot-formdesigner/tests/formdesigner/test_plausibility_enforcement.py",
+          "packages/parrot-formdesigner/tests/formdesigner/test_llm_quota_http.py",
+          "packages/parrot-formdesigner/tests/formdesigner/test_audio_plausibility_policy.py",
+          "packages/parrot-formdesigner/tests/formdesigner/test_audio_engine_review_resume.py",
+          "packages/parrot-formdesigner/tests/formdesigner/test_audio_ws_v2_integration.py",
+          "packages/parrot-formdesigner/tests/unit/services/test_llm_quota.py",
+          "packages/parrot-formdesigner/tests/unit/test_llm_validation_policy.py",
+          "packages/parrot-formdesigner/tests/unit/test_core_models.py",
+          "packages/parrot-formdesigner/tests/unit/api/test_submit_unknown_fields.py",
+          "packages/parrot-formdesigner/tests/unit/api/test_validate_a2ui.py",
+          "packages/parrot-formdesigner/tests/unit/api/test_submit_a2ui.py",
+          "packages/parrot-formdesigner/tests/unit/api/test_setup_form_api.py",
+          "packages/parrot-formdesigner/tests/unit/api/test_route_tenant_coverage.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:c3b5e144c43060d2d838a08f5f8e1360b635e9a82f1787ee61094715d1c08290"
+  },
+  "tasks": [
+    {
+      "id": "TASK-4623",
+      "slug": "llm-validation-policy-and-classifier",
+      "title": "`on_implausible` policy field + pure `implausible_fields()` classifier",
+      "feature_id": "FEAT-728",
+      "feature": "formbuilder-llm-validation-enforcement",
+      "spec": "sdd/specs/formbuilder-llm-validation-enforcement.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies: touches core/llm_validation.py and core/__init__.py, which no other task in this feature modifies.",
+      "assigned_to": null,
+      "started_at": "2026-10-22T20:09:31+00:00",
+      "completed_at": "2026-10-22T20:15:36+00:00",
+      "file": "sdd/tasks/completed/TASK-4623-llm-validation-policy-and-classifier.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4624",
+      "slug": "submission-pipeline-gate",
+      "title": "`ImplausibleSubmission` + `SubmissionPipeline.gate_for()` + `plausibility_ack`",
+      "feature_id": "FEAT-728",
+      "feature": "formbuilder-llm-validation-enforcement",
+      "spec": "sdd/specs/formbuilder-llm-validation-enforcement.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4623"
+      ],
+      "parallel": true,
+      "parallelism_notes": "imports implausible_fields and reads LLMValidationConfig.on_implausible from TASK-4623 (core/llm_validation.py); sole modifier of services/submission_pipeline.py.",
+      "assigned_to": null,
+      "started_at": "2026-10-22T20:09:31+00:00",
+      "completed_at": "2026-10-22T20:19:56+00:00",
+      "file": "sdd/tasks/completed/TASK-4624-submission-pipeline-gate.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4625",
+      "slug": "http-a2ui-gate-surfacing",
+      "title": "Surface the gate on HTTP and A2UI (ack flag + 422 mapping)",
+      "feature_id": "FEAT-728",
+      "feature": "formbuilder-llm-validation-enforcement",
+      "spec": "sdd/specs/formbuilder-llm-validation-enforcement.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4624"
+      ],
+      "parallel": true,
+      "parallelism_notes": "catches ImplausibleSubmission and calls SubmissionPipeline.gate_for / submit(plausibility_ack=) from TASK-4624 (services/submission_pipeline.py).",
+      "assigned_to": null,
+      "started_at": "2026-10-22T20:09:31+00:00",
+      "completed_at": "2026-10-22T20:27:39+00:00",
+      "file": "sdd/tasks/completed/TASK-4625-http-a2ui-gate-surfacing.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4626",
+      "slug": "llm-quota-service",
+      "title": "`services/llm_quota.py` — sliding-window LLM quota behind a Protocol",
+      "feature_id": "FEAT-728",
+      "feature": "formbuilder-llm-validation-enforcement",
+      "spec": "sdd/specs/formbuilder-llm-validation-enforcement.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies: creates services/llm_quota.py and its own unit test file; imports nothing from this feature's other tasks.",
+      "assigned_to": null,
+      "started_at": "2026-10-22T20:09:31+00:00",
+      "completed_at": "2026-10-22T20:15:39+00:00",
+      "file": "sdd/tasks/completed/TASK-4626-llm-quota-service.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4627",
+      "slug": "llm-quota-wiring-and-auth-gate",
+      "title": "Wire the quota + auth-gate the public LLM opt-in (closes the ledger issue)",
+      "feature_id": "FEAT-728",
+      "feature": "formbuilder-llm-validation-enforcement",
+      "spec": "sdd/specs/formbuilder-llm-validation-enforcement.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4625",
+        "TASK-4626"
+      ],
+      "parallel": true,
+      "parallelism_notes": "both modify api/handlers.py with TASK-4625 (serialized: 4625 first); imports LLMQuota/QuotaDecision from TASK-4626 (services/llm_quota.py).",
+      "assigned_to": null,
+      "started_at": "2026-10-22T20:09:31+00:00",
+      "completed_at": "2026-10-22T20:41:35+00:00",
+      "file": "sdd/tasks/completed/TASK-4627-llm-quota-wiring-and-auth-gate.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4628",
+      "slug": "audio-channel-gate-parity",
+      "title": "Audio channel parity — ack the REVIEW turn, surface `reject`",
+      "feature_id": "FEAT-728",
+      "feature": "formbuilder-llm-validation-enforcement",
+      "spec": "sdd/specs/formbuilder-llm-validation-enforcement.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4624"
+      ],
+      "parallel": true,
+      "parallelism_notes": "imports ImplausibleSubmission and passes submit(plausibility_ack=) from TASK-4624 (services/submission_pipeline.py); sole modifier of api/audio_ws.py.",
+      "assigned_to": null,
+      "started_at": "2026-10-22T20:09:31+00:00",
+      "completed_at": "2026-10-22T20:27:42+00:00",
+      "file": "sdd/tasks/completed/TASK-4628-audio-channel-gate-parity.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4629",
+      "slug": "enforcement-documentation",
+      "title": "Document the enforcement policy, the wire shapes and the quota",
+      "feature_id": "FEAT-728",
+      "feature": "formbuilder-llm-validation-enforcement",
+      "spec": "sdd/specs/formbuilder-llm-validation-enforcement.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4627",
+        "TASK-4628"
+      ],
+      "parallel": true,
+      "parallelism_notes": "documents the merged behaviour of TASK-4627 (quota knobs, 429 shape) and TASK-4628 (voice codes); transitively covers 4623-4625.",
+      "assigned_to": null,
+      "started_at": "2026-10-22T20:09:31+00:00",
+      "completed_at": "2026-10-22T20:46:07+00:00",
+      "file": "sdd/tasks/completed/TASK-4629-enforcement-documentation.md",
+      "verification": "verified"
+    }
+  ]
+}

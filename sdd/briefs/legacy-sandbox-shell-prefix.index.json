@@ -1,0 +1,91 @@
+{
+  "feature": "legacy-sandbox-shell-prefix",
+  "feature_id": "BRIEF-legacy-sandbox-shell-prefix",
+  "spec": "sdd/briefs/legacy-sandbox-shell-prefix.brief.md",
+  "type": "brief",
+  "base_branch": "dev",
+  "created_at": "2026-11-09",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "HOTFIX-legacy-sandbox-shell-prefix-1",
+      "slug": "prefix-runtime",
+      "title": "shell_prefix.py: the CLAUDE_CODE_SHELL_PREFIX runtime",
+      "feature_id": "BRIEF-legacy-sandbox-shell-prefix",
+      "feature": "legacy-sandbox-shell-prefix",
+      "spec": "sdd/briefs/legacy-sandbox-shell-prefix.brief.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "creates shell_prefix.py; every later task imports it",
+      "assigned_to": null,
+      "started_at": "2026-11-09T21:50:27+00:00",
+      "completed_at": "2026-11-09T21:57:49+00:00",
+      "file": "sdd/briefs/legacy-sandbox-shell-prefix/tasks/HOTFIX-legacy-sandbox-shell-prefix-1-prefix-runtime.md"
+    },
+    {
+      "id": "HOTFIX-legacy-sandbox-shell-prefix-2",
+      "slug": "launcher-and-hook",
+      "title": "legacy launches set the prefix; the hook stops wrapping in bwrap",
+      "feature_id": "BRIEF-legacy-sandbox-shell-prefix",
+      "feature": "legacy-sandbox-shell-prefix",
+      "spec": "sdd/briefs/legacy-sandbox-shell-prefix.brief.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "HOTFIX-legacy-sandbox-shell-prefix-1"
+      ],
+      "parallel": false,
+      "parallelism_notes": "modifies native_claude_sandbox.py and worktree_environment.py, which task 3 also edits",
+      "assigned_to": null,
+      "started_at": "2026-11-09T21:50:27+00:00",
+      "completed_at": "2026-11-09T23:13:25+00:00",
+      "file": "sdd/briefs/legacy-sandbox-shell-prefix/tasks/HOTFIX-legacy-sandbox-shell-prefix-2-launcher-and-hook.md"
+    },
+    {
+      "id": "HOTFIX-legacy-sandbox-shell-prefix-3",
+      "slug": "rtk-in-prefix",
+      "title": "RTK inside the prefix, for legacy and native launches",
+      "feature_id": "BRIEF-legacy-sandbox-shell-prefix",
+      "feature": "legacy-sandbox-shell-prefix",
+      "spec": "sdd/briefs/legacy-sandbox-shell-prefix.brief.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "HOTFIX-legacy-sandbox-shell-prefix-2"
+      ],
+      "parallel": false,
+      "parallelism_notes": "edits shell_prefix.py, worktree_environment.py and native_claude_sandbox.py after task 2",
+      "assigned_to": null,
+      "started_at": "2026-11-09T21:50:27+00:00",
+      "completed_at": "2026-11-09T23:25:34+00:00",
+      "file": "sdd/briefs/legacy-sandbox-shell-prefix/tasks/HOTFIX-legacy-sandbox-shell-prefix-3-rtk-in-prefix.md"
+    },
+    {
+      "id": "HOTFIX-legacy-sandbox-shell-prefix-4",
+      "slug": "qualify-and-document",
+      "title": "live qualification, before/after measurement, worker guidance, wiki",
+      "feature_id": "BRIEF-legacy-sandbox-shell-prefix",
+      "feature": "legacy-sandbox-shell-prefix",
+      "spec": "sdd/briefs/legacy-sandbox-shell-prefix.brief.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "HOTFIX-legacy-sandbox-shell-prefix-3"
+      ],
+      "parallel": false,
+      "parallelism_notes": "needs the finished prefix to measure and document it",
+      "assigned_to": null,
+      "started_at": "2026-11-09T21:50:27+00:00",
+      "completed_at": "2026-11-09T23:33:11+00:00",
+      "file": "sdd/briefs/legacy-sandbox-shell-prefix/tasks/HOTFIX-legacy-sandbox-shell-prefix-4-qualify-and-document.md"
+    }
+  ]
+}

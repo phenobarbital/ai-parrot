@@ -630,6 +630,7 @@ class Gemma4Client(AbstractClient):
             input_tokens=getattr(_lc_g4_usage, "prompt_tokens", None) if _lc_g4_usage else None,
             output_tokens=getattr(_lc_g4_usage, "completion_tokens", None) if _lc_g4_usage else None,
             finish_reason=None,
+            usage=_lc_g4_usage,
         )
         return ai_message
 

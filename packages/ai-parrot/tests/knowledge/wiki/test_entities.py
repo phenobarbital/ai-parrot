@@ -1,5 +1,6 @@
 """Regression cases for FEAT-627."""
 
+import logging
 from pathlib import Path
 
 import pytest
@@ -98,3 +99,20 @@ def test_canonical_ticket_status_map(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert subject.canonical_ticket_status("IN PROGRESS", status_map) == "in-progress"
     assert subject.canonical_ticket_status("Unknown", status_map) is None
     assert subject.canonical_ticket_status(None, status_map) is None
+
+
+def test_malformed_yaml_logs_one_warning_without_traceback(caplog: pytest.LogCaptureFixture) -> None:
+    """A malformed frontmatter block yields None and ONE one-line WARNING naming the source, never a traceback."""
+    text = "---\nid: F007\nquery_id: [Q026, Q043], [Q033, Q050]\n---\n# Title\n"
+    with caplog.at_level(logging.DEBUG, logger="parrot.knowledge.wiki.entities"):
+        assert subject.parse_leading_yaml(text, path="sdd/state/FEAT-746/findings/F007.md") is None
+    records = [r for r in caplog.records if "frontmatter" in r.getMessage().lower()]
+    assert len(records) == 1
+    record = records[0]
+    assert record.levelno == logging.WARNING
+    assert record.exc_info is None
+    message = record.getMessage()
+    assert "sdd/state/FEAT-746/findings/F007.md" in message
+    assert "line 2" in message
+    assert "Traceback" not in caplog.text
+    assert "\n" not in message

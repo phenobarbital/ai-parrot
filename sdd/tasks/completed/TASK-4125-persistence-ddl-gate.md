@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-638 — Bot-Level Output Language Directive
 **Spec**: `sdd/specs/jiraspecialist-agent-multilang.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

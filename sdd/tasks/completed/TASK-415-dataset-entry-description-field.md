@@ -2,7 +2,7 @@
 
 **Feature**: add-description-datasetmanager
 **Spec**: `sdd/specs/add-description-datasetmanager.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

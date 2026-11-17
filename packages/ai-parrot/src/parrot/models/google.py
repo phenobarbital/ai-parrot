@@ -18,14 +18,12 @@ class GoogleVoiceModel(str, Enum):
     See: https://ai.google.dev/gemini-api/docs/live
     """
 
-    # Latest Native Audio models
-    GEMINI_2_5_FLASH_NATIVE_AUDIO_LATEST = "gemini-2.5-flash-native-audio-preview-12-2025"
-    GEMINI_2_5_FLASH_NATIVE_AUDIO_DEC_2025 = "gemini-2.5-flash-native-audio-preview-12-2025"
-    GEMINI_2_5_FLASH_NATIVE_AUDIO_SEP_2025 = "gemini-2.5-flash-native-audio-preview-09-2025"
-    GEMINI_2_5_FLASH_PREVIEW_TTS = "gemini-2.5-flash-preview-tts"
+    # Live / native-audio models (FEAT-798: 2.5 previews shut down 2026-11-17)
+    GEMINI_3_8_LIVE = "gemini-3.8-live"
+    GEMINI_3_8_FLASH_TTS = "gemini-3.8-flash-tts"
     GEMINI_3_FLASH_TTS = "gemini-3.1-flash-tts-preview"
     # Aliases
-    DEFAULT = "gemini-2.5-flash-native-audio-preview-12-2025"
+    DEFAULT = "gemini-3.8-live"
 
     @classmethod
     def all_models(cls) -> List[str]:
@@ -453,7 +451,7 @@ class VideoReelRequest(BaseModel):
         None,
         description=(
             "Model used to break the prompt down into scenes. "
-            "None resolves to the default director model ('gemini-2.5-flash')."
+            "None resolves to the default director model ('gemini-3.8-flash')."
         ),
     )
     model: Optional[str] = Field(
@@ -599,7 +597,7 @@ class VideoReelRequest(BaseModel):
 
     def effective_director_model(self) -> str:
         """Return the director model actually used: `director_model`, or its default."""
-        return self.director_model or "gemini-2.5-flash"
+        return self.director_model or "gemini-3.8-flash"
 
     def deprecation_warnings(self) -> List[str]:
         """Return warnings collected during validation (e.g. use of the legacy `model` alias)."""

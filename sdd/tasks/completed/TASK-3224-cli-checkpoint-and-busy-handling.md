@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-557 — wikitoolkit SQLite concurrency hardening
 **Spec**: `sdd/specs/wikitoolkit-sqlite-optimizations.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3220, TASK-3223

@@ -6,18 +6,28 @@ allowed-tools: Bash, Read
 
 # /remove-worktree — Safe Worktree Cleanup
 
-Remove leftover worktrees under `.claude/worktrees/` without destroying work
+Remove leftover worktrees under the worktree root without destroying work
 a running `sdd-worker` still owns.
 
-Backed by `scripts/remove_worktree.py`. **Always run `list` first** and show
+Backed by `parrot sdd worktree list|remove`. **Always run `list` first** and show
 the user what is there before removing anything.
 
-## Two kinds of leftovers
+## Kinds of leftovers
 
 | Kind | Symptom | Cause |
 |---|---|---|
 | **Registered** | in `git worktree list` | feature finished or abandoned; `/sdd-done` never cleaned it |
 | **Orphan directory** | on disk, *not* in `git worktree list` | git admin data was pruned or the checkout was moved — invisible to `git worktree prune`, so it just sits there |
+
+Not every orphan is a plain leftover, and `--stale` treats the four shapes
+differently:
+
+| Orphan shape | How you spot it | What `--stale` does |
+|---|---|---|
+| Plain container — an emptied coder `--pool` dir | `ORPHAN-DIR`, nothing else | removes it; no `--force` needed |
+| Pool dir still holding registered worktrees | `ORPHAN-DIR holds:n` | **refuses**, naming each child with its own dirty/unpushed counts; `--force` downgrades it to a `WARNING` and still prints them |
+| Deregistered checkout (its `.git` survives) | `ORPHAN-DIR` plus `dirty:n` / `unpushed:n` | refuses when it has work to lose; `--force` discards it. If `git status` cannot run there the state reads as unknown and it refuses anyway |
+| Symlink | not listed at all | skipped, with a warning on stderr |
 
 ## Usage
 
@@ -33,7 +43,7 @@ the user what is there before removing anything.
 ## Step 1 — Always inspect first
 
 ```bash
-source .venv/bin/activate && python scripts/remove_worktree.py list
+parrot sdd worktree list
 ```
 
 State flags:
@@ -42,7 +52,13 @@ State flags:
   **Never remove one of these.** Detection resolves `/proc/<pid>/cwd`, so it
   catches a worker that `cd`-ed in and does not false-positive on a process
   that merely mentions the path.
-- `ORPHAN-DIR` — no git record; removal is a plain directory delete.
+- `ORPHAN-DIR` — on disk but not in `git worktree list`. Removal is a
+  **recursive** directory delete, so it is only "plain" when the directory holds
+  nothing of value — see the orphan shapes above.
+- `holds:n` — this orphan directory contains n **registered** worktrees (a coder
+  `--pool` dir is the normal case). `--stale` refuses it: remove those
+  individually first — they get their own dirty/unpushed gates — then sweep the
+  empty parent.
 - `dirty:n` — uncommitted changes.
 - `unpushed:n` — commits origin does not have. Per this repo's history, a
   concurrent SDD process can `reset --hard` a shared branch and eat local
@@ -72,7 +88,7 @@ overrides dirty/unpushed gates, never the live-process gate.
 ## Step 3 — Preview
 
 ```bash
-source .venv/bin/activate && python scripts/remove_worktree.py remove <target> --dry-run
+parrot sdd worktree remove <target> --dry-run
 ```
 
 Show the output. If `--dry-run` was in `$ARGUMENTS`, stop here.
@@ -80,7 +96,7 @@ Show the output. If `--dry-run` was in `$ARGUMENTS`, stop here.
 ## Step 4 — Remove
 
 ```bash
-source .venv/bin/activate && python scripts/remove_worktree.py remove <target>
+parrot sdd worktree remove <target>
 ```
 
 Add `--delete-branch` to drop the local branch as well (uses `git branch -d`,
@@ -91,7 +107,9 @@ If the script refuses on **dirty** or **unpushed** state, relay the reason and
 first:
 
 ```bash
-git -C .claude/worktrees/<name> push -u origin <branch>
+MAIN_ROOT=$(cd "$(git rev-parse --path-format=absolute --git-common-dir)/.." && pwd)
+WORKTREES_DIR=$(parrot sdd worktree root --root "$MAIN_ROOT") || exit $?
+git -C "$WORKTREES_DIR/<name>" push -u origin <branch>
 ```
 
 ## Safety gates (all enforced by the script)
@@ -124,5 +142,4 @@ Remaining worktrees:
 | Command | Purpose |
 |---|---|
 | `/remove-worktree` | Targeted, gated removal (THIS) |
-| `python scripts/sweep_worktrees.py` | dev-loop sweep: removes worktrees whose PR is merged/closed, keeps open ones |
 | `/sdd-done <FEAT-ID>` | Normal end-of-feature path — merges, then cleans its own worktree |

@@ -1,0 +1,87 @@
+{
+  "candidates": [
+    {
+      "eligible": true,
+      "license": "apache-2.0",
+      "metrics": {
+        "es_benign_fp": 0.0,
+        "f1_combined": 0.46153846153846156,
+        "f1_en": 0.5416666666666666,
+        "f1_es": 0.37209302325581395,
+        "recall_jailbreak_es": 0.32
+      },
+      "model_id": "vllm-sr/mmbert32k-jailbreak-detector-merged",
+      "reasons": [],
+      "revision": "6a661694b9f46ca2f51b92f5874f9e0aad2915c4",
+      "sha256": "675260ac759fed21874874bdd439a5631b9897555bfec365179bfeb1c6ab950f",
+      "threshold": 0.3657792806625366,
+      "verdict": "pass"
+    },
+    {
+      "eligible": true,
+      "license": "mit",
+      "metrics": {
+        "es_benign_fp": 0.0,
+        "f1_combined": 0.6407766990291263,
+        "f1_en": 0.6538461538461539,
+        "f1_es": 0.6274509803921569,
+        "recall_jailbreak_es": 0.44
+      },
+      "model_id": "madhurjindal/Jailbreak-Detector-Large",
+      "reasons": [],
+      "revision": "d6e5232b642c5b94540bf2d892eafb00748a2f63",
+      "sha256": "c3762562cdd923c4c1dae5d105be179d842f1dfb7f6da03a3654c6c8679d09fa",
+      "threshold": 0.044844940304756165,
+      "verdict": "pass"
+    },
+    {
+      "eligible": true,
+      "license": "llama4",
+      "metrics": {
+        "es_benign_fp": 0.0,
+        "f1_combined": 0.42696629213483145,
+        "f1_en": 0.4782608695652174,
+        "f1_es": 0.37209302325581395,
+        "recall_jailbreak_es": 0.28
+      },
+      "model_id": "gravitee-io/Llama-Prompt-Guard-2-86M-onnx",
+      "reasons": [],
+      "revision": "45a05fbd5337a864edc608f994911f009c37ca57",
+      "sha256": "fbe0be6a471873b6c52f7d6631c16fbddb88ba8c7ab2ba34ca48e8e77ffd9999",
+      "threshold": 0.9981008172035217,
+      "verdict": "pass"
+    },
+    {
+      "eligible": true,
+      "license": "mit",
+      "metrics": {
+        "es_benign_fp": 0.0,
+        "f1_combined": 0.0,
+        "f1_en": 0.0,
+        "f1_es": 0.0,
+        "recall_jailbreak_es": 0.0
+      },
+      "model_id": "enguard/medium-guard-128m-xx-prompt-jailbreak-binary-in-the-wild",
+      "reasons": [],
+      "revision": "54918500f121fd609204f8f78e9ea141fc13c059",
+      "sha256": "",
+      "threshold": 1.01,
+      "verdict": "pass"
+    }
+  ],
+  "skipped": [
+    {
+      "eligible": false,
+      "license": "none",
+      "model_id": "0dinai/jailbreak-embeddings-base-onnx",
+      "reason": "ModuleNotFoundError: Could not import module 'PreTrainedModel'. Are this object's requirements defined correctly? Set the logging verbosity to DEBUG for the original import error."
+    },
+    {
+      "eligible": false,
+      "license": "apache-2.0",
+      "model_id": "protectai/deberta-v3-base-prompt-injection-v2",
+      "reason": "FileNotFoundError: ONNX graph directory not found: /home/jesuslara/jb-models/protectai/deberta-v3-base-prompt-injection-v2/onnx. Export it first:\n  python -m benchmarks.injection_guardrail_latency.export --model protectai/deberta-v3-base-prompt-injection-v2 --output-dir <dir>"
+    }
+  ],
+  "winner": "madhurjindal/Jailbreak-Detector-Large"
+}

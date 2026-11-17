@@ -9,6 +9,12 @@ from parrot.handlers.mcp_persistence import MCPPersistenceService
 from parrot.mcp.registry import UserMCPServerConfig
 
 
+@pytest.fixture(autouse=True)
+def _pin_documentdb(monkeypatch):
+    """Keep DocumentDB mocks selected after Redis became the default backend."""
+    monkeypatch.setenv("MCP_CONFIGS_STORE", "documentdb")
+
+
 @pytest.fixture
 def service() -> MCPPersistenceService:
     """MCPPersistenceService instance for tests."""

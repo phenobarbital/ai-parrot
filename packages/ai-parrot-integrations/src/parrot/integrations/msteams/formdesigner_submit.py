@@ -42,9 +42,20 @@ def parse_envelope(submitted_data: dict[str, Any]) -> TeamsSubmitEnvelope:
 
 
 def verify_envelope(
-    env: TeamsSubmitEnvelope, *, allowed_hosts: list[str], secret: str | None, api_base_path: str = "/api/v1"
+    env: TeamsSubmitEnvelope,
+    *,
+    allowed_hosts: list[str],
+    secret: str | None,
+    api_base_path: str = "/api/v1",
+    require_signature: bool = True,
 ) -> None:
-    """SSRF guard (spec S3). Order: https -> host allowlist -> path/tenant/uid -> signature."""
+    """SSRF guard (spec S3). Order: https -> host allowlist -> path/tenant/uid -> signature.
+
+    ``tenant`` and ``form_uid`` inside the envelope are client-supplied card data, so an
+    unsigned envelope is unauthenticated routing. Raises ``EnvelopeRejected`` when
+    ``require_signature`` is True and ``secret`` is None; pass ``require_signature=False``
+    only where unsigned submissions were explicitly allowed.
+    """
     url = urlparse(str(env.submit_url))
     if url.scheme != "https":
         raise EnvelopeRejected("Submission target must use https.")
@@ -53,8 +64,37 @@ def verify_envelope(
     expected_path = f"{api_base_path.rstrip('/')}/{env.tenant}/forms/{env.form_uid}/data"
     if url.path != expected_path:
         raise EnvelopeRejected("Submission target does not match the form in the envelope.")
-    if secret is not None and not env.verify(secret):
+    if secret is None:
+        if require_signature:
+            logger.warning("formdesigner envelope refused: no signing secret configured (tenant=%s)", env.tenant)
+            raise EnvelopeRejected("Submission envelope signature is invalid.")
+    elif not env.verify(secret):
         raise EnvelopeRejected("Submission envelope signature is invalid.")
+
+
+def resolve_submit_tenant(
+    env: TeamsSubmitEnvelope,
+    *,
+    asserted_tenant_id: str | None,
+    tenant_map: dict[str, str] | None,
+    api_base_path: str = "/api/v1",
+) -> tuple[TeamsSubmitEnvelope, bool]:
+    """Return ``(envelope, overridden)``. A mapped ``asserted_tenant_id`` wins over ``env.tenant``.
+
+    ``asserted_tenant_id`` is the Bot Framework-asserted Azure AD tenant GUID; ``tenant_map``
+    maps it to a FormDesigner tenant slug. On override the ``submit_url`` path is REBUILT from
+    ``api_base_path``/tenant/``form_uid`` — never string-replaced. Returns the envelope
+    unchanged with ``False`` when the id is None, unmapped, or already agrees.
+    """
+    if not asserted_tenant_id or not tenant_map:
+        return env, False
+    resolved = tenant_map.get(asserted_tenant_id)
+    if not resolved or resolved == env.tenant:
+        return env, False
+    url = urlparse(str(env.submit_url))
+    path = f"{api_base_path.rstrip('/')}/{resolved}/forms/{env.form_uid}/data"
+    submit_url = url._replace(path=path).geturl()
+    return env.model_copy(update={"tenant": resolved, "submit_url": submit_url}), True
 
 
 def extract_answers(submitted_data: dict[str, Any]) -> dict[str, Any]:
@@ -218,9 +258,6 @@ class RecentActivityCache:
                 break
 
         if activity_id in self._seen:
-            # Update timestamp to keep it fresh or just return True?
-            # Spec S9: "Return True if activity_id was recorded within the TTL; otherwise record it and return False."
-            # Let's just return True.
             return True
 
         # Evict oldest if we exceed max_items

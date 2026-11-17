@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-222 — ScrapingFlow: Composable Long-Horizon Scraping
 **Spec**: `sdd/specs/scrapingflow-composable-scraping.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: none

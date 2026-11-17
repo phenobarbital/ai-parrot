@@ -300,6 +300,8 @@ def patch_vault_keys(monkeypatch):
 @pytest.fixture
 def fake_documentdb(monkeypatch):
     _FakeDocumentDb.docs = []
+    monkeypatch.setenv("BYOK_STORE", "documentdb")
+    monkeypatch.setenv("VAULT_STORE", "documentdb")
     monkeypatch.setattr(byok_module, "DocumentDb", _FakeDocumentDb)
     # _UserLLMKeyResolver.resolve() (parrot.auth.broker, used by
     # resolve_user_api_key) does its OWN fresh local

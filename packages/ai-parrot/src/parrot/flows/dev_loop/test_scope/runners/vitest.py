@@ -21,6 +21,19 @@ class VitestAdapter:
     default_tiers = frozenset(TIERS)
     report_format = "junit"
 
+    @staticmethod
+    def _contained_cwd(worktree: Path, settings: Mapping[str, str]) -> Path:
+        """Return the resolved runner cwd, refusing one outside ``worktree``.
+
+        Raises:
+            ValueError: the configured ``cwd`` resolves (symlinks included) outside the worktree.
+        """
+        root = Path(worktree).resolve()
+        cwd = (root / settings["cwd"]).resolve()
+        if cwd != root and root not in cwd.parents:
+            raise ValueError(f"vitest: cwd {settings['cwd']!r} must stay inside the worktree")
+        return cwd
+
     def matches(self, argv: Sequence[str]) -> bool:
         """Return whether normalized ``argv`` names Vitest."""
         return bool(argv) and Path(argv[0]).name == "vitest"
@@ -41,7 +54,7 @@ class VitestAdapter:
 
     def mirror_targets(self, changed: Sequence[str], *, worktree: Path, settings: Mapping[str, str]) -> list[str]:
         """Return existing sibling Vitest files for changed UI source files."""
-        cwd = (worktree / settings["cwd"]).resolve()
+        cwd = self._contained_cwd(worktree, settings)
         targets: set[str] = set()
         for changed_path in changed:
             try:
@@ -76,6 +89,7 @@ class VitestAdapter:
         report_path: str,
     ) -> Invocation:
         """Build the deterministic scoped Vitest invocation."""
+        self._contained_cwd(worktree, settings)
         paths = sorted({target.path for target in targets})
         argv = ("pnpm", "exec", "vitest", "run", "--reporter=junit", f"--outputFile={report_path}", *paths)
         return Invocation(
@@ -117,6 +131,10 @@ class VitestAdapter:
         cwd = settings.get("cwd")
         if not cwd:
             return ["vitest: cwd is required"]
+        try:
+            self._contained_cwd(worktree, settings)
+        except ValueError:
+            return ["vitest: cwd must stay inside the worktree"]
         if not (worktree / cwd / "package.json").is_file():
             return [f"vitest: package.json not found in cwd {cwd!r}"]
         return []

@@ -27,7 +27,7 @@ def test_secondopinion_unknown_name_still_raises():
 def test_dual_source_bodies_identical():
     pkg = (
         _REPO_ROOT
-        / "packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_data/sdd-secondopinion.md"
+        / "packages/ai-parrot/src/parrot/sdd/_assets/claude/agents/sdd-secondopinion.md"
     )
     repo = _REPO_ROOT / ".claude/agents/sdd-secondopinion.md"
     assert pkg.read_text() == repo.read_text()
@@ -49,7 +49,7 @@ def test_frontmatter_permission_mode_is_a_valid_claude_value():
     read-only-intent case; this brief must match that convention."""
     pkg = (
         _REPO_ROOT
-        / "packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_data/sdd-secondopinion.md"
+        / "packages/ai-parrot/src/parrot/sdd/_assets/claude/agents/sdd-secondopinion.md"
     )
     frontmatter_lines = pkg.read_text().split("---")[1].splitlines()
     permission_mode_lines = [ln for ln in frontmatter_lines if ln.startswith("permissionMode:")]

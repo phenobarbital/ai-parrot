@@ -1,4 +1,3 @@
-
 import asyncio
 import logging
 from parrot.bots.agent import BasicAgent
@@ -14,9 +13,9 @@ async def main():
         name="GenMediaArtist",
         agent_id="genmedia_artist",
         use_llm="google",
-        model="gemini-2.5-flash",
+        model="gemini-3.8-flash",
         max_tokens=16000,
-        human_prompt="You are a creative artist. Use the available tools to generate media as requested."
+        human_prompt="You are a creative artist. Use the available tools to generate media as requested.",
     )
 
     # Add GenMedia MCP servers
@@ -27,7 +26,7 @@ async def main():
         return
 
     mcp_results = await agent.add_genmedia_mcp_servers()
-    
+
     for server, tools in mcp_results.items():
         if tools:
             logger.info(
@@ -40,18 +39,18 @@ async def main():
 
     # Define the prompt
     prompt = "generate a image of a chubbly tuxedo cat resting on a chair moving the tail."
-    
+
     logger.info(f"🎨 Sending prompt to agent: '{prompt}'")
-    
+
     try:
         await agent.configure()
         async with agent:
             # Invoke the agent
             response = await agent.ask(prompt)
-            
+
             logger.info("✨ Agent Response:")
             print(response.content)
-            
+
             if response.data:
                 logger.info(f"📦 Data: {response.data}")
 

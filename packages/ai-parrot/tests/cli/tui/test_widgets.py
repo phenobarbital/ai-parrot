@@ -85,6 +85,7 @@ async def test_tool_rows_only_from_tool_started():
 
 
 @pytest.mark.asyncio
+@pytest.mark.filterwarnings("error:coroutine .* was never awaited:RuntimeWarning")
 async def test_composer_enter_submits_and_ctrl_j_newline():
     app = _SubmitHarness()
     async with app.run_test() as pilot:
@@ -141,3 +142,10 @@ async def test_transcript_cap_hides_old_turns():
         assert view._hidden_count == 5
         assert view._hidden_notice is not None
         assert "hidden" in view._hidden_notice_text
+
+
+def test_composer_on_key_awaits_textarea_handler():
+    """Composer._on_key must be a coroutine so TextArea's key handling is awaited."""
+    import inspect
+
+    assert inspect.iscoroutinefunction(Composer._on_key)

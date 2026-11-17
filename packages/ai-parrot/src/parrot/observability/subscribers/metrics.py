@@ -28,7 +28,7 @@ from parrot.core.events.lifecycle.events import (
     InvokeFailedEvent,
     ToolCallFailedEvent,
 )
-from parrot.observability.attributes import resolve_gen_ai_system
+from parrot.observability.attributes import TENANT_ATTR, resolve_gen_ai_system, tenant_label
 
 if TYPE_CHECKING:
     from parrot.core.events.lifecycle import EventRegistry
@@ -45,6 +45,12 @@ _DEFAULT_BUCKETS: list[float] = [0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 30.0, 60.0]
 _TOKEN_BUCKETS: list[int] = [
     10, 50, 100, 500, 1000, 2000, 5000, 10000, 50000, 100000
 ]
+
+
+def _feat_label(event: object) -> str:
+    """FEAT-783: the event's SDD feature id as a stable metric label ("none" when unattributed)."""
+    attribution = getattr(event, "attribution", None)
+    return (attribution.feat_id if attribution is not None else None) or "none"
 
 
 class MetricsSubscriber:
@@ -205,6 +211,7 @@ class MetricsSubscriber:
                 "gen_ai.provider.name": system,  # new SemConv key — current OpenLIT reads this
                 "gen_ai.request.model": event.model,
                 "parrot.agent.name": event.agent_name or "unknown",  # FEAT-228
+                TENANT_ATTR: tenant_label(event.tenant),
             },
         )
 
@@ -219,6 +226,8 @@ class MetricsSubscriber:
             "gen_ai.provider.name": system,  # new SemConv key — current OpenLIT reads this
             "gen_ai.response.model": event.model,
             "parrot.agent.name": event.agent_name or "unknown",  # FEAT-228
+            "parrot.feat_id": _feat_label(event),  # FEAT-783: bounded, one series per feature
+            TENANT_ATTR: tenant_label(event.tenant),
         }
 
         # Operation duration histogram
@@ -240,15 +249,13 @@ class MetricsSubscriber:
             )
 
         # Cost counter — only when calculator provides a value
-        if self._cost is not None:
-            cost = self._cost.cost_usd(
-                provider=system,
-                model=event.model,
-                input_tokens=event.input_tokens or 0,
-                output_tokens=event.output_tokens or 0,
-            )
-            if cost is not None:
-                self._client_cost_total.add(cost, attributes=base)
+        from parrot.observability.cost import resolve_event_cost
+        from parrot.observability.cost.policy import PricingPolicy
+
+        cost = resolve_event_cost(event, self._cost)
+        cost, _equivalent = PricingPolicy.from_label(getattr(event, "pricing_policy", None)).apply(cost)
+        if cost is not None:
+            self._client_cost_total.add(cost, attributes=base)
 
     async def _on_client_round(self, event: ClientRoundEvent) -> None:
         """Record per-round token usage and round count.
@@ -275,6 +282,7 @@ class MetricsSubscriber:
             "gen_ai.request.model": event.model,
             "parrot.agent.name": event.agent_name or "unknown",  # FEAT-228
             "parrot.round.number": event.round_number,
+            TENANT_ATTR: tenant_label(event.tenant),
         }
 
         self._client_rounds.add(1, attributes=base)
@@ -305,6 +313,8 @@ class MetricsSubscriber:
                 "gen_ai.provider.name": system,  # new SemConv key — current OpenLIT reads this
                 "error.type": event.error_type,
                 "parrot.agent.name": event.agent_name or "unknown",  # FEAT-228
+                "parrot.feat_id": _feat_label(event),  # FEAT-783: bounded, one series per feature
+                TENANT_ATTR: tenant_label(event.tenant),
             },
         )
 
@@ -332,6 +342,7 @@ class MetricsSubscriber:
             attributes={
                 "parrot.agent.name": event.agent_name,
                 "parrot.invoke.method": event.method,
+                TENANT_ATTR: tenant_label(event.tenant),
             },
         )
 
@@ -342,5 +353,6 @@ class MetricsSubscriber:
             attributes={
                 "parrot.agent.name": event.agent_name,
                 "error.type": event.error_type,
+                TENANT_ATTR: tenant_label(event.tenant),
             },
         )

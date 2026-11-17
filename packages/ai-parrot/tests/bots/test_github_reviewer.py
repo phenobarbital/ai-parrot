@@ -9,6 +9,7 @@ tests.
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 import time
 from contextlib import asynccontextmanager
@@ -38,13 +39,22 @@ from parrot.bots.github_reviewer import (
     _WIKI_READ_TOOLS,
     _WIKI_TOOLS_PROMPT,
 )
+from parrot.core.hooks.github_webhook import GitHubWebhookHook
+from parrot.integrations.core.queued import CommandUsageError
 from parrot_tools.gittoolkit import (
     ContributorStats,
     ContributorWeek,
+    FileContentResult,
+    GitToolkitError,
+    GitToolkit,
+    RepoDirectoryEntry,
+    RepoDirectoryListing,
+    SearchCodeResult,
     StatsNotReadyError,
     WeeklyCodeFrequency,
 )
-
+from parrot_tools.jiratoolkit import JiraToolkit
+from parrot.tools.manager import ToolManager
 
 class _MinimalReviewer:
     """Cheap stand-in that reuses real helpers but skips Agent.__init__."""
@@ -53,17 +63,31 @@ class _MinimalReviewer:
         self,
         repository: str = "owner/repo",
         jira_project: str = "NAV",
+        sdd_feature_prefix: str = "FEAT",
+        enable_sdd_spec_fallback: bool = True,
+        max_spec_scan_files: int = 500,
         max_ticket_bytes: int = 20_000,
         ac_field_id: str = "customfield_10100",
     ) -> None:
         self.repository = repository
         self._repository_lc = repository.lower()
         self.jira_project = jira_project
+        self.sdd_feature_prefix = sdd_feature_prefix
+        self.enable_sdd_spec_fallback = enable_sdd_spec_fallback
+        if (
+            isinstance(max_spec_scan_files, bool)
+            or not isinstance(max_spec_scan_files, int)
+            or max_spec_scan_files <= 0
+        ):
+            raise ValueError("max_spec_scan_files must be a positive integer")
+        self.max_spec_scan_files = max_spec_scan_files
         self.max_ticket_bytes = max_ticket_bytes
+        self.max_diff_bytes = 50_000
         self._ac_field_id = ac_field_id
         self._jira_fields = ",".join(sorted({"summary", "description", "status", ac_field_id}))
         self._jira_strict_fields = ",".join(sorted({"summary", "description", "status", "assignee", ac_field_id}))
         self._ticket_key_regex = re.compile(rf"\b{re.escape(jira_project)}-\d+\b")
+        self._feature_id_regex = re.compile(rf"\b{re.escape(sdd_feature_prefix)}-\d+\b")
         # /review_pr gate knobs — mirror GitHubReviewer.__init__ defaults.
         self.min_check_pass_ratio = 0.8
         self.require_checks = False
@@ -75,6 +99,7 @@ class _MinimalReviewer:
         # ``public_channel_id`` after construction.
         self._management_chat_id: Optional[ChatId] = None
         self._no_ticket_notified: set = set()
+        self.alert_chat_ids: List[Any] = []
         self._wiki_cache = None
         self._wiki_warmup_task = None
         self._wiki_refresh_task = None
@@ -99,12 +124,32 @@ class _MinimalReviewer:
 
     # Bind the real helpers we want to test.
     _extract_ticket_key = GitHubReviewer._extract_ticket_key
+    _extract_feature_id = GitHubReviewer._extract_feature_id
+    _requirement_sources = staticmethod(GitHubReviewer._requirement_sources)
+    _resolve_requirement = GitHubReviewer._resolve_requirement
+    # Already bound to GitHubReviewer as a classmethod — assign it as-is.
+    _sdd_paths_in_diff = GitHubReviewer._sdd_paths_in_diff
+    _feature_id_from_sdd_file = GitHubReviewer._feature_id_from_sdd_file
+    _feature_id_from_pr_files = GitHubReviewer._feature_id_from_pr_files
+    _SDD_FEATURE_FILE_RE = GitHubReviewer._SDD_FEATURE_FILE_RE
+    _SPEC_FEATURE_HEADER_RE = GitHubReviewer._SPEC_FEATURE_HEADER_RE
+    _fetch_diff = GitHubReviewer._fetch_diff
+    _is_valid_spec_content = staticmethod(GitHubReviewer._is_valid_spec_content)
+    _is_direct_spec_path = staticmethod(GitHubReviewer._is_direct_spec_path)
+    _filter_spec_acceptance_criteria = staticmethod(GitHubReviewer._filter_spec_acceptance_criteria)
+    _locate_spec_file = GitHubReviewer._locate_spec_file
+    _parse_spec_sections = staticmethod(GitHubReviewer._parse_spec_sections)
+    _fetch_spec_requirement = GitHubReviewer._fetch_spec_requirement
     _format_review_body = GitHubReviewer._format_review_body
     _format_alert_message = GitHubReviewer._format_alert_message
     _format_no_ticket_comment = GitHubReviewer._format_no_ticket_comment
     _clamp = GitHubReviewer._clamp
     _fetch_ticket = GitHubReviewer._fetch_ticket
     _notify_missing_ticket = GitHubReviewer._notify_missing_ticket
+    _notify_ticket_not_found = GitHubReviewer._notify_ticket_not_found
+    _format_ticket_not_found_comment = GitHubReviewer._format_ticket_not_found_comment
+    _alert_review_skipped = GitHubReviewer._alert_review_skipped
+    _notify_review_error = GitHubReviewer._notify_review_error
     _build_wiki_context = GitHubReviewer._build_wiki_context
     _ask_llm_for_review = GitHubReviewer._ask_llm_for_review
     review_pull_request = GitHubReviewer.review_pull_request
@@ -173,6 +218,8 @@ class _MinimalReviewer:
     _TICKET_PIE_OTHERS = GitHubReviewer._TICKET_PIE_OTHERS
     # Strict on-demand gate (/review_pr).
     review_pr = GitHubReviewer.review_pr
+    _review_pr_usage = GitHubReviewer._review_pr_usage
+    _prepare_review_pr = GitHubReviewer._prepare_review_pr
     strict_review_pull_request = GitHubReviewer.strict_review_pull_request
     _parse_pr_target = classmethod(GitHubReviewer._parse_pr_target.__func__)
     _summarize_checks = classmethod(GitHubReviewer._summarize_checks.__func__)
@@ -229,6 +276,21 @@ def _wire_reviewer(**overrides: Any) -> _MinimalReviewer:
     r.jira_toolkit = MagicMock()
     r._wrapper = None
     return r
+
+
+def _sdd_file(
+    path: str, content: Optional[str], *, exists: bool = True, error: Optional[str] = None
+) -> FileContentResult:
+    """Build a ``FileContentResult`` for an SDD index or spec read at a PR head."""
+    return FileContentResult(
+        exists=exists,
+        path=path,
+        ref="abc123",
+        repository="owner/repo",
+        content=content if exists and error is None else None,
+        encoding="utf-8" if exists else None,
+        error=error,
+    )
 
 
 class TestWikiLifecycle:
@@ -614,7 +676,7 @@ class TestWikiBoundedWait:
         reviewer._ask_llm_for_review = fake_ask
         reviewer.git_toolkit.submit_pr_review = AsyncMock(return_value={"id": 1})
         out = await reviewer.review_pull_request(
-            {"repository": "owner/repo", "pr_number": 3, "pr_body": "NAV-3", "pr_title": ""}
+            {"repository": "owner/repo", "pr_number": 3, "pr_body": "", "pr_title": "NAV-3"}
         )
         assert out["status"] == "reviewed"
         assert events == ["enter", "ask:True", "exit"]
@@ -675,6 +737,509 @@ class TestExtractTicketKey:
         r = _MinimalReviewer()
         # XNAV-1 must NOT match — guards against false positives.
         assert r._extract_ticket_key("backport XNAV-1", "") is None
+
+
+class TestSDDReviewerFoundations:
+    def test_extract_feature_id_matches_feat_prefix(self) -> None:
+        """Recognize the configured prefix, respecting word boundaries and text order."""
+        reviewer = _MinimalReviewer()
+
+        assert reviewer._extract_feature_id("Implements FEAT-811", "") == "FEAT-811"
+        assert reviewer._extract_feature_id("", "No feature here") is None
+        assert reviewer._extract_feature_id("XFEAT-811", "") is None
+        assert reviewer._extract_feature_id("FEAT-811 then FEAT-900", "FEAT-901") == "FEAT-811"
+
+        custom = _MinimalReviewer(sdd_feature_prefix="SDD+")
+        assert custom._extract_feature_id("first SDD+-42", "SDD+-43") == "SDD+-42"
+        assert custom._extract_feature_id("", "") is None
+
+    def test_requirement_sources_are_branch_then_title_never_body(self) -> None:
+        """Ids come from the head branch first, then the title; the PR body is never a source."""
+        reviewer = _MinimalReviewer()
+        payload = {
+            "head_ref": "feat-FEAT-827-template-v3",
+            "pr_title": "FEAT-828 title",
+            "pr_body": "FEAT-787 parent",
+        }
+
+        assert reviewer._requirement_sources(payload) == ("feat-FEAT-827-template-v3", "FEAT-828 title")
+        assert reviewer._requirement_sources({"branch": "hotfix-NAV-7-x", "pr_body": "NAV-9"}) == ("hotfix-NAV-7-x", "")
+        assert reviewer._requirement_sources({"pr_body": "FEAT-1", "head_ref": None}) == ("", "")
+
+    def test_sdd_paths_in_diff_keeps_only_index_and_spec_files(self) -> None:
+        """Only per-spec indexes and specs name a feature; order is kept and duplicates dropped."""
+        diff = "\n".join(
+            [
+                "diff --git a/sdd/tasks/index/template-v3.json b/sdd/tasks/index/template-v3.json",
+                "--- a/sdd/tasks/index/template-v3.json",
+                "diff --git a/src/app.py b/src/app.py",
+                "diff --git a/sdd/specs/template-v3.spec.md b/sdd/specs/template-v3.spec.md",
+                "diff --git a/sdd/tasks/index/template-v3.json b/sdd/tasks/index/template-v3.json",
+                "diff --git a/sdd/tasks/active/TASK-1-x.md b/sdd/tasks/active/TASK-1-x.md",
+                "diff --git a/docs/sdd/specs/other.spec.md b/docs/sdd/specs/other.spec.md",
+            ]
+        )
+
+        assert _MinimalReviewer._sdd_paths_in_diff(diff) == [
+            "sdd/tasks/index/template-v3.json",
+            "sdd/specs/template-v3.spec.md",
+        ]
+        assert _MinimalReviewer._sdd_paths_in_diff("") == []
+
+    def test_feature_id_from_sdd_file_reads_index_and_spec_headers(self) -> None:
+        """A per-spec index yields ``feature_id``; a spec yields its ``**Feature ID**`` header; junk yields None."""
+        reviewer = _MinimalReviewer()
+        index_path = "sdd/tasks/index/x.json"
+        spec_path = "sdd/specs/x.spec.md"
+
+        index = _sdd_file(index_path, '{"feature": "x", "feature_id": "FEAT-827"}')
+        spec = _sdd_file(spec_path, "# Title\n\n**Feature ID**: FEAT-827\n\n## 5. Acceptance Criteria\n")
+        assert reviewer._feature_id_from_sdd_file(index_path, index) == "FEAT-827"
+        assert reviewer._feature_id_from_sdd_file(spec_path, spec) == "FEAT-827"
+
+        assert reviewer._feature_id_from_sdd_file(index_path, _sdd_file(index_path, "{not json")) is None
+        assert (
+            reviewer._feature_id_from_sdd_file(index_path, _sdd_file(index_path, '{"feature_id": "XFEAT-1"}')) is None
+        )
+        assert reviewer._feature_id_from_sdd_file(index_path, _sdd_file(index_path, '["FEAT-1"]')) is None
+        assert reviewer._feature_id_from_sdd_file(spec_path, _sdd_file(spec_path, "# No header\nFEAT-827\n")) is None
+        assert reviewer._feature_id_from_sdd_file(spec_path, _sdd_file(spec_path, None, exists=False)) is None
+        assert reviewer._feature_id_from_sdd_file(spec_path, _sdd_file(spec_path, "x", error="boom")) is None
+
+    async def test_feature_id_from_pr_files_requires_every_file_to_agree(self) -> None:
+        """One feature across the PR's SDD files resolves; two different ones select nothing."""
+        index_path = "sdd/tasks/index/x.json"
+        spec_path = "sdd/specs/x.spec.md"
+        diff = f"diff --git a/{index_path} b/{index_path}\n+x\ndiff --git a/{spec_path} b/{spec_path}\n+y\n"
+        payload = {"pr_number": 42, "head_sha": "abc123"}
+
+        reviewer = _wire_reviewer()
+        reviewer._fetch_diff = AsyncMock(return_value=(diff, False, True))
+        contents = {
+            index_path: _sdd_file(index_path, '{"feature_id": "FEAT-827"}'),
+            spec_path: _sdd_file(spec_path, "**Feature ID**: FEAT-827\n"),
+        }
+        reviewer.git_toolkit.get_file_content_at_ref = AsyncMock(side_effect=lambda p, ref, repository: contents[p])
+
+        assert await reviewer._feature_id_from_pr_files("owner/repo", payload) == "FEAT-827"
+        reviewer._fetch_diff.assert_awaited_once_with("owner/repo", 42)
+        assert reviewer.git_toolkit.get_file_content_at_ref.await_args_list[0].args == (index_path, "abc123")
+
+        contents[spec_path] = _sdd_file(spec_path, "**Feature ID**: FEAT-900\n")
+        assert await reviewer._feature_id_from_pr_files("owner/repo", payload) is None
+        reviewer.logger.warning.assert_called()
+
+        reviewer._fetch_diff = AsyncMock(return_value=("", False, False))
+        assert await reviewer._feature_id_from_pr_files("owner/repo", payload) is None
+        assert await reviewer._feature_id_from_pr_files("owner/repo", {"pr_number": 42}) is None
+
+    async def test_resolve_requirement_takes_the_jira_key_from_a_hotfix_branch(self) -> None:
+        """A Jira key in the branch wins over feature ids anywhere, and the spec lookup never runs."""
+        reviewer = _wire_reviewer()
+        reviewer._fetch_spec_requirement = AsyncMock()
+        payload = {"head_ref": "hotfix-NAV-77-login", "pr_title": "FEAT-5 thing", "pr_body": "NAV-1"}
+
+        assert await reviewer._resolve_requirement("owner/repo", payload) == ("NAV-77", "jira", None)
+        reviewer._fetch_spec_requirement.assert_not_awaited()
+
+        disabled = _wire_reviewer(enable_sdd_spec_fallback=False)
+        disabled._fetch_spec_requirement = AsyncMock()
+        payload = {"head_ref": "feat-FEAT-5-thing", "pr_title": "thing"}
+        assert await disabled._resolve_requirement("owner/repo", payload) == (None, "jira", None)
+        disabled._fetch_spec_requirement.assert_not_awaited()
+
+    def test_source_defaults_and_scan_limit(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Default to Jira on results and enabled bounded SDD lookup on reviewers."""
+        monkeypatch.setattr(github_reviewer.Agent, "__init__", lambda self, **kwargs: None)
+        monkeypatch.setattr(GitHubReviewer, "_apply_google_api_key", lambda self, explicit=None: False)
+
+        reviewer = GitHubReviewer("owner/repo")
+        assert reviewer.sdd_feature_prefix == "FEAT"
+        assert reviewer.enable_sdd_spec_fallback is True
+        assert reviewer.max_spec_scan_files == 500
+
+        disabled = GitHubReviewer(
+            "owner/repo",
+            sdd_feature_prefix="FEATURE",
+            enable_sdd_spec_fallback=False,
+            max_spec_scan_files=17,
+        )
+        assert disabled.sdd_feature_prefix == "FEATURE"
+        assert disabled.enable_sdd_spec_fallback is False
+        assert disabled.max_spec_scan_files == 17
+
+        for invalid_cap in (True, False, 0, -1, 1.5, "10", None):
+            with pytest.raises(ValueError, match="positive integer"):
+                GitHubReviewer("owner/repo", max_spec_scan_files=invalid_cap)
+
+        assert PRReviewResult(summary="ok", approve=True).requirement_source == "jira"
+        assert (
+            PRReviewResult(summary="ok", approve=True, requirement_source="sdd_spec").requirement_source == "sdd_spec"
+        )
+        with pytest.raises(ValueError):
+            PRReviewResult(summary="ok", approve=True, requirement_source="other")
+
+    @pytest.mark.asyncio
+    async def test_fetch_pr_payload_includes_base_ref(self) -> None:
+        """Copy the base branch and SHA without an additional GitHub request."""
+        cases = (
+            ({"base": {"ref": "dev", "sha": "base123"}}, "dev", "base123"),
+            ({"base": None}, "", ""),
+            ({"base": {}}, "", ""),
+            ({}, "", ""),
+        )
+
+        for pr_fields, expected_ref, expected_sha in cases:
+            reviewer = _MinimalReviewer()
+            reviewer.git_toolkit = MagicMock()
+            reviewer.git_toolkit.get_pull_request = AsyncMock(
+                return_value={"title": "PR", "head": {"sha": "head123"}, **pr_fields}
+            )
+
+            payload = await reviewer._fetch_pr_payload("owner/repo", 42)
+
+            assert payload is not None
+            assert payload["base_ref"] == expected_ref
+            assert payload["base_sha"] == expected_sha
+            reviewer.git_toolkit.get_pull_request.assert_awaited_once_with(
+                pr_number=42,
+                repository="owner/repo",
+            )
+
+
+class TestSDDReviewIntegration:
+    """Integration regressions for selecting SDD requirements during review."""
+
+    @pytest.mark.asyncio
+    async def test_jira_fetch_failure_never_uses_spec(self) -> None:
+        """A Jira key wins even if a feature identifier is also present."""
+        payload = {**_PAYLOAD, "pr_title": "Fixes NAV-1 and FEAT-9001"}
+
+        reviewer = _wire_reviewer()
+        reviewer._fetch_ticket = AsyncMock(return_value=None)
+        reviewer._fetch_spec_requirement = AsyncMock()
+        reviewer._notify_ticket_not_found = AsyncMock(return_value=None)
+
+        outcome = await reviewer.review_pull_request(payload)
+
+        assert outcome == {"status": "ticket_not_found", "jira_key": "NAV-1", "pr_number": 42}
+        reviewer._fetch_spec_requirement.assert_not_awaited()
+        reviewer.git_toolkit.submit_pr_review.assert_not_called()
+
+        strict = _wire_strict(ticket=None)
+        strict._fetch_spec_requirement = AsyncMock()
+        outcome = await strict.strict_review_pull_request(payload)
+
+        assert outcome == {
+            "status": "ticket_not_found",
+            "repository": "owner/repo",
+            "pr_number": 42,
+            "jira_key": "NAV-1",
+        }
+        strict._fetch_spec_requirement.assert_not_awaited()
+        strict.git_toolkit.submit_pr_review.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_review_outcomes_expose_selected_requirement_source(self) -> None:
+        """The selected source overwrites untrusted source metadata from the LLM."""
+        payload = {
+            **_PAYLOAD,
+            "pr_title": "feat: thing",
+            "head_ref": "feat-FEAT-9001-thing",
+            "base_ref": "release/next",
+        }
+        requirement = {"fields": {"summary": "SDD", "description": "", "customfield_10100": "- [ ] Real AC"}}
+        result = PRReviewResult(jira_key="wrong", summary="ready", approve=True, requirement_source="jira")
+
+        reviewer = _wire_reviewer()
+        reviewer._fetch_spec_requirement = AsyncMock(return_value=requirement)
+        reviewer._fetch_ticket = AsyncMock()
+        reviewer._fetch_diff = AsyncMock(return_value=("diff", False, True))
+        reviewer._ask_llm_for_review = AsyncMock(return_value=result)
+        reviewer.git_toolkit.submit_pr_review = AsyncMock(return_value={"id": 1})
+
+        outcome = await reviewer.review_pull_request(payload)
+
+        assert outcome["requirement_source"] == "sdd_spec"
+        assert result.requirement_source == "sdd_spec"
+        reviewer._fetch_spec_requirement.assert_awaited_once_with("owner/repo", "FEAT-9001", "release/next")
+        reviewer._fetch_ticket.assert_not_awaited()
+        assert reviewer.git_toolkit.submit_pr_review.await_args.kwargs["event"] == "APPROVE"
+
+        strict = _wire_strict()
+        strict._fetch_spec_requirement = AsyncMock(return_value=requirement)
+        strict._fetch_ticket = AsyncMock()
+        strict._ask_llm_for_review = AsyncMock(return_value=PRReviewResult(summary="ready", approve=True))
+
+        outcome = await strict.strict_review_pull_request(payload)
+
+        assert outcome["requirement_source"] == "sdd_spec"
+        assert strict._ask_llm_for_review.return_value.requirement_source == "sdd_spec"
+        strict._fetch_ticket.assert_not_awaited()
+        assert strict.git_toolkit.submit_pr_review.await_args.kwargs["event"] == "APPROVE"
+
+    @pytest.mark.asyncio
+    async def test_branch_feature_id_beats_the_parent_feature_cited_in_the_body(self) -> None:
+        """fieldsync#586 regression: the body cites the parent FEAT first; the branch names the real one."""
+        payload = {
+            **_PAYLOAD,
+            "pr_title": "feat(file-scheduling-template-v3): FEAT-827 — bulk template v3",
+            "head_ref": "feat-FEAT-827-file-scheduling-template-v3",
+            "pr_body": "Client feedback on the File Scheduling bulk template (FEAT-787). Extends FEAT-787.",
+            "base_ref": "dev",
+        }
+        requirement = {"fields": {"summary": "SDD", "description": "", "customfield_10100": "- [ ] Real AC"}}
+
+        reviewer = _wire_reviewer()
+        reviewer._fetch_spec_requirement = AsyncMock(return_value=requirement)
+        reviewer._fetch_ticket = AsyncMock()
+        reviewer._fetch_diff = AsyncMock(return_value=("diff", False, True))
+        reviewer._ask_llm_for_review = AsyncMock(return_value=PRReviewResult(summary="ready", approve=True))
+        reviewer.git_toolkit.submit_pr_review = AsyncMock(return_value={"id": 1})
+
+        outcome = await reviewer.review_pull_request(payload)
+
+        assert outcome["requirement_source"] == "sdd_spec"
+        reviewer._fetch_spec_requirement.assert_awaited_once_with("owner/repo", "FEAT-827", "dev")
+        reviewer._fetch_ticket.assert_not_awaited()
+
+        strict = _wire_strict()
+        strict._fetch_spec_requirement = AsyncMock(return_value=requirement)
+        strict._fetch_ticket = AsyncMock()
+
+        outcome = await strict.strict_review_pull_request(payload)
+
+        assert outcome["requirement_source"] == "sdd_spec"
+        strict._fetch_spec_requirement.assert_awaited_once_with("owner/repo", "FEAT-827", "dev")
+        strict._fetch_ticket.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_title_feature_id_is_used_when_the_branch_has_none_and_the_body_is_ignored(self) -> None:
+        """Without an id in the branch, the title decides; a different id in the body is never retried."""
+        payload = {**_PAYLOAD, "head_ref": "my-branch", "pr_title": "FEAT-827 bulk template", "pr_body": "FEAT-787"}
+
+        reviewer = _wire_reviewer()
+        reviewer._fetch_spec_requirement = AsyncMock(return_value=None)
+        reviewer._fetch_diff = AsyncMock(return_value=("", False, True))
+        reviewer._notify_missing_ticket = AsyncMock(return_value=None)
+
+        outcome = await reviewer.review_pull_request(payload)
+
+        assert outcome["status"] == "no_ticket"
+        reviewer._fetch_spec_requirement.assert_awaited_once_with("owner/repo", "FEAT-827", "")
+        reviewer._fetch_diff.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_body_only_feature_id_falls_back_to_the_sdd_files_in_the_pr(self) -> None:
+        """With no id in branch or title, the per-spec index the PR commits names the feature."""
+        index_path = "sdd/tasks/index/template-v3.json"
+        payload = {
+            **_PAYLOAD,
+            "head_ref": "my-branch",
+            "pr_title": "bulk template v3",
+            "pr_body": "Follow-up to FEAT-787",
+            "head_sha": "abc123",
+        }
+        diff = f'diff --git a/{index_path} b/{index_path}\n+  "status": "done"\n'
+        requirement = {"fields": {"summary": "SDD", "description": "", "customfield_10100": "- [ ] Real AC"}}
+
+        reviewer = _wire_reviewer()
+        reviewer._fetch_diff = AsyncMock(return_value=(diff, False, True))
+        reviewer.git_toolkit.get_file_content_at_ref = AsyncMock(
+            return_value=_sdd_file(index_path, '{"feature": "template-v3", "feature_id": "FEAT-827"}')
+        )
+        reviewer._fetch_spec_requirement = AsyncMock(return_value=requirement)
+        reviewer._fetch_ticket = AsyncMock()
+        reviewer._ask_llm_for_review = AsyncMock(return_value=PRReviewResult(summary="ready", approve=True))
+        reviewer.git_toolkit.submit_pr_review = AsyncMock(return_value={"id": 1})
+
+        outcome = await reviewer.review_pull_request(payload)
+
+        assert outcome["requirement_source"] == "sdd_spec"
+        reviewer.git_toolkit.get_file_content_at_ref.assert_awaited_once_with(
+            index_path, "abc123", repository="owner/repo"
+        )
+        reviewer._fetch_spec_requirement.assert_awaited_once_with("owner/repo", "FEAT-827", "")
+
+    async def test_fetch_pr_payload_includes_head_ref(self) -> None:
+        """The on-demand payload carries the PR branch like the webhook payload does."""
+        reviewer = _MinimalReviewer()
+        reviewer.git_toolkit = MagicMock()
+        reviewer.git_toolkit.get_pull_request = AsyncMock(
+            return_value={"title": "PR", "head": {"sha": "head123", "ref": "feat-FEAT-827-x"}}
+        )
+
+        payload = await reviewer._fetch_pr_payload("owner/repo", 42)
+
+        assert payload is not None
+        assert payload["head_ref"] == "feat-FEAT-827-x"
+        assert payload["branch"] == "feat-FEAT-827-x"
+
+        reviewer.git_toolkit.get_pull_request = AsyncMock(return_value={"title": "PR", "head": {"sha": "head123"}})
+        payload = await reviewer._fetch_pr_payload("owner/repo", 42)
+        assert payload is not None
+        assert payload["head_ref"] == ""
+        assert payload["branch"] == ""
+
+    def test_webhook_payloads_keep_the_base_ref_for_review_events(self) -> None:
+        """Opened, reopened and synchronized payloads retain the supplied base branch."""
+        raw_payload = {
+            "repository": {"full_name": "owner/repo", "owner": {"login": "owner"}, "name": "repo"},
+            "pull_request": {
+                "number": 42,
+                "html_url": "https://github.com/owner/repo/pull/42",
+                "title": "Implements FEAT-9001",
+                "body": "Implements FEAT-9001",
+                "head": {"sha": "head", "ref": "feature"},
+                "base": {"ref": "release/next"},
+                "user": {"login": "octocat"},
+            },
+        }
+
+        for action in ("opened", "reopened", "synchronize"):
+            payload = GitHubWebhookHook._build_event_payload(
+                "pull_request", f"pr_{action}", {**raw_payload, "action": action}, action
+            )
+            assert payload["base_ref"] == "release/next"
+
+
+class TestSDDSpecRequirements:
+    """Regression coverage for ref-bound SDD specification requirements."""
+
+    @staticmethod
+    def _content(path: str, feature_id: str, *, body: str = "- [ ] A real requirement") -> FileContentResult:
+        """Build a readable minimal spec content result."""
+        return FileContentResult(
+            exists=True,
+            path=path,
+            ref="dev",
+            repository="owner/repo",
+            content=(
+                "# Feature Specification: Example\n\n"
+                f"**Feature ID**: {feature_id}\n\n"
+                "## 1. Motivation & Business Requirements\n\nMotivation text.\n\n"
+                "## 5. Acceptance Criteria\n\n"
+                f"{body}\n"
+            ),
+            encoding="utf-8",
+        )
+
+    @pytest.mark.asyncio
+    async def test_locate_spec_file_budget_and_order(self) -> None:
+        """Share the candidate cap across phases and reuse rejected reads."""
+        reviewer = _wire_reviewer(max_spec_scan_files=2)
+        rejected = "sdd/specs/a.spec.md"
+        accepted = "sdd/specs/b.spec.md"
+        reviewer.git_toolkit.search_repo_code = AsyncMock(
+            return_value=SearchCodeResult(repository="owner/repo", query="q", total_count=1, items=[{"path": rejected}])
+        )
+        reviewer.git_toolkit.list_repo_directory = AsyncMock(
+            return_value=RepoDirectoryListing(
+                exists=True,
+                path="sdd/specs",
+                ref="dev",
+                repository="owner/repo",
+                entries=[
+                    RepoDirectoryEntry(name="b.spec.md", path=accepted, type="file"),
+                    RepoDirectoryEntry(name="a.spec.md", path=rejected, type="file"),
+                ],
+            )
+        )
+        reviewer.git_toolkit.get_file_content_at_ref = AsyncMock(
+            side_effect=[self._content(rejected, "FEAT-OTHER"), self._content(accepted, "FEAT-9001")]
+        )
+
+        assert await reviewer._locate_spec_file("owner/repo", "FEAT-9001", "dev") == accepted
+        assert reviewer.git_toolkit.get_file_content_at_ref.await_count == 2
+        assert await reviewer._locate_spec_file("owner/repo", "FEAT-9001", "") is None
+
+    @pytest.mark.asyncio
+    async def test_locate_spec_file_falls_back_after_search_error(self) -> None:
+        """Contain an expected Code Search failure and use the ref listing."""
+        reviewer = _wire_reviewer()
+        path = "sdd/specs/example.spec.md"
+        reviewer.git_toolkit.search_repo_code = AsyncMock(side_effect=GitToolkitError("rate limited"))
+        reviewer.git_toolkit.list_repo_directory = AsyncMock(
+            return_value=RepoDirectoryListing(
+                exists=True,
+                path="sdd/specs",
+                ref="dev",
+                repository="owner/repo",
+                entries=[RepoDirectoryEntry(name="example.spec.md", path=path, type="file")],
+            )
+        )
+        reviewer.git_toolkit.get_file_content_at_ref = AsyncMock(return_value=self._content(path, "FEAT-9001"))
+
+        assert await reviewer._locate_spec_file("owner/repo", "FEAT-9001", "dev") == path
+        reviewer.git_toolkit.list_repo_directory.assert_awaited_once_with(
+            path="sdd/specs", ref="dev", repository="owner/repo"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("invalid", ["missing", "error", "truncated", "binary", "changed_id"])
+    async def test_fetch_spec_requirement_revalidates_final_content(self, invalid: str) -> None:
+        """Never accept an unreadable or identity-mismatched final reread."""
+        reviewer = _wire_reviewer()
+        path = "sdd/specs/example.spec.md"
+        initial = self._content(path, "FEAT-9001")
+        final = self._content(path, "FEAT-9001")
+        if invalid == "missing":
+            final = final.model_copy(update={"exists": False, "content": None})
+        elif invalid == "error":
+            final = final.model_copy(update={"error": "file_too_large", "content": None})
+        elif invalid == "truncated":
+            final = final.model_copy(update={"truncated": True})
+        elif invalid == "binary":
+            final = final.model_copy(update={"encoding": "base64", "content": None})
+        else:
+            final = self._content(path, "FEAT-9002")
+        reviewer.git_toolkit.search_repo_code = AsyncMock(
+            return_value=SearchCodeResult(repository="owner/repo", query="q", total_count=1, items=[{"path": path}])
+        )
+        reviewer.git_toolkit.get_file_content_at_ref = AsyncMock(side_effect=[initial, final])
+
+        assert await reviewer._fetch_spec_requirement("owner/repo", "FEAT-9001", "dev") is None
+        assert reviewer.git_toolkit.get_file_content_at_ref.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_fetch_spec_requirement_shape_matches_fetch_ticket(self) -> None:
+        """Return only configured Jira-shaped fields with filtered real criteria."""
+        reviewer = _wire_reviewer(ac_field_id="customfield_42")
+        path = "sdd/specs/example.spec.md"
+        body = "\n".join(
+            [
+                "> This feature is complete when all criteria pass.",
+                "- [x] All unit tests pass (`pytest tests/unit/ -v`)",
+                "- [ ] Preserve this substantive criterion",
+                "- [ ] Criterion N",
+            ]
+        )
+        content = self._content(path, "FEAT-9001", body=body)
+        reviewer.git_toolkit.search_repo_code = AsyncMock(
+            return_value=SearchCodeResult(repository="owner/repo", query="q", total_count=1, items=[{"path": path}])
+        )
+        reviewer.git_toolkit.get_file_content_at_ref = AsyncMock(side_effect=[content, content])
+
+        requirement = await reviewer._fetch_spec_requirement("owner/repo", "FEAT-9001", "dev")
+
+        assert requirement == {
+            "fields": {
+                "summary": "Feature Specification: Example",
+                "description": "\nMotivation text.\n\n",
+                "customfield_42": "- [ ] Preserve this substantive criterion",
+            }
+        }
+
+    def test_parse_spec_sections_ignores_fenced_headings(self) -> None:
+        """Keep section bodies intact while excluding headings in fenced examples."""
+        parsed = _MinimalReviewer._parse_spec_sections(
+            "## 1. Motivation\r\ntext\r\n```markdown\r\n## 5. Acceptance Criteria\r\n```\r\n## 5. Acceptance Criteria\r\nreal\r\n"
+        )
+
+        assert parsed == {
+            "motivation": "text\r\n```markdown\r\n## 5. Acceptance Criteria\r\n```\r\n",
+            "acceptance criteria": "real\r\n",
+        }
 
 
 class TestFormatReviewBody:
@@ -927,8 +1492,8 @@ class TestReviewPullRequestDedup:
                 "repository": "owner/repo",
                 "pr_number": 42,
                 "head_sha": "abc123",
-                "pr_body": "Implements NAV-1",
-                "pr_title": "",
+                "pr_body": "",
+                "pr_title": "Implements NAV-1",
             }
         )
         assert out["status"] == "already_reviewed"
@@ -966,8 +1531,8 @@ class TestReviewPullRequestDedup:
                 "repository": "Owner/Repo",
                 "pr_number": 9,
                 "head_sha": "deadbeef",
-                "pr_body": "Fixes NAV-9",
-                "pr_title": "",
+                "pr_body": "",
+                "pr_title": "Fixes NAV-9",
             }
         )
         assert out["status"] == "reviewed"
@@ -1022,8 +1587,8 @@ class TestReviewPullRequestDedup:
                 "repository": "owner/repo",
                 "pr_number": 5,
                 "head_sha": "cap-sha",
-                "pr_body": "Fixes NAV-5",
-                "pr_title": "",
+                "pr_body": "",
+                "pr_title": "Fixes NAV-5",
             }
         )
         # max_iterations must be max_review_tool_calls + 1 as specified.
@@ -1076,7 +1641,7 @@ class TestNoTicketComment:
         assert "@octocat" in body
         assert "NAV-<number>" in body
         assert "NAV-123" in body
-        assert "title or description" in body
+        assert "branch name or title" in body
 
     def test_format_handles_missing_author(self):
         r = _MinimalReviewer(jira_project="PARROT")
@@ -1177,6 +1742,287 @@ class TestNoTicketComment:
         )
         # Failure must NOT poison the dedup set; the next delivery retries.
         assert r._no_ticket_notified == set()
+
+
+class TestTicketNotFoundComment:
+    """Coverage for the _format_ticket_not_found_comment helper."""
+
+    def test_format_includes_ticket_key_and_author(self):
+        r = _MinimalReviewer(jira_project="NAV")
+        body = r._format_ticket_not_found_comment({"author": "octocat"}, "NAV-42")
+        assert "@octocat" in body
+        assert "NAV-42" in body
+        assert "could not fetch" in body.lower() or "not accessible" in body.lower()
+        assert "GitHubReviewer agent" in body
+
+    def test_format_handles_missing_author(self):
+        r = _MinimalReviewer(jira_project="PROJ")
+        body = r._format_ticket_not_found_comment({}, "PROJ-7")
+        assert "PROJ-7" in body
+        lines = body.split("\n")
+        assert "@" not in lines[2]
+
+
+class TestNotifyTicketNotFound:
+    """Coverage for _notify_ticket_not_found: posts a comment and alerts."""
+
+    _PAYLOAD: Dict[str, Any] = {
+        "author": "dev1",
+        "pr_title": "feat: sync",
+        "pr_url": "https://github.com/owner/repo/pull/10",
+    }
+
+    async def test_posts_comment_and_returns_response(self):
+        r = _wire_reviewer()
+        r.alert_chat_ids = []
+        r.git_toolkit.add_pr_comment = AsyncMock(return_value={"id": 55})
+
+        result = await r._notify_ticket_not_found(
+            repo="owner/repo", pr_number=10, ticket_key="NAV-99", payload=self._PAYLOAD,
+        )
+        assert result == {"id": 55}
+        r.git_toolkit.add_pr_comment.assert_awaited_once()
+        call_kw = r.git_toolkit.add_pr_comment.await_args.kwargs
+        assert call_kw["pr_number"] == 10
+        assert "NAV-99" in call_kw["body"]
+
+    async def test_returns_none_when_no_git_toolkit(self):
+        r = _wire_reviewer()
+        r.git_toolkit = None
+        result = await r._notify_ticket_not_found(
+            repo="owner/repo", pr_number=10, ticket_key="NAV-99", payload=self._PAYLOAD,
+        )
+        assert result is None
+
+    async def test_returns_none_when_comment_post_fails(self):
+        r = _wire_reviewer()
+        r.alert_chat_ids = []
+        r.git_toolkit.add_pr_comment = AsyncMock(side_effect=RuntimeError("API error"))
+        result = await r._notify_ticket_not_found(
+            repo="owner/repo", pr_number=10, ticket_key="NAV-99", payload=self._PAYLOAD,
+        )
+        assert result is None
+        r.logger.error.assert_called_once()
+
+    async def test_calls_alert_review_skipped(self):
+        r = _wire_reviewer()
+        r.git_toolkit.add_pr_comment = AsyncMock(return_value={"id": 1})
+        r._alert_review_skipped = AsyncMock()
+
+        await r._notify_ticket_not_found(
+            repo="owner/repo", pr_number=10, ticket_key="NAV-99", payload=self._PAYLOAD,
+        )
+        r._alert_review_skipped.assert_awaited_once()
+        call_kw = r._alert_review_skipped.await_args.kwargs
+        assert call_kw["repo"] == "owner/repo"
+        assert call_kw["pr_number"] == 10
+        assert "NAV-99" in call_kw["reason"]
+
+
+class TestAlertReviewSkipped:
+    """Coverage for _alert_review_skipped: sends Telegram alerts to all alert_chat_ids."""
+
+    _PAYLOAD: Dict[str, Any] = {
+        "pr_title": "feat: something",
+        "pr_url": "https://github.com/owner/repo/pull/5",
+    }
+
+    async def test_sends_to_all_alert_chat_ids(self):
+        r = _wire_reviewer()
+        r.alert_chat_ids = ["111", "222"]
+        bot = MagicMock()
+        bot.send_message = AsyncMock()
+        r._wrapper = MagicMock(bot=bot)
+
+        await r._alert_review_skipped(
+            repo="owner/repo", pr_number=5, reason="test reason", payload=self._PAYLOAD,
+        )
+        assert bot.send_message.await_count == 2
+        chat_ids_sent = [c.kwargs["chat_id"] for c in bot.send_message.await_args_list]
+        assert "111" in chat_ids_sent
+        assert "222" in chat_ids_sent
+        text = bot.send_message.await_args_list[0].kwargs["text"]
+        assert "PR review skipped" in text
+        assert "test reason" in text
+        assert "#5" in text
+
+    async def test_does_nothing_without_bot(self):
+        r = _wire_reviewer()
+        r.alert_chat_ids = ["111"]
+        r._wrapper = None
+        await r._alert_review_skipped(
+            repo="owner/repo", pr_number=5, reason="test", payload=self._PAYLOAD,
+        )
+
+    async def test_does_nothing_without_alert_chat_ids(self):
+        r = _wire_reviewer()
+        r.alert_chat_ids = []
+        bot = MagicMock()
+        bot.send_message = AsyncMock()
+        r._wrapper = MagicMock(bot=bot)
+        await r._alert_review_skipped(
+            repo="owner/repo", pr_number=5, reason="test", payload=self._PAYLOAD,
+        )
+        bot.send_message.assert_not_awaited()
+
+    async def test_single_send_failure_does_not_raise(self):
+        r = _wire_reviewer()
+        r.alert_chat_ids = ["111", "222"]
+        bot = MagicMock()
+        bot.send_message = AsyncMock(side_effect=[RuntimeError("bad chat"), None])
+        r._wrapper = MagicMock(bot=bot)
+
+        await r._alert_review_skipped(
+            repo="owner/repo", pr_number=5, reason="test", payload=self._PAYLOAD,
+        )
+        assert bot.send_message.await_count == 2
+        r.logger.warning.assert_called_once()
+
+
+class TestNotifyReviewError:
+    """Coverage for _notify_review_error: posts a PR comment and sends a Telegram alert."""
+
+    _PAYLOAD: Dict[str, Any] = {
+        "author": "dev1",
+        "pr_title": "big PR",
+        "pr_url": "https://github.com/owner/repo/pull/42",
+    }
+
+    async def test_posts_comment_and_alerts(self):
+        r = _wire_reviewer()
+        r.git_toolkit.add_pr_comment = AsyncMock(return_value={"id": 99})
+        r._alert_review_skipped = AsyncMock()
+
+        error = RuntimeError("LLM timeout")
+        await r._notify_review_error(
+            repo="owner/repo", pr_number=42, ticket_key="NAV-10",
+            error=error, payload=self._PAYLOAD,
+        )
+        r.git_toolkit.add_pr_comment.assert_awaited_once()
+        body = r.git_toolkit.add_pr_comment.await_args.kwargs["body"]
+        assert "NAV-10" in body
+        assert "RuntimeError" in body
+        assert "Automated review failed" in body
+
+        r._alert_review_skipped.assert_awaited_once()
+        alert_kw = r._alert_review_skipped.await_args.kwargs
+        assert "RuntimeError" in alert_kw["reason"]
+        assert "LLM timeout" in alert_kw["reason"]
+
+    async def test_still_alerts_when_comment_post_fails(self):
+        r = _wire_reviewer()
+        r.git_toolkit.add_pr_comment = AsyncMock(side_effect=RuntimeError("GitHub down"))
+        r._alert_review_skipped = AsyncMock()
+
+        await r._notify_review_error(
+            repo="owner/repo", pr_number=42, ticket_key="NAV-10",
+            error=ValueError("bad diff"), payload=self._PAYLOAD,
+        )
+        r.logger.warning.assert_called_once()
+        r._alert_review_skipped.assert_awaited_once()
+
+    async def test_skips_comment_when_no_git_toolkit(self):
+        r = _wire_reviewer()
+        r.git_toolkit = None
+        r._alert_review_skipped = AsyncMock()
+
+        await r._notify_review_error(
+            repo="owner/repo", pr_number=42, ticket_key="NAV-10",
+            error=RuntimeError("boom"), payload=self._PAYLOAD,
+        )
+        r._alert_review_skipped.assert_awaited_once()
+
+
+class TestReviewPullRequestTicketNotFound:
+    """review_pull_request returns ticket_not_found with a comment when Jira fails."""
+
+    async def test_ticket_not_found_posts_comment_and_returns_outcome(self):
+        r = _wire_reviewer()
+
+        r._fetch_ticket = AsyncMock(return_value=None)
+        r._notify_ticket_not_found = AsyncMock(return_value={"id": 77})
+
+        out = await r.review_pull_request(
+            {
+                "repository": "owner/repo",
+                "pr_number": 576,
+                "head_sha": "abc123",
+                "pr_body": "",
+                "pr_title": "Fixes NAV-999",
+                "author": "dev1",
+            }
+        )
+        assert out["status"] == "ticket_not_found"
+        assert out["jira_key"] == "NAV-999"
+        assert out["comment"] == {"id": 77}
+        r._notify_ticket_not_found.assert_awaited_once()
+
+    async def test_ticket_not_found_no_comment_key_when_notify_returns_none(self):
+        r = _wire_reviewer()
+
+        r._fetch_ticket = AsyncMock(return_value=None)
+        r._notify_ticket_not_found = AsyncMock(return_value=None)
+
+        out = await r.review_pull_request(
+            {
+                "repository": "owner/repo",
+                "pr_number": 576,
+                "head_sha": "abc123",
+                "pr_body": "",
+                "pr_title": "Fixes NAV-999",
+            }
+        )
+        assert out["status"] == "ticket_not_found"
+        assert "comment" not in out
+
+
+class TestReviewPullRequestLLMCrash:
+    """review_pull_request catches LLM/diff exceptions and returns error status."""
+
+    async def test_diff_crash_returns_error_and_notifies(self):
+        r = _wire_reviewer()
+
+        r._fetch_ticket = AsyncMock(return_value={"fields": {"summary": "S"}})
+        r._fetch_diff = AsyncMock(side_effect=RuntimeError("diff too large"))
+        r._notify_review_error = AsyncMock()
+
+        out = await r.review_pull_request(
+            {
+                "repository": "owner/repo",
+                "pr_number": 576,
+                "head_sha": "abc123",
+                "pr_body": "",
+                "pr_title": "Fixes NAV-42",
+            }
+        )
+        assert out["status"] == "error"
+        assert out["jira_key"] == "NAV-42"
+        assert "diff too large" in out["error"]
+        r._notify_review_error.assert_awaited_once()
+
+    async def test_llm_crash_returns_error_and_notifies(self):
+        r = _wire_reviewer()
+
+        r._fetch_ticket = AsyncMock(return_value={"fields": {"summary": "S"}})
+        r._fetch_diff = AsyncMock(return_value=("diff text", False, True))
+        r._ask_llm_for_review = AsyncMock(side_effect=TimeoutError("LLM timed out"))
+        r._notify_review_error = AsyncMock()
+
+        out = await r.review_pull_request(
+            {
+                "repository": "owner/repo",
+                "pr_number": 576,
+                "head_sha": "abc123",
+                "pr_body": "",
+                "pr_title": "Fixes NAV-42",
+            }
+        )
+        assert out["status"] == "error"
+        assert "LLM timed out" in out["error"]
+        r._notify_review_error.assert_awaited_once()
+        call_kw = r._notify_review_error.await_args.kwargs
+        assert call_kw["ticket_key"] == "NAV-42"
+        assert call_kw["pr_number"] == 576
 
 
 class TestSetupWebhookRoute:
@@ -1961,7 +2807,8 @@ class TestReviewToolCallingLoop:
         "repository": "owner/repo",
         "pr_number": 42,
         "pr_title": "feat: add logging",
-        "pr_body": "Fixes NAV-100",
+        "pr_body": "Closes the logging gap.",
+        "head_ref": "hotfix-NAV-100-add-logging",
         "pr_url": "https://github.com/owner/repo/pull/42",
         "head_sha": "abc123",
     }
@@ -2163,7 +3010,8 @@ class TestIntegrationToolAssistedReview:
         "repository": "owner/repo",
         "pr_number": 99,
         "pr_title": "feat: refactor login handler",
-        "pr_body": "Implements NAV-200",
+        "pr_body": "Reworks the login handler.",
+        "head_ref": "hotfix-NAV-200-login-handler",
         "pr_url": "https://github.com/owner/repo/pull/99",
         "head_sha": "feedcafe",
     }
@@ -3894,8 +4742,8 @@ def _wire_strict(
 _PAYLOAD = {
     "repository": "owner/repo",
     "pr_number": 42,
-    "pr_title": "feat: thing",
-    "pr_body": "Implements NAV-1",
+    "pr_title": "feat: thing (NAV-1)",
+    "pr_body": "Implements the thing.",
     "pr_url": "https://github.com/owner/repo/pull/42",
     "head_sha": "sha",
     "author": "octocat",
@@ -4359,12 +5207,21 @@ class TestStrictReviewPullRequest:
 
 
 class TestReviewPRCommand:
-    async def test_is_registered_as_a_raw_telegram_command(self) -> None:
-        """``raw`` keeps a pasted URL intact — keyword parsing would mangle it."""
-        meta = GitHubReviewer.review_pr._telegram_command
-        assert meta["command"] == "review_pr"
-        assert meta["parse_mode"] == "raw"
-        assert meta["description"]
+
+    async def test_review_pr_is_a_queued_command(self) -> None:
+        """Strict review remains raw but is now dispatched through the shared queue."""
+        spec = GitHubReviewer.review_pr._queued_command
+        assert spec.command == "review_pr"
+        assert spec.parse_mode == "raw"
+        assert spec.concurrency_group == "github_review"
+        assert spec.description
+
+    async def test_prepare_review_pr_usage_error(self) -> None:
+        """Invalid strict targets are rejected locally with the existing usage text."""
+        reviewer = _wire_strict()
+        with pytest.raises(CommandUsageError, match="repository link"):
+            await reviewer._prepare_review_pr("https://github.com/owner/repo")
+        reviewer.git_toolkit.get_pull_request.assert_not_called()
 
     async def test_a_repository_link_gets_usage_help(self) -> None:
         r = _wire_strict()
@@ -4403,10 +5260,10 @@ class TestReviewPRCommand:
         r.git_toolkit.get_pull_request = AsyncMock(
             return_value={
                 "title": "t",
-                "body": "Implements NAV-1",
+                "body": "Implements the thing.",
                 "state": "open",
                 "html_url": "u",
-                "head": {"sha": "s"},
+                "head": {"sha": "s", "ref": "hotfix-NAV-1-thing"},
                 "user": {"login": "o"},
             }
         )
@@ -4424,10 +5281,10 @@ class TestReviewPRCommand:
         r.git_toolkit.get_pull_request = AsyncMock(
             return_value={
                 "title": "feat: thing",
-                "body": "Implements NAV-1",
+                "body": "Implements the thing.",
                 "state": "open",
                 "html_url": "https://github.com/owner/repo/pull/42",
-                "head": {"sha": "s"},
+                "head": {"sha": "s", "ref": "hotfix-NAV-1-thing"},
                 "user": {"login": "octocat"},
             }
         )
@@ -4444,10 +5301,10 @@ class TestReviewPRCommand:
         r.git_toolkit.get_pull_request = AsyncMock(
             return_value={
                 "title": "feat: thing",
-                "body": "Implements NAV-1",
+                "body": "Implements the thing.",
                 "state": "open",
                 "html_url": "u",
-                "head": {"sha": "s"},
+                "head": {"sha": "s", "ref": "hotfix-NAV-1-thing"},
                 "user": {"login": "o"},
             }
         )
@@ -4830,10 +5687,10 @@ class TestDeferredReviewReportsTheComparison:
         r.git_toolkit.get_pull_request = AsyncMock(
             return_value={
                 "title": "feat: thing",
-                "body": "Implements NAV-10333",
+                "body": "Implements the thing.",
                 "state": "open",
                 "html_url": "u",
-                "head": {"sha": "s"},
+                "head": {"sha": "s", "ref": "hotfix-NAV-10333-thing"},
                 "user": {"login": "o"},
             }
         )
@@ -4871,10 +5728,10 @@ class TestDeferredReviewReportsTheComparison:
         r.git_toolkit.get_pull_request = AsyncMock(
             return_value={
                 "title": "t",
-                "body": "Implements NAV-1",
+                "body": "Implements the thing.",
                 "state": "open",
                 "html_url": "u",
-                "head": {"sha": "s"},
+                "head": {"sha": "s", "ref": "hotfix-NAV-1-thing"},
                 "user": {"login": "o"},
             }
         )
@@ -4930,3 +5787,529 @@ class TestWorkflowRunSourcedVerdict:
             PRReviewResult(jira_key="NAV-1", discrepancies=[], summary="s", approve=True), checks
         )
         assert (verdict.mergeable, verdict.defer) == (True, False)
+
+
+class TestPostConfigureReentrant:
+    """FEAT-721 — a second post_configure() adopts instead of rebuilding."""
+
+    async def test_github_reviewer_post_configure_twice_adopts(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Two post_configure() calls adopt registered toolkits instead of rebuilding."""
+        # Stub exactly what post_configure() reads (lines 956-1008):
+        #   logger, public_channel_id, management_chat_id (management_chat_is_fallback is a property
+        #   over them, :938), tool_manager = ToolManager(include_search_tool=False), tools = [],
+        #   _llm = None, _wiki_cache = None, _wiki_warmup_task = None, app = None, name.
+        reviewer = GitHubReviewer.__new__(GitHubReviewer)
+        reviewer.logger = logging.getLogger(__name__)
+        reviewer.public_channel_id = "public123"
+        reviewer.management_chat_id = None
+        reviewer.configured_management_chat_id = None
+        reviewer.tool_manager = ToolManager(include_search_tool=False)
+        reviewer.tools = []
+        reviewer._llm = None
+        reviewer._wiki_cache = None
+        reviewer._wiki_warmup_task = None
+        reviewer.app = None
+        reviewer.name = "test-reviewer"
+
+        # Build ONE toolkit object per builder that `find_registered_toolkit` can match by
+        # EXACT class — e.g. GitToolkit.__new__(GitToolkit) / JiraToolkit.__new__(JiraToolkit) only if
+        # register_toolkit() can generate their tools without __init__ state; otherwise construct them
+        # offline (read their __init__ first — `packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py:874`). Count builder calls with a
+        # MagicMock(side_effect=[...]) patched over _build_git_toolkit / _build_jira_toolkit.
+        from parrot.bots import github_reviewer as gr_module
+        from parrot.tools.toolkit import AbstractToolkit
+
+        class FakeGit(AbstractToolkit):
+            """Offline stand-in for GitToolkit."""
+
+            async def fake_git_op(self) -> str:
+                """Fake git operation."""
+                return "ok"
+
+        class FakeJira(AbstractToolkit):
+            """Offline stand-in for JiraToolkit."""
+
+            async def fake_jira_op(self) -> str:
+                """Fake jira operation."""
+                return "ok"
+
+        monkeypatch.setattr(gr_module, "GitToolkit", FakeGit)
+        monkeypatch.setattr(gr_module, "JiraToolkit", FakeJira)
+        git_toolkit = FakeGit()
+        jira_toolkit = FakeJira()
+
+        # Track builder calls
+        git_build_calls = []
+        jira_build_calls = []
+
+        def mock_build_git_toolkit():
+            git_build_calls.append(1)
+            return git_toolkit
+
+        def mock_build_jira_toolkit():
+            jira_build_calls.append(1)
+            return jira_toolkit
+
+        # Patch _build_wiki_cache → None, _attach_webhook_listener / _ensure_webhook_subscription → AsyncMock()
+        monkeypatch.setattr(reviewer, "_build_git_toolkit", mock_build_git_toolkit)
+        monkeypatch.setattr(reviewer, "_build_jira_toolkit", mock_build_jira_toolkit)
+        monkeypatch.setattr(reviewer, "_build_wiki_cache", lambda: None)
+        monkeypatch.setattr(reviewer, "_attach_webhook_listener", AsyncMock())
+        monkeypatch.setattr(reviewer, "_ensure_webhook_subscription", AsyncMock())
+
+        # First call
+        await reviewer.post_configure()
+
+        # Second call
+        await reviewer.post_configure()
+
+        # Assert each builder called once
+        assert len(git_build_calls) == 1, f"Expected 1 git build call, got {len(git_build_calls)}"
+        assert len(jira_build_calls) == 1, f"Expected 1 jira build call, got {len(jira_build_calls)}"
+
+        # reviewer.git_toolkit is reviewer.tool_manager.find_registered_toolkit(GitToolkit)
+        assert reviewer.git_toolkit is reviewer.tool_manager.find_registered_toolkit(
+            FakeGit
+        ), "git_toolkit should be the registered instance"
+
+        # No duplicate names in reviewer.tools
+        tool_names = {getattr(tool, "name", None) for tool in reviewer.tools}
+        assert len(tool_names) == len(reviewer.tools), "No duplicate tool names should exist"
+
+
+# ---------------------------------------------------------------------------
+# FEAT-817 — completes the FEAT-759 spec §4 test matrix (issue:9e74a96838c7).
+# ---------------------------------------------------------------------------
+
+_TEMPLATE_AC = """\
+> This feature is complete when ALL of the following are true:
+
+- [ ] Criterion N
+- [ ] All unit tests pass (`pytest tests/unit/ -v`)
+- [ ] All integration tests pass (`pytest tests/integration/ -v`)
+- [ ] Performance benchmark: <metric> within <threshold>
+- [ ] Documentation updated in `docs/`
+- [ ] No breaking changes to existing public API
+"""
+
+
+def _spec_text(feature_id: str, ac_body: str = "- [ ] A real requirement", *, header: Optional[str] = None) -> str:
+    """Render a minimal spec document; ``header`` overrides the Feature ID line."""
+    header_line = header if header is not None else f"**Feature ID**: {feature_id}"
+    return (
+        "# Feature Specification: Example\n\n"
+        f"{header_line}\n\n"
+        "## 1. Motivation & Business Requirements\n\nMotivation text.\n\n"
+        "## 5. Acceptance Criteria\n\n"
+        f"{ac_body}\n"
+    )
+
+
+def _spec_result(path: str, text: Optional[str], **updates: Any) -> FileContentResult:
+    """Build a ``FileContentResult`` for a spec read at ``dev``."""
+    base = FileContentResult(
+        exists=True, path=path, ref="dev", repository="owner/repo", content=text, encoding="utf-8"
+    )
+    return base.model_copy(update=updates) if updates else base
+
+
+def _search(*paths: str, error: Optional[str] = None) -> SearchCodeResult:
+    """Build a Code Search result naming ``paths``."""
+    return SearchCodeResult(
+        repository="owner/repo",
+        query="q",
+        total_count=len(paths),
+        items=[{"path": p} for p in paths],
+        error=error,
+    )
+
+
+def _listing(*paths: str) -> RepoDirectoryListing:
+    """Build an ``sdd/specs`` directory listing of plain files."""
+    return RepoDirectoryListing(
+        exists=True,
+        path="sdd/specs",
+        ref="dev",
+        repository="owner/repo",
+        entries=[RepoDirectoryEntry(name=p.rsplit("/", 1)[-1], path=p, type="file") for p in paths],
+    )
+
+
+class TestSpecAcceptanceCriteriaFilter:
+    """FEAT-759 §4: placeholder vs substantive acceptance criteria."""
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            _TEMPLATE_AC,
+            "- [ ] All unit tests pass (`pytest tests/unit/ -v`)\n- [ ] Documentation updated in `docs/`\n",
+            "- [x] No breaking changes to existing public API\n- [X] Criterion N\n",
+            "  -   [ x ]   All   integration tests pass (`pytest tests/integration/ -v`)  \n",
+            "<!-- fill me in -->\n\n---\n",
+            "<!--\nmulti-line\ncomment\n-->\n",
+            "",
+            "   \n\n",
+            "1. Criterion N\n* [ ] Performance benchmark: <metric> within <threshold>\n",
+        ],
+    )
+    def test_fetch_spec_requirement_rejects_placeholder_ac(self, body: str) -> None:
+        """Template boilerplate, subsets, comments and placeholders leave nothing."""
+        assert GitHubReviewer._filter_spec_acceptance_criteria(body) == ""
+
+    @pytest.mark.asyncio
+    async def test_placeholder_spec_returns_none_from_fetch(self) -> None:
+        """An untouched template AC section makes ``_fetch_spec_requirement`` return ``None``."""
+        reviewer = _wire_reviewer()
+        path = "sdd/specs/example.spec.md"
+        content = _spec_result(path, _spec_text("FEAT-9001", _TEMPLATE_AC))
+        reviewer.git_toolkit.search_repo_code = AsyncMock(return_value=_search(path))
+        reviewer.git_toolkit.get_file_content_at_ref = AsyncMock(side_effect=[content, content])
+
+        assert await reviewer._fetch_spec_requirement("owner/repo", "FEAT-9001", "dev") is None
+
+    def test_fetch_spec_requirement_accepts_substantive_ac(self) -> None:
+        """A real criterion mixed with boilerplate survives verbatim; boilerplate is dropped."""
+        body = _TEMPLATE_AC + "- [x] The endpoint returns 404 for unknown ids\n  - [ ]   Keep   spacing  \n"
+        filtered = GitHubReviewer._filter_spec_acceptance_criteria(body)
+
+        assert filtered == "- [x] The endpoint returns 404 for unknown ids\n  - [ ]   Keep   spacing  "
+        assert "Criterion N" not in filtered
+        assert "pytest" not in filtered
+
+
+class TestLocateSpecFileMatrix:
+    """FEAT-759 §4: fast path, candidate rejection and rate-limited fallback."""
+
+    @pytest.mark.asyncio
+    async def test_locate_spec_file_fast_path_code_search_hit(self) -> None:
+        """A single validated hit is read at the ref and the listing is never called."""
+        reviewer = _wire_reviewer()
+        path = "sdd/specs/example.spec.md"
+        reviewer.git_toolkit.search_repo_code = AsyncMock(return_value=_search(path))
+        reviewer.git_toolkit.list_repo_directory = AsyncMock()
+        reviewer.git_toolkit.get_file_content_at_ref = AsyncMock(
+            return_value=_spec_result(path, _spec_text("FEAT-9001"))
+        )
+
+        assert await reviewer._locate_spec_file("owner/repo", "FEAT-9001", "release/next") == path
+        reviewer.git_toolkit.get_file_content_at_ref.assert_awaited_once_with(
+            path, "release/next", repository="owner/repo"
+        )
+        reviewer.git_toolkit.list_repo_directory.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "case",
+        [
+            "prefix_id",
+            "incidental_mention",
+            "fenced_header",
+            "wrong_extension",
+            "nested_path",
+            "outside_specs",
+            "missing",
+            "error",
+            "truncated",
+            "read_raises",
+        ],
+    )
+    async def test_locate_spec_file_rejects_invalid_search_candidate(self, case: str) -> None:
+        """Every invalid fast-path candidate falls back to the bounded directory scan."""
+        reviewer = _wire_reviewer()
+        good = "sdd/specs/zz-real.spec.md"
+        candidate = "sdd/specs/aa-candidate.spec.md"
+        candidate_result: Any = None
+        if case == "prefix_id":
+            candidate_result = _spec_result(candidate, _spec_text("FEAT-81"))
+        elif case == "incidental_mention":
+            candidate_result = _spec_result(
+                candidate, _spec_text("FEAT-1", "- [ ] Mirrors FEAT-9001 behaviour") + "\nSee FEAT-9001.\n"
+            )
+        elif case == "fenced_header":
+            candidate_result = _spec_result(
+                candidate,
+                _spec_text("FEAT-1") + "\n```markdown\n**Feature ID**: FEAT-9001\n```\n",
+            )
+        elif case == "wrong_extension":
+            candidate = "sdd/specs/aa-candidate.md"
+        elif case == "nested_path":
+            candidate = "sdd/specs/archive/aa-candidate.spec.md"
+        elif case == "outside_specs":
+            candidate = "docs/aa-candidate.spec.md"
+        elif case == "missing":
+            candidate_result = _spec_result(candidate, None, exists=False, encoding=None)
+        elif case == "error":
+            candidate_result = _spec_result(candidate, None, error="file_too_large")
+        elif case == "truncated":
+            candidate_result = _spec_result(candidate, _spec_text("FEAT-9001"), truncated=True)
+
+        good_result = _spec_result(good, _spec_text("FEAT-9001"))
+
+        async def read(path: str, ref: str, repository: str) -> FileContentResult:
+            assert ref == "dev"
+            if path == good:
+                return good_result
+            if case == "read_raises":
+                raise GitToolkitError("404")
+            return candidate_result
+
+        reviewer.git_toolkit.search_repo_code = AsyncMock(return_value=_search(candidate))
+        reviewer.git_toolkit.list_repo_directory = AsyncMock(return_value=_listing(candidate, good))
+        reviewer.git_toolkit.get_file_content_at_ref = AsyncMock(side_effect=read)
+
+        # FEAT-811 is the id for the prefix case (candidate declares FEAT-81).
+        feature_id = "FEAT-811" if case == "prefix_id" else "FEAT-9001"
+        if case == "prefix_id":
+            good_result = _spec_result(good, _spec_text("FEAT-811"))
+
+        assert await reviewer._locate_spec_file("owner/repo", feature_id, "dev") == good
+        reviewer.git_toolkit.list_repo_directory.assert_awaited_once_with(
+            path="sdd/specs", ref="dev", repository="owner/repo"
+        )
+        read_paths = [c.args[0] for c in reviewer.git_toolkit.get_file_content_at_ref.await_args_list]
+        # A rejected candidate is never read twice; invalid paths are never read at all.
+        assert len(read_paths) == len(set(read_paths))
+        if case in {"wrong_extension", "nested_path", "outside_specs"}:
+            assert read_paths == [good]
+
+    @pytest.mark.asyncio
+    async def test_locate_spec_file_falls_back_on_rate_limited_search(self) -> None:
+        """A Code Search result with ``error="rate_limited"`` uses the directory listing."""
+        reviewer = _wire_reviewer()
+        path = "sdd/specs/example.spec.md"
+        reviewer.git_toolkit.search_repo_code = AsyncMock(return_value=_search(path, error="rate_limited"))
+        reviewer.git_toolkit.list_repo_directory = AsyncMock(return_value=_listing(path))
+        reviewer.git_toolkit.get_file_content_at_ref = AsyncMock(
+            return_value=_spec_result(path, _spec_text("FEAT-9001"))
+        )
+
+        assert await reviewer._locate_spec_file("owner/repo", "FEAT-9001", "dev") == path
+        reviewer.git_toolkit.list_repo_directory.assert_awaited_once()
+        reviewer.git_toolkit.get_file_content_at_ref.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_locate_spec_file_fallback_scans_in_order_and_skips_non_specs(self) -> None:
+        """The scan reads only direct ``*.spec.md`` files, lexicographically, first match wins."""
+        reviewer = _wire_reviewer()
+        reviewer.git_toolkit.search_repo_code = AsyncMock(return_value=_search())
+        listing = _listing("sdd/specs/c.spec.md", "sdd/specs/README.md", "sdd/specs/a.spec.md", "sdd/specs/b.spec.md")
+        listing.entries.append(RepoDirectoryEntry(name="sub", path="sdd/specs/sub", type="dir"))
+        reviewer.git_toolkit.list_repo_directory = AsyncMock(return_value=listing)
+        texts = {
+            "sdd/specs/a.spec.md": _spec_text("FEAT-1"),
+            "sdd/specs/b.spec.md": _spec_text("FEAT-9001"),
+            "sdd/specs/c.spec.md": _spec_text("FEAT-9001"),
+        }
+        reviewer.git_toolkit.get_file_content_at_ref = AsyncMock(
+            side_effect=lambda path, ref, repository: _spec_result(path, texts[path])
+        )
+
+        assert await reviewer._locate_spec_file("owner/repo", "FEAT-9001", "dev") == "sdd/specs/b.spec.md"
+        read_paths = [c.args[0] for c in reviewer.git_toolkit.get_file_content_at_ref.await_args_list]
+        assert read_paths == ["sdd/specs/a.spec.md", "sdd/specs/b.spec.md"]
+
+
+class TestRequirementSourceSelectionMatrix:
+    """FEAT-759 §4: no-source, flag-off and outcome source exposure in both entry points."""
+
+    @pytest.mark.asyncio
+    async def test_review_pull_request_no_source_unchanged(self) -> None:
+        """No Jira key and no FEAT id: only the missing-ticket notice, no lookup, no review."""
+        payload = {**_PAYLOAD, "pr_title": "chore: tidy", "head_ref": "my-branch", "head_sha": ""}
+
+        reviewer = _wire_reviewer()
+        reviewer._fetch_spec_requirement = AsyncMock()
+        reviewer._fetch_ticket = AsyncMock()
+        reviewer._notify_missing_ticket = AsyncMock(return_value=None)
+        reviewer.git_toolkit.submit_pr_review = AsyncMock()
+
+        assert await reviewer.review_pull_request(payload) == {"status": "no_ticket", "pr_number": 42}
+        reviewer._fetch_spec_requirement.assert_not_awaited()
+        reviewer._notify_missing_ticket.assert_awaited_once()
+        reviewer.git_toolkit.submit_pr_review.assert_not_awaited()
+
+        strict = _wire_strict()
+        strict._fetch_spec_requirement = AsyncMock()
+        strict._notify_missing_ticket = AsyncMock(return_value=None)
+
+        assert await strict.strict_review_pull_request(payload) == {
+            "status": "no_ticket",
+            "repository": "owner/repo",
+            "pr_number": 42,
+        }
+        strict._fetch_spec_requirement.assert_not_awaited()
+        strict._fetch_ticket.assert_not_awaited()
+        strict.git_toolkit.submit_pr_review.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_unresolvable_spec_is_no_ticket_in_both_entry_points(self) -> None:
+        """A FEAT id whose spec does not resolve behaves exactly like no reference at all."""
+        payload = {**_PAYLOAD, "pr_title": "FEAT-9001 thing", "base_ref": "dev"}
+
+        reviewer = _wire_reviewer()
+        reviewer._fetch_spec_requirement = AsyncMock(return_value=None)
+        reviewer._notify_missing_ticket = AsyncMock(return_value=None)
+        reviewer.git_toolkit.submit_pr_review = AsyncMock()
+
+        assert await reviewer.review_pull_request(payload) == {"status": "no_ticket", "pr_number": 42}
+        reviewer._fetch_spec_requirement.assert_awaited_once_with("owner/repo", "FEAT-9001", "dev")
+        reviewer.git_toolkit.submit_pr_review.assert_not_awaited()
+
+        strict = _wire_strict()
+        strict._fetch_spec_requirement = AsyncMock(return_value=None)
+        strict._notify_missing_ticket = AsyncMock(return_value=None)
+
+        assert (await strict.strict_review_pull_request(payload))["status"] == "no_ticket"
+        strict._fetch_spec_requirement.assert_awaited_once_with("owner/repo", "FEAT-9001", "dev")
+        strict.git_toolkit.submit_pr_review.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_fallback_disabled_skips_spec_lookup_in_both_entry_points(self) -> None:
+        """``enable_sdd_spec_fallback=False`` never looks up a spec, even with a FEAT id."""
+        payload = {**_PAYLOAD, "pr_title": "FEAT-9001 thing", "head_ref": "feat-FEAT-9001-x", "base_ref": "dev"}
+
+        reviewer = _wire_reviewer(enable_sdd_spec_fallback=False)
+        reviewer._fetch_spec_requirement = AsyncMock()
+        reviewer._fetch_diff = AsyncMock()
+        reviewer._notify_missing_ticket = AsyncMock(return_value=None)
+
+        assert (await reviewer.review_pull_request(payload))["status"] == "no_ticket"
+        reviewer._fetch_spec_requirement.assert_not_awaited()
+        reviewer._fetch_diff.assert_not_awaited()
+
+        strict = _wire_strict()
+        strict.enable_sdd_spec_fallback = False
+        strict._fetch_spec_requirement = AsyncMock()
+        strict._notify_missing_ticket = AsyncMock(return_value=None)
+
+        assert (await strict.strict_review_pull_request(payload))["status"] == "no_ticket"
+        strict._fetch_spec_requirement.assert_not_awaited()
+        strict.git_toolkit.submit_pr_review.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_jira_key_shadows_feature_id_and_reports_jira_source(self) -> None:
+        """Both ids present: Jira is reviewed, no spec lookup, outcome source is ``jira``."""
+        payload = {**_PAYLOAD, "pr_title": "NAV-1 FEAT-9001 thing"}
+
+        reviewer = _wire_reviewer()
+        reviewer._fetch_ticket = AsyncMock(return_value=_ticket())
+        reviewer._fetch_spec_requirement = AsyncMock()
+        reviewer._fetch_diff = AsyncMock(return_value=("diff", False, True))
+        reviewer._ask_llm_for_review = AsyncMock(
+            return_value=PRReviewResult(summary="ok", approve=True, requirement_source="sdd_spec")
+        )
+        reviewer.git_toolkit.submit_pr_review = AsyncMock(return_value={"id": 1})
+
+        outcome = await reviewer.review_pull_request(payload)
+
+        assert outcome["requirement_source"] == "jira"
+        assert outcome["jira_key"] == "NAV-1"
+        reviewer._fetch_spec_requirement.assert_not_awaited()
+
+        strict = _wire_strict()
+        strict._fetch_spec_requirement = AsyncMock()
+        strict._ask_llm_for_review.return_value.requirement_source = "sdd_spec"
+
+        outcome = await strict.strict_review_pull_request(payload)
+
+        assert outcome["requirement_source"] == "jira"
+        strict._fetch_spec_requirement.assert_not_awaited()
+
+    @staticmethod
+    def _spec_strict(**kwargs: Any) -> Any:
+        """A strict reviewer whose requirement resolves from an SDD spec."""
+        strict = _wire_strict(**kwargs)
+        strict._fetch_spec_requirement = AsyncMock(
+            return_value={"fields": {"summary": "SDD", "description": "", "customfield_10100": "- [ ] Real AC"}}
+        )
+        # The LLM tries to claim a Jira source; the selected source must win.
+        strict._ask_llm_for_review.return_value.requirement_source = "jira"
+        return strict
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("kwargs", "status"),
+        [
+            ({"approve": True, "checks_raw": _checks(success=1, pending=2)}, "deferred"),
+            ({"approve": False, "checks_raw": _checks(success=0, failure=2)}, "blocked"),
+        ],
+    )
+    async def test_strict_deferred_and_blocked_expose_sdd_source(self, kwargs: Dict[str, Any], status: str) -> None:
+        """Deferred and blocked strict outcomes carry the selected ``sdd_spec`` source."""
+        payload = {**_PAYLOAD, "pr_title": "FEAT-9001 thing", "base_ref": "dev"}
+        strict = self._spec_strict(**kwargs)
+
+        outcome = await strict.strict_review_pull_request(payload)
+
+        assert outcome["status"] == status
+        assert outcome["requirement_source"] == "sdd_spec"
+        assert outcome["jira_key"] == "FEAT-9001"
+        strict._fetch_ticket.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_strict_submission_error_exposes_sdd_source(self) -> None:
+        """A failed review submission keeps ``requirement_source`` on the outcome."""
+        payload = {**_PAYLOAD, "pr_title": "FEAT-9001 thing", "base_ref": "dev"}
+        strict = self._spec_strict()
+        strict.git_toolkit.submit_pr_review = AsyncMock(side_effect=RuntimeError("422"))
+
+        outcome = await strict.strict_review_pull_request(payload)
+
+        assert outcome["status"] == "approved"
+        assert outcome["review_error"] == "422"
+        assert outcome["requirement_source"] == "sdd_spec"
+
+
+class TestSpecSourcedReviewEndToEnd:
+    """FEAT-759 §4 integration: search miss → listing → read → real LLM path → submit."""
+
+    @pytest.mark.asyncio
+    async def test_review_pull_request_end_to_end_spec_sourced(self) -> None:
+        """A real ``_fetch_spec_requirement`` + ``_ask_llm_for_review`` produce an APPROVE review."""
+        spec_path = "sdd/specs/example.spec.md"
+        spec = _spec_text("FEAT-9001", _TEMPLATE_AC + "- [ ] The widget exports CSV\n")
+        payload = {
+            **_PAYLOAD,
+            "pr_title": "feat: widget export",
+            "head_ref": "feat-FEAT-9001-widget-export",
+            "base_ref": "release/next",
+        }
+
+        reviewer = _wire_reviewer_with_tool_cap(max_tool_calls=5)
+        git = reviewer.git_toolkit
+        git.search_repo_code = AsyncMock(return_value=_search())
+        git.list_repo_directory = AsyncMock(return_value=_listing("sdd/specs/a.spec.md", spec_path))
+        git.get_file_content_at_ref = AsyncMock(
+            side_effect=lambda path, ref, repository: _spec_result(
+                path, spec if path == spec_path else _spec_text("FEAT-1")
+            )
+        )
+        git.submit_pr_review = AsyncMock(return_value={"id": 99})
+        reviewer._fetch_diff = AsyncMock(return_value=("diff --git a/w.py b/w.py\n+csv", False, True))
+        reviewer._fetch_ticket = AsyncMock()
+        prompts: List[str] = []
+
+        async def fake_ask(**kwargs: Any) -> Any:
+            prompts.append(str(kwargs.get("question") or kwargs))
+            return _make_fake_response(
+                PRReviewResult(jira_key="FEAT-9001", summary="CSV export implemented.", approve=True)
+            )
+
+        reviewer.ask = fake_ask
+
+        outcome = await reviewer.review_pull_request(payload)
+
+        assert outcome["status"] == "reviewed"
+        assert outcome["requirement_source"] == "sdd_spec"
+        assert outcome["jira_key"] == "FEAT-9001"
+        reviewer._fetch_ticket.assert_not_awaited()
+        for call in git.get_file_content_at_ref.await_args_list:
+            assert call.args[1] == "release/next"
+        git.list_repo_directory.assert_awaited_once_with(path="sdd/specs", ref="release/next", repository="owner/repo")
+        # The prompt carries the real criterion and none of the template boilerplate.
+        assert prompts and "The widget exports CSV" in prompts[0]
+        assert "Criterion N" not in prompts[0]
+        submit = git.submit_pr_review.await_args.kwargs
+        assert submit["event"] == "APPROVE"
+        assert submit["pr_number"] == 42
+        assert "CSV export implemented." in submit["body"]

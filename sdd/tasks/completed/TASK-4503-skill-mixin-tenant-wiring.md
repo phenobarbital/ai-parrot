@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-707 — Per-Tenant Skills for `SkillRegistryMixin`
 **Spec**: `sdd/specs/per-tenant-skills.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4499, TASK-4498, TASK-4495, TASK-4501

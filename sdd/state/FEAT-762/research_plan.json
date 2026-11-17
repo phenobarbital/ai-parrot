@@ -1,0 +1,18 @@
+{
+  "feat_id": "FEAT-762",
+  "wiki_available": true,
+  "queries": [
+    {"id": "Q001", "type": "wiki_query", "intent": "locate the e2e browser target adapter", "params": {"question": "e2e targets browser kind CDP endpoint obscura target implementation"}, "priority": 1},
+    {"id": "Q002", "type": "read", "intent": "verify browser.py never touches Playwright, only spawns obscura serve", "params": {"path": "packages/ai-parrot-server/src/parrot/e2e/targets/browser.py"}, "priority": 1},
+    {"id": "Q003", "type": "read", "intent": "verify e2e-ui-tester's DevTools-MCP attach + screenshot-on-anomaly contract", "params": {"path": ".claude/agents/e2e-ui-tester.md"}, "priority": 1},
+    {"id": "Q004", "type": "wiki_query", "intent": "find PlaywrightConfig / PlaywrightDriver video-recording fields", "params": {"question": "PlaywrightConfig record_video_dir tracing screencast video capture browser context"}, "priority": 1},
+    {"id": "Q005", "type": "grep", "intent": "get exact line numbers for PlaywrightDriver.start/_start_obscura_cdp/_build_context_kwargs", "params": {"pattern": "_start_obscura_cdp|_build_context_kwargs|record_video_dir|record_har", "path": "packages/ai-parrot-tools/src/parrot_tools/scraping/drivers/playwright_driver.py"}, "priority": 1, "parent_id": "Q004"},
+    {"id": "Q006", "type": "wiki_query", "intent": "verify whether Obscura CDP mode reuses or creates a fresh browser context", "params": {"question": "PlaywrightDriver.start connect_over_cdp contexts existing_context reuse new_context record_video_dir"}, "priority": 1, "parent_id": "Q004"},
+    {"id": "Q007", "type": "wiki_query", "intent": "find the per-run log directory convention (artifacts/logs/e2e)", "params": {"question": "E2E supervisor RunState model endpoint field artifacts logs retention cleanup"}, "priority": 2},
+    {"id": "Q008", "type": "grep", "intent": "confirm artifacts/logs/e2e/<run_id>/<target_id>.log convention and distinguish it from sdd/state/e2e/<run_id>/ (private run_dir)", "params": {"pattern": "log_path|artifacts.*logs|logs.*e2e", "path": "packages/ai-parrot-server/src/parrot/e2e/supervisor.py"}, "priority": 2},
+    {"id": "Q009", "type": "read", "intent": "confirm artifacts/logs/e2e/ is excluded from the source-identity hash and deterministic evidence tree only lists JSON/logs/JUnit/screenshots", "params": {"path": "sdd/specs/agentic-e2e-testing.spec.md", "lines": "210-310"}, "priority": 1},
+    {"id": "Q010", "type": "wiki_query", "intent": "check for any existing known Obscura CDP compatibility gaps relevant to video capture", "params": {"question": "Obscura browser implementation Playwright Rust CDP headless"}, "priority": 2},
+    {"id": "Q011", "type": "read", "intent": "check the Obscura compatibility matrix for a video/screencast row", "params": {"path": "docs/obscura-headless-browser.md"}, "priority": 1},
+    {"id": "Q012", "type": "grep", "intent": "check whether artifacts/ is gitignored (video files should never land in git)", "params": {"pattern": "^artifacts", "path": ".gitignore"}, "priority": 3}
+  ]
+}

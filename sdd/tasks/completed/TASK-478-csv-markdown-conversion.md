@@ -2,7 +2,7 @@
 
 **Feature**: datasetmanager-files
 **Spec**: `sdd/specs/datasetmanager-files.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

@@ -1,7 +1,19 @@
 """ensure_observability_bootstrapped — env-driven, idempotent auto-boot.
 
-Called once (lazily, from ``EventEmitterMixin._init_events``) the first time any
-bot/client/tool is constructed. When ``OBSERVABILITY_ENABLED=true``, it activates
+Invoked on every ``EventEmitterMixin._init_events()`` — i.e. on each bot/client/
+tool construction — through the injectable bootstrap hook that
+``parrot.core.events.lifecycle`` installs via
+``navigator_eventbus.lifecycle.mixin.set_bootstrap_hook`` (FEAT-725). This
+function is idempotent, which that hook contract requires: the first call does
+the work, every later call returns on the ``_BOOTSTRAPPED`` check.
+
+Idempotent in the failure case too (FEAT-725 / issue:bd94e0afa8e6): a durable
+fan-out misconfiguration keeps raising on every call — it is a startup error,
+not a warning — but ``setup_event_fanout()`` is attempted exactly once and the
+local observability layer is still brought up. The cached exception is re-raised
+from the fast path.
+
+When ``OBSERVABILITY_ENABLED=true``, it activates
 the usage-recording layer selected by ``OBSERVABILITY_BACKEND`` WITHOUT the user
 writing any code:
 
@@ -23,6 +35,7 @@ from __future__ import annotations
 
 import atexit
 import logging
+import os
 import threading
 from typing import Optional
 
@@ -34,29 +47,92 @@ _BOOTSTRAPPED: bool = False
 _LOCK = threading.Lock()
 _SUBSCRIBER: Optional[object] = None
 _SUBSCRIPTION_IDS: list[str] = []
+_SHUTDOWN_TASKS: set = set()  # strong refs so a scheduled fan-out close is not garbage-collected
 # Guards the atexit flush hook so it is registered at most once per process.
 _ATEXIT_REGISTERED: bool = False
+# FEAT-725 / issue:bd94e0afa8e6 — a durable fan-out misconfiguration is a startup
+# error that keeps raising, but it is diagnosed exactly ONCE: the exception and
+# its original traceback are cached here and re-raised from the fast path, so
+# setup_event_fanout() never runs a second time. The traceback is kept
+# separately because ``raise exc`` prepends the current frame to
+# ``exc.__traceback__``; restoring the original on every raise keeps the chain
+# bounded on the per-construction hot path.
+_FANOUT_ERROR: Optional[BaseException] = None
+_FANOUT_ERROR_TB = None
 
 
 def ensure_observability_bootstrapped() -> None:
     """Activate env-driven observability exactly once. Safe to call repeatedly.
 
     No-op (after recording the decision) when ``OBSERVABILITY_ENABLED`` is not
-    truthy. Never raises: any failure is logged at DEBUG and swallowed so it can
-    never break bot/client construction.
+    truthy. A failure of the local observability layer is logged at ERROR and
+    swallowed, so it can never break bot/client construction.
+
+    Raises:
+        Exception: whatever ``setup_event_fanout()`` raises. Invalid durable
+            fan-out configuration is deliberately a startup error, so it is
+            logged at ERROR and re-raised on this and every later call. The
+            *diagnosis* happens once (FEAT-725 / issue:bd94e0afa8e6): the
+            exception is cached, ``setup_event_fanout()`` is never retried,
+            ``_do_bootstrap()`` still runs so local observability is not
+            collateral damage, and ``_BOOTSTRAPPED`` is set. The ERROR record
+            matters because the ``EventEmitterMixin`` hook site that calls this
+            swallows a raising hook at DEBUG.
     """
-    global _BOOTSTRAPPED  # noqa: PLW0603
+    global _BOOTSTRAPPED, _FANOUT_ERROR, _FANOUT_ERROR_TB  # noqa: PLW0603
     if _BOOTSTRAPPED:
+        if _FANOUT_ERROR is not None:
+            raise _FANOUT_ERROR.with_traceback(_FANOUT_ERROR_TB)
         return
     with _LOCK:
         if _BOOTSTRAPPED:
+            if _FANOUT_ERROR is not None:
+                raise _FANOUT_ERROR.with_traceback(_FANOUT_ERROR_TB)
             return
+        fanout_error: Optional[BaseException] = None
+        if _event_fanout_enabled():
+            from parrot.observability.fanout import setup_event_fanout  # noqa: PLC0415
+
+            # Invalid durable fan-out configuration is a startup error: it is
+            # logged at error (FEAT-725 — the EventEmitterMixin hook site
+            # swallows a raising hook at DEBUG, so without this the
+            # misconfiguration would be completely silent in production) and
+            # re-raised below. It is NOT allowed to escape the lock, because
+            # that would leave _BOOTSTRAPPED False and re-run setup on every
+            # single construction while _do_bootstrap() never ran at all.
+            try:
+                setup_event_fanout()
+            except Exception as exc:  # noqa: BLE001 — cached and re-raised below
+                logger.error(
+                    "Durable event fan-out setup failed; PARROT_EVENT_FANOUT_ENABLED "
+                    "is set but no lifecycle event will reach the bus.",
+                    exc_info=True,
+                )
+                fanout_error = exc
         try:
             _do_bootstrap()
         except Exception:  # noqa: BLE001 — observability must never break construction
-            logger.debug("Observability auto-boot failed; continuing.", exc_info=True)
+            logger.error("Observability auto-boot failed; continuing.", exc_info=True)
         finally:
+            _FANOUT_ERROR = fanout_error
+            _FANOUT_ERROR_TB = None if fanout_error is None else fanout_error.__traceback__
             _BOOTSTRAPPED = True
+    if fanout_error is not None:
+        raise fanout_error.with_traceback(_FANOUT_ERROR_TB)
+
+
+def _event_fanout_enabled() -> bool:
+    """Return whether durable event fan-out is explicitly enabled."""
+    try:
+        from navconfig import config as nav_config  # noqa: PLC0415
+
+        value = nav_config.get(
+            "PARROT_EVENT_FANOUT_ENABLED",
+            fallback=os.environ.get("PARROT_EVENT_FANOUT_ENABLED"),
+        )
+    except Exception:  # noqa: BLE001 — navconfig is optional on lightweight paths
+        value = os.environ.get("PARROT_EVENT_FANOUT_ENABLED")
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _do_bootstrap() -> None:
@@ -113,6 +189,9 @@ def _do_bootstrap() -> None:
         from parrot.observability.cost.calculator import CostCalculator  # noqa: PLC0415
 
         cost_calc = CostCalculator(override_path=config.pricing_override_path)
+        from parrot.observability.cost import set_shared_cost_calculator  # noqa: PLC0415
+
+        set_shared_cost_calculator(cost_calc)
 
     from parrot.observability.recorders.factory import (  # noqa: PLC0415
         build_recorders_from_config,
@@ -190,6 +269,22 @@ def shutdown_usage_recording() -> None:
     torn down via ``shutdown_telemetry``.
     """
     global _SUBSCRIBER  # noqa: PLW0603
+    try:
+        from parrot.observability.fanout import shutdown_event_fanout  # noqa: PLC0415
+
+        import asyncio  # noqa: PLC0415
+
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            asyncio.run(shutdown_event_fanout())
+        else:
+            _task = asyncio.ensure_future(shutdown_event_fanout())
+            _SHUTDOWN_TASKS.add(_task)
+            _task.add_done_callback(_SHUTDOWN_TASKS.discard)
+    except Exception:  # noqa: BLE001 — shutdown must never raise
+        logger.debug("Error closing event fan-out bus.", exc_info=True)
+
     if _SUBSCRIPTION_IDS:
         try:
             from parrot.core.events.lifecycle import (  # noqa: PLC0415
@@ -206,6 +301,9 @@ def shutdown_usage_recording() -> None:
             logger.exception("Error unsubscribing usage recorder.")
         _SUBSCRIPTION_IDS.clear()
 
+    from parrot.observability.cost import set_shared_cost_calculator  # noqa: PLC0415
+
+    set_shared_cost_calculator(None)
     if _SUBSCRIBER is not None:
         aclose = getattr(_SUBSCRIBER, "aclose", None)
         if aclose is not None:
@@ -227,6 +325,7 @@ def shutdown_usage_recording() -> None:
 def reset_bootstrap_for_tests() -> None:
     """Test-only: reset module state so a fresh bootstrap can run."""
     global _BOOTSTRAPPED, _SUBSCRIBER, _ATEXIT_REGISTERED  # noqa: PLW0603
+    global _FANOUT_ERROR, _FANOUT_ERROR_TB  # noqa: PLW0603
     shutdown_usage_recording()
     if _ATEXIT_REGISTERED:
         try:
@@ -236,3 +335,5 @@ def reset_bootstrap_for_tests() -> None:
     _BOOTSTRAPPED = False
     _SUBSCRIBER = None
     _ATEXIT_REGISTERED = False
+    _FANOUT_ERROR = None
+    _FANOUT_ERROR_TB = None

@@ -14,7 +14,8 @@ from aiohttp import web, ClientSession
 
 from .assistant import SlackAssistantHandler
 from .commands import SlackCommandRouter
-from .commands.jira_commands import register_jira_commands
+from .commands.connection_commands import AppLinkIssuer, register_connection_commands
+from .commands.queued_commands import register_queued_commands
 from .dedup import EventDeduplicator
 from .interactive import SlackInteractiveHandler
 from .models import SlackAgentConfig
@@ -97,10 +98,8 @@ class SlackAgentWrapper:
             agent: The AI-Parrot agent to wrap.
             config: Slack configuration including tokens and settings.
             app: The aiohttp application to register routes on.
-            oauth_manager: Optional :class:`JiraOAuthManager` for Jira OAuth
-                commands (``/connect_jira``, ``/disconnect_jira``,
-                ``/jira_status``).  When provided, the Jira commands are
-                registered on the command router and a
+            oauth_manager: Optional :class:`JiraOAuthManager` retained for
+                Jira OAuth notifier compatibility. When provided, a
                 :class:`SlackOAuthNotifier` is stored on the app.
         """
         self.agent = agent
@@ -121,11 +120,23 @@ class SlackAgentWrapper:
         # Pre-LLM message interceptors (FEAT-555 M9): consulted in _handle_events and SlackSocketHandler._handle_event.
         self._message_interceptors: List[MessageInterceptor] = []
 
-        # Command router (Jira commands delegated here before built-in dispatch)
+        # Command router for generic provider connection commands and aliases.
         self._command_router = SlackCommandRouter()
+        self._queued_commands = register_queued_commands(self._command_router, self)
+        from parrot.auth.oauth2.service import IntegrationsService
+
+        register_connection_commands(
+            self._command_router,
+            link_issuer=AppLinkIssuer(app),
+            service_factory=lambda: IntegrationsService(authorizer=app.get("connection_authorizer")),
+        )
+        if config.bot_token:
+            from parrot.auth.oauth2.events import ChannelNotifierRegistry
+            from .notifier import SlackConnectionNotifier
+
+            ChannelNotifierRegistry().register(SlackConnectionNotifier(bot_token=config.bot_token))
         self._knowledge_upload = None
         if oauth_manager is not None:
-            register_jira_commands(self._command_router, oauth_manager)
             # Register the OAuth notifier on the app so the callback route
             # can send DMs after the Atlassian consent redirect.
             if config.bot_token:
@@ -161,6 +172,8 @@ class SlackAgentWrapper:
 
     async def start(self) -> None:
         """Start the deduplication cleanup task."""
+        if self._queued_commands is not None:
+            await self._queued_commands.start()
         await self._dedup.start()
         if self.config.knowledge_upload.enabled:
             from ..knowledge_upload.service import KnowledgeUploadService
@@ -173,6 +186,8 @@ class SlackAgentWrapper:
 
     async def stop(self) -> None:
         """Stop background tasks and cleanup."""
+        if self._queued_commands is not None:
+            await self._queued_commands.shutdown()
         upload = getattr(self, "_knowledge_upload", None)
         if upload is not None:
             await upload.service.shutdown()
@@ -598,10 +613,15 @@ class SlackAgentWrapper:
 
     def _help_text(self) -> str:
         """Return help text for slash commands."""
-        return (
+        text = (
             "Use `/ask <question>` (or configured slash command) to query the agent.\n"
             "Commands: help, clear, commands"
         )
+        queued = getattr(self, "_queued_commands", None)
+        if queued is None:
+            return text
+        entries = "\n".join(f"/{name} — {description}" for name, description in queued.help_entries)
+        return f"{text}\nQueued commands:\n{entries}"
 
     def add_message_interceptor(self, interceptor: MessageInterceptor) -> None:
         """Register a pre-LLM interceptor; interceptors run in registration order, first ``True`` wins.

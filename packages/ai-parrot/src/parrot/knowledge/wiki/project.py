@@ -28,7 +28,9 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from parrot.knowledge.wiki.decisions.models import DecisionConfig
+from parrot.knowledge.wiki.experience.models import ExperienceConfig
 from parrot.knowledge.wiki.schema.models import SchemaPlaneConfig
+from parrot.launcher import parrot_home as _launcher_parrot_home  # FEAT-633: single PARROT_HOME authority (stdlib-only)
 
 if TYPE_CHECKING:
     # Import only for the annotation below — the real (runtime) import in
@@ -711,6 +713,10 @@ class WikiProjectConfig(BaseModel):
         default_factory=StandupConfig,
         description="Daily/period standup brief settings (FEAT-627).",
     )
+    experience: ExperienceConfig = Field(
+        default_factory=ExperienceConfig,
+        description="Experience-memory thresholds and hook runtime bounds (FEAT-887).",
+    )
     sqlite_busy_timeout: float = Field(
         default=15.0,
         ge=1.0,
@@ -1023,14 +1029,15 @@ def config_path(root: Path) -> Path:
 
 
 def _is_temp_root(candidate: Path) -> bool:
-    """True when ``candidate`` is the system temp directory or one of its ancestors.
+    """True when ``candidate`` is the system temp directory itself.
 
     The upward walks in :func:`find_project_root` and :func:`find_shared_root` stop
     there: a stray ``/tmp/.git`` (or ``/tmp/.parrot``) left by an unrelated process
     must never turn every ``tmp_path``-based test — or any scratch checkout under the
     temp dir — into a child of a ``/tmp`` "project" (issue:1270bc83b087). Projects
-    *below* the temp dir are unaffected; only the temp dir itself and its parents
-    (``/``) are excluded.
+    *below* the temp dir are unaffected; only the temp dir itself is excluded — not
+    its ancestors, which may legitimately contain project checkouts (e.g.
+    ``TMPDIR=/home/u/tmp`` must not stop the walk at ``/home/u``).
 
     Args:
         candidate: A resolved directory from the upward walk.
@@ -1042,7 +1049,7 @@ def _is_temp_root(candidate: Path) -> bool:
         temp_root = Path(tempfile.gettempdir()).resolve()
     except (OSError, RuntimeError):
         return False
-    return candidate == temp_root or candidate in temp_root.parents
+    return candidate == temp_root
 
 
 def find_project_root(start: Path | None = None) -> Path | None:
@@ -1390,11 +1397,12 @@ def parrot_home() -> Path:
     value is read on every call — never cached at import time — so a
     ``monkeypatch.setenv`` in a test is always seen.
 
+    Delegates to :func:`parrot.launcher.parrot_home` (FEAT-633).
+
     Returns:
         The expanded, absolute parrot home directory.
     """
-    raw = os.environ.get("PARROT_HOME") or f"~/{PARROT_DIR}"
-    return Path(raw).expanduser()
+    return _launcher_parrot_home()
 
 
 def global_registry_path() -> Path:

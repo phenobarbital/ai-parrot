@@ -2,9 +2,9 @@
 
 Template: ``parrot.clients.amazon.nova.mantle.BedrockMantleClient``. Everything
 (completions, tool calling, retry) is inherited from ``OpenAIBaseClient``; this
-module only resolves endpoint + key. It deliberately declares NO
-``_default_model`` / ``_fallback_model`` / ``_lightweight_model``.
+module resolves the endpoint, key, and Gemini default model.
 """
+
 from __future__ import annotations
 
 from navconfig import config  # verified in use: google/client.py:189

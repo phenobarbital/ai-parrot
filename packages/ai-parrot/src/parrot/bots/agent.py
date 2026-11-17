@@ -28,6 +28,7 @@ from ..mcp import MCPServerConfig, create_http_mcp_server, create_local_mcp_serv
 from ..conf import STATIC_DIR, AGENTS_DIR
 from ..notifications import NotificationMixin
 from ..memory import AnswerMemory
+from parrot.memory.agent_memory import AgentMemoryMixin
 
 SpeechBackend = Literal["gemini", "google_tts", "supertonic", "aws_polly"]
 SpeechMode = Literal["script", "verbatim"]
@@ -37,7 +38,7 @@ _NATIVE_MIME = {"google": "audio/wav", "supertonic": "audio/wav", "polly": "audi
 _MIME_EXT = {"audio/wav": "wav", "audio/mpeg": "mp3", "audio/ogg": "ogg", "audio/pcm": "pcm"}
 
 
-class BasicAgent(Chatbot, NotificationMixin):
+class BasicAgent(AgentMemoryMixin, Chatbot, NotificationMixin):
     """Represents an Agent in Navigator.
 
     Agents are chatbots that can access to Tools and execute commands.
@@ -106,6 +107,14 @@ class BasicAgent(Chatbot, NotificationMixin):
         self.speech_tts_options = dict(self.speech_tts_options)
         self.agent_id = self.agent_id or agent_id
         self.agent_name = self.agent_name or name
+        for memory_option in (
+            "enable_episodic_memory",
+            "enable_user_memory",
+            "enable_brain",
+            "agent_memory_config",
+        ):
+            if memory_option in kwargs:
+                setattr(self, memory_option, kwargs.pop(memory_option))
         tools = self._get_default_tools(tools, use_tools=use_tools)
         super().__init__(
             name=name,
@@ -186,6 +195,8 @@ class BasicAgent(Chatbot, NotificationMixin):
         the base configuration completes.
         """
         await super().configure(app)
+        if self.configure_skipped:
+            return
         if self._llm is not None:
             self.client = self._llm
         await self._wire_tool_namespaces_into_working_memory()
@@ -762,6 +773,12 @@ class BasicAgent(Chatbot, NotificationMixin):
             if mode == "verbatim":
                 speakable_text = self._to_speakable(report)
             else:
+                if not self.speakers:
+                    raise ValueError(
+                        f"{type(self).__name__}.speakers is empty; script mode needs at least "
+                        "one speaker definition to pick a narrator. Set `speakers` on the "
+                        "agent class or use speech_mode='verbatim'."
+                    )
                 speaker_data = dict(next(iter(self.speakers.values())))
                 speaker_data["gender"] = speaker_data.get("gender", "neutral").lower()
                 narrator = FictionalSpeaker(**speaker_data)
@@ -829,6 +846,12 @@ class BasicAgent(Chatbot, NotificationMixin):
         # shared by every instance, so it must never be mutated here.
         if num_speakers < 1:
             raise ValueError(f"num_speakers must be >= 1 (got {num_speakers}).")
+        if not self.speakers:
+            raise ValueError(
+                f"{type(self).__name__}.speakers is empty; script mode needs at least "
+                "one speaker definition. Set `speakers` on the agent class or use "
+                "speech_mode='verbatim'."
+            )
         definitions = list(self.speakers.values())
         if len(definitions) > num_speakers:
             self.logger.warning(f"Too many speakers defined, limiting to {num_speakers}.")

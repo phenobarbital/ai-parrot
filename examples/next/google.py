@@ -112,7 +112,7 @@ async def main():
     #     # Parallel tool execution
     #     response = await client.ask(
     #         "Calculate both: 5 + 3 and 4 * 7. Use the appropriate tools for each calculation.",
-    #         model=GoogleModel.GEMINI_2_5_FLASH
+    #         model=GoogleModel.GEMINI_3_8_FLASH
     #     )
     #     print("Response text:", response.output)
     #     print("Model used:", response.model)
@@ -136,7 +136,7 @@ async def main():
     #         "My lucky numbers are 3 and 7",
     #         user_id=user_id,
     #         session_id=session_id,
-    #         model=GoogleModel.GEMINI_2_5_FLASH,
+    #         model=GoogleModel.GEMINI_3_8_FLASH,
     #     )
     #     print("Response 1 text:", response1.output)
 
@@ -144,7 +144,7 @@ async def main():
     #         "Add my two lucky numbers together using the add function and multiply by 7",
     #         user_id=user_id,
     #         session_id=session_id,
-    #         model=GoogleModel.GEMINI_2_5_FLASH
+    #         model=GoogleModel.GEMINI_3_8_FLASH
     #     )
     #     print("Response 2:", response2)
     #     print("Tools used:", [tc.name for tc in response2.tool_calls])
@@ -159,7 +159,7 @@ async def main():
     #     async for chunk in client.ask_stream(
     #         "Tell me an interesting fact about mathematics",
     #         temperature=0.7,
-    #         model=GoogleModel.GEMINI_2_5_FLASH,
+    #         model=GoogleModel.GEMINI_3_8_FLASH,
     #         user_id=user_id,
     #         session_id=session_id
     #     ):
@@ -181,7 +181,7 @@ async def main():
     #     math_response = await client.ask(
     #         "Calculate 12 + 8 and 6 * 9, then format the results",
     #         structured_output=MathOperations,
-    #         model=GoogleModel.GEMINI_2_5_FLASH
+    #         model=GoogleModel.GEMINI_3_8_FLASH
     #     )
     #     print("Structured math response:")
     #     print("- Is structured:", math_response.is_structured)
@@ -316,7 +316,7 @@ async def main():
     #         image=image_path,
     #         prompt=classification_prompt,
     #         structured_output=ImageClassification,
-    #         model=GoogleModel.GEMINI_2_5_FLASH
+    #         model=GoogleModel.GEMINI_3_8_FLASH
     #     )
     #     print(classification_result)
     #     if classification_result and isinstance(classification_result.output, ImageClassification):
@@ -341,7 +341,7 @@ async def main():
     #             "Then, provide bounding boxes for his location. "
     #             "Format your entire response as a single JSON object with 'analysis' and 'detections' keys."
     #         ),
-    #         model=GoogleModel.GEMINI_2_5_FLASH,
+    #         model=GoogleModel.GEMINI_3_8_FLASH,
     #         count_objects=True
     #     )
     #     print("✅ analysis successful!")
@@ -364,7 +364,7 @@ async def main():
     #             "* Provide a list of the products with their brand, model and type (printers, scanners, etc.)"
     #             "* Provide a briefly description of the products "
     #         ),
-    #         model=GoogleModel.GEMINI_2_5_FLASH,
+    #         model=GoogleModel.GEMINI_3_8_FLASH,
     #     )
     #     print(response_image)
     #     print("Image response text:", response_image.text)
@@ -381,7 +381,7 @@ async def main():
         #         "* Provide a briefly description of the products, extracting if possible the price and model "
         #         "* Provide a list of the products boxes with their brand, model and type "
         #     ),
-        #     model=GoogleModel.GEMINI_2_5_FLASH
+        #     model=GoogleModel.GEMINI_3_8_FLASH
         # )
         # print(response_image)
         # print("Image response text:", response_image.text)
@@ -418,7 +418,7 @@ async def main():
         #     Based on your visual analysis, populate all fields of the requested JSON schema.
         #     """,
         #     structured_output=InkWallAnalysis,
-        #     model=GoogleModel.GEMINI_2_5_FLASH
+        #     model=GoogleModel.GEMINI_3_8_FLASH
         # )
         # print(analysis_result)
         # if analysis_result and isinstance(analysis_result.output, InkWallAnalysis):

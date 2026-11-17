@@ -1,0 +1,79 @@
+{
+  "feature_id": "FEAT-803",
+  "title": "GitHub Pages Informative Site Redesign",
+  "phase": "proposal_rendered",
+  "started_at": "2026-11-04T22:30:00Z",
+  "mode": "investigation",
+  "budget": {
+    "profile": "default",
+    "files_read": 40,
+    "grep_calls": 25,
+    "git_calls": 10,
+    "depth": 2,
+    "wall_seconds": 300
+  },
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "summary_oneline": "Redesign GitHub Pages (mkdocs) as informative landing site after FEAT-801 wiki migration"
+  },
+  "phases": {
+    "source": {
+      "completed_at": "2026-11-04T22:30:00Z"
+    },
+    "plan": {
+      "completed_at": "2026-11-04T22:32:00Z",
+      "approved_by_user": true
+    },
+    "research": {
+      "completed_at": "2026-11-04T22:38:00Z",
+      "parallel": {
+        "enabled": true,
+        "lanes": {
+          "codebase": {
+            "prefix": "FC",
+            "status": "completed",
+            "queries_executed": 12,
+            "files_read": 8,
+            "grep_calls": 3,
+            "git_calls": 0,
+            "findings": 10
+          },
+          "git": {
+            "prefix": "FG",
+            "status": "completed",
+            "queries_executed": 4,
+            "files_read": 0,
+            "grep_calls": 0,
+            "git_calls": 4,
+            "findings": 3
+          },
+          "wiki": {
+            "prefix": "FW",
+            "status": "completed",
+            "queries_executed": 5,
+            "files_read": 5,
+            "grep_calls": 0,
+            "git_calls": 0,
+            "findings": 5
+          }
+        },
+        "merge": {
+          "input_count": 18,
+          "output_count": 11,
+          "merged_count": 7,
+          "audit_dir": "findings/.audit"
+        }
+      }
+    },
+    "synthesis": {
+      "completed_at": "2026-11-04T22:40:00Z"
+    }
+  },
+  "consumed": {
+    "files_read": 23,
+    "grep_calls": 3,
+    "git_calls": 4,
+    "wiki_queries": 10
+  }
+}

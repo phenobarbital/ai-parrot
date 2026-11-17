@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0",
+  "mode_hint": "enrichment",
+  "rationale": "No negation / failure language. The source asks to BUILD new example artifacts on top of an existing, shipped subsystem (FEAT-704, packages/ai-parrot-semantic). The unknown is not 'what is broken' but 'what is the current public surface, what examples already exist, and what conventions must new examples follow'. Named entities: FEAT-704, Semantic Layer, examples/agents/semantic.",
+  "queries": [
+    {"id": "Q001", "intent": "Orient: the SemanticLayerToolkit public tool surface (sl_* tools) an example agent would attach.", "type": "wiki_query", "priority": 0, "params": {"question": "SemanticLayerToolkit sl_query sl_run_sql tools"}},
+    {"id": "Q002", "intent": "Read the toolkit page in full to get the exact constructor signature and tool list.", "type": "wiki_page", "priority": 0, "params": {"page_id": "<from Q001>"}},
+    {"id": "Q003", "intent": "Orient: how a semantic model + policy YAML pair is declared and loaded.", "type": "wiki_query", "priority": 0, "params": {"question": "semantic model YAML loader policy bootstrap"}},
+    {"id": "Q004", "intent": "Orient: PermissionContext / SemanticRequestIdentity binding required before any governed call.", "type": "wiki_query", "priority": 0, "params": {"question": "SemanticRequestIdentity bind_semantic_context PermissionContext"}},
+    {"id": "Q005", "intent": "Symbol-level truth for the toolkit entrypoint (avoid guessed kwargs in the example).", "type": "wiki_symbol_lookup", "priority": 0, "params": {"name": "SemanticLayerToolkit"}},
+    {"id": "Q006", "intent": "Read the already-shipped example to know exactly what is covered and what a second example must NOT duplicate.", "type": "read", "priority": 1, "params": {"path": "examples/semantic/agent_semantic_example.py", "lines": null}},
+    {"id": "Q007", "intent": "Read the regression contract that pins the existing example, since a move/addition may break it.", "type": "read", "priority": 1, "params": {"path": "packages/ai-parrot-semantic/tests/test_example_agent.py", "lines": null}},
+    {"id": "Q008", "intent": "Read the model + policy fixture pair new examples would mirror.", "type": "read", "priority": 1, "params": {"path": "packages/ai-parrot-semantic/tests/fixtures/models/orders.yml", "lines": null}},
+    {"id": "Q009", "intent": "Read the user-facing semantic-layer doc to align example narrative with documented surfaces.", "type": "read", "priority": 1, "params": {"path": "docs/tools/semantic-layer.md", "lines": null}},
+    {"id": "Q010", "intent": "Establish the house style of examples/agents/* so new files match (imports, __main__ guard, config).", "type": "tree", "priority": 1, "params": {"path": "examples/agents", "maxdepth": 2}},
+    {"id": "Q011", "intent": "Find any existing reference to examples/agents/semantic or a second example so we do not re-create one.", "type": "grep", "priority": 1, "params": {"pattern": "examples/(agents/)?semantic", "path": ".", "case_sensitive": false, "max_results": 30}},
+    {"id": "Q012", "intent": "Surfaces beyond the toolkit (MCP local, aiohttp handlers) that a second example could demonstrate.", "type": "wiki_query", "priority": 2, "params": {"question": "parrot mcp-local semantic-layer handlers"}},
+    {"id": "Q013", "intent": "Recent activity on the semantic package — is the surface still moving under us?", "type": "git_log", "priority": 2, "params": {"path": "packages/ai-parrot-semantic/", "since": "60.days.ago", "max_results": 25}},
+    {"id": "Q014", "intent": "Open ledger issues against the semantic layer that an example must not demonstrate as correct behavior.", "type": "grep", "priority": 2, "params": {"pattern": "ai-parrot-semantic", "path": ".parrot/ledger", "case_sensitive": false, "max_results": 20}},
+    {"id": "Q015", "intent": "Check how examples are excluded/included in pytest + ruff so new example files pass the merge gate.", "type": "grep", "priority": 2, "params": {"pattern": "examples", "path": "pyproject.toml", "case_sensitive": false, "max_results": 20}}
+  ]
+}

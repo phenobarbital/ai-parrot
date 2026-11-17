@@ -118,6 +118,9 @@ class FlowContext:
     lifecycle events) onto the flow's trace.
     """
 
+    blackboard: Optional[Any] = field(default=None, repr=False)
+    """Optional Roost ``Blackboard`` binding (FEAT-747). Not part of ``to_snapshot()``; ``shared_data`` is unchanged."""
+
     # ── Agent resolution ──────────────────────────────────────────────────
 
     def resolve_agent(self, agent_ref: AgentRef) -> AgentLike:

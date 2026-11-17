@@ -34,6 +34,10 @@ import pytest
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _CORE_SRC = _REPO_ROOT / "packages" / "ai-parrot" / "src"
 
+# The ``types.ModuleType`` stand-ins below live inside this subprocess source string and
+# fire only on ImportError, so they never touch THIS process's ``sys.modules`` — audited
+# and cleared under issue:aaa24154d0c2. See tests/test_stub_isolation.py for the guard
+# that distinguishes this shape from the unconditional stub FEAT-852 removed.
 _BOOTSTRAP = textwrap.dedent(f"""
     import sys, types
     sys.path.insert(0, {str(_CORE_SRC)!r})

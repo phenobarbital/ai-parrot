@@ -6,6 +6,7 @@ the model-independent behaviours (empty-routes abstain) still run.
 """
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from parrot.models.outputs import OutputMode
@@ -86,3 +87,73 @@ class TestEmbeddingIntentRouter:
         r = EmbeddingIntentRouter()
         r.add_route(OutputMode.STRUCTURED_CHART, [])
         assert r.route("create a pie chart").mode is None
+
+
+class FakeEncoder:
+    """Deterministic encoder stub for label-routing tests."""
+
+    def __init__(self) -> None:
+        self.calls: list[list[str]] = []
+
+    def encode(self, texts: list[str], *, normalize_embeddings: bool) -> np.ndarray:
+        """Return stable vectors for the configured test phrases."""
+        assert normalize_embeddings is True
+        self.calls.append(texts)
+        vectors = {
+            "query: chart": [1.0, 0.0],
+            "query: kpi": [0.0, 1.0],
+            "query: info": [0.6, 0.8],
+        }
+        return np.asarray([vectors[text] for text in texts])
+
+
+class TestLabelRoutes:
+    """Label and supplied-encoder coverage for the embedding router."""
+
+    def test_add_route_normalizes_output_mode_and_keeps_string_label(self):
+        router = EmbeddingIntentRouter(encoder=FakeEncoder())
+
+        router.add_route(OutputMode.STRUCTURED_CHART, ["chart"])
+        router.add_route("a2ui:KPICard", ["kpi"])
+
+        assert set(router._routes) == {"structured_chart", "a2ui:KPICard"}
+
+    def test_composite_winner_populates_shape_metadata(self):
+        router = EmbeddingIntentRouter(threshold=0.5, encoder=FakeEncoder())
+        router.add_route(OutputMode.STRUCTURED_CHART, ["chart"])
+        router.add_route("a2ui:KPICard", ["kpi"])
+
+        score = router.route("kpi")
+
+        assert score.mode is OutputMode.A2UI
+        assert score.label == "a2ui:KPICard"
+        assert score.component == "KPICard"
+
+    def test_compat_scores_preserve_duplicate_a2ui_modes(self):
+        router = EmbeddingIntentRouter(encoder=FakeEncoder())
+        router.add_route("a2ui:KPICard", ["kpi"])
+        router.add_route("a2ui:InfoCard", ["info"])
+        router.add_route("not-a-route", ["chart"])
+
+        labels = router.route_label_scores("kpi")
+        modes = router.route_scores("kpi")
+
+        assert [label for label, _ in labels] == ["a2ui:KPICard", "a2ui:InfoCard", "not-a-route"]
+        assert [mode for mode, _ in modes] == [OutputMode.A2UI, OutputMode.A2UI]
+        assert modes[0][1] >= modes[1][1]
+
+    def test_route_score_remains_positionally_constructible(self):
+        assert RouteScore(None, -1.0, -1.0, False) == RouteScore(None, -1.0, -1.0, False)
+
+    def test_supplied_encoder_bypasses_lazy_loader(self, monkeypatch):
+        encoder = FakeEncoder()
+        router = EmbeddingIntentRouter(encoder=encoder)
+
+        def fail_lazy_import(*args, **kwargs):
+            raise AssertionError("lazy loader must not be invoked")
+
+        monkeypatch.setattr("parrot._imports.lazy_import", fail_lazy_import)
+        router.add_route(OutputMode.STRUCTURED_CHART, ["chart"])
+        router.route("chart")
+
+        assert router._ensure_encoder() is encoder

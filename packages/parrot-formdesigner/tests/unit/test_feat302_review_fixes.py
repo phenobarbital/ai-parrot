@@ -19,7 +19,7 @@ import pytest
 from parrot_formdesigner.services.org_graph import OrgGraphService
 from parrot_formdesigner.services.project_service import ProjectService
 
-from tests.unit.real_db_shapes import assert_real_columns
+from .real_db_shapes import assert_real_columns
 
 
 # ---------------------------------------------------------------------------

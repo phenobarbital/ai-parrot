@@ -236,11 +236,22 @@ class TestGoldensUntouched:
             "golden/kpicard_lowered.json",
             "golden/infographic_lowered.json",
         )
+        # FEAT-753 (TASK-4773): a brand-new component, `MermaidDiagram` — same
+        # "new component, new golden" precedent as `filterbar`/`htmldocument`.
+        # Its catalog/base.py + catalog/__init__.py touches (the four MERMAID_*
+        # codes and the `_validate_mermaid_sources` pass) are already covered
+        # by the FEAT-527 tool-only-gate file list above.
+        # FEAT-754 (TASK-4788): `kind="c4"` lowering adds ONE new golden,
+        # `golden/graph_c4_lowered.json` — same "new component, new golden"
+        # precedent as `graph_lowered`. The existing `graph_lowered.json` is
+        # byte-identical.
         assert all(
             "filterbar" in c
             or "htmldocument" in c
+            or "mermaiddiagram" in c
             or "viz_core" in c
             or "graph_lowered" in c
+            or "graph_c4_lowered" in c
             or c.endswith("catalog/parrot/__init__.py")
             or c.endswith(_FEAT_527_FROZEN_LOWER_FILES)
             or c.endswith(_FEAT_527_TOOL_ONLY_GATE_FILES)

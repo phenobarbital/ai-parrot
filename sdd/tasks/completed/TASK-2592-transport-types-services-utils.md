@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-476 — AgentChat Migration
 **Spec**: `sdd/specs/agentchat-migration.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2590, TASK-2591

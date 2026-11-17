@@ -38,9 +38,11 @@ EXPECTED_KEYS = {
 
 @pytest.fixture(autouse=True)
 def _clear_registry():
+    saved = dict(_REGISTRY)
     _REGISTRY.clear()
     yield
     _REGISTRY.clear()
+    _REGISTRY.update(saved)
 
 
 def test_dump_has_exact_keys():

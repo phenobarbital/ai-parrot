@@ -1,5 +1,5 @@
 
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, field_validator, ConfigDict
 
 
 class Organization(BaseModel):
@@ -62,8 +62,9 @@ class Organization(BaseModel):
     organization_visibility_reference: str | None = None
     external_url_reference: str | None = None
 
-    @validator('inactive', 'is_top_level', 'include_manager_in_name', 'include_organization_code_in_name', 
-               'available_for_hire', 'hiring_freeze', pre=True)
+    @field_validator('inactive', 'is_top_level', 'include_manager_in_name', 'include_organization_code_in_name', 
+                     'available_for_hire', 'hiring_freeze', mode="before")
+    @classmethod
     def validate_boolean_fields(cls, v):
         if v is None:
             return None
@@ -71,12 +72,14 @@ class Organization(BaseModel):
             return v.lower() == 'true' or v == "1"
         return bool(v)
 
-    @validator('availability_date', 'last_updated_datetime', 'inactive_date', pre=True)
+    @field_validator('availability_date', 'last_updated_datetime', 'inactive_date', mode="before")
+    @classmethod
     def validate_dates(cls, v):
         # Keep dates as strings for now to avoid parsing issues
         if isinstance(v, str) and v and v != "1900-01-01T00:00:00.000-08:00":
             return v
         return v
 
-    class Config:
-        arbitrary_types_allowed = True 
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+    )

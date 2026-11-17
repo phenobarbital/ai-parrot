@@ -1,0 +1,176 @@
+
+A single `ProcedureSpec` model describes a node and its outgoing edges. Two producers feed it:
+
+- **Skill frontmatter** for parrot skills (extends `SkillDefinition` with the optional graph
+  fields) — the path product agents will use.
+- **A manifest file** for procedures whose files the feature must not touch: one git-tracked
+  YAML per graph (first: the SDD workflow), where each entry names the command, its graph fields
+  and its edges. The command files and their twins stay unchanged.
+
+Both are folded into a small overlay plane (`procedure.db`, the `schema.db` precedent: a
+`SQLiteWikiStore` subclass in its own file under the wiki storage directory), and into a
+**compiled JSON index** that the hook and the CLI read without opening SQLite. A deterministic
+resolver takes a state (a mapping of named facts) and returns the applicable procedures and the
+valid next steps. State comes from **named probes** (for SDD: task status, `depends_on` all
+done, worktree clean, branch pushed, PR open), never from free-form expressions.
+
+Surfaces: a CLI noun (`parrot sdd procedure next|show|list|check`), one MCP tool on the
+wikitoolkit server, a lint pack (broken edge targets, `requires` cycles, unknown probes, missing
+executor for a mandatory node), and advisory injection through FEAT-887's shared hook entry.
+
+✅ **Pros:**
+- Twins and host frontmatter are untouched; the SDD graph is one reviewable file.
+- The same model serves product agents later through skill frontmatter, with no second design.
+- The hook fast path is a small JSON read, in line with FEAT-595 and FEAT-887.
+- The plane is read-only at runtime, so no sandbox change is needed.
+- The plane sits behind the wiki store contract: moving to a central graph backend later is a
+  backend swap.
+
+❌ **Cons:**
+- A manifest can drift from the command files it describes; a lint rule must check that every
+  referenced command exists and that every `sdd-*` command is either in the manifest or listed
+  as excluded.
+- More new code than A: model, two producers, resolver, index, probes, CLI noun, lint pack.
+- One more database file under the wiki storage directory.
+- Deviates from the literal "frontmatter" wording for the SDD case (accepted by the owner).
+
+📊 **Effort:** Medium–High
+
+📦 **Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| `pydantic` v2 | `ProcedureSpec`, edge and probe models | core dependency; kept out of the hook fast path |
+| `PyYAML` | manifest parsing | already a dependency |
+| `python-frontmatter` | skill producer | already used by `parrot.skills.parsers` |
+| `sqlite3` (stdlib) | overlay plane | same backend as the wiki |
+
+🔗 **Existing Code to Reuse:**
+- `packages/ai-parrot/src/parrot/knowledge/wiki/schema/` — overlay-plane precedent (`SchemaStore`, service, tools, toolkit)
+- `packages/ai-parrot/src/parrot/knowledge/wiki/store.py` — `BaseWikiStore`, `edges`, `neighbors`
+- `packages/ai-parrot/src/parrot/knowledge/lint/` — `LintRule` protocol and `default_rules`
+- `packages/ai-parrot/src/parrot/skills/models.py`, `parsers.py` — `SkillDefinition`, `parse_skill_file`
+- `packages/ai-parrot/src/parrot/sdd/scripts/check_task_state.py` — state checks to wrap as probes
+- `packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/hook.py` — stdlib prefilter pattern
+- FEAT-887 (planned) — `parrot sdd experience hook` entry point and the task-start briefing
+
+
+**Option B** is recommended because:
+
+- The pilot's procedures are command files with four or more copies and host-owned frontmatter.
+  Option A turns every graph change into a multi-file edit plus twin-drift risk; a manifest makes
+  the SDD graph one reviewable file. Skill frontmatter remains the producer for parrot skills, so
+  the owner's "skills with typed edges" decision holds for product agents.
+- The hook constraint (milliseconds, no SQLite) forces a compiled index in any option; B designs
+  for it from the start.
+- A dedicated overlay plane keeps procedure pages out of the code graph and its lint rules, and
+  follows a precedent that already exists (`schema.db`).
+- Option C's strength — one format for advisory and mandatory — is kept cheaply: a mandatory node
+  carries `executor: {kind: flow, ref: ...}`, so the flow stays the executor without being the
+  graph format.
+- Option D is not discarded: observed transitions are the measurement for the pilot (how often a
+  precondition was violated before and after), and later the source of candidate edges.
+
+What is traded off: a manifest that can drift from the commands it describes (covered by lint),
+and more new code than A.
+
+
+### User-Facing Behavior
+
+For the maintainer:
+
+- The SDD workflow is described once, in a manifest: each command is a node with its mode,
+  preconditions, required state and edges (`next`, `requires`, `alternative_to`, `on_failure`).
+- `parrot sdd procedure list|show <id>` prints the graph; `parrot sdd procedure next` prints,
+  for the current checkout or a given feature/task, the applicable procedures and the valid next
+  steps, each with the preconditions that hold and those that do not.
+- `parrot sdd procedure check` (and the lint pack inside `wikitoolkit lint`) reports broken edge
+  targets, `requires` cycles, unknown probes, mandatory nodes with no executor, and `sdd-*`
+  commands that are neither in the manifest nor excluded.
+
+For an agent:
+
+- **At task start**, next to the FEAT-887 pitfalls block, a short "Procedure" block: where the
+  task is in the workflow, the next valid step and the mandatory steps ahead (for example: close
+  the task with `parrot sdd task close`, never a hand-rolled move).
+- **Before a guarded command** (a Bash command that a procedure node declares as its entry; the
+  v1 set is the five listed under Constraints), an advisory when a precondition does not hold ("`depends_on` TASK-5583 is not done"). The command still runs as written.
+- A mandatory node is announced as mandatory. Nothing is dispatched in the pilot.
+
+### Internal Behavior
+
+**Model.** A `ProcedureSpec` holds: id, title, kind (`skill` | `command` | `flow` | `crew` |
+`rule`), mode (`advisory` | `mandatory` | `constraint`), intents, `applies_to` (entity types),
+preconditions (named probes with expected values), `requires` (facts, state probes, other
+procedures, tools), executor reference, confirm flag, source (`authored` | `learned`), and
+outgoing edges. Edge relations: `applies_to`, `requires`, `next`, `alternative_to`,
+`escalates_to`, `on_failure`, `learned_from`.
+
+**Producers.** The skill producer reads the optional graph fields from skill frontmatter; a skill
+without them is not a procedure node and behaves exactly as today. The manifest producer reads a
+YAML file per graph. Both yield `ProcedureSpec` records; ids are namespaced by producer.
+
+**Plane.** A build step folds the records into the overlay plane (pages with the spec as
+attributes and a readable body, edges with `provenance` set to the producer) and writes the
+compiled index: procedures by id, by guarded command, by intent keyword, with their
+preconditions and edges. The build is idempotent and keyed by content hash.
+
+**State and probes.** A probe is a named, deterministic function from a scope (repository,
+feature, task) to a value. The SDD probe set wraps what already exists: task status and
+`depends_on` from the per-spec index, task-state violations, worktree status, branch pushed, PR
+open. A precondition whose probe is unknown or fails to run is reported as *unknown*, never as
+satisfied.
+
+**Resolver.** Given a scope, it evaluates probes lazily (only those the candidate procedures
+name), keeps the procedures whose preconditions hold or are the nearest unmet, orders them by the
+`next` edges from the last completed step, and returns a bounded list. No LLM call.
+
+**Injection.** No new hook registration. The shared FEAT-887 entry point calls the resolver on
+its pre-tool path when the leading executable is in the index's guarded-command set, and the
+task-start briefing gains a procedure block. Every injection is `additionalContext`, bounded and
+templated.
+
+**Link to FEAT-887.** A confirmed pitfall whose scope matches a procedure's guarded command gets
+a `learned_from` edge from the procedure to the lesson. The procedure block lists at most a few
+linked pitfalls. The edge is declared by this feature and resolved only when the FEAT-887 plane
+is present.
+
+**Mandatory and confirm in the pilot.** `mode: mandatory`, `executor` and `confirm` are parsed,
+stored, linted and shown. They change the wording of the advisory and nothing else.
+
+### Edge Cases & Error Handling
+
+- **Stale plane**: the index records the content hash of its sources; when a source changed, the
+  CLI says so and the hook stays silent instead of advising from a stale graph.
+- **No procedure matches**: nothing is injected.
+- **Several match**: ordered by priority, capped; the cap is part of the template.
+- **Loops**: `next` cycles are legal (`codereview → start` after findings). Lint flags cycles
+  only in `requires`.
+- **Unknown or failing probe**: precondition reported as unknown; the advisory says it could not
+  be checked.
+- **Learned procedures**: stored with `source: learned`, shown only as candidates, never
+  announced as mandatory and never given a `confirm` grant.
+- **Worktrees and sandbox**: the plane and index are read through the shared root; no write is
+  needed at runtime, so no sandbox path is added.
+- **Hook failure**: always exit 0 with no output; a procedure advisory can never block a tool
+  call.
+- **Injection safety**: authored procedures come from git-tracked files and are trusted like
+  command files; text from `learned_from` lessons follows FEAT-887's rules (bounded, templated,
+  redacted).
+
+### Out of scope — follow-ups to record
+
+- Prompt-submit injection (needs an event that neither the wiki hook nor FEAT-887 registers).
+- Mandatory dispatch with HITL confirmation in product agents (procedure-level grant covering
+  the declared tools).
+- In-process delegation between agents without A2A: a `delegate` outcome of the pipeline through
+  `AgentRegistry`, passing the resolved envelope; a router is an agent whose pipeline ends at the
+  decision. Open points: the `spawn_sub_agent` deny rule of Experts, conversation-turn
+  ownership, permission propagation, a depth limit.
+- The pre-ask pipeline inside `IntentRouterMixin`.
+- Knowledge and context layers for product agents (Ontology, GraphIndex, PageIndex,
+  `UnifiedMemoryManager` / `ContextAssembler`, the Experts `KnowledgeResolver`).
+- Central graph backend replacing the SQLite overlay.
+- Promotion path learned skill → candidate procedure → authored procedure → flow.
+
+---
+

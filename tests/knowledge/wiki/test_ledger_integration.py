@@ -76,7 +76,7 @@ class TestLedgerCoreIntegration:
             title="Full lifecycle issue", body="b", severity="major", discovered_from="task:TASK-1"
         )
         assert await service.claim(issue_id, "task:TASK-2") is True
-        assert await service.close_issue(issue_id, "fixed", actor="human:jesus") is True
+        assert await service.close_issue(issue_id, "fixed", actor="task:TASK-2") is True
 
         # Rebuild from the durable log alone and confirm identical final state.
         rebuilt = await service.index.rebuild()

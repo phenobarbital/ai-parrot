@@ -258,6 +258,41 @@ class TestTASK2545:
         assert _decode_binding_id(element["id"]) == "root"
 
 
+SRC = 'flowchart TD\n    a["a < b & c"] --> b\n'
+
+
+def _find_textblock(node, text):
+    if isinstance(node, dict):
+        if node.get("type") == "TextBlock" and node.get("text") == text:
+            return node
+        for v in node.values():
+            found = _find_textblock(v, text)
+            if found:
+                return found
+    elif isinstance(node, list):
+        for v in node:
+            found = _find_textblock(v, text)
+            if found:
+                return found
+    return None
+
+
+class TestMermaidDiagramMonospaceTextBlock:
+    """FEAT-753: adaptive_cards renders MermaidDiagram source as a Monospace TextBlock, one degraded record."""
+
+    async def test_adaptive_cards_mermaid_monospace_textblock(self):
+        env = _envelope(Component(id="root", component="MermaidDiagram", source=SRC, diagramType="flowchart"))
+        art = await AdaptiveCardsRenderer().render(env)
+        card = json.loads(art.content)
+        block = _find_textblock(card["body"], SRC)
+        assert block is not None
+        assert block["fontType"] == "Monospace"
+        assert block["wrap"] is True
+        mermaid = [d for d in art.metadata["degraded"] if "Mermaid" in d.get("reason", "")]
+        assert len(mermaid) == 1
+        assert mermaid[0]["reason"] == "adaptive_cards has no Mermaid engine; source shown as monospace text"
+
+
 class TestHtmlDocumentDegradesToTextBlockAndOpenUrl:
     """FEAT-527: adaptive_cards cannot embed HtmlDocument — a TextBlock with
     the title, plus a top-level Action.OpenUrl when a srcUrl exists."""

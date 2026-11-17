@@ -26,10 +26,10 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "ai-parrot>=1.2.4",
+    "ai-parrot>=2.1.3",
     "opencv-python-headless>=4.8",
     "numpy",
-    "pillow>=12.3.0",
+    "pillow>=13.0.0",
     "rapidfuzz>=3.0",
 ]
 

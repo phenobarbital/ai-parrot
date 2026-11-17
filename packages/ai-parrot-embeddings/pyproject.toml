@@ -52,7 +52,7 @@ google = [
     # google-cloud-storage<=3.1.0 (e.g. navigator-api[google]). Keep this extra
     # to google-genai only; add a dedicated `vertex` extra if Vertex SDK use is
     # ever introduced.
-    "google-genai>=2.31.0",
+    "google-genai>=2.34.0",
 ]
 openai = [
     "openai==3.31.0",
@@ -91,7 +91,7 @@ reranker-llm = []  # uses existing LLM clients (anthropic/openai/etc.) declared 
 multimodal = [
     "uform>=3.1",
     "onnxruntime>=1.16",
-    "pillow>=12.3.0",
+    "pillow>=13.0.0",
 ]
 
 # Aggregator extra (TASK-1334/1335/1336)

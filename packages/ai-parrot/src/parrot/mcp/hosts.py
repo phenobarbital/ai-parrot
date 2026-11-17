@@ -48,8 +48,8 @@ class HostAdapter(Protocol):
     def inspect(self, root: Path, names: Sequence[str]) -> dict[str, HostEntryState]:
         """Per-toolkit entry state. Reads config files only; imports no toolkit."""
 
-    def reconcile(self, root: Path) -> tuple[list[str], list[str]]:
-        """Rewrite ONLY this host's `parrot-<name>` entries. Returns (actions, warnings)."""
+    def reconcile(self, root: Path, *, portable: bool | None = None) -> tuple[list[str], list[str]]:
+        """Reconcile managed toolkit entries, forwarding the caller's tri-state form."""
 
     def sync_approvals(self, root: Path, removed: Sequence[str] = ()) -> Optional[str]:
         """Claude Code only; returns None elsewhere."""
@@ -92,10 +92,11 @@ class ClaudeAdapter:
             )
         return states
 
-    def reconcile(self, root: Path) -> tuple[list[str], list[str]]:
+    def reconcile(self, root: Path, *, portable: bool | None = None) -> tuple[list[str], list[str]]:
+        """Reconcile managed toolkit entries, forwarding the caller's tri-state form."""
         from parrot.knowledge.wiki.claude_code.installer import reconcile_toolkit_entries
 
-        return reconcile_toolkit_entries(root)
+        return reconcile_toolkit_entries(root, portable=portable)
 
     def sync_approvals(self, root: Path, removed: Sequence[str] = ()) -> Optional[str]:
         from parrot.knowledge.wiki.claude_code.installer import (
@@ -164,10 +165,11 @@ class CodexAdapter:
             )
         return states
 
-    def reconcile(self, root: Path) -> tuple[list[str], list[str]]:
+    def reconcile(self, root: Path, *, portable: bool | None = None) -> tuple[list[str], list[str]]:
+        """Reconcile managed toolkit entries, forwarding the caller's tri-state form."""
         from parrot.knowledge.wiki.codex.installer import reconcile_toolkit_tables
 
-        return reconcile_toolkit_tables(root)
+        return reconcile_toolkit_tables(root, portable=portable)
 
     def sync_approvals(self, root: Path, removed: Sequence[str] = ()) -> Optional[str]:
         return None
@@ -216,10 +218,11 @@ class GoogleAdapter:
             )
         return states
 
-    def reconcile(self, root: Path) -> tuple[list[str], list[str]]:
+    def reconcile(self, root: Path, *, portable: bool | None = None) -> tuple[list[str], list[str]]:
+        """Reconcile managed toolkit entries, forwarding the caller's tri-state form."""
         from parrot.knowledge.wiki.google.installer import reconcile_toolkit_entries
 
-        return reconcile_toolkit_entries(root, self._mcp_path)
+        return reconcile_toolkit_entries(root, self._mcp_path, portable=portable)
 
     def sync_approvals(self, root: Path, removed: Sequence[str] = ()) -> Optional[str]:
         return None

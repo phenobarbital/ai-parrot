@@ -1,0 +1,312 @@
+[
+ {
+  "id": "c10",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/capabilities/models.py",
+  "name": "IntentRouterConfig",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c223",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/capabilities/models.py",
+  "name": "ResourceType",
+  "expected": "class ResourceType(str, Enum):",
+  "expected_line": 25
+ },
+ {
+  "id": "c224",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/capabilities/models.py",
+  "name": "CapabilityEntry",
+  "expected": "class CapabilityEntry(BaseModel):",
+  "expected_line": 48
+ },
+ {
+  "id": "c225",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/capabilities/registry.py",
+  "name": "CapabilityRegistry",
+  "expected": "class CapabilityRegistry:",
+  "expected_line": 19
+ },
+ {
+  "id": "c226",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/capabilities/registry.py",
+  "name": "build_index",
+  "expected": null,
+  "expected_line": 46
+ },
+ {
+  "id": "c227",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/capabilities/registry.py",
+  "name": "search",
+  "expected": "async def search(",
+  "expected_line": 183
+ },
+ {
+  "id": "c0",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "name": "BotMetadata",
+  "expected": null,
+  "expected_line": 50
+ },
+ {
+  "id": "c1",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "name": "__init__",
+  "expected": null,
+  "expected_line": 258
+ },
+ {
+  "id": "c2",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "name": "register",
+  "expected": "def register(self, name: str, factory: Type[AbstractBot], *, singleton=False, tags=None,",
+  "expected_line": 526
+ },
+ {
+  "id": "c3",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "name": "get_bot_instance",
+  "expected": "def get_bot_instance(self, name: str) -> Optional[AbstractBot]:",
+  "expected_line": 519
+ },
+ {
+  "id": "c4",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "name": "register_bot_decorator",
+  "expected": "def register_bot_decorator(self, name=..., *, tags=None, ...)",
+  "expected_line": 1324
+ },
+ {
+  "id": "c5",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "name": "list_agents",
+  "expected": "def list_agents(self) -> List[BotMetadata]:",
+  "expected_line": 1421
+ },
+ {
+  "id": "c6",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "name": "get_bots_by_tag",
+  "expected": "def get_bots_by_tag(self, tag: str) -> List[BotMetadata]:",
+  "expected_line": 1421
+ },
+ {
+  "id": "c7",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "name": "get_bots_by_tag",
+  "expected": "def get_bots_by_tag(self, tag: str) -> List[BotMetadata]:",
+  "expected_line": 1450
+ },
+ {
+  "id": "c8",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "name": "get_registration_info",
+  "expected": null,
+  "expected_line": 1459
+ },
+ {
+  "id": "c9",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "name": "AgentRegistry",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c15",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "name": "AgentRegistry",
+  "expected": "class AgentRegistry:  # Central registry for managing Bot/Agent discovery and registration",
+  "expected_line": 258
+ },
+ {
+  "id": "c16",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "name": "register_instance",
+  "expected": null,
+  "expected_line": 586
+ },
+ {
+  "id": "c17",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "name": "get_instance",
+  "expected": "async def get_instance(self, name, request)  # PBAC-guarded (enforce_agent_access)",
+  "expected_line": 659
+ },
+ {
+  "id": "c18",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "name": "register_bot_decorator",
+  "expected": "def register_bot_decorator(self, *, name=None, priority=0, dependencies=None,",
+  "expected_line": 1324
+ },
+ {
+  "id": "c19",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "name": "list_agents",
+  "expected": null,
+  "expected_line": 1421
+ },
+ {
+  "id": "c20",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "name": "get_bots_by_tag",
+  "expected": "def get_bots_by_tag(self, tag: str) -> List[BotMetadata]",
+  "expected_line": 1450
+ },
+ {
+  "id": "c195",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "name": "_collect_and_register_policies",
+  "expected": "def _collect_and_register_policies(  def register_db_bot_policies(",
+  "expected_line": 379
+ },
+ {
+  "id": "c196",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+  "name": "register_db_bot_policies",
+  "expected": null,
+  "expected_line": 379
+ },
+ {
+  "id": "c11",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/routing/embedding_router.py",
+  "name": "EmbeddingIntentRouter",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c12",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/registry/routing/store_router.py",
+  "name": "StoreRouter",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c173",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "name": "AuditLedgerEntry",
+  "expected": "class AuditLedgerEntry(BaseModel):",
+  "expected_line": 80
+ },
+ {
+  "id": "c174",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "name": "AbstractKMSSigner",
+  "expected": null,
+  "expected_line": 135
+ },
+ {
+  "id": "c175",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "name": "__init__",
+  "expected": "def __init__(self, signer: Optional[AbstractKMSSigner] = None, storage: Optional[Any] = None):",
+  "expected_line": 296
+ },
+ {
+  "id": "c176",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "name": "append",
+  "expected": "async def append(self, *, user_id: str, channel: str, tool: str, provider: str, credential_material: Any) -> AuditLedgerEntry:",
+  "expected_line": 338
+ },
+ {
+  "id": "c177",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "name": "verify",
+  "expected": "async def verify(self, entry_id: str) -> bool:",
+  "expected_line": 407
+ },
+ {
+  "id": "c178",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "name": "get_entry",
+  "expected": null,
+  "expected_line": 407
+ },
+ {
+  "id": "c179",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "name": "entry_count",
+  "expected": null,
+  "expected_line": 407
+ },
+ {
+  "id": "c180",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "line": 1
+ },
+ {
+  "id": "c181",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "name": "AuditLedgerEntry",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c182",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "name": "AbstractKMSSigner",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c183",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "name": "LocalHMACSigner",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c184",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "name": "AzureKeyVaultSigner",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c185",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+  "name": "AuditLedger",
+  "expected": "class AuditLedger: __init__(self, signer, storage); append(); verify(entry_id); get_entry(entry_id); entry_count()",
+  "expected_line": null
+ }
+]

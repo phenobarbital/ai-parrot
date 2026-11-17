@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-158 — Ontology Entity Extraction & Tool-Call Dispatch
 **Spec**: `sdd/specs/ontology-entity-extraction.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1071, TASK-1072, TASK-1073, TASK-1074, TASK-1075

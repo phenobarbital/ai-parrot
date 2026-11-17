@@ -124,8 +124,16 @@ from parrot.knowledge.wiki.runtime import (
     build_triage_adapters,
     persistence_for_project,
 )
+from parrot.knowledge.wiki.ledger.index import ClaimHeldByOther
 from parrot.knowledge.wiki.ledger.service import LedgerService, normalize_issue_id
 from parrot.knowledge.wiki.ledger.shared_log import SHARED_LOG_REL_PATH, shared_log_files
+from parrot.knowledge.wiki.ledger.outbox import (
+    LedgerDeliveryReport,
+    LedgerOutbox,
+    OutboxLockedError,
+    StrictLedgerReadError,
+)
+from parrot.knowledge.wiki.ledger.integration import IntegrationError, LedgerIntegrator
 from parrot.knowledge.wiki.ledger.fix_planner import FixPlan, Lane, plan_fix_batch
 from parrot.knowledge.wiki.ledger.events import IssueKind, IssueSeverity, IssueStatus
 from parrot.knowledge.wiki.schema.models import SchemaSourceConfig
@@ -140,6 +148,9 @@ logging.getLogger("aiosqlite").setLevel(logging.WARNING)
 # normal operation.  Default to INFO; --verbose restores DEBUG.
 logging.getLogger("parrot.knowledge.wiki.store").setLevel(logging.INFO)
 logging.getLogger("parrot.knowledge.wiki.sources").setLevel(logging.INFO)
+# Frontmatter parsing reports malformed YAML as a one-line WARNING naming
+# the file; keep its DEBUG chatter out of build output too.
+logging.getLogger("parrot.knowledge.wiki.entities").setLevel(logging.INFO)
 
 #: How long a `ns add`/`ns remove` waits for the global registry lock.
 REGISTRY_LOCK_WAIT_SECONDS = 5.0
@@ -1501,6 +1512,45 @@ def wiki(ctx: click.Context, verbose: bool) -> None:
         logging.getLogger("parrot.knowledge.wiki.sources").setLevel(logging.DEBUG)
 
 
+class _LazyMemoryGroup(click.Group):
+    """`memory` command that imports parrot.memory only when it is actually used."""
+
+    def __init__(self) -> None:
+        """Initialize the static command metadata and an unresolved command cache."""
+        super().__init__(name="memory", help="Operate on one explicitly configured agent-memory store.")
+        self._resolved: click.Group | None = None
+
+    def _real(self) -> click.Group:
+        """Import and cache the real memory group on its first invocation."""
+        if self._resolved is None:
+            from parrot.memory.dynamics.cli import register_memory_commands
+
+            holder = click.Group("memory-holder")
+            register_memory_commands(holder)
+            command = holder.commands["memory"]
+            if not isinstance(command, click.Group):
+                raise TypeError("memory command must be a Click group")
+            self._resolved = command
+        return self._resolved
+
+    def make_context(
+        self,
+        info_name: str | None,
+        args: list[str],
+        parent: click.Context | None = None,
+        **extra: Any,
+    ) -> click.Context:
+        """Delegate parsing to the real group after the `memory` command is selected."""
+        return self._real().make_context(info_name, args, parent=parent, **extra)
+
+    def invoke(self, ctx: click.Context) -> Any:
+        """Delegate invocation to the real group after lazy context construction."""
+        return self._real().invoke(ctx)
+
+
+wiki.add_command(_LazyMemoryGroup())
+
+
 @wiki.command()
 @click.option(
     "--config",
@@ -2673,6 +2723,22 @@ wiki.add_command(
         help="Manage typed wiki entities.",
     )
 )
+wiki.add_command(
+    LazyGroup(
+        name="spec",
+        import_path="parrot.knowledge.wiki.decisions.spec_cli",
+        attr="spec",
+        help="Decision audit for SDD specs: governing decisions and consequences.",
+    )
+)
+wiki.add_command(
+    LazyGroup(
+        name="decisions",
+        import_path="parrot.knowledge.wiki.decisions.spec_cli",
+        attr="decisions",
+        help="Publish approved decision batches into the decision plane.",
+    )
+)
 
 
 @wiki.group(name="symbols")
@@ -3219,6 +3285,33 @@ def _dedupe_slugs(plan: FixPlan, specs_dir: Path) -> None:
         seen.add(slug)
 
 
+@wiki.group(name="usage")
+def usage() -> None:
+    """Per-spec token and cost reporting."""
+
+
+@usage.command("report")
+@click.option("--feat", "feat_id", required=True, help="Feature id, e.g. FEAT-783.")
+@click.option("--by", type=click.Choice(["task", "model", "seat"]), default="task")
+@click.option("--format", "fmt", type=click.Choice(["markdown", "json"]), default="markdown")
+@click.option(
+    "--root", type=click.Path(path_type=Path), default=None, help="Durable usage root (default: main checkout)."
+)
+def usage_report(feat_id: str, by: str, fmt: str, root: Path | None) -> None:
+    """Render tokens and cost for one feature."""
+    from parrot.flows.dev_loop.usage_report import UsageReport, render_usage_markdown
+    from parrot.knowledge.wiki.usage_operations import UsageReportInput, op_usage_report
+
+    result = _run(op_usage_report(UsageReportInput(feat_id=feat_id, by=by), root=root))
+    if result.is_error:
+        raise click.ClickException(result.text)
+    data = result.data or {}
+    if fmt == "json":
+        click.echo(json.dumps(data, indent=2))
+        return
+    click.echo(render_usage_markdown(UsageReport.model_validate(data)))
+
+
 @wiki.group(name="ledger")
 def ledger() -> None:
     """Manage the SDD work ledger, discovered work, and spec graph."""
@@ -3466,22 +3559,33 @@ def ledger_acknowledge(issue_id: str, reason: str, actor: str) -> None:
 @click.option("--reason", required=True, help="Reason for closing.")
 @click.option("--actor", default="agent:cli", help="Actor closing the issue.")
 @click.option("--resolved-by", default=None, help="Evidence ref: commit:<sha> or task:TASK-<NNN>.")
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Close even when another actor holds the claim (deliberate hand-off, e.g. /sdd-done).",
+)
 @remote_cli.remote_aware(proxied=True, tool="ledger_close")
-def ledger_close(issue_id: str, reason: str, actor: str, resolved_by: str | None) -> None:
-    """Close an issue."""
+def ledger_close(issue_id: str, reason: str, actor: str, resolved_by: str | None, force: bool) -> None:
+    """Close an issue. A claimed issue closes only for its claimant unless --force."""
     remote = click.get_current_context().obj.get("remote")
     if remote is not None:
+        if force:
+            click.echo("--force is not supported with a remote ledger; close it locally", err=True)
+            raise SystemExit(1)
         arguments = {"issue_id": issue_id, "reason": reason, "resolved_by": resolved_by, "actor": actor}
         click.echo(remote_cli.call_remote_text(remote, "ledger_close", arguments, by=actor))
         return
     service = LedgerService.from_root()
     try:
-        success = _run(service.close_issue(issue_id, reason, actor, resolved_by=resolved_by))
+        success = _run(service.close_issue(issue_id, reason, actor, resolved_by=resolved_by, force=force))
         if success:
             click.echo(f"Closed {issue_id}")
         else:
             click.echo(f"Could not close {issue_id}")
             raise SystemExit(1)
+    except ClaimHeldByOther as exc:
+        click.echo(f"Could not close {issue_id}: claimed by {exc.claimed_by} (pass --force to override)", err=True)
+        raise SystemExit(1) from exc
     except WikiStoreBusy as exc:
         click.echo(f"Ledger index is busy ({exc.operation}); issue queued (index_pending)")
 
@@ -3536,18 +3640,42 @@ def ledger_plan_fix(kind: str | None, severity: str | None, lane: str | None, as
 @click.argument("issue_id")
 @click.option("--reason", required=True, help="Why the claim is being released.")
 @click.option("--actor", default="agent:cli", help="Actor releasing the claim.")
-def ledger_unclaim(issue_id: str, reason: str, actor: str) -> None:
-    """Release a claim so the issue returns to `ledger ready`."""
+@click.option("--force", is_flag=True, help="Release a claim held by another actor (e.g. a stale claim).")
+def ledger_unclaim(issue_id: str, reason: str, actor: str, force: bool) -> None:
+    """Release a claim so the issue returns to `ledger ready`. Only the claimant may release it unless --force."""
     service = LedgerService.from_root()
     try:
-        if _run(service.unclaim(issue_id, reason, actor)):
+        if _run(service.unclaim(issue_id, reason, actor, force=force)):
             click.echo(f"Unclaimed {issue_id}")
         else:
             click.echo(f"Could not unclaim {issue_id} (not claimed or unknown)")
             raise SystemExit(1)
+    except ClaimHeldByOther as exc:
+        click.echo(f"Could not unclaim {issue_id}: claimed by {exc.claimed_by} (pass --force to override)", err=True)
+        raise SystemExit(1) from exc
     except WikiStoreBusy as exc:
         click.echo(f"Ledger index is busy ({exc.operation}); cannot unclaim")
         raise SystemExit(2) from exc
+
+
+@ledger.command("retract-feedback")
+@click.argument("feedback_ids", nargs=-1, required=True)
+@click.option("--reason", required=True, help="Why the recorded correction is wrong (kept in the audit trail).")
+@click.option("--actor", default="agent:cli", help="Actor withdrawing the correction, e.g. human:jesus.")
+def ledger_retract_feedback(feedback_ids: tuple[str, ...], reason: str, actor: str) -> None:
+    """Withdraw misattributed coder feedback (`coder-feedback:<digest>` ids) from model lessons."""
+    from parrot.knowledge.wiki.ledger.coder_feedback import CoderFeedbackStore
+
+    store = CoderFeedbackStore.from_root(Path.cwd())
+    missing = 0
+    for feedback_id in feedback_ids:
+        if _run(store.retract(feedback_id, reason, actor)):
+            click.echo(f"Retracted {feedback_id}")
+        else:
+            click.echo(f"Could not retract {feedback_id} (unknown or already retracted)")
+            missing += 1
+    if missing:
+        raise SystemExit(1)
 
 
 @ledger.command("context")
@@ -3630,12 +3758,18 @@ def _git_toplevel(cwd: Path) -> Path:
 @click.option("--quiet", is_flag=True, default=False)
 @remote_cli.remote_aware(proxied=False)
 def ledger_export_log(repo_root: str | None, stage: bool, quiet: bool) -> None:
-    """Append this machine's shareable events to the committed shared ledger log."""
+    """Append shareable events to the committed log for explicit diagnostics only."""
+    if stage:
+        click.echo(
+            "export-log --stage is obsolete (FEAT-758): ledger events no longer travel in feature commits. "
+            "Re-run `parrot claude install` to upgrade the hooks; /sdd-done delivers events with "
+            "`wikitoolkit ledger outbox prepare|integrate`.",
+            err=True,
+        )
+        raise SystemExit(4)
     root = Path(repo_root) if repo_root else _git_toplevel(Path.cwd())
     try:
         report = _run(LedgerService.from_root().export_shared_log(root))
-        if stage and (report.added > 0 or report.created):
-            subprocess.run(["git", "-C", str(root), "add", "--", str(SHARED_LOG_REL_PATH)], check=True)
     except OSError as exc:
         raise click.ClickException(str(exc)) from exc
     if not quiet:
@@ -3643,6 +3777,250 @@ def ledger_export_log(repo_root: str | None, stage: bool, quiet: bool) -> None:
             click.echo(f"Exported {report.dest} (+{report.added} events)")
         else:
             click.echo(f"Exported {report.dest} (unchanged)")
+
+
+_OUTBOX_EXIT = {"delivered": 0, "already_delivered": 0, "pending": 2, "conflict": 3, "unsupported": 4}
+
+
+@ledger.group("outbox")
+def ledger_outbox() -> None:
+    """Local-only durable delivery of ledger events to origin/dev (FEAT-758)."""
+
+
+def _outbox_source(repo_root: str, ledger_dir: str | None) -> Path | None:
+    """Resolve the local journal directory, or ``None`` for a remote-only ledger."""
+    if ledger_dir:
+        return Path(ledger_dir).resolve()
+    if click.get_current_context().obj.get("remote") is not None:
+        return None
+    return Path(LedgerService.from_root(Path(repo_root)).log.path).parent
+
+
+def _outbox_branch(repo_root: str) -> str:
+    """Resolve the ledger delivery branch from ``sdd/config.json`` (``ledger_branch``, else ``base_branch``)."""
+    from parrot.sdd.config import SddConfigError, ledger_destination, load_sdd_config
+
+    try:
+        return ledger_destination(load_sdd_config(Path(repo_root)))
+    except SddConfigError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
+def _unsupported(json_output: bool, reason: str) -> None:
+    """Emit an unsupported-source result and exit with the documented code."""
+    payload = {"status": "unsupported", "error_code": reason}
+    if json_output:
+        click.echo(json.dumps(payload))
+    else:
+        click.echo(f"Unsupported ledger outbox source: {reason}", err=True)
+    raise SystemExit(4)
+
+
+def _emit_delivery_reports(reports: list[LedgerDeliveryReport], json_output: bool, repo_root: str) -> None:
+    """Render typed integration reports with durable recovery guidance."""
+    if json_output:
+        click.echo(json.dumps([report.model_dump(mode="json") for report in reports]))
+        return
+    for report in reports:
+        click.echo(
+            f"{report.batch_id}: {report.status} (added={report.added}, remaining={report.remaining}, "
+            f"attempts={report.attempts})"
+        )
+        if report.error_code:
+            click.echo(f"  error: {report.error_code}")
+        for conflict in report.conflicts:
+            click.echo(f"  conflict: {conflict.event_id} on {conflict.subject} ({conflict.reason})")
+        if report.skipped:
+            click.echo(f"  skipped redundant close(s): {', '.join(report.skipped)}")
+        if report.recovery_path:
+            click.echo(f"  recovery path: {report.recovery_path}")
+        if _OUTBOX_EXIT[report.status] != 0:
+            click.echo(
+                "  retry: wikitoolkit ledger outbox integrate " f"--repo-root {repo_root} --batch-id {report.batch_id}"
+            )
+
+
+@ledger_outbox.command("prepare")
+@click.option("--repo-root", required=True)
+@click.option("--ledger-dir", default=None)
+@click.option("--json", "json_output", is_flag=True, default=False)
+@remote_cli.remote_aware(proxied=True)
+def ledger_outbox_prepare(repo_root: str, ledger_dir: str | None, json_output: bool) -> None:
+    """Resolve local source, capture a batch, and report its durable location."""
+    source = _outbox_source(repo_root, ledger_dir)
+    if source is None:
+        _unsupported(json_output, "remote-only-ledger")
+    outbox = LedgerOutbox(source, branch=_outbox_branch(repo_root))
+    integrator = LedgerIntegrator(Path(repo_root), outbox)
+    try:
+        source_ref = subprocess.run(
+            ["git", "-C", repo_root, "rev-parse", "--abbrev-ref", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        source_head = subprocess.run(
+            ["git", "-C", repo_root, "rev-parse", "HEAD"], check=True, capture_output=True, text=True
+        ).stdout.strip()
+        known = _run(integrator.remote_event_ids())
+        batch = _run(
+            outbox.prepare(repo_root=Path(repo_root), source_ref=source_ref, source_head=source_head, known_ids=known)
+        )
+    except OutboxLockedError:
+        click.echo(
+            json.dumps({"status": "pending", "error_code": "outbox-locked"}) if json_output else "Outbox is locked."
+        )
+        raise SystemExit(2) from None
+    except StrictLedgerReadError as exc:
+        click.echo(
+            json.dumps({"status": "conflict", "error_code": "invalid-content"}) if json_output else str(exc),
+            err=not json_output,
+        )
+        raise SystemExit(3) from exc
+    except (OSError, subprocess.CalledProcessError) as exc:
+        click.echo(
+            json.dumps({"status": "pending", "error_code": "prepare-failed"}) if json_output else str(exc),
+            err=not json_output,
+        )
+        raise SystemExit(2) from exc
+    except IntegrationError as exc:
+        click.echo(
+            json.dumps({"status": "pending", "error_code": "remote-unavailable"}) if json_output else str(exc),
+            err=not json_output,
+        )
+        raise SystemExit(2) from exc
+    if batch is None:
+        payload = {"status": "no-op"}
+        click.echo(json.dumps(payload) if json_output else "Nothing to prepare.")
+        return
+    path = outbox.pending_dir / batch.batch_id
+    payload = {"status": "prepared", "batch": batch.model_dump(mode="json"), "path": str(path)}
+    click.echo(json.dumps(payload) if json_output else f"Prepared {batch.batch_id} at {path}")
+
+
+@ledger_outbox.command("status")
+@click.option("--repo-root", required=True)
+@click.option("--ledger-dir", default=None)
+@click.option("--json", "json_output", is_flag=True, default=False)
+@remote_cli.remote_aware(proxied=True)
+def ledger_outbox_status(repo_root: str, ledger_dir: str | None, json_output: bool) -> None:
+    """Show sealed/unsealed pending delivery without acknowledgement or pushes."""
+    source = _outbox_source(repo_root, ledger_dir)
+    if source is None:
+        _unsupported(json_output, "remote-only-ledger")
+    outbox = LedgerOutbox(source, branch=_outbox_branch(repo_root))
+    integrator = LedgerIntegrator(Path(repo_root), outbox)
+    remote_fresh = True
+    try:
+        known = _run(integrator.remote_event_ids())
+    except (IntegrationError, OSError):
+        known = set()
+        remote_fresh = False
+    try:
+        payload: dict[str, Any] = _run(outbox.status(known_ids=known))
+        batches = _run(outbox.pending())
+        payload["batches"] = [batch.model_dump(mode="json") for batch in batches]
+        payload["remote_fresh"] = remote_fresh
+        try:
+            payload["contaminated_paths"] = _run(integrator.check_feature_diff("HEAD"))
+        except (IntegrationError, OSError):
+            payload["contaminated_paths"] = []
+            payload["remote_fresh"] = False
+    except StrictLedgerReadError as exc:
+        click.echo(
+            json.dumps({"status": "conflict", "error_code": "invalid-content"}) if json_output else str(exc),
+            err=not json_output,
+        )
+        raise SystemExit(3) from exc
+    except OSError as exc:
+        click.echo(
+            json.dumps({"status": "pending", "error_code": "status-failed"}) if json_output else str(exc),
+            err=not json_output,
+        )
+        raise SystemExit(2) from exc
+    if json_output:
+        click.echo(json.dumps(payload))
+    else:
+        click.echo(
+            f"Pending: {payload['pending_batches']} batches, {payload['pending_events']} events; "
+            f"unsealed: {payload['unsealed_events']} (remote fresh: {payload['remote_fresh']})"
+        )
+        if payload["contaminated_paths"]:
+            click.echo("Legacy canonical ledger changes: " + ", ".join(payload["contaminated_paths"]), err=True)
+    if payload["contaminated_paths"]:
+        raise SystemExit(4)
+
+
+@ledger_outbox.command("integrate")
+@click.option("--repo-root", required=True)
+@click.option("--ledger-dir", default=None)
+@click.option("--batch-id", default=None)
+@click.option("--json", "json_output", is_flag=True, default=False)
+@remote_cli.remote_aware(proxied=True)
+def ledger_outbox_integrate(repo_root: str, ledger_dir: str | None, batch_id: str | None, json_output: bool) -> None:
+    """Deliver pending batches and map typed outcomes to documented exit codes."""
+    source = _outbox_source(repo_root, ledger_dir)
+    if source is None:
+        _unsupported(json_output, "remote-only-ledger")
+    outbox = LedgerOutbox(source, branch=_outbox_branch(repo_root))
+    try:
+        batches = _run(outbox.pending())
+    except StrictLedgerReadError as exc:
+        click.echo(json.dumps([]) if json_output else str(exc), err=not json_output)
+        raise SystemExit(3) from exc
+    except OSError as exc:
+        click.echo(json.dumps([]) if json_output else str(exc), err=not json_output)
+        raise SystemExit(2) from exc
+    if batch_id:
+        batches = [batch for batch in batches if batch.batch_id == batch_id]
+        if not batches:
+            try:
+                receipt = _run(outbox.receipt_for(batch_id))
+            except ValueError:  # malformed id (or a symlinked receipt) — report it as unknown
+                receipt = None
+            if receipt is not None:
+                # Already acknowledged: a retry of a delivered batch is a success, not a conflict.
+                report = LedgerDeliveryReport(
+                    status="already_delivered",
+                    batch_id=batch_id,
+                    attempts=0,
+                    remote_head=receipt.remote_head,
+                    commit_sha=None,
+                    added=0,
+                    remaining=0,
+                    skipped=receipt.skipped_event_ids,
+                )
+                _emit_delivery_reports([report], json_output, repo_root)
+                return
+            report = LedgerDeliveryReport(
+                status="conflict",
+                batch_id=batch_id,
+                attempts=0,
+                remote_head=None,
+                commit_sha=None,
+                added=0,
+                remaining=0,
+                error_code="unknown-batch",
+            )
+            _emit_delivery_reports([report], json_output, repo_root)
+            raise SystemExit(3)
+    if not batches:
+        click.echo(json.dumps([]) if json_output else "Nothing to integrate.")
+        return
+    integrator = LedgerIntegrator(Path(repo_root), outbox)
+    reports: list[LedgerDeliveryReport] = []
+    for batch in batches:
+        report = _run(integrator.integrate(batch))
+        reports.append(report)
+        # A conflicting batch needs review but must not hold later batches back; a batch that
+        # depends on one of its events reports its own missing-predecessor conflict. A pending
+        # report (I/O, lock, push) would hit every later batch too, so stop there.
+        if report.status == "pending":
+            break
+    _emit_delivery_reports(reports, json_output, repo_root)
+    exit_code = max(_OUTBOX_EXIT[report.status] for report in reports)
+    if exit_code:
+        raise SystemExit(exit_code)
 
 
 @ledger.command("import-log")
@@ -3691,7 +4069,16 @@ def ledger_rotate_log(repo_root: str | None, older_than_days: int, now: str | No
                 str(SHARED_LOG_REL_PATH),
                 *(str(path.relative_to(root)) for path in report.archives_touched),
             ]
-            subprocess.run(["git", "-C", str(root), "add", "--", *staged_paths], check=True)
+            try:
+                subprocess.run(
+                    ["git", "-C", str(root), "add", "--", *staged_paths],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+            except subprocess.CalledProcessError as exc:
+                click.echo(f"git add failed: {exc.stderr.strip()}", err=True)
+                raise SystemExit(1) from exc
     except (OSError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc
     if not quiet:
@@ -3832,25 +4219,58 @@ def _schema_service() -> "SchemaPlaneService":
     return SchemaPlaneService.from_root()
 
 
-def _changed_ddl_paths(root: Path, origin: str) -> list[Path]:
-    """Return configured DDL files touched by the merge leading to ``HEAD``."""
+#: Reflog subjects of operations whose changes span ``ORIG_HEAD..HEAD`` (the post-merge hook's case).
+_MERGE_REFLOG_PREFIXES: tuple[str, ...] = ("merge", "pull", "commit (merge)")
+
+
+def _git_changed_files(root: Path, diff_range: str | None) -> list[str]:
+    """Return the paths changed by the operation that last moved ``HEAD``.
+
+    The post-commit and post-merge hooks share one block, so the range is
+    inferred: after a merge or pull it is ``ORIG_HEAD..HEAD``; after anything
+    else (a plain commit) it is the last commit's own changes. ``ORIG_HEAD``
+    is only set by merge/reset/rebase/pull, so diffing it after a plain
+    commit would scan a stale range, or fail when it does not exist.
+
+    Args:
+        root: Repository root.
+        diff_range: Explicit ``git diff`` range (e.g. ``HEAD~3..HEAD``); ``None`` infers it.
+
+    Raises:
+        click.ClickException: git could not report the changed files.
+    """
+    try:
+        if diff_range:
+            cmd = ["git", "-C", str(root), "diff", "--name-only", diff_range]
+        else:
+            reflog = subprocess.run(
+                ["git", "-C", str(root), "reflog", "-1", "--format=%gs", "HEAD"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+            subject = reflog.stdout.strip() if reflog.returncode == 0 else ""
+            if subject.startswith(_MERGE_REFLOG_PREFIXES):
+                cmd = ["git", "-C", str(root), "diff", "--name-only", "ORIG_HEAD", "HEAD"]
+            else:
+                # --root also lists the files of a repository's first commit.
+                cmd = ["git", "-C", str(root), "diff-tree", "--no-commit-id", "--name-only", "-r", "--root", "HEAD"]
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=True)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise click.ClickException(f"Could not determine changed DDL files: {exc}") from exc
+    return proc.stdout.splitlines()
+
+
+def _changed_ddl_paths(root: Path, origin: str, diff_range: str | None = None) -> list[Path]:
+    """Return configured DDL files touched by the last ``HEAD`` move (or ``diff_range``)."""
     config = load_effective_config(root).config
     source = config.schema_plane.sources.get(origin)
     if source is None:
         raise click.UsageError(f"Unknown schema source {origin!r}.")
     if not source.ddl_paths:
         return []
-    try:
-        proc = subprocess.run(
-            ["git", "-C", str(root), "diff", "--name-only", "ORIG_HEAD", "HEAD"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=True,
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise click.ClickException(f"Could not determine changed DDL files: {exc}") from exc
-    changed = proc.stdout.splitlines()
+    changed = _git_changed_files(root, diff_range)
     return [
         root / path
         for path in changed
@@ -3929,17 +4349,32 @@ def schema_sync(origin: str, tables: str | None, changed: bool, as_json: bool) -
     help="SQL dialect; defaults to the source's configured dialect.",
 )
 @click.option("--changed", is_flag=True)
+@click.option(
+    "--range",
+    "diff_range",
+    default=None,
+    help="git range scanned by --changed (e.g. HEAD~3..HEAD); default: inferred from the last HEAD move.",
+)
 @click.option("--json", "as_json", is_flag=True)
 @click.option("--quiet", is_flag=True)
 def schema_ingest_ddl(
-    paths: tuple[Path, ...], origin: str | None, dialect: str | None, changed: bool, as_json: bool, quiet: bool
+    paths: tuple[Path, ...],
+    origin: str | None,
+    dialect: str | None,
+    changed: bool,
+    diff_range: str | None,
+    as_json: bool,
+    quiet: bool,
 ) -> None:
     """Fold SQL files into the schema plane without requiring a database.
 
-    With ``--changed`` and neither PATHS nor ``--origin`` (the post-merge
-    hook's invocation), every declared ``schema.sources`` entry is scanned
-    for DDL files touched by the merge, each ingested with its own dialect.
+    With ``--changed`` and neither PATHS nor ``--origin`` (the post-commit /
+    post-merge hook's invocation), every declared ``schema.sources`` entry is
+    scanned for DDL files touched by the last ``HEAD`` move, each ingested
+    with its own dialect. ``--range`` names the scanned range explicitly.
     """
+    if diff_range and not changed:
+        raise click.UsageError("--range requires --changed.")
     _refuse_in_linked_worktree(Path.cwd())
     root = find_shared_root(Path.cwd()) or Path.cwd().resolve()
     sources = load_effective_config(root).config.schema_plane.sources
@@ -3957,7 +4392,7 @@ def schema_ingest_ddl(
     for alias in origins:
         alias_files = files
         if not alias_files and changed:
-            alias_files = _changed_ddl_paths(root, alias)
+            alias_files = _changed_ddl_paths(root, alias, diff_range)
             if not alias_files:
                 continue
         alias_dialect = dialect or sources[alias].dialect

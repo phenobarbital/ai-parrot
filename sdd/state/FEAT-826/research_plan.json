@@ -1,0 +1,402 @@
+{
+  "schema_version": "1.0",
+  "mode_hint": "investigation",
+  "rationale": "Ticket text is feature-shaped (create two planograms) but its status is Reopened with no reason, the requested slug is a 'fix', and the attached backlit run scored 32% with 0 detections. Named entities: config rows 23/24 (epson_depot_ecotank_backlit / _not_backlit), FlowTask PlanogramCompliance, parrot_pipelines.planogram. The plan establishes what the current perceive/identify/compare cycle needs from these rows versus what exists.",
+  "queries": [
+    {
+      "id": "Q001",
+      "intent": "Orient: how a zone-only promotional endcap (graphics, no products) is modelled as a planogram type.",
+      "type": "wiki_query",
+      "priority": 0,
+      "params": {
+        "question": "planogram type endcap no shelves promotional graphic zones"
+      }
+    },
+    {
+      "id": "Q002",
+      "intent": "Orient: legacy-row migration to the perceive/identify/compare cycle (check_row, dead keys).",
+      "type": "wiki_query",
+      "priority": 0,
+      "params": {
+        "question": "planogram migration check_row legacy configuration row"
+      }
+    },
+    {
+      "id": "Q003",
+      "intent": "Locate the FlowTask PlanogramCompliance component that consumes the pipeline (flowtask namespace).",
+      "type": "wiki_query",
+      "priority": 0,
+      "params": {
+        "question": "PlanogramCompliance flowtask component planogram config"
+      }
+    },
+    {
+      "id": "Q004",
+      "intent": "Find how illumination / appearance (backlit ON vs OFF) is evaluated.",
+      "type": "wiki_query",
+      "priority": 0,
+      "params": {
+        "question": "planogram appearance rule illumination backlit"
+      }
+    },
+    {
+      "id": "Q005",
+      "intent": "API outline of the planogram type contract.",
+      "type": "wiki_page",
+      "priority": 0,
+      "params": {
+        "page_id": "file:packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/abstract.py"
+      }
+    },
+    {
+      "id": "Q006",
+      "intent": "Neighbours of the type contract: concrete types and their callers.",
+      "type": "wiki_related",
+      "priority": 0,
+      "params": {
+        "page_id": "file:packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/abstract.py"
+      }
+    },
+    {
+      "id": "Q007",
+      "intent": "Find where the compliance report (markdown, per-shelf status) is rendered.",
+      "type": "wiki_query",
+      "priority": 0,
+      "params": {
+        "question": "planogram compliance report markdown rendering shelf results"
+      }
+    },
+    {
+      "id": "Q008",
+      "intent": "Read the FlowTask PlanogramCompliance component page (result keys it expects).",
+      "type": "wiki_page",
+      "priority": 0,
+      "params": {
+        "page_id": "<top flowtask result of Q003>"
+      }
+    },
+    {
+      "id": "Q009",
+      "intent": "Prior SDD decisions on planogram config rows (appearance rule, refactor, new pipeline).",
+      "type": "wiki_query",
+      "priority": 0,
+      "params": {
+        "question": "planogram configuration row slots_definition layout_profile perception_mode"
+      }
+    },
+    {
+      "id": "Q010",
+      "intent": "Where the two config names are referenced in the repo (scripts, tests, examples, docs).",
+      "type": "grep",
+      "priority": 1,
+      "params": {
+        "pattern": "epson_depot_ecotank_(not_)?backlit",
+        "path": ".",
+        "case_sensitive": true,
+        "max_results": 40
+      }
+    },
+    {
+      "id": "Q011",
+      "intent": "Local apply script holding the rewritten backlit row (new-cycle candidate config).",
+      "type": "read",
+      "priority": 1,
+      "params": {
+        "path": "artifacts/apply_epson_backlit.py",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q012",
+      "intent": "Local apply script holding the rewritten not-backlit row.",
+      "type": "read",
+      "priority": 1,
+      "params": {
+        "path": "artifacts/apply_epson_not_backlit.py",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q013",
+      "intent": "Store photos and reference images available for the two planograms.",
+      "type": "tree",
+      "priority": 1,
+      "params": {
+        "path": "examples/planogram/images/epson_depot_ecotank_backlit_planogram_config examples/planogram/images/epson_depot_ecotank_not_backlit_planogram_config",
+        "max_depth": 3
+      }
+    },
+    {
+      "id": "Q014",
+      "intent": "Pipeline entrypoint: stages, result keys, report rendering.",
+      "type": "read",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/plan.py",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q015",
+      "intent": "Planogram type used for graphics-only endcaps.",
+      "type": "read",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/endcap_no_shelves_promotional.py",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q016",
+      "intent": "Planogram type registry and how a row selects its type.",
+      "type": "grep",
+      "priority": 1,
+      "params": {
+        "pattern": "planogram_type|PLANOGRAM_TYPES|_TYPE_REGISTRY|register_type",
+        "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram",
+        "case_sensitive": true,
+        "max_results": 30
+      }
+    },
+    {
+      "id": "Q017",
+      "intent": "Rule kinds available to a zone: presence, text, visual, appearance, illumination.",
+      "type": "read",
+      "priority": 2,
+      "params": {
+        "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/rules.py",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q018",
+      "intent": "Presence evaluation \u2014 maps to 'graphic is present'.",
+      "type": "read",
+      "priority": 2,
+      "params": {
+        "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/presence.py",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q019",
+      "intent": "Scoring and thresholds \u2014 how zone results roll up to overall compliance.",
+      "type": "read",
+      "priority": 2,
+      "params": {
+        "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/scoring.py",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q020",
+      "intent": "Reference images \u2014 maps to 'top graphic is correct image'.",
+      "type": "read",
+      "priority": 2,
+      "params": {
+        "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/identification/references.py",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q021",
+      "intent": "Legacy-row migration rules (what is dead, what check_row validates).",
+      "type": "read",
+      "priority": 2,
+      "params": {
+        "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/migration.py",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q022",
+      "intent": "perception_mode / llm_detector handling for zone-only rows.",
+      "type": "grep",
+      "priority": 2,
+      "params": {
+        "pattern": "perception_mode|llm_detector",
+        "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram",
+        "case_sensitive": true,
+        "max_results": 30
+      }
+    },
+    {
+      "id": "Q023",
+      "intent": "Illumination / backlit / appearance handling across the cycle.",
+      "type": "grep",
+      "priority": 2,
+      "params": {
+        "pattern": "illumination|backlit|appearance",
+        "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram",
+        "case_sensitive": false,
+        "max_results": 40
+      }
+    },
+    {
+      "id": "Q024",
+      "intent": "Result contract consumed downstream (FlowTask writes it to epson.compliance_photo_reports).",
+      "type": "grep",
+      "priority": 2,
+      "params": {
+        "pattern": "compliance_analysis|overall_compliant|overlay_path|rendered_image",
+        "path": "packages/ai-parrot-pipelines/src",
+        "case_sensitive": true,
+        "max_results": 30
+      }
+    },
+    {
+      "id": "Q025",
+      "intent": "Existing tests for the planogram cycle.",
+      "type": "glob",
+      "priority": 3,
+      "params": {
+        "pattern": "packages/ai-parrot-pipelines/tests/planogram_cycle/**/*.py"
+      }
+    },
+    {
+      "id": "Q026",
+      "intent": "E2E harness the user runs per config_name.",
+      "type": "read",
+      "priority": 3,
+      "params": {
+        "path": "examples/planogram/e2e/README.md",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q027",
+      "intent": "Migration skill: export/convert/review/apply/preflight procedure for troc.planograms_configurations.",
+      "type": "read",
+      "priority": 3,
+      "params": {
+        "path": ".claude/skills/planogram-migrate/SKILL.md",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q028",
+      "intent": "Zone selector validation that check_row skips.",
+      "type": "grep",
+      "priority": 3,
+      "params": {
+        "pattern": "validate_zone_selectors",
+        "path": "packages/ai-parrot-pipelines",
+        "case_sensitive": true,
+        "max_results": 20
+      }
+    },
+    {
+      "id": "Q029",
+      "intent": "Recent changes to the planogram cycle (regressions / unreleased fixes).",
+      "type": "git_log",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/",
+        "since": "2026-10-01",
+        "max_results": 40
+      }
+    },
+    {
+      "id": "Q030",
+      "intent": "Commits mentioning the EcoTank / backlit planograms on any branch.",
+      "type": "git_log",
+      "priority": 1,
+      "params": {
+        "path": ".",
+        "grep": "ecotank|backlit",
+        "all": true,
+        "max_results": 30
+      }
+    },
+    {
+      "id": "Q031",
+      "intent": "What planogram work is on dev but not yet on main (prod pending).",
+      "type": "git_log",
+      "priority": 2,
+      "params": {
+        "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/",
+        "range": "origin/main..origin/dev",
+        "max_results": 40
+      }
+    },
+    {
+      "id": "Q032",
+      "intent": "History of the migration module.",
+      "type": "git_log",
+      "priority": 2,
+      "params": {
+        "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/migration.py",
+        "since": "2026-08-01",
+        "max_results": 20
+      }
+    },
+    {
+      "id": "Q033",
+      "intent": "History of the graphics-only endcap type.",
+      "type": "git_log",
+      "priority": 2,
+      "params": {
+        "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/endcap_no_shelves_promotional.py",
+        "since": "2026-06-01",
+        "max_results": 20
+      }
+    },
+    {
+      "id": "Q034",
+      "intent": "E2E harness history.",
+      "type": "git_log",
+      "priority": 3,
+      "params": {
+        "path": "examples/planogram/e2e/",
+        "since": "2026-09-01",
+        "max_results": 20
+      }
+    },
+    {
+      "id": "Q035",
+      "intent": "Timeline of planogram specs.",
+      "type": "git_log",
+      "priority": 3,
+      "params": {
+        "path": "sdd/specs/",
+        "grep_path": "planogram-*.spec.md",
+        "since": "2026-08-01",
+        "max_results": 20
+      }
+    }
+  ],
+  "expected_findings": [
+    "Which planogram type and rule kinds cover the four ticket components (top present, top correct image, middle present, bottom present) plus the backlit ON/OFF distinction",
+    "State of the rewritten rows for ids 23/24 (local apply scripts, photos, references) versus the legacy rows in the ticket logs",
+    "Migration/validation gaps (check_row vs validate_zone_selectors, dead keys)",
+    "Downstream contract: what FlowTask PlanogramCompliance reads from the pipeline result",
+    "What is merged on dev but unreleased to main",
+    "Existing test and e2e coverage for these two planograms"
+  ],
+  "meta": {
+    "source_signals": {
+      "named_entities": [
+        "Epson360",
+        "Office Depot",
+        "EcoTank End Cap Backlit",
+        "EcoTank End Cap Not Backlit",
+        "planogram_id 23/24",
+        "PlanogramCompliance",
+        "epson.compliance_photo_reports"
+      ],
+      "verbs": [
+        "create",
+        "rename",
+        "reopened",
+        "fix"
+      ],
+      "polarity": "mixed"
+    },
+    "estimated_budget_use": {
+      "wiki_queries": 9,
+      "files_read": 11,
+      "grep_calls": 9,
+      "git_calls": 7
+    }
+  }
+}

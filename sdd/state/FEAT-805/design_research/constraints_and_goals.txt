@@ -1,0 +1,39 @@
+### 2.2 Constraints Discovered
+
+- **Trusted reads come from the primary checkout.** `load_launch_config` reads only the primary
+  checkout because the sandboxed session can write its own worktree copy, and the modes `off` / `legacy`
+  cannot be set from a file at all.
+  *Implication*: the `sdd/config.json` reader for sandbox policy, runner settings and the worktree setup
+  command must resolve the primary checkout. A command that runs on the host must never be taken from a
+  branch a sandboxed session can write.
+  *Evidence*: F001, F002
+
+- **`SddConfig` forbids unknown keys, and `ensure_worktree` imports its helpers by file path.**
+  *Implication*: every new key is a model change, an older parrot rejects a config that carries one, and
+  the shared reader has to stay importable with stdlib + pydantic only.
+  *Evidence*: F004, F003
+
+- **ai-parrot uses the pyproject tables and tracks `.parrot/test_runners.toml`.**
+  *Implication*: both stay as fallbacks. ai-parrot must keep working with no migration.
+  *Evidence*: F002, F003, F006
+
+- **`.parrot/` is git-ignored in target repositories and becomes the worktree root under FEAT-802.**
+  *Implication*: committed configuration cannot live there; runner settings need a committed home.
+  *Evidence*: F006, F016
+
+- **A sandboxed session cannot reach a package registry or write a user-level package store.**
+  *Implication*: dependency setup runs on the host at worktree creation, before the session starts.
+  *Evidence*: F002, F011
+
+- **Formatting and auto-fixable lint are engine-owned by design.**
+  *Implication*: a toolchain profile has to plug into the engine lint pass, not only into prompt text.
+  *Evidence*: F010
+
+- **FEAT-802 and FEAT-804 are approved and edit the installer, the worktree root and the install-root
+  resolver.**
+  *Implication*: this work sequences after them and rebases on their result.
+  *Evidence*: F016
+
+- **Every shipped prompt has host twins** (`claude/`, `agent/`, `agents/`, `codex/`).
+  *Implication*: each prompt change lands in all copies and passes the existing asset-sync checks.
+  *Evidence*: F012, F014

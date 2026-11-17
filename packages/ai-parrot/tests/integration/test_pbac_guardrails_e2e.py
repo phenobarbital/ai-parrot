@@ -7,7 +7,7 @@ with a frozen `Environment` clock, verifying:
 - Business-hours DENY: outside the window -> forbidden; inside -> passes.
 - Per-policy `enforcement: fail_open` downgrade on an engine error
   (constructed directly on a `ResourcePolicy`, per the documented
-  navigator-auth YAML-loader gap — see docs/security/pbac-guardrails.md).
+  navigator-auth YAML-loader gap — see wiki/security/pbac-guardrails.md).
 - Telemetry never carries content/tool arguments.
 - `UserInfo`/`UserProfileKB` KB regression (unchanged, still importable
   and structurally intact with the feature enabled).

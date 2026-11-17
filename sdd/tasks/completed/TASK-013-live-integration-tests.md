@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-250 — Dev-Loop Refactor
 **Spec**: `sdd/specs/dev-loop-refactor.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-010, TASK-012

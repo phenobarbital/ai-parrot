@@ -11,7 +11,7 @@ FEAT-450 merge), it does not give a namespace its own storage plane. A
 second toolkit instance is mandatory for a genuinely separate plane.
 
 Namespace **registration** (``wikitoolkit ns add``) is an explicit
-operator runbook step (see ``docs/business-automation-runbook.md``), never
+operator runbook step (see ``wiki/operations/business-automation-runbook.md``), never
 agent code (FEAT-452 TASK-2382 non-scope) — an unregistered plane silently
 accumulates knowledge nobody can retrieve via ``wikitoolkit query``.
 """

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-569 — wikitoolkit remote (Streamable HTTP) MCP
 **Spec**: `sdd/specs/wikitoolkit-http-mcp.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3355, TASK-3361, TASK-3363, TASK-3364, TASK-3365, TASK-3366

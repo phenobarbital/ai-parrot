@@ -2,11 +2,29 @@
 # The wheel itself is built by maturin (see pyproject.toml [build-system]);
 # these targets cover local development loops.
 
-.PHONY: build-rust test test-python cargo-test bench clean
+.PHONY: build-rust build-rust-wheel test test-python cargo-test bench clean
 
 # Compile the Rust extension into the active venv (release profile).
 build-rust:
 	uv run --with maturin maturin develop --release
+
+# Build the Rust extension as a wheel and unpack ONLY its .so into src/,
+# installing nothing into the active environment (FEAT-722). `maturin develop`
+# would reinstall navrules into the SHARED venv, which worktree agents must
+# never mutate; `--locked` guarantees an automated build never rewrites
+# rust/Cargo.lock. Recipe lines are TAB-indented; `$$` is a literal `$`.
+build-rust-wheel:
+	@set -e; \
+		tmp=$$(mktemp -d); \
+		trap 'rm -rf "$$tmp"' EXIT; \
+		uv run --no-sync --with maturin maturin build --release --locked --out "$$tmp"; \
+		uv run --no-sync python -c 'import glob,sys,zipfile;\
+wheels = sorted(glob.glob(sys.argv[1] + "/*.whl"));\
+sys.exit("build-rust-wheel: maturin produced no wheel in " + sys.argv[1]) if not wheels else None;\
+z = zipfile.ZipFile(wheels[-1]);\
+members = [n for n in z.namelist() if n.endswith(".so")];\
+sys.exit("build-rust-wheel: no .so inside " + wheels[-1]) if not members else None;\
+[z.extract(n, sys.argv[2]) for n in members]' "$$tmp" src
 
 # Full Python suite (builds the extension via the maturin backend).
 test:

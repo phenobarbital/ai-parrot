@@ -54,6 +54,7 @@ from parrot.flows.dev_loop.models.telemetry import (
     TurnUsage,
 )
 from parrot.flows.dev_loop.dispatchers.claude import ClaudeCodeDispatcher
+from parrot.flows.dev_loop.experience import ExperienceInterceptor
 from parrot.flows.dev_loop.models import DispatchEvent, DispatchLabels, LLMCodeDispatchProfile
 from parrot.flows.dev_loop.session_state import SessionHost
 from parrot.flows.dev_loop.worktree_environment import command_policy_error, protected_argv, validate_write_path
@@ -365,6 +366,7 @@ class LLMCodeDispatcher:
                 profile.timeout_seconds,
             )
             policy = self._observational_policy(profile)
+            interceptor = ExperienceInterceptor(session=run_id, cwd=cwd, seat=profile.llm)
             scope = None
             if policy is not None:
                 try:
@@ -592,6 +594,9 @@ class LLMCodeDispatcher:
                                 cwd=cwd,
                                 profile=profile,
                             )
+                            advice = await interceptor.after(tool_name, tool_args, tool_result)
+                            if advice:
+                                tool_result = {**tool_result, "experience_advice": advice}
                             if tool_result.get("ok") is False:
                                 self.logger.warning(
                                     "%s turn %d: %s failed: %s",
@@ -2211,7 +2216,7 @@ class LLMCodeDispatcher:
             process = await asyncio.create_subprocess_exec(
                 *argv,
                 cwd=cwd,
-                stdin=asyncio.subprocess.PIPE if stdin is not None else None,
+                stdin=asyncio.subprocess.PIPE if stdin is not None else asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 limit=8 * 1024 * 1024,

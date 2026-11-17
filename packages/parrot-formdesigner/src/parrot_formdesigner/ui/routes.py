@@ -21,10 +21,10 @@ from aiohttp import web
 # HARD navigator-auth import — same policy as api/routes.py.
 from navigator_auth.decorators import is_authenticated, user_session
 
+from ..core.tenant import requires_tenant
 from ..services.registry import FormRegistry
 from .handlers import FormPageHandler
 from .telegram import TelegramWebAppHandler
-from ..api.tenant import requires_tenant
 
 
 logger = logging.getLogger(__name__)

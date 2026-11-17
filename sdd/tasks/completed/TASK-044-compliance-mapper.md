@@ -2,7 +2,7 @@
 
 **Feature**: Security Toolkits Suite
 **Spec**: `sdd/specs/compliancereport-toolkit.spec.md`
-**Status**: in-progress
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-032

@@ -3,7 +3,7 @@ Cardinality): YAML -> extract -> resolve -> render -> validate, plus
 persisted-schema backward compatibility.
 
 ``RELATIONAL_YAML`` is the SAME fixture referenced by the "Relational
-Fields" docs page (``docs/formdesigner-relational-fields.md``) — keep the
+Fields" docs page (``wiki/outputs/formdesigner-relational-fields.md``) — keep the
 two in sync.
 """
 

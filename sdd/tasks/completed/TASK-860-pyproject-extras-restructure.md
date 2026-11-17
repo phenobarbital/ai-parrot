@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-124 — Claude SDK Migration & ClaudeAgentClient
 **Spec**: `sdd/specs/claude-sdk-migration.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

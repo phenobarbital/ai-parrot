@@ -8,6 +8,8 @@ discover/post to swarm channels.
 """
 
 import logging
+import uuid
+from contextvars import ContextVar
 from typing import Any, Dict, List, Optional
 
 from parrot.tools import AbstractToolkit
@@ -19,6 +21,10 @@ from .registry import MatrixCrewRegistry
 from .tunnel import TunnelRegistry
 
 logger = logging.getLogger(__name__)
+
+# PermissionContext of the tool call in flight, captured by ``_pre_execute``. Task-local, so concurrent
+# calls on the shared toolkit never see each other's caller.
+_CALL_PCTX: ContextVar[Any] = ContextVar("swarm_toolkit_call_pctx", default=None)
 
 
 class AgentSwarmToolkit(AbstractToolkit):
@@ -48,7 +54,18 @@ class AgentSwarmToolkit(AbstractToolkit):
         self._registry = registry
         self._channels = channels
         self._as = appservice
+        self._endpoint = kwargs.pop("endpoint", None)  # FEAT-747: optional RoostEndpoint — ask_agent becomes a Request
         super().__init__(**kwargs)
+
+    async def _pre_execute(self, tool_name: str, /, **kwargs: Any) -> None:
+        """Capture the call's ``PermissionContext`` so a Roost query runs under this caller's authority.
+
+        Args:
+            tool_name: Name of the tool about to be executed.
+            **kwargs: Tool arguments plus ``_permission_context`` (always injected, possibly ``None``).
+        """
+        await super()._pre_execute(tool_name, **kwargs)
+        _CALL_PCTX.set(kwargs.get("_permission_context"))
 
     async def ask_agent(
         self,
@@ -86,6 +103,8 @@ class AgentSwarmToolkit(AbstractToolkit):
 
         tunnel = await self._tunnels.get_or_create(self._agent_name, agent)
         await self._maybe_echo(agent)
+        if self._endpoint is not None:
+            return await self._ask_via_roost(agent, question, expected_schema=expected_schema, timeout=timeout)
         ans = await tunnel.ask(
             self._agent_name,
             agent,
@@ -96,6 +115,71 @@ class AgentSwarmToolkit(AbstractToolkit):
             origin_session=ctx.current_session.get(),
         )
         return ans.model_dump()
+
+    async def _ask_via_roost(
+        self,
+        agent: str,
+        question: str,
+        *,
+        expected_schema: Optional[Dict[str, Any]] = None,
+        timeout: Optional[float] = None,
+    ) -> dict:
+        """Route ``ask_agent`` through the Roost endpoint (FEAT-747 M12b).
+
+        Args:
+            agent: Name of the peer agent to ask.
+            question: The question text.
+            expected_schema: Optional JSON Schema the answer must satisfy.
+            timeout: Optional timeout override in seconds.
+
+        Returns:
+            The ``AgentAnswer`` envelope as a plain dict on success, or a
+            ``{"status": ...}`` dict mapped to FEAT-463 status strings. Both carry the
+            Roost ``conversation_id`` (``metadata["conversation_id"]`` on success) whenever a
+            conversation was opened, so the outcome can be matched to the Roost audit ledger.
+        """
+        from parrot.auth.context import _pctx_var
+        from parrot.roost.endpoint import RoostFailure
+        from parrot.roost.grant import GrantDenied
+        from parrot.roost.messages import AgentAddress
+        from parrot.roost.performatives import FailureCode
+
+        from ..events import AgentAnswer
+
+        status_map = {
+            FailureCode.HOP_LIMIT: "hop_limit",
+            FailureCode.TIMEOUT: "timeout",
+            FailureCode.POLICY: "refused",
+            FailureCode.SCHEMA: "schema_error",
+        }
+        # Bind the call's authority for this query only; with none, keep any ambient request context.
+        pctx = _CALL_PCTX.get()
+        token = _pctx_var.set(pctx) if pctx is not None else None
+        # Minted here, never taken from tool arguments: the id only correlates this call with the audit ledger.
+        conversation_id = uuid.uuid4().hex
+        try:
+            result = await self._endpoint.query(
+                question,
+                receiver=AgentAddress(name=agent),
+                timeout=timeout,
+                expected_schema=expected_schema,
+                hops=ctx.current_hops.get(),
+                conversation_id=conversation_id,
+            )
+        except RoostFailure as exc:
+            status = status_map.get(exc.failure.code, "error")
+            logger.debug("Roost ask_agent %s -> %s failed: %s", self._agent_name, agent, exc)
+            return {"status": status, "detail": exc.failure.detail, "conversation_id": conversation_id}
+        except GrantDenied as exc:
+            logger.debug("Roost ask_agent %s -> %s outside grant: %s", self._agent_name, agent, exc)
+            return {"status": "refused", "detail": f"grant denied: {exc}"}
+        finally:
+            if token is not None:
+                _pctx_var.reset(token)
+        return AgentAnswer(
+            answer=result,
+            metadata={"via": "roost", "status": "ok", "conversation_id": conversation_id},
+        ).model_dump()
 
     async def send_feedback(
         self,

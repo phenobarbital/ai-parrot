@@ -204,6 +204,13 @@ class SlashCommandDispatcher:
                 "[--clone-from <name>] [--category <dir>]",
                 _cmd_create_agent,
             ),
+            SlashCommand(
+                "connect",
+                "Connect a provider for this login. Usage: /connect <provider> [--paste|--device]",
+                _cmd_connect,
+            ),
+            SlashCommand("connections", "List this login's provider connections.", _cmd_connections),
+            SlashCommand("disconnect", "Disconnect a provider. Usage: /disconnect <provider>", _cmd_disconnect),
             SlashCommand("help", "List all available slash commands.", _cmd_help),
             SlashCommand("quit", "Exit the REPL.", _cmd_quit),
         ]
@@ -390,6 +397,101 @@ async def _cmd_quit(ctx: "CommandContext", args: str) -> None:  # noqa: ARG001
     """
     ctx.renderer.print("[dim]Goodbye.[/dim]")
     raise SystemExit(0)
+
+
+async def _cmd_connect(ctx: "CommandContext", args: str) -> None:
+    """Handle /connect with the terminal suspended for interactive prompts."""
+    tokens = args.split()
+    providers = [token for token in tokens if not token.startswith("--")]
+    unknown_options = [token for token in tokens if token.startswith("--") and token not in {"--paste", "--device"}]
+    if len(providers) != 1 or unknown_options:
+        ctx.renderer.print("[yellow]Usage:[/yellow] /connect <provider> [--paste|--device]")
+        return
+
+    import click
+
+    from parrot.auth.oauth2.local_cache import open_connection_cache
+    from parrot.auth.oauth2.remote_client import NotLoggedIn, ServerConnectionsClient
+    from parrot.cli.connect import ConnectFailed, run_connect
+    from parrot.cli.login import LoginStore
+
+    store = LoginStore()
+    if await asyncio.to_thread(store.load_optional) is None:
+        ctx.renderer.print("[yellow]Not logged in — run `parrot login`[/yellow]")
+        return
+    cache = await asyncio.to_thread(open_connection_cache, store)
+    try:
+        with ctx.suspend():
+            async with ServerConnectionsClient(store) as client:
+                result = await run_connect(
+                    client,
+                    cache,
+                    providers[0],
+                    scopes=None,
+                    open_browser=True,
+                    paste="--paste" in tokens,
+                    device="--device" in tokens,
+                    prompt=lambda text: click.prompt(text, err=True),
+                    echo=lambda text: click.echo(text, err=True),
+                )
+    except NotLoggedIn:
+        ctx.renderer.print("[yellow]Not logged in — run `parrot login`[/yellow]")
+        return
+    except ConnectFailed as exc:
+        ctx.renderer.print(f"[red]Connection failed:[/red] {exc}")
+        return
+    ctx.renderer.print(f"[green]Connected {result['provider']} as {result['account_id'] or '-'}.[/green]")
+
+
+async def _cmd_connections(ctx: "CommandContext", args: str) -> None:  # noqa: ARG001
+    """Handle /connections by listing remote provider descriptors."""
+    from parrot.auth.oauth2.remote_client import NotLoggedIn, ServerConnectionsClient
+    from parrot.cli.login import LoginStore
+
+    store = LoginStore()
+    if await asyncio.to_thread(store.load_optional) is None:
+        ctx.renderer.print("[yellow]Not logged in — run `parrot login`[/yellow]")
+        return
+    try:
+        async with ServerConnectionsClient(store) as client:
+            rows = await client.list()
+    except NotLoggedIn:
+        ctx.renderer.print("[yellow]Not logged in — run `parrot login`[/yellow]")
+        return
+    ctx.renderer.print("[bold]Provider  Status  Account  Scopes  Expires[/bold]")
+    for row in rows:
+        scopes = ", ".join(row.get("scopes_granted") or []) or "-"
+        ctx.renderer.print(
+            f"{row.get('provider') or '-'}  {row.get('status') or '-'}  "
+            f"{row.get('account_id') or row.get('display_account_name') or '-'}  {scopes}  "
+            f"{row.get('expires_at') or '-'}"
+        )
+
+
+async def _cmd_disconnect(ctx: "CommandContext", args: str) -> None:
+    """Handle /disconnect by removing the remote and local connection."""
+    provider = args.strip()
+    if not provider or len(provider.split()) != 1:
+        ctx.renderer.print("[yellow]Usage:[/yellow] /disconnect <provider>")
+        return
+
+    from parrot.auth.oauth2.local_cache import open_connection_cache
+    from parrot.auth.oauth2.remote_client import NotLoggedIn, ServerConnectionsClient
+    from parrot.cli.login import LoginStore
+
+    store = LoginStore()
+    if await asyncio.to_thread(store.load_optional) is None:
+        ctx.renderer.print("[yellow]Not logged in — run `parrot login`[/yellow]")
+        return
+    cache = await asyncio.to_thread(open_connection_cache, store)
+    try:
+        async with ServerConnectionsClient(store) as client:
+            await client.disconnect(provider)
+    except NotLoggedIn:
+        ctx.renderer.print("[yellow]Not logged in — run `parrot login`[/yellow]")
+        return
+    await cache.delete(provider)
+    ctx.renderer.print(f"[green]Disconnected {provider}.[/green]")
 
 
 def _parse_create_agent_args(args: str) -> Dict[str, Any]:

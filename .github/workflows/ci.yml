@@ -6,7 +6,34 @@ on:
   pull_request:
     branches: [main, dev]
 
+# A new revision replaces older work for this PR/branch. PR merge refs and
+# branch refs stay separate so a merge does not cancel its running PR tests.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  select-checks:
+    name: Select CI checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      full_suite: ${{ steps.policy.outputs.full_suite }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Select full suite or post-merge checks
+        id: policy
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci_run_policy.py
+
+  # Always validate the final branch contents. Builds and test matrices below
+  # run on PRs and direct pushes; a confirmed PR merge keeps these checks only.
   lint-and-registry:
     name: Lint & Registry Check
     runs-on: ubuntu-latest
@@ -24,10 +51,23 @@ jobs:
         with:
           python-version: "3.12"
 
+      # issue:7e03742cc29b — one tracked path with : * ? " < > | \, a reserved device name
+      # (aux, con, nul, com1…) or a trailing dot/space aborts every Windows checkout, including
+      # the Windows legs of release.yml. Stdlib only, so it runs before the workspace sync.
+      - name: Check tracked paths are portable to Windows
+        run: python scripts/check_portable_paths.py
+
       - name: Install uv
         uses: astral-sh/setup-uv@v10.2.0
         with:
           version: "latest"
+
+      # A pyproject.toml change (new extra, new dependency, release version bump) must
+      # ship with a regenerated uv.lock. The sync below runs without --locked and would
+      # relock silently, so drift used to surface only in the nightly's
+      # `uv sync --locked`, failing every package suite at once.
+      - name: Check uv.lock is up to date
+        run: uv lock --check
 
       - name: Sync all workspace packages
         run: uv sync --all-packages
@@ -112,6 +152,26 @@ jobs:
           uv run python -m scripts.sdd.check_task_state \
             --baseline scripts/sdd/.task_state_baseline.json
 
+      # FEAT-633: parrot/sdd/_assets/ is a generated copy of the SDD sources (.claude/, .agents/,
+      # .agent/, .codex/, sdd/); fail on any byte divergence. Fix: python scripts/sdd/check_asset_sync.py --write
+      # C16/C22: also fails on a shipped line naming a monorepo source path (packages/, scripts/,
+      # $CLAUDE_PROJECT_DIR/…) or monorepo-specific text (tests/sdd_scripts/, from navconfig,
+      # PYTHONPATH=, reference/sdd-insight/). Fix: edit the SOURCE file, then --write.
+      - name: Check packaged SDD assets are in sync (FEAT-633)
+        run: python scripts/sdd/check_asset_sync.py --check
+
+      # FEAT-633 C11c: the asset tree goes into the PUBLIC wheel. Fail on any organisation data,
+      # CLAUDE.md reference or hardcoded flow branch in a shipped file (kinds from TASK-4070).
+      # rev 0.8 C29: also a bare `python` (absent on Ubuntu/Debian/macOS) and any workflow file written
+      # inside the feature worktree (`artifacts/logs|reviews/` blocks `git worktree remove` in a foreign repo).
+      # Fix: edit the SOURCE file (.claude/, .agents/, …), then `check_asset_sync.py --write`.
+      - name: Scan packaged SDD assets for publication-unsafe content (FEAT-633)
+        run: >
+          uv run --no-sync python -m parrot.sdd.audit
+          packages/ai-parrot/src/parrot/sdd/_assets
+          --root packages/ai-parrot/src/parrot/sdd/_assets
+          --fail-on org-data,claude-md-ref,branch-literal,bare-python,worktree-artifact
+
       # FEAT-712: sdd/ledger/issues.jsonl has silently lost open issues twice
       # (ccbfef606, 769ca8516 — 25 issues, 14 of them open, including a
       # vulnerability), and the loss is invisible in review inside a 350+ line
@@ -131,11 +191,40 @@ jobs:
           uv run python -m scripts.sdd.check_ledger_snapshot \
             --base-ref "origin/$BASE"
 
+  # FEAT-633 (codex S8): prove the BUILT wheel carries the SDD asset tree. `uv build` builds the
+  # sdist first and the wheel from it, so this also proves MANIFEST.in. g++ is preinstalled on
+  # ubuntu-latest for the two Cython extensions; no uv sync / test deps needed.
+  sdd-assets-wheel:
+    needs: select-checks
+    if: ${{ !cancelled() && needs.select-checks.outputs.full_suite != 'false' }}
+    name: SDD assets ship in the ai-parrot wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.2.0
+        with:
+          version: "latest"
+
+      - name: Build ai-parrot sdist + wheel
+        run: uv build --package ai-parrot --out-dir dist
+
+      - name: Verify wheel contains manifest.json, every manifest entry, nothing on the deny-list and no monorepo path
+        run: python scripts/sdd/check_asset_sync.py --wheel dist/ai_parrot-*.whl
+
   # FEAT-586: keeps docs/getting-started.md's factual claims honest (the
   # claim-verification harness) and both installer scripts parseable.
   # Single OS (ubuntu-latest) only — no OS matrix (spec AC13). --system-deps
   # is never exercised here (spec §7 risk); only a --dry-run install runs.
   install-guide:
+    needs: select-checks
+    if: ${{ !cancelled() && needs.select-checks.outputs.full_suite != 'false' }}
     name: Install guide & scripts
     runs-on: ubuntu-latest
     steps:
@@ -179,7 +268,33 @@ jobs:
       - name: POSIX installer dry run
         run: bash scripts/install/install-parrot.sh --dry-run --provider anthropic
 
+      # FEAT-633: global (managed-runtime) mode — dry run only; no network, no writes.
+      - name: POSIX installer global dry run
+        env:
+          PARROT_HOME: ${{ runner.temp }}/parrot-home
+        run: bash scripts/install/install-parrot.sh --global --dry-run --version 0.0.0 --with scraping
+
+      - name: PowerShell installer global dry run (soft)
+        env:
+          PARROT_HOME: ${{ runner.temp }}/parrot-home
+        run: |
+          if command -v pwsh >/dev/null 2>&1; then
+            pwsh -NoProfile -File scripts/install/install-parrot.ps1 -Global -DryRun -Version 0.0.0 -With scraping
+          else
+            echo "pwsh not available on this runner; skipping -Global dry run (single-OS scope)."
+          fi
+
+      # FEAT-633: published-checksum gate. After ANY change to either installer, regenerate with:
+      #   cd scripts/install && sha256sum install-parrot.sh install-parrot.ps1 > SHA256SUMS
+      # (hashes are over the committed LF bytes that raw.githubusercontent.com serves;
+      # a Windows checkout with core.autocrlf=true will hash differently locally)
+      - name: Installer checksums match SHA256SUMS
+        working-directory: scripts/install
+        run: sha256sum -c SHA256SUMS
+
   test-core:
+    needs: select-checks
+    if: ${{ !cancelled() && needs.select-checks.outputs.full_suite != 'false' }}
     name: "Test ai-parrot (Python ${{ matrix.python-version }})"
     runs-on: ubuntu-latest
     strategy:
@@ -226,10 +341,67 @@ jobs:
       - name: Scaffold NavConfig environment
         run: mkdir -p env/dev && touch env/dev/.env
 
+      # FEAT-852: `--continue-on-collection-errors` stays. It does not mask a red
+      # job (collection errors already fail it); it only lets one run report
+      # every failure instead of aborting at the first. The real gap was that a
+      # never-collected file looked routine: four tests/knowledge/pageindex/ files
+      # were skipped on every run (issue:91822a3b8548). tests/test_stub_isolation.py
+      # closes that gap by failing loudly with file:line.
       - name: Run core tests
         run: uv run pytest tests/ -q --tb=short --ignore=tests/tools --continue-on-collection-errors
 
+  test-ontology-pg:
+    needs: select-checks
+    if: ${{ !cancelled() && needs.select-checks.outputs.full_suite != 'false' }}
+    name: "Test ontology vocabulary (PostgreSQL)"
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: ontology_test
+        options: >-
+          --health-cmd "pg_isready -U test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.2.0
+        with:
+          version: "latest"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Sync workspace with ontology extra
+        run: uv sync --all-packages --extra ontology-store
+
+      - name: Scaffold NavConfig environment
+        run: mkdir -p env/dev && touch env/dev/.env
+
+      - name: Enable pg_trgm extension
+        run: PGPASSWORD=test psql -h localhost -U test -d ontology_test -c 'CREATE EXTENSION IF NOT EXISTS pg_trgm;'
+
+      - name: Run ontology vocabulary PG tests
+        env:
+          ONTOLOGY_PG_DSN: "postgresql://test:test@localhost:5432/ontology_test"
+        run: uv run pytest packages/ai-parrot/tests/knowledge/ontology/vocabulary/ -q --tb=short -k "pg or postgres or publisher or conformance or temporal or schema"
+
   test-wiki-extras:
+    needs: select-checks
+    if: ${{ !cancelled() && needs.select-checks.outputs.full_suite != 'false' }}
     name: "Test wikitoolkit with wiki-languages + wiki-structural extras"
     runs-on: ubuntu-latest
     steps:
@@ -350,6 +522,8 @@ jobs:
   # `wiki-structural`/ast-grep) ARE installed, so a partial-extras
   # environment degrades on Luau specifically, not everywhere at once.
   test-wiki-luau-fallback:
+    needs: select-checks
+    if: ${{ !cancelled() && needs.select-checks.outputs.full_suite != 'false' }}
     name: "Test Luau bounded heuristic fallback (wiki-languages absent)"
     runs-on: ubuntu-latest
     steps:
@@ -389,6 +563,8 @@ jobs:
             -q --tb=short --continue-on-collection-errors
 
   test-navrules:
+    needs: select-checks
+    if: ${{ !cancelled() && needs.select-checks.outputs.full_suite != 'false' }}
     name: "Test navrules (rust=${{ matrix.rust }})"
     runs-on: ubuntu-latest
     strategy:
@@ -434,6 +610,8 @@ jobs:
             --with-editable . python -m pytest tests -q
 
   test-tools:
+    needs: select-checks
+    if: ${{ !cancelled() && needs.select-checks.outputs.full_suite != 'false' }}
     name: "Test ai-parrot-tools (Python ${{ matrix.python-version }})"
     runs-on: ubuntu-latest
     strategy:
@@ -475,6 +653,8 @@ jobs:
         run: uv run pytest tests/tools/ -q --tb=short --continue-on-collection-errors
 
   test-tool-optimizations:
+    needs: select-checks
+    if: ${{ !cancelled() && needs.select-checks.outputs.full_suite != 'false' }}
     name: "Test tool-optimizations FEAT-543 (Python ${{ matrix.python-version }})"
     runs-on: ubuntu-latest
     strategy:
@@ -530,7 +710,14 @@ jobs:
       - name: Run tool-optimizations tests
         run: uv run pytest packages/ai-parrot-tools/tests/tool_optimizations -q --tb=short
 
+      - name: Semantic-layer tests
+        run: |
+          uv sync --all-packages --extra duckdb
+          uv run pytest packages/ai-parrot-semantic/tests -q --tb=short
+
   test-loaders:
+    needs: select-checks
+    if: ${{ !cancelled() && needs.select-checks.outputs.full_suite != 'false' }}
     name: "Test ai-parrot-loaders (Python ${{ matrix.python-version }})"
     runs-on: ubuntu-latest
     strategy:

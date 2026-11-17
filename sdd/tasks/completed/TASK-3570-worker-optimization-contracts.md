@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-584 — Optimización medible del flujo SDD y transición compactada a revisión
 **Spec**: `sdd/specs/sdd-execution-optimization.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-3556, TASK-3561, TASK-3562, TASK-3565, TASK-3566, TASK-3568

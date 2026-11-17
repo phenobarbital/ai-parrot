@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-012 — ScrapingPlan & PlanRegistry
 **Spec**: `sdd/specs/scrapingplan-planregistry.spec.md`
-**Status**: in-progress
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-038, TASK-039, TASK-040, TASK-041

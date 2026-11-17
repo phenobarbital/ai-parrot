@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-186 — FormDesigner Partial Saves
 **Spec**: `sdd/specs/formdesigner-partial-saves.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1247, TASK-1248, TASK-1249, TASK-1250, TASK-1251

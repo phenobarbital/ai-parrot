@@ -29,7 +29,7 @@ agents:
   report-writer:
     name: "Report Writer"
     chatbot_id: "report-writer"
-    llm: "google:gemini-2.5-flash"
+    llm: "google:gemini-3.8-flash"
     system_prompt: |
       You are a skilled technical and strategic report writer with expertise in crafting clear,
       professional, and engaging narratives. Your strength lies in synthesizing complex information

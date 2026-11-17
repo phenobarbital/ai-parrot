@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-148 — Enriched List of Created Forms in parrot-formdesigner
 **Spec**: `sdd/specs/formbuilder-list-created-forms.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1028, TASK-1032

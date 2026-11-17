@@ -5,10 +5,11 @@ description: Decompose an approved SDD spec into atomic task files, validate the
 
 # SDD Task
 
-## Full procedure and Codex adaptations
+## Full procedure and host adaptations
 
 Before executing, read the [full sdd-task procedure](../../../.claude/commands/sdd-task.md)
-and the [Codex adaptation contract](../../../docs/sdd/CODEX.md#codex-adaptation-contract).
+and your host's adaptation contract: the [Codex adaptation contract](../../../docs/sdd/CODEX.md#codex-adaptation-contract)
+on Codex, or the [Antigravity adaptation contract](../../../docs/sdd/AGY.md#antigravity-adaptation-contract) on Google Antigravity (`agy`).
 Follow the full procedure for details omitted from this summary. The adaptation
 contract and the Codex-specific instructions below override Claude runtime syntax
 and legacy shell examples; retain all workflow gates and evidence requirements.
@@ -33,7 +34,7 @@ them to the spec's base branch. This command creates no worktree (FEAT-552);
 - Do not implement code.
 - Only decompose an approved spec. If status is not `approved`, warn and ask
   for confirmation before proceeding.
-- Must run from the main repo, not inside `.claude/worktrees/`.
+- Must run from the main repo, not inside a linked worktree.
 - Must run on the spec's `base_branch`.
 - Do not hand-compute `TASK-NNN` IDs for feature work.
 - Use per-spec indexes under `sdd/tasks/index/`; ignore the historical
@@ -42,7 +43,7 @@ them to the spec's base branch. This command creates no worktree (FEAT-552);
 
 ## Workflow
 
-1. Read spec frontmatter with `scripts.sdd.sdd_meta.parse()`:
+1. Read spec frontmatter with `parrot.sdd.scripts.sdd_meta.parse()`:
    - `type`
    - `base_branch`
 2. Validate:
@@ -50,7 +51,7 @@ them to the spec's base branch. This command creates no worktree (FEAT-552);
    - `feature` must not use `main`
    - `staging` is valid for feature stabilization during release freeze
 3. Sync:
-   - refuse if inside `.claude/worktrees/`
+   - refuse if `git rev-parse --git-dir` differs from `--git-common-dir` (a linked worktree)
    - refuse dirty worktree
    - `git checkout <base_branch>`
    - `git pull --ff-only origin <base_branch>`
@@ -63,9 +64,17 @@ them to the spec's base branch. This command creates no worktree (FEAT-552);
    - Acceptance Criteria
    - Codebase Contract
    - Worktree Strategy
+4b. Advisory decision-audit check (FEAT-784):
+   - `parrot sdd spec consequences <spec> --advisory`
+   - never refuses, always exits 0; repeat any warning in the final output and continue
 5. Plan task decomposition:
    - one task per module, class, or distinct deliverable
    - target 1-4 hours per task
+   - Documentation task (FEAT-801): when the spec's `docs.policy` is `required`, emit exactly one
+     task *Documentation — <pages>* creating/updating the listed `wiki/` pages from
+     `sdd/templates/techwiki-page.md`; `depends_on` every task that creates a documented symbol
+     (last in the graph); validation `parrot sdd techwiki check --spec <spec> --root .`;
+     `parallel: true`; `none`/absent policy: no task
    - `depends_on` is the only ordering: add an edge only for a consumed symbol,
      file, fixture or configuration created by another task, or overlapping
      modified files (serialize overlapping writers, lower ID first)
@@ -102,12 +111,19 @@ must contain no unfinished placeholders.
 #### Validation Commands (mandatory, per task — FEAT-563)
 
 Place `## Validation Commands` immediately after `## Acceptance Criteria`.
-Use one backticked pytest command per bullet, targeting test files or node IDs;
-never bare pytest or directory-wide test operands. Set new index headers to
+Use one backticked command per bullet that a registered test runner recognises (pytest, vitest, `cargo test`,
+`parrot e2e` or a `.parrot/test_runners.toml` extension; `npm`/`pnpm`/`yarn test` stand for `vitest run`). Pytest
+commands target test files or node IDs, never bare pytest or directory-wide operands; other runners only need a
+filter (never over-broad). Set new index headers to
 `"validation_contract": "required"` so missing or broad commands fail validation.
+A command no registered runner (pytest, vitest, cargo, parrot-e2e, `.parrot/test_runners.toml` extensions)
+recognises is an error, unless `sdd/config.json` sets `test_command`: then `check_task_graph` reports
+`non-pytest-validation-command` as a warning that may stay unresolved (FEAT-633 rev 0.8 C29).
+
+When `sdd/config.json` sets `test_command`, skip caching (and continue past a missing Validation Contract section); `cache_test_contract` itself stays strict and, when the `test_scope` kernel cannot be loaded, exits non-zero with a one-line stderr message.
 
 Each task lists its OWN test files only; the spec-wide contract is cached once with
-`python -m scripts.sdd.cache_test_contract --spec <spec> --index <index>` (never hand-write `test_contract`). It accepts the flat
+`parrot sdd tests contract --spec <spec> --index <index>` (never hand-write `test_contract`). It accepts the flat
 and the FEAT-709 `runners:` forms and always writes schema 2 (schema 1 is lifted on read to one pytest runner);
 runner kinds, tiers and settings are checked against `.parrot/test_runners.toml`, and `check_task_graph.py` flags
 unknown runners, forbidden tiers, invalid settings/extensions and unrecognised validation commands.
@@ -141,7 +157,7 @@ a JSON block with `schema_version: 1`.
   Create / Modify" table exactly.
 - **`contract_symbols`**: A list of exact symbol IDs referenced by the
   Codebase Contract (e.g.,
-  `"sym:packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/models.py#RosterConfig"`).
+  `"sym:<src>/<pkg>/module.py#ClassName"`).
   If there are no existing symbol references, use an empty list `[]` (do not
   omit the field — an absent list means legacy/unknown coverage).
 - Legacy tasks without this section default to unknown complexity.
@@ -154,7 +170,7 @@ Example:
   "schema_version": 1,
   "targets": [
     {
-      "path": "packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/complexity.py",
+      "path": "<src>/<pkg>/module.py",
       "action": "MODIFY"
     }
   ],
@@ -164,7 +180,7 @@ Example:
 
 7. Reserve task IDs:
    - For `type: feature`, run:
-     `python -m scripts.sdd.reserve_ids --kind task --count <N> --base-branch <base_branch> --label <feature-slug>`.
+     `parrot sdd ids reserve --kind task --count <N> --base-branch <base_branch> --label <feature-slug>`.
    - Use returned IDs verbatim.
    - Stop if reservation fails.
    - For `type: hotfix`, do not reserve `TASK-NNN`; use local IDs
@@ -196,7 +212,7 @@ Example:
      priority, effort, dependencies, parallel fields, assignment timestamps,
      and file path
 10. Validate the task graph before committing:
-    - run `python -m scripts.sdd.check_task_graph sdd/tasks/index/<feature-slug>.json`
+    - run `parrot sdd task graph sdd/tasks/index/<feature-slug>.json`
     - errors block the commit: fix file overlaps without dependency paths,
       unknown dependencies, cycles, and validation-contract errors, then rerun
     - resolve every warning: justify/remove edges, check possible missing
@@ -209,6 +225,9 @@ Example:
      files
    - verify cached names
    - commit `sdd: add <N> tasks for FEAT-NNN - <feature-slug>`
+   - publish the base branch: `git pull --no-rebase --no-edit origin <base_branch> && git push origin <base_branch>`
+     — worktrees are created from `origin/<base_branch>`, so an unpushed task set is invisible to the
+     next implementation run; on failure never force, stop and print that exact command
 
 ## Output
 
@@ -236,6 +255,6 @@ Next:
 
 - `sdd/templates/task.md`
 - `sdd/WORKFLOW.md`
-- `scripts/sdd/sdd_meta.py`
-- `scripts/sdd/reserve_ids.py`
-- `scripts/sdd/check_task_graph.py`
+- `parrot.sdd.scripts.sdd_meta`
+- `parrot.sdd.scripts.reserve_ids`
+- `parrot.sdd.scripts.check_task_graph`

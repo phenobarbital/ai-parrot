@@ -33,6 +33,7 @@ from .checkov import CheckovConfig, CheckovExecutor, CheckovParser
 from .cloud_posture_toolkit import CloudPostureToolkit
 from .compliance_report_toolkit import ComplianceReportToolkit
 from .container_security_toolkit import ContainerSecurityToolkit
+from .cve import CVEToolkit, CVERecord, CVESearchResult, DownloadReceipt
 from .models import (
     CloudProvider,
     ComparisonDelta,
@@ -58,6 +59,10 @@ from .soc2_advisory import SOC2AdvisoryToolkit
 from .trivy import TrivyConfig, TrivyExecutor, TrivyParser
 
 __all__ = [
+    "CVEToolkit",
+    "CVERecord",
+    "CVESearchResult",
+    "DownloadReceipt",
     # Enums
     "SeverityLevel",
     "FindingSource",

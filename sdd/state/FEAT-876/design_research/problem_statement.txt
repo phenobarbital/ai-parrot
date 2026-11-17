@@ -1,0 +1,55 @@
+Bookstore is built **on top of** PageIndex: `Bookstore` composes one
+`PageIndexToolkit` per library scope whose `storage_dir` is
+`<library>/trees/` (`knowledge/bookstore/library.py:1-11, 250-260`;
+`knowledge/bookstore/config.py` `LibraryLocation.trees_dir`). Every
+`bookstore add` ends in `toolkit.create_tree(...)` and the book lives in
+PageIndex's native layout. The catalog (`library.db`) is a metadata layer
+over those trees — fichas, FTS5, sha256 identity, relations, communities —
+not a second content index.
+
+PageIndex has no global index of its own. Every consumer instantiates its
+own toolkit over its own directory: the wiki runtime over
+`<wiki>/pageindex`, Studio over `<storage>/pageindex`, and the FEAT-842
+local MCP server (`parrot mcp-local pageindex`) over
+`<repo>/.parrot/pageindex` (`mcp/_toolkit_templates/pageindex.yaml`). The
+FEAT-842 spec explicitly decided "the Bookstore server stays separate" and
+"no user-level or shared library; storage is per repository".
+
+That decision leaves three things a user of both planes runs into today
+(observed in the `parrot-bookstore` test repository, where the PageIndex
+MCP had to be pointed by hand at `.parrot/library/trees`):
+
+1. **Reading the library through PageIndex is possible but unguarded.**
+   Pointing the PageIndex MCP at `library/trees` works for reads (FEAT-831
+   per-tree `flock` + generation-signature reload make two writers safe at
+   the file level), but the server also exposes every structural write —
+   `create_tree`, `delete_tree`, `rename_tree`, `import_*`, `insert_*`,
+   `vacuum_tree`, `optimize --apply` — on trees the catalog believes it
+   owns. One `rename_tree` leaves a card with a dangling `tree_name`; the
+   (now closed) ledger issues `d77afc39e913` / `d2289b11be8c` show how
+   brittle that coupling already is. The only defence is hand-listing tools in the
+   template's `exclude:`, and because the server serves "whatever
+   `get_tools()` returns", every new tool reopens the hole.
+
+2. **Annotations have nowhere safe to live.** The user wants to use the
+   PageIndex *write* tools over ingested books to build richer knowledge:
+   virtual footnotes on sections, reading notes, cross-book relation
+   sheets, and a Dewey-style classification of the library. Writing those
+   into the book's own tree is lost on the next re-index (`add_book` with
+   status `"updated"` rebuilds the tree from the source — the same class of
+   loss as `issue:9013034b010f` for hand-edited cards), and it blurs
+   evidence with interpretation: the `bookstore` research skill tells the
+   agent to "distinguish statements in the books from your interpretation",
+   yet a note inside the book tree would be cited as *Book, "Section",
+   pp. x–y*.
+
+3. **A tree built elsewhere cannot become a book.** There is no way to
+   register an existing PageIndex tree (from `.parrot/pageindex`, from a
+   free-hand tree an agent created, from another repository) in the
+   catalog without re-ingesting its source — and a notebook has no source
+   to re-ingest.
+
+**Users**: the human curating the library with the `bookstore` CLI and the
+PageIndex MCP write tools; the research agent (Claude Code / Codex via the
+`bookstore` MCP and skill) that must answer "which books of this library
+treat X, and where?" in two steps without reading the books.

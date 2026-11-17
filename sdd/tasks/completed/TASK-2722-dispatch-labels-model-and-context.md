@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-496 — Dev-Loop Dispatch Event Legibility
 **Spec**: `sdd/specs/dev-loop-dispatch-event-legibility.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

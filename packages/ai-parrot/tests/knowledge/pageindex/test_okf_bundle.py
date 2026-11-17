@@ -440,3 +440,70 @@ class TestRoundTrip:
 
         # Verify tags preserved (exported from categories field)
         assert "access-control" in by_cid["access-control-policy"]["tags"]
+
+
+def test_okf_bundle_rewrites_aliases(content_store, tmp_path):
+    """Links and relates_to naming an alias point at the absorber; live id wins; no aliases key (AC-11)."""
+    import yaml
+
+    tree = {
+        "tree_name": "test-kb",
+        "structure": [
+            {
+                "node_id": "0001",
+                "concept_id": "access-control-policy",
+                "type": "Policy",
+                "title": "Access Control Policy",
+                "summary": "Manages access control.",
+                "relates_to": [
+                    {"concept": "old-audit", "rel": "references"},
+                    {"concept": "audit-logging", "rel": "references"},
+                ],
+                "nodes": [],
+            },
+            {
+                "node_id": "0002",
+                "concept_id": "audit-logging",
+                "type": "Control",
+                "title": "Audit Logging",
+                "summary": "All access events are logged.",
+                # "access-control-policy" is a live concept_id: it must not be hijacked.
+                "aliases": ["old-audit", "", "access-control-policy"],
+                "relates_to": [{"concept": "access-control-policy", "rel": "references"}],
+                "nodes": [],
+            },
+        ],
+    }
+    content_store.save(
+        "test-kb",
+        "access-control-policy",
+        "# Policy\n\nSee pageindex://test-kb/old-audit for details.\n",
+    )
+    content_store.save(
+        "test-kb",
+        "audit-logging",
+        "# Audit\n\nGoverned by pageindex://test-kb/access-control-policy here.\n",
+    )
+    export_dir = tmp_path / "bundle"
+    report = export_okf_bundle(tree, "test-kb", content_store, export_dir)
+
+    # No file is written for an alias.
+    assert report.files_written == 2
+    assert not list(export_dir.rglob("old-audit.md"))
+
+    policy = (export_dir / "policies" / "access-control-policy.md").read_text()
+    assert "pageindex://" not in policy
+    assert "../controls/audit-logging.md" in policy
+    policy_fm = yaml.safe_load(policy.split("---\n")[1])
+    assert [r["concept"] for r in policy_fm["relates_to"]] == ["audit-logging", "audit-logging"]
+
+    # Live concept_id wins over the equal alias on the absorber.
+    control = (export_dir / "controls" / "audit-logging.md").read_text()
+    assert "../policies/access-control-policy.md" in control
+    control_fm = yaml.safe_load(control.split("---\n")[1])
+    assert control_fm["relates_to"] == [{"concept": "access-control-policy", "rel": "references"}]
+
+    for md in export_dir.rglob("*.md"):
+        text = md.read_text()
+        if text.startswith("---\n"):
+            assert "aliases" not in yaml.safe_load(text.split("---\n")[1])

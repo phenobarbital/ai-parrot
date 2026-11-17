@@ -5,10 +5,11 @@ description: Suggest next unblocked SDD tasks to assign across per-spec indexes.
 
 # SDD Next
 
-## Full procedure and Codex adaptations
+## Full procedure and host adaptations
 
 Before executing, read the [full sdd-next procedure](../../../.claude/commands/sdd-next.md)
-and the [Codex adaptation contract](../../../docs/sdd/CODEX.md#codex-adaptation-contract).
+and your host's adaptation contract: the [Codex adaptation contract](../../../docs/sdd/CODEX.md#codex-adaptation-contract)
+on Codex, or the [Antigravity adaptation contract](../../../docs/sdd/AGY.md#antigravity-adaptation-contract) on Google Antigravity (`agy`).
 Follow the full procedure for details omitted from this summary. The adaptation
 contract and the Codex-specific instructions below override Claude runtime syntax
 and legacy shell examples; retain all workflow gates and evidence requirements.
@@ -31,10 +32,10 @@ Inspect all per-spec indexes (`sdd/tasks/index/*.json`), identify tasks whose de
 
 1. Aggregate tasks:
    - Read all `sdd/tasks/index/*.json` excluding `_orphans.json`.
-   - Optional `--project` / `--tag` (FEAT-576): get matching spec paths from `python -m scripts.sdd.doc_taxonomy --kind spec --paths-only ...` and keep only indexes whose `spec` is listed.
+   - Optional `--project` / `--tag` (FEAT-576): get matching spec paths from `parrot sdd docs list --kind spec --paths-only ...` and keep only indexes whose `spec` is listed.
 2. Inspect worktrees:
    - Run `git worktree list` to match active feature worktrees.
-   - Additionally run `python -m scripts.sdd.worktree_status --json` for task-level progress and `ready_for_done` flags.
+   - Additionally run `parrot sdd worktree status --json` for task-level progress and `ready_for_done` flags.
    - Ignore `flow_type: "non-sdd"` entries — they have no tasks and are not suggestion candidates.
 3. Compute unblocked tasks:
    - Check `status == "pending"`.

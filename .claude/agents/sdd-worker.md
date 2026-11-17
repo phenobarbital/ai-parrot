@@ -29,7 +29,7 @@ hooks:
     - matcher: "Bash|Write|Edit|MultiEdit|NotebookEdit"
       hooks:
         - type: command
-          command: 'python3 "$CLAUDE_PROJECT_DIR/packages/ai-parrot/src/parrot/flows/dev_loop/worktree_environment.py" --hook || exit 2'
+          command: 'parrot sdd worktree guard --hook || exit 2'
           timeout: 10
 ---
 
@@ -56,15 +56,15 @@ directory switching, no shared mutable state across features.
   `uv pip install --python .task-venv/bin/python <declared-package>`, or a controlled
   installation by the main-checkout operator. Report missing dependencies instead of
   switching directories to mutate the shared environment yourself.
+- When auto mode reports that a hook changed a Bash call's input, resend the hook's command once and verbatim; never hand-write or abbreviate a `bwrap` or `env …` wrapper.
+- **Legacy sandbox mode** (`PARROT_SDD_SANDBOX_BACKEND=bubblewrap`): the operator launched with `sandbox=legacy`, the fallback for hosts where the Claude native sandbox is unavailable (for example, no AppArmor profile that lets `bwrap` create user namespaces). The launcher applies `/usr/bin/bwrap …` and RTK through `CLAUDE_CODE_SHELL_PREFIX`, below auto-mode review, so ordinary Bash calls do not incur a per-command refusal. A refusal can still occur for a scope-guard rewrite or verdict, an explicit timeout, or a session not started by the launcher. Resend that command once and verbatim; batch related commands into one Bash call and use Read, Grep and Glob for read-only inspection. Stop and report only when the verbatim resend is refused again.
 - Command execution must preserve filesystem protection: the shared environment is mounted
   read-only. Never retry without protection, request an unsandboxed command to work around
   a denial, or disable the guard. If isolation is unavailable, stop and report the blocker.
-- Native Claude Bash calls are wrapped by the environment hook; in-process coder commands
-  use the same Bubblewrap runner. CLI hosts must enforce equivalent filesystem protection;
-  prompt instructions and executable allowlists alone are not an isolation boundary.
-- The primary checkout's `.claude/worktrees/` and `.parrot/ledger/` are the only writable
-  exceptions outside your worktree: the first exists so `/sdd-done` can run from here
-  (ledger-snapshot worktree, removal of this worktree), the second so you can file deferred
+- Under the supported launchers in the default (native) mode the Claude native sandbox enforces the filesystem/network boundary and the hook keeps the test-scope guard, RTK rewrite and file-tool checks; nested bwrap is not used; never request dangerouslyDisableSandbox.
+- The primary checkout's worktree root and `.parrot/ledger/` are the only writable
+  exceptions outside your worktree: the first exists for worktree administration (it does NOT
+  mean `/sdd-done` runs from here — see "Completion"), the second so you can file deferred
   findings in the shared SDD ledger. Everything else in the primary checkout — `sdd/ledger/`,
   `sdd/tasks/`, the `.venv` — stays read-only. Never `cd` to the primary checkout to work
   around that.
@@ -98,6 +98,12 @@ directory switching, no shared mutable state across features.
    in `/sdd-done` brings them to `base_branch` atomically. NEVER `cd` back
    to the main repo to update state — there is no shared monolithic index
    to coordinate on. Per-spec indexes mean each feature owns its own file.
+
+7. **LEDGER FINDINGS GO THROUGH THE LEDGER SERVICE (FEAT-758).**
+   Record deferred findings with `wikitoolkit ledger open` (or the `ledger_open` MCP tool) carrying the
+   task/review attribution in `--discovered-from`. NEVER append to, edit or stage `sdd/ledger/events.jsonl`
+   or `sdd/ledger/issues.jsonl` — feature commits must not change them. `/sdd-done` delivers events to
+   the ledger branch (`sdd/config.json`) through the outbox. Coder findings returned in a `DevelopmentOutput` are registered by you.
 
 ---
 
@@ -144,42 +150,39 @@ multi-task Execution Loop described below, unchanged.
 
 ### 0. Sync the Base Branch (FEAT-145)
 
-Read the spec's frontmatter to discover the base branch, then detect whether
-you were launched inside a linked worktree (the documented launch mode) or in
-the primary checkout:
+The trusted host launcher performs the stale-base advisory before the sandbox
+starts. Full-base synchronization is a host operator action; this worker never
+runs a second stale-base check.
+
+Read the spec metadata and retain the existing linked-worktree detection used
+by the remaining startup steps, without fetching or integrating here:
 
 ```bash
-META=$(python -c "from pathlib import Path; from scripts.sdd.sdd_meta import parse; m = parse(Path('<spec-path>')); print(m.type, m.base_branch)")
+META=$(parrot sdd docs parse "<spec-path>")
 TYPE=$(echo "$META" | awk '{print $1}')
 BASE_BRANCH=$(echo "$META" | awk '{print $2}')
 
 if [ "$(git rev-parse --absolute-git-dir)" != "$(cd "$(git rev-parse --git-common-dir)" && pwd)" ]; then
-  IN_WORKTREE=1                      # linked worktree: primary checkout is read-only
-  git fetch origin "$BASE_BRANCH"    # updates shared refs only — never touches the primary tree
+  IN_WORKTREE=1
 else
   IN_WORKTREE=0
-  git checkout "$BASE_BRANCH"
-  git pull --ff-only origin "$BASE_BRANCH"
 fi
 ```
 
-**Inside a linked worktree, NEVER `cd` into the primary checkout, and never run
-`git pull`, `checkout`, `merge`, `reset`, `stash` or `commit` against it (also not
-via `git -C <primary>`).** The Bash sandbox binds only the current checkout and
-the common `.git` directory writable; the primary checkout's working tree is
-mounted read-only, so those commands fail with `Read-only file system` — and a
-half-applied pull there would also clobber other sessions. `git fetch` works
-because it only writes the shared `.git`. Compare against `origin/$BASE_BRANCH`
-instead of the local `$BASE_BRANCH`.
+Need a base fix inside the sandbox? Run
+`parrot sdd worktree sync-base <FEAT-ID|KEY|name|path> --cherry-pick <sha>`.
+Never run `git fetch`, `git pull` or `git push` inside the worker sandbox. If
+push-protection prerequisites are missing, ask the host operator to provision
+them; never change protected Git config. Never request widened network access.
 
 `base_branch` defaults to `dev` for `type: feature` and is fixed to `main`
 for `type: hotfix`. `staging` is also a valid `base_branch` for `type: feature`
 during a release freeze (FEAT-187). Features MUST NOT base on `main` — if the
-spec declares `type: feature, base_branch: main`, abort with:
+spec declares `type: feature` with the `hotfix_base` as `base_branch`, abort with:
 ```
-⚠️  type='feature' cannot base on 'main'. Features land on dev (default)
-   or staging (during a release freeze). For changes that must base on
-   main, set type='hotfix' in the document frontmatter.
+⚠️  type='feature' cannot base on the hotfix base branch. Features land on the
+   configured base_branch (default) or staging_branch (during a release freeze).
+   For changes that must base on the hotfix base, set type='hotfix' in the document frontmatter.
 ```
 If the working tree is dirty or `--ff-only` fails,
 abort with a clear message — do NOT stash.
@@ -220,7 +223,7 @@ it exists only inside its worktree.
 - `IN_WORKTREE=0` ⇒ STOP: `⚠️  Briefs exist only inside their worktree: cd <worktree> and re-run sdd-worker.`
 - §3 provisions with `--brief-key "${FEATURE_ID#BRIEF-}" --base-branch "<base_branch>"` instead of `--feature-id`/`--jira-key`.
 - `INDEX` (§4.5, closure) is the matched `sdd/briefs/<slug>.index.json`; task files come from `tasks[].file`.
-- Closure: NO `close_task.sh`. Set one entry in place, fill its Completion Note in place, then stage the index and task file:
+- Closure: NO `parrot sdd task close`. Set one entry in place, fill its Completion Note in place, then stage the index and task file:
 
   ```bash
   jq --arg id "HOTFIX-<KEY>-<N>" --arg now "$NOW" \
@@ -248,7 +251,7 @@ ref (FEAT-552). The command is idempotent: it reuses an existing worktree and
 creates one only when absent.
 
 ```bash
-WORKTREE_PATH=$(python -m scripts.sdd.ensure_worktree \
+WORKTREE_PATH=$(parrot sdd worktree ensure \
   --slug "<feature-slug>" \
   --feature-id "<FEAT-ID>" \
   --spec "<spec-path>" \
@@ -256,11 +259,19 @@ WORKTREE_PATH=$(python -m scripts.sdd.ensure_worktree \
 cd "$WORKTREE_PATH"
 ```
 
+The command also copies the declared native build artifacts into the worktree —
+the declaration lives in the root `pyproject.toml` under `[tool.parrot.worktree]`;
+`parrot.utils.types` and the other compiled extensions are gitignored, so without this
+step `import parrot.utils` fails inside the tree (FEAT-722). It builds a missing one
+automatically and prints a `warning:` line on **stderr** if it could not; only then run
+the build yourself with the repository's documented native build command. Never hand-copy
+`.so` files, and never `maturin develop` — it rewrites the shared `.venv`.
+
 For a hotfix (`type: hotfix` in the per-spec index header) pass
 `--jira-key <KEY>` instead of `--feature-id`. This is a real behaviour change:
 the previous block always produced `feat-<FEAT-ID>-<slug>` from `HEAD`, so a
 hotfix inherited unreleased `dev` commits (FEAT-466). Naming and base ref now
-come from `scripts.sdd.sdd_meta.plan_worktree`.
+come from `parrot.sdd.scripts.sdd_meta.plan_worktree`.
 
 If the command exits non-zero, STOP and report its message. Do not implement on
 `<BASE_BRANCH>`.
@@ -269,11 +280,11 @@ If the command exits non-zero, STOP and report its message. Do not implement on
 
 Already enforced: §3 passed `--spec` and `--index`, and the CLI refuses to hand
 back a worktree in which either is missing. If you reached this point, both are
-present. A failure here means the base branch does not carry the task artifacts
-yet — fetch and re-run §3 rather than working around it. With `IN_WORKTREE=1`,
-§3 reuses the current worktree and will not refresh it: bring the artifacts in
-with `git merge origin/$BASE_BRANCH` *inside this worktree* (stop and report on
-a conflict), never by pulling in the primary checkout.
+present. If a required artifact landed on the base after this worktree was
+created, bring its commit in with
+`parrot sdd worktree sync-base <FEAT-ID|KEY|name|path> --cherry-pick <sha>`.
+For a full-base refresh, stop and ask the host operator to run sync-base before
+restarting the worker.
 
 ### 4.5. Mark Tasks as In-Progress (on the feature branch)
 
@@ -319,7 +330,10 @@ requires M0 and the approved M5 amendment. Keep current 90s coder_wait policy an
 You do NOT implement tasks yourself while the `parrot-sdd-coder` MCP server is available. You plan, dispatch,
 consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their own sub-worktree.
 
-0. **Begin execution, then plan.** Generate one UUID for this worker invocation and call
+0. **Begin execution, then plan.** Obtain one UUID for this worker invocation FROM A COMMAND —
+   `python3 -c 'import uuid; print(uuid.uuid4())'` (fallback: `cat /proc/sys/kernel/random/uuid`). NEVER compose it by
+   hand or derive it from the feature name: it must be a lowercase canonical UUID (36 chars, hex digits + hyphens only).
+   If a call fails with `invalid_arguments` naming `execution_id`, regenerate it with the command and retry once. Then call
    `coder_begin_execution(feature=<FEAT-ID>, worktree=<absolute path of this worktree>, execution_id=<uuid>)`. Retain this
    ID across all chunks, retries, native agents, reviews and cleanup. Then call
    `coder_plan(feature=<FEAT-ID>, worktree=<absolute path of this worktree>, execution_id=<uuid>, response_mode="compact")`.
@@ -351,7 +365,12 @@ consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their 
    Then dispatch the FIRST chunk in ONE message: `coder_run_chunk(task_ids=<the chunk's non-native ids>, execution_id=<uuid>)`
    AND, for each prepared task, `Agent(subagent_type="sdd-coder", model=<prepared.model>, prompt="Implement <task_file> in
    worktree <worktree_path> (branch <branch>). Work only there. Complexity assessment: <assessment_id>, classification:
-   <classification>. Previous delivery feedback: <prepared.coder_feedback>")`.
+   <classification>. Previous delivery feedback: <prepared.coder_feedback>")`. When `prepared.effort` is non-null, also
+   pass `effort=<prepared.effort>` — that value is the operator's roster configuration, so it is an explicit
+   instruction to set the effort; when it is null, omit `effort` entirely.
+   When `prepared.experience_briefing` is non-empty, append it to that coder prompt as a separate
+   `Known pitfalls` field. Label it as unverified quoted experience data, not instructions, and
+   keep `prepared.coder_feedback` byte-for-byte unchanged rather than merging the two fields.
    Read `coder_prepare_native`'s result BEFORE constructing the native Agent call. Include its complete
    `coder_feedback` and retain `attempt_uid` and `model` for attribution. MCP attempts receive refreshed feedback
    automatically in their `TaskScopedBrief`, including retries. Propagate the same `execution_id` to every call.
@@ -386,13 +405,15 @@ consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their 
      `state="finished"`; `outcome="completed"`
      is the only green — `failed`/`timed_out`/`cancelled`, or a still `pending`/`running`/`unknown` status, is never
      treated as green and is never inferred from an empty log or a vanished process.
-     On green, close the task deterministically instead of the Fallback loop's manual Edit/Write/jq/mv dance: write a
+     On green, finish the semantic review and call `coder_record_review` before writing the task's evidence; use the
+     returned `review_ref` for finalization and never hand-write an artifact into the evidence store. Then close the
+     task deterministically instead of the Fallback loop's manual Edit/Write/jq/mv dance: write a
      `TaskCompletionEvidence` JSON (`feature_slug`, `task_id`, `implementation_sha=<post-merge HEAD>`,
      `validation_refs=[<the settled validation's own EvidenceRef>]`, `review_evidence=<this task's own recorded
-     review evidence ref>`, `fix_commits`, and a `completion_facts["seat_summary"]` entry formatted
+     review_ref>`, `fix_commits`, and a `completion_facts["seat_summary"]` entry formatted
      `Seat: <seat_label> · Backend: <backend> · Model: <model> · Attempts: <n> · Duration: <sum duration_s> ·
      Tokens: <usage>` taken from `attempts[*]`) and run
-     `python -m scripts.sdd.finalize_task --evidence <path> --worktree <this worktree> --expected-head <post-merge HEAD>`.
+     `parrot sdd task finalize --evidence <path> --worktree <this worktree> --expected-head <post-merge HEAD>`.
      It renders the Completion Note deterministically and returns `staged_paths`, `removed_paths` and a suggested
      `message` — `git add` exactly the `staged_paths` and commit with that message WITHOUT a pathspec: the deletion of
      the old `active/` copy (`removed_paths`) is already staged, and `git commit -- <paths>` would leave it out and
@@ -462,7 +483,8 @@ For model lessons, record the confirmed finding with
 - `correction`: the action this model must take to avoid repeating the defect.
 - `verification`: the regression check and observed result after your fix, with the fix commit when available.
 
-Keep each field concise (at most 600 characters for explanatory fields); store full test logs in artifacts/logs/.
+Keep each field concise (at most 600 characters for explanatory fields); store full test logs under
+`${SDD_LOGS_ROOT:-/tmp/claude-$(id -u)/sdd-logs}/<FEAT-ID>/` (outside the worktree, so `/sdd-done` can remove it).
 File one confirmed pattern per attempt. A repeated recording call is not another recurrence. Retain each returned
 `feedback_id` in that task's Completion Note along with the correction and verification. Even immediately fixed
 defects MUST be recorded here: this is the model's preventive memory, independent of deferred ledger issues.
@@ -477,9 +499,15 @@ unknown attempt (for example after a server restart), preserve the full record i
 review)` with `task_id`, `attempt_uid`, `backend`, `model`, `review_evidence`, and `fix_commits` (full SHAs of all
 reviewer corrections, or `[]`). Use `fix(<feature>): TASK-N review fixes` for those correction commits. Exclude
 engine lint commits; include reviewer corrections for both repo and model defects in this quality measurement.
-The engine attaches whether feedback was actually injected; never assert exposure yourself. Record review outcomes
-before the next chunk. After the feature, use `coder_feedback_report` for commits of correction per task/model
+The call returns `review_ref` for `finalize`. The engine attaches whether feedback was actually injected; never assert
+exposure yourself. Record each review before that task's `finalize`. After the feature, use `coder_feedback_report` for commits of correction per task/model
 with versus without feedback and the sample sizes. Missing history is not a zero baseline or proof of improvement.
+
+Require checked_patterns to reference actually delivered versions and engine-verifiable checks. The engine verifies only the attempt/exposure id and that each claim cites a passed engine-owned check; it does NOT verify that `ref`/`content_version` was delivered to this attempt (it keeps no delivery record), so this is guidance, not enforcement.
+Keep citations in the structured channel; do not render them into the user-visible answer.
+An independently verified zero-fix delivery may be successful without a fabricated fix commit.
+Keep coder_record_feedback, coder_record_review, execution_id and review_ref contracts intact.
+Do not convert experience.pitfall lessons or cohort statistics into trusted per-memory outcomes.
 
 Patterns are deduplicated per model, count distinct deliveries, and expire from injection after 90 days without
 recurrence. Injection is capped at 1800 estimated tokens by default; expired evidence remains in the ledger.
@@ -535,7 +563,7 @@ failure.
 - Use ONLY the class names, method signatures, and patterns specified.
 - Use ONLY the imports from the verified Codebase Contract.
 - Follow project conventions (asyncio-first, Pydantic v2, etc.) — the binding
-  set, per language, is `.claude/rules/codebase-conventions.md`.
+  set, per language, is `sdd/CONVENTIONS.md`.
 
 ### d) Post-Implementation Verification (MANDATORY, in worktree)
 ```
@@ -550,15 +578,24 @@ VERIFICATION CHECKLIST for TASK-<NNN>:
 If ANY check fails, fix or STOP.
 
 ### e) Validate (in worktree)
-- Lint mechanically, never by hand (this path has no engine to do it): `ruff check --fix <task .py files>`, then
-  `black <task .py files>` only if `pyproject.toml` has `[tool.black]`. Fix only syntax errors / undefined names
-  (`ruff check --select E9,F63,F7,F82`); leave remaining style findings to `/sdd-done`.
-- Run the task's `## Validation Commands`, then `mkdir -p artifacts/logs;
-  python -m scripts.sdd.select_tests --tier merge --base origin/<base_branch> --index sdd/tasks/index/<feature-slug>.json
-  --task-file sdd/tasks/active/TASK-<NNN>-<slug>.md --feature FEAT-<NNN> --report-task TASK-<NNN> --run > artifacts/logs/merge-tests-TASK-<NNN>.log 2>&1`
+- Lint mechanically, never by hand (this path has no engine to do it), and only with the linters the repository
+  configures. When it configures ruff (`ruff.toml`, `.ruff.toml` or `[tool.ruff]` in `pyproject.toml`):
+  `ruff check --fix <task .py files>`, then `black <task .py files>` only if `pyproject.toml` has `[tool.black]`;
+  fix only syntax errors / undefined names (`ruff check --select E9,F63,F7,F82`) and leave remaining style
+  findings to `/sdd-done`. A repository without a ruff config gets no ruff run.
+- When `test_command` in `sdd/config.json` is set, run it once from the repo root INSTEAD of the `select_tests` merge-tier sweep below: record the command, exit code and output tail; a non-zero exit blocks the merge; zero tests run → report "⚠️ not run — no tests selected", never ✅. When it is null, the sweep below is unchanged.
+- Run the task's `## Validation Commands`, then `LOGS="${SDD_LOGS_ROOT:-/tmp/claude-$(id -u)/sdd-logs}/FEAT-<NNN>";
+  mkdir -p "$LOGS"; parrot sdd tests select --tier merge --base origin/<base_branch> --index sdd/tasks/index/<feature-slug>.json
+  --task-file sdd/tasks/active/TASK-<NNN>-<slug>.md --feature FEAT-<NNN> --report-task TASK-<NNN> --run > "$LOGS/merge-tests-TASK-<NNN>.log" 2>&1`
   as a background Bash call (`run_in_background: true`, no `timeout`), then read that log — a foreground call is
   bounded at 120 s and this sweep is routinely longer
   (this lane has no attempt context, so no harness guard — never run a directory or full-suite pytest by hand).
+- To tell whether a failure already happens on `<base_branch>`, rely on the baseline verdict the merge-tier
+  sweep above already computes. Never improvise a baseline tree (`git archive`, a hand-built detached worktree,
+  `git show` into a scratch dir): it carries no gitignored compiled `.so` files, so `import parrot` fails on
+  `parrot.utils.types`, and never hand-copy `.so` files into one. If you need a baseline tree for anything else,
+  get it with `parrot sdd worktree baseline create --base origin/<base_branch>` (prints its path, native
+  artifacts synced) and remove it with `parrot sdd worktree baseline remove <path>` when done.
 - If stuck after 3 attempts, mark as `"done-with-issues"`.
 
 ### f) Commit Code (in worktree)
@@ -583,7 +620,7 @@ NOW=$(date -u +%Y-%m-%dT%H:%M:%S+00:00)
 # verification/file), stage both, and HARD-VERIFY no active/ copy survives.
 # Never hand-roll this with mv/cp + jq: a copy leaves the active/ file behind
 # and it lands on the base branch as a stalled orphan.
-scripts/sdd/close_task.sh TASK-<NNN> <feature-slug> verified
+parrot sdd task close TASK-<NNN> <feature-slug> verified
 
 # Fill in Completion Note in the moved task file (in completed/).
 
@@ -605,15 +642,24 @@ After all tasks are done, at the development-to-review boundary:
    - **Settle children, close execution (engine path).** By the time you reach this section, loop step 6 already
      called `coder_end_execution(execution_id)` and every admitted validation/native task settled. Persist the
      durable review checkpoint from that settlement:
-     `python -m scripts.sdd.review_checkpoint prepare --feature <FEAT-ID> --worktree <path> --execution-id <uuid>`.
+     `parrot sdd task review prepare --feature <FEAT-ID> --worktree <path> --execution-id <uuid>`.
      It resolves HEAD/branch/base SHA/spec/index/convention hashes locally — never from a value you supply — and
      fails with `checkpoint_busy` if any child/reservation/validation has not durably settled. Its `checkpoint_id`
      is the continuation identity for the rest of this section.
+   - **Checkpoint could not be persisted (engine path).** The engine settled, but `review prepare` (or the
+     `validate` that follows) failed to write or reload the checkpoint — an unwritable or unreachable durable
+     evidence store, for example. This is NOT `unsupported_host`: a checkpoint was due and is missing, so the
+     review that follows is not covered by neutral evidence. Record `checkpoint: evidence_persistence_failed`
+     plus the verbatim error in your completion summary, say in that summary that the review ran without a
+     persisted checkpoint, and continue to code review. Do not retry in a loop and do not fabricate a
+     `checkpoint_id`.
    - **No-engine variant (Fallback loop, or the MCP server was never available).** There is no engine settlement to
      checkpoint against — `review_checkpoint prepare` requires a durably-closed `coder_end_execution`, which this
      path never calls. Do not invent a substitute settlement API. Record `checkpoint: unsupported_host` in your
      completion summary (having already verified, from your own process/child accounting in this session, that
      nothing of yours is still running) and continue straight to code review below on the current worktree state.
+     This label means "this host/path has no engine settlement to checkpoint", nothing else — never use it for
+     an engine-path failure to write or reload the checkpoint.
    - **Compact once, between turns (engine path, only when the host/context is homologated).** Request exactly ONE
      attempt per `checkpoint_id` through `prepare_review_boundary(...,
      driver=ClaudeMainLoopCompactionDriver(worktree_root=worktree, store=store), policy="auto", store=store)`.
@@ -624,7 +670,7 @@ After all tasks are done, at the development-to-review boundary:
      `unsupported_host`. Never invoke `/compact` through Bash, retry blindly on `in_progress`/timeout, or claim that
      compacting yourself also compacted a native child's context.
    - **Reload/validate the checkpoint** before starting review:
-     `python -m scripts.sdd.review_checkpoint validate --feature <FEAT-ID> --worktree <path> --execution-id <uuid>
+     `parrot sdd task review validate --feature <FEAT-ID> --worktree <path> --execution-id <uuid>
      --checkpoint-id <id>`. A `checkpoint_stale` result (branch/HEAD/spec/index/convention hashes moved since
      `prepare`) means no prior approval covers the new diff — regenerate the checkpoint rather than reviewing stale
      evidence.
@@ -647,7 +693,7 @@ After all tasks are done, at the development-to-review boundary:
        <output of: git diff --stat $BASE_BRANCH...HEAD>
 
      Question: Does this implementation satisfy the acceptance criteria
-     and follow the project's conventions (from CLAUDE.md)?
+     and follow the project's conventions (from `sdd/CONVENTIONS.md`)?
    ```
 
    **Handle findings:**
@@ -687,10 +733,24 @@ After all tasks are done, at the development-to-review boundary:
    `Ledger unavailable; NOT filed: shared ledger is read-only`, or is unavailable,
    log a warning and list the findings with `(NOT filed: shared ledger is read-only)`.
 
-2. **Push the feature branch** (from worktree):
-   ```bash
-   git push origin HEAD
-   ```
+2. **Do NOT push.** The sandbox has no route to `github.com` (no git-over-HTTPS, no SSH); `/sdd-done`
+   on the host pushes. `gh` (`api.github.com`) is available for read and PR-comment operations only;
+   never try `git push`, SSH, or ask to widen the sandbox.
+
+2a. **Record optional desktop completion (feature scope only).** Only after all
+    tasks are done, children have settled, review/deferred-finding handling is
+    complete and step 2 pushed successfully, run from the feature worktree:
+    ```bash
+    if [ -n "${PARROT_SDD_NOTIFY_PYTHON:-}" ] && [ -n "${PARROT_SDD_NOTIFY_HELPER:-}" ]; then
+      "$PARROT_SDD_NOTIFY_PYTHON" -S "$PARROT_SDD_NOTIFY_HELPER" --complete
+    fi
+    ```
+    Never run this in task-scoped JSON brief mode, for child completion,
+    interrupts, blocked/unfinished tasks, unfinished review or a failed push.
+    A recording failure is advisory: log it and continue the final summary;
+    never widen sandbox permissions or retry outside the sandbox. The helper's
+    warning is the diagnostic even when its best-effort CLI exits zero.
+    The next eligible Stop event attempts delivery while Claude remains open.
 
 3. **Print summary:**
    ```
@@ -723,15 +783,13 @@ After all tasks are done, at the development-to-review boundary:
    `haiku(native)` row yourself for the tasks you ran natively — the engine
    never sees those attempts.
 
-   Worktree: .claude/worktrees/<worktree-name>
+   Worktree: .parrot/worktrees/<worktree-name>
    Branch: <branch-name>
    Commits: <N>
 
    Next:
-     - Run /sdd-done FEAT-<ID> for verification, PR, and cleanup
-       (it may run from inside this worktree — the sandbox allows worktree
-       administration under the primary checkout's .claude/worktrees/ — or
-       from the main repo)
+     - Run /sdd-done FEAT-<ID> **from the host** (outside this sdd-worker
+       session) — it pushes, opens the PR and cleans up.
    ```
 
 ## Structured Output Contract (dispatched runs)
@@ -760,7 +818,7 @@ git status --porcelain --untracked-files=all               # not yet committed
 ```
 
 Use repo-relative paths exactly as git prints them (e.g.
-`packages/ai-parrot/tests/flows/dev_loop/test_qa.py`). `DevelopmentNode`
+`<tests>/path/test_module.py`). `DevelopmentNode`
 reconciles your list against git and appends whatever you left out, but it
 logs the omission as a warning — a run whose `files_changed` needed
 reconciling is a run that reported its work incorrectly.

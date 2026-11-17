@@ -153,6 +153,12 @@ class BotModel(Model):
         memory_config JSONB DEFAULT '{}'::JSONB,
         max_context_turns INTEGER DEFAULT 5,
         use_conversation_history BOOLEAN DEFAULT TRUE,
+        -- Follow-up suggestion chips (FEAT-752)
+        enable_suggestions BOOLEAN DEFAULT FALSE,
+        suggest_followups BOOLEAN DEFAULT FALSE,
+        suggestion_timeout_s REAL DEFAULT 4.0,
+        max_suggestions INTEGER DEFAULT 6,
+        suggestion_model VARCHAR,
 
         -- Security and permissions
         permissions JSONB DEFAULT '{}'::JSONB,
@@ -297,6 +303,20 @@ class BotModel(Model):
     use_conversation_history: bool = Field(
         default=True, required=False, ui_help="Whether the bot’s conversation history is enabled or not."
     )
+    # Follow-up suggestion chips (FEAT-752) — defaults equal AbstractBot's constructor defaults.
+    enable_suggestions: bool = Field(
+        default=False, required=False, ui_help="Offer deterministic follow-up chips (view as table/chart, explain)."
+    )
+    suggest_followups: bool = Field(
+        default=False, required=False, ui_help="Also ask the lightweight LLM for follow-up questions (one extra call)."
+    )
+    suggestion_timeout_s: float = Field(
+        default=4.0, required=False, ui_help="Timeout in seconds for the LLM chip call."
+    )
+    max_suggestions: int = Field(default=6, required=False, ui_help="Maximum number of chips per answer.")
+    suggestion_model: Optional[str] = Field(
+        default=None, required=False, ui_help="Optional model for the chip call (defaults to the lightweight model)."
+    )
     # advanced: Bot Class
     bot_class: Optional[str] = Field(
         required=False, default="BasicBot", ui_help="The bot’s class path, e.g., 'parrot.bots.unified.UnifiedBot'."
@@ -343,7 +363,7 @@ class BotModel(Model):
             raise ValueError(f"operation_mode must be one of {valid_modes}")
 
         # Validate memory_type
-        valid_memory_types = ["memory", "file", "redis"]
+        valid_memory_types = ["auto", "memory", "file", "redis"]
         if self.memory_type not in valid_memory_types:
             raise ValueError(f"memory_type must be one of {valid_memory_types}")
 
@@ -384,6 +404,11 @@ class BotModel(Model):
             "memory_config": self.memory_config,
             "max_context_turns": self.max_context_turns,
             "use_conversation_history": self.use_conversation_history,
+            "enable_suggestions": self.enable_suggestions,
+            "suggest_followups": self.suggest_followups,
+            "suggestion_timeout_s": self.suggestion_timeout_s,
+            "max_suggestions": self.max_suggestions,
+            "suggestion_model": self.suggestion_model,
             "permissions": self.permissions,
             "language": self.language,
             "disclaimer": self.disclaimer,
@@ -604,49 +629,34 @@ class PromptLibrary(Model):
 
     Saving information about Prompt Library.
 
-    -- PostgreSQL CREATE TABLE Syntax --
-    CREATE TABLE IF NOT EXISTS navigator.prompt_library (
-            prompt_id  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-            chatbot_id UUID,                                  -- now nullable
-            agent_id   VARCHAR,                               -- NEW
-            title      VARCHAR,
-            query      VARCHAR,
-            description TEXT,
-            prompt_category VARCHAR,
-            prompt_tags VARCHAR[],
-            created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-            created_by INTEGER,
-            updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-            CONSTRAINT chk_prompt_library_target_xor
-                CHECK ((chatbot_id IS NOT NULL) <> (agent_id IS NOT NULL)),
-            CONSTRAINT unq_prompt_library_target_title
-                UNIQUE (chatbot_id, agent_id, title)
-    );
-    CREATE INDEX IF NOT EXISTS idx_prompt_library_agent_id
-        ON navigator.prompt_library(agent_id);
+    -- Deployed shape of navigator.prompt_library --
+    prompt_id       UUID PRIMARY KEY
+    chatbot_id      UUID NULL            -- the chatbot, or the Studio agent's UUID
+    agent_id        VARCHAR NULL         -- added by Studio migration 0009 (FEAT-794)
+    title           VARCHAR
+    query           VARCHAR
+    description     TEXT
+    prompt_category VARCHAR
+    prompt_tags     VARCHAR[]
+    sort_order      INTEGER NULL         -- added by Studio migration 0009 (FEAT-794); NULL = unordered
+    created_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+    created_by      INTEGER
+    updated_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 
-    -- ALTER TABLE (live-database migration) --
-    ALTER TABLE navigator.prompt_library
-        ADD COLUMN IF NOT EXISTS agent_id VARCHAR;
-    ALTER TABLE navigator.prompt_library
-        ALTER COLUMN chatbot_id DROP NOT NULL;
-    ALTER TABLE navigator.prompt_library
-        ADD CONSTRAINT chk_prompt_library_target_xor
-        CHECK ((chatbot_id IS NOT NULL) <> (agent_id IS NOT NULL));
-    ALTER TABLE navigator.prompt_library
-        ADD CONSTRAINT unq_prompt_library_target_title
-        UNIQUE (chatbot_id, agent_id, title);
-    CREATE INDEX IF NOT EXISTS idx_prompt_library_agent_id
-        ON navigator.prompt_library(agent_id);
+    The table has only its primary key: FEAT-167's CHECK (exactly one of
+    chatbot_id / agent_id) and UNIQUE (chatbot_id, agent_id, title) were
+    never applied. Schema changes go through the Studio migrations
+    (parrot.handlers.studio.storage.migrations), never through this docstring.
     """
 
     prompt_id: uuid.UUID = Field(primary_key=True, required=False, default_factory=uuid.uuid4)
     chatbot_id: Optional[uuid.UUID] = Field(required=False, default=None)
     agent_id: Optional[str] = Field(required=False, default=None)
+    sort_order: Optional[int] = Field(required=False, default=None)
     title: str = Field(required=True)
     query: str = Field(required=True)
     description: str = Field(required=False)
-    prompt_category: str = Field(required=False, default=PromptCategory.OTHER)
+    prompt_category: str = Field(required=False, default=PromptCategory.OTHER.value)
     prompt_tags: list = Field(required=False, default_factory=list)
     created_at: datetime = Field(required=False, default=datetime.now)
     created_by: int = Field(required=False)

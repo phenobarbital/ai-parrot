@@ -250,6 +250,8 @@ class DocumentAgent(BasicAgent):
             app: Optional aiohttp application for web integrations
         """
         await super().configure(app)
+        if self.configure_skipped:
+            return
         self.logger.info(f"DocumentAgent '{self.name}' configured with {len(self.tools)} tools")
 
     async def load_document(self, url: str) -> Dict[str, Any]:

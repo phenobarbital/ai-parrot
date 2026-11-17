@@ -29,10 +29,12 @@ _TASK2337_TYPES = [
 
 @pytest.fixture(autouse=True)
 def _clear_registry():
-    """Reset the module-level registry between tests."""
+    """Reset the module-level registry for each test and restore it afterwards."""
+    saved = dict(_REGISTRY)
     _REGISTRY.clear()
     yield
     _REGISTRY.clear()
+    _REGISTRY.update(saved)
 
 
 def test_register_basic():
@@ -173,11 +175,11 @@ def test_builtin_snippets_are_deep_copies():
 
 
 def test_controls_registry_has_all_new_types():
-    """get_controls() returns 32 entries (20 existing + 10 FEAT-167 + 1 FEAT-170 REST + 1 FEAT-300 FORMULA)."""
+    """get_controls() registers exactly one control for every FieldType."""
     sys.modules.pop("parrot_formdesigner.controls.builtin", None)
     importlib.import_module("parrot_formdesigner.controls.builtin")
     controls = get_controls()
-    assert len(controls) == 32, f"Expected 32 controls, got {len(controls)}"
+    assert {control.type for control in controls} == {member.value for member in FieldType}
 
     # Spot-check new types are present
     control_types = {c.type for c in controls}

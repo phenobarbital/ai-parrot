@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-596 — profile-execution-schema-contract
 **Spec**: sdd/specs/profile-execution-schema-contract.spec.md
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Depends-on**: none
 **Assigned-to**: unassigned

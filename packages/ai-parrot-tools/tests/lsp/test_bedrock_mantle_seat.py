@@ -5,7 +5,7 @@ replaced with a scripted, network-free test double so these tests verify
 the seat's own orchestration (tool loadout per arm, path-bounded local
 tools, the trace.jsonl/answer.json writing contract) -- never the
 underlying model's behavior, which only a real ``--live`` run can measure
-(see docs/sdd/lsp-pilot-results.md).
+(see wiki/sdd-tooling/sdd/lsp-pilot-results.md).
 """
 
 from __future__ import annotations

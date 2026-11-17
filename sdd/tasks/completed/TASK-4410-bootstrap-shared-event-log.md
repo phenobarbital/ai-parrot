@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-694 — Shared Ledger Event Log (cross-machine sync via git hooks)
 **Spec**: `sdd/specs/ledger-shared-event-log.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-4409

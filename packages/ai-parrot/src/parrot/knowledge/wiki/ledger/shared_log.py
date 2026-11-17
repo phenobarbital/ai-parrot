@@ -115,23 +115,29 @@ def read_shared_event_ids(files: list[Path]) -> set[str]:
     return {event.event_id for path in files for _, event in read_raw_events(path)}
 
 
-def _stable_relative_path(path: Path) -> Path:
+def _stable_relative_path(path: Path, repo_root: Path | None = None) -> Path:
     """Return the repository-stable path beginning with ``sdd`` when possible."""
+    if repo_root is not None:
+        try:
+            return path.relative_to(repo_root)
+        except ValueError:
+            pass
+
     parts = path.parts
     try:
-        return Path(*parts[parts.index("sdd") :])
+        return Path(*parts[max(index for index, part in enumerate(parts) if part == "sdd") :])
     except ValueError:
         return path
 
 
-def digest_files(files: list[Path]) -> str:
+def digest_files(files: list[Path], repo_root: Path | None = None) -> str:
     """Return a SHA-256 digest of ordered stable paths and file content digests."""
     if not files:
         return ""
     digest = hashlib.sha256()
     for path in files:
         content_digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        digest.update(f"{_stable_relative_path(path).as_posix()}\0{content_digest}\n".encode("utf-8"))
+        digest.update(f"{_stable_relative_path(path, repo_root).as_posix()}\0{content_digest}\n".encode("utf-8"))
     return digest.hexdigest()
 
 
@@ -143,6 +149,11 @@ def export_events(local: LedgerLog, repo_root: Path) -> SharedLogExportReport:
     added = 0
     skipped_local_only = 0
     dest.parent.mkdir(parents=True, exist_ok=True)
+    needs_separator = False
+    if dest.exists() and dest.stat().st_size > 0:
+        with dest.open("rb") as handle:
+            handle.seek(-1, os.SEEK_END)
+            needs_separator = handle.read(1) != b"\n"
     with dest.open("a", encoding="utf-8") as handle:
         for raw, event in read_raw_events(Path(local.path)):
             if not is_shareable(event):
@@ -150,6 +161,8 @@ def export_events(local: LedgerLog, repo_root: Path) -> SharedLogExportReport:
                 continue
             if event.event_id in known:
                 continue
+            if added == 0 and needs_separator:
+                handle.write("\n")
             handle.write(raw + "\n")
             known.add(event.event_id)
             added += 1
@@ -202,7 +215,7 @@ def import_events(
     superseded within the same batch is never reported as a conflict.
     """
     files = shared_log_files(repo_root)
-    digest = digest_files(files)
+    digest = digest_files(files, repo_root)
     if not force and marker.exists() and marker.read_text(encoding="utf-8") == digest:
         return (
             SharedLogImportReport(
@@ -311,6 +324,8 @@ def rotate_events(
             movable = (
                 status in TERMINAL_ISSUE_STATUSES and terminal_timestamp is not None and terminal_timestamp < cutoff
             )
+        if movable and not is_shareable(event):
+            movable = False
         if movable:
             month = event_timestamp.strftime("%Y-%m")
             moved_by_month.setdefault(month, []).append(raw_line)
@@ -325,11 +340,26 @@ def rotate_events(
     for month in sorted(moved_by_month):
         archive = archive_dir / ARCHIVE_FILENAME_FMT.format(yyyy_mm=month)
         archive.parent.mkdir(parents=True, exist_ok=True)
+        existing_ids: set[str] = set()
+        if archive.exists():
+            for line in archive.read_text(encoding="utf-8").splitlines():
+                try:
+                    existing_ids.add(json.loads(line)["event_id"])
+                except (json.JSONDecodeError, KeyError, TypeError):
+                    pass
         with archive.open("ab") as handle:
             for raw_line in moved_by_month[month]:
+                try:
+                    event_id = json.loads(raw_line.decode("utf-8"))["event_id"]
+                except (UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError):
+                    event_id = None
+                if event_id is not None and event_id in existing_ids:
+                    continue
                 handle.write(raw_line)
                 if not raw_line.endswith((b"\n", b"\r")):
                     handle.write(b"\n")
+                if event_id is not None:
+                    existing_ids.add(event_id)
         archives_touched.append(archive)
 
     temporary_current = current.with_suffix(f"{current.suffix}.tmp")

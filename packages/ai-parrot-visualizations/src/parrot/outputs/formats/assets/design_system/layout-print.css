@@ -4,7 +4,7 @@
  * no constructor kwarg can override it into a screen layout).
  *
  * Every construct below is now a VERIFIED choice against the pinned
- * WeasyPrint 69.0, not an assumption — see docs/weasyprint-css-support.md
+ * WeasyPrint 69.0, not an assumption — see wiki/outputs/weasyprint-css-support.md
  * for the full empirical findings (probe documents + captured WeasyPrint
  * CSS-validation warnings + a cross-check of the installed
  * weasyprint/css/validation/properties.py and weasyprint/layout/grid.py):
@@ -20,7 +20,7 @@
  *     harmless no-op) — hence the fixed `repeat(4, 1fr)` / `repeat(2, 1fr)`
  *     column counts below. A plain, fixed-count track-sizing function DOES
  *     work fine. (Exact CSS syntax intentionally not spelled out in THIS
- *     file — see docs/weasyprint-css-support.md — this stylesheet's own
+ *     file — see wiki/outputs/weasyprint-css-support.md — this stylesheet's own
  *     text is asset-tested for the absence of those exact tokens.)
  *   - `position: sticky` is REJECTED outright (not a partial/degraded
  *     implementation — `sticky` isn't in the `position` property's accepted

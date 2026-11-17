@@ -218,6 +218,113 @@ async def _seed_matching_evidence(worktree: Path, **verdict_overrides: Any) -> E
 # ---------------------------------------------------------------------------
 
 
+_LIVE_SCENARIO_ID = "scn-live-recall"
+_LIVE_NODE_ID = "tests/e2e/test_live_recall.py::test_recall"
+
+
+def _write_optional_live_plan(worktree: Path) -> None:
+    """Commit an ``optional`` plan whose only scenario is a required live one with no targets."""
+    _write_plan(
+        worktree,
+        policy="optional",
+        targets={},
+        scenarios=[
+            {
+                "id": _LIVE_SCENARIO_ID,
+                "tier": "live",
+                "target_ids": [],
+                "required": True,
+                "node_ids": [_LIVE_NODE_ID],
+            }
+        ],
+    )
+
+
+def _live_result(**overrides: Any) -> ScenarioResult:
+    data: dict[str, Any] = {
+        "scenario_id": _LIVE_SCENARIO_ID,
+        "node_id": _LIVE_NODE_ID,
+        "outcome": "passed",
+        "setup_outcome": "passed",
+        "call_outcome": "passed",
+        "teardown_outcome": "passed",
+        "exit_code": 0,
+        "duration_s": 1.0,
+    }
+    data.update(overrides)
+    return ScenarioResult(**data)
+
+
+_NO_PHASES: dict[str, Any] = {"setup_outcome": None, "call_outcome": None, "teardown_outcome": None}
+
+
+@pytest.mark.parametrize(
+    ("result_overrides", "expected_status", "expected_code_prefix"),
+    [
+        ({}, "PASS", None),
+        ({"setup_outcome": "failed"}, "FAIL", "required_node_setup_failure:"),
+        ({"call_outcome": "failed"}, "FAIL", "required_node_call_failure:"),
+        ({"teardown_outcome": "failed"}, "FAIL", "required_node_teardown_failure:"),
+        ({"outcome": "failed", "call_outcome": "failed"}, "FAIL", "required_node_not_passed:"),
+        ({"outcome": "xfailed"}, "FAIL", "required_node_not_passed:"),
+        ({"outcome": "blocked", **_NO_PHASES}, "FAIL", "required_node_not_passed:"),
+        ({"outcome": "skipped", **_NO_PHASES}, "BLOCKED", None),
+        (None, "FAIL", "required_node_missing:"),
+    ],
+    ids=[
+        "passed",
+        "setup-failed",
+        "call-failed",
+        "teardown-failed",
+        "node-failed",
+        "node-xfailed",
+        "node-blocked",
+        "node-skipped",
+        "node-missing",
+    ],
+)
+async def test_optional_live_plan_requires_successful_proof(
+    git_worktree: Path,
+    result_overrides: Optional[dict[str, Any]],
+    expected_status: str,
+    expected_code_prefix: Optional[str],
+) -> None:
+    """Reject unsuccessful required live evidence under optional plan policy.
+
+    The recorded verdict always claims ``PASS``/``gate_satisfied`` (a forged
+    aggregate); ``verify_evidence`` must recompute from the per-node phases.
+    """
+    _write_optional_live_plan(git_worktree)
+    if result_overrides is None:
+        results: list[ScenarioResult] = []
+        counts: dict[str, int] = {}
+    else:
+        result = _live_result(**result_overrides)
+        results = [result]
+        counts = {result.outcome: 1}
+    await _seed_matching_evidence(
+        git_worktree,
+        policy="optional",
+        selected_node_ids=[_LIVE_NODE_ID],
+        collected_node_ids=[_LIVE_NODE_ID],
+        results=results,
+        counts=counts,
+        status="PASS",
+        gate_satisfied=True,
+    )
+
+    verification = await verify_evidence(_plan_path(git_worktree), worktree=git_worktree)
+
+    assert verification.status == expected_status
+    assert verification.gate_satisfied is (expected_status == "PASS")
+    if expected_code_prefix is not None:
+        assert any(
+            code.startswith(f"{expected_code_prefix}{_LIVE_NODE_ID}") for code in verification.reason_codes
+        ), verification.reason_codes
+    if expected_status == "PASS":
+        assert verification.reason_codes == []
+
+
 async def test_verify_evidence_policy_none_returns_pass_without_touching_evidence(git_worktree: Path) -> None:
     _write_plan(git_worktree, policy="none", scenarios=[])
 

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from parrot.flows.dev_loop.test_scope.datatypes import TestTarget
 from parrot.flows.dev_loop.test_scope.policy import ScopePolicy
 from parrot.flows.dev_loop.test_scope.runners.vitest import ADAPTER
@@ -128,3 +130,33 @@ def test_vitest_distribution_defaults_to_admin_ui() -> None:
     """Distribution settings override the stable admin UI default."""
     assert ADAPTER.distribution_of("src/form.test.ts", settings={}) == "admin-ui"
     assert ADAPTER.distribution_of("src/form.test.ts", settings={"distribution": "web"}) == "web"
+
+
+@pytest.mark.parametrize("cwd", ["/etc", "../outside", "ui/../../outside"])
+def test_vitest_rejects_cwd_outside_worktree(tmp_path: Path, cwd: str) -> None:
+    """mirror_targets and invocation refuse an escaping cwd; validate_settings reports it."""
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+    settings = {"cwd": cwd}
+    with pytest.raises(ValueError, match="must stay inside the worktree"):
+        ADAPTER.mirror_targets(["ui/src/a.ts"], worktree=worktree, settings=settings)
+    with pytest.raises(ValueError, match="must stay inside the worktree"):
+        ADAPTER.invocation(
+            (TestTarget("src/a.test.ts", "admin-ui", "declared", runner="vitest"),),
+            distribution="admin-ui",
+            worktree=worktree,
+            settings=settings,
+            policy=ScopePolicy(),
+            report_path="/tmp/vitest.xml",
+        )
+    assert ADAPTER.validate_settings(settings, worktree=worktree) == ["vitest: cwd must stay inside the worktree"]
+
+
+def test_vitest_rejects_symlinked_cwd_outside_worktree(tmp_path: Path) -> None:
+    """A cwd that is a symlink pointing outside the worktree is refused too."""
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+    (tmp_path / "outside").mkdir()
+    (worktree / "ui").symlink_to(tmp_path / "outside")
+    with pytest.raises(ValueError, match="must stay inside the worktree"):
+        ADAPTER.mirror_targets(["ui/src/a.ts"], worktree=worktree, settings={"cwd": "ui"})

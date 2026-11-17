@@ -190,6 +190,7 @@ class TestAuthorizingDataSource:
         self,
         mock_guard: MagicMock,
         pctx: PermissionContext,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """When guard returns RLS predicates, they are injected before fetch."""
         from parrot.auth.rls_registry import RlsPredicate
@@ -203,9 +204,163 @@ class TestAuthorizingDataSource:
         mock_guard.rls_predicates = AsyncMock(return_value=[pred])
 
         inner = SQLQuerySource(sql="SELECT * FROM sales.orders", driver="pg")
-        inner.fetch = AsyncMock(return_value=pd.DataFrame({"id": [1]}))
+        original_sql = inner.sql
+        fetched: dict[str, str] = {}
+
+        async def _capture(self, **params):  # noqa: ANN001, ANN003 - test double
+            fetched["sql"] = self.sql
+            return pd.DataFrame({"id": [1]})
+
+        monkeypatch.setattr(SQLQuerySource, "fetch", _capture)
         source = AuthorizingDataSource(inner, mock_guard, lambda: pctx)
         await source.fetch()
-        # The inner SQL should now be rewritten with the RLS wrapper
-        assert "_rls" in inner.sql
-        assert "WHERE" in inner.sql
+
+        # The source actually fetched from carries the RLS wrapper (AC3) ...
+        assert "_rls" in fetched["sql"]
+        assert "WHERE" in fetched["sql"]
+        # ... while the wrapped source is left untouched (AC1, issue:90cf04ce8edd).
+        assert inner.sql == original_sql
+
+
+class TestRequestScopedRls:
+    """issue:90cf04ce8edd — RLS injection must never mutate the wrapped source."""
+
+    @staticmethod
+    def _predicate():
+        """Build a single region predicate used by every test in this class."""
+        from parrot.auth.rls_registry import RlsPredicate
+
+        return RlsPredicate(
+            table="sales.orders",
+            sql_predicate="region IN (:p0)",
+            bound_params={"p0": ["northeast"]},
+        )
+
+    @pytest.mark.asyncio
+    async def test_repeated_fetch_does_not_accumulate_predicates(
+        self,
+        mock_guard: MagicMock,
+        pctx: PermissionContext,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Two fetches send identical SQL — predicates must not pile up (AC2)."""
+        from parrot.tools.dataset_manager.sources.sql import SQLQuerySource
+
+        mock_guard.rls_predicates = AsyncMock(return_value=[self._predicate()])
+        inner = SQLQuerySource(sql="SELECT * FROM sales.orders", driver="pg")
+        seen: list[str] = []
+
+        async def _capture(self, **params):  # noqa: ANN001, ANN003 - test double
+            seen.append(self.sql)
+            return pd.DataFrame({"id": [1]})
+
+        monkeypatch.setattr(SQLQuerySource, "fetch", _capture)
+        source = AuthorizingDataSource(inner, mock_guard, lambda: pctx)
+        await source.fetch()
+        await source.fetch()
+
+        assert len(seen) == 2
+        assert seen[0] == seen[1]
+
+    @pytest.mark.asyncio
+    async def test_fetch_does_not_mutate_table_source_permanent_filter(
+        self,
+        mock_guard: MagicMock,
+        pctx: PermissionContext,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """TableSource._permanent_filter is isolated per request (AC1)."""
+        from parrot.tools.dataset_manager.sources.table import TableSource
+
+        mock_guard.rls_predicates = AsyncMock(return_value=[self._predicate()])
+        inner = TableSource(table="sales.orders", driver="pg")
+        original_filter = dict(inner._permanent_filter)
+        original_id = id(inner._permanent_filter)
+        fetched: dict[str, dict] = {}
+
+        async def _capture(self, **params):  # noqa: ANN001, ANN003 - test double
+            fetched["filter"] = dict(self._permanent_filter)
+            return pd.DataFrame({"id": [1]})
+
+        monkeypatch.setattr(TableSource, "fetch", _capture)
+        source = AuthorizingDataSource(inner, mock_guard, lambda: pctx)
+        await source.fetch()
+
+        # The fetched copy carries the predicate ...
+        assert fetched["filter"].get("region") == ["northeast"]
+        # ... the original dict is neither replaced nor written through.
+        assert inner._permanent_filter == original_filter
+        assert id(inner._permanent_filter) == original_id
+
+    @pytest.mark.asyncio
+    async def test_fetch_does_not_mutate_query_slug_permanent_filter(
+        self,
+        mock_guard: MagicMock,
+        pctx: PermissionContext,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """QuerySlugSource._permanent_filter is isolated per request (AC1)."""
+        from parrot.tools.dataset_manager.sources.query_slug import QuerySlugSource
+
+        mock_guard.rls_predicates = AsyncMock(return_value=[self._predicate()])
+        inner = QuerySlugSource(slug="orders_by_region")
+        original_filter = dict(inner._permanent_filter)
+        fetched: dict[str, dict] = {}
+
+        async def _capture(self, **params):  # noqa: ANN001, ANN003 - test double
+            fetched["filter"] = dict(self._permanent_filter)
+            return pd.DataFrame({"id": [1]})
+
+        monkeypatch.setattr(QuerySlugSource, "fetch", _capture)
+        source = AuthorizingDataSource(inner, mock_guard, lambda: pctx)
+        await source.fetch()
+
+        assert fetched["filter"].get("region") == ["northeast"]
+        assert inner._permanent_filter == original_filter
+
+    @pytest.mark.asyncio
+    async def test_two_wrappers_sharing_one_source_do_not_cross_contaminate(
+        self,
+        mock_guard: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The cross-subject leak itself: one shared source, two subjects (AC1)."""
+        from parrot.auth.rls_registry import RlsPredicate
+        from parrot.tools.dataset_manager.sources.sql import SQLQuerySource
+
+        def _pred(region: str) -> RlsPredicate:
+            return RlsPredicate(
+                table="sales.orders",
+                sql_predicate="region IN (:p0)",
+                bound_params={"p0": [region]},
+            )
+
+        def _ctx(user: str, region: str) -> PermissionContext:
+            return PermissionContext(
+                session=UserSession(
+                    user_id=user,
+                    tenant_id="corp",
+                    roles=frozenset({"Sales"}),
+                    metadata={"groups": [region], "programs": []},
+                )
+            )
+
+        shared = SQLQuerySource(sql="SELECT * FROM sales.orders", driver="pg")
+        seen: list[str] = []
+
+        async def _capture(self, **params):  # noqa: ANN001, ANN003 - test double
+            seen.append(self.sql)
+            return pd.DataFrame({"id": [1]})
+
+        monkeypatch.setattr(SQLQuerySource, "fetch", _capture)
+
+        mock_guard.rls_predicates = AsyncMock(return_value=[_pred("northeast")])
+        await AuthorizingDataSource(shared, mock_guard, lambda: _ctx("alice", "NE")).fetch()
+
+        mock_guard.rls_predicates = AsyncMock(return_value=[_pred("southwest")])
+        await AuthorizingDataSource(shared, mock_guard, lambda: _ctx("bob", "SW")).fetch()
+
+        # Bob's query must not carry Alice's region.
+        assert "northeast" in seen[0]
+        assert "southwest" in seen[1]
+        assert "northeast" not in seen[1]

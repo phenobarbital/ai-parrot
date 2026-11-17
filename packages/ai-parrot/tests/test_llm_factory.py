@@ -125,3 +125,11 @@ def test_list_models_google_includes_argon():
 def test_list_models_google_has_no_deprecations():
     """Google retires by deletion (FEAT-688 U2) — no deprecation registry."""
     assert LLMFactory.list_models("google")["deprecated"] == []
+
+
+def test_list_models_google_excludes_2_5():
+    """FEAT-798: retired 2.5 ids are no longer published; flash-lite stays."""
+    active = LLMFactory.list_models("google")["active"]
+    assert "gemini-2.5-pro" not in active
+    assert "gemini-2.5-flash" not in active
+    assert "gemini-2.5-flash-lite" in active

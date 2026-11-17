@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-127 — FileManagerTool Migration to Toolkit
 **Spec**: `sdd/specs/filemanagertool-migration-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: none

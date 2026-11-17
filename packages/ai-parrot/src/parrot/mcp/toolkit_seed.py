@@ -5,10 +5,11 @@ from __future__ import annotations
 import logging
 import os
 import re
+import shlex
 import tempfile
 from importlib.resources import files
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 import yaml
 from pydantic import BaseModel, Field
@@ -32,6 +33,9 @@ class ToolkitTemplate(BaseModel):
     requires_llm: bool = False
     summary: str = ""
     requires_dist: tuple[str, ...] = ()
+    requires_pip: tuple[str, ...] = ()  # PEP 508 requirement strings for `parrot self add` (never import-probed)
+    post_install: tuple[str, ...] = ()  # argv run after install; leading "python" = target venv interpreter
+    requires_env: tuple[str, ...] = ()  # env var names `parrot self doctor` checks
 
 
 class SeedResult(BaseModel):
@@ -66,6 +70,10 @@ def load_template(name: str) -> ToolkitTemplate:
     Raises:
         KeyError: no template named `name` ships with this wheel.
     """
+    # Executable metadata (requirements, post_install) comes ONLY from the packaged catalogue: reject anything that
+    # is not a bare catalogue name before a resource path is built (no separators, "..", absolute paths).
+    if name not in available_templates():
+        raise KeyError(f"No template named {name!r} in the packaged catalogue")
     template_dir = files(TEMPLATE_PACKAGE) / TEMPLATE_DIR
     template_path = template_dir / f"{name}.yaml"
 
@@ -79,6 +87,9 @@ def load_template(name: str) -> ToolkitTemplate:
     summary = ""
     requires_llm = False
     requires_dist: tuple[str, ...] = ()
+    requires_pip: list[str] = []
+    post_install: tuple[str, ...] = ()
+    requires_env: tuple[str, ...] = ()
     body_start = 0
 
     for i, line in enumerate(lines):
@@ -96,13 +107,33 @@ def load_template(name: str) -> ToolkitTemplate:
         elif meta_content.startswith("requires_dist:"):
             raw = meta_content[len("requires_dist:") :].strip()
             requires_dist = tuple(part.strip() for part in raw.split(",") if part.strip())
+        elif meta_content.startswith("requires_pip:"):
+            requirement = meta_content[len("requires_pip:") :].strip()
+            if requirement:
+                requires_pip.append(requirement)  # repeatable, one PEP 508 string per line — no comma split
+        elif meta_content.startswith("post_install:"):
+            raw = meta_content[len("post_install:") :].strip()
+            try:
+                post_install = tuple(shlex.split(raw))
+            except ValueError as exc:  # unbalanced quotes — stay lenient (spec §7)
+                logger.warning("template %s: ignoring unparsable post_install %r: %s", name, raw, exc)
+        elif meta_content.startswith("requires_env:"):
+            raw = meta_content[len("requires_env:") :].strip()
+            requires_env = tuple(part.strip() for part in raw.split(",") if part.strip())
 
     # Extract body (remaining lines)
     body_lines = lines[body_start:]
     body = "\n".join(body_lines)
 
     return ToolkitTemplate(
-        name=name, body=body, requires_llm=requires_llm, summary=summary, requires_dist=requires_dist
+        name=name,
+        body=body,
+        requires_llm=requires_llm,
+        summary=summary,
+        requires_dist=requires_dist,
+        requires_pip=tuple(requires_pip),
+        post_install=post_install,
+        requires_env=requires_env,
     )
 
 
@@ -301,6 +332,24 @@ def remove_section(root: Path, name: str) -> bool:
     return True
 
 
+def _toolkits_root_state(content: str) -> tuple[str, bool]:
+    """Normalise the ``toolkits:`` root of an existing file and report whether it must be added.
+
+    A line-anchored match (not a substring test) so a comment or value that merely mentions
+    ``toolkits:`` is not mistaken for the root; an empty flow mapping (``toolkits: {}``) is
+    rewritten to the block form so sections can be appended beneath it.
+
+    Args:
+        content: Current text of the toolkits config file ("" when absent).
+
+    Returns:
+        The possibly normalised text and True when a ``toolkits:`` root line must still be appended.
+    """
+    normalised = re.sub(r"(?m)^toolkits:[ \t]*\{\s*\}[ \t]*(#.*)?$", "toolkits:", content)
+    has_root = re.search(r"(?m)^toolkits:[ \t]*(#.*)?$", normalised) is not None
+    return normalised, not has_root
+
+
 def seed_toolkit_sections(root: Path, names: Sequence[str]) -> SeedResult:
     """Create/extend `<root>/.parrot/mcp-toolkits.yaml` with the named sections.
 
@@ -362,7 +411,7 @@ def seed_toolkit_sections(root: Path, names: Sequence[str]) -> SeedResult:
             sections_to_add.append(name)
 
     # If file doesn't exist or doesn't have toolkits root, create/add it
-    needs_toolkits_root = not path.exists() or "toolkits:" not in content
+    content, needs_toolkits_root = _toolkits_root_state(content)
     # A hand-edited file missing a trailing newline would otherwise have the
     # first appended section's key concatenated onto its last line (e.g.
     # "enabled: true  bounded-source:") — corrupting the file.
@@ -388,6 +437,81 @@ def seed_toolkit_sections(root: Path, names: Sequence[str]) -> SeedResult:
         _atomic_write(path, "".join(pieces))
 
     # Re-load with load_toolkits_config(root) and raise ValueError if seeded names are not all present
+    if result.added:
+        try:
+            config = load_toolkits_config(root_path)
+            missing = set(result.added) - set(config.toolkits.keys())
+            if missing:
+                raise ValueError(f"Failed to load seeded sections {missing} from {path}")
+        except Exception as e:
+            raise ValueError(f"Failed to re-load seeded config from {path}: {e}") from e
+
+    if result.added or result.skipped:
+        logger.info("seeded %s: added=%s skipped=%s drift=%s", path, result.added, result.skipped, result.drift)
+    return result
+
+
+def seed_agent_sections(root: Path, agents: Mapping[str, str]) -> SeedResult:
+    """Create/extend `<root>/.parrot/mcp-toolkits.yaml` with one AgentToolkit section per item (FEAT-877).
+
+    Args:
+        root: Project root.
+        agents: Section name (``agent-<slug>``) to registry agent name.
+
+    Returns:
+        SeedResult naming the added and skipped (already installed) sections.
+
+    Raises:
+        ValueError: An existing section of that name serves another agent or class, the
+            existing file is malformed, or the written file fails to re-load.
+    """
+    from parrot.mcp.toolkit_config import AGENT_TOOLKIT_CLASS_PATH, load_toolkits_config  # noqa: PLC0415
+
+    root_path = Path(root)
+    path = _config_path(root_path)
+    result = SeedResult(created_file=not path.exists())
+    content = ""
+    existing: dict[str, Any] = {}
+    if path.exists():
+        content = path.read_text(encoding="utf-8")
+        existing = load_toolkits_config(root_path).toolkits
+
+    pending: list[tuple[str, str]] = []
+    for section_name, agent_name in agents.items():
+        section = existing.get(section_name)
+        if section is None:
+            pending.append((section_name, agent_name))
+        elif section.class_path == AGENT_TOOLKIT_CLASS_PATH and section.kwargs.get("agent") == agent_name:
+            result.skipped.append(section_name)
+        else:
+            raise ValueError(
+                f"Section {section_name!r} already serves class {section.class_path!r} "
+                f"with agent {section.kwargs.get('agent')!r}"
+            )
+
+    content, needs_root = _toolkits_root_state(content)
+    if pending:
+        pieces = [content]
+        if needs_root:
+            pieces.append("toolkits:\n")
+        elif content and not content.endswith("\n"):
+            pieces.append("\n")
+        for section_name, agent_name in pending:
+            body = {"class": AGENT_TOOLKIT_CLASS_PATH, "kwargs": {"agent": agent_name}, "env": {}}
+            rendered = yaml.safe_dump({section_name: body}, sort_keys=False, default_flow_style=False)
+            pieces.append("".join(f"  {line}\n" for line in rendered.splitlines()))
+            result.added.append(section_name)
+        text = "".join(pieces)
+        try:
+            parsed = (yaml.safe_load(text) or {}).get("toolkits") or {}
+        except (yaml.YAMLError, AttributeError) as exc:
+            raise ValueError(f"Refusing to write {path}: the result is not valid YAML ({exc})") from exc
+        if not set(result.added) <= set(parsed):
+            raise ValueError(
+                f"Refusing to write {path}: sections {sorted(set(result.added) - set(parsed))} would not load"
+            )
+        _atomic_write(path, text)
+
     if result.added:
         try:
             config = load_toolkits_config(root_path)

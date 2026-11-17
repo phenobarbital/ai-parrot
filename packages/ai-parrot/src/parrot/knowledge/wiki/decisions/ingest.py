@@ -9,14 +9,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sqlite3
 from pathlib import Path
 
 from parrot.knowledge.graphindex.cli import discover_python_files
 from parrot.knowledge.scan_excludes import SCAN_EXCLUDE_DIRS
-from parrot.knowledge.wiki.decisions.codec import content_fingerprint
+from parrot.knowledge.wiki.decisions.codec import content_fingerprint, decision_to_page
 from parrot.knowledge.wiki.decisions.evidence import build_evidence, extract_python_citations
 from parrot.knowledge.wiki.decisions.models import (
     ADR_REFERENCE_AMBIGUOUS,
+    ADR_READ_ONLY,
     ADR_REFERENCE_MISSING,
     ADR_SOURCE_UNAVAILABLE,
     DecisionConfig,
@@ -29,6 +31,7 @@ from parrot.knowledge.wiki.decisions.models import (
 )
 from parrot.knowledge.wiki.decisions.parser import parse_adr
 from parrot.knowledge.wiki.decisions.repository import DecisionRepository
+from parrot.knowledge.wiki.decisions.spec_entries import SEED_HEADING
 from parrot.knowledge.wiki.store import BaseWikiStore
 
 logger = logging.getLogger(__name__)
@@ -40,12 +43,16 @@ logger = logging.getLogger(__name__)
 _ResolvedLinks = dict[str, tuple[list[EvidenceRef], list[DecisionLink]]]
 
 
-def discover_adr_sources(root: Path, config: DecisionConfig) -> list[str]:
+def discover_adr_sources(root: Path, config: DecisionConfig, *, approved_specs: list[str] | None = None) -> list[str]:
     """Repository-relative POSIX paths of every eligible ADR document.
 
     Applies ``config.adr_globs`` AND the project's normal relevance /
     exclusion rules — a matching glob inside an excluded directory is still
-    excluded (spec §2).
+    excluded (spec §2). A file carrying a ``## Decision Metadata`` block is a
+    seed ADR and is never a legacy source: it enters only through its approved
+    batch (AC13). When ``approved_specs`` is given, the result is instead the
+    batch sources: those seed files plus every approved spec path that exists
+    under ``root`` (missing or out-of-root paths are skipped silently).
     """
     found: set[Path] = set()
     for pattern in config.adr_globs:
@@ -56,11 +63,31 @@ def discover_adr_sources(root: Path, config: DecisionConfig) -> list[str]:
             if any(part in SCAN_EXCLUDE_DIRS for part in rel_parts):
                 continue
             found.add(path)
-    return sorted(p.relative_to(root).as_posix() for p in found)
+    seeds = {p for p in found if _has_seed_metadata(p)}
+    legacy = sorted(p.relative_to(root).as_posix() for p in found if p not in seeds)
+    if approved_specs is None:
+        return legacy
+    batch_sources = {p.relative_to(root).as_posix() for p in seeds}
+    resolved_root = root.resolve()
+    for spec in approved_specs:
+        candidate = (root / spec).resolve()
+        if not candidate.is_relative_to(resolved_root) or not candidate.is_file():
+            continue
+        batch_sources.add(candidate.relative_to(resolved_root).as_posix())
+    return sorted(batch_sources)
+
+
+def _has_seed_metadata(path: Path) -> bool:
+    """True when the ADR carries a ``## Decision Metadata`` block — it enters only via its approved batch (AC13)."""
+    try:
+        with path.open(encoding="utf-8") as handle:
+            return any(line.strip() == SEED_HEADING for line in handle)
+    except (OSError, UnicodeDecodeError):
+        return False
 
 
 def _alias_index(inventory: list[DecisionRecord]) -> tuple[dict[str, str], set[str]]:
-    """Map ``ADR-42`` -> decision_id, plus the set of ambiguous aliases.
+    """Map full canonical aliases to decision ids, plus ambiguous aliases.
 
     Built per call: spec §2 forbids a persistent cache without an
     invalidation contract.
@@ -81,17 +108,47 @@ def _alias_index(inventory: list[DecisionRecord]) -> tuple[dict[str, str], set[s
     return mapping, ambiguous
 
 
+def _lookup_alias(
+    alias: str,
+    alias_map: dict[str, str],
+    ambiguous_aliases: set[str],
+    local_prefix: str | None,
+) -> tuple[str | None, str | None]:
+    """Resolve a canonical alias to a decision id or diagnostic code.
+
+    Ambiguity is terminal at each candidate. Only a missing bare alias may
+    fall back to the configured local namespace; a recognized prefixed alias
+    is never retried as bare.
+    """
+    candidates = [alias]
+    if local_prefix is not None and alias.startswith("ADR-"):
+        candidates.append(f"{local_prefix}-{alias}")
+
+    for candidate in candidates:
+        if candidate in ambiguous_aliases:
+            return None, ADR_REFERENCE_AMBIGUOUS
+        decision_id = alias_map.get(candidate)
+        if decision_id is not None:
+            return decision_id, None
+    return None, ADR_REFERENCE_MISSING
+
+
 async def _resolve_citations(
     root: Path,
     code_paths: list[str],
     inventory: list[DecisionRecord],
+    config: DecisionConfig,
 ) -> tuple[_ResolvedLinks, list[DecisionDiagnostic]]:
-    """Resolve Python ADR citations into per-decision ``explains`` links.
+    """Resolve Python citations using exact and optional local-prefix aliases.
 
     Args:
         code_paths: EVERY indexed Python target, not only changed files —
             changing an ADR must repair links in unchanged citing code
             (spec §2 Module 3).
+        config: the project's ADR settings. Required: the recognized
+            prefixes and the local namespace decide which aliases are
+            extracted at all, so a silent default would quietly resolve
+            a configured repository as if it were unconfigured.
 
     Returns:
         ``(resolved, diagnostics)``. ``resolved[decision_id]`` is
@@ -115,10 +172,16 @@ async def _resolve_citations(
         except OSError as exc:
             diagnostics.append(DecisionDiagnostic(code=ADR_SOURCE_UNAVAILABLE, message=str(exc), path=rel_path))
             continue
-        citations, cite_diagnostics = extract_python_citations(rel_path, text)
+        citations, cite_diagnostics = extract_python_citations(rel_path, text, config.effective_prefixes())
         diagnostics.extend(cite_diagnostics)
         for citation in citations:
-            if citation.alias in ambiguous_aliases:
+            decision_id, diagnostic_code = _lookup_alias(
+                citation.alias,
+                alias_map,
+                ambiguous_aliases,
+                config.local_prefix,
+            )
+            if diagnostic_code == ADR_REFERENCE_AMBIGUOUS:
                 diagnostics.append(
                     DecisionDiagnostic(
                         code=ADR_REFERENCE_AMBIGUOUS,
@@ -127,7 +190,6 @@ async def _resolve_citations(
                     )
                 )
                 continue
-            decision_id = alias_map.get(citation.alias)
             if decision_id is None:
                 diagnostics.append(
                     DecisionDiagnostic(
@@ -197,11 +259,41 @@ def _strip_extracted_explains(record: DecisionRecord) -> tuple[list[EvidenceRef]
 
 
 async def _persist_if_changed(repo: DecisionRepository, record: DecisionRecord, result: SyncResult) -> None:
-    """Save ``record`` when it differs from the stored version; update ``result`` counters."""
+    """Save ``record`` when it differs from the stored version; update ``result`` counters.
+
+    A stored record with the same content but a non-canonical envelope (written by an
+    older codec) is re-encoded in place and counted as ``updated``. That re-encode is a
+    best-effort heal: on a read-only plane it is skipped and the record counts as
+    ``unchanged`` (no diagnostic), so a read-only sync of unchanged content keeps
+    succeeding; a writable session heals the page later (issue:84c5f270394d).
+    """
     existing = await repo.get(record.decision_id)
     expected_hash = existing[1] if existing is not None else None
     if existing is not None and content_fingerprint(existing[0]) == content_fingerprint(record):
-        result.unchanged += 1
+        # Same content — but an envelope written by an older codec must still be re-encoded,
+        # or the page keeps a hash no current reader can reproduce (issue:42977fa3aaeb).
+        stored_record, stored_hash = existing
+        try:
+            canonical_hash = decision_to_page(stored_record).content_hash
+            if stored_hash == canonical_hash:
+                result.unchanged += 1
+                return
+            await repo.save(stored_record, stored_hash)
+        except DecisionError as exc:
+            if exc.code == ADR_READ_ONLY:
+                logger.debug("skipping canonical re-encode of %s on a read-only plane", record.decision_id)
+                result.unchanged += 1
+                return
+            result.diagnostics.append(DecisionDiagnostic(code=exc.code, message=str(exc), decision_id=exc.decision_id))
+            return
+        except sqlite3.OperationalError as exc:
+            # A read-only database file surfaces as a raw sqlite error, not ADR_READ_ONLY.
+            if "readonly" not in str(exc):
+                raise
+            logger.debug("skipping canonical re-encode of %s on a read-only database: %s", record.decision_id, exc)
+            result.unchanged += 1
+            return
+        result.updated += 1
         return
     try:
         await repo.save(record, expected_hash)
@@ -248,7 +340,7 @@ async def refresh_decisions(
         except OSError as exc:
             result.diagnostics.append(DecisionDiagnostic(code=ADR_SOURCE_UNAVAILABLE, message=str(exc), path=source))
             continue
-        record, parse_diagnostics = parse_adr(source, text)
+        record, parse_diagnostics = parse_adr(source, text, config.effective_prefixes())
         result.diagnostics.extend(parse_diagnostics)
         if record is None:
             continue
@@ -274,7 +366,12 @@ async def refresh_decisions(
     if alias_map or ambiguous_aliases:
         python_files = await asyncio.to_thread(discover_python_files, root)
         code_paths = [p.relative_to(root).as_posix() for p in python_files]
-        resolved_links, link_diagnostics = await _resolve_citations(root, code_paths, combined_inventory)
+        resolved_links, link_diagnostics = await _resolve_citations(
+            root,
+            code_paths,
+            combined_inventory,
+            config=config,
+        )
         result.diagnostics.extend(link_diagnostics)
 
     for record in parsed_by_source.values():
@@ -349,6 +446,14 @@ async def project_links(store: BaseWikiStore, records: list[DecisionRecord]) -> 
         for record in records
         for link in record.links
     ]
+    for record in records:
+        if record.schema_version != 2 or record.lifecycle != "active":
+            continue
+        edges.extend((record.decision_id, f"concept:{subsystem}", "about", "asserted") for subsystem in record.about)
+        if record.normative is not None:
+            edges.extend(
+                (record.decision_id, target.target_id, record.normative, "asserted") for target in record.targets
+            )
     if not edges:
         return 0
     return await store.add_edges(edges)

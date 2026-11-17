@@ -263,7 +263,7 @@ async def test_handle_voice_replies_with_voice():
     fake_parsed.text = "Agent reply text"
 
     with (
-        patch.object(wrapper, "_invoke_agent", new=AsyncMock(return_value="Agent reply text")),
+        patch.object(wrapper, "_invoke_agent", new=AsyncMock(return_value=("Agent reply text", []))),
         patch.object(wrapper, "_parse_response", return_value=fake_parsed),
         patch.object(wrapper, "_send_parsed_response", new=AsyncMock(return_value=MagicMock(message_id=42))),
         patch.object(wrapper, "_store_telegram_metadata", new=AsyncMock()),
@@ -327,7 +327,7 @@ async def test_handle_voice_degrades_on_tts_error():
     fake_parsed.text = "Text reply"
 
     with (
-        patch.object(wrapper, "_invoke_agent", new=AsyncMock(return_value="Text reply")),
+        patch.object(wrapper, "_invoke_agent", new=AsyncMock(return_value=("Text reply", []))),
         patch.object(wrapper, "_parse_response", return_value=fake_parsed),
         patch.object(wrapper, "_send_parsed_response", new=AsyncMock(return_value=MagicMock(message_id=42))),
         patch.object(wrapper, "_store_telegram_metadata", new=AsyncMock()),
@@ -385,7 +385,7 @@ async def test_tts_disabled_synth_never_invoked():
     fake_parsed.text = "Text only reply"
 
     with (
-        patch.object(wrapper, "_invoke_agent", new=AsyncMock(return_value="Text only reply")),
+        patch.object(wrapper, "_invoke_agent", new=AsyncMock(return_value=("Text only reply", []))),
         patch.object(wrapper, "_parse_response", return_value=fake_parsed),
         patch.object(wrapper, "_send_parsed_response", new=AsyncMock(return_value=MagicMock(message_id=42))),
         patch.object(wrapper, "_store_telegram_metadata", new=AsyncMock()),

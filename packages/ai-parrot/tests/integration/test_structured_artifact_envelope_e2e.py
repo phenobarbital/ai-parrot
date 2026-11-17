@@ -279,9 +279,7 @@ def test_envelope_contract_direct(
 
 def test_parity_suite_importable() -> None:
     """FEAT-223 parity test module must remain importable (regression guard)."""
-    mod = importlib.import_module(
-        "tests.outputs.formats.test_structured_parity"
-    )
+    mod = importlib.import_module("..outputs.formats.test_structured_parity", package=__package__)
     assert hasattr(mod, "TestEnvelopeParity"), (
         "TestEnvelopeParity class must still exist in the parity suite"
     )

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-559 - SDD coder execution pools and recent suspensions
 **Spec**: `sdd/specs/sdd-coder-execution-pool-suspensions.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2h)
 **Depends-on**: TASK-3283

@@ -13,13 +13,23 @@ import pytest
 from parrot.knowledge.bookstore.carding import disambiguate_title
 from parrot.knowledge.bookstore.config import LibraryLocation
 from parrot.knowledge.bookstore.library import (
+    LIBRARY_NOTEBOOK,
+    NOTEBOOK_SUFFIX,
     REPLACED_MARKER,
     _STAGING_MARKER,
     _STAGING_MAX_AGE_S,
     Bookstore,
     BookstoreError,
+    notebook_tree_name,
 )
-from parrot.knowledge.bookstore.models import BookCommunity, BookRelation, RelationJudgement, REL_WEIGHTS, TocEntry
+from parrot.knowledge.bookstore.models import (
+    BookCommunity,
+    BookRelation,
+    CardDraft,
+    RelationJudgement,
+    REL_WEIGHTS,
+    TocEntry,
+)
 
 from .conftest import SAMPLE_MARKDOWN
 
@@ -47,6 +57,11 @@ def store(locations, fake_adapter) -> Bookstore:
 @pytest.fixture
 def store_no_llm(locations) -> Bookstore:
     return Bookstore(locations)
+
+
+def test_toolkit_receives_grace(store: Bookstore) -> None:
+    """Use the staging retention window for generation garbage collection."""
+    assert store._toolkit("project")._generation_grace_s == _STAGING_MAX_AGE_S
 
 
 @pytest.mark.asyncio
@@ -191,19 +206,67 @@ async def test_add_book_txt_requires_llm(store_no_llm, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_add_book_pdf_requires_llm(store_no_llm, tmp_path):
-    """PDF ToC detection/structuring always needs an LLM (FEAT-531 bug).
-
-    Ingest must fail fast with a clear ``BookstoreError`` — not deep
-    inside the PageIndex builder with ``'_NullAdapter' object has no
-    attribute 'ask_with_finish_info'`` (an AttributeError, not a
-    BookstoreError, so it used to bypass the CLI's clean-error handling
-    and crash with a full traceback).
-    """
+async def test_add_book_unreadable_pdf(store_no_llm, tmp_path):
+    """An unreadable PDF raises BookstoreError naming the file."""
     pdf = tmp_path / "book.pdf"
     pdf.write_bytes(b"%PDF-1.4 fake")
-    with pytest.raises(BookstoreError, match="LLM"):
+    with pytest.raises(BookstoreError, match="Cannot index book.pdf"):
         await store_no_llm.add_book(pdf)
+    assert store_no_llm.list_books() == []
+
+
+def _headed_pdf(path: Path) -> Path:
+    """Create a three-page PDF with bookmarks and visible headings."""
+    import pymupdf
+
+    doc = pymupdf.open()
+    try:
+        for page_number in range(1, 4):
+            page = doc.new_page()
+            page.insert_text((72, 100), f"Chapter {page_number}", fontsize=16, fontname="hebo")
+            page.insert_text((72, 140), f"Section {page_number}.1", fontsize=12, fontname="hebo")
+            for line_number in range(20):
+                page.insert_text(
+                    (72, 180 + (line_number * 18)),
+                    "Body text describes the manual and its practical topics.",
+                    fontsize=10,
+                    fontname="helv",
+                )
+        doc.set_toc(
+            [
+                [1, "Chapter 1", 1],
+                [2, "Section 1.1", 1],
+                [1, "Chapter 2", 2],
+                [2, "Section 2.1", 2],
+                [1, "Chapter 3", 3],
+                [2, "Section 3.1", 3],
+            ]
+        )
+        doc.save(str(path))
+    finally:
+        doc.close()
+    return path
+
+
+@pytest.mark.asyncio
+async def test_add_book_pdf_without_llm(store_no_llm, tmp_path, monkeypatch):
+    """A real PDF uses deterministic structure without calling the null adapter."""
+    monkeypatch.setattr("parrot.knowledge.pageindex.utils.get_encoder", lambda model="gpt-4o": None)
+    monkeypatch.setattr(
+        "parrot.knowledge.pageindex.toolkit.get_injection_scoring_engine", lambda force_reresolve=False: None
+    )
+
+    async def _never(*args, **kwargs):
+        raise AssertionError("_NullAdapter must not be called on the PDF path")
+
+    for name in ("ask", "ask_structured", "ask_with_finish_info"):
+        monkeypatch.setattr(f"parrot.knowledge.bookstore.library._NullAdapter.{name}", _never)
+
+    card, status = await store_no_llm.add_book(_headed_pdf(tmp_path / "manual.pdf"))
+
+    assert status == "added"
+    assert card.card_origin == "fallback"
+    assert card.toc
 
 
 @pytest.mark.asyncio
@@ -270,6 +333,19 @@ async def test_read_surface_toc_search_and_section(store, book_md):
     assert section["content"]
     hits = await store.search_book(card.book_id, "vector search")
     assert hits and {"node_id", "title", "score"} <= set(hits[0])
+
+
+@pytest.mark.asyncio
+async def test_read_section_reads_body_ref(store: Bookstore, book_md: Path) -> None:
+    """Resolve a catalog node id through the live tree's immutable body reference."""
+    card, _ = await store.add_book(book_md)
+    tree = await store._toolkit("project").get_tree(card.tree_name)
+    node = next(node for node in tree["structure"] if node.get("body_ref"))
+
+    section = store.read_section(card.book_id, node["node_id"])
+
+    assert section["content"]
+    assert "synthetic handbook" in section["content"].lower()
 
 
 @pytest.mark.asyncio
@@ -703,6 +779,22 @@ async def test_reindex_success_swaps_tree_same_book_id(store: Bookstore, book_md
 
 
 @pytest.mark.asyncio
+async def test_reindex_leaves_no_replaced_tree(store: Bookstore, book_md: Path) -> None:
+    """Publication replaces the live generation without creating a backup tree."""
+    card, _ = await store.add_book(book_md)
+    book_md.write_text(
+        SAMPLE_MARKDOWN + "\n## Updated Chapter\n\n"
+        "The updated chapter contains enough descriptive text to remain visible to the markdown parser.\n",
+        encoding="utf-8",
+    )
+
+    _, status = await store.add_book(book_md)
+
+    assert status == "updated"
+    assert not list(store._location("project").trees_dir.glob(f"*{REPLACED_MARKER}*.json"))
+
+
+@pytest.mark.asyncio
 async def test_add_failed_ingest_leaves_no_tree(store: Bookstore, book_md: Path) -> None:
     """Leave no staging or card after a first-add failure."""
 
@@ -781,13 +873,37 @@ async def test_sweep_deletes_stale_staging_keeps_fresh(store: Bookstore, book_md
 
 
 @pytest.mark.asyncio
-async def test_all_taken_slugs_ignores_reserved_names(store: Bookstore, book_md: Path) -> None:
-    """Ignore staging and replacement names."""
+async def test_sweep_vacuums_live_reserved_target(store: Bookstore, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Vacuum surviving live trees without letting a cleanup failure stop recovery."""
     toolkit = store._toolkit("project")
-    await toolkit.create_tree(f"book{_STAGING_MARKER}deadbeef")
-    await toolkit.create_tree(f"book{REPLACED_MARKER}deadbeef")
+    live_name = "live"
+    await toolkit.create_tree(live_name)
+    await toolkit.create_tree(f"{live_name}{_STAGING_MARKER}deadbeef")
+    vacuumed: list[str] = []
 
-    assert "book" not in store._all_taken_slugs()
+    async def failing_vacuum(tree_name: str) -> None:
+        vacuumed.append(tree_name)
+        raise RuntimeError("vacuum failed")
+
+    monkeypatch.setattr(toolkit, "vacuum_tree", failing_vacuum)
+
+    await store._sweep_reserved_trees("project")
+
+    assert vacuumed == [live_name]
+
+
+@pytest.mark.asyncio
+async def test_all_taken_slugs_reserves_staging_but_ignores_replacements(store: Bookstore, book_md: Path) -> None:
+    """A staging tree reserves its slug for other processes; a replacement copy does not."""
+    toolkit = store._toolkit("project")
+    await toolkit.create_tree(f"staged{_STAGING_MARKER}deadbeef")
+    await toolkit.create_tree(f"replaced{REPLACED_MARKER}deadbeef")
+
+    taken = store._all_taken_slugs()
+
+    assert "staged" in taken
+    assert "replaced" not in taken
+    assert not any(_STAGING_MARKER in name or REPLACED_MARKER in name for name in taken)
 
 
 @pytest.mark.asyncio
@@ -797,7 +913,10 @@ async def test_reindex_roundtrip_markdown(store: Bookstore, book_md: Path) -> No
     book_md.write_text(
         SAMPLE_MARKDOWN + "\n## Replacement Chapter\n"
         "Atomic swap roundtrip phrase with plenty of descriptive content to clear the "
-        "thinning threshold of the markdown parser and keep this node visible.\n",
+        "thinning threshold of the markdown parser and keep this node visible. "
+        + "The optimizer keeps a section as its own node only when it clears the minimum leaf size, "
+        "so this chapter carries enough descriptive prose about swapping a book revision atomically "
+        "while readers keep searching the previous revision until the new one is published. " * 4 + "\n",
         encoding="utf-8",
     )
 
@@ -825,3 +944,672 @@ async def test_cancelled_ingest_cleans_up_staging_tree(monkeypatch, store: Books
 
     trees_dir = store._location("project").trees_dir
     assert not list(trees_dir.glob(f"*{_STAGING_MARKER}*.json"))
+
+
+@pytest.mark.asyncio
+async def test_draft_card_samples_live_bodies_not_stale_legacy(
+    store: Bookstore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Card the live generation: a stale ``<node_id>.md`` must never reach the LLM."""
+    book_path = tmp_path / "pinned-book.md"
+    book_path.write_text(SAMPLE_MARKDOWN, encoding="utf-8")
+    card, _ = await store.add_book(book_path)
+    tree = await store._toolkit("project").get_tree(card.tree_name)
+    node = next(n for n in tree["structure"] if n.get("body_ref"))
+    node_id = node["node_id"]
+
+    # A leftover legacy sidecar, as rename_tree(overwrite=True) over a legacy
+    # destination leaves behind. The unpinned loader prefers it over body_ref.
+    store._content_store("project").save(card.tree_name, node_id, "STALE LEGACY BODY from another book")
+
+    captured: list[list[str]] = []
+
+    async def _capture(adapter, *, filename, doc_description, toc_digest, samples):
+        captured.append(list(samples))
+        return CardDraft(title="Pinned Book", topics=["testing"])
+
+    monkeypatch.setattr("parrot.knowledge.bookstore.library.generate_card_fields", _capture)
+
+    await store.refresh_card(card.book_id)
+
+    assert captured, "generate_card_fields was never reached"
+    joined = "\n".join(captured[0])
+    assert "STALE LEGACY BODY" not in joined, "carding sampled a stale legacy sidecar instead of the live body"
+
+
+# ----------------------------------------------------------------------
+# Notebooks (FEAT-876 TASK-5477)
+# ----------------------------------------------------------------------
+async def _anchor_note(
+    store: Bookstore, book_id: str, node_id: str, *, title: str = "A footnote", body: str = ""
+) -> str:
+    """Add one note anchored to ``(book_id, node_id)`` in the book's notebook; return its node id."""
+    notebook = await store.ensure_notebook(book_id)
+    toolkit = await store._ready_toolkit(notebook.scope)
+    added = await toolkit.add_node(notebook.tree_name, title=title, body=body)
+    await toolkit.tag_node(
+        notebook.tree_name,
+        added["node_id"],
+        metadata={"anchors": [{"book_id": book_id, "node_id": node_id}], "note_kind": "footnote"},
+    )
+    return added["node_id"]
+
+
+@pytest.mark.asyncio
+async def test_notebook_lazy_registration(store, book_md):
+    card, _ = await store.add_book(book_md)
+    books_before = [c.book_id for c in store.list_books()]
+    assert store.notebook_for(card.book_id) is None
+
+    toolkit = await store._ready_toolkit("project")
+    await toolkit.create_tree(notebook_tree_name(card.book_id))
+
+    first = store.notebook_for(card.book_id)
+    second = store.notebook_for(card.book_id)
+    assert first is not None and second is not None
+    assert first.book_id == first.tree_name == f"{card.book_id}{NOTEBOOK_SUFFIX}"
+    assert first.kind == "notes" and first.notes_for == card.book_id
+    assert first.source_format == "tree" and first.card_origin == "fallback"
+    assert first.title == f"Notes — {card.title}"
+    catalog = store._catalog("project")
+    assert [c.book_id for c in catalog.list_cards(kind="notes")] == [first.book_id]
+    assert [c.book_id for c in store.list_books()] == books_before
+    assert all(c.kind == "book" for c in store.catalog_search("Notes"))
+
+    # Library notebook: absent → None; ensure_notebook creates and registers it.
+    assert store.library_notebook("project") is None
+    library = await store.ensure_notebook(None, scope="project")
+    assert library.book_id == LIBRARY_NOTEBOOK and library.notes_for is None
+    assert store.library_notebook("project").book_id == LIBRARY_NOTEBOOK
+
+
+@pytest.mark.asyncio
+async def test_read_section_carries_annotations(store, book_md):
+    card, _ = await store.add_book(book_md)
+    assert len(card.toc) >= 2
+    target, other = card.toc[0].node_id, card.toc[1].node_id
+    assert store.read_section(card.book_id, target)["annotations"] == []
+
+    note_id = await _anchor_note(store, card.book_id, target, body="Remember the event loop.")
+
+    section = store.read_section(card.book_id, target)
+    assert section["content"]  # existing keys unchanged
+    assert len(section["annotations"]) == 1
+    note = section["annotations"][0]
+    assert note["node_id"] == note_id
+    assert note["note_tree"] == notebook_tree_name(card.book_id)
+    assert note["body"] == "Remember the event loop."
+    assert note["note_kind"] == "footnote"
+    assert note["anchor_status"] == "current"
+    assert store.read_section(card.book_id, other)["annotations"] == []
+    async_notes = await store.annotations_for(card.book_id, target)
+    assert [n.node_id for n in async_notes] == [note_id]
+
+
+@pytest.mark.asyncio
+async def test_read_section_survives_corrupt_notebook(store, book_md, locations):
+    card, _ = await store.add_book(book_md)
+    (locations[0].trees_dir / f"{notebook_tree_name(card.book_id)}.json").write_text("{not json", encoding="utf-8")
+    section = store.read_section(card.book_id, card.toc[0].node_id)
+    assert section["annotations"] == []
+    assert all(entry["has_notes"] is False for entry in store.get_toc(card.book_id)["entries"])
+
+
+@pytest.mark.asyncio
+async def test_get_toc_has_notes(store, book_md):
+    card, _ = await store.add_book(book_md)
+    before = store.get_toc(card.book_id)
+    assert all(entry["has_notes"] is False for entry in before["entries"])
+    target = card.toc[0].node_id
+    await _anchor_note(store, card.book_id, target)
+
+    toc = store.get_toc(card.book_id)
+    assert set(toc) == {"book_id", "title", "toc_digest", "entries"}
+    for entry, original in zip(toc["entries"], card.toc, strict=True):
+        assert {k: v for k, v in entry.items() if k != "has_notes"} == original.model_dump()
+        assert entry["has_notes"] is (entry["node_id"] == target)
+
+
+@pytest.mark.asyncio
+async def test_annotations_resolve_by_scope_and_id(tmp_path, fake_adapter):
+    project = LibraryLocation(scope="project", root=tmp_path / "proj" / "library")
+    glob = LibraryLocation(scope="global", root=tmp_path / "glob" / "library")
+    book = tmp_path / "synthetic-handbook.md"
+    book.write_text(SAMPLE_MARKDOWN, encoding="utf-8")
+
+    # The same book id in each scope, each with its own notebook.
+    global_store = Bookstore([glob], adapter=fake_adapter)
+    global_card, _ = await global_store.add_book(book, scope="global")
+    project_store = Bookstore([project], adapter=fake_adapter)
+    project_card, _ = await project_store.add_book(book)
+    assert global_card.book_id == project_card.book_id
+    node_id = project_card.toc[0].node_id
+    project_note = await _anchor_note(project_store, project_card.book_id, node_id, title="Project note")
+
+    # The global book never sees the project notebook (identity is (scope, book_id)).
+    assert global_store.read_section(global_card.book_id, node_id)["annotations"] == []
+
+    # A global notebook node anchored with the default (project) scope is ignored there;
+    # an explicit global anchor is honoured.
+    notebook = await global_store.ensure_notebook(global_card.book_id)
+    assert notebook.scope == "global"
+    toolkit = await global_store._ready_toolkit("global")
+    wrong = await toolkit.add_node(notebook.tree_name, title="Wrong scope")
+    await toolkit.tag_node(
+        notebook.tree_name,
+        wrong["node_id"],
+        metadata={"anchors": [{"book_id": global_card.book_id, "node_id": node_id}]},
+    )
+    right = await toolkit.add_node(notebook.tree_name, title="Global note")
+    await toolkit.tag_node(
+        notebook.tree_name,
+        right["node_id"],
+        metadata={"anchors": [{"book_id": global_card.book_id, "node_id": node_id, "scope": "global"}]},
+    )
+    global_notes = global_store.read_section(global_card.book_id, node_id)["annotations"]
+    assert [n["title"] for n in global_notes] == ["Global note"]
+    project_notes = project_store.read_section(project_card.book_id, node_id)["annotations"]
+    assert [n["node_id"] for n in project_notes] == [project_note]
+
+
+@pytest.mark.asyncio
+async def test_annotations_skip_malformed_anchors(store, book_md):
+    card, _ = await store.add_book(book_md)
+    target = card.toc[0].node_id
+    notebook = await store.ensure_notebook(card.book_id)
+    toolkit = await store._ready_toolkit("project")
+    added = await toolkit.add_node(notebook.tree_name, title="Mixed anchors")
+    await toolkit.tag_node(
+        notebook.tree_name,
+        added["node_id"],
+        metadata={"anchors": [{"node_id": target}, "garbage", {"book_id": card.book_id, "node_id": target}]},
+    )
+    notes = store.read_section(card.book_id, target)["annotations"]
+    assert [n["node_id"] for n in notes] == [added["node_id"]]
+
+
+@pytest.mark.asyncio
+async def test_remove_book_keeps_notebook_by_default(store, book_md, locations):
+    card, _ = await store.add_book(book_md)
+    await _anchor_note(store, card.book_id, card.toc[0].node_id)
+    name = notebook_tree_name(card.book_id)
+    tree_path = locations[0].trees_dir / f"{name}.json"
+
+    assert await store.remove_book(card.book_id) is True
+    catalog = store._catalog("project")
+    orphan = catalog.get(name)
+    assert orphan is not None and orphan.kind == "notes" and orphan.notes_for is None
+    assert tree_path.is_file()
+    assert store.list_books() == []
+
+
+@pytest.mark.asyncio
+async def test_remove_book_with_notes_deletes_notebook(store, book_md, locations):
+    card, _ = await store.add_book(book_md)
+    await _anchor_note(store, card.book_id, card.toc[0].node_id)
+    name = notebook_tree_name(card.book_id)
+
+    assert await store.remove_book(card.book_id, with_notes=True) is True
+    assert store._catalog("project").get(name) is None
+    assert not (locations[0].trees_dir / f"{name}.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_resolve_book_refuses_notebook(store, book_md):
+    card, _ = await store.add_book(book_md)
+    notebook = await store.ensure_notebook(card.book_id)
+    with pytest.raises(BookstoreError):
+        store.resolve_book(notebook.book_id)
+    assert notebook.book_id not in [c.book_id for c in store.list_books()]
+    assert all(c.kind == "book" for c in store.catalog_search("Notes"))
+    assert all(c.kind == "book" for c in store.catalog_search(card.title))
+
+
+# ----------------------------------------------------------------------
+# remap_anchors (FEAT-876 TASK-5479)
+# ----------------------------------------------------------------------
+def _long(word: str) -> str:
+    """A body long enough that the markdown parser keeps its section as its own node."""
+    return (f"{word} content of the section, repeated at length. ") * 20
+
+
+def _chapters(*sections: tuple[str, str]) -> str:
+    """Markdown book with an intro and one ``##`` section per ``(title, word)``."""
+    parts = ["# Remap Book\n\n" + _long("intro")]
+    parts += [f"## {title}\n{_long(word)}" for title, word in sections]
+    return "\n\n".join(parts) + "\n"
+
+
+def _node_id_by_title(toc, title: str) -> str:
+    return next(entry.node_id for entry in toc if entry.title == title)
+
+
+async def _note_anchors(store: Bookstore, card, note_id: str) -> tuple[list, str]:
+    """``(anchors, anchor_status)`` of one notebook node, read from the live notebook tree."""
+    toolkit = await store._ready_toolkit(card.scope)
+    tree = await toolkit.get_tree(notebook_tree_name(card.book_id))
+    from parrot.knowledge.pageindex.utils import structure_to_list
+
+    node = next(n for n in structure_to_list(tree["structure"]) if n["node_id"] == note_id)
+    meta = node.get("metadata") or {}
+    return meta["anchors"], meta.get("anchor_status", "current")
+
+
+@pytest.mark.asyncio
+async def test_remap_anchors_after_update(store, book_md):
+    book_md.write_text(_chapters(("Chapter One", "alpha"), ("Chapter Two", "beta")), encoding="utf-8")
+    card, _ = await store.add_book(book_md)
+    ch2 = _node_id_by_title(card.toc, "Chapter Two")
+    note_id = await _anchor_note(store, card.book_id, ch2)
+    before = {
+        n["node_id"]
+        for n in (await (await store._ready_toolkit("project")).get_tree(notebook_tree_name(card.book_id)))["structure"]
+    }
+
+    # A new chapter inserted before Chapter Two shifts its node id; text is unchanged.
+    book_md.write_text(
+        _chapters(("Chapter One", "alpha"), ("Bridge", "gamma"), ("Chapter Two", "beta")), encoding="utf-8"
+    )
+    updated, status = await store.add_book(book_md)
+    assert status == "updated"
+    new_ch2 = _node_id_by_title(updated.toc, "Chapter Two")
+    assert new_ch2 != ch2
+
+    anchors, anchor_status = await _note_anchors(store, updated, note_id)
+    assert anchor_status == "remapped"
+    assert anchors[0]["node_id"] == new_ch2
+    assert anchors[0]["revision"]
+    after = {
+        n["node_id"]
+        for n in (await (await store._ready_toolkit("project")).get_tree(notebook_tree_name(card.book_id)))["structure"]
+    }
+    assert before <= after  # never deletes
+    notes = await store.annotations_for(card.book_id, new_ch2)
+    assert [n.node_id for n in notes] == [note_id]
+    assert notes[0].anchor_status == "remapped"
+
+    # Idempotent: a second pass finds everything current.
+    assert await store.remap_anchors(card.book_id) == {"current": 1, "remapped": 0, "stale": 0}
+
+
+@pytest.mark.asyncio
+async def test_remap_repeated_titles_and_moved_sections(store, tmp_path):
+    path = tmp_path / "dupes.md"
+    path.write_text(_chapters(("Notes", "alpha"), ("Notes", "beta"), ("Moving", "gamma")), encoding="utf-8")
+    card, _ = await store.add_book(path)
+    first_notes = [e.node_id for e in card.toc if e.title == "Notes"][0]
+    moving = _node_id_by_title(card.toc, "Moving")
+    n_first = await _anchor_note(store, card.book_id, first_notes, title="n1")
+    n_moving = await _anchor_note(store, card.book_id, moving, title="n2")
+
+    # Both "Notes" bodies change (no fingerprint match, duplicate title); "Moving" moves up unchanged.
+    path.write_text(_chapters(("Moving", "gamma"), ("Notes", "delta"), ("Notes", "epsilon")), encoding="utf-8")
+    updated, status = await store.add_book(path)
+    assert status == "updated"
+    new_moving = _node_id_by_title(updated.toc, "Moving")
+    assert new_moving != moving
+
+    anchors, anchor_status = await _note_anchors(store, updated, n_first)
+    assert anchor_status == "stale"
+    assert anchors[0]["node_id"] == first_notes  # kept as is
+    anchors, anchor_status = await _note_anchors(store, updated, n_moving)
+    assert anchor_status == "remapped"
+    assert anchors[0]["node_id"] == new_moving
+
+
+@pytest.mark.asyncio
+async def test_add_book_survives_remap_failure(store, book_md, monkeypatch):
+    book_md.write_text(_chapters(("Chapter One", "alpha")), encoding="utf-8")
+    card, _ = await store.add_book(book_md)
+    await _anchor_note(store, card.book_id, _node_id_by_title(card.toc, "Chapter One"))
+
+    async def boom(*args, **kwargs):
+        raise RuntimeError("remap exploded")
+
+    monkeypatch.setattr(store, "remap_anchors", boom)
+    book_md.write_text(_chapters(("Chapter One", "alpha"), ("Chapter Three", "zeta")), encoding="utf-8")
+    updated, status = await store.add_book(book_md)
+    assert status == "updated"
+    assert updated.book_id == card.book_id
+
+
+@pytest.mark.asyncio
+async def test_reindex_preserves_notebook_end_to_end(store, book_md):
+    book_md.write_text(_chapters(("Chapter One", "alpha"), ("Chapter Two", "beta")), encoding="utf-8")
+    card, _ = await store.add_book(book_md)
+    ch1 = _node_id_by_title(card.toc, "Chapter One")
+    ch2 = _node_id_by_title(card.toc, "Chapter Two")
+    n1 = await _anchor_note(store, card.book_id, ch1, title="one", body="note one")
+    n2 = await _anchor_note(store, card.book_id, ch2, title="two", body="note two")
+
+    book_md.write_text(_chapters(("Chapter One", "alpha"), ("Chapter Two", "omega")), encoding="utf-8")
+    updated, status = await store.add_book(book_md)
+    assert status == "updated"
+
+    for note_id in (n1, n2):
+        anchors, anchor_status = await _note_anchors(store, updated, note_id)
+        assert anchor_status in {"current", "remapped", "stale"}
+        assert anchors and anchors[0]["book_id"] == card.book_id
+    # Chapter One is untouched, still readable with its note attached.
+    section = store.read_section(card.book_id, ch1)
+    assert any(a["node_id"] == n1 for a in section["annotations"])
+    bodies = (await (await store._ready_toolkit("project")).get_tree(notebook_tree_name(card.book_id)))["structure"]
+    assert len(bodies) == 2
+
+
+# ----------------------------------------------------------------------
+# find_books (FEAT-876 TASK-5480)
+# ----------------------------------------------------------------------
+async def _sector(store: Bookstore, scope: str, code: str, title: str, anchors: list, *, body: str = "") -> str:
+    """Add one sector node to ``scope``'s library notebook; return its node id."""
+    notebook = await store.ensure_notebook(None, scope=scope)
+    toolkit = await store._ready_toolkit(scope)
+    added = await toolkit.add_node(notebook.tree_name, title=title, body=body)
+    await toolkit.tag_node(
+        notebook.tree_name,
+        added["node_id"],
+        metadata={"sector_code": code, "note_kind": "sector", "anchors": anchors},
+    )
+    return added["node_id"]
+
+
+@pytest.mark.asyncio
+async def test_find_books_sectors_first(store, book_md, monkeypatch):
+    pytest.importorskip("bm25s")
+    card, _ = await store.add_book(book_md)
+    entry = card.toc[0]
+
+    # No library notebook → catalog FTS with a hint.
+    fallback = await store.find_books("vector search")
+    assert fallback["source"] == "catalog_fts"
+    assert fallback["hint"]
+    assert [b["book_id"] for b in fallback["books"]] == [card.book_id]
+
+    await _sector(
+        store,
+        "project",
+        "025",
+        "Vector search and retrieval",
+        [{"book_id": card.book_id}, {"book_id": card.book_id, "node_id": entry.node_id}],
+    )
+    await _sector(store, "project", "171", "Ethical theories", [{"book_id": card.book_id}])
+
+    from parrot.knowledge.pageindex.content_store import NodeContentStore
+
+    read_trees: list[str] = []
+    original = NodeContentStore.load_current
+
+    def _spy(self, tree_name, node_id):
+        read_trees.append(tree_name)
+        return original(self, tree_name, node_id)
+
+    monkeypatch.setattr(NodeContentStore, "load_current", _spy)
+
+    async def _no_body(*args, **kwargs):
+        raise AssertionError("find_books must never read a book body")
+
+    monkeypatch.setattr(store, "read_section", _no_body)
+
+    result = await store.find_books("vector search")
+    assert result["source"] == "sectors"
+    assert "hint" not in result
+    assert [s["code"] for s in result["sectors"]] == ["025"]
+    sector = result["sectors"][0]
+    assert sector["title"] == "Vector search and retrieval"
+    assert sector["books"] == [
+        {
+            "book_id": card.book_id,
+            "title": card.title,
+            "scope": "project",
+            "entries": [
+                {
+                    "node_id": entry.node_id,
+                    "title": entry.title,
+                    "start_page": entry.start_page,
+                    "end_page": entry.end_page,
+                }
+            ],
+        }
+    ]
+    assert card.tree_name not in read_trees
+
+    # A query no sector shares a term with falls back to the catalog.
+    miss = await store.find_books("quantum chromodynamics")
+    assert miss["source"] == "catalog_fts" and "hint" in miss
+
+
+@pytest.mark.asyncio
+async def test_find_books_merges_scopes_project_first(tmp_path, fake_adapter):
+    pytest.importorskip("bm25s")
+    project = LibraryLocation(scope="project", root=tmp_path / "proj" / "library")
+    glob = LibraryLocation(scope="global", root=tmp_path / "glob" / "library")
+    store = Bookstore([project, glob], adapter=fake_adapter)
+    book = tmp_path / "synthetic-handbook.md"
+    book.write_text(SAMPLE_MARKDOWN, encoding="utf-8")
+    global_card, _ = await store.add_book(book, scope="global")
+    other = tmp_path / "project-book.md"
+    other.write_text(SAMPLE_MARKDOWN + "\nProject sha.\n", encoding="utf-8")
+    project_card, _ = await store.add_book(other, title="Project Book")
+
+    # Global sector first on disk, project sector second: project still wins the order.
+    await _sector(
+        store, "global", "100", "Stoic ethics (global)", [{"book_id": global_card.book_id, "scope": "global"}]
+    )
+    await _sector(store, "project", "170", "Stoic ethics (project)", [{"book_id": project_card.book_id}])
+    # Anchors resolve through (scope, book_id): a global book anchored with the default
+    # project scope is skipped, so this sector has no books and is dropped.
+    await _sector(store, "project", "171", "Stoic ethics (wrong scope)", [{"book_id": global_card.book_id}])
+
+    result = await store.find_books("stoic ethics")
+    assert result["source"] == "sectors"
+    assert [s["code"] for s in result["sectors"]] == ["170", "100"]
+    assert result["sectors"][0]["books"][0]["scope"] == "project"
+    assert result["sectors"][1]["books"][0] == {
+        "book_id": global_card.book_id,
+        "title": global_card.title,
+        "scope": "global",
+        "entries": [],
+    }
+    limited = await store.find_books("stoic ethics", top_k=1)
+    assert [s["code"] for s in limited["sectors"]] == ["170"]
+
+
+@pytest.mark.asyncio
+async def test_find_books_without_bm25s_matches_titles(store, book_md, monkeypatch):
+    card, _ = await store.add_book(book_md)
+    await _sector(store, "project", "025", "Vector search", [{"book_id": card.book_id}])
+    await _sector(store, "project", "171", "Ethics", [{"book_id": card.book_id}])
+    toolkit = await store._ready_toolkit("project")
+
+    async def _no_bm25(*args, **kwargs):
+        raise ImportError("'bm25s' is required but not installed.")
+
+    monkeypatch.setattr(toolkit, "search", _no_bm25)
+    result = await store.find_books("vector")
+    assert result["source"] == "sectors"
+    assert [s["code"] for s in result["sectors"]] == ["025"]
+    assert "bm25s" in result["hint"] and "title" in result["hint"]
+    assert (await store.find_books("astronomy"))["source"] == "catalog_fts"
+
+
+# ----------------------------------------------------------------------
+# import_tree (FEAT-876 TASK-5482)
+# ----------------------------------------------------------------------
+async def _source_tree(tmp_path: Path, book_md: Path, name: str = "src-handbook") -> Path:
+    """Build a real PageIndex tree (JSON + bodies + segments) in a throwaway library; return its JSON path."""
+    src = Bookstore([LibraryLocation(scope="project", root=tmp_path / "srclib")])
+    card, _ = await src.add_book(book_md, title=name)
+    return src._location("project").trees_dir / f"{card.book_id}.json"
+
+
+def _snapshot(json_path: Path) -> dict[str, bytes]:
+    base = json_path.parent
+    out = {json_path.name: json_path.read_bytes()}
+    side = base / json_path.stem
+    for f in sorted(side.rglob("*")):
+        if f.is_file():
+            out[f.relative_to(base).as_posix()] = f.read_bytes()
+    return out
+
+
+@pytest.mark.asyncio
+async def test_import_tree_copies_and_cards(store, tmp_path, book_md, locations):
+    src_json = await _source_tree(tmp_path, book_md)
+    before = _snapshot(src_json)
+    assert any("/segments/" in k for k in before), "fixture must carry segment revisions"
+    card, status = await store.import_tree(src_json)
+    assert status == "added"
+    assert card.source_format == "tree" and card.kind == "book"
+    assert card.source_path == str(src_json.resolve())
+    dst = locations[0].trees_dir
+    assert (dst / f"{card.book_id}.json").is_file()
+    assert any((dst / card.book_id / "segments").glob("*.json"))
+    assert _snapshot(src_json) == before
+    assert store.get_toc(card.book_id)["entries"]
+    again, status2 = await store.import_tree(src_json)
+    assert status2 == "skipped" and again.book_id == card.book_id
+
+
+@pytest.mark.asyncio
+async def test_import_tree_adopts_in_place(store, tmp_path, book_md, locations):
+    src_json = await _source_tree(tmp_path, book_md, "adoptable")
+    trees = locations[0].trees_dir
+    trees.mkdir(parents=True, exist_ok=True)
+    import shutil
+
+    shutil.copy2(src_json, trees / "adoptable.json")
+    shutil.copytree(src_json.parent / src_json.stem, trees / "adoptable")
+    before = sorted(p.name for p in trees.iterdir())
+    card, status = await store.import_tree("adoptable")
+    assert status == "adopted" and card.book_id == "adoptable"
+    assert sorted(p.name for p in trees.iterdir()) == before
+    assert store._catalog("project").get("adoptable") is not None
+
+
+@pytest.mark.asyncio
+async def test_import_tree_refuses_multi_document_as_book(store, tmp_path, book_md):
+    src = Bookstore([LibraryLocation(scope="project", root=tmp_path / "multi")])
+    toolkit = await src._ready_toolkit("project")
+    await toolkit.create_tree("multi")
+    await toolkit.insert_markdown("multi", SAMPLE_MARKDOWN, doc_name="One", doc_id="d1")
+    await toolkit.insert_markdown("multi", SAMPLE_MARKDOWN, doc_name="Two", doc_id="d2")
+    multi_json = src._location("project").trees_dir / "multi.json"
+    with pytest.raises(BookstoreError, match="as_kind='notes'"):
+        await store.import_tree(multi_json)
+    assert store._catalog("project").get("multi") is None
+    card, status = await store.import_tree(multi_json, as_kind="notes")
+    assert status == "added" and card.kind == "notes" and card.notes_for is None
+    assert card.book_id == LIBRARY_NOTEBOOK
+
+
+@pytest.mark.asyncio
+async def test_import_tree_notes_for_book_and_force(store, tmp_path, book_md):
+    book, _ = await store.add_book(book_md)
+    src = Bookstore([LibraryLocation(scope="project", root=tmp_path / "nb")])
+    toolkit = await src._ready_toolkit("project")
+    await toolkit.create_tree("mynotes")
+    await toolkit.add_node("mynotes", title="Note", body="hello")
+    nb_json = src._location("project").trees_dir / "mynotes.json"
+    card, status = await store.import_tree(nb_json, as_kind="notes", notes_for=book.book_id)
+    assert (card.book_id, card.kind, card.notes_for) == (f"{book.book_id}_notes", "notes", book.book_id)
+    await toolkit.add_node("mynotes", title="Another", body="more")
+    with pytest.raises(BookstoreError, match="force"):
+        await store.import_tree(nb_json, as_kind="notes", notes_for=book.book_id)
+    card2, status2 = await store.import_tree(nb_json, as_kind="notes", notes_for=book.book_id, force=True)
+    assert status2 == "added" and card2.book_id == card.book_id
+    trees = store._location("project").trees_dir
+    assert len(list(trees.glob(f"{book.book_id}_notes_*.json"))) == 1
+    with pytest.raises(BookstoreError, match="catalogued book"):
+        await store.import_tree(nb_json, as_kind="notes", notes_for="nope")
+    with pytest.raises(BookstoreError, match="as_kind='notes'"):
+        await store.import_tree(trees / f"{book.book_id}_notes.json")
+
+
+@pytest.mark.asyncio
+async def test_import_tree_stages_and_publishes_atomically(store, tmp_path, book_md, locations, monkeypatch):
+    src_json = await _source_tree(tmp_path, book_md)
+    real_copy2 = __import__("shutil").copy2
+    calls = {"n": 0}
+
+    def flaky(src, dst, *a, **kw):
+        calls["n"] += 1
+        if calls["n"] >= 3:
+            raise OSError("disk exploded")
+        return real_copy2(src, dst, *a, **kw)
+
+    monkeypatch.setattr("parrot.knowledge.bookstore.library.shutil.copy2", flaky)
+    with pytest.raises(OSError):
+        await store.import_tree(src_json)
+    monkeypatch.undo()
+    trees = locations[0].trees_dir
+    assert store._catalog("project").list_cards() == []
+    leftovers = [p.name for p in trees.glob("*.json")]
+    assert all(_STAGING_MARKER in n for n in leftovers)
+    await store._sweep_reserved_trees("project")
+    assert not [p for p in trees.glob("*.json") if _STAGING_MARKER in p.name]
+
+
+@pytest.mark.asyncio
+async def test_import_tree_sha_covers_bodies_and_segments(store, tmp_path, book_md):
+    src_json = await _source_tree(tmp_path, book_md)
+    sidecar = src_json.parent / src_json.stem
+    sha0 = Bookstore._tree_snapshot_sha(src_json, sidecar)
+    body = next(p for p in (sidecar / "bodies").rglob("*") if p.is_file())
+    original = body.read_bytes()
+    body.write_bytes(original + b"x")
+    assert Bookstore._tree_snapshot_sha(src_json, sidecar) != sha0
+    body.write_bytes(original)
+    assert Bookstore._tree_snapshot_sha(src_json, sidecar) == sha0
+    seg = next((sidecar / "segments").glob("*.json"))
+    seg_original = seg.read_bytes()
+    seg.write_bytes(seg_original + b" ")
+    assert Bookstore._tree_snapshot_sha(src_json, sidecar) != sha0
+    # A body missing from the copied sidecar is refused (references must resolve).
+    seg.write_bytes(seg_original)
+    body.unlink()
+    with pytest.raises(BookstoreError, match="body references"):
+        await store.import_tree(src_json)
+
+
+@pytest.mark.asyncio
+async def test_import_tree_reimport_remaps_anchors(store, tmp_path):
+    """Re-importing a changed tree over a live book remaps its notes' anchors, like a re-index does."""
+    src = Bookstore([LibraryLocation(scope="project", root=tmp_path / "srclib")])
+    book = tmp_path / "evolving.md"
+    book.write_text(_chapters(("Chapter One", "alpha"), ("Chapter Two", "beta")), encoding="utf-8")
+    src_card, _ = await src.add_book(book, title="evolving")
+    src_json = src._location("project").trees_dir / f"{src_card.book_id}.json"
+
+    card, status = await store.import_tree(src_json)
+    assert status == "added"
+    ch2 = _node_id_by_title(card.toc, "Chapter Two")
+    note_id = await _anchor_note(store, card.book_id, ch2)
+
+    # The source grows a chapter before "Chapter Two" (its node id shifts, text unchanged).
+    book.write_text(_chapters(("Chapter One", "alpha"), ("Bridge", "gamma"), ("Chapter Two", "beta")), encoding="utf-8")
+    await src.add_book(book, title="evolving")
+    updated, status = await store.import_tree(src_json)
+    assert status == "added" and updated.book_id == card.book_id
+    new_ch2 = _node_id_by_title(updated.toc, "Chapter Two")
+    assert new_ch2 != ch2
+
+    anchors, anchor_status = await _note_anchors(store, updated, note_id)
+    assert anchor_status == "remapped"
+    assert anchors[0]["node_id"] == new_ch2
+
+
+@pytest.mark.asyncio
+async def test_find_books_survives_read_only_catalog(store, book_md, monkeypatch):
+    """find_books on a read-only library degrades instead of raising from lazy notebook registration."""
+    import sqlite3
+
+    await store.add_book(book_md)
+    toolkit = await store._ready_toolkit("project")
+    await toolkit.create_tree("_library_notes")  # on disk, never registered
+
+    def read_only(*_args, **_kwargs):
+        raise sqlite3.OperationalError("attempt to write a readonly database")
+
+    monkeypatch.setattr(store._catalog("project"), "upsert", read_only)
+    result = await store.find_books("anything")
+    assert result["source"] in {"sectors", "catalog_fts"}

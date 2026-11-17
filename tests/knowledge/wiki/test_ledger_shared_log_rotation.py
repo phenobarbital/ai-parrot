@@ -38,7 +38,7 @@ def _event(kind: str, subject: str, timestamp: str, payload: dict | None = None)
 def _write_current(root: Path, *lines: bytes) -> Path:
     """Write lines to the committed shared log under a temporary checkout."""
     current = root / SHARED_LOG_REL_PATH
-    current.parent.mkdir(parents=True)
+    current.parent.mkdir(parents=True, exist_ok=True)
     current.write_bytes(b"".join(lines))
     return current
 
@@ -74,6 +74,35 @@ def test_rotate_is_deterministic_and_idempotent(tmp_path: Path) -> None:
     assert first.moved == 1
     assert second.moved == 0
     assert archive.read_bytes() == first_archive
+
+
+def test_rotate_dedup_against_existing_archive(tmp_path: Path) -> None:
+    """Crash-recovery: lines already in an archive are not duplicated on re-rotation."""
+    event = _event("task.closed", "task:TASK-1", OLD)
+    archive = tmp_path / ARCHIVE_REL_DIR / "events-2026-08.jsonl"
+    archive.parent.mkdir(parents=True)
+    archive.write_bytes(event)
+    current = _write_current(tmp_path, event)
+
+    report = rotate_events(tmp_path, now=NOW)
+
+    assert report.moved == 1
+    assert archive.read_bytes() == event
+    assert current.read_bytes() == b""
+
+
+def test_rotate_kind_filter_matches_is_shareable(tmp_path: Path) -> None:
+    """Only events where is_shareable(event) is true rotate; others stay current."""
+    shareable = _event("task.closed", "task:TASK-1", OLD)
+    local_only = _event("insight.recorded", "insight:local", OLD, {"category": "coder_suspension"})
+    current = _write_current(tmp_path, shareable, local_only)
+
+    report = rotate_events(tmp_path, now=NOW)
+
+    archive = tmp_path / ARCHIVE_REL_DIR / "events-2026-08.jsonl"
+    assert report.moved == 1
+    assert archive.read_bytes() == shareable
+    assert current.read_bytes() == local_only
 
 
 def test_marker_invalidated_by_rotation(tmp_path: Path) -> None:
@@ -120,6 +149,20 @@ def test_claim_imports_first_and_unreadable_checkout_does_not_block(tmp_path: Pa
     assert current.exists()
     assert "Shared ledger log import before claim failed" in caplog.text
     assert index.claim_issue.await_count == 2
+
+
+def test_claim_imports_when_only_archive_exists(tmp_path: Path) -> None:
+    """A committed archive triggers claim pre-import even without a current log."""
+    archive = tmp_path / ARCHIVE_REL_DIR / "events-2026-08.jsonl"
+    archive.parent.mkdir(parents=True)
+    archive.write_bytes(_event("task.closed", "task:TASK-1", OLD))
+    index = MagicMock()
+    index.claim_issue = AsyncMock(return_value=True)
+    service = LedgerService(index, MagicMock(), MagicMock(), tmp_path)
+    service.import_shared_log = AsyncMock()
+
+    assert asyncio.run(service.claim("issue:test", "task:4408")) is True
+    service.import_shared_log.assert_awaited_once()
 
 
 def test_cli_rotate_log_stage_adds_archive(tmp_path: Path, monkeypatch) -> None:

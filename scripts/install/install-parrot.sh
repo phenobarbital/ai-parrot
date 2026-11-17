@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# AI-Parrot installer — automates the AI-Parrot getting-started guide (FEAT-586).
+# AI-Parrot installer — automates the AI-Parrot getting-started guide.
 # Never destructive; every privileged/network command is announced before it runs.
 #
 # Usage:
@@ -20,6 +20,16 @@
 #                            (opt-in; never run automatically)
 #   --dry-run                Print every command, with its purpose, without
 #                            executing anything
+#   --global                 Install a managed runtime under $PARROT_HOME (default
+#                            ~/.parrot): compatible system uv or private pinned uv, a uv-managed
+#                            Python 3.12 and venv; parrot/wikitoolkit/bookstore on PATH. Your own
+#                            uv is never modified, moved or removed. Needs no system Python; incompatible with --venv/--with-wiki/--system-deps
+#   --version <X>            (--global) pin ai-parrot and ai-parrot-tools to <X>
+#   --with <c>[,<c>...]      (--global) run `parrot self add <c>` per component: install
+#                            the packages an MCP toolkit needs (e.g. scraping). One of:
+#                            bounded-source, browsing, database-query, lsp, memory,
+#                            pageindex, pageindex-library, querysource, scraping, sdd-coder,
+#                            targeted-writer
 #   -h, --help               Show this help and exit
 #
 # Contract: idempotent (reuses an existing venv, never deletes one); refuses
@@ -35,9 +45,15 @@ WITH_WIKI=0
 INSTALL_CLI=0
 SYSTEM_DEPS=0
 DRY_RUN=0
+GLOBAL=0; PARROT_VERSION=""; WITH_COMPONENTS=""; PYTHON_SET=0; VENV_SET=0; UV_VERSION="0.11.28"; CREATED=()
+UV_MIN="0.11.28"; UV_MAX="0.12"
+UV_MODE=""; UV_BIN=""; SYS_UV=""; SYS_UV_VER=""; UV_LEGACY_COMPAT=0
+PATH_BLOCK_RC=""
+MIN_FREE_KB=2097152   # C14b gate: 2 GiB free under PARROT_HOME (managed CPython + venv + wheel cache)
+RAW_BASE="https://raw.githubusercontent.com/phenobarbital/ai-parrot/main/scripts/install"   # C14a non-piped alternative
 
 usage() {
-  sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,37p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 # run "<purpose>" cmd...
@@ -65,10 +81,24 @@ while [ $# -gt 0 ]; do
       ;;
     --venv)
       VENV="$2"
+      VENV_SET=1
       shift 2
       ;;
     --python)
       PYTHON="$2"
+      PYTHON_SET=1
+      shift 2
+      ;;
+    --global)
+      GLOBAL=1
+      shift
+      ;;
+    --version)
+      PARROT_VERSION="$2"
+      shift 2
+      ;;
+    --with)
+      WITH_COMPONENTS="$2"
       shift 2
       ;;
     --with-wiki)
@@ -98,6 +128,329 @@ while [ $# -gt 0 ]; do
       ;;
   esac
 done
+
+resolve_extras() {
+  # Map provider keys to ai-parrot extras (spec §3 M3; see the getting-started
+  # guide §3 for the same mapping). Sets ALL_EXTRAS and CLI_PROVIDERS.
+  local p extra
+  ALL_EXTRAS="$EXTRAS"
+  IFS=',' read -ra PROVIDER_LIST <<< "$PROVIDER"
+  CLI_PROVIDERS=()
+  for p in "${PROVIDER_LIST[@]}"; do
+    case "$p" in
+      anthropic) extra="anthropic" ;;
+      openai) extra="openai" ;;
+      google) extra="google" ;;
+      claude-code)
+        extra="claude-agent"
+        CLI_PROVIDERS+=("claude-code")
+        ;;
+      codex-code)
+        extra="codex-agent"
+        CLI_PROVIDERS+=("codex-code")
+        ;;
+      *)
+        echo "Unknown provider '$p'; expected one of: anthropic|openai|google|claude-code|codex-code" >&2
+        exit 1
+        ;;
+    esac
+    if [ -z "$ALL_EXTRAS" ]; then
+      ALL_EXTRAS="$extra"
+    else
+      ALL_EXTRAS="$ALL_EXTRAS,$extra"
+    fi
+  done
+}
+print_plan() {  # C14a — first output of global mode; no side effects; printed under --dry-run too
+  case "$UV_MODE" in
+    download)
+      echo "This installer will download pinned uv $UV_VERSION from $1 and verify it against the SHA-256 pinned in this script, into"
+      echo "$PARROT_HOME/libexec (never on PATH)."
+      [ -z "$SYS_UV" ] || echo "Your uv $SYS_UV_VER at $SYS_UV is outside >=$UV_MIN,<$UV_MAX and is left as is."
+      ;;
+    system)
+      echo "This installer will use your uv $SYS_UV_VER at $SYS_UV (inside >=$UV_MIN,<$UV_MAX) and record its"
+      echo "path in $PARROT_HOME/libexec/uv-path; no uv is downloaded."
+      ;;
+    managed) echo "This installer will reuse uv at $PARROT_HOME/libexec/uv." ;;
+  esac
+  cat <<PLAN
+create $PARROT_HOME/{bin,venv,python} (a uv-managed Python $PYTHON and a venv with $2),
+and add $PARROT_HOME/bin to PATH via a marker block in your shell profile.
+If missing, it writes a commented-out credentials file $PARROT_HOME/env/.env (mode 0600)
+and an empty navconfig $PARROT_HOME/etc/config.ini.
+Your own uv is never modified, moved or removed; uv/uvx that an older parrot installer left in $PARROT_HOME/bin are removed after a successful install. Existing $PARROT_HOME data is never touched.
+Prefer not to pipe a download into bash? Fetch $RAW_BASE/install-parrot.sh and
+$RAW_BASE/SHA256SUMS, run 'sha256sum -c --ignore-missing SHA256SUMS', read the script, then run it.
+PLAN
+}
+# Components --with accepts: the packaged toolkit templates (parrot/mcp/_toolkit_templates/*.yaml). Checked before
+# the plan, so a wrong name fails before anything is downloaded, under --dry-run too. Kept equal to the templates by
+# tests/docs/test_install_posix.py::test_known_components_match_the_packaged_templates.
+KNOWN_COMPONENTS="bounded-source browsing database-query lsp memory pageindex pageindex-library querysource scraping sdd-coder targeted-writer"
+check_components() {
+  local c _comps
+  [ -n "$WITH_COMPONENTS" ] || return 0
+  IFS=',' read -ra _comps <<< "$WITH_COMPONENTS"
+  for c in "${_comps[@]}"; do
+    [ -n "$c" ] || continue
+    case " $KNOWN_COMPONENTS " in
+      *" $c "*) ;;
+      *) echo "unknown component '$c' for --with; available: ${KNOWN_COMPONENTS// /, }" >&2; exit 1 ;;
+    esac
+  done
+}
+gate_fail() { echo "preflight: $1 — fix: $2" >&2; exit 1; }   # C14b — nothing has been written yet
+uv_target() {
+  case "$(uname -s)-$(uname -m)" in
+    Linux-x86_64) echo x86_64-unknown-linux-gnu ;;  Linux-aarch64|Linux-arm64) echo aarch64-unknown-linux-gnu ;;
+    Darwin-x86_64) echo x86_64-apple-darwin ;;      Darwin-arm64) echo aarch64-apple-darwin ;;
+    *) echo "unsupported platform $(uname -s)-$(uname -m) for --global" >&2; return 1 ;;
+  esac
+}
+reachable() {  # reachable <url> — HEAD request; used only by the network gate
+  if command -v curl >/dev/null 2>&1; then curl -fsI "$1" >/dev/null 2>&1
+  else wget -q --spider "$1" >/dev/null 2>&1; fi
+}
+preflight() {  # C14b — read-only checks, in order; never calls run(); never creates PARROT_HOME
+  local anc free h
+  case "$(uname -s)-$(uname -m)" in
+    Linux-x86_64|Darwin-arm64) ;;
+    # Linux aarch64 dropped (owner decision 2026-10-29): no core wheel is published for it.
+    *) gate_fail "unsupported platform $(uname -s)-$(uname -m)" "use a Linux x86_64 machine (official) or macOS arm64; ARM Linux is not supported" ;;
+  esac
+  uv_target >/dev/null 2>&1 || gate_fail "unsupported platform $(uname -s)-$(uname -m)" "use a Linux x86_64 machine (official) or macOS arm64; ARM Linux is not supported"
+  # Officially supported: Linux x86_64 (owner decision 2026-10-29). Elsewhere some dependencies publish no wheel,
+  # so uv builds them from source: warn, never block — a machine with a C toolchain may still succeed.
+  [ "$(uname -s)-$(uname -m)" = Linux-x86_64 ] || echo "warning: $(uname -s)-$(uname -m) is not officially supported \
+(official: Linux x86_64); some dependencies have no wheel here, so the install compiles them, needs a C toolchain \
+and may fail" >&2
+  command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 || gate_fail "no download tool" "install curl or wget"
+  command -v sha256sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1 || gate_fail "no checksum tool" "install coreutils (sha256sum) or perl (shasum)"
+  command -v mktemp >/dev/null 2>&1 || gate_fail "no mktemp" "install coreutils (mktemp)"
+  command -v git >/dev/null 2>&1 || gate_fail "git not found" "install git (the SDD flow and parrot self doctor need it)"
+  # Safeguard, never a gate: the managed runtime brings its own Python, but the SDD workflow commands run python3
+  # snippets, and a minimal host (e.g. the ubuntu:24.04 image) has none (rev 0.8 C29).
+  command -v python3 >/dev/null 2>&1 || echo "warning: python3 not found — the managed runtime does not need it, but the \
+SDD workflow commands run python3 snippets; install it (e.g. sudo apt-get install python3)" >&2
+  anc="$PARROT_HOME"; while [ ! -e "$anc" ]; do anc="$(dirname "$anc")"; done   # nearest existing ancestor
+  [ -w "$anc" ] || gate_fail "$anc is not writable" "set PARROT_HOME to a writable directory"
+  free="$(df -Pk "$anc" | awk 'NR==2{print $4}')"
+  [ "${free:-0}" -ge "$MIN_FREE_KB" ] || gate_fail "only ${free}KB free under $anc (need $MIN_FREE_KB)" "free disk space or set PARROT_HOME elsewhere"
+  if [ "$DRY_RUN" -eq 1 ]; then echo "preflight: network checks skipped (--dry-run)"; return 0; fi
+  for h in https://github.com https://pypi.org/simple/; do
+    reachable "$h" || gate_fail "$h unreachable" "check your network/proxy"
+  done
+  echo "preflight: ok"
+}
+fetch() {  # fetch <url> <dest> — the network check; failure aborts before any PATH change
+  if command -v curl >/dev/null 2>&1; then curl -fsSL --retry 3 -o "$2" "$1"
+  elif command -v wget >/dev/null 2>&1; then wget -q -O "$2" "$1"
+  else echo "--global needs curl or wget" >&2; return 1; fi
+}
+uv_pinned_sha256() {  # uv_pinned_sha256 <asset> — SHA-256 of uv $UV_VERSION release assets, pinned in this script
+  # (itself covered by SHA256SUMS), so a tampered release or a MITM cannot swap archive and checksum together.
+  # PARROT_UV_SHA256 overrides it (offline mirrors, tests); it is read from the local environment only.
+  if [ -n "${PARROT_UV_SHA256:-}" ]; then printf '%s' "$PARROT_UV_SHA256"; return 0; fi
+  [ "$UV_VERSION" = "0.11.28" ] || { echo "no pinned checksum for uv $UV_VERSION" >&2; return 1; }
+  case "$1" in
+    uv-x86_64-unknown-linux-gnu.tar.gz) echo e490a6464492183c5d4534a5527fb4440f7f2bb2f228162ad7e4afe076dc0224 ;;
+    uv-aarch64-unknown-linux-gnu.tar.gz) echo 03e9fe0a81b0718d0bc84625de3885df6cc3f89a8b6af6121d6b9f6113fb6533 ;;
+    uv-x86_64-apple-darwin.tar.gz) echo 2ad79983127ffca7d77b77ce6a24278d7e4f7b817a1acf72fea5f8124b4aac5e ;;
+    uv-aarch64-apple-darwin.tar.gz) echo 33540eb7c883ab857eff79bd5ac2aa31fe27b595abecb4a9c003a2c998447232 ;;
+    *) echo "no pinned checksum for $1" >&2; return 1 ;;
+  esac
+}
+verify_sha256() {  # verify_sha256 <file> <asset> — fails closed when no pin exists
+  local want got; want="$(uv_pinned_sha256 "$2")" || return 1
+  if command -v sha256sum >/dev/null 2>&1; then got="$(sha256sum "$1" | awk '{print $1}')"
+  else got="$(shasum -a 256 "$1" | awk '{print $1}')"; fi
+  [ "$want" = "$got" ] || { echo "checksum mismatch for $1" >&2; return 1; }
+}
+uv_ver() {  # uv_ver <exe> — "0.11.28" from `<exe> --version`; prints nothing when it cannot run
+  local out tok
+  out="$("$1" --version 2>/dev/null)" || return 0
+  for tok in $out; do
+    case "$tok" in [0-9]*) printf '%s' "${tok%%[!0-9.]*}"; return 0 ;; esac
+  done
+}
+ver_lt() {  # ver_lt <a> <b> — true iff dotted-numeric a < b (missing parts = 0); pure bash, no sort -V
+  local IFS=. i x y
+  local -a A B
+  read -ra A <<< "$1"; read -ra B <<< "$2"
+  for ((i = 0; i < ${#A[@]} || i < ${#B[@]}; i++)); do
+    x="${A[i]:-0}"; y="${B[i]:-0}"
+    ((10#$x < 10#$y)) && return 0
+    ((10#$x > 10#$y)) && return 1
+  done
+  return 1
+}
+uv_in_range() { [ -n "$1" ] && ! ver_lt "$1" "$UV_MIN" && ver_lt "$1" "$UV_MAX"; }
+same_dir() {  # same_dir <a> <b> — both exist and are the same physical directory
+  [ -d "$1" ] && [ -d "$2" ] && [ "$(cd "$1" && pwd -P)" = "$(cd "$2" && pwd -P)" ]
+}
+find_system_uv() {  # first `uv` on PATH outside $PARROT_HOME/{bin,libexec}; absolute path, symlinks kept
+  local d IFS=:
+  for d in $PATH; do
+    [ -n "$d" ] || continue
+    same_dir "$d" "$PARROT_HOME/bin" && continue
+    same_dir "$d" "$PARROT_HOME/libexec" && continue
+    if [ -f "$d/uv" ] && [ -x "$d/uv" ]; then
+      case "$d" in /*) printf '%s/uv\n' "${d%/}" ;; *) printf '%s/uv\n' "$(cd "$d" && pwd)" ;; esac
+      return 0
+    fi
+  done
+  return 1
+}
+choose_uv() {  # read-only: UV_MODE=managed|system|download, UV_BIN, SYS_UV, SYS_UV_VER
+  local managed="$PARROT_HOME/libexec/uv"
+  SYS_UV="$(find_system_uv || true)"; SYS_UV_VER=""
+  [ -z "$SYS_UV" ] || SYS_UV_VER="$(uv_ver "$SYS_UV")"
+  if [ -f "$managed" ] && [ -x "$managed" ] && uv_in_range "$(uv_ver "$managed")"; then UV_MODE=managed; UV_BIN="$managed"
+  elif [ -n "$SYS_UV" ] && uv_in_range "$SYS_UV_VER"; then UV_MODE=system; UV_BIN="$SYS_UV"
+  else UV_MODE=download; UV_BIN="$managed"; fi
+}
+record_uv_path() {  # record_uv_path <uv> — write-then-rename $PARROT_HOME/libexec/uv-path
+  local f="$PARROT_HOME/libexec/uv-path"
+  [ -e "$f" ] || CREATED+=("$f")
+  printf '%s\n' "$1" > "$f.tmp.$$" && mv -f "$f.tmp.$$" "$f"
+}
+mkdir_tracked() { if [ ! -e "$1" ]; then mkdir -p "$1"; CREATED+=("$1"); fi; }
+install_shim() {  # write-then-rename: never a half-written shim
+  [ -e "$2" ] || [ -L "$2" ] || CREATED+=("$2"); ln -sfn "$1" "$2.tmp.$$" && mv -f "$2.tmp.$$" "$2"
+}
+install_uv_bins() {  # install_uv_bins <extract-dir> <target> <dest-bin-dir> — uv only, write-then-rename
+  local src="$1/uv-$2"
+  [ -f "$src/uv" ] || src="$1"   # tolerate a flat tarball
+  [ -f "$src/uv" ] || { echo "uv binary not found in the downloaded archive" >&2; return 1; }
+  [ -e "$3/uv" ] || CREATED+=("$3/uv")
+  cp "$src/uv" "$3/uv.tmp.$$" && chmod 755 "$3/uv.tmp.$$" && mv -f "$3/uv.tmp.$$" "$3/uv"
+}
+legacy_compat_uv() {
+  if [ -f "$PARROT_HOME/libexec/uv" ] && [ "$(uv_ver "$PARROT_HOME/libexec/uv")" = "$UV_VERSION" ]; then
+    install_uv_bins "$PARROT_HOME/libexec" "$target" "$PARROT_HOME/bin"
+    return
+  fi
+  if [ ! -d "$dl" ]; then dl="$(mktemp -d "$dl")"; CREATED+=("$dl"); fi
+  fetch "$url" "$dl/$asset"
+  verify_sha256 "$dl/$asset" "$asset"
+  tar -xzf "$dl/$asset" -C "$dl"
+  install_uv_bins "$dl" "$target" "$PARROT_HOME/bin"
+}
+rollback() {
+  local rc=$? i tmp; [ "$rc" -eq 0 ] && return 0
+  echo "global install failed (exit $rc); removing only what this run created (if 'parrot self doctor --runtime-only' failed, its suggested fixes are printed above)" >&2
+  if [ -n "$PATH_BLOCK_RC" ] && [ -f "$PATH_BLOCK_RC" ]; then   # strip the PATH block only if THIS run added it
+    tmp="$PATH_BLOCK_RC.parrot-rollback.$$"
+    sed '/^# >>> parrot >>>$/,/^# <<< parrot <<<$/d' "$PATH_BLOCK_RC" > "$tmp" && cat "$tmp" > "$PATH_BLOCK_RC"
+    rm -f -- "$tmp"
+  fi
+  for ((i=${#CREATED[@]}-1; i>=0; i--)); do rm -rf -- "${CREATED[$i]}"; done
+  return "$rc"
+}
+add_path_block() {
+  local rc_file="$HOME/.profile"
+  case "${SHELL:-}" in */zsh) rc_file="$HOME/.zshrc" ;; */bash) rc_file="$HOME/.bashrc" ;; esac
+  if [ -f "$rc_file" ] && grep -qF '# >>> parrot >>>' "$rc_file"; then return 0; fi
+  [ -e "$rc_file" ] || CREATED+=("$rc_file")
+  PATH_BLOCK_RC="$rc_file"
+  printf '\n# >>> parrot >>>\nexport PATH="%s/bin:$PATH"\n# <<< parrot <<<\n' "$PARROT_HOME" >> "$rc_file"
+  echo "Added $PARROT_HOME/bin to PATH in $rc_file — open a new shell to pick it up"
+}
+global_install() {
+  local target asset url spec tools dl uv s c failed=0 _comps
+  if [ "$VENV_SET" -eq 1 ]; then echo "--global cannot be combined with --venv: the managed venv lives at \$PARROT_HOME/venv" >&2; exit 1; fi
+  if [ "$WITH_WIKI" -eq 1 ]; then echo "--global cannot be combined with --with-wiki: there is no project to build a wiki for" >&2; exit 1; fi
+  if [ "$INSTALL_CLI" -eq 1 ]; then echo "--global cannot be combined with --install-cli: the managed runtime installs no host CLIs; run the installer again without --global for them" >&2; exit 1; fi
+  if [ "$SYSTEM_DEPS" -eq 1 ]; then echo "--global cannot be combined with --system-deps: uv supplies the Python runtime" >&2; exit 1; fi
+  PARROT_HOME="${PARROT_HOME:-$HOME/.parrot}"; [ "$PYTHON_SET" -eq 1 ] || PYTHON="3.12"; resolve_extras
+  check_components
+  target="$(uv_target 2>/dev/null || true)"; asset="uv-$target.tar.gz"
+  url="https://github.com/astral-sh/uv/releases/download/$UV_VERSION/$asset"
+  spec="ai-parrot[$ALL_EXTRAS]"; [ -z "$PARROT_VERSION" ] || spec="$spec==$PARROT_VERSION"
+  # rev 0.5 C20 — ai-parrot-tools at the same version pin (wikitoolkit mcp's wiki tools live in parrot_tools.wiki)
+  tools="ai-parrot-tools"; [ -z "$PARROT_VERSION" ] || tools="$tools==$PARROT_VERSION"
+  dl="${TMPDIR:-/tmp}/parrot-uv.XXXXXX"   # real private dir (mktemp -d, 0700) is created below, never a predictable path
+  choose_uv; uv="$UV_BIN"
+  print_plan "$url" "$spec $tools"    # C14a — before anything else
+  preflight                    # C14b — exits 1 on any failed gate; nothing written yet
+  if [ "$DRY_RUN" -eq 0 ]; then
+    trap rollback EXIT; mkdir_tracked "$PARROT_HOME"; mkdir_tracked "$PARROT_HOME/bin"
+  fi
+  case "$UV_MODE" in
+    download)
+      if [ "$DRY_RUN" -eq 0 ]; then dl="$(mktemp -d "$dl")"; CREATED+=("$dl"); mkdir_tracked "$PARROT_HOME/libexec"; fi
+      printf '\xe2\x86\x92 create a scratch download dir: mktemp -d %s\n' "$dl"
+      run "download pinned uv $UV_VERSION ($target)" fetch "$url" "$dl/$asset"
+      run "verify the uv checksum against the pinned SHA-256" verify_sha256 "$dl/$asset" "$asset"
+      run "extract uv" tar -xzf "$dl/$asset" -C "$dl"
+      run "install uv $UV_VERSION into $PARROT_HOME/libexec (not on PATH; your own uv is never touched)" \
+        install_uv_bins "$dl" "$target" "$PARROT_HOME/libexec"
+      ;;
+    system)
+      [ "$DRY_RUN" -eq 1 ] || mkdir_tracked "$PARROT_HOME/libexec"
+      run "record your uv $SYS_UV_VER ($SYS_UV) in $PARROT_HOME/libexec/uv-path" record_uv_path "$SYS_UV"
+      ;;
+    managed) echo "Reusing uv at $UV_BIN" ;;
+  esac
+  export UV_PYTHON_INSTALL_DIR="$PARROT_HOME/python"
+  [ "$DRY_RUN" -eq 1 ] || [ -e "$UV_PYTHON_INSTALL_DIR" ] || CREATED+=("$UV_PYTHON_INSTALL_DIR")
+  if [ -d "$PARROT_HOME/venv" ]; then echo "Reusing managed venv at $PARROT_HOME/venv"
+  else
+    [ "$DRY_RUN" -eq 1 ] || CREATED+=("$PARROT_HOME/venv")
+    run "create the managed venv (Python $PYTHON)" "$uv" venv "$PARROT_HOME/venv" --python "$PYTHON" --python-preference only-managed
+  fi
+  run "install $spec $tools into the managed venv" "$uv" pip install --python "$PARROT_HOME/venv/bin/python" "$spec" "$tools"
+  if [ "$DRY_RUN" -eq 1 ]; then
+    printf '\xe2\x86\x92 check that the installed ai-parrot knows the libexec uv layout (import parrot.self_.uv)\n'
+  elif ! "$PARROT_HOME/venv/bin/python" -c 'import parrot.self_.uv' >/dev/null 2>&1; then
+    UV_LEGACY_COMPAT=1
+    echo "warning: this ai-parrot release predates the libexec uv layout: its doctor needs uv $UV_VERSION in" \
+      "$PARROT_HOME/bin, which shadows any uv on your PATH. Once a newer release is installed, 'parrot self update'" \
+      "(run it twice from this release) or re-running this installer moves it off PATH." >&2
+    run "place uv $UV_VERSION in $PARROT_HOME/bin for this older ai-parrot" legacy_compat_uv
+  fi
+  for s in parrot wikitoolkit bookstore; do run "expose $s" install_shim "$PARROT_HOME/venv/bin/$s" "$PARROT_HOME/bin/$s"; done
+  run "add $PARROT_HOME/bin to PATH" add_path_block
+  # the profile edit only helps NEW shells: the doctor below runs in this one and checks PATH
+  [ "$DRY_RUN" -eq 1 ] || export PATH="$PARROT_HOME/bin:$PATH"
+  # C14b — runtime scope only, pinned to the venv just built; a non-zero exit under set -e fires the rollback trap
+  run "verify the managed runtime (parrot self doctor --runtime-only)" \
+    env PARROT_VENV="$PARROT_HOME/venv" "$PARROT_HOME/bin/parrot" self doctor --runtime-only
+  [ -d "$dl" ] && run "remove the scratch download dir" rm -rf "$dl"
+  # The base runtime is verified: a failing component must never roll it back (warn, then exit non-zero).
+  trap - EXIT
+  if [ "$UV_LEGACY_COMPAT" -eq 0 ]; then
+    for s in uv uvx; do
+      [ -e "$PARROT_HOME/bin/$s" ] || continue
+      run "remove the legacy $PARROT_HOME/bin/$s (an older installer put it on PATH, shadowing your uv)" \
+        rm -f -- "$PARROT_HOME/bin/$s" || echo "warning: could not remove $PARROT_HOME/bin/$s" >&2
+    done
+  fi
+  # navconfig's env/.env (credentials) and an empty etc/config.ini under PARROT_HOME (user data: never overwritten,
+  # kept by uninstall).
+  if ! run "create the credentials file and etc/config.ini under $PARROT_HOME (kept if present)" \
+      env PARROT_VENV="$PARROT_HOME/venv" "$PARROT_HOME/bin/parrot" self env --init; then
+    echo "warning: no credentials file was created under $PARROT_HOME/env (needs an ai-parrot release with" \
+      "'parrot self env --init'; after 'parrot self update', run 'parrot self env --init')" >&2
+  fi
+  if [ -n "$WITH_COMPONENTS" ]; then  # guard: empty "${arr[@]}" + set -u breaks macOS bash 3.2
+    IFS=',' read -ra _comps <<< "$WITH_COMPONENTS"
+    for c in "${_comps[@]}"; do
+      [ -n "$c" ] || continue
+      if ! run "add component $c" "$PARROT_HOME/bin/parrot" self add "$c"; then
+        echo "warning: 'parrot self add $c' failed; the base runtime stays installed" >&2
+        failed=1
+      fi
+    done
+  fi
+  return "$failed"
+}
+if [ "$GLOBAL" -eq 1 ]; then global_install; echo "Done."; exit 0; fi
+if [ -n "$WITH_COMPONENTS" ] || [ -n "$PARROT_VERSION" ]; then
+  echo "--with and --version only apply to --global (the managed runtime); add --global or drop them" >&2
+  exit 1
+fi
 
 # Python guard — refuse anything outside >=3.11,<3.14 (AC10). Runs BEFORE any
 # other step (including --dry-run) so an unsupported interpreter is caught
@@ -146,35 +499,7 @@ fi
 VENV_PIP="$VENV/bin/pip"
 VENV_BIN="$VENV/bin"
 
-# Map provider keys to ai-parrot extras (spec §3 M3; see the getting-started
-# guide §3 for the same mapping).
-ALL_EXTRAS="$EXTRAS"
-IFS=',' read -ra PROVIDER_LIST <<< "$PROVIDER"
-CLI_PROVIDERS=()
-for p in "${PROVIDER_LIST[@]}"; do
-  case "$p" in
-    anthropic) extra="anthropic" ;;
-    openai) extra="openai" ;;
-    google) extra="google" ;;
-    claude-code)
-      extra="claude-agent"
-      CLI_PROVIDERS+=("claude-code")
-      ;;
-    codex-code)
-      extra="codex-agent"
-      CLI_PROVIDERS+=("codex-code")
-      ;;
-    *)
-      echo "Unknown provider '$p'; expected one of: anthropic|openai|google|claude-code|codex-code" >&2
-      exit 1
-      ;;
-  esac
-  if [ -z "$ALL_EXTRAS" ]; then
-    ALL_EXTRAS="$extra"
-  else
-    ALL_EXTRAS="$ALL_EXTRAS,$extra"
-  fi
-done
+resolve_extras
 
 # Install ai-parrot + the resolved provider/extra set.
 run "install ai-parrot with extras: $ALL_EXTRAS" "$VENV_PIP" install "ai-parrot[$ALL_EXTRAS]"

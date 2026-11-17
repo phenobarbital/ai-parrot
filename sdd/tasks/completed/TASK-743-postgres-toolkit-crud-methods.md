@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-106 — NavigatorToolkit ↔ PostgresToolkit Interaction
 **Spec**: `sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: XL (> 8h)
 **Depends-on**: TASK-739, TASK-740, TASK-741, TASK-742

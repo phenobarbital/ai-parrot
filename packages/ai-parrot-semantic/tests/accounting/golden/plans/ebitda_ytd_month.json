@@ -1,0 +1,298 @@
+{
+  "account_key": "account_id",
+  "amount": "amount",
+  "amount_convention": "debit_positive",
+  "arithmetic_version": 1,
+  "cast_decimal": false,
+  "columns": [
+    [
+      "m_ebitda",
+      {
+        "alias": null,
+        "args": [
+          {
+            "alias": null,
+            "args": [
+              {
+                "alias": null,
+                "args": [
+                  {
+                    "alias": null,
+                    "args": [
+                      {
+                        "alias": "set_product_sales",
+                        "args": [],
+                        "op": "set",
+                        "value": null
+                      },
+                      {
+                        "alias": "set_returns",
+                        "args": [],
+                        "op": "set",
+                        "value": null
+                      }
+                    ],
+                    "op": "sub",
+                    "value": null
+                  },
+                  {
+                    "alias": "set_cost_of_sales",
+                    "args": [],
+                    "op": "set",
+                    "value": null
+                  }
+                ],
+                "op": "sub",
+                "value": null
+              },
+              {
+                "alias": "set_other_cost",
+                "args": [],
+                "op": "set",
+                "value": null
+              }
+            ],
+            "op": "sub",
+            "value": null
+          },
+          {
+            "alias": "set_operating_expenses",
+            "args": [],
+            "op": "set",
+            "value": null
+          }
+        ],
+        "op": "sub",
+        "value": null
+      }
+    ]
+  ],
+  "credit": null,
+  "cumulative": "ytd",
+  "debit": null,
+  "dimensions": [],
+  "filters": [],
+  "grain": "month",
+  "natures": [
+    [
+      "4000",
+      "credit"
+    ],
+    [
+      "4010",
+      "credit"
+    ],
+    [
+      "4020",
+      "credit"
+    ],
+    [
+      "4030",
+      "credit"
+    ],
+    [
+      "4040",
+      "credit"
+    ],
+    [
+      "4050",
+      "credit"
+    ],
+    [
+      "4060",
+      "credit"
+    ],
+    [
+      "4070",
+      "credit"
+    ],
+    [
+      "4080",
+      "credit"
+    ],
+    [
+      "4090",
+      "credit"
+    ],
+    [
+      "4900",
+      "debit"
+    ],
+    [
+      "5000",
+      "debit"
+    ],
+    [
+      "5010",
+      "debit"
+    ],
+    [
+      "5020",
+      "debit"
+    ],
+    [
+      "5030",
+      "debit"
+    ],
+    [
+      "5040",
+      "debit"
+    ],
+    [
+      "5050",
+      "debit"
+    ],
+    [
+      "5060",
+      "debit"
+    ],
+    [
+      "5070",
+      "debit"
+    ],
+    [
+      "5080",
+      "debit"
+    ],
+    [
+      "5090",
+      "debit"
+    ],
+    [
+      "5900",
+      "debit"
+    ],
+    [
+      "6000",
+      "debit"
+    ],
+    [
+      "6010",
+      "debit"
+    ],
+    [
+      "6020",
+      "debit"
+    ],
+    [
+      "6030",
+      "debit"
+    ],
+    [
+      "6040",
+      "debit"
+    ],
+    [
+      "6050",
+      "debit"
+    ],
+    [
+      "6060",
+      "debit"
+    ],
+    [
+      "6070",
+      "debit"
+    ],
+    [
+      "6080",
+      "debit"
+    ],
+    [
+      "6090",
+      "debit"
+    ],
+    [
+      "6100",
+      "debit"
+    ],
+    [
+      "6110",
+      "debit"
+    ],
+    [
+      "6120",
+      "debit"
+    ],
+    [
+      "6130",
+      "debit"
+    ],
+    [
+      "6140",
+      "debit"
+    ]
+  ],
+  "output_from": "2025-03-15",
+  "posting_date": "posting_date",
+  "result_scale": 6,
+  "rounding": "half_even",
+  "scan_from": "2025-01-01",
+  "schema_version": 1,
+  "sets": [
+    {
+      "accounts": [
+        "5000",
+        "5010",
+        "5020",
+        "5030",
+        "5040",
+        "5050",
+        "5060",
+        "5070",
+        "5080",
+        "5090"
+      ],
+      "alias": "set_cost_of_sales"
+    },
+    {
+      "accounts": [
+        "6000",
+        "6010",
+        "6020",
+        "6030",
+        "6040",
+        "6050",
+        "6060",
+        "6070",
+        "6080",
+        "6090",
+        "6100",
+        "6110",
+        "6120",
+        "6130",
+        "6140"
+      ],
+      "alias": "set_operating_expenses"
+    },
+    {
+      "accounts": [
+        "5900"
+      ],
+      "alias": "set_other_cost"
+    },
+    {
+      "accounts": [
+        "4000",
+        "4010",
+        "4020",
+        "4030",
+        "4040",
+        "4050",
+        "4060",
+        "4070",
+        "4080",
+        "4090"
+      ],
+      "alias": "set_product_sales"
+    },
+    {
+      "accounts": [
+        "4900"
+      ],
+      "alias": "set_returns"
+    }
+  ],
+  "table": "journal",
+  "to_exclusive": "2025-07-01"
+}

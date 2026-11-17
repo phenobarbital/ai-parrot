@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-232 — Enable Anthropic AWS Bedrock & AWS-native Backends
 **Spec**: `sdd/specs/enable-anthropic-aws-bedrock.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

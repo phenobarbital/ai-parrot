@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from parrot.auth.o365_oauth import O365OAuthManager
+from parrot.auth.oauth2_base import InvalidGrantError, RefreshTransientError
 
 
 class _FakeResponse:
@@ -20,7 +21,8 @@ class _FakeResponse:
     async def __aexit__(self, *exc_info):
         return False
 
-    async def json(self):
+    async def json(self, **kwargs):
+        # Accept aiohttp kwargs such as ``content_type=None``.
         return self._json
 
     async def text(self):
@@ -63,24 +65,42 @@ async def test_refresh_access_token_returns_token(manager, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_refresh_access_token_dead_token_raises_permissionerror(manager, monkeypatch):
-    fake_response = _FakeResponse(400, text_data="invalid_grant")
+    """An OAuth ``invalid_grant`` body is the only dead-token signal."""
+    fake_response = _FakeResponse(400, json_data={"error": "invalid_grant"})
     monkeypatch.setattr(
         manager, "_get_session", AsyncMock(return_value=_FakeSession(fake_response))
     )
 
-    with pytest.raises(PermissionError):
+    with pytest.raises(InvalidGrantError) as excinfo:
         await manager.refresh_access_token("dead-token")
+    assert isinstance(excinfo.value, PermissionError)
+    assert "dead-token" not in str(excinfo.value)
 
 
 @pytest.mark.asyncio
-async def test_refresh_access_token_401_raises_permissionerror(manager, monkeypatch):
-    fake_response = _FakeResponse(401, text_data="unauthorized")
+async def test_refresh_access_token_401_without_invalid_grant_keeps_grant(manager, monkeypatch):
+    """A 401 that is not ``invalid_grant`` (e.g. ``invalid_client``) does not revoke the grant."""
+    fake_response = _FakeResponse(401, json_data={"error": "invalid_client"})
     monkeypatch.setattr(
         manager, "_get_session", AsyncMock(return_value=_FakeSession(fake_response))
     )
 
-    with pytest.raises(PermissionError):
+    with pytest.raises(RuntimeError) as excinfo:
         await manager.refresh_access_token("dead-token")
+    assert not isinstance(excinfo.value, PermissionError)
+    assert "invalid_client" in str(excinfo.value)
+
+
+@pytest.mark.asyncio
+async def test_refresh_access_token_5xx_is_transient(manager, monkeypatch):
+    """A 5xx without an ``invalid_grant`` body is transient, never a revocation."""
+    fake_response = _FakeResponse(503, text_data="service unavailable")
+    monkeypatch.setattr(
+        manager, "_get_session", AsyncMock(return_value=_FakeSession(fake_response))
+    )
+
+    with pytest.raises(RefreshTransientError):
+        await manager.refresh_access_token("refresh-tok")
 
 
 @pytest.mark.asyncio

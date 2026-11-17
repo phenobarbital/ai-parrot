@@ -13,12 +13,15 @@ import asyncio
 import json
 import logging
 import os
+import re
 import shutil
 import tempfile
 import time
+import uuid
+from collections.abc import Mapping
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Type
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from parrot import conf
 from parrot.flows.dev_loop._subagent_defs import (
@@ -38,6 +41,7 @@ from parrot.flows.dev_loop.dispatchers._shared import (
     DispatchOutputValidationError,
 )
 from parrot.flows.dev_loop.dispatchers.gemini import GeminiCodeDispatcher
+from parrot.flows.dev_loop.experience import ExperienceInterceptor
 from parrot.flows.dev_loop.models import (
     ClaudeCodeDispatchProfile,
     CodexCodeDispatchProfile,
@@ -47,6 +51,8 @@ from parrot.flows.dev_loop.models import (
     GoogleCodingDispatchProfile,
 )
 from parrot.flows.dev_loop.session_state import SessionHost
+from parrot.knowledge.wiki.experience.fastpath import agy_exit_code, redact
+from parrot.knowledge.wiki.experience.models import CommandOutcome
 
 # agy's ``--sandbox`` can only read its workspace (the dispatch ``cwd``), so the
 # ``--json-schema`` file must live inside it. The directory carries its own
@@ -54,6 +60,205 @@ from parrot.flows.dev_loop.session_state import SessionHost
 # the worktree, whatever repository it belongs to.
 _SCHEMA_DIR_PREFIX = ".dev_loop_agy_"
 _SCHEMA_DIR_GITIGNORE = ".gitignore"
+
+# agy >= 1.5.8 reports each tool call as ``step_update`` events with
+# ``step_type: "tool"`` (``ACTIVE`` then ``DONE``, one ``step_index``); a
+# ``run_command`` exit code exists only as text inside ``tool_info.output``.
+_AGY_EXIT_CODE_RE = re.compile(r"Command exited with code (-?\d+)\.")
+_AGY_COMMAND_OUTPUT_MARKER = "Command output:"
+# agy parameter keys renamed to the shapes ``summarize_tool_input`` recognises.
+_AGY_PARAM_ALIASES: Dict[str, str] = {"CommandLine": "command", "Path": "path"}
+
+
+class AgyToolStep(BaseModel):
+    """One agy ``step_update`` tool step (``step_type: "tool"``, agy >= 1.5.8).
+
+    A tool call arrives twice with the same ``step_index``: ``ACTIVE`` (name and
+    parameters only), then ``DONE`` (adds ``tool_info.output`` when the tool ran;
+    a command agy refused has no output).
+
+    Attributes:
+        step_index: The step index shared by the ``ACTIVE`` and ``DONE`` updates.
+        state: The step state as agy sent it (``"ACTIVE"`` / ``"DONE"`` observed).
+        name: The tool name, e.g. ``run_command`` or ``read_file``.
+        parameters: The tool parameters as agy sent them (``CommandLine``, ``Path``, ...).
+        output: ``tool_info.output``; ``None`` when absent.
+        exit_code: Parsed from ``Command exited with code N.`` in ``output``;
+            ``None`` when the output carries no exit code.
+        command_output: The text after ``Command output:`` in ``output``, stripped;
+            ``None`` when the marker is absent. Locale-dependent.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    step_index: Optional[int] = None
+    state: str = ""
+    name: str = ""
+    parameters: Dict[str, Any] = Field(default_factory=dict)
+    output: Optional[str] = None
+    exit_code: Optional[int] = None
+    command_output: Optional[str] = None
+
+    @property
+    def command(self) -> Optional[str]:
+        """The ``run_command`` command line, or ``None`` for any other tool."""
+        value = self.parameters.get("CommandLine")
+        return str(value) if value else None
+
+    @property
+    def done(self) -> bool:
+        """Whether this is the step's terminal ``DONE`` update."""
+        return self.state == "DONE"
+
+    @property
+    def is_error(self) -> Optional[bool]:
+        """``True`` for a non-zero exit code, ``None`` when no exit code was reported."""
+        if self.exit_code is None:
+            return None
+        return self.exit_code != 0
+
+
+def parse_agy_tool_step(step_update: Any) -> Optional[AgyToolStep]:
+    """Parse one agy ``step_update`` payload into an :class:`AgyToolStep`.
+
+    Shared by the dispatcher's event mapping and by any consumer of agy
+    stream-json command outcomes. Never raises.
+
+    Args:
+        step_update: The ``event["step_update"]`` value of an agy stream-json event.
+
+    Returns:
+        The parsed step when ``step_update`` is a dict with ``step_type == "tool"``;
+        ``None`` for any other step or an unparseable payload.
+    """
+    try:
+        if not isinstance(step_update, dict) or step_update.get("step_type") != "tool":
+            return None
+        tool_info = step_update.get("tool_info")
+        if not isinstance(tool_info, dict):
+            tool_info = {}
+        name = tool_info.get("name") or step_update.get("tool_name") or ""
+        parameters = tool_info.get("parameters")
+        raw_output = tool_info.get("output")
+        output = None if raw_output is None else str(raw_output)
+        exit_code: Optional[int] = None
+        command_output: Optional[str] = None
+        if output is not None:
+            match = _AGY_EXIT_CODE_RE.search(output)
+            if match:
+                exit_code = int(match.group(1))
+            _, marker, rest = output.partition(_AGY_COMMAND_OUTPUT_MARKER)
+            if marker:
+                command_output = rest.strip()
+        step_index = step_update.get("step_index")
+        return AgyToolStep(
+            step_index=step_index if isinstance(step_index, int) else None,
+            state=str(step_update.get("state") or ""),
+            name=str(name),
+            parameters=dict(parameters) if isinstance(parameters, dict) else {},
+            output=output,
+            exit_code=exit_code,
+            command_output=command_output,
+        )
+    except Exception:  # noqa: BLE001 - telemetry must never break a dispatch
+        return None
+
+
+def _experience_outcome(event: Mapping[str, Any], *, conversation_id: str) -> CommandOutcome | None:
+    """Convert a terminal agy tool step into a command outcome via the shared parser.
+
+    Args:
+        event: One agy stream-json event carrying a ``step_update``.
+        conversation_id: The agy conversation identity used in the observation id.
+
+    Returns:
+        The outcome for a ``DONE`` ``run_command`` step with a command and step index;
+        ``None`` for anything else. ``ok`` is ``None`` when the output header carries no
+        exit code (the parser's ``exit_code`` is deliberately not trusted).
+    """
+    step = parse_agy_tool_step(event.get("step_update"))
+    if step is None or not step.done or step.name != "run_command":
+        return None
+    if step.step_index is None or not step.command:
+        return None
+    code = agy_exit_code(step.output or "")
+    return CommandOutcome(
+        command=step.command,
+        ok=None if code is None else code == 0,
+        error=redact(step.command_output or "")[:400],
+        observation_id=f"{conversation_id}:{step.step_index}",
+    )
+
+
+class _AgyExperienceCollector:
+    """Per-attempt collector of agy command outcomes for fallback replay.
+
+    Deduplicates repeated ``DONE`` updates by ``step_index`` and holds outcomes
+    until the stream reveals the agy conversation identity, so an observation id
+    is never invented from anything else.
+    """
+
+    def __init__(self) -> None:
+        self.conversation_id: Optional[str] = None
+        self.outcomes: List[CommandOutcome] = []
+        self._seen: set[int] = set()
+        self._pending: Dict[int, Mapping[str, Any]] = {}
+
+    def observe(self, event: Any) -> None:
+        """Record one stream event. Never raises."""
+        try:
+            self._observe(event)
+        except Exception:  # noqa: BLE001 - experience capture must never break a dispatch
+            logging.getLogger(__name__).debug("agy experience capture failed", exc_info=True)
+
+    def _observe(self, event: Any) -> None:
+        if not isinstance(event, dict):
+            return
+        self._learn_conversation(event)
+        su = event.get("step_update")
+        if (event.get("type") or event.get("event")) != "step_update" or not isinstance(su, dict):
+            return
+        step = parse_agy_tool_step(su)
+        if step is None or not step.done or step.name != "run_command":
+            return
+        if step.step_index is None or not step.command or step.step_index in self._seen:
+            return
+        self._seen.add(step.step_index)
+        self._pending[step.step_index] = event
+        self._flush()
+
+    def _learn_conversation(self, event: Dict[str, Any]) -> None:
+        if self.conversation_id:
+            return
+        sources: List[Any] = [event, event.get("step_update"), event.get("result"), event.get("init")]
+        for source in sources:
+            if not isinstance(source, dict):
+                continue
+            for key in ("conversation_id", "conversationId"):
+                value = source.get(key)
+                if isinstance(value, str) and value:
+                    self.conversation_id = value
+                    self._flush()
+                    return
+
+    def _flush(self) -> None:
+        if not self.conversation_id:
+            return
+        pending, self._pending = self._pending, {}
+        for index in sorted(pending):
+            outcome = _experience_outcome(pending[index], conversation_id=self.conversation_id)
+            if outcome is not None:
+                self.outcomes.append(outcome)
+
+    def finish(self) -> List[CommandOutcome]:
+        """Return collected outcomes, discarding any whose conversation was never identified."""
+        self._flush()
+        if self._pending:
+            logging.getLogger(__name__).debug(
+                "dropping %d agy command outcome(s): conversation identity never reported", len(self._pending)
+            )
+            self._pending = {}
+        return list(self.outcomes)
 
 
 class GoogleCodingDispatcher:
@@ -177,6 +382,13 @@ class GoogleCodingDispatcher:
             raise
 
         async with self._semaphore:
+            collector = _AgyExperienceCollector()
+            attempt_uid = f"{run_id}:{node_id}:{uuid.uuid4().hex[:12]}"
+            interceptor: Optional[ExperienceInterceptor] = None
+            try:
+                interceptor = ExperienceInterceptor(session=attempt_uid, cwd=cwd, seat=f"agy:{node_id}")
+            except Exception:  # noqa: BLE001 - experience memory is fail-open
+                self.logger.debug("experience interceptor unavailable", exc_info=True)
             try:
                 schema_path = self._materialize_json_schema(output_model, cwd)
                 prompt = self._build_agy_prompt(profile, brief, output_model, cwd=cwd)
@@ -200,13 +412,18 @@ class GoogleCodingDispatcher:
 
                 try:
                     async with asyncio.timeout(profile.timeout_seconds):
-                        process = await self._create_process(command, cwd=cwd)
+                        process = await self._create_process(
+                            command,
+                            cwd=cwd,
+                            env={"PARROT_EXPERIENCE_SESSION": attempt_uid},
+                        )
                         stderr_task = asyncio.create_task(self._read_stream(process.stderr))
                         result_data, assistant_text = await self._stream_stdout_events(
                             process.stdout,
                             stream_key=stream_key,
                             run_id=run_id,
                             node_id=node_id,
+                            experience=collector,
                         )
                         return_code = await process.wait()
                         stderr = await stderr_task
@@ -286,10 +503,16 @@ class GoogleCodingDispatcher:
                 )
                 return result
             finally:
-                _SESSION_HOST_CTX.reset(_host_token)
-                _DISPATCH_LABELS_CTX.reset(_labels_token)
-                if schema_path:
-                    self._cleanup_json_schema(schema_path)
+                try:
+                    if interceptor is not None:
+                        await interceptor.replay(collector.finish())
+                except Exception:  # noqa: BLE001 - replay is fail-open and must not mask the dispatch result
+                    self.logger.debug("experience replay failed", exc_info=True)
+                finally:
+                    _SESSION_HOST_CTX.reset(_host_token)
+                    _DISPATCH_LABELS_CTX.reset(_labels_token)
+                    if schema_path:
+                        self._cleanup_json_schema(schema_path)
 
     def _build_command(
         self,
@@ -403,13 +626,23 @@ class GoogleCodingDispatcher:
         if os.path.basename(schema_dir).startswith(_SCHEMA_DIR_PREFIX):
             shutil.rmtree(schema_dir, ignore_errors=True)
 
-    async def _create_process(self, command: Sequence[str], cwd: str) -> Any:
+    async def _create_process(
+        self,
+        command: Sequence[str],
+        cwd: str,
+        env: Optional[Mapping[str, str]] = None,
+    ) -> Any:
+        extra: Dict[str, Any] = {}
+        if env is not None:
+            extra["env"] = {**os.environ, **env}
         return await asyncio.create_subprocess_exec(
             *command,
             cwd=cwd,
+            stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             limit=8 * 1024 * 1024,
+            **extra,
         )
 
     async def _read_stream(self, stream: Any) -> str:
@@ -427,6 +660,7 @@ class GoogleCodingDispatcher:
         stream_key: str,
         run_id: str,
         node_id: str,
+        experience: Optional[_AgyExperienceCollector] = None,
     ) -> Tuple[Optional[Dict[str, Any]], str]:
         if stdout is None:
             return None, ""
@@ -451,6 +685,9 @@ class GoogleCodingDispatcher:
                     payload={"raw_line": line},
                 )
                 continue
+
+            if experience is not None:
+                experience.observe(event)
 
             event_type = event.get("type") or event.get("event")
             if event_type == "result":
@@ -493,6 +730,13 @@ class GoogleCodingDispatcher:
                 kind = "dispatch.tool_use"
             elif st == "tool_response":
                 kind = "dispatch.tool_result"
+            elif st == "tool":
+                # agy >= 1.5.8: one ``tool`` step per call, ACTIVE then DONE.
+                state = su.get("state")
+                if state == "ACTIVE":
+                    kind = "dispatch.tool_use"
+                elif state == "DONE":
+                    kind = "dispatch.tool_result"
 
         payload: Dict[str, Any] = {"agy_event": event}
         payload.update(self._extract_agy_display(event))
@@ -573,6 +817,21 @@ class GoogleCodingDispatcher:
                                 response = tool_response.get("output")
                             if response is not None:
                                 out["result_snippet"] = str(response)[:400]
+                    elif step_type == "tool":
+                        step = parse_agy_tool_step(su)
+                        if step is not None:
+                            if step.name:
+                                out["tool_name"] = step.name
+                            if step.parameters:
+                                params = {_AGY_PARAM_ALIASES.get(k, k): v for k, v in step.parameters.items()}
+                                out["tool_input"] = summarize_tool_input(step.name, params)
+                            if step.done:
+                                if step.exit_code is not None:
+                                    out["exit_code"] = step.exit_code
+                                    out["is_error"] = step.is_error
+                                snippet = step.command_output if step.command_output is not None else step.output
+                                if snippet:
+                                    out["result_snippet"] = snippet[:400]
                     text_delta = su.get("text_delta")
                     if text_delta:
                         out["text"] = str(text_delta)[:400]

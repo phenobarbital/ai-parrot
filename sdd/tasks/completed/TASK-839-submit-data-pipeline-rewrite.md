@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-121 — Parrot FormDesigner POST Submission Pipeline
 **Spec**: `sdd/specs/parrot-formdesigner-post-method.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: XL (> 8h)
 **Depends-on**: TASK-834, TASK-835, TASK-836, TASK-837

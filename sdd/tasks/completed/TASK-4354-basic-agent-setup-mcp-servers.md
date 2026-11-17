@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-680 — BasicAgent.setup_mcp_servers (registry MCP config was silently ignored)
 **Spec**: `sdd/specs/tests-test-basic-agent-new-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

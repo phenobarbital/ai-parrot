@@ -1,0 +1,788 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-826",
+  "mode": "investigation",
+  "summary_oneline": "NAV-7762's two Office Depot EcoTank end-cap planograms were delivered on the legacy pipeline; on the current cycle their rewritten rows exist only locally, untracked and unvalidated, and the report no longer shows the requested checks.",
+  "localization": [
+    {
+      "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/plan.py",
+      "symbol": "PlanogramCompliance.__init__",
+      "lines": "121-130",
+      "role": "pipeline constructor: resolves the type handler and refuses a row whose slots_definition is missing",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/plan.py",
+      "symbol": "PlanogramCompliance._load_definition",
+      "lines": "201-210",
+      "role": "loads the definition and is the only production caller of validate_zone_selectors",
+      "evidence": [
+        "F005",
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/plan.py",
+      "symbol": "PlanogramCompliance._assemble",
+      "lines": "493-532",
+      "role": "result contract: eight legacy keys plus additive keys, no markdown",
+      "evidence": [
+        "F014"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/endcap_no_shelves_promotional.py",
+      "symbol": "EndcapNoShelvesPromotional.default_layout_profile",
+      "lines": "66-84",
+      "role": "type used by both rows; default perception_mode is cv, min_usable_shapes 1",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/layout.py",
+      "symbol": "LayoutProfile",
+      "lines": "66-129",
+      "role": "per-row layout override: perception_mode (cv | llm_detector), roi_detection, roi_zone_labels",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/layout.py",
+      "symbol": "validate_zone_selectors",
+      "lines": "209-242",
+      "role": "selector validation required for repeated zone kinds; not run by the migration preflight",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/rules.py",
+      "symbol": "evaluate_rules",
+      "lines": "738-754",
+      "role": "dispatch of the six rule kinds available to a zone",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/rules.py",
+      "symbol": "_rule_zone_present",
+      "lines": "325-373",
+      "role": "'graphic is present'; unassessed (not failed) when visibility is unknown",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/rules.py",
+      "symbol": "_rule_illumination",
+      "lines": "391-438",
+      "role": "backlit ON vs OFF: params.required on | off, penalty on mismatch",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/rules.py",
+      "symbol": "_rule_visual",
+      "lines": "550-590",
+      "role": "keyword-overlap visual check: the closest thing to 'correct image' for a zone",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/rules.py",
+      "symbol": "_rule_appearance",
+      "lines": "441-501",
+      "role": "closed-vocabulary colour / finish check (FEAT-683)",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/scoring.py",
+      "symbol": "score_shelves",
+      "lines": "311-434",
+      "role": "zone-shelf score: presence / text / visual weights and the illumination multiplier",
+      "evidence": [
+        "F010"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/scoring.py",
+      "symbol": "summarize",
+      "lines": "437-494",
+      "role": "marks a zone-only run INCONCLUSIVE unless every listed rule was assessed",
+      "evidence": [
+        "F010"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/definition.py",
+      "symbol": "_normalise_zone_shelves",
+      "lines": "341-362",
+      "role": "turns each unowned zone into a virtual shelf 'zone:<zone_id>' with level None",
+      "evidence": [
+        "F020"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/projection.py",
+      "symbol": "project_compliance",
+      "lines": "139-176",
+      "role": "projects zone shelves into the legacy per-shelf result the report consumes",
+      "evidence": [
+        "F020",
+        "F031"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/projection.py",
+      "symbol": "finalize_comparison",
+      "lines": "181-202",
+      "role": "overall_compliant only when the assessment is complete and every shelf is compliant",
+      "evidence": [
+        "F020"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/migration.py",
+      "symbol": "check_row",
+      "lines": "698-739",
+      "role": "migration preflight verdict used by the apply scripts and the migrate command",
+      "evidence": [
+        "F012"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/migration.py",
+      "symbol": "_convert_zones_only",
+      "lines": "408-440",
+      "role": "mechanical converter for promotional endcaps (one zone per legacy product)",
+      "evidence": [
+        "F012"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/migration.py",
+      "symbol": "_product_rules",
+      "lines": "202-218",
+      "role": "emits an illumination binding only from illumination_required",
+      "evidence": [
+        "F012"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/identification/references.py",
+      "symbol": "select_references",
+      "lines": "80-87",
+      "role": "reference images feed product identification only, never zones",
+      "evidence": [
+        "F011"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/identification/evidence.py",
+      "symbol": "build_zone_prompt",
+      "lines": "75-77",
+      "role": "asks the vision model for illumination only when the zone has an illumination binding",
+      "evidence": [
+        "F013"
+      ]
+    },
+    {
+      "path": "/home/jesuslara/proyectos/flowtask/flowtask/components/PlanogramCompliance.py",
+      "symbol": "PlanogramCompliance._build_planogram_config",
+      "lines": "250-289",
+      "role": "FlowTask consumer: raises ConfigError for a row without slots_definition; type from the row column",
+      "evidence": [
+        "F018"
+      ]
+    },
+    {
+      "path": "/home/jesuslara/proyectos/flowtask/flowtask/components/PlanogramCompliance.py",
+      "symbol": "PlanogramCompliance._create_markdown_report",
+      "lines": "538-622",
+      "role": "builds the report shown in Epson360: per shelf, tick only at score 1.0, no rule outcomes",
+      "evidence": [
+        "F018"
+      ]
+    },
+    {
+      "path": "artifacts/apply_epson_backlit.py",
+      "symbol": "ZONES",
+      "lines": "45-49",
+      "role": "git-ignored script holding the rewritten backlit row (3 zones, llm_detector, illumination on)",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "artifacts/apply_epson_not_backlit.py",
+      "symbol": "ZONES",
+      "lines": "40-45",
+      "role": "git-ignored script holding the rewritten not-backlit row (4 zones, illumination off)",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "examples/planogram/e2e/main.py",
+      "symbol": "main",
+      "lines": "476-493",
+      "role": "per-config e2e runner that reads the active row from the ENV database",
+      "evidence": [
+        "F016"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/tests/test_endcap_no_shelves_promotional.py",
+      "symbol": "(test functions)",
+      "lines": "120-227",
+      "role": "generic type tests; no fixture of either EcoTank row",
+      "evidence": [
+        "F015"
+      ]
+    },
+    {
+      "path": ".claude/commands/planogram-migrate.md",
+      "symbol": "(Ground rules)",
+      "lines": "28-48",
+      "role": "the sanctioned migration procedure (preflight, export, convert, render, apply with confirmation)",
+      "evidence": [
+        "F017"
+      ]
+    },
+    {
+      "path": "sdd/migrations/FEAT-096-planogram15-config.sql",
+      "symbol": "FEAT-096",
+      "lines": null,
+      "role": "precedent: a planogram row change committed as SQL with its feature",
+      "evidence": [
+        "F030",
+        "F022"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "statement": "A row must carry slots_definition: PlanogramCompliance.__init__ and the FlowTask component both refuse a legacy row before any image is processed.",
+      "evidence": [
+        "F005",
+        "F018"
+      ],
+      "implication": "There is no fallback to the March configuration; production rows must be in the new format before (or together with) the new runtime."
+    },
+    {
+      "statement": "The planogram type is read from the planogram_type column of the row, never from slots_definition.meta.",
+      "evidence": [
+        "F007",
+        "F018"
+      ],
+      "implication": "Any row artefact must set or verify the column value endcap_no_shelves_promotional; the apply scripts write only the meta copy."
+    },
+    {
+      "statement": "planogram_id differs between environments (9 and 3 in the exported database, 23 and 24 in the ticket's production logs); config_name is the only stable key.",
+      "evidence": [
+        "F019",
+        "F021"
+      ],
+      "implication": "Every SQL statement and fixture must be keyed by config_name."
+    },
+    {
+      "statement": "Configuration rows are hand-applied data changes by policy: FEAT-612 and FEAT-683 exclude automatic SQL application, and the migrate command requires an explicit confirmation naming the target database for its two writing steps.",
+      "evidence": [
+        "F030",
+        "F012",
+        "F017"
+      ],
+      "implication": "The feature can ship reviewed artefacts and a procedure; it must not write to dev or production on its own."
+    },
+    {
+      "statement": "check_row does not run validate_zone_selectors; only the pipeline constructor does, and both apply scripts gate their UPDATE on check_row alone.",
+      "evidence": [
+        "F012",
+        "F006",
+        "F002"
+      ],
+      "implication": "A row can pass preflight and still fail at construction; both EcoTank rows have repeated zone kinds and therefore depend on selectors."
+    },
+    {
+      "statement": "For a zone-only row every required zone needs a mandatory zone_present binding, and one unassessed mandatory rule makes the run INCONCLUSIVE, which can never be compliant.",
+      "evidence": [
+        "F006",
+        "F010",
+        "F020"
+      ],
+      "implication": "Each additional mandatory rule (text, visual, illumination, appearance) is another way for a correct display to end not compliant."
+    },
+    {
+      "statement": "No rule compares a zone with a reference image; reference images feed product identification only.",
+      "evidence": [
+        "F008",
+        "F011"
+      ],
+      "implication": "'Top Graphic is correct image' can only be approximated by text, keyword visual features, illumination and appearance unless a new capability is built."
+    },
+    {
+      "statement": "Zone shelves are projected with level None: the default threshold and default weights apply, not the per-level 0.95 / 0.9 thresholds of the legacy rows.",
+      "evidence": [
+        "F020",
+        "F010"
+      ],
+      "implication": "Compliance cut-offs for these planograms changed silently with the migration and need an explicit decision."
+    },
+    {
+      "statement": "The report a user reads is built in the FlowTask repository, per shelf: a shelf is ticked only at score 1.0, rule outcomes go only to the JSON report, the projection never fills text_compliance_results, and products_found is off for this type by documented policy.",
+      "evidence": [
+        "F018",
+        "F031",
+        "F032",
+        "F020"
+      ],
+      "implication": "Naming the ticket's four checks in the UI needs a change in the projection, in the FlowTask renderer, or in both; the second is a cross-repository change."
+    },
+    {
+      "statement": "The eight legacy result keys must be preserved.",
+      "evidence": [
+        "F014",
+        "F006"
+      ],
+      "implication": "Any reporting change has to be additive."
+    },
+    {
+      "statement": "No planogram source differs between origin/main and origin/dev; the 2026-10-15 fixes are first tagged in 1.2.3 and the optional-zone scoring fix in 1.2.5.",
+      "evidence": [
+        "F023",
+        "F028",
+        "F010"
+      ],
+      "implication": "What is pending for production is data and deployment; the worker needs ai-parrot-pipelines 1.2.5 or later."
+    },
+    {
+      "statement": "The type defaults to cv perception and the converter never sets llm_detector, never emits appearance, and emits illumination only from illumination_required.",
+      "evidence": [
+        "F006",
+        "F012",
+        "F024"
+      ],
+      "implication": "The mechanical conversion cannot produce these rows; they have to be authored by hand and reviewed."
+    },
+    {
+      "statement": "No test or fixture exercises either configuration; the per-config e2e runner reads the row from whichever database ENV selects.",
+      "evidence": [
+        "F015",
+        "F016",
+        "F001"
+      ],
+      "implication": "A regression on these displays is only caught by a manual run; a committed fixture with expected outcomes is missing."
+    }
+  ],
+  "investigation": {
+    "hypotheses": [
+      {
+        "rank": 1,
+        "statement": "The March deliverable cannot run on the current runtime, and its replacement was never delivered: the rewritten rows for both planograms exist only in a local database and in git-ignored scripts, with no tracked artefact, no retained validation result and no recorded path to production.",
+        "supporting": [
+          "F005",
+          "F018",
+          "F001",
+          "F002",
+          "F003",
+          "F019",
+          "F021",
+          "F023",
+          "F028"
+        ],
+        "contradicting": [],
+        "confidence": "medium",
+        "reasoning": "Direct reads show both the pipeline and FlowTask reject a row without slots_definition, and that the only new-format versions of the two rows are local. The rewrite (2026-10-15), release 1.2.3 (2026-10-16) and the reopen (2026-10-21) line up, and no code changed in between. What keeps this at medium: nothing records why the ticket was reopened, and no database was contacted, so the state of production is unknown.",
+        "next_probe": "On the production database (read-only): SELECT config_name, planogram_id, planogram_type, slots_definition IS NOT NULL AS migrated, updated_at FROM troc.planograms_configurations WHERE config_name LIKE 'epson_depot_ecotank_%backlit%'; and check the ai-parrot-pipelines version installed on the Epson360 FlowTask worker."
+      },
+      {
+        "rank": 2,
+        "statement": "On the new cycle the two planograms no longer report what the ticket asks: the UI report names zones instead of the four requested checks, shows no text or product evidence, can print a cross on a compliant zone, and the rewritten rows fail photos on rules the ticket never requested.",
+        "supporting": [
+          "F018",
+          "F020",
+          "F031",
+          "F032",
+          "F002",
+          "F003",
+          "F010"
+        ],
+        "contradicting": [
+          "F032"
+        ],
+        "confidence": "medium",
+        "reasoning": "Every element is read from code or from the row scripts. F032 shows the empty product list is documented policy, so part of this is by design rather than a defect. It has not been observed in a run: no result of the rewritten rows is kept (F021).",
+        "next_probe": "With the local database up, run `python examples/planogram/e2e/main.py epson_depot_ecotank_backlit_planogram_config --output-dir <new dir>` and the not-backlit equivalent, then read the per-zone status, score and assessment_status for each of the 12 photos."
+      },
+      {
+        "rank": 3,
+        "statement": "The Backlit planogram never produced a correct result: the run attached when the ticket was resolved scored 32 % with zero detections, and in the type's default cv mode a lit lightbox can satisfy the poster profile so the ROI step is skipped.",
+        "supporting": [
+          "F006",
+          "F002",
+          "F014",
+          "F018"
+        ],
+        "contradicting": [
+          "F002"
+        ],
+        "confidence": "low",
+        "reasoning": "The 32 % run is in the ticket's own log (source), and the cv-mode behaviour is stated in the type defaults and in the comment of the backlit script. The rewritten backlit row already sets llm_detector (F002), so if that row is what runs, this cause is addressed; whether it is what runs in production is unknown.",
+        "next_probe": "Check epson.compliance_photo_reports for planogram 'EcoTank End Cap Backlit' since 2026-03-17: share of rows with overall_compliant = false and their detection_source."
+      }
+    ]
+  },
+  "enrichment": null,
+  "confidence_map": [
+    {
+      "id": "C1",
+      "statement": "The pipeline and the FlowTask component both refuse a row without slots_definition.",
+      "evidence": [
+        "F005",
+        "F018"
+      ],
+      "confidence": "high",
+      "reasoning": "Both raise statements were read directly."
+    },
+    {
+      "id": "C2",
+      "statement": "The row format attached to the ticket in March is the legacy format that current code rejects.",
+      "evidence": [
+        "F005",
+        "F018",
+        "F019"
+      ],
+      "confidence": "high",
+      "reasoning": "The ticket logs print the legacy keys; the 2026-10-01 exports show the same legacy shape before conversion."
+    },
+    {
+      "id": "C3",
+      "statement": "The rewritten rows exist only in git-ignored scripts and a local database; no package code, test or tracked example names either configuration.",
+      "evidence": [
+        "F001",
+        "F002",
+        "F003",
+        "F021"
+      ],
+      "confidence": "high",
+      "reasoning": "Unfiltered grep plus direct reads of both scripts and the local backups."
+    },
+    {
+      "id": "C4",
+      "statement": "Both rows use the type endcap_no_shelves_promotional, taken from the planogram_type column.",
+      "evidence": [
+        "F019",
+        "F021",
+        "F007"
+      ],
+      "confidence": "high",
+      "reasoning": "Column value read from the exports; precedence read in four readers."
+    },
+    {
+      "id": "C5",
+      "statement": "zone_present covers 'graphic is present', and the two planograms differ by one parameter, illumination.params.required = on vs off.",
+      "evidence": [
+        "F008",
+        "F002",
+        "F003"
+      ],
+      "confidence": "high",
+      "reasoning": "Rule code and both row scripts read directly."
+    },
+    {
+      "id": "C6",
+      "statement": "No rule compares a zone with a reference image; 'correct image' can only be approximated by text, keyword visual features, illumination and appearance.",
+      "evidence": [
+        "F008",
+        "F011"
+      ],
+      "confidence": "high",
+      "reasoning": "Six rule kinds enumerated in evaluate_rules; references.py has no zone handling.",
+      "user_confirmation": "Decision (U4): text + keywords + backlight state are accepted; no artwork comparison."
+    },
+    {
+      "id": "C7",
+      "statement": "No spec or task plans an image-similarity rule for zones.",
+      "evidence": [
+        "F032"
+      ],
+      "confidence": "low",
+      "reasoning": "One lexical wiki query returned nothing; absence of a hit is weak evidence."
+    },
+    {
+      "id": "C8",
+      "statement": "check_row skips validate_zone_selectors, and both apply scripts gate their UPDATE on check_row alone.",
+      "evidence": [
+        "F012",
+        "F006",
+        "F002"
+      ],
+      "confidence": "high",
+      "reasoning": "Call sites enumerated by grep; script flow read."
+    },
+    {
+      "id": "C9",
+      "statement": "The UI report is built in FlowTask per shelf; rule outcomes, text requirements and product lists are absent for these zone-only rows.",
+      "evidence": [
+        "F018",
+        "F031",
+        "F032",
+        "F020"
+      ],
+      "confidence": "high",
+      "reasoning": "Renderer and projection read directly; the product-list policy is documented.",
+      "user_confirmation": "Decision (U5): itemise the checks in the report, changing ai-parrot and flowtask."
+    },
+    {
+      "id": "C10",
+      "statement": "A compliant zone scoring between its threshold and 1.0 prints a cross under an overall tick.",
+      "evidence": [
+        "F018",
+        "F020"
+      ],
+      "confidence": "medium",
+      "reasoning": "Follows from two code reads; the 0.8 default was taken from a docstring and no run was observed."
+    },
+    {
+      "id": "C11",
+      "statement": "No planogram source differs between origin/main and origin/dev.",
+      "evidence": [
+        "F023"
+      ],
+      "confidence": "high",
+      "reasoning": "rev-list count is 0 and ancestry was checked for five commits."
+    },
+    {
+      "id": "C12",
+      "statement": "The 2026-10-15 fixes ship in tag 1.2.3 and the optional-zone scoring fix in 1.2.5.",
+      "evidence": [
+        "F028",
+        "F010"
+      ],
+      "confidence": "medium",
+      "reasoning": "Verified for one commit per tag; the other two are inferred from same-day linear history."
+    },
+    {
+      "id": "C13",
+      "statement": "The rewritten rows enforce more than the ticket asks (mandatory text, visual, illumination and appearance rules on every zone; four zones for Not Backlit against three graphics).",
+      "evidence": [
+        "F002",
+        "F003"
+      ],
+      "confidence": "high",
+      "reasoning": "Rule tables read directly from both scripts.",
+      "user_confirmation": "Decision (U3): ticket-minimal — the stricter rewritten rules are not the target."
+    },
+    {
+      "id": "C14",
+      "statement": "The ticket was reopened because the two planograms have to be delivered again on the new cycle.",
+      "evidence": [
+        "F010",
+        "F021",
+        "F028"
+      ],
+      "confidence": "low",
+      "reasoning": "Timing only: rewrite 2026-10-15, tag 1.2.3 on 2026-10-16, reopen 2026-10-21, no code change in between. The ticket carries no reopen comment.",
+      "user_confirmation": "Confirmed by the user (U1). Research confidence stays low: no artefact records the reason."
+    },
+    {
+      "id": "C15",
+      "statement": "The production rows (planogram_id 23 and 24) have not received the hand-rewritten configuration.",
+      "evidence": [
+        "F019",
+        "F021"
+      ],
+      "confidence": "low",
+      "reasoning": "No database was contacted; inferred from the rewrite being recorded only in local backups.",
+      "user_confirmation": "Refined by the user (U2): production runs the new cycle and these rows have no slots_definition, so the tasks fail with ConfigError."
+    },
+    {
+      "id": "C16",
+      "statement": "No result of the rewritten rows on the 12 local photos is retained.",
+      "evidence": [
+        "F021",
+        "F004"
+      ],
+      "confidence": "high",
+      "reasoning": "The only result folders date from 2026-10-01, before the rewrite."
+    },
+    {
+      "id": "C17",
+      "statement": "The row description holds 'EcoTank End Cap (Backlit)' and '(Non-Backlit)', not the names the ticket asks for; where Epson360 reads the planogram name is not in this repository.",
+      "evidence": [
+        "F021"
+      ],
+      "confidence": "medium",
+      "reasoning": "Values read from one export of one database; the UI source was not found."
+    },
+    {
+      "id": "C18",
+      "statement": "No test or fixture covers the two configurations.",
+      "evidence": [
+        "F015",
+        "F001",
+        "F016"
+      ],
+      "confidence": "high",
+      "reasoning": "Grep and test listing."
+    },
+    {
+      "id": "C19",
+      "statement": "The mechanical converter cannot produce these rows (no llm_detector, no appearance, illumination only from illumination_required).",
+      "evidence": [
+        "F012",
+        "F006",
+        "F024"
+      ],
+      "confidence": "high",
+      "reasoning": "Converter code read; the module has not changed since 2026-10-01."
+    },
+    {
+      "id": "C20",
+      "statement": "The migration runbook is stale: code and FlowTask point at docs/pipelines/, the file lives under wiki/flows/pipelines/, and it says the ROI prompt is ignored while LayoutProfile uses it.",
+      "evidence": [
+        "F012",
+        "F006",
+        "F018"
+      ],
+      "confidence": "medium",
+      "reasoning": "Path existence checked in one lane; the contradiction is between a doc line and a field docstring."
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Why was NAV-7762 reopened on 2026-10-21 — what was observed or requested?",
+      "blocks_claims": [
+        "C14"
+      ],
+      "plausible_answers": [
+        "The two planograms must be delivered again on the new perceive/identify/compare cycle (rows not in production)",
+        "Real photos are scored wrongly (say which planogram and how)",
+        "The report in Epson360 does not show the checks the ticket asks for"
+      ],
+      "ask_user": true,
+      "user_answer": "Redeliver on new cycle — planograms 23/24 must work on the perceive/identify/compare cycle; their rows are not in production yet.",
+      "answered_at": "2026-11-06T16:49:16Z"
+    },
+    {
+      "id": "U2",
+      "question": "What runs in production today: are config rows 23/24 legacy, mechanically converted (3 zones, cv) or hand-rewritten, and which ai-parrot-pipelines version does the Epson360 FlowTask worker have?",
+      "blocks_claims": [
+        "C15",
+        "C12"
+      ],
+      "plausible_answers": [
+        "Legacy runtime and legacy rows: nothing from the new cycle is deployed",
+        "New runtime with mechanically converted rows",
+        "New runtime, rows not migrated (tasks fail with ConfigError)"
+      ],
+      "ask_user": true,
+      "user_answer": "New runtime, not migrated — production runs the new cycle but these rows have no slots_definition, so the tasks fail with ConfigError.",
+      "answered_at": "2026-11-06T16:49:16Z"
+    },
+    {
+      "id": "U3",
+      "question": "How strict should the two planograms be? The ticket lists presence of three graphics plus 'Top Graphic is correct image'; the rewritten rows make text, visual, illumination and appearance rules mandatory on every zone, and split the Not Backlit top into a header strip and the Shaq panel.",
+      "blocks_claims": [
+        "C13"
+      ],
+      "plausible_answers": [
+        "Ticket-minimal: presence for all graphics, identity checks only on the top graphic",
+        "Keep the stricter rewritten rules as they are",
+        "Presence mandatory; text, visual and appearance informative (score only)"
+      ],
+      "ask_user": true,
+      "user_answer": "Ticket-minimal — presence is mandatory for every graphic; identity checks (text, visual, backlight) are mandatory only on the top graphic; middle and bottom extras become informative.",
+      "answered_at": "2026-11-06T16:49:16Z"
+    },
+    {
+      "id": "U4",
+      "question": "Is text + keyword + illumination evidence acceptable for 'Top Graphic is correct image', or must the graphic be compared with the reference artwork (a new capability)?",
+      "blocks_claims": [
+        "C6",
+        "C7"
+      ],
+      "plausible_answers": [
+        "Acceptable: no new rule kind",
+        "A reference-image comparison for zones is required"
+      ],
+      "ask_user": true,
+      "user_answer": "Text + keywords suffice — verify the top graphic by its texts, visual keywords and backlight on/off; no new rule kind.",
+      "answered_at": "2026-11-06T16:49:16Z"
+    },
+    {
+      "id": "U5",
+      "question": "Should the Epson360 report name each requested check per graphic (present, correct image, backlight), which needs a change in the projection and/or the FlowTask renderer, or is the per-zone score enough?",
+      "blocks_claims": [
+        "C9",
+        "C10"
+      ],
+      "plausible_answers": [
+        "Yes: itemise the checks, changing ai-parrot and flowtask",
+        "Only what ai-parrot can add without touching flowtask",
+        "No report change"
+      ],
+      "ask_user": true,
+      "user_answer": "Itemise, both repos — ai-parrot exposes per-zone check outcomes with readable names; flowtask's report prints them and fixes the per-zone tick.",
+      "answered_at": "2026-11-06T16:49:16Z"
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "The user's answers closed the three scope forks (ticket-minimal rules, no artwork-comparison rule, report itemised in both repositories) and confirmed the reopen reason and the production state; localization is high-confidence. Overall confidence stays medium because the git research was truncated and no run of the rows was observed.",
+    "before_qa": {
+      "command": "sdd-brainstorm",
+      "rationale": "Medium confidence, truncated git research and three open product decisions spanning two repositories."
+    }
+  },
+  "overall_confidence": "medium",
+  "meta": {
+    "findings_used": [
+      "F001",
+      "F002",
+      "F003",
+      "F004",
+      "F005",
+      "F006",
+      "F007",
+      "F008",
+      "F010",
+      "F011",
+      "F012",
+      "F013",
+      "F014",
+      "F015",
+      "F016",
+      "F017",
+      "F018",
+      "F019",
+      "F020",
+      "F021",
+      "F022",
+      "F023",
+      "F024",
+      "F028",
+      "F030",
+      "F031",
+      "F032"
+    ],
+    "findings_unused": [
+      "F009",
+      "F025",
+      "F026",
+      "F027",
+      "F029"
+    ],
+    "notes": "Follow-ups answerable by more research, not by the user: (1) history of the slots_definition requirement and of _create_markdown_report in the flowtask repository (git budget exhausted); (2) a run of the rewritten rows on the 12 local photos (needs the local database up); (3) where the Epson360 'Planogram Type' name comes from (not in this repository). Spec-level items left open after the Q&A: which zone is the Not Backlit 'Top Graphic' (header strip vs Shaq panel), the compliance threshold for zone shelves (default 0.8 vs the legacy 0.95/0.9), where Epson360 reads the planogram display name, and ownership of the companion flowtask change."
+  }
+}

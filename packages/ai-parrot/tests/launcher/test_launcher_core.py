@@ -1,0 +1,253 @@
+"""Unit tests for parrot.launcher resolution (FEAT-633 M1, TASK-4071)."""
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+
+import pytest
+
+from parrot import launcher  # created by this task
+from .conftest import make_venv
+
+@pytest.fixture(autouse=True)
+def _reset_warnings(monkeypatch):
+    monkeypatch.setattr(launcher, "_WARNED", set())
+
+
+def test_parrot_home_env_default_and_tilde(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert launcher.parrot_home({}) == tmp_path / ".parrot"
+    assert launcher.parrot_home({"PARROT_HOME": ""}) == tmp_path / ".parrot"
+    assert launcher.parrot_home({"PARROT_HOME": "~/x"}) == tmp_path / "x"
+
+
+def test_launcher_not_managed(tmp_path):
+    env = {"PARROT_HOME": str(tmp_path / "home")}
+    assert launcher.is_managed(str(tmp_path / "other"), env=env) is False
+    assert launcher.is_managed(str(tmp_path / "home" / "venv"), env=env) is True
+
+
+def test_resolve_order_and_validity(tmp_path):
+    home, proj = tmp_path / "home", tmp_path / "proj"
+    make_venv(home / "venv", "wikitoolkit")
+    (proj / ".git").mkdir(parents=True)
+    make_venv(proj / ".venv", "wikitoolkit")
+    explicit = make_venv(tmp_path / "explicit", "wikitoolkit")
+    ve = make_venv(tmp_path / "ve", "wikitoolkit")
+    env = {"PARROT_HOME": str(home), "PARROT_VENV": str(explicit), "VIRTUAL_ENV": str(ve)}
+    assert launcher.resolve_venv("wikitoolkit", argv=[], env=env, cwd=proj)[1] == "PARROT_VENV"
+    env.pop("PARROT_VENV")
+    assert launcher.resolve_venv("wikitoolkit", argv=[], env=env, cwd=proj) == (proj / ".venv", "project")
+    (proj / ".venv" / "bin" / "wikitoolkit").unlink()
+    assert launcher.resolve_venv("wikitoolkit", argv=[], env=env, cwd=proj) == (ve, "VIRTUAL_ENV")
+    env.pop("VIRTUAL_ENV")
+    assert launcher.resolve_venv("wikitoolkit", argv=[], env=env, cwd=proj) == (home / "venv", "managed")
+
+
+def test_worktree_prefers_local_then_main(linked_worktree_repo, tmp_path):
+    main, wt = linked_worktree_repo
+    make_venv(main / ".venv", "parrot")
+    env = {"PARROT_HOME": str(tmp_path / "home")}
+    assert launcher.resolve_venv("parrot", argv=[], env=env, cwd=wt)[0].resolve() == (main / ".venv").resolve()
+    make_venv(wt / ".venv", "parrot")
+    assert launcher.resolve_venv("parrot", argv=[], env=env, cwd=wt)[0] == wt / ".venv"
+
+
+def test_script_path_windows(tmp_path):
+    assert launcher.script_path(tmp_path, "bookstore", os_name="nt").parts[-2:] == ("Scripts", "bookstore.exe")
+    assert launcher.script_path(tmp_path, "bookstore", os_name="posix") == tmp_path / "bin" / "bookstore"
+
+
+def test_warn_once_per_session(tmp_path, capsys):
+    proj = tmp_path / "proj"
+    (proj / ".git").mkdir(parents=True)
+    make_venv(proj / ".venv")                      # venv WITHOUT the script
+    env = {"PARROT_HOME": str(tmp_path / "home")}
+    for _ in range(3):
+        launcher.resolve_venv("wikitoolkit", argv=[], env=env, cwd=proj)
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.count("\n") == 1
+
+
+def test_walk_up_stops_at_temp_root(tmp_path, monkeypatch):
+    """rev 0.5 C24: a stray `.git` in the system temp dir never becomes the project (mirrors wiki.project)."""
+    fake_tmp = tmp_path / "systmp"
+    (fake_tmp / ".git").mkdir(parents=True)
+    cwd = fake_tmp / "a" / "b"
+    cwd.mkdir(parents=True)
+    monkeypatch.setattr(launcher.tempfile, "gettempdir", lambda: str(fake_tmp))
+    assert launcher.find_project_root([], {}, cwd) is None
+    assert launcher.repository_paths(cwd) == (cwd.resolve(), None)
+
+
+def test_find_project_root_precedence(tmp_path):
+    a, b, c, d = (tmp_path / n for n in "abcd")
+    for p in (a, b, c):
+        p.mkdir()
+    (d / ".git").mkdir(parents=True)
+    env = {"PARROT_PROJECT": str(b), "CLAUDE_PROJECT_DIR": str(c)}
+    assert launcher.find_project_root(["--project", str(a)], env, d) == a.resolve()
+    assert launcher.find_project_root([f"--project={a}"], env, d) == a.resolve()
+    assert launcher.find_project_root([], env, d) == b.resolve()
+    assert launcher.find_project_root([], {"CLAUDE_PROJECT_DIR": str(c)}, d) == c.resolve()
+    assert launcher.find_project_root([], {}, d) == d
+    # non-leading --project belongs to a wikitoolkit subcommand
+    assert launcher.find_project_root(["build", "--project", str(a)], {}, d) == d
+    # a pinned root that does not exist falls through
+    assert launcher.find_project_root([], {"PARROT_PROJECT": str(tmp_path / "nope")}, d) == d
+
+
+def test_install_root_classifies_checkout_metadata(linked_worktree_repo: tuple[Path, Path], tmp_path: Path) -> None:
+    """Only valid commondir metadata makes a checkout a linked worktree."""
+    main, worktree = linked_worktree_repo
+    nested = worktree / "nested"
+    nested.mkdir()
+    linked = launcher.install_root(nested)
+    assert linked == launcher.InstallRoot(worktree.resolve(), main.resolve(), True, False)
+    with pytest.raises(launcher.LinkedWorktreeError, match="--path"):
+        launcher.require_primary_checkout(linked)
+
+    external = tmp_path / "external-gitdir"
+    external.mkdir()
+    separate = tmp_path / "separate"
+    separate.mkdir()
+    (separate / ".git").write_text(f"gitdir: {external}\n", encoding="utf-8")
+    assert launcher.install_root(separate) == launcher.InstallRoot(separate.resolve(), separate.resolve(), False, False)
+
+    explicit_subdir = nested / "chosen"
+    explicit_subdir.mkdir()
+    assert launcher.install_root(worktree, explicit=explicit_subdir) == launcher.InstallRoot(
+        explicit_subdir.resolve(), main.resolve(), True, True
+    )
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    assert launcher.install_root(worktree, explicit=outside) == launcher.InstallRoot(
+        outside.resolve(), outside.resolve(), False, True
+    )
+
+
+def test_install_root_malformed_metadata_never_raises(tmp_path: Path) -> None:
+    """Unreadable or malformed worktree metadata remains an ordinary checkout."""
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    (checkout / ".git").write_text("gitdir: missing\n", encoding="utf-8")
+    assert launcher.install_root(checkout) == launcher.InstallRoot(checkout.resolve(), checkout.resolve(), False, False)
+
+
+def test_explicit_project_pin_provenance(tmp_path: Path) -> None:
+    """Automatic discovery never becomes an explicit pin."""
+    cli, project, claude, repository = (tmp_path / name for name in ("cli", "project", "claude", "repository"))
+    for path in (cli, project, claude, repository):
+        path.mkdir()
+    (repository / ".git").mkdir()
+    env = {"PARROT_PROJECT": str(project), "CLAUDE_PROJECT_DIR": str(claude)}
+    assert launcher.explicit_project_pin(["--project", str(cli)], env, repository) == cli.resolve()
+    assert launcher.explicit_project_pin([f"--project={cli}"], env, repository) == cli.resolve()
+    assert launcher.explicit_project_pin([], env, repository) == project.resolve()
+    assert launcher.explicit_project_pin([], {"CLAUDE_PROJECT_DIR": str(claude)}, repository) == claude.resolve()
+    assert launcher.explicit_project_pin([], {}, repository) is None
+    assert launcher.explicit_project_pin(["build", "--project", str(cli)], {}, repository) is None
+    assert launcher.install_root(repository).explicit is False
+
+
+def test_managed_launcher_on_path_accepts_direct_and_symlink(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Managed launcher detection handles absent, direct, foreign, and symlink executables."""
+    home = tmp_path / "home"
+    launcher_path = home / "venv" / "bin" / "parrot"
+    launcher_path.parent.mkdir(parents=True)
+    launcher_path.write_text("", encoding="utf-8")
+    launcher_path.chmod(0o755)
+    env = {"PARROT_HOME": str(home), "PATH": str(launcher_path.parent)}
+    assert launcher.managed_launcher_on_path(env) is True
+    foreign = tmp_path / "foreign" / "parrot"
+    foreign.parent.mkdir()
+    foreign.write_text("", encoding="utf-8")
+    foreign.chmod(0o755)
+    assert launcher.managed_launcher_on_path({"PARROT_HOME": str(home), "PATH": str(foreign.parent)}) is False
+    link_dir = tmp_path / "links"
+    link_dir.mkdir()
+    (link_dir / "parrot").symlink_to(launcher_path)
+    assert launcher.managed_launcher_on_path({"PARROT_HOME": str(home), "PATH": str(link_dir)}) is True
+    monkeypatch.setattr(launcher.shutil, "which", lambda *_args, **_kwargs: None)
+    assert launcher.managed_launcher_on_path(env) is False
+
+
+def test_malformed_git_file_does_not_crash(tmp_path):
+    (tmp_path / ".git").write_text("garbage\n", encoding="utf-8")
+    assert launcher.repository_paths(tmp_path) == (tmp_path.resolve(), None)
+    assert launcher.find_project_root([], {}, tmp_path) == tmp_path
+    env = {"PARROT_HOME": str(tmp_path / "home")}
+    assert launcher.resolve_venv("parrot", argv=[], env=env, cwd=tmp_path)[1] == "managed"
+
+
+def test_managed_venv_never_returned_as_virtual_env(tmp_path):
+    home = tmp_path / "home"
+    make_venv(home / "venv", "parrot")
+    env = {"PARROT_HOME": str(home), "VIRTUAL_ENV": str(home / "venv")}
+    assert launcher.resolve_venv("parrot", argv=[], env=env, cwd=tmp_path) == (home / "venv", "managed")
+
+
+def _git_repo_with_venv(tmp_path: Path, *, tracked: bool) -> Path:
+    import subprocess
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    subprocess.run(["git", "init", "-q", str(proj)], check=True)
+    make_venv(proj / ".venv", "wikitoolkit")
+    if tracked:
+        subprocess.run(["git", "-C", str(proj), "add", "-f", ".venv"], check=True)
+    return proj
+
+
+def test_committed_project_venv_is_never_executed(tmp_path):
+    """A venv that arrives with a cloned repo (tracked by git) is untrusted: resolution falls back to managed."""
+    home = tmp_path / "home"
+    make_venv(home / "venv", "wikitoolkit")
+    proj = _git_repo_with_venv(tmp_path, tracked=True)
+    env = {"PARROT_HOME": str(home)}
+    assert launcher.resolve_venv("wikitoolkit", argv=[], env=env, cwd=proj) == (home / "venv", "managed")
+
+
+def test_locally_created_untracked_project_venv_is_trusted(tmp_path):
+    home = tmp_path / "home"
+    make_venv(home / "venv", "wikitoolkit")
+    proj = _git_repo_with_venv(tmp_path, tracked=False)
+    env = {"PARROT_HOME": str(home)}
+    assert launcher.resolve_venv("wikitoolkit", argv=[], env=env, cwd=proj) == (proj / ".venv", "project")
+
+
+def test_loop_guard_is_consumed_not_inherited(tmp_path, monkeypatch):
+    """PARROT_LAUNCHER_RESOLVED must not leak to grandchildren: the guarded process pops it."""
+    monkeypatch.setenv(launcher.LOOP_GUARD_ENV, "1")
+    assert launcher._resolved_target("wikitoolkit", []) is None
+    assert launcher.LOOP_GUARD_ENV not in launcher.os.environ
+
+
+def test_trust_gate_reads_git_errors_in_c_locale(tmp_path, monkeypatch):
+    """git localizes "not a git repository"; the gate runs it with LC_ALL=C (issue:91d60a249533, issue:a0b7a0210abc)."""
+    home, proj = tmp_path / "home", tmp_path / "proj"
+    make_venv(home / "venv", "wikitoolkit")
+    (proj / ".git").mkdir(parents=True)  # a .git entry git rejects as a repository
+    make_venv(proj / ".venv", "wikitoolkit")
+    monkeypatch.setenv("LC_ALL", "es_ES.UTF-8")
+    monkeypatch.setenv("LANGUAGE", "es")
+    real_run = subprocess.run
+    calls: list[dict[str, str]] = []
+
+    def fake_run(cmd, *args, **kwargs):
+        if "ls-files" not in cmd:
+            return real_run(cmd, *args, **kwargs)
+        child_env = kwargs.get("env") or dict(launcher.os.environ)
+        calls.append(child_env)
+        # like git: the message language follows LC_ALL, and LANGUAGE is ignored under the C locale
+        if child_env.get("LC_ALL") == "C":
+            stderr = b"fatal: not a git repository (or any of the parent directories): .git\n"
+        else:
+            stderr = "fatal: no es un repositorio git (ni ninguno de los directorios superiores): .git\n".encode()
+        return subprocess.CompletedProcess(cmd, 128, b"", stderr)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    env = {"PARROT_HOME": str(home)}
+    assert launcher.resolve_venv("wikitoolkit", argv=[], env=env, cwd=proj) == (proj / ".venv", "project")
+    assert calls and calls[0]["LC_ALL"] == "C" and "LANGUAGE" not in calls[0]

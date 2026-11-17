@@ -15,8 +15,9 @@ from typing import Any, Mapping
 
 logger = logging.getLogger("Parrot.AgentStudio.Storage")
 
-# The ``database`` backend needs migrations 1-8 (phase 2 ships in the same release), whatever the store switches say.
-STUDIO_SCHEMA_REQUIRED: int = 8
+# The ``database`` backend needs migrations 1-9 (phase 2 ships in the same release; 0009 = FEAT-794 prompt_library
+# columns), whatever the store switches say.
+STUDIO_SCHEMA_REQUIRED: int = 9
 STUDIO_MIGRATION_LOCK_KEY: int = 4715391001
 STUDIO_MIN_SERVER_VERSION_NUM: int = 140000
 LEDGER_MARKER: str = "-- @studio-ledger"

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-464 — Matrix Swarm Sample
 **Spec**: `sdd/specs/matrix-swarm-sample.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-2488, TASK-2489

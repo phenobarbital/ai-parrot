@@ -5,7 +5,7 @@ Transparently offloads artifact definitions that exceed the inline threshold
 On retrieval the reference is resolved back to the original dict.
 
 FEAT-116: dynamodb-fallback-redis — Module 2 (OverflowStore generalization).
-See docs/storage-backends.md for overflow store configuration.
+See wiki/stores/storage-backends.md for overflow store configuration.
 """
 
 import io

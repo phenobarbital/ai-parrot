@@ -1,0 +1,251 @@
+[
+{
+"id": "c162",
+"kind": "file",
+"path": ".agent/rules/"
+},
+{
+"id": "c101",
+"kind": "symbol",
+"path": ".claude/agents/sdd-secondopinion.md",
+"symbol": "frontmatter"
+},
+{
+"id": "c102",
+"kind": "symbol",
+"path": ".claude/agents/sdd-secondopinion.md",
+"symbol": "rules"
+},
+{
+"id": "c115",
+"kind": "symbol",
+"path": ".claude/commands/sdd-proposal.md",
+"symbol": "command"
+},
+{
+"id": "c114",
+"kind": "symbol",
+"path": ".claude/commands/sdd-spec.md",
+"symbol": "command"
+},
+{
+"id": "c62",
+"kind": "symbol",
+"path": "packages/ai-parrot-server/src/parrot/manager/manager.py",
+"symbol": "_create_crew_from_definition"
+},
+{
+"id": "c108",
+"kind": "symbol",
+"path": "packages/ai-parrot-tools/src/parrot_tools/contracts/agent.py",
+"symbol": "ContractsAgent"
+},
+{
+"id": "c109",
+"kind": "symbol",
+"path": "packages/ai-parrot-tools/src/parrot_tools/contracts/agent.py",
+"symbol": "ContractsAgentProducer"
+},
+{
+"id": "c110",
+"kind": "symbol",
+"path": "packages/ai-parrot-tools/src/parrot_tools/contracts/toolkit.py",
+"symbol": "ContractsToolkit"
+},
+{
+"id": "c155",
+"kind": "symbol",
+"path": "packages/ai-parrot-tools/src/parrot_tools/legal/boe/sync.py",
+"symbol": "sync_boe"
+},
+{
+"id": "c156",
+"kind": "file",
+"path": "packages/ai-parrot-tools/src/parrot_tools/legal/librarian/"
+},
+{
+"id": "c111",
+"kind": "symbol",
+"path": "packages/ai-parrot-tools/src/parrot_tools/legal/librarian/agent.py",
+"symbol": "LegalLibrarianAgent"
+},
+{
+"id": "c83",
+"kind": "symbol",
+"path": "packages/ai-parrot-tools/src/parrot_tools/wiki/toolkit.py",
+"symbol": "LLMWikiToolkit"
+},
+{
+"id": "c84",
+"kind": "symbol",
+"path": "packages/ai-parrot-tools/src/parrot_tools/wiki/toolkit.py",
+"symbol": "__init__"
+},
+{
+"id": "c85",
+"kind": "symbol",
+"path": "packages/ai-parrot-tools/src/parrot_tools/wiki/toolkit.py",
+"symbol": "_search_for"
+},
+{
+"id": "c86",
+"kind": "symbol",
+"path": "packages/ai-parrot-tools/src/parrot_tools/wiki/toolkit.py",
+"symbol": "query"
+},
+{
+"id": "c11",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/bots/abstract.py",
+"symbol": "register_kb"
+},
+{
+"id": "c12",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/bots/abstract.py",
+"symbol": "configure_kb"
+},
+{
+"id": "c13",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/bots/abstract.py",
+"symbol": "AbstractBot"
+},
+{
+"id": "c18",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/bots/agent.py",
+"symbol": "Agent"
+},
+{
+"id": "c19",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/bots/fireflies_insights.py",
+"symbol": "skill_paths"
+},
+{
+"id": "c60",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py",
+"symbol": "from_definition"
+},
+{
+"id": "c59",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/bots/flows/crew/nodes.py",
+"symbol": "CrewAgentNode"
+},
+{
+"id": "c20",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/bots/flows/flow/loader.py",
+"symbol": "loader"
+},
+{
+"id": "c16",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/bots/kb.py",
+"symbol": "KBSelector"
+},
+{
+"id": "c130",
+"kind": "file",
+"path": "packages/ai-parrot/src/parrot/bots/kb.py"
+},
+{
+"id": "c5",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/bots/mixins/identity.py",
+"symbol": "IdentityMixin"
+},
+{
+"id": "c6",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/bots/mixins/identity.py",
+"symbol": "__init__"
+},
+{
+"id": "c7",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/bots/mixins/identity.py",
+"symbol": "_resolve_identity_dir"
+},
+{
+"id": "c8",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/bots/mixins/identity.py",
+"symbol": "_reload_identity"
+},
+{
+"id": "c118",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/bots/prompts/",
+"symbol": "commits"
+},
+{
+"id": "c0",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/bots/prompts/builder.py",
+"symbol": "__init__"
+},
+{
+"id": "c1",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/bots/prompts/builder.py",
+"symbol": "default"
+},
+{
+"id": "c2",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/bots/prompts/builder.py",
+"symbol": "from_system_prompt"
+},
+{
+"id": "c3",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/bots/prompts/builder.py",
+"symbol": "replace"
+},
+{
+"id": "c4",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/bots/prompts/builder.py",
+"symbol": "build"
+},
+{
+"id": "c138",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/bots/prompts/builder.py",
+"symbol": "PromptBuilder"
+},
+{
+"id": "c117",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/bots/prompts/domain_layers.py",
+"symbol": "TOOLLESS_DATA_GROUNDING_LAYER"
+},
+{
+"id": "c9",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/bots/prompts/identity.py",
+"symbol": "IdentityFields"
+},
+{
+"id": "c116",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/bots/prompts/layers.py",
+"symbol": "PromptLayer"
+},
+{
+"id": "c139",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/bots/prompts/layers.py",
+"symbol": "LayerPriority"
+},
+{
+"id": "c140",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/bots/prompts/layers.py",
+"symbol": "IDENTITY_LAYER"
+}
+]

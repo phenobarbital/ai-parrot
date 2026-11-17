@@ -1,0 +1,8 @@
+- [ ] CLI noun name: `parrot sdd techwiki` is proposed to avoid colliding with `parrot wiki`
+- [ ] ADRs: keep `docs/decisions/**` in place (wikitoolkit's `adr_globs` depend on it) and
+- [ ] `docs/sdd/**` and `docs/wiki/**` (agent/tooling docs): `docs/sdd/WORKFLOW.md` is
+- [ ] `docs/migration/**` (12 FEAT migration notes): technical (move) or informative
+- [ ] Documentation chapter numbering: `## 10. Documentation` appended after §9 to avoid
+- [ ] Release label on `Home.md`: `git describe --tags` on `main` (release tags) vs the
+- [ ] Should `workflow_dispatch` from `dev` publish to a preview location (artifact only,
+- [ ] Follow-up (not this feature): multi-language reference (Svelte admin UI, TS client)

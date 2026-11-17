@@ -25,6 +25,7 @@ class TestBotManagerWiring:
         manager = MagicMock(spec=BotManager)
         manager.enable_registry_bots = True
         manager.enable_database_bots = False
+        manager.enable_experts = False
         manager.registry = registry
         manager.load_bots = BotManager.load_bots.__get__(manager, BotManager)
         return manager, registry
@@ -37,6 +38,7 @@ class TestBotManagerWiring:
         manager = MagicMock(spec=BotManager)
         manager.enable_registry_bots = True
         manager.enable_database_bots = False
+        manager.enable_experts = False
 
         mock_registry = MagicMock()
         mock_registry.setup = MagicMock()
@@ -65,6 +67,7 @@ class TestBotManagerWiring:
         manager = MagicMock(spec=BotManager)
         manager.enable_registry_bots = True
         manager.enable_database_bots = False
+        manager.enable_experts = False
 
         mock_registry = MagicMock()
 
@@ -103,6 +106,7 @@ class TestBotManagerWiring:
         manager = MagicMock(spec=BotManager)
         manager.enable_registry_bots = False  # Registry loading disabled
         manager.enable_database_bots = False
+        manager.enable_experts = False
 
         mock_registry = MagicMock()
         mock_registry.setup = MagicMock()

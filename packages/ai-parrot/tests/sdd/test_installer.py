@@ -1,0 +1,1105 @@
+"""Tests for parrot.sdd.installer (FEAT-633 M6; spec §4 test_sdd_install_into_empty_repo,
+integration test_sdd_flow_in_foreign_repo)."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+from parrot.flows.dev_loop.feature_launcher import _preflight_sandbox
+from parrot.launcher import script_path
+from parrot.sdd.cli import VERBS
+from parrot.sdd.installer import (
+    GITIGNORE_BEGIN,
+    GUARD_HOOK_LINE,
+    RECEIPT_PATH,
+    dangerous_hook_command,
+    guard_hook_command,
+    install_sdd_integration,
+    load_manifest,
+    sdd_status,
+    uninstall_sdd_integration,
+)
+
+@pytest.fixture
+def empty_repo(tmp_path: Path) -> Path:
+    """A fresh, non-Python git repository."""
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    (tmp_path / "README.md").write_text("# foreign repo\n")
+    return tmp_path
+
+
+@pytest.mark.asyncio
+async def test_preflight_sync_failure_is_nonfatal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failed global sync does not prevent native sandbox planning."""
+    from parrot.flows.dev_loop import feature_launcher
+    from parrot.knowledge.wiki.experience import sync
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    synced: list[Path] = []
+    planned: list[tuple[Path, tuple[str, ...]]] = []
+
+    def fail_sync(plane: Path) -> int:
+        synced.append(plane)
+        raise OSError("read-only global plane")
+
+    def plan(worktree: Path, *, allowed_domains: tuple[str, ...]) -> None:
+        planned.append((worktree, allowed_domains))
+
+    monkeypatch.setattr(sync, "sync_global", fail_sync)
+    monkeypatch.setattr(feature_launcher.native_claude_sandbox, "plan_native_launch", plan)
+
+    _preflight_sandbox(tmp_path, ("example.com",))
+
+    assert synced == [tmp_path / ".parrot" / "experience"]
+    assert planned == [(tmp_path, ("example.com",))]
+
+
+@pytest.mark.asyncio
+async def test_closeout_exports_in_worktree(tmp_path: Path) -> None:
+    """Every closeout surface exports in-worktree and stages only the returned definition."""
+    repo_root = Path(__file__).resolve().parents[4]
+    assert tmp_path != repo_root
+    pairs = (
+        (
+            ".claude/commands/sdd-done.md",
+            "packages/ai-parrot/src/parrot/sdd/_assets/claude/commands/sdd-done.md",
+        ),
+        (
+            ".agent/workflows/sdd-done.md",
+            "packages/ai-parrot/src/parrot/sdd/_assets/agent/workflows/sdd-done.md",
+        ),
+        (
+            ".agents/skills/sdd-done/SKILL.md",
+            "packages/ai-parrot/src/parrot/sdd/_assets/agents/skills/sdd-done/SKILL.md",
+        ),
+    )
+    texts: dict[str, str] = {}
+    for source, packaged in pairs:
+        source_text = (repo_root / source).read_text(encoding="utf-8")
+        assert source_text == (repo_root / packaged).read_text(encoding="utf-8")
+        texts[source] = source_text
+
+    for source in (".claude/commands/sdd-done.md", ".agent/workflows/sdd-done.md"):
+        source_text = texts[source]
+        sync_at = source_text.index('(cd "$WORKTREE_PATH" && parrot sdd experience sync)')
+        export_at = source_text.index('EXPERIENCE_EXPORT="$(cd "$WORKTREE_PATH" && parrot sdd experience export)"')
+        closeout_stage_at = source_text.index('git -C "$WORKTREE_PATH" add "$INDEX" sdd/tasks/completed/')
+        assert sync_at < export_at < closeout_stage_at
+        assert '"$WORKTREE_PATH"/sdd/experience/lessons/*.jsonl)' in source_text
+        assert 'git -C "$WORKTREE_PATH" add -- "$EXPERIENCE_EXPORT"' in source_text
+        assert 'add "$INDEX" sdd/tasks/completed/ sdd/experience/lessons/' not in source_text
+
+    skill_text = texts[".agents/skills/sdd-done/SKILL.md"]
+    assert skill_text.index("parrot sdd experience sync") < skill_text.index("parrot sdd experience export")
+    assert "inside the feature worktree" in skill_text
+    assert "sdd/experience/lessons/<digest>.jsonl" in skill_text
+    assert "never stage the whole lessons directory" in skill_text
+
+
+def _claude_targets() -> list[str]:
+    """Claude assets the installer records (seeds are team-owned: written once, never recorded or removed)."""
+    return [e["target"] for e in load_manifest() if "claude" in e["hosts"] and not e.get("seed", False)]
+
+
+def test_sdd_install_into_empty_repo(empty_repo: Path) -> None:
+    """Deploy + uninstall round-trip, marker-block safe (spec §4)."""
+    install_sdd_integration(empty_repo)
+    assert all((empty_repo / t).is_file() for t in _claude_targets())
+    assert GITIGNORE_BEGIN in (empty_repo / ".gitignore").read_text()
+    assert (empty_repo / "sdd/tasks/.id_ledger.json").is_file()
+    uninstall_sdd_integration(empty_repo)
+    assert not any((empty_repo / t).exists() for t in _claude_targets())
+    assert GITIGNORE_BEGIN not in (empty_repo / ".gitignore").read_text()
+    assert (empty_repo / "README.md").read_text() == "# foreign repo\n"
+    assert (empty_repo / "sdd/tasks/.id_ledger.json").is_file()  # state is never removed
+
+
+def test_reinstall_is_idempotent(empty_repo: Path) -> None:
+    install_sdd_integration(empty_repo)
+    actions = install_sdd_integration(empty_repo)
+    # asset lines end with the verb; the wiring note / hook lines mention "installed" in other positions
+    assert not any(a.endswith((" — installed", " — upgraded")) or "overwritten" in a for a in actions)
+
+
+def test_worker_hook_ignores_worktree_pythonpath(empty_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Installed hook commands stay portable even with a hostile worktree PYTHONPATH."""
+    monkeypatch.setenv("PYTHONPATH", str(empty_repo / "packages" / "ai-parrot" / "src"))
+    install_sdd_integration(empty_repo, dangerous_guard=False, sdd_coder=False, portable=False)
+    settings = json.loads((empty_repo / ".claude/settings.json").read_text(encoding="utf-8"))
+    commands = [
+        hook["command"]
+        for event in ("PostToolUse", "PostToolUseFailure")
+        for entry in settings["hooks"][event]
+        for hook in entry["hooks"]
+        if hook.get("type") == "command"
+    ]
+    assert commands == [
+        "parrot sdd experience hook --host claude --event post",
+        "parrot sdd experience hook --host claude --event post-failure",
+    ]
+    assert all(str(empty_repo) not in command for command in commands)
+
+
+def test_experience_install_idempotent(empty_repo: Path) -> None:
+    """Upgrade a foreign wheel-shaped command once, then preserve the stable managed settings."""
+    install_sdd_integration(empty_repo, dangerous_guard=False, sdd_coder=False, portable=False)
+    settings_path = empty_repo / ".claude/settings.json"
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    settings["hooks"]["PostToolUse"][0]["hooks"][0][
+        "command"
+    ] = "/foreign-wheel/bin/parrot sdd experience hook --host claude --event post"
+    settings["hooks"]["PostToolUse"].append(
+        {"matcher": "Bash", "hooks": [{"type": "command", "command": "foreign-command"}]}
+    )
+    settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+
+    actions = install_sdd_integration(empty_repo, dangerous_guard=False, sdd_coder=False, portable=False)
+    upgraded = json.loads(settings_path.read_text(encoding="utf-8"))
+    post_hooks = upgraded["hooks"]["PostToolUse"]
+    assert post_hooks[0]["hooks"][0]["command"] == ("parrot sdd experience hook --host claude --event post")
+    assert any(hook["command"] == "foreign-command" for entry in post_hooks for hook in entry["hooks"])
+    assert any("Claude experience hooks updated" in action for action in actions)
+
+    stable = settings_path.read_bytes()
+    repeat = install_sdd_integration(empty_repo, dangerous_guard=False, sdd_coder=False, portable=False)
+    assert settings_path.read_bytes() == stable
+    assert any("Claude experience hooks already registered" in action for action in repeat)
+
+
+_AGY_EXPERIENCE = {
+    "PostToolUse": [
+        {
+            "matcher": "run_command",
+            "hooks": [
+                {"type": "command", "command": "parrot sdd experience hook --host agy --event post", "timeout": 5}
+            ],
+        }
+    ],
+    "PostInvocation": [
+        {"type": "command", "command": "parrot sdd experience hook --host agy --event post-invocation", "timeout": 5}
+    ],
+}
+
+
+def _agy_install(root: Path) -> tuple[bool, list[str]]:
+    from parrot.sdd import installer
+
+    return installer._install_agy_hook(root, {"settings_hooks": []}, portable=True)
+
+
+def test_agy_hooks_json_shape(tmp_path: Path) -> None:
+    """Grouped PostToolUse, FLAT PostInvocation, no pre hook; reinstall is byte-stable; foreign wheel is upgraded."""
+    registered, _ = _agy_install(tmp_path)
+    assert registered
+    path = tmp_path / ".agents/hooks.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["parrot-sdd-experience"] == _AGY_EXPERIENCE
+    assert set(data["parrot-sdd-experience"]) == {"PostToolUse", "PostInvocation"}  # no pre experience hook
+    assert "matcher" not in data["parrot-sdd-experience"]["PostInvocation"][0]
+
+    stable = path.read_bytes()
+    _, lines = _agy_install(tmp_path)
+    assert path.read_bytes() == stable
+    assert any("agy experience hooks already registered" in line for line in lines)
+
+    data["parrot-sdd-experience"]["PostToolUse"][0]["hooks"][0]["command"] = "/old/bin/parrot sdd experience hook"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    _, lines = _agy_install(tmp_path)
+    assert json.loads(path.read_text(encoding="utf-8"))["parrot-sdd-experience"] == _AGY_EXPERIENCE
+    assert any("agy experience hooks updated" in line for line in lines)
+
+
+def test_agy_permissions_preserved(tmp_path: Path) -> None:
+    """The permission group and unrelated named hooks are unchanged by the experience merge."""
+    from parrot.sdd import installer
+
+    _agy_install(tmp_path)
+    path = tmp_path / ".agents/hooks.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    permissions = json.dumps(data[installer.AGY_HOOK_NAME], sort_keys=True)
+    data["foreign-hook"] = {"PreToolUse": [{"matcher": "x", "hooks": []}]}
+    path.write_text(json.dumps(data), encoding="utf-8")
+    _agy_install(tmp_path)
+    after = json.loads(path.read_text(encoding="utf-8"))
+    assert json.dumps(after[installer.AGY_HOOK_NAME], sort_keys=True) == permissions
+    assert after["foreign-hook"] == {"PreToolUse": [{"matcher": "x", "hooks": []}]}
+
+    # a malformed hooks file is never clobbered by the experience merge
+    path.write_text("[not an object]", encoding="utf-8")
+    registered, _ = _agy_install(tmp_path)
+    assert not registered and path.read_text(encoding="utf-8") == "[not an object]"
+
+    # removal drops both managed groups but keeps foreign ones
+    path.write_text(json.dumps(data), encoding="utf-8")
+    _agy_install(tmp_path)
+    receipt = {"settings_hooks": ["agy-permissions"]}
+    installer._remove_agy_permissions(tmp_path, receipt)
+    left = json.loads(path.read_text(encoding="utf-8"))
+    assert set(left) == {"foreign-hook"}
+
+
+def test_codex_experience_hook_shape() -> None:
+    """The tracked Codex hooks file registers the PostToolUse Bash experience hook next to the PreToolUse guard."""
+    repo_root = Path(__file__).resolve().parents[4]
+    hooks = json.loads((repo_root / ".codex/hooks.json").read_text(encoding="utf-8"))["hooks"]
+    assert hooks["PostToolUse"] == [
+        {
+            "matcher": "Bash",
+            "hooks": [
+                {"type": "command", "command": "parrot sdd experience hook --host codex --event post", "timeout": 5}
+            ],
+        }
+    ]
+    assert "sh scripts/sdd/codex_hook.sh" in json.dumps(hooks["PreToolUse"])
+    assert "experience" not in json.dumps(hooks["PreToolUse"])
+    agy = json.loads((repo_root / ".agents/hooks.json").read_text(encoding="utf-8"))
+    assert agy["parrot-sdd-experience"] == _AGY_EXPERIENCE
+
+
+def _tree_digest(root: Path) -> dict[str, str]:
+    """{relative path: sha256} for every file under root except .git/ (C5 no-write assertion)."""
+    return {
+        str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest()
+        for p in root.rglob("*")
+        if p.is_file() and ".git" not in p.parts
+    }
+
+
+def test_edited_file_overwritten_by_default_kept_with_keep_edits(empty_repo: Path) -> None:
+    """A recorded file whose bytes changed is `edited`: --keep-edits skips/keeps it; the default replaces/removes it."""
+    install_sdd_integration(empty_repo)
+    target = empty_repo / _claude_targets()[0]
+    target.write_text("user edit\n")
+    assert any(
+        a.startswith("warning:") and str(_claude_targets()[0]) in a
+        for a in install_sdd_integration(empty_repo, keep_edits=True)
+    )
+    assert target.read_text() == "user edit\n"
+    uninstall_sdd_integration(empty_repo, keep_edits=True)
+    assert target.read_text() == "user edit\n"
+    actions = install_sdd_integration(empty_repo)
+    assert any("overwritten (edited since parrot wrote it)" in a for a in actions)
+    assert target.read_text() != "user edit\n"
+    assert _claude_targets()[0] in sdd_status(empty_repo)["hosts"]["claude"]["current"]  # re-recorded
+    target.write_text("user edit\n")
+    uninstall_sdd_integration(empty_repo)
+    assert not target.exists()
+
+
+def test_untouched_file_upgrades_from_older_record(empty_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """C4: a file untouched since an OLDER release (receipt sha == on-disk sha != packaged) upgrades without --force."""
+    install_sdd_integration(empty_repo)
+    target = _claude_targets()[0]
+    old_bytes = b"# older packaged copy\n"
+    (empty_repo / target).write_bytes(old_bytes)
+    receipt = json.loads((empty_repo / RECEIPT_PATH).read_text())
+    receipt["files"][target] = hashlib.sha256(old_bytes).hexdigest()
+    receipt["version"] = "0.0.1"
+    (empty_repo / RECEIPT_PATH).write_text(json.dumps(receipt))
+    assert sdd_status(empty_repo)["hosts"]["claude"]["outdated"] == [target]
+    actions = install_sdd_integration(empty_repo)
+    assert any(a.endswith("upgraded") and target in a for a in actions)
+    assert (empty_repo / target).read_bytes() != old_bytes
+    assert json.loads((empty_repo / RECEIPT_PATH).read_text())["version"] != "0.0.1"
+
+
+def test_foreign_file_kept_only_with_keep_edits(empty_repo: Path) -> None:
+    """A target present but not in the receipt (and not byte-identical) is `foreign`: kept with --keep-edits."""
+    target = empty_repo / _claude_targets()[0]
+    target.parent.mkdir(parents=True)
+    target.write_text("theirs\n")
+    actions = install_sdd_integration(empty_repo, keep_edits=True)
+    assert any(a.startswith("warning:") and "not recorded in the receipt" in a for a in actions)
+    assert target.read_text() == "theirs\n"
+    assert sdd_status(empty_repo)["hosts"]["claude"]["foreign"] == [_claude_targets()[0]]
+    uninstall_sdd_integration(empty_repo, keep_edits=True)
+    assert target.read_text() == "theirs\n"
+
+
+def test_foreign_file_overwritten_by_default(empty_repo: Path) -> None:
+    """Upgrade path: an SDD file parrot never recorded (copied by hand, older flow) is replaced and recorded."""
+    target = empty_repo / _claude_targets()[0]
+    target.parent.mkdir(parents=True)
+    target.write_text("theirs\n")
+    actions = install_sdd_integration(empty_repo)
+    assert any("overwritten (not recorded in the receipt)" in a for a in actions)
+    assert target.read_text() != "theirs\n"
+    report = sdd_status(empty_repo)["hosts"]["claude"]
+    assert report["foreign"] == [] and _claude_targets()[0] in report["current"]
+
+
+def test_uninstall_removes_files_install_never_recorded(empty_repo: Path) -> None:
+    """Uninstall without a receipt (assets copied by hand / an older flow) removes every present SDD asset."""
+    install_sdd_integration(empty_repo)
+    (empty_repo / RECEIPT_PATH).unlink()
+    edited = empty_repo / _claude_targets()[0]
+    edited.write_text("theirs\n")
+    plan = uninstall_sdd_integration(empty_repo, dry_run=True)
+    assert any(line.startswith("plan: remove") for line in plan)
+    uninstall_sdd_integration(empty_repo)
+    assert not any((empty_repo / t).exists() for t in _claude_targets())
+    assert (empty_repo / "sdd/config.json").is_file()  # seeds/state stay
+
+
+def test_unrecorded_identical_file_is_adopted(empty_repo: Path) -> None:
+    """C4 interpretation: byte-identical to the packaged copy but missing from the receipt → current + recorded."""
+    install_sdd_integration(empty_repo)
+    (empty_repo / RECEIPT_PATH).unlink()
+    install_sdd_integration(empty_repo)
+    receipt = json.loads((empty_repo / RECEIPT_PATH).read_text())
+    assert set(receipt["files"]) >= set(_claude_targets())
+
+
+def test_dry_run_changes_nothing(empty_repo: Path) -> None:
+    """C5: install/uninstall --dry-run print a plan and leave the tree byte-for-byte unchanged."""
+    before = _tree_digest(empty_repo)
+    plan = install_sdd_integration(empty_repo, dry_run=True)
+    assert plan and all(p.startswith("plan: ") for p in plan)
+    assert any(p.startswith("plan: write ") for p in plan)
+    assert any(p.startswith(("plan: gitignore", "plan: ledger-seed", "plan: config-seed")) for p in plan)
+    assert _tree_digest(empty_repo) == before and not (empty_repo / RECEIPT_PATH).exists()
+    install_sdd_integration(empty_repo)
+    before = _tree_digest(empty_repo)
+    plan = uninstall_sdd_integration(empty_repo, dry_run=True)
+    assert any(p.startswith("plan: remove ") for p in plan)
+    assert _tree_digest(empty_repo) == before
+
+
+def _seed_targets() -> list[str]:
+    """Every manifest entry flagged `"seed": true` (TASK-4090 rev 0.2) — generic, never a hardcoded path."""
+    return [e["target"] for e in load_manifest() if e.get("seed", False)]
+
+
+def test_seeds_written_once_never_overwritten_or_removed(empty_repo: Path) -> None:
+    """C6/C10: sdd/config.json and EVERY `"seed": true` asset are written iff absent; --force and uninstall leave them."""
+    seeds = _seed_targets()
+    assert seeds, "TASK-4090 must flag at least one seed (sdd/CONVENTIONS.md)"
+    install_sdd_integration(empty_repo)
+    config = empty_repo / "sdd/config.json"
+    assert config.is_file() and json.loads(config.read_text())["base_branch"] == "dev"
+    assert all((empty_repo / t).is_file() for t in seeds)
+    config.write_text('{"base_branch": "develop", "hotfix_base": "main"}\n')
+    for t in seeds:
+        (empty_repo / t).write_text("# ours\n")
+    install_sdd_integration(empty_repo)  # overwrite is the default; seeds still never touched
+    assert "develop" in config.read_text()
+    assert all((empty_repo / t).read_text() == "# ours\n" for t in seeds)
+    receipt = json.loads((empty_repo / RECEIPT_PATH).read_text())
+    assert "sdd/config.json" not in receipt["files"] and not set(seeds) & set(receipt["files"])
+    uninstall_sdd_integration(empty_repo)
+    assert config.is_file() and all((empty_repo / t).read_text() == "# ours\n" for t in seeds)
+    report = sdd_status(empty_repo)
+    assert all(report["seeds"][t] == "seed-present" for t in seeds)
+    assert not any(
+        t in report["hosts"][h][state] for t in seeds for h in report["hosts"] for state in report["hosts"][h]
+    )
+
+
+def test_existing_gitignore_content_preserved(empty_repo: Path) -> None:
+    (empty_repo / ".gitignore").write_text("node_modules/\n")
+    install_sdd_integration(empty_repo)
+    assert (empty_repo / ".gitignore").read_text().startswith("node_modules/\n")
+
+
+@pytest.mark.parametrize("host", ["claude", "codex", "google"])
+def test_gitattributes_block_written_recorded_and_removed(empty_repo: Path, host: str) -> None:
+    """rev 0.5 C23: any host writes the ledger merge=union block, keeps foreign lines, uninstall removes it."""
+    (empty_repo / ".gitattributes").write_text("*.png binary\n")
+    install_sdd_integration(empty_repo, hosts=(host,))
+    text = (empty_repo / ".gitattributes").read_text()
+    assert text.startswith("*.png binary\n")
+    assert "sdd/ledger/events.jsonl merge=union" in text and "sdd/ledger/archive/*.jsonl merge=union" in text
+    assert json.loads((empty_repo / "sdd/.sdd-installed.json").read_text())["blocks"][".gitattributes"]
+    uninstall_sdd_integration(empty_repo, hosts=(host,))
+    assert (empty_repo / ".gitattributes").read_text() == "*.png binary\n"
+
+
+def test_ledger_hooks_installed_for_any_host(empty_repo: Path) -> None:
+    """rev 0.5 C23: the four FEAT-694 ledger hooks are installed through the claude installer's function."""
+    install_sdd_integration(empty_repo, hosts=("codex",))
+    for event in ("pre-commit", "post-merge", "post-checkout", "post-rewrite"):
+        assert "# >>> parrot-ledger >>>" in (empty_repo / ".git/hooks" / event).read_text()
+
+
+def test_install_refuses_malformed_config_before_writing(empty_repo: Path) -> None:
+    """PR #1746 review (Codex P1): a malformed existing sdd/config.json aborts before any write."""
+    from parrot.sdd.config import SddConfigError
+
+    (empty_repo / "sdd").mkdir()
+    (empty_repo / "sdd/config.json").write_text("{not json")
+    before = sorted(p.relative_to(empty_repo) for p in empty_repo.rglob("*") if ".git" not in p.parts)
+    for dry_run in (True, False):
+        with pytest.raises(SddConfigError):
+            install_sdd_integration(empty_repo, hosts=("codex",), dry_run=dry_run)
+    after = sorted(p.relative_to(empty_repo) for p in empty_repo.rglob("*") if ".git" not in p.parts)
+    assert after == before
+    assert not any((empty_repo / ".git/hooks" / e).exists() for e in ("pre-commit", "post-merge"))
+
+
+def test_ledger_hooks_removed_on_uninstall_when_sdd_created_them(empty_repo: Path) -> None:
+    """PR #1746 review (Codex P2): install → uninstall round trip leaves no parrot-ledger block."""
+    install_sdd_integration(empty_repo, hosts=("codex",))
+    assert json.loads((empty_repo / "sdd/.sdd-installed.json").read_text())["ledger_hooks"]
+    uninstall_sdd_integration(empty_repo, hosts=("codex",))
+    for event in ("pre-commit", "post-merge", "post-checkout", "post-rewrite"):
+        hook = empty_repo / ".git/hooks" / event
+        assert not hook.exists() or "# >>> parrot-ledger >>>" not in hook.read_text()
+
+
+def test_ledger_hooks_kept_when_shared_with_claude_integration(empty_repo: Path) -> None:
+    """PR #1746 review: hooks `parrot claude install` also owns are kept (and reported) on sdd uninstall."""
+    from parrot.knowledge.wiki.claude_code.installer import _install_git_hook, _install_ledger_hooks
+
+    _install_git_hook(empty_repo)  # parrot-wiki post-commit block, as `parrot claude install` writes
+    _install_ledger_hooks(empty_repo)  # pre-existing ledger blocks → this install records none
+    install_sdd_integration(empty_repo, hosts=("claude",))
+    actions = uninstall_sdd_integration(empty_repo, hosts=("claude",))
+    assert "# >>> parrot-ledger >>>" in (empty_repo / ".git/hooks/pre-commit").read_text()
+    assert any("keep-ledger-hooks" in a or "kept" in a for a in actions)
+
+
+def test_install_warns_when_test_command_is_null(empty_repo: Path) -> None:
+    """rev 0.5 C21: a seeded (or existing) sdd/config.json with test_command null yields one warning line."""
+    actions = install_sdd_integration(empty_repo)
+    assert any(a.startswith("warning:") and "test_command" in a for a in actions)
+
+
+def test_unknown_host_rejected(empty_repo: Path) -> None:
+    with pytest.raises(ValueError):
+        install_sdd_integration(empty_repo, hosts=("vim",))
+
+
+def test_status_shape(empty_repo: Path) -> None:
+    install_sdd_integration(empty_repo, hosts=("codex",))
+    report = sdd_status(empty_repo)
+    assert set(report) >= {"hosts", "seeds", "config", "gitignore", "id_ledger", "receipt_version"}
+    assert set(report["hosts"]["codex"]) == {"current", "outdated", "edited", "foreign", "missing"}
+    assert report["hosts"]["codex"]["missing"] == []
+    assert set(report) >= {"gitattributes", "ledger_hooks", "guard_hook"}
+    claude_only = [e["target"] for e in load_manifest() if e["hosts"] == ["claude"]]
+    assert claude_only
+    assert sorted(report["hosts"]["claude"]["missing"]) == sorted(claude_only)  # codex install: claude-only absent
+    assert report["receipt_version"]
+
+
+@pytest.mark.parametrize("hosts", [("claude",), ("codex",), ("google",)])
+def test_sdd_flow_in_foreign_repo(empty_repo: Path, hosts: tuple[str, ...]) -> None:
+    """Integration (spec §4, rev 0.2): installed markdown invokes helpers ONLY as `parrot sdd <noun> <verb>`,
+    every such pair is a row of parrot.sdd.cli.VERBS, and no `python -m` / repo-script form remains."""
+    install_sdd_integration(empty_repo, hosts=hosts)
+    installed = [empty_repo / e["target"] for e in load_manifest() if set(hosts) & set(e["hosts"])]
+    texts = [p.read_text(encoding="utf-8") for p in installed if p.suffix in {".md", ".toml"}]
+    joined = "\n".join(texts)
+    pairs = set(re.findall(r"parrot sdd ([a-z]+) ([a-z0-9-]+)", joined))
+    assert pairs, "installed markdown invokes no helper through `parrot sdd <noun> <verb>`"
+    for noun, verb in pairs:
+        if noun in {"install", "uninstall", "status", "ledger", "launch"}:
+            continue  # installer verbs, the re-mounted ledger group (TASK-5099) and launch (TASK-5100)
+        assert verb in VERBS.get(noun, {}), (noun, verb)
+    assert "parrot sdd run" not in joined
+    assert "python -m parrot.sdd.scripts." not in joined
+    assert "python -m scripts.sdd." not in joined
+    assert not re.search(r"scripts/sdd/[a-z_0-9]+\.(py|sh)", joined)
+
+
+def test_rewrite_preserves_asset_names() -> None:
+    """C30: the noun/verb rewrite changed shell lines only - every shipped target keeps its name."""
+    expected = set(json.loads((Path(__file__).parent / "fixtures" / "asset_targets.json").read_text()))
+    assert {e["target"] for e in load_manifest()} == expected
+
+
+# --------------------------------------------------------------------------
+# rev 0.6 C25 — guard-hook rendering
+# --------------------------------------------------------------------------
+
+WORKER = ".claude/agents/sdd-worker.md"
+CODER = ".claude/agents/sdd-coder.md"
+
+
+def _hook_of(repo: Path, rel: str = WORKER) -> str:
+    """The decoded ``command:`` of the agent's frontmatter hook (parsed as YAML)."""
+    import yaml
+
+    front = yaml.safe_load((repo / rel).read_text(encoding="utf-8").split("---", 2)[1])
+    found: list[str] = []
+
+    def walk(node: object) -> None:
+        if isinstance(node, dict):
+            if isinstance(node.get("command"), str) and (
+                "worktree guard" in node["command"] or "worktree_environment" in node["command"]
+            ):
+                found.append(node["command"])
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+
+    walk(front)
+    assert found, front
+    return found[0]
+
+
+@pytest.fixture
+def no_launcher(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """PATH without any `parrot`, and a PARROT_HOME that holds nothing."""
+    empty = tmp_path / "empty-bin"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(empty))
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path / "no-home"))
+    return empty
+
+
+def test_guard_hook_bare_when_managed_launcher_on_path(
+    empty_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home"
+    (home / "bin").mkdir(parents=True)
+    shim = home / "bin" / "parrot"
+    shim.write_text("#!/bin/sh\n")
+    shim.chmod(0o755)
+    monkeypatch.setenv("PARROT_HOME", str(home))
+    monkeypatch.setenv("PATH", str(home / "bin"))
+    assert guard_hook_command(portable=None) == (GUARD_HOOK_LINE, "bare")
+    install_sdd_integration(empty_repo)
+    assert _hook_of(empty_repo) == GUARD_HOOK_LINE
+    assert _hook_of(empty_repo, CODER) == GUARD_HOOK_LINE
+    assert sdd_status(empty_repo)["guard_hook"]["form"] == "bare"
+
+
+def test_guard_hook_baked_when_launcher_absent(empty_repo: Path, no_launcher: Path) -> None:
+    hook, form = guard_hook_command(portable=None)
+    assert form == "baked"
+    install_sdd_integration(empty_repo)
+    command = _hook_of(empty_repo)
+    assert command == hook
+    assert command.startswith(script_path(Path(sys.prefix), "parrot").as_posix())
+    assert "python3." not in command and "site-packages" not in command
+    report = sdd_status(empty_repo)
+    assert report["guard_hook"]["form"] == "baked" and report["guard_hook"]["targets"]
+    assert report["hosts"]["claude"]["outdated"] == [] and report["hosts"]["claude"]["edited"] == []
+
+
+def test_guard_hook_portable_flag_forces_bare(empty_repo: Path, no_launcher: Path) -> None:
+    assert guard_hook_command(portable=True) == (GUARD_HOOK_LINE, "bare")
+    actions = install_sdd_integration(empty_repo, portable=True)
+    assert _hook_of(empty_repo) == GUARD_HOOK_LINE
+    assert not any("baked" in a for a in actions)
+
+
+def test_guard_hook_no_portable_forces_baked(empty_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """False forces baked commands even when the managed launcher is available."""
+    home = tmp_path / "home"
+    (home / "bin").mkdir(parents=True)
+    shim = home / "bin" / "parrot"
+    shim.write_text("#!/bin/sh\n", encoding="utf-8")
+    shim.chmod(0o755)
+    venv = tmp_path / "venv with space"
+    monkeypatch.setenv("PARROT_HOME", str(home))
+    monkeypatch.setenv("PATH", str(home / "bin"))
+    monkeypatch.setattr(sys, "prefix", str(venv))
+
+    guard, form = guard_hook_command(portable=False)
+    dangerous, dangerous_form = dangerous_hook_command(portable=False)
+
+    assert form == dangerous_form == "baked"
+    assert guard.startswith("'") and str(venv / "bin" / "parrot") in guard
+    assert dangerous == (
+        guard.removesuffix(" sdd worktree guard --hook || exit 2") + " sdd hooks dangerous-actions --hook"
+    )
+    install_sdd_integration(empty_repo, portable=False)
+    assert _hook_of(empty_repo) == guard
+    settings = json.loads((empty_repo / ".claude/settings.json").read_text(encoding="utf-8"))
+    command = settings["hooks"]["PreToolUse"][-1]["hooks"][0]["command"]
+    assert command == dangerous
+
+
+def test_guard_hook_quoting_space_and_quote(
+    empty_repo: Path, tmp_path: Path, no_launcher: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A venv path with a space and a `'` survives the YAML scalar and `sh -c`."""
+    venv = tmp_path / "my venv's"
+    (venv / "bin").mkdir(parents=True)
+    fake = venv / "bin" / "parrot"
+    fake.write_text('#!/bin/sh\necho "ran:$*"\n')
+    fake.chmod(0o755)
+    monkeypatch.setattr(sys, "prefix", str(venv))
+    install_sdd_integration(empty_repo)
+    command = _hook_of(empty_repo)
+    out = subprocess.run(["/bin/sh", "-c", command], capture_output=True, text=True)
+    assert out.returncode == 0 and out.stdout.strip() == "ran:sdd worktree guard --hook"
+    assert sdd_status(empty_repo)["guard_hook"]["resolvable"] is True
+
+
+def test_guard_hook_mode_change_is_outdated_not_edited(empty_repo: Path, no_launcher: Path) -> None:
+    install_sdd_integration(empty_repo)  # baked
+    assert _hook_of(empty_repo) != GUARD_HOOK_LINE
+    actions = install_sdd_integration(empty_repo, portable=True)  # → bare, no --force
+    assert any(a.endswith("upgraded") and WORKER in a for a in actions), actions
+    assert _hook_of(empty_repo) == GUARD_HOOK_LINE
+    report = sdd_status(empty_repo)
+    assert WORKER in report["hosts"]["claude"]["current"] and report["hosts"]["claude"]["edited"] == []
+    path = empty_repo / WORKER
+    path.write_text(path.read_text(encoding="utf-8") + "\n<!-- team edit -->\n", encoding="utf-8")
+    assert WORKER in sdd_status(empty_repo)["hosts"]["claude"]["edited"]
+
+
+def test_guard_hook_status_flags_hand_patched_foreign(empty_repo: Path, no_launcher: Path) -> None:
+    agent = empty_repo / WORKER
+    agent.parent.mkdir(parents=True)
+    agent.write_text(
+        "---\nname: sdd-worker\nhooks:\n  PreToolUse:\n    - hooks:\n        - type: command\n"
+        "          command: 'python3 /x/site-packages/parrot/sdd/scripts/worktree_environment.py --hook'\n---\nbody\n",
+        encoding="utf-8",
+    )
+    actions = install_sdd_integration(empty_repo, keep_edits=True)
+    assert any(a.startswith("warning:") and WORKER in a for a in actions)  # foreign: kept with --keep-edits
+    guard = sdd_status(empty_repo)["guard_hook"]
+    assert (guard["form"], guard["resolvable"]) == ("other", False)
+    assert WORKER in guard["targets"]
+    assert sdd_status(empty_repo)["hosts"]["claude"]["foreign"].count(WORKER) == 1
+
+
+def test_guard_hook_absent_is_resolvable(tmp_path: Path) -> None:
+    assert sdd_status(tmp_path)["guard_hook"] == {"form": None, "command": None, "targets": [], "resolvable": True}
+
+
+_LINK_RE = re.compile(r"\]\((\.\./[^)#\s]+)")
+
+
+@pytest.mark.parametrize("host", ["codex", "google"])
+def test_non_claude_host_skills_have_every_file_they_read(empty_repo: Path, host: str) -> None:
+    """A codex/google-only install must ship the `.claude/commands/*.md` and `docs/sdd/CODEX.md` its skills link to."""
+    install_sdd_integration(empty_repo, hosts=(host,))
+    skills = sorted((empty_repo / ".agents/skills").glob("*/SKILL.md"))
+    assert skills
+    missing = [
+        f"{skill.relative_to(empty_repo)} -> {link}"
+        for skill in skills
+        for link in _LINK_RE.findall(skill.read_text(encoding="utf-8"))
+        if not (skill.parent / link).resolve().is_file()
+    ]
+    assert not missing, missing
+
+
+def test_agents_dispatched_by_packaged_autopilot_are_installed(empty_repo: Path) -> None:
+    """Every `claude --agent <name>` the shipped autopilot runs resolves to a shipped agent file."""
+    install_sdd_integration(empty_repo)
+    text = (empty_repo / ".claude/agents/sdd-autopilot.md").read_text(encoding="utf-8")
+    names = set(re.findall(r"claude --agent ([a-z][a-z-]*)", text))
+    assert {"code-reviewer", "qa-runner"} <= names
+    missing = sorted(n for n in names if not (empty_repo / ".claude/agents" / f"{n}.md").is_file())
+    assert not missing, missing
+
+
+_CODEX_LINK = "../../../docs/sdd/CODEX.md#codex-adaptation-contract"
+_AGY_LINK = "../../../docs/sdd/AGY.md#antigravity-adaptation-contract"
+
+
+@pytest.mark.parametrize("host", ["codex", "google"])
+def test_shared_skill_headers_name_both_host_contracts(empty_repo: Path, host: str) -> None:
+    install_sdd_integration(empty_repo, hosts=(host,))
+    skills = sorted((empty_repo / ".agents/skills").glob("*/SKILL.md"))
+    assert skills
+    for skill in skills:
+        text = skill.read_text(encoding="utf-8")
+        assert _CODEX_LINK in text and _AGY_LINK in text, skill
+
+
+def test_packaged_skills_match_repo() -> None:
+    """Packaged skill copies are byte-identical to the repo."""
+    manifest = load_manifest()
+    for entry in manifest:
+        if entry["target"].startswith(".agents/skills/"):
+            repo_path = Path(entry["target"])
+            # Assets are stored under "agents/skills/" not ".agents/skills/"
+            asset_rel_path = entry["target"].lstrip(".")
+            asset_path = Path("packages/ai-parrot/src/parrot/sdd/_assets") / asset_rel_path
+            assert repo_path.is_file(), f"Repo file missing: {repo_path}"
+            assert asset_path.is_file(), f"Asset file missing: {asset_path}"
+            assert repo_path.read_bytes() == asset_path.read_bytes(), f"Mismatch: {repo_path}"
+
+
+def test_fresh_shell_rule_no_wt_vars() -> None:
+    """No skill relies on a previous shell's WT/cd."""
+    skills = sorted(Path(".agents/skills").glob("*/SKILL.md"))
+    for skill in skills:
+        text = skill.read_text(encoding="utf-8")
+        lines = text.splitlines()
+        for i, line in enumerate(lines, 1):
+            if "$WT" in line and "WT=" not in line:
+                pytest.fail(f"{skill}:{i} uses $WT without assignment: {line}")
+
+
+def test_uninstall_after_hand_deleting_one_asset_still_cleans_up(empty_repo: Path) -> None:
+    """A managed file removed by hand must not leave the receipt, ledger hooks and blocks behind."""
+    install_sdd_integration(empty_repo)
+    (empty_repo / ".claude/commands/sdd-done.md").unlink()
+    uninstall_sdd_integration(empty_repo)
+    assert not (empty_repo / RECEIPT_PATH).exists()
+    assert GITIGNORE_BEGIN not in (empty_repo / ".gitignore").read_text()
+    assert not any((empty_repo / t).exists() for t in _claude_targets())
+
+
+def test_install_never_writes_through_a_symlink_out_of_the_repo(empty_repo: Path, tmp_path_factory) -> None:
+    """A repo-supplied symlinked `.claude/agents` must not redirect managed writes outside the repository."""
+    outside = tmp_path_factory.mktemp("outside")
+    (empty_repo / ".claude").mkdir()
+    (empty_repo / ".claude/agents").symlink_to(outside, target_is_directory=True)
+    actions = install_sdd_integration(empty_repo)
+    assert list(outside.iterdir()) == [], "managed assets were written outside the repository"
+    assert any("outside the repository" in a for a in actions)
+
+
+def _ignored(repo: Path, rel: str) -> bool:
+    return subprocess.run(["git", "check-ignore", "-q", rel], cwd=repo).returncode == 0
+
+
+def test_gitignore_block_ignores_worktrees_and_parrot_state(empty_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """rev 0.8 C29: `parrot sdd run` creates .parrot/ (ledger index); the managed block ignores it, like the
+    claude/codex/google installers do, so a repo using only the SDD flow keeps a clean primary checkout."""
+    monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
+    install_sdd_integration(empty_repo)
+    assert _ignored(empty_repo, ".parrot/ledger/index.db")
+    assert _ignored(empty_repo, ".parrot/worktrees/feat-x/README.md")
+    assert not _ignored(empty_repo, "sdd/config.json")
+
+
+@pytest.mark.parametrize(
+    "rel",
+    [
+        ".env",
+        "env/.env",
+        "env/dev/.env",
+        "env/prod/.env",
+        "logs/parrot.log",
+        "outputs/chart.html",
+        ".claude/settings.local.json",
+    ],
+)
+def test_gitignore_block_ignores_runtime_and_credential_files(empty_repo: Path, rel: str) -> None:
+    """navconfig writes credentials to env/[<ENV>/].env and logs to logs/; parrot writes OUTPUT_DIR; parrot claude
+    install writes personal permissions to .claude/settings.local.json — none of them may reach a commit."""
+    install_sdd_integration(empty_repo)
+    assert _ignored(empty_repo, rel)
+
+
+@pytest.mark.parametrize(
+    "rel",
+    [
+        "env/.env.example",
+        "env/dev/.env.example",
+        "etc/config.ini",
+        "agents/agents.yaml",
+        "plugins/tools/__init__.py",
+        ".claude/settings.json",
+        "artifacts/logs/FEAT-1-evidence.md",
+        "docs/outputs/example.md",
+    ],
+)
+def test_gitignore_block_keeps_project_files_tracked(empty_repo: Path, rel: str) -> None:
+    """Templates, configuration and the user's own agents/plugins stay versioned."""
+    install_sdd_integration(empty_repo)
+    assert not _ignored(empty_repo, rel)
+
+
+def test_gitignore_is_created_when_missing(empty_repo: Path) -> None:
+    gitignore = empty_repo / ".gitignore"
+    if gitignore.exists():
+        gitignore.unlink()
+    install_sdd_integration(empty_repo)
+    text = gitignore.read_text()
+    assert text.count(GITIGNORE_BEGIN) == 1
+    assert "\nenv/**/.env\n" in text and "\n/logs/\n" in text and "\n.parrot/\n" in text
+
+
+def test_reinstall_upgrades_an_old_gitignore_block(empty_repo: Path) -> None:
+    """A block written before rev 0.8 (worktrees only) gains .parrot/ on re-install, keeping user lines around it."""
+    (empty_repo / ".gitignore").write_text(
+        "node_modules/\n# >>> parrot sdd (managed) >>>\n.claude/worktrees/\n# <<< parrot sdd (managed) <<<\ndist/\n"
+    )
+    install_sdd_integration(empty_repo)
+    text = (empty_repo / ".gitignore").read_text()
+    assert text.startswith("node_modules/\n") and text.rstrip().endswith("dist/")
+    assert text.count(GITIGNORE_BEGIN) == 1 and "\n.parrot/\n" in text
+    uninstall_sdd_integration(empty_repo)
+    assert ".parrot/" not in (empty_repo / ".gitignore").read_text()
+
+
+def test_sdd_uninstall_strips_only_receipt_ledger_events(empty_repo: Path) -> None:
+    """TASK-5116 (issue:4c5b3404e8fb): a ledger block this install did not create survives uninstall."""
+    from parrot.knowledge.wiki.claude_code.installer import _install_ledger_hooks, _uninstall_ledger_hooks
+
+    _install_ledger_hooks(empty_repo)
+    _uninstall_ledger_hooks(empty_repo, ["pre-commit", "post-checkout", "post-rewrite"])  # post-merge stays foreign
+    install_sdd_integration(empty_repo, hosts=("codex",))
+    recorded = json.loads((empty_repo / "sdd/.sdd-installed.json").read_text())["ledger_hooks"]
+    assert "post-merge" not in recorded and recorded
+    uninstall_sdd_integration(empty_repo, hosts=("codex",))
+    assert "# >>> parrot-ledger >>>" in (empty_repo / ".git/hooks/post-merge").read_text()
+    for event in recorded:
+        hook = empty_repo / ".git/hooks" / event
+        assert not hook.exists() or "# >>> parrot-ledger >>>" not in hook.read_text()
+
+
+# --- FEAT-802 TASK-5179: resolved-root ignore rule + legacy-worktree refusal ----------------------------------
+
+
+def test_gitignore_literal_escapes_metacharacters() -> None:
+    from parrot.sdd.installer import _gitignore_literal
+
+    assert _gitignore_literal("a\\b*c?d[e]") == "a\\\\b\\*c\\?d\\[e]"
+    assert _gitignore_literal("!wt") == "\\!wt"
+    assert _gitignore_literal("#wt") == "\\#wt"
+    assert _gitignore_literal("wt  ") == "wt\\ \\ "
+    assert _gitignore_literal(".parrot/worktrees") == ".parrot/worktrees"
+
+
+def test_gitignore_block_resolved_root(
+    empty_repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    """AC7: anchored literal rule for in-repo roots (overrides included), none for external roots, an error for
+    the repository root itself; unrelated managed rules always survive."""
+    from parrot.sdd.config import SddConfigError
+    from parrot.sdd.installer import GITIGNORE_BLOCK, gitignore_block
+
+    monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
+    gitignore = empty_repo / ".gitignore"
+
+    def unrelated_rules_present(text: str) -> bool:
+        return all(rule in text for rule in ("\n.parrot/\n", "\n/logs/\n", "\n/outputs/\n", "\nenv/**/.env\n"))
+
+    # default root
+    install_sdd_integration(empty_repo)
+    text = gitignore.read_text()
+    assert "\n/.parrot/worktrees/\n" in text and unrelated_rules_present(text)
+
+    # relative override with a space and gitignore metacharacters
+    monkeypatch.setenv("WORKTREE_BASE_PATH", "wt dir/[x]")
+    install_sdd_integration(empty_repo)
+    text = gitignore.read_text()
+    assert "\n/wt dir/\\[x]/\n" in text and unrelated_rules_present(text)
+    assert text.count(GITIGNORE_BEGIN) == 1
+    (empty_repo / "wt dir/[x]/feat").mkdir(parents=True)
+    (empty_repo / "wt dir/[x]/feat/a.txt").write_text("x")
+    (empty_repo / "wt dir/x/feat").mkdir(parents=True)
+    (empty_repo / "wt dir/x/feat/a.txt").write_text("x")
+    status = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=all"], cwd=empty_repo, capture_output=True, text=True
+    ).stdout
+    assert "[x]/feat/a.txt" not in status and "wt dir/x/feat/a.txt" in status
+
+    # absolute in-repository override → still a repository-relative rule, never an absolute path
+    monkeypatch.setenv("WORKTREE_BASE_PATH", str(empty_repo / "abs-wt"))
+    install_sdd_integration(empty_repo)
+    text = gitignore.read_text()
+    assert "\n/abs-wt/\n" in text and str(empty_repo) not in text and unrelated_rules_present(text)
+    assert _ignored(empty_repo, "abs-wt/feat-x/README.md")
+
+    # external root → no worktree rule at all
+    outside = tmp_path_factory.mktemp("outside-wt")
+    monkeypatch.setenv("WORKTREE_BASE_PATH", str(outside))
+    assert gitignore_block(empty_repo) == GITIGNORE_BLOCK
+    install_sdd_integration(empty_repo)
+    text = gitignore.read_text()
+    assert "SDD feature worktrees" not in text and str(outside) not in text and unrelated_rules_present(text)
+
+    # repository root itself → configuration error, nothing written
+    before = text
+    for value in (".", str(empty_repo)):
+        monkeypatch.setenv("WORKTREE_BASE_PATH", value)
+        with pytest.raises(SddConfigError):
+            gitignore_block(empty_repo)
+        with pytest.raises(SddConfigError):
+            install_sdd_integration(empty_repo)
+    assert gitignore.read_text() == before
+
+
+def _legacy_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A real repository with one worktree registered under .claude/worktrees/."""
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git = ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@x"]
+    subprocess.run([*git, "init", "-q"], check=True)
+    (repo / "README.md").write_text("# legacy\n")
+    subprocess.run([*git, "add", "README.md"], check=True)
+    subprocess.run([*git, "commit", "-qm", "seed"], check=True)
+    subprocess.run([*git, "worktree", "add", "-q", "-b", "feat-1", ".claude/worktrees/feat-FEAT-1-x"], check=True)
+    return repo
+
+
+def test_install_refuses_legacy_worktrees(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """AC5: dry-run and real install both refuse with the recipe; nothing is written."""
+    from parrot.sdd.config import LegacyWorktreesError
+
+    repo = _legacy_repo(tmp_path, monkeypatch)
+    for dry_run in (True, False):
+        with pytest.raises(LegacyWorktreesError) as excinfo:
+            install_sdd_integration(repo, dry_run=dry_run)
+        message = str(excinfo.value)
+        assert message.startswith("error: SDD worktrees still live under .claude/worktrees/")
+        assert f"git -C {repo.resolve()} worktree repair" in message and "mv " in message
+    assert not (repo / ".gitignore").exists() and not (repo / "sdd").exists()
+
+    # an occupied destination → diagnostic without runnable moves, still LegacyWorktreesError
+    (repo / ".parrot/worktrees/feat-FEAT-1-x").mkdir(parents=True)
+    with pytest.raises(LegacyWorktreesError) as excinfo:
+        install_sdd_integration(repo)
+    message = str(excinfo.value)
+    assert "cannot generate a safe migration recipe" in message and "mv " not in message
+    assert not (repo / ".gitignore").exists() and not (repo / "sdd").exists()
+
+
+def test_install_cli_exit_1_on_legacy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """AC5: `parrot sdd install` (any host, --dry-run included) exits 1 and prints the recipe."""
+    from click.testing import CliRunner
+
+    from parrot.sdd.cli import sdd
+
+    repo = _legacy_repo(tmp_path, monkeypatch)
+    for extra in ([], ["--dry-run"], ["--host", "codex"]):
+        result = CliRunner().invoke(sdd, ["install", "--path", str(repo), *extra])
+        assert result.exit_code == 1, result.output
+        assert "worktree repair" in result.output
+    assert not (repo / ".gitignore").exists() and not (repo / "sdd").exists()
+
+
+# --- TASK-5118 (issue:80c5e6e510b2): worktree tests importing the main checkout -----------------------------
+
+
+def _python_repo(root: Path, pyproject: str = '[project]\nname = "demo"\nversion = "0.1"\n') -> Path:
+    (root / "pyproject.toml").write_text(pyproject, encoding="utf-8")
+    return root
+
+
+def _editable_dist(root: Path, source: Path, name: str = "demo") -> None:
+    info = root / ".venv/lib/python3.12/site-packages" / f"{name}-0.1.dist-info"
+    info.mkdir(parents=True)
+    (info / "direct_url.json").write_text(
+        json.dumps({"url": source.resolve().as_uri(), "dir_info": {"editable": True}}), encoding="utf-8"
+    )
+
+
+def test_isolation_none_for_non_python_repo(empty_repo: Path) -> None:
+    from parrot.sdd.installer import worktree_test_isolation
+
+    assert worktree_test_isolation(empty_repo, None) is None
+
+
+def test_isolation_flags_missing_pythonpath(tmp_path: Path) -> None:
+    from parrot.sdd.installer import worktree_test_isolation
+
+    note = worktree_test_isolation(_python_repo(tmp_path), None)
+    assert note and 'pythonpath = ["."]' in note and "test_command" in note
+    (tmp_path / "src").mkdir()
+    assert 'pythonpath = ["src"]' in (worktree_test_isolation(tmp_path, None) or "")
+
+
+def test_isolation_names_editable_install_from_main_checkout(tmp_path: Path) -> None:
+    from parrot.sdd.installer import worktree_test_isolation
+
+    (tmp_path / "repo").mkdir()
+    repo = _python_repo(tmp_path / "repo")
+    _editable_dist(repo, repo)
+    note = worktree_test_isolation(repo, None)
+    assert note and "demo is installed editable" in note and "main checkout" in note
+    elsewhere = tmp_path / "other"
+    elsewhere.mkdir()
+    (repo / ".venv").rename(tmp_path / "old-venv")
+    _editable_dist(repo, elsewhere)
+    assert "installed editable" not in (worktree_test_isolation(repo, None) or "")
+
+
+def test_isolation_names_virtual_project(tmp_path: Path) -> None:
+    from parrot.sdd.installer import worktree_test_isolation
+
+    _python_repo(tmp_path, '[project]\nname = "demo"\n\n[tool.uv]\npackage = false\n')
+    assert "virtual project" in (worktree_test_isolation(tmp_path, None) or "")
+
+
+@pytest.mark.parametrize(
+    "files, test_command",
+    [
+        ({"pyproject.toml": '[project]\nname = "d"\n\n[tool.pytest.ini_options]\npythonpath = ["."]\n'}, None),
+        ({"pyproject.toml": '[project]\nname = "d"\n', "pytest.ini": "[pytest]\npythonpath = src\n"}, None),
+        ({"setup.cfg": "[tool:pytest]\npythonpath = .\n"}, None),
+        ({"pyproject.toml": '[project]\nname = "d"\n'}, "make test"),
+        ({"pyproject.toml": '[project]\nname = "d"\n'}, "PYTHONPATH=src uv run --no-sync pytest"),
+    ],
+)
+def test_isolation_satisfied(tmp_path: Path, files: dict[str, str], test_command: str | None) -> None:
+    from parrot.sdd.installer import worktree_test_isolation
+
+    for name, text in files.items():
+        (tmp_path / name).write_text(text, encoding="utf-8")
+    assert worktree_test_isolation(tmp_path, test_command) is None
+
+
+def test_install_prints_worktree_tests_note(empty_repo: Path) -> None:
+    _python_repo(empty_repo)
+    actions = install_sdd_integration(empty_repo, hosts=("codex",))
+    assert any(a.startswith("note: worktree tests") and "pythonpath" in a for a in actions)
+    assert not any(a.startswith("note: worktree tests") for a in install_sdd_integration(empty_repo, dry_run=True))
+
+
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+_AGY_DOC = "docs/sdd/AGY.md"
+_AGY_MARKER = "<!-- agy-fresh-shell-example -->"
+
+
+@pytest.mark.parametrize("host", ["google", "codex"])
+def test_install_ships_agy_contract(empty_repo: Path, host: str) -> None:
+    install_sdd_integration(empty_repo, hosts=(host,))
+    text = (empty_repo / _AGY_DOC).read_text(encoding="utf-8")
+    assert "## Antigravity Adaptation Contract" in text
+
+
+def test_agy_contract_repo_copy_matches_package() -> None:
+    packaged = _REPO_ROOT / "packages/ai-parrot/src/parrot/sdd/_assets/sdd/AGY.md"
+    assert (_REPO_ROOT / _AGY_DOC).read_bytes() == packaged.read_bytes()
+
+
+@pytest.mark.parametrize(
+    "needle",
+    [
+        "invoke_subagent",
+        "manage_subagents",
+        'TypeName="self"',
+        "flash",
+        "inherit",
+        "PARROT_SDD_AGY_UNATTENDED",
+        "parrot sdd launch worker",
+        "install.sh",
+        "snap",
+    ],
+)
+def test_agy_contract_has_required_content(needle: str) -> None:
+    assert needle in (_REPO_ROOT / _AGY_DOC).read_text(encoding="utf-8")
+
+
+def test_agy_worktree_examples_run_in_fresh_shells(tmp_path: Path) -> None:
+    text = (_REPO_ROOT / _AGY_DOC).read_text(encoding="utf-8")
+    blocks = re.findall(re.escape(_AGY_MARKER) + r"\n```bash\n(.*?)\n```", text, re.DOTALL)
+    assert len(blocks) >= 2
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    subprocess.run(["git", "init", "-q", str(wt)], check=True)
+    env = {"PATH": os.environ["PATH"], "HOME": str(tmp_path)}
+    for block in blocks:
+        script = block.replace("/abs/path/to/worktree", str(wt))
+        result = subprocess.run(["bash", "-c", script], cwd=tmp_path, env=env, capture_output=True, text=True)
+        assert result.returncode == 0, result.stderr
+        if "rev-parse" in script:
+            assert Path(result.stdout.strip()).resolve() == wt.resolve()

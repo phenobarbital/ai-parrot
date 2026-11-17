@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-388 — `parrot devloop` CLI Homologation
 **Spec**: `sdd/specs/devloop-cli-homologation.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1968

@@ -7,6 +7,7 @@ types, so a record round-trips through the canonical JSON envelope in
 
 from __future__ import annotations
 
+import re
 from pathlib import PurePosixPath
 from typing import Any, Literal
 
@@ -35,6 +36,31 @@ ADR_REFERENCE_AMBIGUOUS = "ADR_REFERENCE_AMBIGUOUS"
 ADR_SOURCE_UNAVAILABLE = "ADR_SOURCE_UNAVAILABLE"
 ADR_PATH_OUTSIDE_ROOT = "ADR_PATH_OUTSIDE_ROOT"
 ADR_READ_ONLY = "ADR_READ_ONLY"
+
+#: FEAT-784 decision-audit vocabulary (spec §7 "Error codes introduced").
+#: The spec's ``ADR_UNSUPPORTED_SCHEMA`` is ``ADR_SCHEMA_UNSUPPORTED`` above.
+ADR_INVALID_ID = "ADR_INVALID_ID"
+SPEC_BLOCK_MISSING = "SPEC_BLOCK_MISSING"
+SPEC_BLOCK_INVALID_YAML = "SPEC_BLOCK_INVALID_YAML"
+SPEC_DUPLICATE_ENTRY_ID = "SPEC_DUPLICATE_ENTRY_ID"
+SPEC_INVALID_ID = "SPEC_INVALID_ID"
+SPEC_UNKNOWN_FIELD = "SPEC_UNKNOWN_FIELD"
+SPEC_DANGLING_REF = "SPEC_DANGLING_REF"
+SPEC_EMPTY_ABOUT = "SPEC_EMPTY_ABOUT"
+SPEC_EMPTY_TARGETS = "SPEC_EMPTY_TARGETS"
+TAXONOMY_INVALID = "TAXONOMY_INVALID"
+APPROVAL_MANIFEST_INVALID = "APPROVAL_MANIFEST_INVALID"
+APPROVAL_UNVERIFIED = "APPROVAL_UNVERIFIED"
+APPROVAL_LOCAL_BASE = "APPROVAL_LOCAL_BASE"
+TARGET_UNRESOLVED = "TARGET_UNRESOLVED"
+TARGET_FOREIGN = "TARGET_FOREIGN"
+SCOPE_INCOMPLETE = "SCOPE_INCOMPLETE"
+SNAPSHOT_UNSTABLE = "SNAPSHOT_UNSTABLE"
+SUPERSESSION_INVALID = "SUPERSESSION_INVALID"
+DECISION_REF_HISTORICAL = "DECISION_REF_HISTORICAL"
+WAIVER_INVALID = "WAIVER_INVALID"
+BATCH_PARTIAL = "BATCH_PARTIAL"
+AUDIT_NOT_CONFIGURED = "AUDIT_NOT_CONFIGURED"
 
 #: Page category for every managed ADR record.
 ADR_CATEGORY = "adr"
@@ -73,6 +99,34 @@ class DecisionConfig(_Strict):
     max_files: int = Field(default=8, gt=0)
     max_candidates: int = Field(default=3, gt=0)
     timeout_seconds: int = Field(default=60, gt=0)
+    local_prefix: str | None = None
+    known_prefixes: list[str] = Field(default_factory=list)
+
+    @staticmethod
+    def _normalize_prefix(prefix: str) -> str:
+        """Uppercase one prefix, rejecting invalid or compact-citation names."""
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9]*", prefix):
+            raise ValueError(f"invalid ADR prefix: {prefix!r}")
+        normalized_prefix = prefix.upper()
+        if re.fullmatch(r"(?:ADR|RFC)[0-9]{1,5}", normalized_prefix):
+            raise ValueError(f"ADR prefix must not be a compact citation: {prefix!r}")
+        return normalized_prefix
+
+    @field_validator("local_prefix")
+    @classmethod
+    def _validate_local_prefix(cls, value: str | None) -> str | None:
+        """Normalize the optional local namespace prefix."""
+        return None if value is None else cls._normalize_prefix(value)
+
+    @field_validator("known_prefixes")
+    @classmethod
+    def _validate_known_prefixes(cls, value: list[str]) -> list[str]:
+        """Normalize every configured foreign prefix."""
+        return [cls._normalize_prefix(prefix) for prefix in value]
+
+    def effective_prefixes(self) -> frozenset[str]:
+        """Return configured foreign prefixes plus the optional local prefix."""
+        return frozenset((*self.known_prefixes, *(() if self.local_prefix is None else (self.local_prefix,))))
 
 
 class EvidenceRef(_Strict):
@@ -112,7 +166,7 @@ class DecisionLink(_Strict):
     """A typed, provenance-tagged association to another page or record."""
 
     target_id: str = Field(..., min_length=1)
-    relation: Literal["explains", "supported_by", "supersedes"]
+    relation: Literal["explains", "supported_by", "supersedes", "contradicts", "about"]
     provenance: Literal["extracted", "inferred", "asserted"]
     evidence_indexes: list[int] = Field(default_factory=list)
 
@@ -140,10 +194,37 @@ class GenerationInfo(_Strict):
     max_output_tokens: int = Field(..., gt=0)
 
 
+_TARGET_PREFIXES: dict[str, str] = {"sym:": "symbol", "file:": "file", "dir:": "dir"}
+
+
+class DecisionRef(_Strict):
+    """Exact ``(decision_id, revision)`` reference to another decision (FEAT-784)."""
+
+    decision_id: str = Field(..., min_length=1)
+    revision: int = Field(..., ge=1)
+
+
+class DecisionTarget(_Strict):
+    """Typed structural target; ``kind`` must match the id prefix (FEAT-784)."""
+
+    target_id: str = Field(..., min_length=1)
+    kind: Literal["symbol", "file", "dir"]
+
+    @model_validator(mode="after")
+    def _check_prefix(self) -> "DecisionTarget":
+        """Reject a target whose id prefix disagrees with ``kind``."""
+        for prefix, kind in _TARGET_PREFIXES.items():
+            if self.target_id.startswith(prefix):
+                if kind != self.kind:
+                    raise ValueError(f"target_id prefix {prefix!r} requires kind={kind!r}")
+                return self
+        raise ValueError(f"target_id must begin with one of {tuple(_TARGET_PREFIXES)!r}")
+
+
 class DecisionRecord(_Strict):
     """The single canonical, versioned record persisted per ``adr:`` page."""
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[1, 2] = 1
     decision_id: str = Field(..., min_length=1)
     revision: int = Field(default=1, ge=1)
     title: str = ""
@@ -164,6 +245,19 @@ class DecisionRecord(_Strict):
     generation: GenerationInfo | None = None
     content_fingerprint: str = ""
 
+    # --- schema 2 (FEAT-784, additive; defaults preserve schema-1 payloads) ---
+    normative: Literal["constrains", "forbids", "requires"] | None = None
+    about: list[str] = Field(default_factory=list)
+    targets: list[DecisionTarget] = Field(default_factory=list)
+    contradicts: list[DecisionRef] = Field(default_factory=list)
+    supersedes_refs: list[DecisionRef] = Field(default_factory=list)
+    document_id: str | None = None
+    entry_id: str | None = None
+    batch_id: str | None = None
+    lifecycle: Literal["active", "retired"] = "active"
+    rationale: str = ""
+    rejected_alternatives: list[str] = Field(default_factory=list)
+
     @model_validator(mode="after")
     def _check_invariants(self) -> "DecisionRecord":
         """Enforce the provenance invariants review may never violate."""
@@ -180,6 +274,32 @@ class DecisionRecord(_Strict):
                         f"DecisionLink.evidence_indexes entry {idx} does not address "
                         f"this record's own evidence list (len={evidence_len})"
                     )
+        return self
+
+    @model_validator(mode="after")
+    def _check_schema_fields(self) -> "DecisionRecord":
+        """A schema-1 record must keep every schema-2 field at its default."""
+        if self.schema_version == 1:
+            schema_2_fields = (
+                "normative",
+                "about",
+                "targets",
+                "contradicts",
+                "supersedes_refs",
+                "document_id",
+                "entry_id",
+                "batch_id",
+                "lifecycle",
+                "rationale",
+                "rejected_alternatives",
+            )
+            non_default_fields = [
+                name
+                for name in schema_2_fields
+                if getattr(self, name) != type(self).model_fields[name].get_default(call_default_factory=True)
+            ]
+            if non_default_fields:
+                raise ValueError(f"schema_version=1 forbids schema-2 fields: {', '.join(non_default_fields)}")
         return self
 
 

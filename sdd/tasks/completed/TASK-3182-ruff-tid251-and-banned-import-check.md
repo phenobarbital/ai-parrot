@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-553 — sdd-coder Shared Conventions & Turn Budget
 **Spec**: `sdd/specs/sdd-coder-shared-conventions.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

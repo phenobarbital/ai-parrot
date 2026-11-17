@@ -135,7 +135,7 @@ def test_manifest_matches_golden(config: str, transport: str, tmp_path: Path, mo
 
 def test_minimal_manifest_matches_frozen_tool_surface(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The minimal local manifest preserves the FEAT-569 name baseline."""
-    from tests.knowledge.wiki.test_tool_surface_golden import LOCAL_NO_LEDGER
+    from .test_tool_surface_golden import LOCAL_NO_LEDGER
 
     config = WikiProjectConfig(wiki_name="baseline")
     save_project_config(tmp_path, config)

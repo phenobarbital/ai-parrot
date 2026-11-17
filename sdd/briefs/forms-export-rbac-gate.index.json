@@ -1,0 +1,31 @@
+{
+  "feature": "forms-export-rbac-gate",
+  "feature_id": "BRIEF-3e191d955d4c",
+  "spec": "sdd/briefs/forms-export-rbac-gate.brief.md",
+  "type": "brief",
+  "base_branch": "dev",
+  "created_at": "2026-10-29",
+  "completed_at": "2026-10-29T01:12:12.547095+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "HOTFIX-3e191d955d4c-1",
+      "slug": "export-rbac-and-membership-parity",
+      "title": "Gate POST /forms/export with RBAC and per-form membership parity",
+      "feature_id": "BRIEF-3e191d955d4c",
+      "feature": "forms-export-rbac-gate",
+      "spec": "sdd/briefs/forms-export-rbac-gate.brief.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Single task; both modified source files share one test surface.",
+      "assigned_to": null,
+      "started_at": "2026-10-29T01:08:49.614764+00:00",
+      "completed_at": "2026-10-29T01:12:12.547095+00:00",
+      "file": "sdd/briefs/forms-export-rbac-gate/tasks/HOTFIX-3e191d955d4c-1-export-rbac-and-membership-parity.md"
+    }
+  ]
+}

@@ -618,3 +618,132 @@ async def test_setup_mcp_servers_none_is_noop(mock_agent_deps):
     await agent.setup_mcp_servers([])
 
     agent.add_mcp_server.assert_not_called()
+
+
+# --- FEAT-726 / issue:b032fa211abd -----------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_speech_report_empty_speakers_raises_value_error_gemini_script(mock_agent_deps):
+    """Empty speakers in gemini script mode raises a ValueError naming `speakers`.
+
+    Regression for issue:b032fa211abd. The multi-speaker path used to build an
+    EMPTY speaker list from an empty dict and fail later, far from the cause.
+    """
+    from parrot.bots.agent import BasicAgent
+
+    class Speechless(BasicAgent):
+        """Subclass with no speakers; never mutate BasicAgent.speakers (class-level)."""
+
+        speakers = {}
+
+    agent = Speechless(name="Podcaster")
+    with pytest.raises(ValueError, match="speakers"):
+        await agent.speech_report(report="Analysis Text", num_speakers=1)
+
+
+@pytest.mark.asyncio
+async def test_speech_report_empty_speakers_raises_value_error_non_gemini_script(mock_agent_deps, tmp_path):
+    """Empty speakers in non-gemini script mode raises ValueError, not StopIteration.
+
+    This is the exact line issue:b032fa211abd names: the narrator pick used
+    `next(iter(self.speakers.values()))`, whose bare StopIteration a coroutine
+    surfaces as `RuntimeError: coroutine raised StopIteration` — naming nothing
+    about speakers.
+    """
+    from parrot.bots.agent import BasicAgent
+
+    class Speechless(BasicAgent):
+        """Subclass with no speakers."""
+
+        speakers = {}
+
+    agent = Speechless(name="Podcaster")
+    with pytest.raises(ValueError, match="speakers"):
+        await agent.speech_report(
+            report="Analysis Text",
+            tts_backend="supertonic",
+            speech_mode="script",
+            directory=tmp_path,
+            output_directory=tmp_path,
+        )
+
+
+@pytest.mark.asyncio
+async def test_speech_report_verbatim_works_with_empty_speakers(mock_agent_deps, tmp_path):
+    """Verbatim mode never reads self.speakers, so it still works when empty.
+
+    Pins that the guards were NOT hoisted above the `if mode == "verbatim"`
+    test — verbatim is the one working configuration for a speakerless agent.
+    """
+    from parrot.bots.agent import BasicAgent
+
+    class Speechless(BasicAgent):
+        """Subclass with no speakers."""
+
+        speakers = {}
+
+    agent = Speechless(name="Podcaster")
+    result = MagicMock(audio=b"wav", mime_format="audio/wav")
+    synthesizer = MagicMock()
+    synthesizer.synthesize = AsyncMock(return_value=result)
+
+    with patch(
+        "parrot.voice.tts.synthesizer.get_shared_synthesizer",
+        AsyncMock(return_value=synthesizer),
+    ):
+        response = await agent.speech_report(
+            report="# Heading\n\n**Plain** report",
+            tts_backend="supertonic",
+            speech_mode="verbatim",
+            directory=tmp_path,
+            output_directory=tmp_path,
+        )
+
+    mock_agent_deps.create_conversation_script.assert_not_awaited()
+    assert response["podcast_path"].suffix == ".wav"
+
+
+# --- FEAT-726 / issue:b858ae4ad636 -----------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_speech_report_verbatim_google_tts_zero_llm_calls(mock_agent_deps, tmp_path):
+    """google_tts verbatim synthesis bypasses all LLM calls.
+
+    Closes issue:b858ae4ad636 — google_tts was covered only at the backend unit
+    level (test_google_backend.py), never through speech_report() itself, while
+    supertonic and aws_polly both had an agent-level zero-LLM-calls test.
+
+    The extra assertion over its supertonic twin is the resolved TTS backend:
+    "google_tts" is the speech_report selector, "google" the TTS backend name it
+    maps to via _SPEECH_TO_TTS_BACKEND. Supertonic cannot exercise that mapping
+    because its selector and backend name are identical.
+    """
+    from parrot.bots.agent import BasicAgent
+
+    agent = BasicAgent(name="Podcaster")
+    result = MagicMock(audio=b"wav", mime_format="audio/wav")
+    synthesizer = MagicMock()
+    synthesizer.synthesize = AsyncMock(return_value=result)
+    get_synth = AsyncMock(return_value=synthesizer)
+
+    with patch("parrot.voice.tts.synthesizer.get_shared_synthesizer", get_synth):
+        response = await agent.speech_report(
+            report="# Heading\n\n**Plain** report",
+            tts_backend="google_tts",
+            speech_mode="verbatim",
+            directory=tmp_path,
+            output_directory=tmp_path,
+        )
+
+    mock_agent_deps.create_conversation_script.assert_not_awaited()
+    mock_agent_deps.generate_speech.assert_not_awaited()
+    synthesizer.synthesize.assert_awaited_once_with("Heading\n\nPlain report", language=None)
+
+    tts_config = get_synth.await_args.args[0]
+    assert tts_config.backend == "google"
+    assert tts_config.mime_format == "audio/wav"
+
+    assert response["script_path"].read_text() == "Heading\n\nPlain report"
+    assert response["podcast_path"].suffix == ".wav"

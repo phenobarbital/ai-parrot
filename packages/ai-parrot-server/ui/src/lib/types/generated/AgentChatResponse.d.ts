@@ -30,6 +30,13 @@ export type Response = string | null;
 export type Sources = {
   [k: string]: unknown;
 }[];
+export type Action = string | null;
+export type Kind = string;
+export type Label = string;
+export type OutputMode1 = string | null;
+export type Prompt = string;
+export type Source = string;
+export type Suggestions = AgentChatSuggestion[];
 export type Name = string;
 export type Status = string;
 export type ToolCalls = AgentToolCall[];
@@ -55,6 +62,7 @@ export interface AgentChatResponse {
   output_mode?: OutputMode;
   response?: Response;
   sources?: Sources;
+  suggestions?: Suggestions;
   tool_calls?: ToolCalls;
   [k: string]: unknown;
 }
@@ -85,6 +93,22 @@ export interface AgentChatMetadata {
   [k: string]: unknown;
 }
 export interface Output {
+  [k: string]: unknown;
+}
+/**
+ * Mirror of the core ``Suggestion`` chip model (FEAT-752) for the generated TS types.
+ *
+ * Kept import-free of ``parrot.models`` like the rest of this module; ``kind`` is
+ * ``followup | presentation | action``, ``source`` is ``llm | skill | provider`` and ``action`` is ``"explain"``
+ * when ``kind == "action"``.
+ */
+export interface AgentChatSuggestion {
+  action?: Action;
+  kind?: Kind;
+  label: Label;
+  output_mode?: OutputMode1;
+  prompt: Prompt;
+  source?: Source;
   [k: string]: unknown;
 }
 /**

@@ -32,7 +32,6 @@ async def test_patch_tool_manager_uses_chat_identity(ref: str) -> None:
     request["NAV_SESSION"] = session
     handler = agent_module.AgentTalk(request)
     handler._apply_user_toolkit_overrides = AsyncMock(side_effect=lambda agent, session, manager: manager)
-    handler._bootstrap_jira_oauth_session = AsyncMock()
     handler._restore_user_mcp_servers = AsyncMock()
     bot = SimpleNamespace(name="sales", _tooling_ref=ref, enable_mcp_restore=True)
 
@@ -262,6 +261,7 @@ class _FakeDb:
 
 async def test_purge_agent_returns_and_deletes(monkeypatch) -> None:
     _FakeDb.calls = []
+    monkeypatch.setenv("TOOLKIT_OVERRIDES_STORE", "documentdb")
     monkeypatch.setattr(toolkit_persistence, "DocumentDb", _FakeDb)
     purged = await ToolkitConfigService().purge_agent(REF)
     assert [(p.user_id, p.slug) for p in purged] == [("u1", "jira"), ("u2", "jira")]
@@ -294,6 +294,7 @@ async def test_purge_agent_returns_concurrent_writes(monkeypatch) -> None:
         async def delete_many(self, collection, query):
             RacyDb.deleted.append(query)
 
+    monkeypatch.setenv("TOOLKIT_OVERRIDES_STORE", "documentdb")
     monkeypatch.setattr(toolkit_persistence, "DocumentDb", RacyDb)
     purged = await ToolkitConfigService().purge_agent(REF)
     assert [p.user_id for p in purged] == ["u1", "u9"]

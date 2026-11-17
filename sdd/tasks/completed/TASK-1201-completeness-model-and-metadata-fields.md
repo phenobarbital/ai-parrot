@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-178 — Database Toolkit Cache Contract & Tool Semantics
 **Spec**: `sdd/specs/database-toolkit-cache-contract.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

@@ -19,6 +19,15 @@ proposal_audit: FEAT-569
 **Inputs:** [accepted brainstorm](../proposals/memory-dynamics.brainstorm.md), [accepted proposal](../proposals/memory-dynamics.proposal.md), and [proposal findings](../state/FEAT-569/findings/).
 The proposal's Design Corrections and §2.2 override conflicting brainstorm sketches, as explicitly accepted in the brainstorm's Amendments. FEAT-569 is only the proposal audit identity. The allocator reserved FEAT-571 for this specification in commit `d8664446e`.
 
+## Ownership amendment
+
+Pending M1, M2, M3, M5 and M6 ownership transfers to
+[FEAT-892 — Agent Memory](agent-memory-mixin.spec.md), including its agent
+integration. M4 remains exclusively with [FEAT-889 — Agent Brain](agent-brain.spec.md)
+phase 2. G1–G4 and M0 task history, reported evidence and gate verdicts remain
+unchanged; every unaccepted gate and release condition in this specification
+remains blocked.
+
 ## 1. Motivation & Business Requirements
 
 ### Problem Statement

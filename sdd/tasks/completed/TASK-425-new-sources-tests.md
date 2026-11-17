@@ -2,7 +2,7 @@
 
 **Feature**: datasetmanager-sources
 **Spec**: `sdd/specs/datasetmanager-sources.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-423, TASK-424

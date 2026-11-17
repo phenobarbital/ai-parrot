@@ -1,0 +1,18 @@
+{
+  "backend": "streams",
+  "executed": 2,
+  "dlq": [
+    {
+      "topic": "squawk:caller:replies:undeliverable:27b3f5de",
+      "attempts": 1
+    }
+  ],
+  "base64_overhead_pct": 33.4,
+  "_meta": {
+    "date": "2026-10-30",
+    "redis": "7.4.11 (throwaway container)",
+    "navigator_eventbus": "0.4.0",
+    "runs": "4/4 identical",
+    "command": "SQUAWK_SPIKE_REDIS_URL=redis://127.0.0.1:56379/0 python sdd/state/FEAT-746/spikes/G6-bus-envelope/spike.py"
+  }
+}

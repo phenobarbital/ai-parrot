@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-573 — Agent Terminal Workspace for `parrot agent`
 **Spec**: `sdd/specs/new-ui-cli-agents.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3406, TASK-3410

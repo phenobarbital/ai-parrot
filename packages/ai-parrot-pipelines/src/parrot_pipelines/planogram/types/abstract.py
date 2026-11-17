@@ -71,7 +71,7 @@ class AbstractPlanogramType(ABC):
         if getattr(self.config, "slots_definition", None) is None:
             raise ValueError(
                 f"{type(self).__name__} requires a slots_definition but config {config_name!r} has none; "
-                "see docs/pipelines/planogram-cycle-migration.md"
+                "see wiki/flows/pipelines/planogram-cycle-migration.md"
             )
 
     @classmethod

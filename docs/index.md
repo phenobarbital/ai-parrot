@@ -8,13 +8,13 @@ hide:
 
 **Async-first Python framework for building AI Agents and Chatbots.**
 
-AI-Parrot is a vendor-agnostic framework that lets you build conversational
-agents, tool-using assistants and multi-agent crews on top of any major LLM
-provider — OpenAI, Anthropic, Google GenAI, Groq, VertexAI, HuggingFace —
-through a single async interface.
+AI-Parrot is a vendor-agnostic framework that lets you build conversational agents, tool-using assistants and multi-agent crews on top of any major LLM provider — OpenAI, Anthropic, Google GenAI, Groq, VertexAI, HuggingFace — through a single async interface.
 
 [Get started →](INSTALL.md){ .md-button .md-button--primary }
-[Browse the API →](api-reference/index.md){ .md-button }
+[Browse the Wiki →](https://github.com/phenobarbital/ai-parrot/wiki){ .md-button }
+
+!!! note "Two-surface doctrine"
+    This site provides **what and why** — concept overviews, getting started guides, and tutorials. For API reference, class signatures, and implementation details, see the [project Wiki](https://github.com/phenobarbital/ai-parrot/wiki).
 
 ---
 
@@ -26,8 +26,7 @@ through a single async interface.
 
     ---
 
-    Core abstractions, data models and the architectural decisions that
-    keep AI-Parrot async and vendor-agnostic.
+    Core abstractions, data models and the architectural decisions that keep AI-Parrot async and vendor-agnostic.
 
     [→ Open chapter](chapters/foundations.md)
 
@@ -35,8 +34,7 @@ through a single async interface.
 
     ---
 
-    One `AbstractClient` interface for every provider. Streaming,
-    retries, presets and embeddings.
+    One `AbstractClient` interface for every provider. Streaming, retries, presets and embeddings.
 
     [→ Open chapter](chapters/llm-clients.md)
 
@@ -44,8 +42,7 @@ through a single async interface.
 
     ---
 
-    `Chatbot`, `Agent`, `AgentCrew` — single agents and multi-agent
-    orchestration with sequential, parallel and DAG execution.
+    `Chatbot`, `Agent`, `AgentCrew` — single agents and multi-agent orchestration with sequential, parallel and DAG execution.
 
     [→ Open chapter](chapters/bots-agents.md)
 
@@ -53,8 +50,7 @@ through a single async interface.
 
     ---
 
-    Conversation memory, episodic memory and RAG over PgVector,
-    FAISS, Milvus, Arango or BigQuery.
+    Conversation memory, episodic memory and RAG over PgVector, FAISS, Milvus, Arango or BigQuery.
 
     [→ Open chapter](chapters/memory-knowledge.md)
 
@@ -62,8 +58,7 @@ through a single async interface.
 
     ---
 
-    PageIndex tree retrieval, the GraphIndex typed knowledge graph, and
-    the agent-maintained LLM Wiki your assistants read *and* write.
+    PageIndex tree retrieval, the GraphIndex typed knowledge graph, and the agent-maintained LLM Wiki your assistants read *and* write.
 
     [→ Open chapter](chapters/knowledge-graph.md)
 
@@ -71,8 +66,7 @@ through a single async interface.
 
     ---
 
-    The `@tool` decorator, toolkits, OpenAPI ingestion and document
-    loaders for the RAG pipeline.
+    The `@tool` decorator, toolkits, OpenAPI ingestion and document loaders for the RAG pipeline.
 
     [→ Open chapter](chapters/tools-rag.md)
 
@@ -80,8 +74,7 @@ through a single async interface.
 
     ---
 
-    Telegram, MS Teams, WhatsApp, voice. MCP servers/clients and the
-    A2A inter-agent protocol.
+    Telegram, MS Teams, WhatsApp, voice. MCP servers/clients and the A2A inter-agent protocol.
 
     [→ Open chapter](chapters/integrations.md)
 
@@ -100,42 +93,28 @@ through a single async interface.
 
 === "Build a multi-agent system"
 
-    1. Read [Bots & Agents](chapters/bots-agents.md) and pick the
-       right execution mode (sequential / parallel / DAG).
-    2. For cross-host or cross-process agents, jump to
-       [A2A Communication](a2a_communication.md).
-    3. Production patterns live in the
-       [AgentsFlow User Guide](orchestration/agentsflow.md).
+    1. Read [Bots & Agents](chapters/bots-agents.md) and pick the right execution mode (sequential / parallel / DAG).
+    2. For cross-host or cross-process agents, jump to [A2A Communication](https://github.com/phenobarbital/ai-parrot/wiki/MCP-%26-A2A-A2A-Secure-Communication-Demo).
+    3. Production patterns live in the [AgentsFlow User Guide](https://github.com/phenobarbital/ai-parrot/wiki/Bots-%26-Agents-AgentsFlow-User-Guide).
 
 === "RAG over your documents"
 
-    1. Pick a vector store —
-       [Storage Backends](storage-backends.md).
-    2. Wire loaders →
-       [Local Knowledge Base](local_kb.md),
-       [Loaders Metadata](loaders-metadata.md).
-    3. Tune retrieval with
-       [Parent-Child Retrieval](parent-child-retrieval.md).
+    1. Pick a vector store — [Storage Backends](https://github.com/phenobarbital/ai-parrot/wiki/Stores-%26-Loaders-Storage-Backends-Guide).
+    2. Wire loaders → [Local Knowledge Base](https://github.com/phenobarbital/ai-parrot/wiki/Knowledge-Local-Kb), [Loaders Metadata](https://github.com/phenobarbital/ai-parrot/wiki/Stores-%26-Loaders-Loader-Metadata-Standard).
+    3. Tune retrieval with [Parent-Child Retrieval](https://github.com/phenobarbital/ai-parrot/wiki/Stores-%26-Loaders-Parent-Child-Retrieval-%28Small-to-Big%29).
 
 === "Expose an agent as a service"
 
     1. Decide the surface — REST? MCP? Messaging?
-    2. REST: [API Endpoints](API_ENDPOINTS.md).
-    3. MCP: [MCP Sessions](mcp_session.md) and
-       [Simple MCP Server](simple_mcp_server.md).
-    4. Telegram / Teams / WhatsApp: see the
-       [Integrations chapter](chapters/integrations.md).
+    2. REST: [API Endpoints](https://github.com/phenobarbital/ai-parrot/wiki/Server-%26-APIs-API-Endpoints-Reference).
+    3. MCP: [MCP Sessions](https://github.com/phenobarbital/ai-parrot/wiki/MCP-%26-A2A-Create-and-configure-agent) and [Simple MCP Server](https://github.com/phenobarbital/ai-parrot/wiki/MCP-%26-A2A-Simple-Mcp-Server).
+    4. Telegram / Teams / WhatsApp: see the [Integrations chapter](chapters/integrations.md).
 
 ---
 
 ## Contributing
 
-Documentation lives in `docs/` and follows the
-[Style Guide](STYLE_GUIDE.md). The site is built with
-[MkDocs Material](https://squidfunk.github.io/mkdocs-material/) and the
-API reference is generated by
-[mkdocstrings](https://mkdocstrings.github.io/) from the docstrings in
-`packages/ai-parrot/src/parrot/`.
+Documentation lives in `docs/` and follows the [Style Guide](STYLE_GUIDE.md). The site is built with [MkDocs Material](https://squidfunk.github.io/mkdocs-material/) and the API reference is generated by [mkdocstrings](https://mkdocstrings.github.io/) from the docstrings in `packages/ai-parrot/src/parrot/`.
 
 Run the site locally:
 

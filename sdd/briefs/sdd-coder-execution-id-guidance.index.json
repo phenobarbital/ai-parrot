@@ -1,0 +1,49 @@
+{
+  "feature": "sdd-coder-execution-id-guidance",
+  "feature_id": "BRIEF-sdd-coder-execution-id-guidance",
+  "spec": "sdd/briefs/sdd-coder-execution-id-guidance.brief.md",
+  "type": "brief",
+  "base_branch": "dev",
+  "created_at": "2026-11-03",
+  "completed_at": "2026-11-03T19:44:10+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "HOTFIX-sdd-coder-execution-id-guidance-1",
+      "slug": "prompt-uuid-command",
+      "title": "sdd-worker prompt: generate execution_id with a command",
+      "feature_id": "BRIEF-sdd-coder-execution-id-guidance",
+      "feature": "sdd-coder-execution-id-guidance",
+      "spec": "sdd/briefs/sdd-coder-execution-id-guidance.brief.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "XS",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-11-03T19:44:10+00:00",
+      "file": "sdd/briefs/sdd-coder-execution-id-guidance/tasks/HOTFIX-sdd-coder-execution-id-guidance-1-prompt-uuid-command.md"
+    },
+    {
+      "id": "HOTFIX-sdd-coder-execution-id-guidance-2",
+      "slug": "toolkit-schema-and-error",
+      "title": "SddCoderToolkit: advertise UUID schema + field-level invalid_arguments",
+      "feature_id": "BRIEF-sdd-coder-execution-id-guidance",
+      "feature": "sdd-coder-execution-id-guidance",
+      "spec": "sdd/briefs/sdd-coder-execution-id-guidance.brief.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-11-03T19:44:10+00:00",
+      "file": "sdd/briefs/sdd-coder-execution-id-guidance/tasks/HOTFIX-sdd-coder-execution-id-guidance-2-toolkit-schema-and-error.md"
+    }
+  ]
+}

@@ -82,15 +82,15 @@ Ask one batch of questions to collect the core feature information. Use an inter
 
 **Questions in order:**
 
-1. **Flow type and base branch**: `type: feature | hotfix`, `base_branch: dev | main | staging`
-   - Default: `feature` / `dev`
-   - If `type: hotfix`, enforce `base_branch: main`
+1. **Flow type and base branch**: `type: feature | hotfix`, `base_branch: <branch>` (from `sdd/config.json`)
+   - Default: `feature` / the `base_branch` in `sdd/config.json`
+   - If `type: hotfix`, enforce `base_branch` = the `hotfix_base` in `sdd/config.json`
 
 2. **Feature name / slug**: The kebab-case slug for the feature.
    - Validate: does `sdd/specs/<slug>.spec.md` already exist? If yes, abort with a pointer to the existing spec.
    - Validate: does `sdd/proposals/<slug>.brainstorm.md` or `<slug>.proposal.md` exist? If yes, stop intake and fall back to the carry-forward path (the exploration doc wins).
 
-3. **Related project(s)**: Select from `KNOWN_PROJECTS` (FEAT-576) if available. Also allow free text, normalized with `normalize_project`. If FEAT-576 is not importable, use free text as fallback.
+3. **Related project(s)**: Select from the project areas in `sdd/CONVENTIONS.md` (§ Project areas), or the `projects` list in `sdd/config.json` when set. Also allow free text; unknown values warn, never fail.
 
 4. **Overview**: Free-text description of the feature.
 
@@ -325,7 +325,7 @@ The codebase contract build is seeded by:
 
 ### 5e. §5 reserve FEAT-ID
 
-Reserve the FEAT-ID as usual via `scripts/sdd/reserve_ids.py`. Write the reserved ID to `intake.json.feat_id`.
+Reserve the FEAT-ID as usual via `parrot.sdd.scripts.reserve_ids`. Write the reserved ID to `intake.json.feat_id`.
 
 ### 5f. §6 promote and commit
 

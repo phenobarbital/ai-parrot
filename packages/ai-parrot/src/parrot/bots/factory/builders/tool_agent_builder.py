@@ -28,7 +28,7 @@ Decision flow:
    enable autonomous posting/sending.
 4. Pick `class_name = "BasicAgent"` and `module = "parrot.bots.agent"`
    unless the user explicitly wants another bot class.
-5. Default model: provider=`google`, model=`gemini-2.5-flash`,
+5. Default model: provider=`google`, model=`gemini-3.8-flash`,
    temperature=0.4, max_tokens=4096 — override only if the user said so.
 6. `vector_store` stays null. If the user asked for retrieval, switch to
    RAGBuilderAgent territory (note it and refuse).

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-103 — Agent Artifact Persistency
 **Spec**: `sdd/specs/agent-artifact-persistency.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-720, TASK-722

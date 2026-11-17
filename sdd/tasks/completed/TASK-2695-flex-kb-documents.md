@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-491 — Flex A2UI Dashboard Agent
 **Spec**: `sdd/specs/flex-agent-infographic-a2ui.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

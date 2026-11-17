@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-317 — Parrot EventBus Migration
 **Spec**: `sdd/specs/parrot-eventbus-migration.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1827

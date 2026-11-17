@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import subprocess
+import uuid
 from pathlib import Path
 
 import pytest
@@ -15,10 +16,11 @@ from parrot.flows.dev_loop.sdd_coder.checkpoint import (
     prepare_review_checkpoint,
     validate_review_checkpoint,
 )
-from parrot.flows.dev_loop.sdd_coder.evidence import ExecutionEvidenceStore
-from parrot.flows.dev_loop.sdd_coder.optimization_models import BackgroundRegistration
+from parrot.flows.dev_loop.sdd_coder.evidence import EvidenceCorruptionError, ExecutionEvidenceStore
+from parrot.flows.dev_loop.sdd_coder.optimization_models import BackgroundRegistration, ReviewArtifact
 from parrot.flows.dev_loop.sdd_coder.models import ExecutionSnapshot
 from parrot.flows.dev_loop.sdd_coder.background import BackgroundRegistry
+from parrot.sdd.scripts.review_checkpoint import main
 
 EXECUTION_ID = "33333333-3333-4333-8333-333333333333"
 FEATURE_SLUG = "checkpoint-demo"
@@ -264,3 +266,275 @@ def test_durable_neutral_resume(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     # Re-validating the SAME checkpoint from a brand-new process-local object
     # (nothing carried over except the durable files) still succeeds.
     asyncio.run(validate_review_checkpoint(checkpoint, worktree=worktree))
+
+
+def test_record_publishes_manual_review_artifact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The manual CLI stores a typed review artifact at the durable root."""
+    worktree = _build_repo(tmp_path)
+    durable_root = tmp_path / "durable"
+    execution_id = "44444444-4444-4444-8444-444444444444"
+    monkeypatch.setenv("SDD_CODER_TELEMETRY_DIR", str(durable_root))
+    head_sha = _run_git(["rev-parse", "HEAD"], cwd=worktree).stdout.strip()
+
+    exit_code = main(
+        [
+            "record",
+            "--feature",
+            FEATURE_SLUG,
+            "--task",
+            "TASK-2",
+            "--worktree",
+            str(worktree),
+            "--summary",
+            "Manual semantic review passed.",
+            "--execution-id",
+            execution_id,
+            "--fix-commit",
+            head_sha,
+        ]
+    )
+
+    result = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert result["ok"] is True
+    assert result["execution_id"] == execution_id
+    assert result["execution_id_generated"] is False
+    review_ref = result["review_ref"]
+    page = asyncio.run(ExecutionEvidenceStore(durable_root).read_artifact(execution_id, review_ref["artifact_id"]))
+    artifact = ReviewArtifact.model_validate_json(page["content"])
+    assert artifact.source == "manual"
+    assert artifact.head_sha == head_sha
+    assert artifact.fix_commits == [head_sha]
+    assert artifact.feature_slug == FEATURE_SLUG
+
+
+def test_record_generates_execution_id_when_omitted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An omitted execution ID becomes a fresh canonical UUID."""
+    worktree = _build_repo(tmp_path)
+    durable_root = tmp_path / "durable"
+    monkeypatch.setenv("SDD_CODER_TELEMETRY_DIR", str(durable_root))
+
+    exit_code = main(
+        [
+            "record",
+            "--feature",
+            FEATURE_SLUG,
+            "--task",
+            "TASK-2",
+            "--worktree",
+            str(worktree),
+            "--summary",
+            "Manual semantic review passed.",
+        ]
+    )
+
+    result = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert result["ok"] is True
+    assert str(uuid.UUID(result["execution_id"])) == result["execution_id"]
+    assert result["execution_id_generated"] is True
+    assert (durable_root / "executions" / result["execution_id"] / "artifacts").is_dir()
+
+
+@pytest.mark.parametrize(
+    ("arguments", "error_fragment"),
+    [
+        (["--task", "invalid-task"], "invalid-task"),
+        (["--summary", ""], "String should have at least 1 character"),
+        (["--fix-commit", "abc123"], "full 40-hex-char git SHA"),
+    ],
+)
+def test_record_rejects_invalid_input_without_writing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    arguments: list[str],
+    error_fragment: str,
+) -> None:
+    """Model-invalid manual reviews return input errors before an artifact write."""
+    worktree = _build_repo(tmp_path)
+    durable_root = tmp_path / "durable"
+    monkeypatch.setenv("SDD_CODER_TELEMETRY_DIR", str(durable_root))
+    argv = [
+        "record",
+        "--feature",
+        FEATURE_SLUG,
+        "--task",
+        "TASK-2",
+        "--worktree",
+        str(worktree),
+        "--summary",
+        "Manual semantic review passed.",
+        "--execution-id",
+        EXECUTION_ID,
+        *arguments,
+    ]
+
+    exit_code = main(argv)
+
+    result = json.loads(capsys.readouterr().out)
+    assert exit_code == 2
+    assert result["ok"] is False
+    assert result["error"] == "invalid_input"
+    assert error_fragment in result["message"]
+    assert not (durable_root / "executions" / EXECUTION_ID / "artifacts").exists()
+
+
+def _record_argv(worktree: Path, *extra: str) -> list[str]:
+    """A valid `record` argv for `worktree` with a fixed execution ID, plus any extra arguments."""
+    return [
+        "record",
+        "--feature",
+        FEATURE_SLUG,
+        "--task",
+        "TASK-2",
+        "--worktree",
+        str(worktree),
+        "--summary",
+        "Manual semantic review passed.",
+        "--execution-id",
+        EXECUTION_ID,
+        *extra,
+    ]
+
+
+@pytest.mark.parametrize(
+    "error",
+    [OSError("disk full"), EvidenceCorruptionError("artifact hash mismatch")],
+    ids=["os_error", "evidence_corruption"],
+)
+def test_record_reports_store_errors_as_json(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    error: Exception,
+) -> None:
+    """A failed artifact write is an operation_error JSON result, never a traceback (issue:f64fd3bb663f)."""
+    worktree = _build_repo(tmp_path)
+    monkeypatch.setenv("SDD_CODER_TELEMETRY_DIR", str(tmp_path / "durable"))
+
+    async def failing_put_artifact(self: ExecutionEvidenceStore, execution_id: str, payload: object) -> None:
+        raise error
+
+    monkeypatch.setattr(ExecutionEvidenceStore, "put_artifact", failing_put_artifact)
+
+    exit_code = main(_record_argv(worktree))
+
+    result = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
+    assert result == {"ok": False, "error": "operation_error", "message": str(error)}
+
+
+@pytest.mark.parametrize("failure", ["not_a_repository", "git_missing"])
+def test_record_reports_git_failures_as_json(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    failure: str,
+) -> None:
+    """A failed or missing git is an operation_error JSON result with exit 1 and nothing stored."""
+    durable_root = tmp_path / "durable"
+    monkeypatch.setenv("SDD_CODER_TELEMETRY_DIR", str(durable_root))
+    if failure == "not_a_repository":
+        worktree = tmp_path / "plain"
+        worktree.mkdir()
+        monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
+    else:
+        worktree = _build_repo(tmp_path)
+        empty_bin = tmp_path / "empty-bin"
+        empty_bin.mkdir()
+        monkeypatch.setenv("PATH", str(empty_bin))
+
+    exit_code = main(_record_argv(worktree))
+
+    result = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
+    assert result["ok"] is False
+    assert result["error"] == "operation_error"
+    assert "git" in result["message"]
+    assert not (durable_root / "executions" / EXECUTION_ID / "artifacts").exists()
+
+
+def test_record_reads_head_without_blocking_subprocess_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`record` reads HEAD through the async run_bounded helper, never a blocking subprocess.run (issue:f64fd3bb663f)."""
+    worktree = _build_repo(tmp_path)
+    durable_root = tmp_path / "durable"
+    monkeypatch.setenv("SDD_CODER_TELEMETRY_DIR", str(durable_root))
+    head_sha = _run_git(["rev-parse", "HEAD"], cwd=worktree).stdout.strip()
+
+    def blocking_run(*args: object, **kwargs: object) -> None:
+        raise AssertionError("record must not call the blocking subprocess.run")
+
+    monkeypatch.setattr(subprocess, "run", blocking_run)
+
+    exit_code = main(_record_argv(worktree))
+
+    result = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    page = asyncio.run(
+        ExecutionEvidenceStore(durable_root).read_artifact(EXECUTION_ID, result["review_ref"]["artifact_id"])
+    )
+    assert ReviewArtifact.model_validate_json(page["content"]).head_sha == head_sha
+
+
+def _record_argv_for(worktree: Path, feature: str) -> list[str]:
+    """`_record_argv` with `--feature` set to `feature` instead of FEATURE_SLUG."""
+    argv = _record_argv(worktree)
+    argv[argv.index("--feature") + 1] = feature
+    return argv
+
+
+@pytest.mark.parametrize(
+    "feature",
+    [FEATURE_ID, "checkpoint", f"../index/{FEATURE_SLUG}"],
+    ids=["feature_id", "substring", "path_traversal"],
+)
+def test_record_rejects_feature_without_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], feature: str
+) -> None:
+    """A --feature that is not an index slug is invalid_input with nothing stored (issue:b9ff30bf709e).
+
+    finalize_task matches the stored feature_slug against the per-spec index file stem, so any other form would
+    only fail later, at finalize. The traversal case resolves to the real index and is refused for its separator.
+    """
+    worktree = _build_repo(tmp_path)
+    durable_root = tmp_path / "durable"
+    monkeypatch.setenv("SDD_CODER_TELEMETRY_DIR", str(durable_root))
+
+    exit_code = main(_record_argv_for(worktree, feature))
+
+    result = json.loads(capsys.readouterr().out)
+    assert exit_code == 2
+    assert result["ok"] is False
+    assert result["error"] == "invalid_input"
+    assert repr(feature) in result["message"]
+    assert not (durable_root / "executions" / EXECUTION_ID / "artifacts").exists()
+
+
+def test_record_accepts_brief_index_slug(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A brief index slug resolves like in `prepare` and is stored as the artifact's feature_slug."""
+    worktree = _build_repo(tmp_path)
+    durable_root = tmp_path / "durable"
+    monkeypatch.setenv("SDD_CODER_TELEMETRY_DIR", str(durable_root))
+    brief_dir = worktree / "sdd" / "briefs"
+    brief_dir.mkdir(parents=True)
+    (brief_dir / "brief-demo.index.json").write_text(
+        json.dumps({"feature": "brief-demo", "tasks": []}), encoding="utf-8"
+    )
+
+    exit_code = main(_record_argv_for(worktree, "brief-demo"))
+
+    result = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    page = asyncio.run(
+        ExecutionEvidenceStore(durable_root).read_artifact(EXECUTION_ID, result["review_ref"]["artifact_id"])
+    )
+    assert ReviewArtifact.model_validate_json(page["content"]).feature_slug == "brief-demo"

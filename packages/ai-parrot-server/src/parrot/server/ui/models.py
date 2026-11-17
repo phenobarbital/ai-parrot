@@ -10,6 +10,7 @@ Kept separate from ``parrot.server.ui.status`` (TASK-2524) because it
 describes a different endpoint (``/api/v1/bots``, not
 ``/api/v1/admin/status``) and has no runtime consumer of its own.
 """
+
 from __future__ import annotations
 
 from typing import Any, Literal
@@ -109,10 +110,16 @@ class BotWritePayload(BaseModel):
     parent_searcher_config: dict[str, Any] | None = None
     context_search_limit: int | None = None
     context_score_threshold: float | None = None
-    memory_type: Literal["memory", "file", "redis"] | None = None
+    memory_type: Literal["auto", "memory", "file", "redis"] | None = None
     memory_config: dict[str, Any] | None = None
     max_context_turns: int | None = None
     use_conversation_history: bool | None = None
+    # Follow-up suggestion chips (FEAT-752)
+    enable_suggestions: bool | None = None
+    suggest_followups: bool | None = None
+    suggestion_timeout_s: float | None = None
+    max_suggestions: int | None = None
+    suggestion_model: str | None = None
     bot_class: str | None = None
     permissions: dict[str, Any] | list[dict[str, Any]] | None = None
 

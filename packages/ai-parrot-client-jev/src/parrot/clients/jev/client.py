@@ -155,6 +155,7 @@ class JevClient(AbstractClient):
 
     client_type: str = "jev"
     client_name: str = "jev"
+    supports_tool_loop: bool = False  # FEAT-848: ask() warns and ignores tools; no tool loop
     # env vars holding the server-side API key (read by ``has_server_credentials``; never returned to callers)
     credential_env = ('TYPESAFE_API_KEY',)
     #: Provider label stamped on every ``AIMessage`` / ``InvokeResult``.
@@ -575,6 +576,7 @@ class JevClient(AbstractClient):
             input_tokens=usage.prompt_tokens,
             output_tokens=usage.completion_tokens,
             finish_reason="completed",
+            usage=usage,
         )
         return self._build_message(
             prompt=prompt,
@@ -762,6 +764,7 @@ class JevClient(AbstractClient):
             input_tokens=usage.prompt_tokens,
             output_tokens=usage.completion_tokens,
             finish_reason="completed",
+            usage=usage,
         )
 
         # Parsing happens after the terminal event: the tokens were consumed and

@@ -51,10 +51,11 @@ class TestConceptType:
         assert ConceptType.PLAYBOOK.value == "Playbook"
         assert ConceptType.CONTROL.value == "Control"
 
-    def test_all_values_count(self):
-        """11 original + 5 graph-native (FEAT-239) + 5 wiki (FEAT-260)
-        + OTHER (FEAT-216) + RUN/CLAIM work-lineage types = 24."""
-        assert len(list(ConceptType)) == 24
+    def test_shared_vocabulary(self):
+        """PageIndex must re-export the shared, extensible vocabulary."""
+        from parrot.knowledge.okf.ontology import ConceptType as SharedConceptType
+
+        assert ConceptType is SharedConceptType
 
     def test_case_sensitive_values(self):
         """Values use Title-Case as per spec."""
@@ -93,11 +94,11 @@ class TestRelationType:
         assert RelationType.REFERENCES == "references"
         assert RelationType.REFERENCES.value == "references"
 
-    def test_all_values_count(self):
-        """8 original + 4 graph edge kinds (FEAT-239) + extends (FEAT-240)
-        + summarizes/contradicts (FEAT-260) + produced/about/supported_by
-        work-lineage relations = 18."""
-        assert len(list(RelationType)) == 18
+    def test_shared_vocabulary(self):
+        """PageIndex must re-export the shared, extensible vocabulary."""
+        from parrot.knowledge.okf.ontology import RelationType as SharedRelationType
+
+        assert RelationType is SharedRelationType
 
     def test_str_enum_equality(self):
         """str, Enum values compare equal to plain strings."""

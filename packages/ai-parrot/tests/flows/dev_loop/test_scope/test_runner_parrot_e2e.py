@@ -6,6 +6,9 @@ import json
 import shutil
 from pathlib import Path
 
+import pytest
+
+from parrot.flows.dev_loop.test_scope.datatypes import TestTarget
 from parrot.flows.dev_loop.test_scope.runners.parrot_e2e import ADAPTER, parse_e2e_verdict
 
 FIXTURE = Path(__file__).parent / "fixtures" / "e2e-verdict.json"
@@ -59,6 +62,60 @@ def test_tiers_and_settings(tmp_path: Path) -> None:
         "task tier forbidden" in p
         for p in ADAPTER.validate_settings({"plan": "plan.json", "tiers": "task,merge"}, worktree=tmp_path)
     )
+
+
+@pytest.mark.parametrize("settings", [{}, {"plan": ""}])
+def test_missing_plan_is_value_error(settings: dict[str, str]) -> None:
+    """An absent or empty plan is a readable ValueError, never a KeyError (issue:a3aebc40ef48)."""
+    with pytest.raises(ValueError, match=r"'plan'.*test_runners\.toml"):
+        ADAPTER.distribution_of("", settings=settings)
+    with pytest.raises(ValueError, match=r"'plan'.*test_runners\.toml"):
+        ADAPTER.invocation(
+            [], distribution="d", worktree=Path("."), settings=settings, policy=None, report_path="r"
+        )  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected"),
+    [
+        (["parrot", "e2e", "run", "--plan", "sdd/state/FEAT-581/e2e-plan.md"], ["sdd/state/FEAT-581/e2e-plan.md"]),
+        (["parrot", "e2e", "verify", "--plan=sdd/state/FEAT-581/e2e-plan.md"], ["sdd/state/FEAT-581/e2e-plan.md"]),
+        (["parrot", "e2e", "run", "--owner-id", "o", "--plan", "p.md"], ["p.md"]),
+        (["parrot", "e2e", "run"], []),
+        (["parrot", "e2e", "run", "--plan"], []),
+        (["pytest", "tests/test_x.py"], None),
+    ],
+)
+def test_operands_surface_the_plan(argv: list[str], expected: list[str] | None) -> None:
+    """The declared --plan is the operand; no --plan means no operand (issue:3ae0b2ae0ef4)."""
+    assert ADAPTER.operands(argv) == expected
+
+
+def test_distribution_prefers_target() -> None:
+    settings = {"plan": "sdd/state/FEAT-581/e2e-plan.md"}
+    assert ADAPTER.distribution_of("sdd/state/FEAT-815/e2e-plan.md", settings=settings) == "FEAT-815"
+    assert ADAPTER.distribution_of("", settings=settings) == "FEAT-581"
+    with pytest.raises(ValueError):
+        ADAPTER.distribution_of("", settings={})
+
+
+def _plan_argument(targets: list[TestTarget], settings: dict[str, str]) -> str:
+    """The ``--plan`` value of the invocation built for ``targets`` under ``settings``."""
+    invocation = ADAPTER.invocation(
+        targets, distribution="d", worktree=Path("."), settings=settings, policy=None, report_path="r"
+    )  # type: ignore[arg-type]
+    return invocation.argv[4]
+
+
+def test_invocation_prefers_target_plan() -> None:
+    settings = {"plan": "sdd/state/FEAT-581/e2e-plan.md"}
+    declared = TestTarget("sdd/state/FEAT-815/e2e-plan.md", "FEAT-815", "declared", runner="parrot-e2e")
+    contract_only = TestTarget("", "FEAT-581", "contract", runner="parrot-e2e")
+    assert _plan_argument([declared], settings) == "sdd/state/FEAT-815/e2e-plan.md"
+    assert _plan_argument([contract_only], settings) == settings["plan"]
+    assert _plan_argument([], settings) == settings["plan"]
+    with pytest.raises(ValueError):
+        _plan_argument([contract_only], {})
 
 
 def test_matches_and_argv() -> None:

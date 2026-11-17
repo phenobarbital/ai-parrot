@@ -348,6 +348,8 @@ class WebAgent(BasicAgent):
                 ``BasicAgent.configure()``.
         """
         await super().configure(app)
+        if self.configure_skipped:
+            return
         config = self.chrome_config
         await self.add_chrome_devtools_mcp_server(
             browser_url=config.browser_url or f"http://127.0.0.1:{config.port}",

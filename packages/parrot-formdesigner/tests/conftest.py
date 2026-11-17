@@ -27,6 +27,7 @@ from parrot_formdesigner.core.schema import (
     FormSubsection,
 )
 from parrot_formdesigner.core.types import FieldType
+from parrot_formdesigner.controls.registry import _REGISTRY
 
 _DIRECTORY_MARKERS = {"integration": "integration", "e2e": "e2e"}
 
@@ -43,6 +44,25 @@ def pytest_collection_modifyitems(config, items):  # noqa: D401
             marker = _DIRECTORY_MARKERS.get(segment)
             if marker:
                 item.add_marker(getattr(pytest.mark, marker))
+
+
+@pytest.fixture(autouse=True)
+def _control_registry_must_not_leak():
+    """FEAT-618 AC5: no fixture may leave the module-global ``_REGISTRY`` mutated.
+
+    Autouse at the conftest level, so it is set up BEFORE any test- or
+    module-level fixture and torn down AFTER all of them. A fixture that clears
+    or replaces seeded controls without restoring them fails the test it ran
+    in. Entries a test merely *adds* are tolerated here: the pollution this
+    guards against is losing or replacing the seeded set.
+    """
+    snapshot = dict(_REGISTRY)
+    yield
+    lost = sorted(key for key, control in snapshot.items() if _REGISTRY.get(key) is not control)
+    assert not lost, (
+        f"a fixture left the control registry without its seeded entries {lost}; "
+        "snapshot `dict(_REGISTRY)` before clearing it and restore it on teardown"
+    )
 
 
 def _field(fid: str, **kw) -> FormField:

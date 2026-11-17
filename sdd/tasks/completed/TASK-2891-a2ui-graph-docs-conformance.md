@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-529 - A2UI Graph component under the viz-core catalog
 **Spec**: sdd/specs/a2ui-graph-component.spec.md
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2886, TASK-2888, TASK-2889, TASK-2890

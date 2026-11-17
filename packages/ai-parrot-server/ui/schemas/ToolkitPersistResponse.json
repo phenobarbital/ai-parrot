@@ -26,6 +26,18 @@
       ],
       "default": null,
       "title": "Slug"
+    },
+    "version": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Version"
     }
   },
   "required": [

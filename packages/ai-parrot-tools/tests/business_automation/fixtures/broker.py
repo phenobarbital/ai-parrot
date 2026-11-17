@@ -29,7 +29,7 @@ import pytest
 from parrot.auth.broker import CredentialBroker
 from parrot.auth.credentials import CredentialResolver
 
-from tests.scraping.fixtures.local_site import TEST_PASSWORD, TEST_USERNAME
+from ...scraping.fixtures.local_site import TEST_PASSWORD, TEST_USERNAME
 
 #: The provider identifier this fixture registers — used as
 #: ``Authenticate.credential_provider`` in a real end-to-end plan.

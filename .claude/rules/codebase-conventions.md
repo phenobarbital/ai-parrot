@@ -37,6 +37,7 @@ report — never pick one silently.
 ## Tooling — pick the mode that matches how you run
 - **Interactive shell** (humans, Claude Code, codex, agy): `source .venv/bin/activate` first; then `uv add` / `uv pip`, `pytest`, `ruff check`, `black`. Never run `python`/`uv`/`pip` outside the venv.
 - **Tool-driven coder without a shell** (dev-loop in-process seats): there is no shell — never try `source`, `cd`, pipes or `>`. Call the allowlisted binaries directly (`pytest`, `ruff`, `python`, `uv`); the host resolves them on its `PATH`. Do not create or look for a `.venv` inside your worktree — it is a bare git worktree.
+- **Worktrees**: the shared `.venv` is editable-installed against the **main checkout**, so a bare `pytest` inside a worktree imports the wrong branch — prefix with `PYTHONPATH=packages/<dist>/src` (one entry per changed package). Never `uv sync` inside a worktree: it repoints the shared venv's `.pth` and breaks `import parrot` for every session once the worktree is removed.
 - Common: `black` (line-length 120) formats; `ruff check` is the lint gate; tests use `pytest` + `pytest-asyncio`; run your task's tests before committing.
 
 ## Python

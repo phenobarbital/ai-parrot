@@ -84,7 +84,7 @@ grep -rnE 'id_rsa|id_ed25519|\.ssh|\.env|ANTHROPIC_API_KEY|credentials|token' .c
 
 ## Phase 4 — Commands and skills: prompt-injection carriers
 
-> `.claude/worktrees/` holds full checkouts of the repo, so every recursive
+> The worktree root holds full checkouts of the repo, so every recursive
 > grep below excludes it — otherwise each finding is reported once per live
 > worktree, and legitimate emoji ZWJ sequences in product code drown the real
 > hits. Worktree contents are audited when their branch is reviewed.

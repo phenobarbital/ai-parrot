@@ -4,6 +4,7 @@ AsyncComputerBackend — async Playwright wrapper for computer-use actions.
 Translates coordinate-based computer-use model actions into Playwright API
 calls. Every action returns an EnvState with a screenshot and current URL.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -202,8 +203,7 @@ class AsyncComputerBackend:
         """
         if self._page is None:
             raise RuntimeError(
-                "Browser not started. Call start() or use the toolkit which calls "
-                "_pre_execute() automatically."
+                "Browser not started. Call start() or use the toolkit which calls " "_pre_execute() automatically."
             )
 
     @property
@@ -516,6 +516,7 @@ class AsyncComputerBackend:
             output_dir: Directory where the recorded video will be saved.
         """
         import os
+
         os.makedirs(output_dir, exist_ok=True)
         # Close existing context and reopen with recording
         current_url = self._page.url if self._page else self._initial_url

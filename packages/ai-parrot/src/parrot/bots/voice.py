@@ -30,7 +30,7 @@ from ..models.voice import LiveCompletionUsage, LiveVoiceResponse
 # FEAT-416 (TASK-2151): VoiceCapable Protocol for runtime type-checking
 # _create_llm_client()'s return value (spec §3 Module 7).
 from ..clients.protocols import VoiceCapable
-from ..mcp import MCPEnabledMixin, MCPServerConfig
+from ..mcp import MCPServerConfig
 from ..memory import ConversationTurn
 from ..observability.context import (
     current_memory_key_id,
@@ -39,7 +39,7 @@ from ..observability.context import (
 )
 
 # Voice configuration from models (unified VoiceConfig/VoiceProvider, FEAT-416)
-from ..models.voice import AudioFormat, VoiceConfig, VoiceStreamOptions
+from ..models.voice import VoiceConfig, VoiceStreamOptions
 from ..tools import AbstractTool
 from ..tools.manager import ToolDefinition
 from .base import BaseBot
@@ -392,8 +392,14 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         """
         Configure the bot.
         """
+        # FEAT-726: pre-super work — a repeat entry would call setup_a2a() again
+        # and re-register this bot's A2A routes on the same app. Still enter
+        # super() so the counter and the INFO log stay truthful.
+        if self.configure_is_noop(app):
+            await super().configure(app)
+            return
         # Default to Redis memory for VoiceBot if not specified
-        if not self.memory_type or self.memory_type == "memory":
+        if not self.memory_type or self.memory_type in ("memory", "auto"):
             self.memory_type = "redis"
         url = getattr(self, "url", None)
         if url and app:
@@ -429,7 +435,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
 
         # Create text-based LLM client
         text_llm = GoogleGenAIClient(
-            model=kwargs.get("model", "gemini-2.5-flash"),
+            model=kwargs.get("model", "gemini-3.8-flash"),
             temperature=kwargs.get("temperature", 0.3),
         )
 
@@ -560,6 +566,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         _user_token = current_user_id.set(user_id)
         _session_token = current_session_id.set(session_id)
         _memkey_token = current_memory_key_id.set(self.memory_key_id)
+        _identity = self._bind_call_identity(kwargs.get("tenant"))
 
         try:
             # Handle different input types
@@ -676,6 +683,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
                                     metadata={"timestamp": str(datetime.now())},
                                     chatbot_id=self.memory_key_id,
                                 )
+                                await self._guard_session(user_id, session_id)  # a deleted session is not revived
                                 await self.save_conversation_turn(user_id, session_id, turn)
                                 self.logger.debug(f"Saved turn {current_turn_id} to memory")
 
@@ -715,6 +723,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
                         metadata={"timestamp": str(datetime.now())},
                         chatbot_id=self.memory_key_id,
                     )
+                    await self._guard_session(user_id, session_id)  # a deleted session is not revived
                     await self.save_conversation_turn(user_id, session_id, turn)
                     self.logger.debug(f"Saved final turn {current_turn_id} to memory")
 
@@ -724,6 +733,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
                 text=f"I'm sorry, I encountered an error: {str(e)}", is_complete=True, metadata={"error": str(e)}
             )
         finally:
+            self._reset_call_identity(_identity)
             current_memory_key_id.reset(_memkey_token)
             current_session_id.reset(_session_token)
             current_user_id.reset(_user_token)
@@ -799,6 +809,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         _user_token = current_user_id.set(user_id)
         _session_token = current_session_id.set(session_id)
         _memkey_token = current_memory_key_id.set(self.memory_key_id)
+        _identity = self._bind_call_identity(kwargs.get("tenant"))
 
         try:
             # Build context for system prompt
@@ -861,6 +872,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
                 ):
                     yield response
         finally:
+            self._reset_call_identity(_identity)
             current_memory_key_id.reset(_memkey_token)
             current_session_id.reset(_session_token)
             current_user_id.reset(_user_token)
@@ -923,7 +935,6 @@ def create_voice_bot(
 # =============================================================================
 
 if __name__ == "__main__":
-    import os
 
     async def example():
         """Example usage of the refactored VoiceBot."""

@@ -1,0 +1,23 @@
+{
+  "kind": "c4",
+  "level": "container",
+  "title": "Order platform — containers",
+  "accessibleDescription": "Customers use the web app, which calls the API; the API stores orders in Postgres and notifies the payment provider.",
+  "nodes": [
+    {"id": "customer", "label": "Customer", "c4Type": "person", "description": "Places orders"},
+    {"id": "payments", "label": "Payment Provider", "c4Type": "system_ext", "description": "Card processing"},
+    {"id": "web", "label": "Web App", "c4Type": "container", "technology": "SvelteKit", "description": "Storefront UI"},
+    {"id": "api", "label": "Order API", "c4Type": "container", "technology": "aiohttp", "description": "Order lifecycle", "state": "running"},
+    {"id": "db", "label": "Orders DB", "c4Type": "container_db", "technology": "PostgreSQL"}
+  ],
+  "edges": [
+    {"from": "customer", "to": "web", "label": "Uses", "technology": "HTTPS"},
+    {"from": "web", "to": "api", "label": "Calls", "technology": "JSON/HTTPS"},
+    {"from": "api", "to": "db", "label": "Reads/writes", "technology": "asyncpg", "bidirectional": true},
+    {"from": "api", "to": "payments", "label": "Charges", "technology": "REST"},
+    {"from": "payments", "to": "api", "label": "Webhook", "technology": "HTTPS", "hint": "back"}
+  ],
+  "groups": [
+    {"id": "platform", "label": "Order Platform", "c4Type": "system", "nodes": ["web", "api", "db"]}
+  ]
+}

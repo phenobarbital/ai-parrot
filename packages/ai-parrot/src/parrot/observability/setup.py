@@ -243,6 +243,9 @@ def setup_telemetry(
                         exc,
                     )
             cost_calc = CostCalculator(override_path=override)
+            from parrot.observability.cost import set_shared_cost_calculator  # noqa: PLC0415
+
+            set_shared_cost_calculator(cost_calc)
 
         # --- 5. Subscribers -------------------------------------------------------
         from parrot.observability.subscribers.trace import (  # noqa: PLC0415
@@ -379,6 +382,9 @@ def shutdown_telemetry() -> None:
         _SUBSCRIPTION_IDS.clear()
 
     _STATE.clear()
+    from parrot.observability.cost import set_shared_cost_calculator  # noqa: PLC0415
+
+    set_shared_cost_calculator(None)
     logger.debug("shutdown_telemetry: complete.")
 
 

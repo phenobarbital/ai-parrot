@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-188 — Form Lifecycle Events for parrot-formdesigner
 **Spec**: `sdd/specs/formdesigner-lifecycle-events.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

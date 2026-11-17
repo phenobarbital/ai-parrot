@@ -2,7 +2,7 @@
 
 **Feature**: formdesigner-authentication
 **Spec**: `sdd/specs/formdesigner-authentication.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

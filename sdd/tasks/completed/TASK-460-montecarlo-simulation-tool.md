@@ -2,7 +2,7 @@
 
 **Feature**: whatif-toolkit-decomposition
 **Spec**: `sdd/specs/whatif-toolkit-decomposition.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: none

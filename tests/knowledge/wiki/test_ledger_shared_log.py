@@ -63,6 +63,34 @@ def test_export_never_rewrites_dest(tmp_path: Path) -> None:
     assert dest.read_text(encoding="utf-8") == existing.model_dump_json() + "\n" + new.model_dump_json() + "\n"
 
 
+def test_export_ensures_trailing_newline(tmp_path: Path) -> None:
+    """Export prepends a newline when the committed file does not end with one."""
+    repo = tmp_path / "repo"
+    dest = repo / sl.SHARED_LOG_REL_PATH
+    dest.parent.mkdir(parents=True)
+    dest.write_text('{"existing": true}', encoding="utf-8")
+    event = _event("issue.opened", "issue:new")
+    local = LedgerLog(str(tmp_path / "local.jsonl"))
+    _write_events(Path(local.path), event)
+
+    sl.export_events(local, repo)
+
+    assert dest.read_bytes() == b'{"existing": true}\n' + (event.model_dump_json() + "\n").encode()
+
+
+def test_digest_stable_across_repo_paths(tmp_path: Path) -> None:
+    """digest_files produces the same digest regardless of the repository parent path."""
+    first_root = tmp_path / "first" / "repo"
+    second_root = tmp_path / "sdd" / "second" / "repo"
+    first = first_root / sl.SHARED_LOG_REL_PATH
+    second = second_root / sl.SHARED_LOG_REL_PATH
+    event = _event("issue.opened", "issue:stable")
+    _write_events(first, event)
+    _write_events(second, event)
+
+    assert sl.digest_files([first], first_root) == sl.digest_files([second], second_root)
+
+
 def test_import_appends_unknown_in_src_order(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     first = _event("issue.opened", "issue:first")

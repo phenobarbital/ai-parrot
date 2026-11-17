@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-466 — Dev-Loop Run Fidelity
 **Spec**: `sdd/specs/dev-loop-run-fidelity.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2502

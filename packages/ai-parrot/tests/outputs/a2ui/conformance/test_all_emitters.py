@@ -57,6 +57,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from parrot.models.infographic import InfographicResponse
@@ -66,11 +67,13 @@ from parrot.outputs.a2ui.baking import bake_envelope
 from parrot.outputs.a2ui.builders import (
     build_card,
     build_chart,
+    build_c4_diagram,
     build_datatable,
     build_graph,
     build_infographic,
     build_kpicard,
     build_linked_surface,
+    build_mermaid_diagram,
     build_surface,
 )
 from parrot.outputs.a2ui.catalog import (
@@ -82,7 +85,8 @@ from parrot.outputs.a2ui.catalog import (
 from parrot.outputs.a2ui.catalog.base import CatalogValidationError, to_components
 from parrot.outputs.a2ui.catalog.parrot.form import FormField, FormSubmit, build_form
 from parrot.outputs.a2ui.catalog.viz_core import VIZ_CORE_CATALOG_ID
-from parrot.outputs.a2ui.graph import from_mermaid, to_mermaid
+from parrot.outputs.a2ui.graph import GraphSpec, from_mermaid, graph_spec_from_mermaid_source, to_mermaid
+from parrot.outputs.a2ui.inline.emitter import PRESENTATION_EXTENSION, emit_inline_component
 from parrot.outputs.a2ui.models import A2UIAgentMessage, Component, CreateSurface
 from parrot.outputs.a2ui.recipes import SUPPORTED_SCHEMA_VERSION
 from parrot.outputs.a2ui.recipes.migrate import migrate_layout
@@ -178,6 +182,12 @@ class TestBuildersConformance:
         )
         assert envelope.components[0].catalog_id == VIZ_CORE_CATALOG_ID
         _assert_conformant(envelope)
+
+    @pytest.mark.parametrize("origin", [ProducerOrigin.TOOL, ProducerOrigin.LLM])
+    def test_build_mermaid_diagram(self, origin):
+        """FEAT-753: build_mermaid_diagram()'s output validates for both origins (lowered Basic-only tree)."""
+        env = build_mermaid_diagram(source="sequenceDiagram\n    A->>B: hi\n", origin=origin)
+        _assert_conformant(env, origin=origin)
 
 
 # ---------------------------------------------------------------------------
@@ -552,6 +562,125 @@ class TestGraphRendersOnEveryRegisteredRenderer:
             assert VIZ_CORE_CATALOG_ID in graph_records[0]["reason"]
 
 
+_MERMAID_SRC = 'flowchart TD\n    a["a < b & c"] --> b\n'
+
+
+def _card_texts(node) -> list[str]:
+    """Every ``text`` string in an Adaptive Card document (raw, not JSON-escaped)."""
+    found: list[str] = []
+    if isinstance(node, dict):
+        if isinstance(node.get("text"), str):
+            found.append(node["text"])
+        for value in node.values():
+            found.extend(_card_texts(value))
+    elif isinstance(node, list):
+        for value in node:
+            found.extend(_card_texts(value))
+    return found
+
+
+def _mermaid_envelope() -> CreateSurface:
+    return build_mermaid_diagram(source=_MERMAID_SRC, accessible_description="a to b")
+
+
+class TestGraphToMermaidDiagramRoundtrip:
+    """FEAT-753 AC-5: Graph -> to_mermaid -> MermaidDiagram -> graph_spec_from_mermaid_source round-trips."""
+
+    @staticmethod
+    def _normalize(graph_spec):
+        dumped = graph_spec.model_dump(by_alias=True, exclude={"accessible_description", "size"})
+        for edge in dumped.get("edges", []):
+            if edge.get("kind") is None:
+                edge["kind"] = "solid"
+        if dumped.get("kind") == "dag":
+            dumped["kind"] = "flowchart"
+        return dumped
+
+    def _specs(self):
+        from parrot.outputs.a2ui.graph import GraphSpec
+
+        flow = flow_definition_to_graph(json.loads((_FIXTURES_DIR / "dev_loop_flow.json").read_text()))
+        flowchart = GraphSpec.model_validate(
+            {
+                "kind": "flowchart",
+                "nodes": [{"id": "a", "label": "A"}, {"id": "b", "label": "B"}],
+                "edges": [{"from": "a", "to": "b", "label": "go"}],
+            }
+        )
+        state = from_mermaid("stateDiagram-v2\n[*] --> idle\nidle --> done\n")
+        sequence = from_mermaid(
+            "sequenceDiagram\n    participant A as Alice\n    participant B as Bob\n    A->>B: hello\n"
+        )
+        return [flow, flowchart, state, sequence]
+
+    def test_graph_to_mermaid_diagram_roundtrip(self):
+        for spec in self._specs():
+            text = to_mermaid(spec)
+            envelope = build_mermaid_diagram(source=text)
+            _assert_conformant(envelope)
+            assert envelope.components[0].model_extra["diagramType"] in {"flowchart", "state", "sequence"}
+            back = graph_spec_from_mermaid_source(envelope.components[0].model_extra["source"])
+            assert self._normalize(back) == self._normalize(spec)
+
+
+class TestCatalogDefinitionIncludesMermaidDiagram:
+    def test_catalog_definition_includes_mermaid_diagram(self):
+        from parrot.outputs.a2ui.catalog.export import export_catalog_definition
+
+        parrot_doc = export_catalog_definition()  # DEFAULT_CATALOG_ID
+        assert "MermaidDiagram" in parrot_doc["components"]
+        viz_core_doc = export_catalog_definition(catalog_id=VIZ_CORE_CATALOG_ID)
+        assert "MermaidDiagram" not in viz_core_doc["components"]
+
+
+class TestMermaidDiagramFallbackRenderers:
+    """MermaidDiagram renders (readable source + exactly ONE degraded record) on every fallback renderer."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("renderer_name", ["ssr_html", "pdf", "adaptive_cards", "interactive_html"])
+    async def test_mermaid_degrades_once_with_readable_source(self, renderer_name):
+        if renderer_name == "pdf":
+            pytest.importorskip("weasyprint")
+            from parrot.outputs.a2ui_renderers.pdf import PDFRenderer as Renderer
+        elif renderer_name == "ssr_html":
+            from parrot.outputs.a2ui_renderers.ssr_html import SSRHTMLRenderer as Renderer
+        elif renderer_name == "adaptive_cards":
+            from parrot.outputs.a2ui_renderers.adaptive_cards import AdaptiveCardsRenderer as Renderer
+        else:
+            from parrot.outputs.a2ui_renderers.interactive_html import InteractiveHTMLRenderer as Renderer
+
+        envelope = _mermaid_envelope()
+        _assert_conformant(envelope)
+        artifact = await Renderer().render(envelope)
+        degraded = [d for d in (artifact.metadata.get("degraded") or []) if "mermaid" in d.get("reason", "").lower()]
+        assert len(degraded) == 1, renderer_name
+        if renderer_name == "pdf":
+            assert artifact.mime_type == "application/pdf"
+        elif renderer_name == "adaptive_cards":
+            assert _MERMAID_SRC in _card_texts(json.loads(artifact.content))
+        else:
+            assert "a &lt; b &amp; c" in artifact.content.decode()
+
+
+class TestMermaidDiagramFocalRendererCompatibility:
+    """echarts / folium_map are focal-component renderers: a Mermaid-only envelope keeps their existing errors."""
+
+    @pytest.mark.asyncio
+    async def test_echarts_keeps_missing_focal_error(self):
+        from parrot.outputs.a2ui_renderers.echarts import EChartsRenderer
+
+        with pytest.raises(ValueError, match="requires a 'Chart' or viz-core 'Graph'"):
+            await EChartsRenderer().render(_mermaid_envelope())
+
+    @pytest.mark.asyncio
+    async def test_folium_map_keeps_missing_focal_error(self):
+        pytest.importorskip("folium")
+        from parrot.outputs.a2ui_renderers.folium_map import FoliumMapRenderer
+
+        with pytest.raises(ValueError, match="requires a 'Map' component"):
+            await FoliumMapRenderer().render(_mermaid_envelope())
+
+
 class TestCatalogDefinitionIncludesGraph:
     def test_catalog_definition_includes_graph(self):
         from parrot.outputs.a2ui.catalog.export import export_catalog_definition
@@ -561,6 +690,76 @@ class TestCatalogDefinitionIncludesGraph:
 
         parrot_doc = export_catalog_definition()  # DEFAULT_CATALOG_ID
         assert "Graph" not in parrot_doc["components"]
+
+
+def _c4_envelope() -> CreateSurface:
+    """Build the C4 fixture through the public C4 diagram builder."""
+    fixture = json.loads((_FIXTURES_DIR / "c4_container_diagram.json").read_text())
+    return build_c4_diagram(
+        level=fixture["level"],
+        nodes=fixture["nodes"],
+        edges=fixture["edges"],
+        boundaries=fixture["groups"],
+        title=fixture["title"],
+        accessible_description=fixture["accessibleDescription"],
+    )
+
+
+class TestC4GraphConformance:
+    """C4 graphs remain conformant across the existing renderer fleet."""
+
+    def test_build_c4_diagram_conformant(self) -> None:
+        _assert_conformant(_c4_envelope())
+
+    def test_c4_mermaid_roundtrip_byte_stable(self) -> None:
+        component = _c4_envelope().components[0]
+        props = component.model_dump(
+            by_alias=True,
+            exclude={"id", "component", "catalog_id"},
+            exclude_none=True,
+        )
+        spec = GraphSpec(**props)
+        source = to_mermaid(spec)
+        assert to_mermaid(from_mermaid(source)) == source
+
+    @pytest.mark.asyncio
+    async def test_c4_graph_renders_on_every_registered_renderer(self) -> None:
+        from parrot.outputs.a2ui_renderers.adaptive_cards import AdaptiveCardsRenderer
+        from parrot.outputs.a2ui_renderers.echarts import EChartsRenderer
+        from parrot.outputs.a2ui_renderers.interactive_html import InteractiveHTMLRenderer
+        from parrot.outputs.a2ui_renderers.ssr_html import SSRHTMLRenderer
+
+        envelope = _c4_envelope()
+        _assert_conformant(envelope)
+
+        for renderer in (SSRHTMLRenderer(), InteractiveHTMLRenderer(), EChartsRenderer()):
+            artifact = await renderer.render(envelope)
+            assert not artifact.metadata.get("degraded"), type(renderer).__name__
+
+        ac_artifact = await AdaptiveCardsRenderer().render(envelope)
+        ac_degraded = ac_artifact.metadata.get("degraded") or []
+        assert len(ac_degraded) == 1
+        assert VIZ_CORE_CATALOG_ID in ac_degraded[0]["reason"]
+
+        try:
+            import folium  # noqa: F401
+        except ImportError:
+            return
+
+        from parrot.outputs.a2ui_renderers.folium_map import FoliumMapRenderer
+
+        map_and_graph = build_surface(
+            "Map",
+            {"layers": [{"layer": "base"}]},
+            surface_id="map",
+        )
+        graph_component = envelope.components[0].model_copy(update={"id": "graph"})
+        combined = map_and_graph.model_copy(update={"components": [*map_and_graph.components, graph_component]})
+        map_artifact = await FoliumMapRenderer().render(combined)
+        map_degraded = map_artifact.metadata.get("degraded") or []
+        graph_records = [record for record in map_degraded if record["component"] == "Graph"]
+        assert len(graph_records) == 1
+        assert VIZ_CORE_CATALOG_ID in graph_records[0]["reason"]
 
 
 class TestMixedCatalogSurfaceValidates:
@@ -688,3 +887,52 @@ class TestLinkedSurfaceConformance:
             surface_id="linked-dashboard-join",
         )
         _assert_conformant(envelope, origin=ProducerOrigin.TOOL)
+
+
+# ---------------------------------------------------------------------------
+# Inline emitter (inline/emitter.py, FEAT-755) — LLM-origin producer.
+# ---------------------------------------------------------------------------
+
+_INLINE_CASES: list[tuple[str, dict]] = [
+    ("KPICard", {"label": "Worked hours", "value": 1234.5, "unit": "h", "trend": "up"}),
+    ("InfoCard", {"title": "Release status", "body": "All checks are green."}),
+    ("Timeline", {"events": [{"title": "Kickoff", "timestamp": "2026-10-27"}]}),
+    (
+        "Graph",
+        {
+            "nodes": [{"id": "a", "label": "Start"}, {"id": "b", "label": "End"}],
+            "edges": [{"from": "a", "to": "b", "label": "go"}],
+            "accessibleDescription": "Two-step flow from Start to End",
+        },
+    ),
+]
+
+
+@pytest.mark.parametrize(("component", "config"), _INLINE_CASES, ids=[c for c, _ in _INLINE_CASES])
+def test_inline_emitter_envelopes_conform(component: str, config: dict) -> None:
+    """FEAT-755 G7: every inline-emitted envelope is catalog- and wire-conformant.
+
+    The inline emitter is an LLM-origin producer, so it is validated with LLM-origin
+    semantics — the same gates that reject an `action` or `parrot_data_sources` from
+    a model-authored surface.
+    """
+    response = SimpleNamespace(
+        structured_output=config,
+        output=None,
+        content=None,
+        response="",
+        data=None,
+        metadata={},
+        a2ui_envelope=None,
+        output_mode=None,
+    )
+    outcome = emit_inline_component(response, component)
+    assert outcome.status == "emitted", f"{component}: {outcome.reason}"
+
+    message = A2UIAgentMessage.model_validate(response.a2ui_envelope)
+    envelope = message.create_surface
+    assert envelope is not None
+    _assert_conformant(envelope, origin=ProducerOrigin.LLM)
+
+    extensions = envelope.metadata.extensions.root
+    assert PRESENTATION_EXTENSION in extensions

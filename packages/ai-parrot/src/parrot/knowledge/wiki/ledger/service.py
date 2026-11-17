@@ -379,9 +379,9 @@ class LedgerService:
 
     async def claim(self, issue_id: str, actor: str) -> bool:
         """Import the committed shared log first (FEAT-694 G8), then :meth:`LedgerIndex.claim_issue`."""
-        from parrot.knowledge.wiki.ledger.shared_log import SHARED_LOG_REL_PATH
+        from parrot.knowledge.wiki.ledger.shared_log import shared_log_files
 
-        if (self.shared_root / SHARED_LOG_REL_PATH).exists():
+        if shared_log_files(self.shared_root):
             try:
                 await self.import_shared_log()
             except WikiStoreBusy:
@@ -419,13 +419,15 @@ class LedgerService:
                 row = await cur.fetchone()
         return _decode_issue_body(row[0]) if row else None
 
-    async def close_issue(self, issue_id: str, reason: str, actor: str, resolved_by: str | None = None) -> bool:
-        """Delegate to :meth:`LedgerIndex.close_issue` (atomic transaction)."""
-        return await self.index.close_issue(issue_id, actor, reason, resolved_by)
+    async def close_issue(
+        self, issue_id: str, reason: str, actor: str, resolved_by: str | None = None, force: bool = False
+    ) -> bool:
+        """Delegate to :meth:`LedgerIndex.close_issue` (atomic transaction; claimant-only unless ``force``)."""
+        return await self.index.close_issue(issue_id, actor, reason, resolved_by, force=force)
 
-    async def unclaim(self, issue_id: str, reason: str, actor: str) -> bool:
-        """Delegate to :meth:`LedgerIndex.unclaim_issue` (atomic transaction)."""
-        return await self.index.unclaim_issue(issue_id, actor, reason)
+    async def unclaim(self, issue_id: str, reason: str, actor: str, force: bool = False) -> bool:
+        """Delegate to :meth:`LedgerIndex.unclaim_issue` (atomic transaction; claimant-only unless ``force``)."""
+        return await self.index.unclaim_issue(issue_id, actor, reason, force=force)
 
     async def get_context(self, file_paths: list[str], max_tokens: int = 3000) -> str:
         """Return a token-budgeted rendering of open issues touching ``file_paths``.
@@ -706,7 +708,7 @@ class LedgerService:
         marker = Path(self.log.path).parent / MARKER_FILENAME
         if not marker.exists():
             marker_state = "missing"
-        elif marker.read_text(encoding="utf-8") == digest_files(files):
+        elif marker.read_text(encoding="utf-8") == digest_files(files, self.shared_root):
             marker_state = "ok"
         else:
             marker_state = "stale"

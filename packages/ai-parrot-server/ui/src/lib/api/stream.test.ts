@@ -109,3 +109,123 @@ it("propagates AbortError when the signal is aborted", async () => {
     }
   }).rejects.toThrow("aborted");
 });
+
+// ── FEAT-752 rev 0.3: suggestions trailer (second NUL-delimited frame) ──────────────────────────
+
+const ENVELOPE =
+  '{"input":"q","output":"o","metadata":{"session_id":"s","turn_id":"t1"},"sources":[],"tool_calls":[]}';
+
+/** A response whose body bytes are released by the test, to prove ordering across reads. */
+function controlled() {
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  const stream = new ReadableStream<Uint8Array>({
+    start(c) {
+      controller = c;
+    },
+  });
+  return {
+    response: new Response(stream, { status: 200 }),
+    push: (s: string) => controller.enqueue(enc.encode(s)),
+    close: () => controller.close(),
+  };
+}
+
+async function collect(parts: string[]) {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(resp(parts)));
+  const out = [];
+  for await (const c of streamChatWithAgent("bot", { query: "q", stream: true })) out.push(c);
+  return out;
+}
+
+it("yields done before EOF when a trailer frame follows, then the suggestions chunk", async () => {
+  const body = controlled();
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(body.response));
+  const it = streamChatWithAgent("bot", { query: "q", stream: true })[Symbol.asyncIterator]();
+
+  body.push(`Hi\x00${ENVELOPE}\x00`); // text + envelope + start of the trailer frame; trailer bytes not sent yet
+  expect((await it.next()).value).toEqual({ type: "chunk", text: "Hi" });
+  const done = (await it.next()).value;
+  expect(done.type).toBe("done"); // delivered while the stream is still open
+  expect(done.message.metadata.turn_id).toBe("t1");
+
+  body.push('{"suggestions":[{"label":"A","prompt":"a"}],"turn_id":"t1"}');
+  body.close();
+  const chips = (await it.next()).value;
+  expect(chips).toEqual({
+    type: "suggestions",
+    suggestions: [{ label: "A", prompt: "a" }],
+    turn_id: "t1",
+  });
+  expect((await it.next()).done).toBe(true);
+});
+
+it("handles a trailer split across reads and a separator at a read boundary", async () => {
+  const out = await collect([
+    "Hel",
+    `lo\x00${ENVELOPE.slice(0, 30)}`,
+    `${ENVELOPE.slice(30)}\x00{"suggestions":[{"label":"A",`,
+    '"prompt":"a"}],"turn_id":"t1"}',
+  ]);
+  expect(out.map((c) => c.type)).toEqual(["chunk", "chunk", "done", "suggestions"]);
+});
+
+it("ignores a trailing error frame (no suggestions, done still delivered)", async () => {
+  const out = await collect([`Hi\x00${ENVELOPE}\x00{"error":"boom"}`]);
+  expect(out.map((c) => c.type)).toEqual(["chunk", "done"]);
+});
+
+it("ignores malformed trailer frames and non-array suggestions", async () => {
+  expect((await collect([`Hi\x00${ENVELOPE}\x00{not json`])).map((c) => c.type)).toEqual(["chunk", "done"]);
+  expect((await collect([`Hi\x00${ENVELOPE}\x00{"suggestions":"nope"}`])).map((c) => c.type)).toEqual([
+    "chunk",
+    "done",
+  ]);
+  expect((await collect([`Hi\x00${ENVELOPE}\x00[1,2]`])).map((c) => c.type)).toEqual(["chunk", "done"]);
+});
+
+it("keeps single-frame streams unchanged: done is yielded at EOF, no suggestions", async () => {
+  const out = await collect([`Hi\x00${ENVELOPE}`]);
+  expect(out.map((c) => c.type)).toEqual(["chunk", "done"]);
+});
+
+it("yields suggestions without a turn_id when the trailer omits it", async () => {
+  const out = await collect([`\x00${ENVELOPE}\x00{"suggestions":[]}`]);
+  const chips = out.find((c) => c.type === "suggestions") as any;
+  expect(chips).toEqual({ type: "suggestions", suggestions: [], turn_id: undefined });
+});
+
+// ── FEAT-777: auth_required trailer ─────────────────────────────────────────────────────────────
+
+const AUTH = { provider: "jira", message: "Connect Jira" };
+
+it("yields auth_required after done, copying retry_safe and turn_id from the frame", async () => {
+  const out = await collect([
+    `Hi\x00${ENVELOPE}\x00${JSON.stringify({ auth_required: AUTH, turn_id: "t1", retry_safe: true })}`,
+  ]);
+  expect(out.map((c) => c.type)).toEqual(["chunk", "done", "auth_required"]);
+  expect(out[2]).toEqual({ type: "auth_required", payload: AUTH, turn_id: "t1", retry_safe: true });
+});
+
+it("yields both a suggestions and an auth_required trailer independently", async () => {
+  const out = await collect([
+    `Hi\x00${ENVELOPE}\x00{"suggestions":[]}\x00${JSON.stringify({ auth_required: AUTH })}`,
+  ]);
+  expect(out.map((c) => c.type)).toEqual(["chunk", "done", "suggestions", "auth_required"]);
+});
+
+it("treats retry_safe as true only for boolean true", async () => {
+  const frames = [true, "true", 1, null, false];
+  const out = [];
+  for (const retry_safe of frames) {
+    const chunks = await collect([`\x00${ENVELOPE}\x00${JSON.stringify({ auth_required: AUTH, retry_safe })}`]);
+    out.push((chunks.find((c) => c.type === "auth_required") as any).retry_safe);
+  }
+  expect(out).toEqual([true, undefined, undefined, undefined, false]);
+});
+
+it("ignores a non-object auth_required value", async () => {
+  for (const bad of ['"x"', "[1]", "null", "3"]) {
+    const out = await collect([`Hi\x00${ENVELOPE}\x00{"auth_required":${bad}}`]);
+    expect(out.map((c) => c.type)).toEqual(["chunk", "done"]);
+  }
+});

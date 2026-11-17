@@ -19,13 +19,11 @@ import hashlib
 import logging
 import os
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel, Field
 
-try:
-    import pymupdf
-except ImportError:  # pragma: no cover — pyproject pins pymupdf.
-    pymupdf = None  # type: ignore[assignment]
+from ._pymupdf import pymupdf
 
 try:
     import pymupdf4llm
@@ -43,6 +41,7 @@ def extract_markdown_per_page(
     image_format: str = "png",
     dpi: int = 150,
     image_size_limit: float = 0.05,
+    hdr_info: Any = None,
 ) -> list[tuple[int, str]]:
     """Extract per-physical-page markdown from a PDF.
 
@@ -60,6 +59,10 @@ def extract_markdown_per_page(
             ``images_dir`` is set. Ignored otherwise.
         image_size_limit: Minimum image-to-page area ratio forwarded to
             ``pymupdf4llm`` when ``images_dir`` is set. Ignored otherwise.
+        hdr_info: Header detector forwarded to ``pymupdf4llm.to_markdown`` as
+            ``hdr_info`` (an object with ``get_header_id(span, page=None)``,
+            e.g. ``LayoutHeaders``). Forwarded only when not ``None``; with
+            ``None`` the call is byte-identical to the pre-existing behaviour.
 
     Returns:
         ``[(physical_page_1based, markdown_text), ...]`` covering every
@@ -92,6 +95,8 @@ def extract_markdown_per_page(
     # NB: NEVER pass ``pages=`` here — restricting the page set would
     # decouple the returned index from ``get_page_tokens``' index space.
     kwargs: dict[str, object] = {"page_chunks": True}
+    if hdr_info is not None:
+        kwargs["hdr_info"] = hdr_info
     if images_dir is not None:
         Path(images_dir).mkdir(parents=True, exist_ok=True)
         kwargs.update(

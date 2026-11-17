@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-467 — Agent Studio — Management API
 **Spec**: `sdd/specs/agentstudio-management.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2512, TASK-2513, TASK-2514, TASK-2515, TASK-2516

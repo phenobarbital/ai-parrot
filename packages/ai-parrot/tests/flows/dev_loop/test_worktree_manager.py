@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from pathlib import Path
 
 import pytest
 
+from parrot.flows.dev_loop.native_artifacts import NativeSyncReport
 from parrot.flows.dev_loop.worktree_manager import (
     SubWorktreeManager,
     SubWorktreeMergeError,
@@ -276,3 +278,74 @@ async def test_create_with_base_forks_from_that_branch(git_sandbox) -> None:
     path = await manager.create("development.w9", base="attempt-a1")
     assert (Path(path) / "fix.txt").exists()
     await _run_git("merge-base", "--is-ancestor", "attempt-a1", "HEAD", cwd=Path(path))
+
+
+@pytest.mark.asyncio
+async def test_subworktree_create_syncs_artifacts(git_sandbox) -> None:
+    """A declared artifact from the sandbox main checkout lands in the sub-worktree."""
+    base_worktree, feature_branch, worktree_base_path = git_sandbox
+    artifact = base_worktree / "native" / "artifact.so"
+    artifact.parent.mkdir()
+    artifact.write_bytes(b"native artifact")
+    (base_worktree / "pyproject.toml").write_text(
+        "[tool.parrot.worktree]\n"
+        "enabled = true\n\n"
+        "[[tool.parrot.worktree.native_group]]\n"
+        'name = "test-native"\n'
+        'copy_globs = ["native/*.so"]\n'
+    )
+    manager = SubWorktreeManager(
+        base_worktree=str(base_worktree),
+        feature_branch=feature_branch,
+        worktree_base_path=str(worktree_base_path),
+    )
+
+    path = await manager.create("development.w1")
+
+    assert (Path(path) / "native" / "artifact.so").read_bytes() == b"native artifact"
+
+
+@pytest.mark.asyncio
+async def test_subworktree_sync_failure_does_not_raise(git_sandbox, monkeypatch, caplog) -> None:
+    """A sync that raises is logged and ``create()`` still returns the path."""
+    base_worktree, feature_branch, worktree_base_path = git_sandbox
+
+    def failing_sync(*, main_root: Path, target: Path) -> NativeSyncReport:
+        raise RuntimeError("sync exploded")
+
+    monkeypatch.setattr("parrot.flows.dev_loop.worktree_manager.sync_native_artifacts", failing_sync)
+    manager = SubWorktreeManager(
+        base_worktree=str(base_worktree),
+        feature_branch=feature_branch,
+        worktree_base_path=str(worktree_base_path),
+    )
+
+    with caplog.at_level(logging.WARNING):
+        path = await manager.create("development.w1")
+
+    assert Path(path).exists()
+    assert "native artifact sync failed" in caplog.text
+    assert "sync exploded" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_subworktree_sync_warnings_are_logged(git_sandbox, monkeypatch, caplog) -> None:
+    """Each report warning reaches the logger at WARNING level."""
+    base_worktree, feature_branch, worktree_base_path = git_sandbox
+
+    def warning_sync(*, main_root: Path, target: Path) -> NativeSyncReport:
+        return NativeSyncReport(enabled=True, warnings=["first warning", "second warning"])
+
+    monkeypatch.setattr("parrot.flows.dev_loop.worktree_manager.sync_native_artifacts", warning_sync)
+    manager = SubWorktreeManager(
+        base_worktree=str(base_worktree),
+        feature_branch=feature_branch,
+        worktree_base_path=str(worktree_base_path),
+    )
+
+    with caplog.at_level(logging.WARNING):
+        await manager.create("development.w1")
+
+    warning_messages = [record.message for record in caplog.records if record.levelno == logging.WARNING]
+    assert "native artifacts: first warning" in warning_messages
+    assert "native artifacts: second warning" in warning_messages

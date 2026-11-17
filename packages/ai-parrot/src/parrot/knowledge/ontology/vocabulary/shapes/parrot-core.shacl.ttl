@@ -1,0 +1,34 @@
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+[] a sh:NodeShape ;
+    sh:targetClass skos:Concept ;
+    sh:property [
+        sh:path skos:prefLabel ;
+        sh:minCount 1 ;
+        sh:nodeKind sh:Literal
+    ] .
+
+[] a sh:NodeShape ;
+    sh:targetSubjectsOf skos:broader ;
+    sh:property [
+        sh:path skos:broader ;
+        sh:nodeKind sh:IRI
+    ] .
+
+[] a sh:NodeShape ;
+    sh:targetSubjectsOf rdfs:subClassOf ;
+    sh:property [
+        sh:path rdfs:subClassOf ;
+        sh:nodeKind sh:IRI
+    ] .
+
+[] a sh:NodeShape ;
+    sh:targetSubjectsOf owl:deprecated ;
+    sh:property [
+        sh:path owl:deprecated ;
+        sh:datatype xsd:boolean
+    ] .

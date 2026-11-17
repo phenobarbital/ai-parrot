@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-176 — Lifecycle Events System
 **Spec**: `sdd/specs/FEAT-176-lifecycle-events-system.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: L
 **Depends-on**: TASK-1196, TASK-1197 (i.e., the full system end-to-end)

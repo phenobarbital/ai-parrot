@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-152 — parrot-formdesigner Structural Refactor
 **Spec**: `sdd/specs/formdesigner-refactor.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-1042, TASK-1043

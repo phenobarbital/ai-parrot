@@ -107,44 +107,40 @@ describe("SchemaForm", () => {
     expect(jsonEditor).toBeInTheDocument();
   });
 
-  test("oneOf kind switch swaps branch fields", () => {
+  test("oneOf kind switch swaps branch fields", async () => {
+    // The kind picker comes from a property that carries its own `oneOf`;
+    // each branch is keyed by `const` and brings its own fields.
     const oneOfSchema = {
       type: "object",
       properties: {
         kind: {
-          type: "string",
-          enum: ["query_slug", "sql"],
           "x-ui-help": "Choose the datasource kind",
-        },
-        query_slug: {
-          type: "object",
-          properties: { slug: { type: "string" } },
-        },
-        sql: {
-          type: "object",
-          properties: { query: { type: "string" } },
+          oneOf: [
+            { const: "query_slug", title: "Query Slug", properties: { slug: { type: "string" } } },
+            { const: "sql", title: "SQL", properties: { query: { type: "string" } } },
+          ],
         },
       },
-      oneOf: [
-        { const: "query_slug", title: "Query Slug" },
-        { const: "sql", title: "SQL" },
-      ],
     };
 
-    const oneOfValue = { kind: "query_slug", slug: "my-slug" };
-
-    render(SchemaForm, {
+    const { rerender } = render(SchemaForm, {
       schema: oneOfSchema,
-      value: oneOfValue,
+      value: { kind: "query_slug" },
       onchange: mockOnchange,
     });
 
     const kindSelect = screen.getByTestId("schema-form-oneof-kind-kind");
-    expect(kindSelect).toBeInTheDocument();
     expect(kindSelect).toHaveValue("query_slug");
+    expect(screen.getByTestId("schema-form-text-slug")).toBeInTheDocument();
+    expect(screen.queryByTestId("schema-form-text-query")).not.toBeInTheDocument();
 
-    const slugInput = screen.getByTestId("schema-form-oneof-branch-kind-query_slug");
-    expect(slugInput).toBeInTheDocument();
+    // Callers hold `value` in $state; a plain object here is not reactive, so the
+    // parent's update is simulated by passing the switched value back in.
+    await rerender({ value: { kind: "sql" } });
+
+    expect(screen.getByTestId("schema-form-oneof-kind-kind")).toHaveValue("sql");
+    expect(screen.getByTestId("schema-form-text-query")).toBeInTheDocument();
+    expect(screen.queryByTestId("schema-form-text-slug")).not.toBeInTheDocument();
   });
 
   test("options loader rejection falls back to text input", async () => {

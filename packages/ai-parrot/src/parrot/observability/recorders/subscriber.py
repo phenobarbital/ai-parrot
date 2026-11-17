@@ -20,7 +20,7 @@ from parrot.core.events.lifecycle.events import (
     ClientCallFailedEvent,
 )
 from parrot.observability.attributes import resolve_gen_ai_system
-from parrot.observability.context import current_run_id, current_seat
+from parrot.observability.context import current_component, current_run_id, current_seat, current_usage_attribution
 from parrot.observability.recorders.models import UsageRecord
 
 if TYPE_CHECKING:
@@ -42,6 +42,21 @@ def _node_id_from_seat(seat: "Optional[str]") -> "Optional[str]":
     if seat is None:
         return None
     return seat.split(".", 1)[0]
+
+
+def _attribution_fields(event: "AfterClientCallEvent | ClientCallFailedEvent") -> "dict[str, Optional[str]]":
+    """Return SDD ids from the event snapshot, with ContextVar fallback only."""
+    attribution = getattr(event, "attribution", None) or current_usage_attribution.get()
+    if attribution is None:
+        return {}
+    return {
+        "feat_id": attribution.feat_id,
+        "task_id": attribution.task_id,
+        "attempt_uid": attribution.attempt_uid,
+        "execution_id": attribution.execution_id,
+        "dispatch_kind": attribution.dispatch_kind,
+        "roster_seat": attribution.roster_seat,
+    }
 
 
 class UsageRecordingSubscriber:
@@ -98,15 +113,23 @@ class UsageRecordingSubscriber:
         output_tokens = event.output_tokens or 0
         usage_reported = not (event.input_tokens is None and event.output_tokens is None)
 
-        cost_usd: Optional[float] = None
+        from parrot.observability.cost import get_shared_cost_calculator, resolve_event_cost
+        from parrot.observability.cost.policy import PricingPolicy
+
+        cost_usd = resolve_event_cost(event, self._cost)
+        policy = PricingPolicy.from_label(getattr(event, "pricing_policy", None))
+        cost_usd, equivalent_usd = policy.apply(cost_usd)
+        price_revision = event.price_revision
+        price_valid_from = event.price_valid_from
+        if event.cost_usd is None and cost_usd is not None:
+            calc = get_shared_cost_calculator() or self._cost
+            if calc is not None and hasattr(calc, "revision_for"):
+                try:
+                    price_revision, price_valid_from = calc.revision_for(provider, event.model)
+                except Exception:  # noqa: BLE001 — telemetry must never break recording
+                    logger.debug("price revision lookup failed", exc_info=True)
         cumulative: Optional[float] = None
-        if self._cost is not None:
-            cost_usd = self._cost.cost_usd(
-                provider=provider,
-                model=event.model,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-            )
+        if cost_usd is not None or self._cost is not None:
             with self._lock:
                 if cost_usd is not None:
                     self._cumulative_cost_usd += cost_usd
@@ -131,7 +154,17 @@ class UsageRecordingSubscriber:
             run_id=run_id,
             seat=seat,
             node_id=_node_id_from_seat(seat),
+            component=current_component.get(),
             usage_reported=usage_reported,
+            cache_read_tokens=event.cache_read_tokens or 0,
+            cache_creation_tokens=event.cache_creation_tokens or 0,
+            reasoning_output_tokens=event.reasoning_output_tokens or 0,
+            source_cost_usd=event.source_cost_usd,
+            price_revision=price_revision,
+            price_valid_from=price_valid_from,
+            pricing_policy=policy.kind,
+            equivalent_usd=equivalent_usd,
+            **_attribution_fields(event),
         )
 
         await self._fan_out(record)
@@ -159,9 +192,11 @@ class UsageRecordingSubscriber:
             run_id=run_id,
             seat=seat,
             node_id=_node_id_from_seat(seat),
+            component=current_component.get(),
             usage_reported=False,
             status="failed",
             error_type=event.error_type or None,
+            **_attribution_fields(event),
         )
 
         await self._fan_out(record)

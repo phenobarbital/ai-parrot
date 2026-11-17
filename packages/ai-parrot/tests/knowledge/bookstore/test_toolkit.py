@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 import pytest
 
 from parrot.knowledge.bookstore.config import LibraryLocation
@@ -11,16 +13,21 @@ from parrot.knowledge.bookstore.toolkit import BookstoreToolkit
 from .conftest import SAMPLE_MARKDOWN
 
 EXPECTED_TOOLS = {
+    "bookstore_find_books",
     "bookstore_catalog_search",
     "bookstore_list_books",
     "bookstore_get_card",
     "bookstore_get_toc",
     "bookstore_search_book",
+    "bookstore_agentic_retrieve",
     "bookstore_read_section",
     "bookstore_related_books",
     "bookstore_communities",
     "bookstore_get_community",
     "bookstore_search",
+    "bookstore_read_pages",
+    "bookstore_read_segments",
+    "bookstore_outline",
 }
 
 
@@ -47,6 +54,81 @@ def book_md(tmp_path):
 
 def test_tool_discovery_exposes_exactly_the_read_surface(toolkit):
     assert set(toolkit.list_tool_names()) == EXPECTED_TOOLS
+
+
+def test_agentic_and_revision_tools_expose_complete_schemas(toolkit):
+    tools = {tool.name: tool for tool in toolkit.get_tools_sync()}
+
+    agentic_schema = tools["bookstore_agentic_retrieve"].args_schema.model_json_schema()
+    assert set(agentic_schema["properties"]) == {
+        "book_id",
+        "query",
+        "top_k",
+        "draft_answer",
+        "budget_chars",
+        "max_reads",
+        "timeout_s",
+    }
+    revision_schema = tools["bookstore_read_segments"].args_schema.model_json_schema()
+    assert "expected_revision" in revision_schema["properties"]
+    assert "llm_dependent_tools" not in BookstoreToolkit.__dict__
+    assert BookstoreToolkit.llm_dependent_tools == frozenset()
+
+
+@pytest.mark.asyncio
+async def test_agentic_retrieve_forwards_every_argument(toolkit, bookstore, monkeypatch):
+    expected = {"evidence": [], "citations": []}
+    retrieve = AsyncMock(return_value=expected)
+    monkeypatch.setattr(bookstore, "agentic_retrieve", retrieve)
+
+    result = await toolkit.agentic_retrieve(
+        "book-1",
+        "How does it work?",
+        top_k=7,
+        draft_answer=False,
+        budget_chars=3456,
+        max_reads=4,
+        timeout_s=12.5,
+    )
+
+    assert result is expected
+    retrieve.assert_awaited_once_with(
+        "book-1",
+        "How does it work?",
+        top_k=7,
+        draft_answer=False,
+        budget_chars=3456,
+        max_reads=4,
+        timeout_s=12.5,
+    )
+
+
+@pytest.mark.asyncio
+async def test_read_segments_forwards_every_argument(toolkit, bookstore, monkeypatch):
+    expected = {"segments": [], "revision": "revision-1"}
+    read_segments = AsyncMock(return_value=expected)
+    monkeypatch.setattr(bookstore, "read_segments", read_segments)
+
+    result = await toolkit.read_segments(
+        "book-1",
+        start=2,
+        end=8,
+        node_id="chapter-1",
+        max_chars=4321,
+        cursor="next-page",
+        expected_revision="revision-1",
+    )
+
+    assert result is expected
+    read_segments.assert_awaited_once_with(
+        "book-1",
+        start=2,
+        end=8,
+        node_id="chapter-1",
+        max_chars=4321,
+        cursor="next-page",
+        expected_revision="revision-1",
+    )
 
 
 @pytest.mark.asyncio
@@ -191,3 +273,41 @@ async def test_search_expand_related_respects_max_books(toolkit, bookstore, monk
     monkeypatch.setattr(bookstore, "search", _spy)
     await toolkit.search("anything", max_books=2, expand_related=True)
     assert captured == {"expand_related": True, "max_books": 2}
+
+
+# ---------------------------------------------------------------------------
+# FEAT-876 TASK-5480 — find_books
+# ---------------------------------------------------------------------------
+
+
+def test_find_books_is_a_read_tool():
+    assert "find_books" in BookstoreToolkit.read_tools
+    assert len(BookstoreToolkit.read_tools) == 15
+
+
+@pytest.mark.asyncio
+async def test_toolkit_find_books_clamps_and_delegates(toolkit, bookstore, monkeypatch):
+    captured: dict = {}
+    expected = {"source": "catalog_fts", "books": [], "hint": "x"}
+
+    async def _spy(query, top_k=5):
+        captured["query"] = query
+        captured["top_k"] = top_k
+        return expected
+
+    monkeypatch.setattr(bookstore, "find_books", _spy)
+    assert await toolkit.find_books("stoic ethics", top_k=999) is expected
+    assert captured == {"query": "stoic ethics", "top_k": 50}
+    await toolkit.find_books("stoic ethics", top_k=0)
+    assert captured["top_k"] == 1
+
+
+@pytest.mark.asyncio
+async def test_toolkit_find_books_payload(toolkit, bookstore, book_md):
+    card, _ = await bookstore.add_book(book_md)
+    result = await toolkit.find_books("vector search")
+    assert result["source"] == "catalog_fts"
+    assert result["hint"]
+    assert result["books"][0]["book_id"] == card.book_id
+    tools = {tool.name: tool for tool in toolkit.get_tools_sync()}
+    assert "START HERE" in tools["bookstore_find_books"].description

@@ -13,7 +13,7 @@ class GoogleWizard(BaseClientWizard):
 
     display_name: str = "Google (Gemini)"
     provider_key: str = "google"
-    default_model: str = "gemini-2.5-flash"
+    default_model: str = "gemini-3.8-flash"
 
     def collect(self) -> ProviderConfig:
         """Collect Google credentials interactively.

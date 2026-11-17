@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-408 — Nova Sonic Protocol Fidelity
 **Spec**: `sdd/specs/nova-sonic-protocol-fidelity.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2104

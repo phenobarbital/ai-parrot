@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-581 - Deterministic E2E Gate and Agentic Exploration
 **Spec**: `sdd/specs/agentic-e2e-testing.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3523, TASK-3528, TASK-3529, TASK-3530, TASK-3532

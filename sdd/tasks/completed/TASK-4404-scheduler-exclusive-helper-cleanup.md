@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-693 — FEAT-560 follow-ups in `DevelopmentNode` / `task_scheduler`
 **Spec**: `sdd/specs/nodes-development-tech-debt.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

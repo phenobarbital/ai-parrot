@@ -102,8 +102,8 @@ three-tier walk (verbatim / pruned / dropped) driven by a `ContextBudget`
 `context_budget=False` / `PARROT_COMPACTION_DISABLED=1`). Pruned tool
 output is offloaded to a memory-owned `OmissionStore`, recoverable via the
 `read_omitted_content` tool (ContextVar-scoped, fails closed). See
-`docs/memory/conversation-history-ownership.md` and
-`docs/memory/per-turn-conversation-compaction.md`.
+`wiki/memory/conversation-history-ownership.md` and
+`wiki/memory/per-turn-conversation-compaction.md`.
 
 ### Loaders
 Location: `parrot/loaders/`
@@ -155,7 +155,7 @@ tree shadows the global `skills/` tree by name and `/trigger` (`global_only: tru
 shadowed; learned skills stay global). The tenant comes from `ask(tenant=...)` → `RequestContext.kwargs["tenant"]`
 → the bound ContextVar → the instance `tenant_id`; HTTP handlers pass the server-resolved Navigator tenant
 and drop any client-supplied one before forwarding `**data`, Telegram uses the bot's static `tenant:`. The
-`/trigger`-activated skill is request-local. See `docs/skills/per-tenant-skills.md`.
+`/trigger`-activated skill is request-local. See `wiki/skills/per-tenant-skills.md`.
 
 ---
 
@@ -197,7 +197,7 @@ parrot/
 │                     #   dev_loop/. Use dev_loop/ as the template for a new domain
 │                     #   flow (definition.py + factories.py + nodes/ + runner.py).
 │                     #   dev_loop/sdd_coder/ — FEAT-549 orchestration kernel behind the `parrot-sdd-coder` MCP server
-│                     #   (roster · chunker · per-attempt dispatch · fidelity gate · jobs); see docs/dev_loop/sdd-coder-orchestrator.md
+│                     #   (roster · chunker · per-attempt dispatch · fidelity gate · jobs); see wiki/sdd-tooling/dev_loop/sdd-coder-orchestrator.md
 ├── skills/           # On-demand skills: file/composite discovery + two
 │                     #   AbstractToolkits — SkillFileToolkit (file-based) and
 │                     #   SkillRegistryToolkit (DB store). See Core Abstractions.
@@ -239,7 +239,7 @@ packages/ai-parrot-embeddings/src/parrot/
 
 Install with: `pip install ai-parrot-embeddings[pgvector,milvus,huggingface]`
 or via the rewritten host meta-extra: `pip install ai-parrot[all]`.
-See `docs/migration/feat-201-ai-parrot-embeddings.md` for migration details.
+See `wiki/migration/feat-201-ai-parrot-embeddings.md` for migration details.
 
 ---
 

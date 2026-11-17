@@ -169,7 +169,7 @@ class BookCard(BaseModel):
     scope: Literal["project", "global"] = "project"
     source_path: str
     source_sha256: str
-    source_format: Literal["pdf", "md", "txt", "epub", "mobi", "docx"]
+    source_format: Literal["pdf", "md", "txt", "epub", "mobi", "docx", "tree"]
     page_count: Optional[int] = None
     chapter_count: int = 0
     added_at: str
@@ -179,6 +179,8 @@ class BookCard(BaseModel):
     period: Optional[str] = None
     community_id: Optional[str] = None
     community_label: Optional[str] = None
+    kind: Literal["book", "notes"] = "book"
+    notes_for: Optional[str] = None
 
     def brief(self) -> dict:
         """Compact dict for catalog listings (small tool outputs).
@@ -227,7 +229,8 @@ class BookRelation(BaseModel):
         origin: Where this edge came from — ``"deterministic"``
             (computed from card fields, no LLM), ``"llm"`` (pairwise
             conceptual judgement), or ``"community"`` (derived from a
-            community partition).
+            community partition), or ``"manual"`` (hand-authored, e.g. from a
+            notebook sheet; never overwritten by a computed edge).
         confidence: LLM judgement confidence in ``[0, 1]``; ``None`` for
             deterministic/community edges.
         rationale: Free-form explanation (LLM edges) or a short
@@ -239,7 +242,7 @@ class BookRelation(BaseModel):
     dst_book_id: str
     rel: RelationKind
     weight: float = 1.0
-    origin: Literal["deterministic", "llm", "community"]
+    origin: Literal["deterministic", "llm", "community", "manual"]
     confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     rationale: str = ""
     computed_at: str
@@ -375,3 +378,34 @@ class RelateSummary(BaseModel):
     failed: dict[str, str] = Field(default_factory=dict)
     communities: Optional[int] = None
     notes: list[str] = Field(default_factory=list)
+
+
+class Anchor(BaseModel):
+    """One reference from a notebook node into a book (optionally into a node of it)."""
+
+    book_id: str
+    scope: Literal["project", "global"] = "project"
+    node_id: Optional[str] = None
+    doc_id: Optional[str] = None
+    revision: Optional[str] = None
+
+
+class Annotation(BaseModel):
+    """A notebook node as returned next to a book section."""
+
+    note_tree: str
+    node_id: str
+    title: str
+    body: str
+    note_kind: Literal["footnote", "note", "sector", "sheet"] = "note"
+    origin: Literal["human", "agent", "draft"] = "human"
+    anchor_status: Literal["current", "remapped", "stale"] = "current"
+
+
+class SectorDraft(BaseModel):
+    """LLM-proposed sector for the library notebook."""
+
+    code: str
+    title: str
+    rationale: str = ""
+    books: list[Anchor] = Field(default_factory=list)

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-155 — Final Migration: Remove bots/orchestration, Consolidate into bots/flows
 **Spec**: `sdd/specs/migration-orchestration-to-flows.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-1056, TASK-1057, TASK-1058

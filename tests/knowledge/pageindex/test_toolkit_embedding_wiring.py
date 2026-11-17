@@ -4,65 +4,23 @@ Tests:
   - Without embedding params, no store is created (backward compat).
   - With use_vec_rank=True, embedding store is constructed.
   - _search_for passes embedding_store + flags to HybridPageIndexSearch.
-  - Tree mutations via _persist propagate dirty flag to embedding store.
+  - Publishing a generation prunes stale per-generation embedding matrices.
 
-Import note:
-    We use PageIndexToolkit via normal import since toolkit.py does not
-    import from parrot.knowledge.pageindex package __init__ — it uses
-    direct relative imports of submodules (content_store, hybrid_search, etc.).
-    We pre-register the package stub to prevent __init__.py from loading.
+Imports ``parrot.knowledge.pageindex`` normally (FEAT-852). The old note here
+claimed ``toolkit.py`` does not import the package ``__init__``; in fact
+``toolkit.py:40`` imports ``.embedding_store``, which is exactly the leg that
+closed the cycle once a stub package suppressed ``__init__``
+(issue:91822a3b8548).
 """
 from __future__ import annotations
 
-import importlib.util
-import sys
-import types
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-
-# ---------------------------------------------------------------------------
-# Module loading helpers (bypass heavy __init__.py)
-# ---------------------------------------------------------------------------
-
-_WT = Path(__file__).parents[3]  # <worktree root>
-
-
-def _load_module(name: str, rel_path: str):
-    """Load a module by file path, bypassing __init__.py chains."""
-    if name in sys.modules:
-        return sys.modules[name]
-    full = _WT / rel_path
-    spec = importlib.util.spec_from_file_location(name, str(full))
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-# Pre-register stub package to avoid __init__.py execution.
-if "parrot.knowledge.pageindex" not in sys.modules:
-    _pkg_stub = types.ModuleType("parrot.knowledge.pageindex")
-    _pkg_stub.__path__ = [  # type: ignore[attr-defined]
-        str(_WT / "packages/ai-parrot/src/parrot/knowledge/pageindex")
-    ]
-    _pkg_stub.__package__ = "parrot.knowledge.pageindex"
-    sys.modules["parrot.knowledge.pageindex"] = _pkg_stub
-
-# Load embedding_store (no internal parrot deps)
-_es_mod = _load_module(
-    "parrot.knowledge.pageindex.embedding_store",
-    "packages/ai-parrot/src/parrot/knowledge/pageindex/embedding_store.py",
-)
-NodeEmbeddingStore = _es_mod.NodeEmbeddingStore
-
-# Load HybridPageIndexSearch via module stub
-from parrot.knowledge.pageindex.hybrid_search import HybridPageIndexSearch  # noqa: E402
-
-# Load PageIndexToolkit
-from parrot.knowledge.pageindex.toolkit import PageIndexToolkit  # noqa: E402
+from parrot.knowledge.pageindex.embedding_store import NodeEmbeddingStore
+from parrot.knowledge.pageindex.hybrid_search import HybridPageIndexSearch
+from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
 
 
 # ---------------------------------------------------------------------------
@@ -173,10 +131,10 @@ class TestToolkitEmbeddingWiring:
         engine = toolkit._search_for("t")
         assert engine._embedding_store is None
 
-    def test_dirty_propagation_via_persist(
+    async def test_publish_prunes_stale_generation_matrices(
         self, mock_adapter, tmp_path
     ) -> None:
-        """_persist calls engine.mark_dirty which invalidates embedding matrix."""
+        """Publishing keeps the new and base generations' matrices and prunes older ones."""
         with patch("parrot.embeddings.registry.EmbeddingRegistry"):
             toolkit = _make_toolkit(
                 mock_adapter, tmp_path,
@@ -185,33 +143,44 @@ class TestToolkitEmbeddingWiring:
                 embedding_dimension=16,
             )
 
-        tree = {"doc_name": "my-tree", "structure": []}
-        toolkit._trees["my-tree"] = tree
+        # create_tree publishes generation 1.
+        await toolkit.create_tree("my-tree")
+        first = (await toolkit.get_generation("my-tree"))["id"]
+        assert first == 1
 
-        # Build the engine first by calling _search_for
+        # Build the engine so we can assert the publish drops the cached one.
         engine = toolkit._search_for("my-tree")
         assert toolkit._search.get("my-tree") is engine
 
-        # Build a fake tree matrix to verify invalidation
+        # Materialize a matrix for the live generation.
         import numpy as np
 
-        # Use a tiny embed_fn to build the matrix
         def _tiny_embed(texts):
             return np.random.default_rng(0).standard_normal(
                 (len(texts), 16)
             ).astype(np.float32)
 
         store = toolkit._embedding_store
-        store.build_tree_matrix("my-tree", [
-            {"node_id": "0001", "title": "Root", "summary": "Root"}
-        ], _tiny_embed)
-        assert store.load_tree_matrix("my-tree") is not None
+        store.build_tree_matrix(
+            "my-tree",
+            [{"node_id": "0001", "title": "Root", "summary": "Root"}],
+            _tiny_embed,
+            generation_id=first,
+        )
+        assert store.load_tree_matrix("my-tree", generation_id=first) is not None
 
-        # Calling _persist should mark dirty → invalidate embedding matrix
-        with patch.object(toolkit._store, "save"):
-            toolkit._persist("my-tree")
+        # One publication keeps it: _after_publish keeps {new, base}.
+        async with toolkit._write("my-tree"):
+            pass
+        assert (await toolkit.get_generation("my-tree"))["id"] == first + 1
+        assert store.load_tree_matrix("my-tree", generation_id=first) is not None
+        assert toolkit._search.get("my-tree") is None
 
-        assert store.load_tree_matrix("my-tree") is None
+        # The next publication makes generation `first` older than the base and prunes it.
+        async with toolkit._write("my-tree"):
+            pass
+        assert (await toolkit.get_generation("my-tree"))["id"] == first + 2
+        assert store.load_tree_matrix("my-tree", generation_id=first) is None
 
     def test_embedding_store_dimension_parameter(
         self, mock_adapter, tmp_path

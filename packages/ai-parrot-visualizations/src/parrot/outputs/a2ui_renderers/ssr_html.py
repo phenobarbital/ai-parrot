@@ -529,6 +529,18 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
             # like an ordinary Text value.
             return str(props.get("text") or "")
 
+        if role == "mermaid-source":
+            # FEAT-753: no Mermaid engine server-side — show the source as a copyable code block.
+            degradations.append(
+                degradation_record(node, "ssr-html has no Mermaid engine; source shown as a code block")
+            )
+            source = str(props.get("text") or "")
+            diagram_type = str(extensions.get("parrot_diagram_type") or "unknown")
+            return (
+                '<pre class="a2ui-mermaid-source"><code class="language-mermaid" '
+                f'data-diagram-type="{html.escape(diagram_type, quote=True)}">{html.escape(source)}</code></pre>'
+            )
+
         if role == "html_document":
             # FEAT-527: HtmlDocumentComponent.lower() never carries the raw
             # HTML — this static renderer cannot embed it either way, so it

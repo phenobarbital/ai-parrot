@@ -59,6 +59,7 @@ from parrot.outputs.a2ui.catalog.base import (
     ProducerOrigin,
     RegisteredComponent,
 )
+from parrot.outputs.a2ui.graph.mermaid_source import check_mermaid_source
 from parrot.outputs.a2ui.models import (
     A2UIAgentMessage,
     A2UIRendererMessage,
@@ -585,6 +586,25 @@ def _validate_filter_params(
                 )
 
 
+def _validate_mermaid_sources(envelope: CreateSurface | UpdateComponents, issues: list[dict[str, Any]]) -> None:
+    """Append one issue per :func:`check_mermaid_source` finding for every ``MermaidDiagram`` component.
+
+    Runs for EVERY origin and for BOTH CreateSurface and UpdateComponents (FEAT-753 G2). Each issue is
+    ``{"code", "message", "path": <component id>}``. A missing/non-string ``source`` is reported as
+    ``MERMAID_SOURCE_TOO_LARGE`` ("empty source").
+    """
+    for comp in envelope.components:
+        if comp.component != "MermaidDiagram":
+            continue
+        props = comp.model_extra or {}
+        source = props.get("source")
+        if not isinstance(source, str):
+            source = ""
+        declared = props.get("diagramType")
+        for finding in check_mermaid_source(source, declared_type=declared if isinstance(declared, str) else None):
+            issues.append({"code": finding["code"], "message": finding["message"], "path": comp.id})
+
+
 def _validate_linked_sources(
     envelope: CreateSurface,
     *,
@@ -962,6 +982,8 @@ def validate_envelope(
 
     if isinstance(envelope, CreateSurface):
         _validate_linked_sources(envelope, origin=origin, issues=issues)
+
+    _validate_mermaid_sources(envelope, issues)
 
     if issues:
         summary = "; ".join(f"{i['code']}: {i['message']}" for i in issues)

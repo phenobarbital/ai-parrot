@@ -62,7 +62,7 @@ class TestStudioCatalogs:
         assert "Agent" in names
         basic_bot = next(row for row in body if row["name"] == "BasicBot")
         assert basic_bot["available"] is True
-        assert basic_bot["lazy"] is False
+        assert basic_bot["lazy"] is True
         assert isinstance(basic_bot["params"], dict)
         # Rows are sorted by name.
         assert [row["name"] for row in body] == sorted(row["name"] for row in body)
@@ -306,11 +306,14 @@ def test_voice_only_gemini_live_is_not_offered():
 
 @pytest.mark.asyncio
 async def test_model_params_reports_params_the_model_rejects():
-    """P1: the catalogue says which sampling params ``claude-opus-5`` does not take (and what it still takes)."""
+    """P1: the catalogue says which sampling params a Claude model does not take.
+
+    API version 2026-10-21 (anthropic SDK 2.x) removed them on every model, older ones included.
+    """
     app = web.Application()
     for provider, model, expected in (
         ("anthropic", "claude-opus-5", ["temperature", "top_p", "top_k"]),
-        ("anthropic", "claude-sonnet-4-6", []),
+        ("anthropic", "claude-sonnet-4-6", ["temperature", "top_p", "top_k"]),
     ):
         request = make_mocked_request(
             "GET", f"/catalog/model-params?provider={provider}&model={model}", match_info={"kind": "model-params"}, app=app

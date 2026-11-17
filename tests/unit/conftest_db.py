@@ -50,15 +50,6 @@ def _load_wt(module_name: str, rel_path: str) -> types.ModuleType:
     return mod
 
 
-def _ensure_pkg(pkg_name: str, rel_dir: str) -> None:
-    """Register a package in sys.modules."""
-    if pkg_name not in sys.modules:
-        pkg = types.ModuleType(pkg_name)
-        pkg.__path__ = [os.path.join(_WT_SRC, *rel_dir.split("/"))]
-        pkg.__package__ = pkg_name
-        sys.modules[pkg_name] = pkg
-
-
 def setup_worktree_imports() -> None:
     """Idempotent: load worktree modules for FEAT-082 tests.
 
@@ -103,33 +94,7 @@ def setup_worktree_imports() -> None:
     # cache.py (TASK-568 — rewritten)
     _load_wt("parrot.bots.database.cache", "parrot/bots/database/cache.py")
 
-    # toolkits subpackage (TASK-569+)
-    _ensure_pkg("parrot.bots.database.toolkits", "parrot/bots/database/toolkits")
-
-    for mod_name, rel_path in [
-        ("parrot.bots.database.toolkits.base", "parrot/bots/database/toolkits/base.py"),
-        ("parrot.bots.database.toolkits.sql", "parrot/bots/database/toolkits/sql.py"),
-        ("parrot.bots.database.toolkits.postgres", "parrot/bots/database/toolkits/postgres.py"),
-        ("parrot.bots.database.toolkits._crud", "parrot/bots/database/toolkits/_crud.py"),
-        ("parrot.bots.database.toolkits._internal", "parrot/bots/database/toolkits/_internal.py"),
-        ("parrot.bots.database.toolkits.bigquery", "parrot/bots/database/toolkits/bigquery.py"),
-        ("parrot.bots.database.toolkits.influx", "parrot/bots/database/toolkits/influx.py"),
-        ("parrot.bots.database.toolkits.elastic", "parrot/bots/database/toolkits/elastic.py"),
-        ("parrot.bots.database.toolkits.documentdb", "parrot/bots/database/toolkits/documentdb.py"),
-    ]:
-        filepath = os.path.join(_WT_SRC, *rel_path.split("/"))
-        if os.path.isfile(filepath):
-            _load_wt(mod_name, rel_path)
-
-    # The stub package skips ``toolkits/__init__.py``; mirror its public
-    # re-exports so ``from .toolkits import X`` (e.g. agent.py importing
-    # ``DatabaseAgentToolkit``) resolves against the loaded submodules.
-    _tk_pkg = sys.modules["parrot.bots.database.toolkits"]
-    for _sub in list(sys.modules):
-        if _sub.startswith("parrot.bots.database.toolkits."):
-            _submod = sys.modules[_sub]
-            for _name in dir(_submod):
-                _obj = getattr(_submod, _name)
-                if isinstance(_obj, type) and _name.endswith(("Toolkit", "ToolkitConfig")):
-                    if not hasattr(_tk_pkg, _name):
-                        setattr(_tk_pkg, _name, _obj)
+    # toolkits subpackage — load the real __init__.py; its relative imports
+    # resolve via __path__ (parent submodules models/cache/retries are already
+    # in sys.modules from the loads above).
+    _load_wt("parrot.bots.database.toolkits", "parrot/bots/database/toolkits/__init__.py")

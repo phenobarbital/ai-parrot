@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import tempfile
 import time
 import zipfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List
 
 from aiohttp import MultipartWriter, web
 from navigator.views import BaseView
@@ -244,8 +243,8 @@ class MediaGen(BaseView):
 
             # Direct attribute check for native google-genai ClientError/APIError
             if hasattr(exc, "code") and hasattr(exc, "message"):
-                error_message = getattr(exc, "message")
-                error_code = getattr(exc, "code")
+                error_message = exc.message
+                error_code = exc.code
 
             return self.json_response(
                 {"error": {"message": error_message, "code": error_code, "details": str(exc)}}, status=500

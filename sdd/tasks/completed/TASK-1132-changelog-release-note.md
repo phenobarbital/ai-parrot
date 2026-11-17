@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-164 — DatabaseAgent Homologation
 **Spec**: `sdd/specs/database-agent-homologation.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-1128, TASK-1130

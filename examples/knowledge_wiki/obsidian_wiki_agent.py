@@ -42,7 +42,7 @@ logger = logging.getLogger("obsidian_wiki_agent")
 
 STORE_DIR = Path(__file__).parent / "store" / "obsidian"
 TREE_NAME = "obsidian-vault"
-HEAVY_MODEL = "gemini-2.5-flash"
+HEAVY_MODEL = "gemini-3.8-flash"
 LIGHT_MODEL = "gemini-2.5-flash-lite"
 
 

@@ -1,0 +1,188 @@
+
+**Option A** remains recommended: it extends the canonical decision plane and
+keeps consumer, producer and verifier on one authority model. Its advantage is
+lower integration duplication, not exclusive access to a consumer/producer
+design. B/C could also consume projections of those records.
+
+The corrected v1 provides explicit-conflict checking plus advisory structural
+signals. It does not prove conservativity, semantic consistency or implementation
+compliance. Certificates, drift jobs and backfill remain later phases. A rich
+dossier, multi-entry ingestion and approval snapshots are new contracts, so
+the earlier “one service and one parser extension” estimate is withdrawn.
+
+
+### Option A: Governing-decisions dossier + consequence service over the existing decision plane
+
+**Contract correction, 2026-10-31:** incorporates F01–F10 from
+`sdd-decision-audit.findings.md`. These are proposed design corrections, not
+additional discovery answers attributed to the owner. The document remains
+`exploration`; approval integration and optional delivery scope remain open.
+
+The v1 service checks **consistency of declared decisions**, not whether code
+implements prose rules. It has two outputs over one complete, versioned input
+inventory: a budgeted dossier for authoring and an unbudgeted evaluation for
+approval. No lexical match or LLM judgment establishes applicability or a
+blocking contradiction.
+
+0. **Authoritative inventory before presentation.** Introduce a shared read
+   contract over `DecisionRepository` that returns complete records, revisions,
+   source provenance and diagnostics from a consistent snapshot. A record is
+   eligible when `origin == documented`, `source_status == accepted`,
+   `review_status != rejected`, and it is effective under the validated
+   supersession graph. An accepted documented ADR may remain `unreviewed`;
+   double acceptance is not required. Inferred records remain suggestions.
+   New spec/seed records additionally require a verified approval batch.
+   Filtering happens before ranking/packing. Inventory overflow, decode
+   failures or unstable reads mean `incomplete`, never an empty clean result.
+
+1. **Governing dossier.** Retrieve by explicit `about` concepts and structural
+   scope, union/deduplicate by canonical ID, then render under a token budget.
+   A versioned mapping connects `projects` and recognized `tags` to subsystem
+   concepts; arbitrary tags do not silently become concepts. Unknown mappings
+   are shown to the author; authored `about` values must be valid taxonomy IDs.
+   Load full records for rationale/context, consequences and supersession
+   references. Rejected alternatives are shown only when explicitly recorded;
+   missing fields say “not recorded”, never inferred. List omitted IDs and
+   domains separately from “no accepted records”. Budget truncation affects
+   presentation only. Presence of a dossier is not proof that a human read it.
+
+2. **Structured producer.** A dedicated parser reads a versioned YAML block
+   inside `## Decisions`, containing `schema_version`, a stable `document_id`
+   and an `entries` list. Each entry has an immutable local `id`, `statement`,
+   `relation` in `{constrains, forbids, requires}`, nonempty `about` and
+   `targets` lists, and optional `contradicts` and `supersedes` lists of
+   `{decision_id, revision}` references. `supersedes` is a lifecycle link, not a normative
+   relation. Optional rationale and rejected-alternative text is authored.
+   Canonical IDs use `adr:spec:<document_id>#<entry_id>`; both components are
+   immutable repository-unique/document-local identifiers respectively, limited
+   to lowercase ASCII letters, digits, hyphens and underscores. IDs derive from
+   the stable document ID plus entry ID, not only the path;
+   source paths/spans remain provenance. Duplicate IDs, unknown fields and
+   dangling references fail validation. New entries can reference one another
+   via their canonical IDs and proposed revisions; unresolved intra-proposal
+   conflicts also block. New entries start at revision 1; edits preserve ID,
+   increment revision and explicitly pin their previous revision. Updating a
+   record is a revision transition, not a self-referential supersedes edge.
+   This is new parsing/identity work: `parse_adr()` currently yields one
+   path-identified record per document. Preserve ordinary ADR v1 parsing.
+
+3. **Typed targets and scope.** A new resolver validates exact local `sym:`,
+   `file:` and `dir:` IDs against confined repository paths and structural
+   records. `StructuralService.lookup()` is for name suggestions only;
+   `DecisionService._resolve_symbol()` is not an existence validator.
+   A symbol target covers that symbol; a file target covers its file/symbols;
+   a directory target covers path-segment descendants recursively. Consult
+   ancestor scope when collecting governing decisions. Directory expansion
+   must prove completeness against the declared scan inventory. Unsupported
+   files may be governed at file scope, but must not imply complete symbol
+   impact analysis. v1 targets must exist: decisions about future components
+   anchor to an existing container and state that scope explicitly. The gate
+   never invents a future node. A later phase may add typed proposed targets.
+
+4. **Deterministic findings.** Blocking `contradiction` requires an explicit
+   `contradicts` reference between the proposal and an effective accepted
+   record, or between proposed entries. Either direction establishes the
+   declared conflict, independently of target overlap. Sharing a target with
+   opposite `forbids`/`requires` relations yields advisory `potential-conflict`;
+   sharing a target and relation yields advisory `possible-supersession`.
+   Neither proves semantic disagreement or conservativity. `blast-radius`
+   reports impacted dependents; `evidence-gap` reports stale/missing/unverified
+   evidence. Impact does not propagate normative applicability. Absent
+   declarations, semantic contradictions may remain undetected in v1.
+
+5. **Approval and supersession.** A proposed `supersedes` link names an exact
+   active predecessor revision and represents full replacement in v1. Validate
+   existence, local identity, acyclicity, identical canonical target sets and absence
+   of competing effective successors. No implicit partial replacement or
+   exception. Historical targets yield a diagnostic with their active heads;
+   do not silently retarget the author's link. The prospective replacement
+   resolves only the conflict with that predecessor, and becomes effective
+   only when the same proposal batch receives human approval.
+   Optional conflict waivers live in a separate authored block, with stable
+   finding fingerprint, participating decision revisions, actor, reason and
+   verifiable approval reference. Generated markdown cannot authorize a waiver.
+   Any changed participant invalidates it. The trust adapter must verify actor,
+   scope and approval against versioned evidence; its concrete mechanism must
+   be chosen before implementation. No adapter means no ingestion or waiver
+   acceptance, not a fallback to trusting `status: approved`.
+
+6. **Publication and evidence.** Extend ingestion with a spec-entry adapter
+   and approval-batch manifest. Parse/validate all entries, then publish one
+   effective batch only after its complete manifest and approval are valid.
+   Per-record CAS remains the write primitive; it is not a multi-record
+   transaction. Partial/retried writes must never expose half an approved
+   proposal. Edits require a new approved batch; removed entries require an
+   explicit retirement, not silent deletion. Preserve prior approved revisions
+   and review history. Store declaration/approval provenance separately from
+   target applicability and optional implementation evidence. A hash proves
+   source freshness, not compliance. Spec/seed approval sets documented source
+   acceptance; review events remain attributed and are not manufactured by sync.
+
+7. **Seed, persistence and compatibility.** Prefer ADR Markdown under
+   `docs/decisions/` for the seed; the existing glob only handles discovery.
+   Extended metadata and approval still require code. Add explicit `about`
+   and `targets` fields to the canonical decision model, keeping `supported_by`
+   for evidence. Project ABOUT/normative edges as rebuildable caches; retrieval
+   validates canonical records. Use a new schema version for extended records:
+   new readers support legacy v1 and the extended schema; old readers must
+   fail explicitly, so readers upgrade before writers. Legacy records retain
+   their IDs. Migration, rollback and all consumers' compatibility are part of
+   the spec, not a claim that optional fields are universally nonbreaking.
+
+8. **Surfaces and scope.** `ConsequenceService` exposes one typed evaluation
+   shared by CLI, MCP and `scripts/sdd/check_spec_consequences.py`. `/sdd-spec`
+   retrieves before design and verifies before approval. Three sections:
+   `Governing Decisions`, `Decisions`, `Consequences`; approval/waiver metadata
+   is authored separately. Rendering is explicit and idempotent; checking
+   never rewrites files. CI and task-dossier propagation are optional v1 delivery
+   items pending owner scope, not prerequisites silently assumed to exist.
+
+✅ **Pros:**
+- Reuses record persistence, source hashing, review provenance and transports
+  without introducing a second authoritative decision plane.
+- One shared authority/scope contract feeds complete checks and bounded author
+  context. Offline results are reproducible for the same versioned inputs.
+- Existing ADR discovery and FEAT-778 consumers provide integration points.
+
+❌ **Cons:**
+- New identity/parser, scope resolver, snapshot/approval protocol and schema
+  migration are substantial work; this is not “mostly wiring”.
+- Explicit conflict declarations provide no automatic semantic completeness.
+- Taxonomy, stable IDs and approval provenance require maintained artifacts.
+- FEAT-778 is already implemented (22/22 tasks done). Its current `ADRSource`
+  uses lexical `why()` and emits title/decision only; it is not a drop-in
+  implementation of the strict domain dossier. Share authority/retrieval
+  primitives through an explicit adapter contract, without requiring an
+  unrelated runtime refactor in this feature.
+
+📊 **Effort:** Medium–High; estimate after approval/snapshot contracts are frozen.
+
+📦 **Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| `pydantic` ≥ 2 | versioned reports, validation and model evolution | existing core dependency |
+| `wikitoolkit` | local decision/structural planes and transport | existing infrastructure |
+| `PyYAML` | structured entries and extended seed metadata | direct core dependency |
+
+🔗 **Existing code to reuse, with boundaries:**
+- `decisions/models.py`, `repository.py`, `codec.py`: canonical records and
+  CAS; extend schemas/identity and complete snapshot reads explicitly.
+- `decisions/parser.py`, `ingest.py`: legacy ADR parser/discovery; add a
+  separate multi-entry spec adapter and approval-aware batch publication.
+- `decisions/evidence.py`: freshness only, not a compliance verifier.
+- `decisions/service.py`, `render.py`: presentation patterns; their budgeted
+  `why()`/`for_symbol()` outputs must not be gate inputs.
+- `structural/service.py`: impact traversal, with explicit freshness and
+  completeness checks; a typed target resolver is new work.
+- `experts/knowledge/resolver.py`, `experts/knowledge/sources/adr.py`:
+  implemented FEAT-778 consumer; compatibility target, not a future dependency.
+- `wiki/transport.py`, `scripts/sdd/check_task_graph.py`: transport/report shape.
+- `ledger/sdd_meta.py`, `okf/ontology.py`: coarse taxonomy and ABOUT vocabulary;
+  exact subsystem mapping and authoritative fields are new work.
+
+Paths above are relative to `packages/ai-parrot/src/parrot/knowledge/` except
+`experts/`, which is relative to `packages/ai-parrot/src/parrot/`; `decisions/`
+and `structural/` are under `knowledge/wiki/`.
+
+---
+

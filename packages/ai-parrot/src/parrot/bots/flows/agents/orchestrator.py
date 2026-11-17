@@ -110,6 +110,8 @@ After gathering responses from one or more agents:
     async def configure(self, app=None) -> None:
         """Configure the OrchestratorAgent and register specialist agents."""
         await super().configure(app)
+        if self.configure_skipped:
+            return
         for name in self._pending_agent_names:
             await self.add_agent_by_name(name)
         # Hook for child classes to register their agents

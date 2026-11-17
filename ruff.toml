@@ -133,6 +133,7 @@ ignore = [
 "langchain_community".msg = "LangChain was removed; use parrot primitives."
 "langgraph".msg           = "LangGraph is banned; use AgentsFlow / AgentCrew (parrot.bots.flows)."
 "langsmith".msg           = "LangSmith is banned; use parrot observability."
+"sidemantic".msg          = "Removed dependency: do not import sidemantic anywhere."
 
 [lint.per-file-ignores]
 # PEP 420 namespace packages and deliberate re-export surfaces: these

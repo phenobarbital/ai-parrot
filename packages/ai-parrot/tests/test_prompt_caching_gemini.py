@@ -151,3 +151,27 @@ class TestGeminiCacheTranslator:
         )
         # Should NOT have cached_content — fail-open
         assert "cached_content" not in result
+
+    @pytest.mark.asyncio
+    async def test_maybe_apply_gemini_cache_fail_open_for_argon(self):
+        """FEAT-798: Argon cache failures must leave the payload usable."""
+        client = self._make_client()
+        pending_segments = [CacheableSegment(text="x" * 20000, cacheable=True)]
+        mock_caches = MagicMock()
+        mock_caches.create = AsyncMock(side_effect=RuntimeError("API error"))
+        mock_aio = MagicMock()
+        mock_aio.caches = mock_caches
+        mock_genai_client = MagicMock()
+        mock_genai_client.aio = mock_aio
+        payload = {"contents": [], "system_instruction": "you are a test"}
+
+        result = await client._maybe_apply_gemini_cache(
+            mock_genai_client,
+            "gemini-4-argon",
+            payload,
+            pending_segments,
+            system_instruction="you are a test",
+        )
+
+        assert "cached_content" not in result
+        assert result["system_instruction"] == "you are a test"

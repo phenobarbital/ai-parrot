@@ -4,6 +4,7 @@ export type Agent = string;
 export type Persisted = boolean;
 export type ReloadRequired = boolean;
 export type Slug = string | null;
+export type Version = number | null;
 
 /**
  * Response of every agent-level tooling write.
@@ -13,5 +14,6 @@ export interface ToolkitPersistResponse {
   persisted?: Persisted;
   reload_required?: ReloadRequired;
   slug?: Slug;
+  version?: Version;
   [k: string]: unknown;
 }

@@ -36,7 +36,7 @@ Return the results in JSON format with fields 'sap_reference_nbr' and 'vendor_in
         )
         response = await client.ask_to_image(
             prompt=analysis_prompt,
-            model=GoogleModel.GEMINI_2_5_PRO,
+            model=GoogleModel.GEMINI_4_ARGON,
             image=image_path,
             structured_output=ImageAnalysisResult
         )

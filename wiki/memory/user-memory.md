@@ -1,0 +1,287 @@
+---
+title: User Memory
+summary: Independent knowledge, provenance, correction and suppression
+---
+
+# User Memory
+
+## Purpose
+
+The user memory subsystem provides durable, correctable knowledge about users across sessions, independent of episodic recording. It enables agents to learn, recall, and manage user-specific facts, preferences, goals, and constraints without requiring episodic memory to be enabled.
+
+Key features:
+- Cross-session persistence of user knowledge
+- Independent validity and provenance tracking
+- Explicit correction and suppression mechanisms
+- Context-specific knowledge management
+- No dependency on episodic memory
+
+## Public API
+
+### Core Classes
+
+- [`UserMemoryStore`](ref:parrot.memory.user.store) — Main storage and retrieval interface
+- [`UserKnowledge`](ref:parrot.memory.user.models) — User knowledge model
+- [`UserKnowledgeCandidate`](ref:parrot.memory.user.models) — Extracted knowledge candidate
+- [`UserKnowledgeCommand`](ref:parrot.memory.user.models) — Knowledge operation command
+- [`UserMemoryReceipt`](ref:parrot.memory.user.models) — Operation receipt
+
+### Models
+
+- [`UserKnowledge`](ref:parrot.memory.user.models) — Main knowledge model
+- [`UserKnowledgeCandidate`](ref:parrot.memory.user.models) — Candidate for persistence
+- [`UserKnowledgeCommand`](ref:parrot.memory.user.models) — Operation command
+- [`UserMemoryReceipt`](ref:parrot.memory.user.models) — Operation result
+
+### Extraction
+
+- [`extract_user_knowledge`](ref:parrot.memory.user.extraction) — Extract knowledge from events
+
+### Automatic Recall Collaborators
+
+- [`UnifiedMemoryManager`](ref:parrot.memory.unified.manager) — Delivers a scoped user profile to an agent prompt
+- [`query_terms`](ref:parrot.memory.lexical) — Normalizes Unicode-aware lexical query terms
+- [`EpisodicMemoryStore`](ref:parrot.memory.episodic.store) — Supplies the separate earlier-interaction recall lane
+
+## Configuration & Parameters
+
+### UserKnowledge Model
+
+The `UserKnowledge` model includes the following fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `knowledge_id` | `str` | Stable unique identifier |
+| `tenant_id` / `agent_id` / `user_id` | `str` | Scope the knowledge belongs to |
+| `kind` | `Literal["fact", "preference", "goal", "constraint"]` | Knowledge type |
+| `normalized_key` | `str | None` | Normalized key for lookup |
+| `value` | `Any` | The stored value |
+| `context` | `dict[str, str]` | Context qualifiers (for example a project) |
+| `provenance` | `Literal["explicit", "inferred"]` | Whether the user said it directly or it was inferred |
+| `evidence_refs` | `tuple[str, ...]` | Evidence references backing the knowledge |
+| `status` | `Literal["active", "pending", "superseded", "invalidated"]` | Current status |
+| `created_at` / `updated_at` | `datetime` | Timestamps |
+| `confirmed_at` | `datetime | None` | Confirmation timestamp |
+| `valid_from` / `expires_at` | `datetime | None` | Validity window |
+| `revision` | `int` | Revision number (compare-and-swap) |
+| `supersedes_id` | `str | None` | ID of the superseded knowledge |
+
+### UserKnowledgeCandidate Model
+
+The `UserKnowledgeCandidate` model includes:
+
+| Field | Type | Description |
+|---|---|---|
+| `kind` | `Literal["fact", "preference", "goal", "constraint"]` | Knowledge type |
+| `value` | `Any` | Knowledge value |
+| `provenance` | `Literal["explicit", "inferred"]` | How the claim was obtained |
+| `evidence_refs` | `tuple[str, ...]` | Evidence references (required) |
+| `context` | `dict[str, str]` | Context qualifiers |
+| `normalized_key` | `str | None` | Normalized key |
+| `valid_from` / `expires_at` | `datetime | None` | Optional validity window |
+
+### UserKnowledgeCommand Model
+
+| Field | Type | Description |
+|---|---|---|
+| `event_id` | `str` | Idempotency identity of the originating event |
+| `knowledge_id` | `str | None` | Existing knowledge to act on |
+| `expected_revision` | `int | None` | Revision the caller saw (compare-and-swap) |
+| `candidate` | `UserKnowledgeCandidate | None` | The claim for `upsert` / `correct` |
+| `operation` | `Literal["upsert", "correct", "forget"]` | Defaults to `upsert` |
+| `evidence_refs` | `tuple[str, ...]` | Evidence references |
+
+`UserMemoryReceipt` reports `knowledge_id`, `revision` and a `status` of `applied`, `duplicate`, `conflict`, `ignored` or `storage_unavailable`.
+
+### Store Configuration
+
+The `UserMemoryStore` is configured with:
+
+| Parameter | Type | Description |
+|---|---|---|
+| `path` | `Path` | Path to SQLite database |
+| `evidence_tenant_resolver` | `Callable | None` | Optional metadata-only ChatStorage tenant resolver; required for `chatstorage/...` evidence to be accepted |
+
+### Automatic Profile Delivery
+
+For every identified-user request, `UnifiedMemoryManager.prepare_context()` calls
+`UserMemoryStore.profile()` when user memory is enabled. `profile()` returns active, currently valid knowledge for
+the trusted `(tenant_id, agent_id, user_id)` scope; it does not require episodic memory to be enabled. A missing
+`user_id`, a disabled user-memory capability, or a `max_user_records` value of `0` yields no profile candidates.
+
+| Setting or argument | Default | Bounds / behavior |
+|---|---:|---|
+| `UserMemoryStore.profile(..., limit=...)` | `20` | `0..100`; `0` returns no records |
+| `AgentMemoryConfig.max_user_records` | `20` | `0..100`; passed to automatic profile delivery |
+| profile / recall query | — | At most 2,048 characters; automatic manager delivery truncates its query to that limit |
+
+The store scans every eligible row in bounded batches while retaining only the requested top results. It ranks profile
+records by kind group (constraints and preferences before goals and facts), then lexical overlap, recency, and stable
+knowledge ID. This is full-population ranking, not a database-prefix or first-page result.
+
+`query_terms()` case-folds Unicode word terms, removes duplicates in first-seen order, and retains terms of at least
+three characters. `recall()` matches any normalized term against a key or value and ranks its matches globally. Blank
+queries and queries with no retained terms intentionally keep the prior literal-substring behavior; callers should not
+treat a whole question as one required literal phrase.
+
+### Context Ceiling and Priority
+
+The context assembler uses `effective_budget = int(max_context_tokens * 0.9)`, reserving 10% headroom. User knowledge
+is packed as complete records, never truncated mid-record. `user_context_tokens` is a hard ceiling when configured.
+With `user_memory_priority="high"`, the assembler reserves the user ceiling inside the effective budget before packing
+episodic, skills, and brain sections; a `None` ceiling uses the normalized user allocation. With
+`user_memory_priority="normal"`, user knowledge follows the other sections and their rollover, while the same explicit
+ceiling still applies. The two modes can produce equal output only when their allocations admit the same complete
+records; the defaults do not guarantee identical output.
+
+## Usage Examples
+
+### Scoped Profile Usage
+
+```python
+from pathlib import Path
+from parrot.memory.user.store import UserMemoryStore
+from parrot.memory.agent_memory.models import MemoryRequestScope
+
+scope = MemoryRequestScope(
+    tenant_id="default",
+    agent_id="my-agent",
+    user_id="user123",
+    session_id="session456",
+    turn_id="turn789",
+    identity_provenance="server_resolved"
+)
+
+async with UserMemoryStore(Path("/path/to/memory.db")) as store:
+    # `profile()` ranks every active, valid record for this identified user.
+    knowledge = await store.profile(scope=scope, query="How should I answer?", limit=20)
+```
+
+The asynchronous context manager configures the owned SQLite connection and closes it even if profile handling raises.
+For an explicitly managed store, call `await store.close()` in a `finally` block.
+
+### Knowledge Extraction
+
+```python
+from datetime import datetime, timezone
+
+from parrot.memory.user.extraction import extract_user_knowledge
+from parrot.memory.agent_memory.models import MemoryEvent
+
+# `client` is the agent's configured AbstractClient (any provider client works);
+# extract_user_knowledge makes one bounded extraction call through it.
+
+event = MemoryEvent(
+    event_id="event123",
+    kind="user_knowledge",
+    scope=scope,
+    observed_at=datetime.now(timezone.utc),
+    evidence_refs=(),
+    payload={"text": "User mentioned they prefer dark mode"}
+)
+
+candidates = await extract_user_knowledge(event, client=client)  # -> list[UserKnowledgeCandidate]
+```
+
+Extraction only proposes candidates; it never selects the scope and never persists anything. It reads one of the
+user-authored text fields, rejects anonymous, partial, and streaming events, bounds input to 4,000 characters, and
+makes one tool-free extraction call with `temperature=0`. It accepts at most eight validated candidates from a bounded
+JSON response. The prompt excludes task-local requests and instructions, accepts only lasting statements about the
+user, preserves the user's language, and rejects identity fields. Model provenance and candidate selection remain
+model output, not deterministic extraction behavior or verified user authority.
+
+### Managing User Knowledge
+
+```python
+from parrot.memory.user.models import UserKnowledgeCandidate, UserKnowledgeCommand
+
+existing = (await store.recall("theme", scope=scope, limit=1))[0]
+
+# Correct user knowledge (compare-and-swap on the revision you read; the correction must be explicit and keep the same
+# kind/key/context, otherwise the receipt is `conflict`)
+candidate = UserKnowledgeCandidate(
+    kind="preference",
+    normalized_key="theme",
+    value="light",
+    provenance="explicit",
+    evidence_refs=existing.evidence_refs,
+    context=existing.context,  # a correction keeps the same claim: kind, key and context
+)
+command = UserKnowledgeCommand(
+    event_id="event-correct-1",
+    knowledge_id=existing.knowledge_id,
+    expected_revision=existing.revision,
+    candidate=candidate,
+    operation="correct",
+    evidence_refs=candidate.evidence_refs,
+)
+receipt = await store.correct(command, scope=scope)
+
+# Forget user knowledge (writes a suppression marker)
+forget_command = UserKnowledgeCommand(
+    event_id="event-forget-1",
+    knowledge_id=receipt.knowledge_id,  # the corrected record; the old one is now superseded
+    expected_revision=receipt.revision,
+    operation="forget",
+)
+forget_receipt = await store.forget(forget_command, scope=scope)
+```
+
+## Gotchas
+
+### Independence from Episodic Memory
+
+- User memory works completely independently of episodic memory
+- Enabling user memory doesn't require episodic memory to be enabled
+- User knowledge is stored in separate tables in the same SQLite database
+
+### Identity and Scope
+
+- User knowledge is scoped by `(tenant_id, agent_id, user_id)`
+- Missing or anonymous user identity prevents knowledge operations
+- Session information is used for provenance, not identity
+
+### Validity and Status
+
+- Knowledge has explicit validity periods (`valid_from`, `expires_at`)
+- Status can be `active`, `pending`, `superseded`, or `invalidated`
+- An `explicit` candidate is admitted `active`; an `inferred` one is admitted `pending`, and `recall` returns only active, currently valid facts
+
+### Conflict Resolution
+
+- Most recent explicit declaration wins on conflict
+- Superseded knowledge is kept as history, not served
+- Suppression markers prevent re-learning from retained evidence
+
+### Evidence and Provenance
+
+- `provenance` is `explicit` (the user said it directly) or `inferred`; for extracted candidates the extraction model chooses the label, so treat it as a model assertion, not verified authority
+- `chatstorage/...` evidence references are validated before persistence: malformed, cross-scope and tombstoned ones are rejected (see the next bullet); other reference schemes are stored as given
+- `chatstorage/...` evidence references fail closed: a command carrying one is `ignored` unless the store was built with an `evidence_tenant_resolver` that confirms the stored tenant matches the scope (malformed, cross-scope and tombstoned references are ignored too); other reference schemes are not resolved
+
+### Physical Erasure
+
+- `forget` runs in one transaction: it deletes the whole claim chain (superseded revisions included) and its event rows, with `PRAGMA secure_delete=ON`, and writes a suppression marker that holds only hashes (no content)
+- Events that never produced a fact (ignored or suppressed) keep a payload digest, not the claim content
+- A suppression marker is lifted by an `explicit` candidate that brings at least one evidence reference not already blocked; because the extractor labels provenance, that label alone is not proof of an explicit user request
+- `user_derivative_forgets` records the source episodes for derivative invalidation; nothing in this feature reads it yet (FEAT-889 consumes it)
+
+## Related
+
+### Wiki Pages
+
+- [Agent Memory](agent-memory.md) — Architecture, flags, lifecycle, scope and hard-cut migration
+- [Memory Dynamics](memory-dynamics.md) — Accepted gates, evidence, backends, CLI/MCP/export and measured limits
+- [Conversation Memory](conversation-memory.md) — How conversation history is stored and managed
+
+### External References
+
+- [FEAT-892 Specification](https://github.com/phenobarbital/ai-parrot/blob/main/sdd/specs/agent-memory-mixin.spec.md) — Full feature specification
+- [FEAT-889 Agent Brain](https://github.com/phenobarbital/ai-parrot/blob/main/sdd/specs/agent-brain.spec.md) — Brain service and knowledge promotion
+- [FEAT-571 Memory Dynamics](https://github.com/phenobarbital/ai-parrot/blob/main/sdd/specs/memory-dynamics.spec.md) — Historical dynamics policies
+
+### Ownership
+
+- User memory models and store are owned by FEAT-892
+- Knowledge extraction and validation policies are governed by accepted gates
+- Physical erasure is implemented here (see Physical Erasure); retention of other stores is governed separately

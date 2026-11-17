@@ -1,0 +1,127 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-704",
+  "feature_slug": "semantic-layer-rev2",
+  "started_at": "2026-10-25T10:00:00Z",
+  "updated_at": "2026-10-25T18:50:54+00:00",
+  "source": {
+    "kind": "file",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": "artifacts/semantic-layer.research.md",
+    "raw_path": "sdd/state/FEAT-704/rev2/source.md",
+    "fetched_at": "2026-10-25T10:00:00Z",
+    "summary_oneline": "FEAT-704 rev2 — drop sidemantic (AGPL), own sqlglot compiler as sole engine, SemaFlow (MIT) for the Rust phase, BSL reserved for joins"
+  },
+  "mode": "auto",
+  "detected_mode": "enrichment",
+  "phase": "committed",
+  "phases": {
+    "source": {
+      "status": "completed",
+      "started_at": "2026-10-25T10:00:00Z",
+      "completed_at": "2026-10-25T10:01:00Z",
+      "duration_seconds": 60,
+      "note": "Two uncommitted artifacts (research rev + brainstorm with Appendix A) plus inline instructions; mid-run owner decision on the feature branch recorded in source.md."
+    },
+    "plan": {
+      "status": "completed",
+      "started_at": "2026-10-25T10:01:00Z",
+      "completed_at": "2026-10-25T10:02:00Z",
+      "duration_seconds": 60,
+      "queries_total": 15,
+      "approved_by_user": false,
+      "edited_by_user": false,
+      "plan_path": "sdd/state/FEAT-704/rev2/research_plan.json",
+      "note": "Autonomous run: plan gate not presented; the plan is recorded for review alongside the proposal."
+    },
+    "research": {
+      "status": "completed",
+      "started_at": "2026-10-25T10:02:00Z",
+      "completed_at": "2026-10-25T11:15:00Z",
+      "duration_seconds": 4380,
+      "queries_executed": 15,
+      "queries_skipped": 0,
+      "depth_reached": 1,
+      "files_read": 36,
+      "grep_calls": 12,
+      "git_calls": 7,
+      "truncated": false,
+      "truncation_reason": null,
+      "parallel": {
+        "enabled": false,
+        "fallback_reason": "operator: research-grade source (enrichment); queries executed inline by the parent, wiki-first; fork lanes not justified",
+        "lanes": {},
+        "merge": {}
+      }
+    },
+    "synthesis": {
+      "status": "completed",
+      "started_at": "2026-10-25T11:15:00Z",
+      "completed_at": "2026-10-25T11:35:00Z",
+      "duration_seconds": 1200,
+      "synthesis_path": "sdd/state/FEAT-704/rev2/synthesis.json",
+      "thinking_path": null,
+      "overall_confidence": "medium",
+      "claims_total": 15,
+      "claims_high_conf": 12,
+      "claims_medium_conf": 3,
+      "claims_low_conf": 0,
+      "unknowns_count": 5,
+      "lint_passed": true,
+      "lint_iterations": 1
+    },
+    "qa": {
+      "status": "partial",
+      "started_at": null,
+      "completed_at": "2026-10-25T18:50:54+00:00",
+      "duration_seconds": null,
+      "questions_total": 6,
+      "questions_answered": 4,
+      "skipped_reason": "autonomous run: U1 answered mid-run; U2/U4/U6 answered by the owner on 2026-10-25 after the commit; U3/U5 still open for /sdd-spec §8"
+    },
+    "output": {
+      "status": "completed",
+      "started_at": "2026-10-25T11:35:00Z",
+      "completed_at": "2026-10-25T11:45:00Z",
+      "duration_seconds": 600,
+      "proposal_path": "sdd/proposals/semantic-layer-rev2.proposal.md",
+      "commit_sha": null,
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "Architectural fork closed by owner decisions; remaining items are spec-level scoping (FEAT-704 rev 0.3).",
+      "commit_note": "single commit; sha = `git log -1 --format=%h -- sdd/proposals/semantic-layer-rev2.proposal.md`"
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 36,
+    "grep_calls": 12,
+    "git_calls": 7,
+    "wall_seconds": 4380
+  },
+  "errors": [
+    {
+      "phase": "research",
+      "at": "2026-10-25T11:15:00Z",
+      "message": "wall_seconds (4380) exceeded the default profile (300) — interactive session pacing, not query volume; all 15 planned queries completed, none skipped, so the run is recorded as complete rather than truncated",
+      "recoverable": true
+    }
+  ],
+  "resume_hint": {
+    "next_phase": "done",
+    "next_action": "/sdd-spec FEAT-704 (amend to rev 0.3) after answering §5 U2–U6"
+  },
+  "x_revision": {
+    "of": "FEAT-704",
+    "rev": 2,
+    "why_not_new_feat_id": "The proposal amends an approved spec whose 20 TASK ids are already reserved; a new FEAT id is reserved by /sdd-spec only if the owner answers U2 with 'supersede'.",
+    "supersedes": "sdd/proposals/semantic-layer.proposal.md (2026-10-14 research recommending BSL/Ibis + sidemantic-as-alternative)"
+  }
+}

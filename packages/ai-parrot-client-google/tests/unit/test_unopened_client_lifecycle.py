@@ -3,7 +3,7 @@
 Regression: these methods went straight to ``self.client.aio``, so a caller that never entered the
 client's async context manager — e.g. ``PlanogramCompliance``, which builds its client through
 ``LLMFactory`` — failed with ``'NoneType' object has no attribute 'aio'``. The per-loop cache
-contract (``docs/clients/per-loop-cache.md``) says a public method calls ``_ensure_client()``
+contract (``wiki/clients/per-loop-cache.md``) says a public method calls ``_ensure_client()``
 instead of guarding on ``self.client``; ``AnthropicClient.ask_to_image`` has always done so.
 """
 
@@ -45,7 +45,7 @@ def image() -> Image.Image:
 @pytest.fixture
 def client() -> GoogleGenAIClient:
     """A client whose ``get_client()`` returns a mocked SDK client; never entered as a context manager."""
-    instance = GoogleGenAIClient(api_key="fake_key", model=GoogleModel.GEMINI_2_5_FLASH.value)
+    instance = GoogleGenAIClient(api_key="fake_key", model=GoogleModel.GEMINI_3_8_FLASH.value)
     instance.logger = MagicMock()
     sdk = MagicMock()
     chat = MagicMock()
@@ -72,11 +72,11 @@ async def test_ask_to_image_builds_the_client_when_the_caller_never_opened_it(cl
 async def test_ask_to_image_passes_the_resolved_model_to_the_chat(client, image):
     """The explicit model reaches both the client hint and ``chats.create`` — a default never masks it."""
     await client.ask_to_image(
-        prompt="what is this?", image=image, model=GoogleModel.GEMINI_2_5_PRO.value, no_memory=True
+        prompt="what is this?", image=image, model=GoogleModel.GEMINI_4_ARGON.value, no_memory=True
     )
 
-    assert client.get_client.await_args.kwargs.get("model") == GoogleModel.GEMINI_2_5_PRO.value
-    assert client._sdk.aio.chats.create.call_args.kwargs["model"] == GoogleModel.GEMINI_2_5_PRO.value
+    assert client.get_client.await_args.kwargs.get("model") == GoogleModel.GEMINI_4_ARGON.value
+    assert client._sdk.aio.chats.create.call_args.kwargs["model"] == GoogleModel.GEMINI_4_ARGON.value
 
 
 async def test_ask_to_image_reuses_the_cached_client(client, image):
@@ -93,11 +93,11 @@ async def test_question_builds_the_client_when_the_caller_never_opened_it(client
     """``question()`` is a public stateless entry point: it must not require an opened client."""
     client._sdk.aio.models.generate_content = AsyncMock(return_value=_mock_response("42"))
 
-    message = await client.question(prompt="the answer?", model=GoogleModel.GEMINI_2_5_FLASH.value)
+    message = await client.question(prompt="the answer?", model=GoogleModel.GEMINI_3_8_FLASH.value)
 
     client.get_client.assert_awaited()
     assert client.client is client._sdk
-    assert client._sdk.aio.models.generate_content.await_args.kwargs["model"] == GoogleModel.GEMINI_2_5_FLASH.value
+    assert client._sdk.aio.models.generate_content.await_args.kwargs["model"] == GoogleModel.GEMINI_3_8_FLASH.value
     assert message.provider == "google_genai"
 
 

@@ -24,12 +24,15 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shlex
 import stat
+import subprocess
 import sys
-from pathlib import Path, PurePosixPath
-from typing import Any, Optional, Sequence
+from pathlib import Path
+from typing import Any, Iterable, Optional, Sequence
 
+from parrot.launcher import shared_state_root
 from parrot.knowledge.wiki.claude_code import assets
 from parrot.knowledge.wiki.project import (
     WikiConfigError,
@@ -39,6 +42,7 @@ from parrot.knowledge.wiki.project import (
     load_effective_config,
     save_project_config,
 )
+from parrot.mcp.portability import resolve_portable_mode
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +90,91 @@ def _remove_marker_block(text: str, begin: str, end: str) -> str:
     return head + ("\n" + tail.lstrip("\n") if tail.strip() else "\n")
 
 
+def _script_basename(command: str) -> str:
+    """Basename of a command/path token, Windows-safe (codex S4).
+
+    Splits on BOTH separators and drops a trailing ``.exe`` (case-insensitive), so
+    ``/r/.venv/bin/parrot``, ``C:\\r\\.venv\\Scripts\\parrot.exe`` and ``parrot`` all give ``parrot``.
+    """
+    name = command.replace("\\", "/").rsplit("/", 1)[-1]
+    return name[:-4] if name.lower().endswith(".exe") else name
+
+
+def _is_portable_wikitoolkit_entry(entry: Any) -> bool:
+    """Whether a ``.mcp.json`` wikitoolkit entry is in the portable (bare-command) form."""
+    return (
+        isinstance(entry, dict)
+        and entry.get("command") == assets.HOOK_BIN_NAME
+        and entry.get("args") == ["mcp"]
+    )
+
+
+def _is_portable_toolkit_entry(entry: Any) -> bool:
+    """Whether a managed ``parrot-<name>`` entry is in the portable form (relative config, no cwd)."""
+    args = entry.get("args") if isinstance(entry, dict) else None
+    return (
+        isinstance(args, list)
+        and len(args) >= 4
+        and args[2] == "--config"
+        and args[3] == assets.PORTABLE_TOOLKIT_CONFIG
+        and "cwd" not in entry
+    )
+
+
+def _managed_toolkit_entries(servers: dict[str, Any], root: Path) -> list[Any]:
+    """The ``parrot-*`` entries of ``servers`` that we wrote (foreign colliding keys excluded)."""
+    return [
+        entry for key, entry in servers.items()
+        if key.startswith("parrot-") and _is_managed_toolkit_entry(entry, root, key[len("parrot-"):])
+    ]
+
+
+def _portable_from_servers(servers: dict[str, Any], root: Path) -> bool:
+    """Portable iff ANY managed ``parrot-*`` entry is portable (the mode is sticky).
+
+    Used when the ``wikitoolkit`` key cannot decide (http, url-only, absent, foreign or the ambiguous bare
+    form); no managed ``parrot-*`` entry gives ``False``.
+    """
+    return any(_is_portable_toolkit_entry(entry) for entry in _managed_toolkit_entries(servers, root))
+
+
+def _current_portable_mode(root: Path) -> bool | None:
+    """Infer the host's current mode (FEAT-633, sticky).
+
+    A managed stdio ``wikitoolkit`` entry in the baked (absolute) form gives ``False``. Its bare form is
+    ambiguous: a baked install falls back to the bare name when no binary resolves
+    (:func:`assets.resolve_wikitoolkit_bin`), so the managed ``parrot-*`` entries (absolute vs relative
+    ``--config``) break the tie, and with none of them the bare entry means portable — the same rule as
+    ``codex.installer._current_portable_mode``. When the ``wikitoolkit`` entry is http, url-only, absent
+    or foreign (``--remote`` decides only that key), the mode is inferred from the managed ``parrot-*``
+    entries. A missing ``.mcp.json``, unparsable JSON, or no managed entry
+    means ``None`` so the shared launcher rule can choose a fresh-host form.
+
+    Args:
+        root: Repository root.
+
+    Returns:
+        The current portable form, or ``None`` when no managed form exists.
+    """
+    try:
+        data = json.loads((root / ".mcp.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    servers = data.get("mcpServers") if isinstance(data, dict) else None
+    if not isinstance(servers, dict):
+        return None
+    wiki = servers.get("wikitoolkit")
+    if isinstance(wiki, dict) and "type" not in wiki and "url" not in wiki and _is_wikitoolkit_entry(wiki):
+        if not _is_portable_wikitoolkit_entry(wiki):
+            return False
+        if _managed_toolkit_entries(servers, root):
+            return _portable_from_servers(servers, root)
+        return True
+    if _managed_toolkit_entries(servers, root):
+        return _portable_from_servers(servers, root)
+    return None
+
+
 # --------------------------------------------------------------------------
 # Individual install steps (each returns a human-readable action string)
 # --------------------------------------------------------------------------
@@ -107,7 +196,7 @@ def _install_claude_md(root: Path) -> str:
     return "CLAUDE.md — wiki section already current"
 
 
-def _hook_entry(root: Path) -> dict[str, Any]:
+def _hook_entry(root: Path, *, portable: bool = False) -> dict[str, Any]:
     """Build the PreToolUse hook entry for settings.json.
 
     The command is resolved to an absolute path so the hook fires
@@ -119,7 +208,7 @@ def _hook_entry(root: Path) -> dict[str, Any]:
         "hooks": [
             {
                 "type": "command",
-                "command": assets.hook_command(root),
+                "command": assets.hook_command(root, portable=portable),
                 "timeout": 10,
             }
         ],
@@ -149,7 +238,9 @@ def _is_our_command(command: Any) -> bool:
         return assets.HOOK_COMMAND in text
     if assets.HOOK_SUBCOMMAND not in tokens:
         return False
-    return any(PurePosixPath(token).name == assets.HOOK_BIN_NAME for token in tokens)
+    # shlex (POSIX mode) eats backslashes in an unquoted Windows path, so also test the raw
+    # whitespace split (codex S4).
+    return any(_script_basename(token) == assets.HOOK_BIN_NAME for token in [*tokens, *text.split()])
 
 
 def _is_our_hook(entry: dict[str, Any]) -> bool:
@@ -187,7 +278,7 @@ def _write_settings(path: Path, settings: dict[str, Any]) -> None:
     path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
 
 
-def _install_settings_hook(root: Path) -> str:
+def _install_settings_hook(root: Path, *, portable: bool = False) -> str:
     """Merge the PreToolUse nudge hook into .claude/settings.json."""
     path = root / ".claude" / "settings.json"
     settings = _load_settings(path) or {}
@@ -203,7 +294,7 @@ def _install_settings_hook(root: Path) -> str:
     if not isinstance(pre, list):
         raise RuntimeError(f"{path}: 'hooks.PreToolUse' is not a list")
 
-    resolved_cmd = assets.hook_command(root)
+    resolved_cmd = assets.hook_command(root, portable=portable)
 
     ours = [e for e in pre if isinstance(e, dict) and _is_our_hook(e)]
     if ours:
@@ -244,12 +335,12 @@ def _install_settings_hook(root: Path) -> str:
                 return f".claude/settings.json — PreToolUse hook updated ({len(duplicates)} {noun} removed)"
             return ".claude/settings.json — PreToolUse hook updated"
         return ".claude/settings.json — PreToolUse hook already installed"
-    pre.append(_hook_entry(root))
+    pre.append(_hook_entry(root, portable=portable))
     _write_settings(path, settings)
     return ".claude/settings.json — PreToolUse wiki nudge hook added"
 
 
-def _install_permissions(root: Path) -> list[str]:
+def _install_permissions(root: Path, *, portable: bool = False) -> list[str]:
     """Allowlist wikitoolkit commands in settings.local.json.
 
     Permissions are per-user (wikitoolkit is a local tool), so they
@@ -291,7 +382,7 @@ def _install_permissions(root: Path) -> list[str]:
     if not isinstance(allow, list):
         raise RuntimeError(f"{local_path}: 'permissions.allow' is not a list")
 
-    all_rules = assets.permission_rules(root)
+    all_rules = assets.permission_rules(root, portable=portable)
     missing = [r for r in all_rules if r not in allow]
     if not missing:
         actions.append(".claude/settings.local.json — wikitoolkit permissions " "already allowed")
@@ -583,13 +674,13 @@ def _is_managed_toolkit_entry(entry: Any, root: Path, name: str) -> bool:
     ``parrot-<name>`` key whose content does not match this shape is a
     foreign entry with a colliding name — it must never be overwritten or
     removed by reconciliation. A pinned entry whose ``--config`` points
-    outside ``root`` is treated as foreign (operator override).
+    outside ``root`` is treated as foreign (operator override). The portable shape
+    (relative ``--config .parrot/mcp-toolkits.yaml``, FEAT-633) is also ours.
     """
     if not isinstance(entry, dict):
         return False
     command = entry.get("command")
-    bin_name = PurePosixPath(assets.resolve_parrot_bin(root)).name
-    if not isinstance(command, str) or not command.endswith(bin_name):
+    if not isinstance(command, str) or _script_basename(command) != "parrot":
         return False
     args = entry.get("args")
     if not isinstance(args, list) or args[:2] != ["mcp-local", name]:
@@ -604,6 +695,8 @@ def _is_managed_toolkit_entry(entry: Any, root: Path, name: str) -> bool:
     # `config_path=/repo/worktree2/...` shares the `startswith` prefix but is
     # NOT inside `root` — a naive substring check would misclassify it as ours.
     if len(args) >= 4 and args[2] == "--config":
+        if args[3] == assets.PORTABLE_TOOLKIT_CONFIG:  # portable form (TASK-4081) — ours
+            return True
         config_path = Path(args[3])
         if not config_path.is_absolute():
             return False
@@ -614,13 +707,18 @@ def _is_managed_toolkit_entry(entry: Any, root: Path, name: str) -> bool:
     return True
 
 
-def reconcile_toolkit_entries(root: Path) -> tuple[list[str], list[str]]:
+def reconcile_toolkit_entries(root: Path, *, portable: Optional[bool] = None) -> tuple[list[str], list[str]]:
     """Reconcile ONLY the `parrot-<name>` keys of .mcp.json from the toolkit config.
 
     Never reads or writes the "wikitoolkit" key, and never touches any other
     foreign key (FEAT-570 AC5). Upserts one entry per ENABLED section, skips a
     `parrot-<name>` key whose content is not our shape (reported as a warning),
     and deletes managed entries whose section is disabled or gone.
+
+    Args:
+        root: Repository root.
+        portable: ``None`` infers the mode via ``_current_portable_mode`` (FEAT-633 sticky rule — the
+            ``parrot toolkits`` path via ``mcp/hosts.py::ClaudeAdapter.reconcile``); True/False force it.
 
     Returns:
         (actions, warnings) — human-readable strings.
@@ -640,6 +738,9 @@ def reconcile_toolkit_entries(root: Path) -> tuple[list[str], list[str]]:
     if not isinstance(servers, dict):
         servers = data["mcpServers"] = {}
 
+    decision = resolve_portable_mode(portable, current=_current_portable_mode(root))
+    portable = decision.portable
+
     from parrot.mcp.toolkit_config import load_toolkits_config
 
     cfg = load_toolkits_config(root)
@@ -650,10 +751,13 @@ def reconcile_toolkit_entries(root: Path) -> tuple[list[str], list[str]]:
     updated: list[str] = []
     removed: list[str] = []
     warnings: list[str] = []
+    actions: list[str] = []
+    if decision.note:
+        actions.append(decision.note)
 
     for name in sorted(enabled_names):
         key = f"parrot-{name}"
-        toolkit_entry = assets.toolkit_mcp_json_entry(root, name, cfg.toolkits[name])
+        toolkit_entry = assets.toolkit_mcp_json_entry(root, name, cfg.toolkits[name], portable=portable)
         existing = servers.get(key)
         if existing == toolkit_entry:
             continue
@@ -681,7 +785,6 @@ def reconcile_toolkit_entries(root: Path) -> tuple[list[str], list[str]]:
     if changed:
         path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
-    actions: list[str] = []
     if added:
         actions.append(f"{len(added)} toolkit entry(s) added ({', '.join(added)})")
     if updated:
@@ -691,7 +794,7 @@ def reconcile_toolkit_entries(root: Path) -> tuple[list[str], list[str]]:
     return actions, warnings
 
 
-def _install_mcp_json(root: Path, *, remote: Optional[WikiRemoteConfig] = None) -> str:
+def _install_mcp_json(root: Path, *, remote: Optional[WikiRemoteConfig] = None, portable: bool = False) -> str:
     """Write/refresh the wikitoolkit entry plus one managed entry per
     enabled toolkit section in the project's .mcp.json (FEAT-485).
 
@@ -720,7 +823,7 @@ def _install_mcp_json(root: Path, *, remote: Optional[WikiRemoteConfig] = None) 
     if remote is not None:
         entry = assets.mcp_json_entry_remote(remote.url, remote.token_env)
     else:
-        entry = assets.mcp_json_entry(root)
+        entry = assets.mcp_json_entry(root, portable=portable)
 
     servers = data.get("mcpServers")
     if not isinstance(servers, dict):
@@ -741,7 +844,7 @@ def _install_mcp_json(root: Path, *, remote: Optional[WikiRemoteConfig] = None) 
         path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
     # --- toolkit reconciliation (FEAT-485), delegated (FEAT-570) ----------
-    toolkit_actions, _warnings = reconcile_toolkit_entries(root)
+    toolkit_actions, _warnings = reconcile_toolkit_entries(root, portable=portable)
 
     if not changed and not toolkit_actions:
         return f".mcp.json — {wikitoolkit_status}"
@@ -751,7 +854,7 @@ def _install_mcp_json(root: Path, *, remote: Optional[WikiRemoteConfig] = None) 
 
 
 def _is_wikitoolkit_entry(entry: Any) -> bool:
-    """True for BOTH managed shapes: stdio (``command`` ends with wikitoolkit, args == ["mcp"]) and http."""
+    """True for BOTH managed shapes: stdio (``command`` basename is wikitoolkit, args == ["mcp"]) and http."""
     if not isinstance(entry, dict):
         return False
     if entry.get("type") == "http":
@@ -759,7 +862,7 @@ def _is_wikitoolkit_entry(entry: Any) -> bool:
         auth = headers.get("Authorization", "") if isinstance(headers, dict) else ""
         return isinstance(entry.get("url"), str) and isinstance(auth, str) and auth.startswith("Bearer ${")
     command = entry.get("command")
-    return isinstance(command, str) and command.endswith("wikitoolkit") and entry.get("args") == ["mcp"]
+    return isinstance(command, str) and _script_basename(command) == assets.HOOK_BIN_NAME and entry.get("args") == ["mcp"]
 
 
 def _uninstall_mcp_json(root: Path) -> tuple[str | None, list[str]]:
@@ -829,8 +932,44 @@ def _install_slash_command(root: Path) -> str:
     return ".claude/commands/parrotwiki.md — " + ("updated" if existing is not None else "created")
 
 
+#: Upper bound for the ``git rev-parse`` call that resolves the hooks directory.
+_GIT_HOOKS_TIMEOUT_S: float = 10.0
+
+
+def _git_resolved_hook_path(root: Path, hook_name: str) -> Optional[Path]:
+    """Ask git where ``hooks/<hook_name>`` lives (honours ``core.hooksPath`` and linked worktrees).
+
+    Returns None when git is unavailable, fails, or reports a different toplevel than ``root``
+    (for example a bare ``.git`` directory that is not a repository); the caller then falls back
+    to the file-based lookup.
+    """
+    cmd = ["git", "-C", str(root), "rev-parse", "--show-toplevel", "--git-path", f"hooks/{hook_name}"]
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, check=False, timeout=_GIT_HOOKS_TIMEOUT_S,
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    lines = result.stdout.splitlines()
+    if result.returncode != 0 or len(lines) != 2:
+        return None
+    toplevel, hook = Path(lines[0]), Path(lines[1])
+    try:
+        if toplevel.resolve() != root.resolve():
+            return None
+    except (OSError, RuntimeError):
+        return None
+    # A relative answer is relative to the worktree root (git runs hooks from there).
+    return hook if hook.is_absolute() else root / hook
+
+
 def _git_hook_path(root: Path, hook_name: str = "post-commit") -> Optional[Path]:
-    """Locate .git/hooks/<hook_name>, or None when not a git repo.
+    """Locate the git hook file ``hook_name``, or None when not a git repo.
+
+    Git itself resolves the path first (``git rev-parse --git-path hooks/<name>``), so a
+    ``core.hooksPath`` setting (husky, lefthook, a shared hooks dir) is honoured; without a
+    usable git answer it falls back to ``.git/hooks`` (or the common dir of a linked worktree).
 
     Args:
         root: Repository root.
@@ -838,6 +977,11 @@ def _git_hook_path(root: Path, hook_name: str = "post-commit") -> Optional[Path]
             (default) or ``"post-merge"`` (FEAT-566 Module 10).
     """
     git_dir = root / ".git"
+    if not git_dir.exists():
+        return None
+    resolved = _git_resolved_hook_path(root, hook_name)
+    if resolved is not None:
+        return resolved
     if git_dir.is_dir():
         return git_dir / "hooks" / hook_name
     if git_dir.is_file():  # worktree: `gitdir: <path>` pointer
@@ -893,9 +1037,9 @@ def _shebang_is_sh_compatible(first_line: str) -> bool:
     tokens = first_line[2:].split()
     if not tokens:
         return True
-    interpreter = PurePosixPath(tokens[0]).name
+    interpreter = _script_basename(tokens[0])
     if interpreter == "env" and len(tokens) > 1:
-        interpreter = PurePosixPath(tokens[1]).name
+        interpreter = _script_basename(tokens[1])
     return interpreter in _SH_FAMILY
 
 
@@ -970,30 +1114,75 @@ def _install_post_merge_hook(root: Path) -> str:
     return _install_managed_git_hook(root, "post-merge", "post-merge")
 
 
+def _replace_marker_block(text: str, begin: str, end: str, block: str) -> str | None:
+    """Return ``text`` with its first marker block replaced, or ``None`` for unbalanced markers."""
+    begin_index = text.find(begin)
+    if begin_index == -1:
+        return None
+    end_index = text.find(end, begin_index + len(begin))
+    if end_index == -1:
+        return None
+    line_end = text.find("\n", end_index + len(end))
+    suffix_index = len(text) if line_end == -1 else line_end + 1
+    return text[:begin_index] + block + text[suffix_index:]
+
+
 def _install_ledger_hooks(root: Path) -> list[str]:
-    """Install the ``parrot-ledger`` block on every event of :data:`assets.LEDGER_HOOK_EVENTS`."""
-    return [
-        _install_managed_git_hook(
-            root,
-            event,
-            f"{event} ledger",
-            block=assets.ledger_hook_block(root, event),
-            new_file=assets.ledger_hook_new_file(root, event),
-            begin_marker=assets.LEDGER_HOOK_BEGIN,
-            manual_hint=(
-                "wikitoolkit ledger export-log --stage --quiet"
-                if event == "pre-commit"
-                else "wikitoolkit ledger import-log --quiet"
-            ),
-        )
-        for event in assets.LEDGER_HOOK_EVENTS
-    ]
-
-
-def _uninstall_ledger_hooks(root: Path) -> list[str]:
-    """Strip the ``parrot-ledger`` block from each ledger hook; never touch other blocks."""
+    """Install or upgrade the ``parrot-ledger`` block on every configured hook event."""
     actions: list[str] = []
     for event in assets.LEDGER_HOOK_EVENTS:
+        block = assets.ledger_hook_block(root, event)
+        hook_path = _git_hook_path(root, event)
+        if hook_path is not None and hook_path.exists():
+            text = hook_path.read_text(encoding="utf-8")
+            if assets.LEDGER_HOOK_BEGIN in text:
+                updated = _replace_marker_block(
+                    text,
+                    assets.LEDGER_HOOK_BEGIN,
+                    assets.LEDGER_HOOK_END,
+                    block,
+                )
+                if updated is None:
+                    actions.append(
+                        f"git {event} ledger hook — skipped " "(unbalanced parrot-ledger markers; fix manually)"
+                    )
+                elif updated == text:
+                    actions.append(f"git {event} ledger hook — already installed")
+                else:
+                    mode = hook_path.stat().st_mode
+                    hook_path.write_text(updated, encoding="utf-8")
+                    hook_path.chmod(mode)
+                    actions.append(f"git {event} ledger hook — upgraded")
+                continue
+        actions.append(
+            _install_managed_git_hook(
+                root,
+                event,
+                f"{event} ledger",
+                block=block,
+                new_file=assets.ledger_hook_new_file(root, event),
+                begin_marker=assets.LEDGER_HOOK_BEGIN,
+                manual_hint=(
+                    "nothing (FEAT-758: pre-commit no longer exports ledger events)"
+                    if event == "pre-commit"
+                    else "wikitoolkit ledger import-log --quiet"
+                ),
+            )
+        )
+    return actions
+
+
+def _uninstall_ledger_hooks(root: Path, events: Optional[Iterable[str]] = None) -> list[str]:
+    """Strip the ``parrot-ledger`` block from each ledger hook; never touch other blocks.
+
+    Args:
+        root: Repository root.
+        events: Limit the strip to these hook events (``parrot sdd uninstall`` passes the events
+            its install receipt recorded). ``None`` means every ledger hook event.
+    """
+    wanted = set(assets.LEDGER_HOOK_EVENTS if events is None else events)
+    actions: list[str] = []
+    for event in (e for e in assets.LEDGER_HOOK_EVENTS if e in wanted):
         hook_path = _git_hook_path(root, event)
         if hook_path is None or not hook_path.exists():
             continue
@@ -1042,6 +1231,7 @@ def install_claude_integration(
     typesafe_api_key: Optional[str] = None,
     plugin_cli: bool = True,
     remote: Optional[WikiRemoteConfig] = None,
+    portable: Optional[bool] = None,
 ) -> list[str]:
     """Install the wiki ↔ Claude Code integration into a repository.
 
@@ -1064,6 +1254,10 @@ def install_claude_integration(
             plugin`` CLI when it is on ``PATH``.
         remote: When given, register wikitoolkit as a native HTTP MCP entry
             pointing at this remote instead of the local stdio server.
+        portable: ``True`` emits bare launcher commands (committable ``.mcp.json``/settings hook, FEAT-633),
+            ``False`` bakes absolute paths (today's default), ``None`` keeps the host's current form
+            (from the managed stdio ``wikitoolkit`` entry, else the managed ``parrot-*`` entries;
+            a fresh repo is baked).
 
     Returns:
         Human-readable list of actions performed.
@@ -1074,8 +1268,9 @@ def install_claude_integration(
         only reconciles whatever the toolkit config already declares.
     """
     root = root.resolve()
-    config = config or load_effective_config(root).config
-    existed = config_path(root).exists()
+    state_root = shared_state_root(root)
+    config = config or load_effective_config(state_root).config
+    existed = config_path(state_root).exists()
     # Migrate an older config's nudge tools to include ``Bash`` so shell
     # searches are nudged after an upgrade — but only from the exact old
     # default, never overriding a user's customised list.
@@ -1089,12 +1284,17 @@ def install_claude_integration(
         actions = [".parrot/wiki.json — nudge tools upgraded (added Bash)"]
     else:
         actions = [".parrot/wiki.json — config already present"]
-    save_project_config(root, config)
+    save_project_config(state_root, config)
+    decision = resolve_portable_mode(portable, current=_current_portable_mode(root))
+    portable = decision.portable
+    if decision.note:
+        actions.append(decision.note)
+    logger.debug("claude install: portable=%s", portable)
 
     actions.append(_install_claude_md(root))
-    actions.append(_install_settings_hook(root))
-    actions.extend(_install_permissions(root))
-    actions.append(_install_mcp_json(root, remote=remote))
+    actions.append(_install_settings_hook(root, portable=portable))
+    actions.extend(_install_permissions(root, portable=portable))
+    actions.append(_install_mcp_json(root, remote=remote, portable=portable))
 
     from parrot.mcp.toolkit_config import load_toolkits_config
 
@@ -1116,7 +1316,7 @@ def install_claude_integration(
     if bookstore:
         from .bookstore import install_bookstore
 
-        actions.extend(install_bookstore(root))
+        actions.extend(install_bookstore(root, portable=portable))
     if compaction:
         from .compaction import install_compaction
 

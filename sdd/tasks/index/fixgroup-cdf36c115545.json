@@ -1,0 +1,52 @@
+{
+  "feature": "fixgroup-cdf36c115545",
+  "feature_id": "FEAT-818",
+  "spec": "sdd/specs/fixgroup-cdf36c115545.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-05T16:19:47.383217+00:00",
+  "completed_at": "2026-11-05T16:23:51+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/sdd/test_techwiki_bundle.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:5fd260ae0eb6aebc9bca9c1abe7e2521ec033a66d72013c52b6693641fcfa02f"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5232",
+      "slug": "generated-ref-link-rewriting",
+      "title": "Rewrite and validate links in generated API reference pages",
+      "feature_id": "FEAT-818",
+      "feature": "fixgroup-cdf36c115545",
+      "spec": "sdd/specs/fixgroup-cdf36c115545.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Only task in the feature; touches bundle.py and test_techwiki_bundle.py exclusively, no shared state outside its declared files.",
+      "assigned_to": null,
+      "started_at": "2026-11-05T16:20:47.704146+00:00",
+      "completed_at": "2026-11-05T16:23:51+00:00",
+      "file": "sdd/tasks/completed/TASK-5232-generated-ref-link-rewriting.md",
+      "verification": "verified"
+    }
+  ]
+}

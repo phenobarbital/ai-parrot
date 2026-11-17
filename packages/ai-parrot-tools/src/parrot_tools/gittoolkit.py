@@ -399,6 +399,14 @@ class GetPRChecksInput(BaseModel):
     )
 
 
+class ListPRItemsInput(BaseModel):
+    """Bounded PR context listing arguments."""
+
+    pr_number: int = Field(..., description="Pull request number")
+    repository: Optional[str] = Field(None, description="owner/repo; defaults to configured repository")
+    max_items: int = Field(300, ge=1, le=1000, description="Stop after this many items")
+
+
 class ConvertPRToDraftInput(BaseModel):
     """Input payload for ``convert_pr_to_draft``."""
 
@@ -488,6 +496,32 @@ class SearchRepoCodeInput(BaseModel):
         le=100,
         description="Maximum number of results to return (1-100). GitHub caps this at 100 per request.",
     )
+
+
+class RepoDirectoryEntry(BaseModel):
+    """One file or directory in a repository directory listing."""
+
+    name: str
+    path: str
+    type: Literal["file", "dir"]
+
+
+class RepoDirectoryListing(BaseModel):
+    """Directory listing at an explicitly selected repository ref."""
+
+    exists: bool
+    path: str
+    ref: str
+    repository: str
+    entries: List[RepoDirectoryEntry] = Field(default_factory=list)
+
+
+class ListRepoDirectoryInput(BaseModel):
+    """Input for a ref-specific repository directory listing."""
+
+    path: str
+    ref: str
+    repository: Optional[str] = None
 
 
 class FileContentResult(BaseModel):
@@ -1658,7 +1692,7 @@ class GitToolkit(AbstractToolkit):
         Raises:
             GitToolkitError: If the clone/pull fails (stderr is token-scrubbed).
         """
-        if os.path.isdir(os.path.join(dest_dir, ".git")):
+        if await asyncio.to_thread(os.path.isdir, os.path.join(dest_dir, ".git")):
             # Already a clone → fast-forward instead of re-cloning (idempotent).
             extra: Dict[str, Any] = {"private": True} if private else {}
             if timeout is not None:
@@ -1726,7 +1760,7 @@ class GitToolkit(AbstractToolkit):
         Raises:
             GitToolkitError: If ``repo_path`` is not a clone or the pull fails.
         """
-        if not os.path.isdir(os.path.join(repo_path, ".git")):
+        if not await asyncio.to_thread(os.path.isdir, os.path.join(repo_path, ".git")):
             raise GitToolkitError(f"{repo_path!r} is not a git clone")
         env: Optional[Dict[str, str]] = None
         token: Optional[str] = None
@@ -2162,6 +2196,116 @@ class GitToolkit(AbstractToolkit):
         # "for this token" — the caller has already said whose token it is.
         return reason
 
+    def _paginate_pr_items_sync(
+        self,
+        repository: Optional[str],
+        pr_number: int,
+        max_items: int,
+        suffix: str,
+        shaper: Any,
+    ) -> List[Dict[str, Any]]:
+        conn = self._resolve_connection(repository)
+        repo, token = conn.repository, conn.token()
+        url = f"https://api.github.com/repos/{repo}/{suffix.format(n=pr_number)}"
+        results: List[Dict[str, Any]] = []
+        page = 1
+        while len(results) < max_items:
+            response = self._request("GET", url, token, expected=200, params={"per_page": 100, "page": page})
+            data = response.json()
+            items = data if isinstance(data, list) else []
+            results.extend(shaper(item) for item in items)
+            if len(items) < 100:
+                break
+            page += 1
+        return results[:max_items]
+
+    @staticmethod
+    def _pr_user(item: Dict[str, Any]) -> Dict[str, Any]:
+        user = item.get("user") or {}
+        return {"author": user.get("login"), "author_type": user.get("type")}
+
+    @tool_schema(ListPRItemsInput)
+    async def list_pull_request_files(
+        self, pr_number: int, repository: Optional[str] = None, max_items: int = 300
+    ) -> List[Dict[str, Any]]:
+        """List changed files, including patch when supplied by GitHub."""
+
+        def shape(i: Dict[str, Any]) -> Dict[str, Any]:
+            return {
+                "filename": i.get("filename"),
+                "status": i.get("status"),
+                "additions": i.get("additions"),
+                "deletions": i.get("deletions"),
+                "changes": i.get("changes"),
+                "patch": i.get("patch"),
+            }
+
+        return await asyncio.to_thread(
+            self._paginate_pr_items_sync, repository, pr_number, max_items, "pulls/{n}/files", shape
+        )
+
+    @tool_schema(ListPRItemsInput)
+    async def list_pull_request_comments(
+        self, pr_number: int, repository: Optional[str] = None, max_items: int = 300
+    ) -> List[Dict[str, Any]]:
+        """List issue-style comments with author identity and Bot/User type."""
+
+        def shape(i: Dict[str, Any]) -> Dict[str, Any]:
+            return {
+                "id": i.get("id"),
+                **self._pr_user(i),
+                "body": i.get("body"),
+                "created_at": i.get("created_at"),
+                "html_url": i.get("html_url"),
+            }
+
+        return await asyncio.to_thread(
+            self._paginate_pr_items_sync, repository, pr_number, max_items, "issues/{n}/comments", shape
+        )
+
+    @tool_schema(ListPRItemsInput)
+    async def list_pull_request_reviews(
+        self, pr_number: int, repository: Optional[str] = None, max_items: int = 300
+    ) -> List[Dict[str, Any]]:
+        """List PR review summaries with state and commit identity."""
+
+        def shape(i: Dict[str, Any]) -> Dict[str, Any]:
+            return {
+                "id": i.get("id"),
+                **self._pr_user(i),
+                "state": i.get("state"),
+                "body": i.get("body"),
+                "submitted_at": i.get("submitted_at"),
+                "commit_id": i.get("commit_id"),
+            }
+
+        return await asyncio.to_thread(
+            self._paginate_pr_items_sync, repository, pr_number, max_items, "pulls/{n}/reviews", shape
+        )
+
+    @tool_schema(ListPRItemsInput)
+    async def list_pull_request_review_comments(
+        self, pr_number: int, repository: Optional[str] = None, max_items: int = 300
+    ) -> List[Dict[str, Any]]:
+        """List inline comments, locations and reply relationships."""
+
+        def shape(i: Dict[str, Any]) -> Dict[str, Any]:
+            return {
+                "id": i.get("id"),
+                **self._pr_user(i),
+                "path": i.get("path"),
+                "line": i.get("line"),
+                "body": i.get("body"),
+                "commit_id": i.get("commit_id"),
+                "created_at": i.get("created_at"),
+                "html_url": i.get("html_url"),
+                "in_reply_to_id": i.get("in_reply_to_id"),
+            }
+
+        return await asyncio.to_thread(
+            self._paginate_pr_items_sync, repository, pr_number, max_items, "pulls/{n}/comments", shape
+        )
+
     @tool_schema(GetPRChecksInput)
     async def get_pr_checks(
         self,
@@ -2596,6 +2740,57 @@ class GitToolkit(AbstractToolkit):
                 pass
         return result
 
+    def _list_repo_directory_sync(
+        self,
+        repository: Optional[str],
+        path: str,
+        ref: str,
+    ) -> "RepoDirectoryListing":
+        """Read directory entries; report ``exists=False`` on a missing directory."""
+        conn = self._resolve_connection(repository)
+        repo, token = conn.repository, conn.token()
+        url = f"https://api.github.com/repos/{repo}/contents/{path}"
+
+        try:
+            response = self._request("GET", url, token, expected=200, params={"ref": ref})
+        except GitToolkitError as exc:
+            msg = str(exc)
+            if " 404" in msg or "404" in msg:
+                return RepoDirectoryListing(
+                    exists=False,
+                    path=path,
+                    ref=ref,
+                    repository=repo,
+                )
+            raise
+
+        payload = response.json()
+        if not isinstance(payload, list):
+            raise GitToolkitError(f"GitHub Contents API returned a non-directory response for {path!r} at ref {ref!r}.")
+
+        entries = [
+            RepoDirectoryEntry(name=entry["name"], path=entry["path"], type=entry["type"])
+            for entry in payload
+            if isinstance(entry, dict) and entry.get("type") in {"file", "dir"}
+        ]
+        return RepoDirectoryListing(
+            exists=True,
+            path=path,
+            ref=ref,
+            repository=repo,
+            entries=entries,
+        )
+
+    @tool_schema(ListRepoDirectoryInput)
+    async def list_repo_directory(
+        self,
+        path: str,
+        ref: str,
+        repository: Optional[str] = None,
+    ) -> "RepoDirectoryListing":
+        """List files and subdirectories at path for an explicit git ref."""
+        return await asyncio.to_thread(self._list_repo_directory_sync, repository, path, ref)
+
     def _compare_pr_versions_sync(
         self,
         repository: Optional[str],
@@ -2951,9 +3146,12 @@ __all__ = [
     "GetCodeFrequencyInput",
     # FEAT-182 PR context retrieval models
     "GetFileContentInput",
+    "ListRepoDirectoryInput",
     "ComparePRVersionsInput",
     "SearchRepoCodeInput",
     "FileContentResult",
+    "RepoDirectoryEntry",
+    "RepoDirectoryListing",
     "CompareVersionsResult",
     "SearchCodeResult",
     "_FileBlobCache",

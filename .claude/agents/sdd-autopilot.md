@@ -88,9 +88,9 @@ can execute without asking questions.
 ### Usage
 
 ```
-/sdd-fromjira NAV-8036
-/sdd-fromjira NAV-8036 --auto-approve    # skip manual spec approval (risky)
-/sdd-fromjira NAV-8036 --complexity=fix  # hint: simple fix, minimal Q&A
+/sdd-fromjira PROJ-123
+/sdd-fromjira PROJ-123 --auto-approve    # skip manual spec approval (risky)
+/sdd-fromjira PROJ-123 --complexity=fix  # hint: simple fix, minimal Q&A
 ```
 
 ### Flow
@@ -250,7 +250,7 @@ After spec approval, automatically runs task decomposition.
 #### 6. Create Worktree
 
 ```bash
-python -m scripts.sdd.ensure_worktree --json \
+parrot sdd worktree ensure --json \
   --slug <slug> --feature-id FEAT-<NNN> \
   --spec sdd/specs/<slug>.spec.md \
   --index sdd/tasks/index/<slug>.json
@@ -259,22 +259,26 @@ python -m scripts.sdd.ensure_worktree --json \
 #### 7. Output & Handoff
 
 ```
-✅ /sdd-fromjira complete for NAV-8036
+✅ /sdd-fromjira complete for PROJ-123
 
-   Jira: NAV-8036 — "Add OAuth 2.0 support for JiraToolkit"
+   Jira: PROJ-123 — "Add OAuth 2.0 support for JiraToolkit"
    Spec: sdd/specs/jira-oauth.spec.md (committed to dev)
    Tasks: 4 tasks generated (committed to dev)
-   Worktree: .claude/worktrees/feat-071-jira-oauth
+   Worktree: .parrot/worktrees/feat-071-jira-oauth
 
    AC Coverage: 3/3 criteria mapped to tasks
 
    To execute autonomously:
-     cd .claude/worktrees/feat-071-jira-oauth
+     MAIN_ROOT=$(cd "$(git rev-parse --path-format=absolute --git-common-dir)/.." && pwd)
+     WORKTREES_DIR=$(parrot sdd worktree root --root "$MAIN_ROOT") || exit $?
+     cd "$WORKTREES_DIR/feat-071-jira-oauth"
      claude --agent sdd-autopilot --verbose
 
    Or manually:
-     cd .claude/worktrees/feat-071-jira-oauth
-     claude --agent sdd-worker --verbose
+     MAIN_ROOT=$(cd "$(git rev-parse --path-format=absolute --git-common-dir)/.." && pwd)
+     WORKTREES_DIR=$(parrot sdd worktree root --root "$MAIN_ROOT") || exit $?
+     cd "$WORKTREES_DIR/feat-071-jira-oauth"
+     parrot sdd launch worker <FEAT-ID>
 ```
 
 ---
@@ -324,7 +328,8 @@ REVIEW_ITERATION=0
 # ──────────────────────────────────────────────
 # Stage 1: IMPLEMENT (sdd-worker)
 # ──────────────────────────────────────────────
-claude --agent sdd-worker \
+# Not natively sandboxed: a non-interactive `-p` run cannot go through `parrot sdd launch worker` (it starts an interactive session).
+claude --agent sdd-worker --setting-sources project,local \
   --model sonnet \
   --verbose \
   --output-format json \
@@ -359,7 +364,8 @@ while [[ $REVIEW_ITERATION -lt $MAX_REVIEW_ITERATIONS ]]; do
     echo "⚠️ Code review: NEEDS_CHANGES (iteration $((REVIEW_ITERATION + 1)))"
     
     # Feed review findings back to worker for fixes
-    claude --agent sdd-worker \
+    # Not natively sandboxed: a non-interactive `-p` run cannot go through `parrot sdd launch worker` (it starts an interactive session).
+    claude --agent sdd-worker --setting-sources project,local \
       --model sonnet \
       -p "Fix the issues found in .autopilot/review-report.md for $FEAT_ID. \
           Only fix the issues listed — no scope creep." \
@@ -393,7 +399,9 @@ if [[ "$QA_VERDICT" != "PASS" ]]; then
     echo "❌ QA failed. See .autopilot/qa-report.md"
     echo "   Attempting auto-fix..."
     
-    claude --agent sdd-worker \
+    # Not natively sandboxed: a non-interactive `-p` run cannot go through `parrot sdd launch worker` (it starts an interactive session).
+    
+    claude --agent sdd-worker --setting-sources project,local \
       --model sonnet \
       -p "Fix failing tests described in .autopilot/qa-report.md for $FEAT_ID." \
       2>&1 | tee .autopilot/qa-fix-output.log
@@ -417,9 +425,9 @@ fi
 # Push feature branch
 git push origin HEAD
 
-# Create PR against dev
+# Create PR against the flow's base_branch
 PR_URL=$(gh pr create \
-  --base dev \
+  --base "$BASE_BRANCH" \
   --head "$(git branch --show-current)" \
   --title "feat($FEAT_ID): $(cat sdd/specs/*.spec.md | head -1 | sed 's/# //')" \
   --body-file .autopilot/review-report.md \
@@ -478,7 +486,7 @@ Each stage produces a checkpoint file in `.autopilot/`:
 ```json
 {
   "feature_id": "FEAT-071",
-  "jira_key": "NAV-8036",
+  "jira_key": "PROJ-123",
   "started_at": "2026-04-14T10:30:00Z",
   "stages": {
     "worker": {
@@ -564,7 +572,8 @@ You validate feature implementations. You do NOT fix code — you report issues.
 1. Read the spec and task files to understand what was implemented.
 2. Identify all new/modified files from git diff.
 3. Run the test suite:
-   a. `TASK_FILES=$(jq -r '.tasks[].file' sdd/tasks/index/<feature-slug>.json); python -m scripts.sdd.select_tests --tier feature
+   a. If `test_command` in `sdd/config.json` is set, run it once from the repo root instead of `select_tests` (record command, exit code and output tail; non-zero blocks the merge; zero tests run → "⚠️ not run — no tests selected", never ✅). When null, use:
+      `TASK_FILES=$(jq -r '.tasks[].file' sdd/tasks/index/<feature-slug>.json); parrot sdd tests select --tier feature
       --base origin/<base_branch> $(printf -- '--task-file %s ' $TASK_FILES) --run` — the feature
       tier (mirror of directories ∪ declared Validation Commands ∪ core escalation); never a full-suite run
    b. `ruff check` on modified files
@@ -660,8 +669,8 @@ worker never needs to ask:
 
 ## Codebase Contract
 ### Verified Imports
-- `from parrot_tools.toolkit import AbstractToolkit` — packages/ai-parrot-tools/src/parrot_tools/toolkit.py:15
-- `from parrot.tools.manager import ToolManager` — packages/ai-parrot/src/parrot/tools/manager.py:1
+- `from <pkg>.module import ClassName` — <src>/<pkg>/module.py:15
+- `from <pkg>.other import helper` — <src>/<pkg>/other.py:1
 
 ### Does NOT Exist
 - `parrot.auth.CredentialResolver` — must be created in this task
@@ -699,10 +708,12 @@ async def test_oauth_callback_invalid_state():
 
 ```bash
 # Human does: review Jira ticket, approve spec
-/sdd-fromjira NAV-8036
+/sdd-fromjira PROJ-123
 
 # Then walk away
-cd .claude/worktrees/feat-071-jira-oauth
+MAIN_ROOT=$(cd "$(git rev-parse --path-format=absolute --git-common-dir)/.." && pwd)
+WORKTREES_DIR=$(parrot sdd worktree root --root "$MAIN_ROOT") || exit $?
+cd "$WORKTREES_DIR/feat-071-jira-oauth"
 claude --agent sdd-autopilot --verbose
 # ... coffee ...
 # Come back to a ready-to-review PR
@@ -712,22 +723,24 @@ claude --agent sdd-autopilot --verbose
 
 ```bash
 # Planning phase (interactive)
-/sdd-fromjira NAV-8036
+/sdd-fromjira PROJ-123
 
 # Run worker + reviewer only
-cd .claude/worktrees/feat-071-jira-oauth
-claude --agent sdd-worker --verbose
+MAIN_ROOT=$(cd "$(git rev-parse --path-format=absolute --git-common-dir)/.." && pwd)
+WORKTREES_DIR=$(parrot sdd worktree root --root "$MAIN_ROOT") || exit $?
+cd "$WORKTREES_DIR/feat-071-jira-oauth"
+parrot sdd launch worker <FEAT-ID>
 claude --agent code-reviewer -p "Review feat-071"
 
 # Human reviews code, then:
 /sdd-done FEAT-071
-/pr-review <PR_URL> NAV-8036
+/pr-review <PR_URL> PROJ-123
 ```
 
 ### Background Execution (tmux)
 
 ```bash
-cd .claude/worktrees/feat-071-jira-oauth
+cd .parrot/worktrees/feat-071-jira-oauth
 tmux new -s feat-071 \
   "claude --agent sdd-autopilot --verbose 2>&1 | tee .autopilot/full.log"
 # Ctrl+B, D to detach

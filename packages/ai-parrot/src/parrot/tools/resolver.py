@@ -36,12 +36,34 @@ class ToolkitEntry(BaseModel, frozen=True):
 
 
 def _builtin_classes() -> dict[str, type]:
-    """Lazily import the built-in explicit toolkit classes."""
-    from parrot.knowledge.wiki import LLMWikiToolkit
-    from parrot.tools.dataset_manager.tool import DatasetManager
-    from parrot.tools.infographic_toolkit import InfographicToolkit
+    """Lazily import the built-in explicit toolkit classes.
 
-    return {"dataset_manager": DatasetManager, "wiki": LLMWikiToolkit, "infographic": InfographicToolkit}
+    Each class is imported independently: one whose optional distribution is missing (``wiki`` needs
+    ``ai-parrot-tools``) is omitted instead of breaking every other toolkit's tool generation.
+    """
+
+    def _wiki() -> type:
+        from parrot.knowledge.wiki import LLMWikiToolkit
+
+        return LLMWikiToolkit
+
+    def _dataset_manager() -> type:
+        from parrot.tools.dataset_manager.tool import DatasetManager
+
+        return DatasetManager
+
+    def _infographic() -> type:
+        from parrot.tools.infographic_toolkit import InfographicToolkit
+
+        return InfographicToolkit
+
+    classes: dict[str, type] = {}
+    for slug, loader in (("dataset_manager", _dataset_manager), ("wiki", _wiki), ("infographic", _infographic)):
+        try:
+            classes[slug] = loader()
+        except ImportError as exc:
+            logger.debug("built-in toolkit %r unavailable (%s: %s)", slug, type(exc).__name__, exc)
+    return classes
 
 
 class ToolkitResolver:

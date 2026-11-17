@@ -1,0 +1,920 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-747",
+  "mode": "enrichment",
+  "summary_oneline": "Local inter-agent protocol (sister of FEAT-746): FIPA-style performatives, LLM-free gating, capability directory on AgentRegistry, single-writer blackboard and local carriers; absence confirmed for all of it except Matrix, which already ships m.parrot.* events, room-state records, hop-limited tunnels and a per-crew roster.",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+      "symbol": "BotMetadata",
+      "lines": "50-71",
+      "role": "registry entry: name/factory/tags/priority/dependencies/bot_config \u2014 no kind, endpoint, contract or locality; the entry to extend",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+      "symbol": "AgentRegistry.register / get_bots_by_tag / register_bot_decorator",
+      "lines": "526-584, 1324-1420, 1450-1452",
+      "role": "name+tag directory; register() also feeds PBAC policy collection; only discovery-by-attribute is get_bots_by_tag",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/registry/capabilities/models.py",
+      "symbol": "ResourceType / CapabilityEntry",
+      "lines": "25-33, 48-75",
+      "role": "FEAT-070 capability model (dataset/tool/graph_node/pageindex/vector_collection) \u2014 no AGENT resource type",
+      "evidence": [
+        "F014"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/registry/capabilities/registry.py",
+      "symbol": "CapabilityRegistry.register* / build_index / search",
+      "lines": "19-44, 46-148, 183",
+      "role": "embedding (cosine) index over tools/datasets; natural seed for find_capability but needs an embedding fn and has no exact cap-id or locality path",
+      "evidence": [
+        "F014",
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/flows/core/context.py",
+      "symbol": "FlowContext.shared_data / trace_context / to_snapshot",
+      "lines": "55-119, 287-342",
+      "role": "per-run shared state: plain dict, no writer ownership/version/ACL/subscriptions; carries W3C TraceContext; in-process blackboard seam",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/flows/flow/actions.py",
+      "symbol": "SetContextAction",
+      "lines": "309-320",
+      "role": "only existing writer of a shared_context key from a flow action",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py",
+      "symbol": "AgentCrew.run_sequential / run_loop / run_flow",
+      "lines": "1744-1876, 2090-2094, 2933-3077",
+      "role": "crew hand-off is a rendered prompt string; per-run max_iterations caps, no per-conversation hop/token budget",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/flows/tools.py",
+      "symbol": "ResultRetrievalTool",
+      "lines": "16-48, 124-156",
+      "role": "read-only result retrieval returning text; no delegate/cfp origin tool here",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/agent.py",
+      "symbol": "AgentTool / AgentContext / QuestionInput",
+      "lines": "20-55",
+      "role": "agents-as-tools wrapper: text question in, text answer out; origin tool for a future request performative",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py",
+      "symbol": "ParrotEventType / ChannelStateContent / TunnelStateContent / TaskEventContent / AgentAnswer",
+      "lines": "27-40, 89-165, 269-293",
+      "role": "custom m.parrot.* namespace already chosen: message events task/result/status/feedback and STATE events agent_card/channel/tunnel (replace-not-append)",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/client.py",
+      "symbol": "MatrixClientWrapper.send_event / set_room_state / get_room_state_event / on_custom_event",
+      "lines": "193-262, 277-303",
+      "role": "mautrix wrapper with custom-event send/receive and room-state primitives",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/appservice.py",
+      "symbol": "MatrixAppService.send_reply_as_agent",
+      "lines": "341-402",
+      "role": "m.relates_to / m.in_reply_to threading for human clients (the only in_reply_to in the tree)",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/swarm_toolkit.py",
+      "symbol": "AgentSwarmToolkit.ask_agent / post_to_channel",
+      "lines": "24-51, 53-98, 160-178",
+      "role": "FEAT-463 name-addressed ask with self-ask rejection, unknown-agent envelope, ContextVar hops + hop_limit status, channel membership check",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/tunnel.py",
+      "symbol": "TunnelRegistry.register_future / discard_future",
+      "lines": "1-10, 318-338",
+      "role": "private 2-agent rooms with correlation-id futures (request/reply pairing precedent)",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/delegation.py",
+      "symbol": "HybridDelegator.delegate / DelegationRequest",
+      "lines": "31-47, 71-151",
+      "role": "visible human message + m.parrot.task, awaits m.parrot.result by task_id",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/registry.py",
+      "symbol": "MatrixCrewRegistry / MatrixAgentCard",
+      "lines": "16-39, 67-92",
+      "role": "per-crew roster keyed by agent_name with status and display-only skills; separate from core AgentRegistry",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/hook.py",
+      "symbol": "MatrixHook",
+      "lines": "1-27",
+      "role": "Matrix inbound hook is a navigator_eventbus BaseHook",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "docker-compose.matrix.yml",
+      "symbol": "synapse service",
+      "lines": "1-20, 39-62",
+      "role": "dev homeserver stack (Synapse, Element, well-known, bridges) usable for spike L-S6 as-is",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+      "symbol": "ToolManager.add_tool / unregister_tool / execute_tool / register_a2a_agent / get_by_skill / search_a2a_agents / clone",
+      "lines": "289, 299-330, 827-853, 1434-1458, 1787, 2302-2398, 2824",
+      "role": "runtime register/unregister (a catalog.mount needs no new lifecycle), per-session clone, guard chain; also hosts remote A2A RegisteredAgent cards with substring skill search",
+      "evidence": [
+        "F011",
+        "F020"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/guardrails/builtin/pbac.py",
+      "symbol": "PBACToolCallGuardrail / PBACToolCallGuardrail.check",
+      "lines": "53-72, 233-283",
+      "role": "first guard in execute_tool; PolicyEvaluator.check_access keyed by ResourceType.TOOL + tool name; fail-closed",
+      "evidence": [
+        "F010",
+        "F017"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/auth/agent_guard.py",
+      "symbol": "enforce_agent_access / parse_bot_permissions",
+      "lines": "1-45",
+      "role": "PBAC at bot resolution (AgentRegistry.get_instance, BotManager.get_bot) \u2014 nearest thing to an inter-agent grant",
+      "evidence": [
+        "F017"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+      "symbol": "WorkingMemoryToolkit / store_result / _put",
+      "lines": "47-106, 244-279, 374-405",
+      "role": "per-session pandas/generic catalog with compact summaries; seam for a handle EntryType (parent D5)",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/blob.py",
+      "symbol": "pyarrow imports (parquet only)",
+      "lines": "135, 244-245, 306, 331-332",
+      "role": "pyarrow used only to write/read parquet blobs; no Arrow IPC / shm / Polars",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/repl_worker/transport.py",
+      "symbol": "encode_dataframe / decode_dataframe_from_shm / unlink_shm",
+      "lines": "1-30",
+      "role": "Arrow IPC over multiprocessing.shared_memory with documented ownership rules \u2014 the only zero-copy primitive, host\u2192REPL worker only",
+      "evidence": [
+        "F022"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+      "symbol": "AuditLedgerEntry / AuditLedger.append",
+      "lines": "80-107, 338-406",
+      "role": "append-only KMS-signed ledger; entry schema is credential-centric and append() requires credential_material",
+      "evidence": [
+        "F009"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/observability/fanout.py",
+      "symbol": "setup_event_fanout / _validate_bus",
+      "lines": "1-45",
+      "role": "FEAT-710 dedicated Streams publish-only EventBus with outbox; the bus idiom to copy for a carrier",
+      "evidence": [
+        "F018",
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/a2a/mesh.py",
+      "symbol": "A2AMeshDiscovery",
+      "lines": "n/a",
+      "role": "remote-only capability directory (get_by_skill/get_by_tag/search)",
+      "evidence": [
+        "F019"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/a2a/router.py",
+      "symbol": "A2AProxyRouter",
+      "lines": "n/a",
+      "role": "LLM-free routing by skill/tag/regex for remote A2A agents",
+      "evidence": [
+        "F019"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/a2a/client.py",
+      "symbol": "A2ARemoteSkillTool / _create_skill_input_model",
+      "lines": "1-15",
+      "role": "precedent for compiling a remote contract (skill input_schema) into a typed local tool",
+      "evidence": [
+        "F019"
+      ]
+    },
+    {
+      "path": "sdd/specs/matrix-collaborative-crew.spec.md",
+      "symbol": "FEAT-195 Non-Goals",
+      "lines": "1-60",
+      "role": "prior decision: rejected m.parrot.* pub/sub as the PRIMARY communication path and rejected extending AgentCrew with Matrix awareness",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "sdd/specs/matrix-agents-swarm.spec.md",
+      "symbol": "FEAT-463",
+      "lines": "10-18, 28-50",
+      "role": "approved swarm spec (tunnels, hops, answer_policy mention|swarm|silent) that the local protocol must subsume, not duplicate",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "sdd/specs/parrot-telemetry-event-fanout.spec.md",
+      "symbol": "setup_event_fanout / Overview",
+      "lines": "80-112, 259-292",
+      "role": "FEAT-710/711 bus pattern: Streams transport, outbox, event_id dedup, dedicated instance (\u00a78 Q2)",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "sdd/specs/tool-call-delegate.spec.md",
+      "symbol": "FEAT-590",
+      "lines": "8-20",
+      "role": "'delegate' already means small-model tool-call planning (DelegateToolNode) \u2014 vocabulary collision",
+      "evidence": [
+        "F015"
+      ]
+    },
+    {
+      "path": "sdd/proposals/workingmemory-toolkit.proposal.md",
+      "symbol": "ArtifactStore / Closed decisions D1-D8",
+      "lines": "11-24, 252-270",
+      "role": "artifact_id@version identity + ArtifactStore protocol + blob tier: the identity space the blackboard `artifacts` key should reuse",
+      "evidence": [
+        "F008"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "statement": "The Matrix custom-event namespace is already `m.parrot.*` (task/result/status/feedback) with STATE events agent_card/channel/tunnel, and FEAT-195 explicitly rejected m.parrot.* pub/sub as the primary communication path.",
+      "evidence": [
+        "F006"
+      ],
+      "implication": "The Matrix carrier must extend the existing namespace (no `ai.parrot.*`), keep a human-readable body, and either route FEAT-463's tunnels through the protocol engine or justify a parallel path; room state is the natural blackboard backend."
+    },
+    {
+      "statement": "AgentRegistry is name+tag keyed and consumed by result_agent, studio_runtime, handlers/agents/data, bot factory tools and CLI loaders; PBAC policy collection hangs off register().",
+      "evidence": [
+        "F001"
+      ],
+      "implication": "Contract/kind/carrier/grant fields on BotMetadata must be additive and optional; find_capability is a new method, not a change to existing lookups."
+    },
+    {
+      "statement": "`parrot.registry.capabilities` already names a CapabilityRegistry (FEAT-070) that indexes tools/datasets by embedding with no AGENT resource type and no exact cap-id path.",
+      "evidence": [
+        "F014",
+        "F001"
+      ],
+      "implication": "Either extend it (ResourceType.AGENT + exact/keyword index + locality ranking) or pick a distinct name; the <5 ms deterministic lookup of spike L-S3 cannot ride the embedding path."
+    },
+    {
+      "statement": "PBAC is enforced per tool call (PBACToolCallGuardrail, ResourceType.TOOL, first guard in ToolManager.execute_tool) and at bot resolution (agent_guard.enforce_agent_access); no capability-scoped agent-to-agent grant exists.",
+      "evidence": [
+        "F010",
+        "F017"
+      ],
+      "implication": "Mounting a remote capability as a local tool inherits the caller-side gate for free; the serving side needs the caller's PermissionContext to travel in the message, and the grant must be a new deterministic config, not a policy on tools."
+    },
+    {
+      "statement": "Every existing agent-to-agent mechanism (crew hand-off, AgentTool, AgentSwarmToolkit.ask_agent, HybridDelegator, ResultRetrievalTool) is text in / text out and wakes the callee LLM; there is no performative, protocol state or reply-obligation typing anywhere.",
+      "evidence": [
+        "F005",
+        "F006",
+        "F004",
+        "F002",
+        "F021"
+      ],
+      "implication": "The performative layer is greenfield; existing tools become origin tools that the harness maps to acts, which is additive rather than a rewrite."
+    },
+    {
+      "statement": "Hop limiting already exists once: ask_agent propagates `hops`/`origin_session` via ContextVars and returns a `hop_limit` status; crews only have per-run max_iterations.",
+      "evidence": [
+        "F006",
+        "F005"
+      ],
+      "implication": "The conversation hop budget should generalise the FEAT-463 mechanism rather than add a second counter."
+    },
+    {
+      "statement": "FEAT-710 decided telemetry uses a DEDICATED navigator-eventbus instance (Streams, publish-only, outbox); the RPC-on-bus pattern (reply_to, correlation) is not defined anywhere.",
+      "evidence": [
+        "F006",
+        "F018"
+      ],
+      "implication": "An eventbus carrier is a third bus instance (or must justify sharing) and must define reply_to/correlation/idempotency itself, reusing the outbox + event_id dedup idiom."
+    },
+    {
+      "statement": "AuditLedger is append-only and KMS-signed but its entry schema is credential-centric (user_id, channel, tool, provider, key_fingerprint) and append() requires credential_material; a semantic audit ledger (TASK-4474) is being built in parallel.",
+      "evidence": [
+        "F009"
+      ],
+      "implication": "Per-performative audit lines need a new entry kind or a sibling ledger sharing the signer; coordinate with TASK-4474."
+    },
+    {
+      "statement": "WorkingMemory is a per-session pandas catalog; task_memory already defines artifact_id@version identity, an ArtifactStore protocol and a parquet blob tier; Arrow IPC/shared-memory exists only on the REPL worker boundary; no Polars in core.",
+      "evidence": [
+        "F008",
+        "F022"
+      ],
+      "implication": "By-reference in-process passing and the blackboard `artifacts` key should reuse task_memory identity and the repl_worker shm ownership rules instead of inventing new ones; Polars (parent D6) is a new dependency."
+    },
+    {
+      "statement": "`delegate` is already the vocabulary of FEAT-590 tool-call-delegate (DelegateToolNode, LlamaCppDelegate, NeedleDelegate).",
+      "evidence": [
+        "F015"
+      ],
+      "implication": "The cfp origin tool needs another name or an explicit disambiguation."
+    },
+    {
+      "statement": "TraceContext (W3C) is carried by FlowContext and already propagates across an A2A hop; its class is re-exported into parrot.core.events.lifecycle from a dependency.",
+      "evidence": [
+        "F003"
+      ],
+      "implication": "The shared trace_id has a carrier; the local protocol only needs to thread it through envelopes and audit lines."
+    },
+    {
+      "statement": "Four partial directories exist today: AgentRegistry (local, name/tag), ToolManager._registered_agents (remote A2A cards, substring skill search), A2AMeshDiscovery (remote, skill/tag/search), MatrixCrewRegistry (per-crew roster).",
+      "evidence": [
+        "F001",
+        "F011",
+        "F019",
+        "F006"
+      ],
+      "implication": "find_capability must be the unifying front, otherwise it becomes a fifth directory."
+    },
+    {
+      "statement": "Test baseline: 26 Matrix test modules, crew regression suites, AgentRegistry and CapabilityRegistry tests, working-memory tests inside the source tree.",
+      "evidence": [
+        "F013"
+      ],
+      "implication": "Regression coverage exists for every seam the spec would touch; new behaviour needs new suites, not retrofits."
+    }
+  ],
+  "investigation": null,
+  "enrichment": {
+    "new": [
+      "Performative model: an enum (inform, request, query, agree, refuse, failure, cfp, propose, accept, reject, subscribe, not_understood) plus message fields performative/protocol/conversation_id/in_reply_to/sender/receivers|capability filter layered on the FEAT-746 envelope; the harness maps origin tools to acts (AgentTool/QuestionInput \u2192 request|query, a generic send tool with a small enum).",
+      "Protocol engine: per-conversation state machines for Inform, Request, Query, Contract Net and Subscribe with not_understood, timeout \u2192 failure(TIMEOUT), hop budget \u2192 failure(HOP_LIMIT), token budget; modelled after the flows FSM precedent and the ask_agent status enum.",
+      "Gating dispatcher: addressing (receivers | capability filter) \u2192 protocol state \u2192 decision-needed; inform handler registry (store / blackboard update / wake LLM when registered); wakes-per-message metric.",
+      "Capability directory: ResourceType.AGENT + exact cap-id/keyword index + locality/cost ranking exposed as AgentRegistry.find_capability; per-agent contract advertisement on the registry entry; inter-agent grant as scoped configuration enforced by the harness.",
+      "Blackboard: versioned single-writer keyed store (roster, definitions, tasks, digest, artifacts) with ACLs and subscriptions; in-process backend (successor to FlowContext.shared_data for protocol runs) and Matrix room-state backend.",
+      "Local carriers: in-process asyncio queue passing objects by reference; same-host Arrow IPC/shm reusing repl_worker transport ownership rules; navigator-eventbus carrier (dedicated instance, reply_to/correlation/idempotency/DLQ); Matrix carrier adapter over m.parrot.* events with human-readable body.",
+      "Audit: a performative entry kind for the signed ledger (or a sibling ledger sharing the signer) joined by trace_id."
+    ],
+    "modified": [
+      {
+        "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+        "symbol": "BotMetadata / AgentRegistry",
+        "change": "additive contract/kind/carrier/grant fields; new find_capability(keywords|cap_id) ranked by locality and cost",
+        "evidence": [
+          "F001"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/registry/capabilities/models.py",
+        "symbol": "ResourceType",
+        "change": "add AGENT (and an exact-match path beside the embedding search in capabilities/registry.py)",
+        "evidence": [
+          "F014"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/events.py",
+        "symbol": "TaskEventContent / ParrotEventType",
+        "change": "carry the typed envelope + performative fields; blackboard keys as additional state event types",
+        "evidence": [
+          "F006"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-integrations/src/parrot/integrations/matrix/crew/swarm_toolkit.py",
+        "symbol": "AgentSwarmToolkit.ask_agent",
+        "change": "route through the protocol engine (Request/Query) so hops, status and correlation come from one place",
+        "evidence": [
+          "F006"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/tools/agent.py",
+        "symbol": "AgentTool",
+        "change": "emit request/query performatives instead of a bare text question when the target is protocol-enabled",
+        "evidence": [
+          "F006"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/bots/flows/core/context.py",
+        "symbol": "FlowContext",
+        "change": "optional blackboard binding alongside shared_data (shared_data itself unchanged)",
+        "evidence": [
+          "F003"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+        "symbol": "AuditLedgerEntry / AuditLedger.append",
+        "change": "new entry kind (sender, receiver, performative, conversation_id, trace_id, result digest) or sibling ledger",
+        "evidence": [
+          "F009"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+        "symbol": "WorkingMemoryToolkit.store_result",
+        "change": "accept native objects/handles arriving from an inform (parent D5 seam)",
+        "evidence": [
+          "F008"
+        ]
+      }
+    ],
+    "untouched": [
+      "A2A JSON-RPC client/server, A2AMeshDiscovery and A2AProxyRouter (stay as the external surface; adapters come from FEAT-746).",
+      "FEAT-590 tool-call-delegate nodes and their 'delegate' vocabulary.",
+      "AgentCrew.run_sequential/run_loop/run_flow behaviour and FlowContext.shared_data API for existing crews (mapping crews onto channels is an open question, not v0 scope).",
+      "HybridDelegator's visible human messages and the FEAT-195 collaborative session phases.",
+      "AuditLedger credential entries and signers; the TASK-4474 semantic audit ledger.",
+      "WorkingMemory pandas operations and task_memory durable tiers.",
+      "FEAT-746's envelope, handles, blob store, catalog tools and policy gate (dependency, not redefined here)."
+    ],
+    "patterns": [
+      {
+        "pattern": "ask_agent status enum + ContextVar hop propagation + hop_limit",
+        "evidence": [
+          "F006"
+        ]
+      },
+      {
+        "pattern": "TunnelRegistry correlation-id futures for request/reply pairing",
+        "evidence": [
+          "F006"
+        ]
+      },
+      {
+        "pattern": "Matrix state events replace-not-append (agent_card/channel/tunnel) with a version field on ChannelStateContent",
+        "evidence": [
+          "F006"
+        ]
+      },
+      {
+        "pattern": "PBACToolCallGuardrail as the first guard, fail-closed, keyed by resource type + name",
+        "evidence": [
+          "F010",
+          "F017"
+        ]
+      },
+      {
+        "pattern": "A2ARemoteSkillTool compiles a remote contract into a typed local tool",
+        "evidence": [
+          "F019"
+        ]
+      },
+      {
+        "pattern": "FEAT-710 dedicated EventBus instance with outbox and event_id dedup",
+        "evidence": [
+          "F006",
+          "F018"
+        ]
+      },
+      {
+        "pattern": "repl_worker Arrow IPC/shm ownership rules (host creates/unlinks after ACK)",
+        "evidence": [
+          "F022"
+        ]
+      },
+      {
+        "pattern": "task_memory artifact_id@version + ArtifactStore protocol for handles",
+        "evidence": [
+          "F008"
+        ]
+      },
+      {
+        "pattern": "ToolManager runtime register/unregister + clone for per-session mounts",
+        "evidence": [
+          "F011",
+          "F020"
+        ]
+      }
+    ],
+    "risks": [
+      {
+        "risk": "Fifth directory: AgentRegistry, ToolManager A2A cards, A2AMeshDiscovery and MatrixCrewRegistry already overlap",
+        "impact": "find_capability must front all four or the roster drifts",
+        "evidence": [
+          "F001",
+          "F011",
+          "F019",
+          "F006"
+        ]
+      },
+      {
+        "risk": "FEAT-195 rejected m.parrot.* pub/sub as the primary path",
+        "impact": "the Matrix carrier must be framed as one carrier among four with a mandatory human body, or the prior decision revisited explicitly",
+        "evidence": [
+          "F006"
+        ]
+      },
+      {
+        "risk": "CapabilityRegistry search needs an embedding function",
+        "impact": "spike L-S3's <5 ms deterministic lookup needs an exact index first; embedding search is a fallback",
+        "evidence": [
+          "F014"
+        ]
+      },
+      {
+        "risk": "Name collisions: registry.capabilities (intent routing) and delegate (FEAT-590)",
+        "impact": "spec must choose names up front",
+        "evidence": [
+          "F001",
+          "F015"
+        ]
+      },
+      {
+        "risk": "AuditLedger.append requires credential_material",
+        "impact": "performative audit cannot reuse append() as-is",
+        "evidence": [
+          "F009"
+        ]
+      },
+      {
+        "risk": "FEAT-746 (envelope, handles, blob store, catalog, policy gate) is reserved but not yet specified",
+        "impact": "this spec cannot close its Codebase Contract until the parent's models exist; ordering dependency",
+        "evidence": [
+          "F008",
+          "F020"
+        ]
+      },
+      {
+        "risk": "Matrix payloads are JSON dicts (model_dump), not a binary envelope",
+        "impact": "the parent's protobuf envelope needs a base64/structured-fields mapping for the Matrix carrier",
+        "evidence": [
+          "F006"
+        ]
+      },
+      {
+        "risk": "TraceContext is defined outside parrot src",
+        "impact": "envelope trace fields depend on a navigator dependency's model",
+        "evidence": [
+          "F003"
+        ]
+      }
+    ]
+  },
+  "confidence_map": [
+    {
+      "id": "C1",
+      "statement": "No performative, speech-act, protocol state machine, Contract Net or FIPA concept exists in core, server or integrations.",
+      "evidence": [
+        "F002",
+        "F021"
+      ],
+      "confidence": "high",
+      "reasoning": "repo-wide grep (0 hits for five patterns) plus wiki query with only false positives."
+    },
+    {
+      "id": "C2",
+      "statement": "AgentRegistry indexes agents by name and tag only; no capability id, locality, cost or remote kind on BotMetadata.",
+      "evidence": [
+        "F001"
+      ],
+      "confidence": "high",
+      "reasoning": "read of BotMetadata and the lookup API plus a zero-match grep."
+    },
+    {
+      "id": "C3",
+      "statement": "A CapabilityRegistry (embedding index of tools/datasets) already lives at parrot.registry.capabilities and is the seam for find_capability.",
+      "evidence": [
+        "F014",
+        "F001"
+      ],
+      "confidence": "high",
+      "reasoning": "read of models.py and registry.py; ResourceType enum has no AGENT."
+    },
+    {
+      "id": "C4",
+      "statement": "No inter-agent communication grant exists; PBAC gates tool execution (ResourceType.TOOL) and bot resolution only.",
+      "evidence": [
+        "F010",
+        "F017"
+      ],
+      "confidence": "high",
+      "reasoning": "read of PBACToolCallGuardrail.check and agent_guard; grep for allowed_agents|can_call|inter_agent returned nothing."
+    },
+    {
+      "id": "C5",
+      "statement": "No shared versioned single-writer blackboard exists; FlowContext.shared_data is a plain dict and SetContextAction is its only flow-level writer.",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "high",
+      "reasoning": "read of context.py and actions.py plus a zero-match grep for blackboard/single_writer."
+    },
+    {
+      "id": "C6",
+      "statement": "No in-process by-reference or Arrow zero-copy path exists between agent instances; Arrow IPC/shm exists only host\u2192REPL worker; pyarrow is used only for parquet blobs; no Polars.",
+      "evidence": [
+        "F008",
+        "F022"
+      ],
+      "confidence": "high",
+      "reasoning": "grep over working_memory/stores/memory and wiki page of repl_worker/transport.py."
+    },
+    {
+      "id": "C7",
+      "statement": "A substantial Matrix integration exists (mautrix client, AppService, m.parrot.* message + state events, A2A transport, FEAT-463 swarm with tunnels, hop limit, per-crew roster, dev Synapse stack); the brainstorm's 'no Matrix integration' claim is false.",
+      "evidence": [
+        "F006",
+        "F007"
+      ],
+      "confidence": "high",
+      "reasoning": "24 module files read/listed, three approved specs, docker-compose read."
+    },
+    {
+      "id": "C8",
+      "statement": "Crew hand-off between agents is a rendered prompt string and loop termination is LLM-evaluated; iteration caps are per run, not per conversation.",
+      "evidence": [
+        "F005"
+      ],
+      "confidence": "high",
+      "reasoning": "read of run_sequential lines 1862-1876 and run_loop/run_flow signatures."
+    },
+    {
+      "id": "C9",
+      "statement": "All existing agent-calling tools (AgentTool, ask_agent, HybridDelegator) are text in / text out and await an answer, i.e. implicit request semantics with no inform.",
+      "evidence": [
+        "F006",
+        "F004"
+      ],
+      "confidence": "high",
+      "reasoning": "read of swarm_toolkit.py and delegation.py; wiki page of tools/agent.py."
+    },
+    {
+      "id": "C10",
+      "statement": "AuditLedger exists, append-only and KMS-signed, but its entry schema is credential-centric and append() requires credential_material.",
+      "evidence": [
+        "F009"
+      ],
+      "confidence": "high",
+      "reasoning": "read of AuditLedgerEntry (80-107) and append (338-406)."
+    },
+    {
+      "id": "C11",
+      "statement": "navigator-eventbus is already a dependency used for hooks and FEAT-710 telemetry fan-out (dedicated Streams publish-only instance with outbox), not yet as an agent-to-agent carrier; no reply_to/correlation bus pattern exists.",
+      "evidence": [
+        "F018",
+        "F006"
+      ],
+      "confidence": "medium",
+      "reasoning": "grep clusters + wiki page of fanout.py; absence of reply_to on the bus is inferred from no hits, not a targeted read of navigator-eventbus."
+    },
+    {
+      "id": "C12",
+      "statement": "TraceContext propagates through FlowContext and across an A2A hop; the class is re-exported from a dependency.",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "medium",
+      "reasoning": "context.py import and an integration test name; the defining module was not located (grep budget exhausted)."
+    },
+    {
+      "id": "C13",
+      "statement": "FEAT-195 rejected m.parrot.* pub/sub as the primary communication path and rejected extending AgentCrew with Matrix awareness.",
+      "evidence": [
+        "F006"
+      ],
+      "confidence": "high",
+      "reasoning": "wiki page of the approved spec's Non-Goals (lines 1-60)."
+    },
+    {
+      "id": "C14",
+      "statement": "ToolManager can register/unregister tools at runtime and clone per session, so a catalog.mount needs no new lifecycle machinery; it also hosts remote A2A cards with substring skill search.",
+      "evidence": [
+        "F011",
+        "F020"
+      ],
+      "confidence": "high",
+      "reasoning": "read of manager.py line ranges 827-853, 1434-1458, 2302-2398, 2824."
+    },
+    {
+      "id": "C15",
+      "statement": "The vocabulary 'delegate' is taken by FEAT-590 and 'capabilities' by FEAT-070 intent routing.",
+      "evidence": [
+        "F015",
+        "F001"
+      ],
+      "confidence": "high",
+      "reasoning": "git log + spec header read; registry tree."
+    },
+    {
+      "id": "C16",
+      "statement": "FEAT-746 (the cross-boundary parent) is reserved but has no spec yet, so envelope/handle/blob/catalog/policy-gate models this proposal depends on do not exist.",
+      "evidence": [
+        "F008",
+        "F020",
+        "F011"
+      ],
+      "confidence": "medium",
+      "reasoning": "absence of handle type and mount lifecycle confirmed in findings; the parent's status is session knowledge (id ledger), not a finding."
+    },
+    {
+      "id": "C17",
+      "statement": "Spike L-S6 (Matrix carrier) can run today against docker-compose.matrix.yml; spike L-S3 cannot be met by CapabilityRegistry.search without an exact index.",
+      "evidence": [
+        "F007",
+        "F014"
+      ],
+      "confidence": "medium",
+      "reasoning": "stack read directly; the 5 ms bound is an inference about embedding cost, not measured."
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Which performative set ships in v0: all eleven acts (with Contract Net and Subscribe), or a minimal inform/request/query/failure core with cfp/propose/accept/reject and subscribe deferred?",
+      "blocks_claims": [
+        "C1",
+        "C9"
+      ],
+      "plausible_answers": [
+        "all eleven, five protocols, so FEAT-463's tunnels can be subsumed in one pass",
+        "minimal four acts + Inform/Request/Query protocols; Contract Net and Subscribe as a follow-up spec",
+        "minimal four acts but reserve the enum values now"
+      ],
+      "ask_user": true,
+      "user_answer": "all eleven acts, five protocols in v0",
+      "resolved_at": "2026-10-26"
+    },
+    {
+      "id": "U2",
+      "question": "Does the Matrix carrier subsume FEAT-463's ask_agent/tunnel/HybridDelegator path (routing them through the protocol engine), or sit beside it as new m.parrot.* event types, given FEAT-195's rejection of m.parrot.* pub/sub as the primary path?",
+      "blocks_claims": [
+        "C7",
+        "C13"
+      ],
+      "plausible_answers": [
+        "subsume: ask_agent becomes a Request over the engine; tunnels stay as the room topology",
+        "coexist in v0: new event types + state keys, migrate FEAT-463 later",
+        "revisit FEAT-195 explicitly in the spec and make the protocol the primary path on Matrix"
+      ],
+      "ask_user": true,
+      "user_answer": "subsume: ask_agent becomes a Request over the engine; tunnels stay as room topology; Matrix one carrier among four, human body mandatory",
+      "resolved_at": "2026-10-26"
+    },
+    {
+      "id": "U3",
+      "question": "Where does the capability directory live: extend parrot.registry.capabilities (ResourceType.AGENT + exact index + locality) or a new sibling index owned by AgentRegistry, leaving the FEAT-070 intent router untouched?",
+      "blocks_claims": [
+        "C3",
+        "C2"
+      ],
+      "plausible_answers": [
+        "extend CapabilityRegistry (one index, add AGENT + exact path)",
+        "new AgentRegistry-owned directory that also fronts ToolManager A2A cards and A2AMeshDiscovery",
+        "new directory in v0, unify with CapabilityRegistry when FEAT-746's catalog lands"
+      ],
+      "ask_user": true,
+      "user_answer": "extend CapabilityRegistry: ResourceType.AGENT + exact cap-id/keyword index + locality ranking; embedding search as fallback",
+      "resolved_at": "2026-10-26"
+    },
+    {
+      "id": "U4",
+      "question": "How do existing crews map onto the protocol in v0: crews untouched (protocol only for registry-discovered peers), or a crew is a channel with the coordinator as digest owner and each step a Request?",
+      "blocks_claims": [
+        "C8"
+      ],
+      "plausible_answers": [
+        "untouched in v0; mapping is a follow-up",
+        "crew = channel, steps = Requests, coordinator owns digest",
+        "opt-in per CrewDefinition flag"
+      ],
+      "ask_user": true,
+      "user_answer": "crews untouched in v0; mapping is a follow-up spec",
+      "resolved_at": "2026-10-26"
+    },
+    {
+      "id": "U5",
+      "question": "Does the in-process carrier bypass the envelope (direct method call with the performative as a parameter) or keep the full envelope for uniform audit and gating?",
+      "blocks_claims": [
+        "C6",
+        "C10"
+      ],
+      "plausible_answers": [
+        "keep the envelope; pass payloads by reference inside it",
+        "bypass for in-process, audit from the engine instead of the carrier",
+        "envelope-lite: headers only, payload by reference"
+      ],
+      "ask_user": true,
+      "user_answer": "keep the full envelope, payloads by reference",
+      "resolved_at": "2026-10-26"
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Decisions L1-L9 are fixed by the source, localization is high-confidence and the remaining forks (U1-U5) are bounded open questions a spec can carry; but the spec must be written after FEAT-746's spec exists because this one reuses its envelope, handles, blob store, catalog and policy gate."
+  },
+  "overall_confidence": "medium",
+  "meta": {
+    "findings_used": [
+      "F001",
+      "F002",
+      "F003",
+      "F004",
+      "F005",
+      "F006",
+      "F007",
+      "F008",
+      "F009",
+      "F010",
+      "F011",
+      "F013",
+      "F014",
+      "F015",
+      "F017",
+      "F018",
+      "F019",
+      "F020",
+      "F021",
+      "F022"
+    ],
+    "findings_unused": [
+      "F012",
+      "F016"
+    ],
+    "notes": "Mode resolved to enrichment (additive verbs, explicit VERIFY list). Scope confidence is medium because the parent FEAT-746 models are unspecified and the Matrix path has a prior rejection to reconcile. Source open questions OQ2 (digest owner), OQ3 (inform wakes), OQ4 (bid scoring) and OQ8 (name) are carried into the proposal's unresolved list for the spec; the codebase cannot answer them. OQ7 (Matrix event types) is answered by the codebase: m.parrot.* already exists. Follow-up queries for the spec phase: locate the TraceContext definition in navigator dependencies; read navigator_eventbus for reply_to/correlation support; read sdd/state/FEAT-746 findings for the envelope model. Citation probe (\u00a74d): 293 checks over 8 sheets at HEAD 14d4fc780; 5 stale (renamed/misattributed symbols, line drift), 0 missing after inline resolution; see probe_results.json.",
+    "carried_questions_resolved": {
+      "digest_owner": "last agent that closed a Request",
+      "inform_wakes": "wake if addressed directly; broadcast informs stored, handler-driven wake",
+      "bid_scoring": "fixed weights from contract annotations, pluggable override per channel, LLM only if undecidable",
+      "name": "two names, shared envelope: FEAT-746 protocol = Squawk, FEAT-747 sub-protocol = Roost (rides the Squawk envelope)"
+    }
+  }
+}

@@ -346,9 +346,9 @@ automatically.
 
 - [Jira Ticket Extractor setup](./jira-ticket-extractor.md) — installation,
   credentials, cron setup
-- [WikiToolkit as Claude Code infrastructure](../wiki-claude-code.md) —
+- [WikiToolkit as Claude Code infrastructure](https://github.com/phenobarbital/ai-parrot/wiki/LLM-Wiki-WikiToolkit-as-Claude-Code-infrastructure) —
   namespaces, MCP tools, CLI reference
-- [LLM Wiki architecture](../llm-wiki.md) — PageIndex + GraphIndex +
+- [LLM Wiki architecture](https://github.com/phenobarbital/ai-parrot/wiki/LLM-Wiki-LLM-Wiki-%E2%80%94-an-agent-maintained-knowledge-repository) — PageIndex + GraphIndex +
   Ontology layers
 - `agents/fireflies_wiki.py` — the `FirefliesWikiAgent` source (the reference
   for multi-plane wiki integration)

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-624 — Planogram `fact_tag_present` rule
 **Spec**: `sdd/specs/planogram-fact-tag-rule.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-4005, TASK-4006, TASK-4007

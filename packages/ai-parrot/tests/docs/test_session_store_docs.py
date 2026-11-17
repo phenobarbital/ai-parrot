@@ -4,7 +4,7 @@ from pathlib import Path
 
 from parrot.interfaces.file import session
 
-DOC = Path(__file__).resolve().parents[4] / "docs" / "files" / "session-file-store.md"
+DOC = Path(__file__).resolve().parents[4] / "wiki" / "server" / "files" / "session-file-store.md"
 
 
 def _text() -> str:

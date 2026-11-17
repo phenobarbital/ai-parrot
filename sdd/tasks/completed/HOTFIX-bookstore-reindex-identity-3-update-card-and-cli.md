@@ -2,7 +2,7 @@
 
 **Feature**: bookstore-reindex-identity — Bookstore re-index identity, graph invalidation, title collision guard and card editing (hotfix)
 **Spec**: `sdd/specs/bookstore-reindex-identity.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: HOTFIX-bookstore-reindex-identity-2

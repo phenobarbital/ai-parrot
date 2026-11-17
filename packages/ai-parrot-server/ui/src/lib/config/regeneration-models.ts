@@ -19,8 +19,8 @@ export interface RegenerationModel {
 export const REGENERATION_MODELS: RegenerationModel[] = [
   // Google (supported)
   {
-    value: "google:gemini-2.5-flash",
-    label: "Gemini 2.5 Flash",
+    value: "google:gemini-3.8-flash",
+    label: "Gemini 3.8 Flash",
     provider: "Google",
     enabled: true,
   },
@@ -31,8 +31,8 @@ export const REGENERATION_MODELS: RegenerationModel[] = [
     enabled: true,
   },
   {
-    value: "google:gemini-3-pro-preview",
-    label: "Gemini 3 Pro",
+    value: "google:gemini-3.1-pro-preview",
+    label: "Gemini 3.1 Pro",
     provider: "Google",
     enabled: true,
   },
@@ -59,12 +59,12 @@ export const REGENERATION_MODELS: RegenerationModel[] = [
 ];
 
 /** Default model used when no selection has been made */
-export const DEFAULT_MODEL = "google:gemini-2.5-flash";
+export const DEFAULT_MODEL = "google:gemini-3.8-flash";
 
 /**
  * Find a matching enabled model from metadata.
- * Handles the naming mismatch between backend metadata (e.g. "gemini-2.5-flash")
- * and frontend config values (e.g. "google:gemini-2.5-flash").
+ * Handles the naming mismatch between backend metadata (e.g. "gemini-3.8-flash")
+ * and frontend config values (e.g. "google:gemini-3.8-flash").
  *
  * Matching strategy (in priority order):
  * 1. Exact match on value

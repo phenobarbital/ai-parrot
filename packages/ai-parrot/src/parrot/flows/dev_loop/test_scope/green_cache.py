@@ -41,6 +41,22 @@ def cache_namespace(*, feature_id: str, base_ref: str, contract_digest: str) -> 
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def namespace_for(*, feature_id: str, base_ref: str, contract: TestContract | None) -> str:
+    """Return the one namespace every driver uses for this feature/base/contract.
+
+    Args:
+        feature_id: ``FEAT-<NNN>`` / ``BRIEF-<KEY>`` the cache belongs to.
+        base_ref: Baseline ref, e.g. ``origin/dev``.
+        contract: The feature's test contract, or ``None`` when it declares none.
+
+    Returns:
+        ``cache_namespace`` with ``contract.digest``, or ``""`` when there is no contract.
+    """
+    return cache_namespace(
+        feature_id=feature_id, base_ref=base_ref, contract_digest=contract.digest if contract is not None else ""
+    )
+
+
 def _file_part(target: str) -> str:
     """The file portion of a ``file`` or ``file::node`` operand."""
     return target.split("::", 1)[0]

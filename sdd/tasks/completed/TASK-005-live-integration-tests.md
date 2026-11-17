@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-253 — Complete FEAT-250 Repo Wiring
 **Spec**: `sdd/specs/complete-feat-250-dev-loop-repo-wiring.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-003, TASK-004

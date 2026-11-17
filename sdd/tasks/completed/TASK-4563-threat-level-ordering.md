@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-714 — Total Ordering for `ThreatLevel`
 **Spec**: `sdd/specs/builtin-prompt-injection-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

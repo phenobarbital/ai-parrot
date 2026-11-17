@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-561 - Deterministic complexity routing for SDD tasks
 **Spec**: `sdd/specs/complex-sdd-tasks.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3294

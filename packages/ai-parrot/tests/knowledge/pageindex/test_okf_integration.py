@@ -313,9 +313,13 @@ class TestToolkitDeleteNodeConceptIdCleanup:
         result = await toolkit.delete_node("guide", "0000")
         assert result["removed"] is True
 
-        # The concept_id-keyed sidecar must be gone.
-        # Use the toolkit's own content_store to avoid cross-instance cache issues.
+        # FEAT-831: OKF flat-concept sidecars are not generation-versioned and are
+        # never swept, so delete_node removes those of the deleted subtree itself.
+        # (Immutable ``body_ref`` blobs, in contrast, are kept for the sweep.)
         assert toolkit._content_store.load("guide", "safeguards--hipaa-164") is None
+        published = JSONTreeStore(store_dir).load("guide")
+        titles = {n["title"] for n in structure_to_list(published["structure"])}
+        assert "HIPAA §164" not in titles  # ids are renumbered on delete, so match by title
 
 
 # ============================================================================

@@ -766,3 +766,22 @@ async def test_ticket_params_escape_jira_markup(tmp_path: Path, monkeypatch: pyt
     assert params["due_date"] is None
     assert params["meeting_id"] == "meeting-1"
     assert jira.kwargs["summary"] == "[Weekly sync] Fix [parser]"
+
+
+@pytest.mark.asyncio
+async def test_fireflies_post_configure_twice_adopts(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A second post_configure() keeps the registered working memory (FEAT-721)."""
+    from parrot.tools.manager import ToolManager
+
+    agent = _bare_agent()
+    agent.tool_manager = ToolManager(include_search_tool=False)
+    monkeypatch.setattr(agent, "_build_jira_toolkit", lambda: None)
+
+    await agent.post_configure()
+    first = agent.working_memory
+    first_wm_count = len([name for name in agent.tool_manager.list_tools() if name.startswith("wm_")])
+    await agent.post_configure()
+
+    assert agent.working_memory is first
+    assert agent.tool_manager.find_registered_toolkit(type(first)) is first
+    assert len([name for name in agent.tool_manager.list_tools() if name.startswith("wm_")]) == first_wm_count

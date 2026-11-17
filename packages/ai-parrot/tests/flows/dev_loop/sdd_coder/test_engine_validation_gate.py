@@ -134,6 +134,30 @@ async def test_red_gate_without_repair_is_validation_failed_and_nothing_merges(g
     assert len(task.attempts) == 1
 
 
+class _NotesOnlySupervisor(FakeSupervisor):
+    """A non-passed verdict that carries notes but no failures."""
+
+    async def wait_verdict(self, execution_id, handle, timeout_s):
+        return ValidationVerdict(
+            schema=1,
+            status="failed",
+            tier="task",
+            runners=(),
+            failures=(),
+            notes=("ai-parrot: pytest collected no tests (exit 5)",),
+        )
+
+
+async def test_failure_less_verdict_diagnostics_show_notes(git_sandbox_feature):
+    """No more "0 failure(s)": a verdict without failures explains itself (issue:8c423c5612c2)."""
+    worktree, _feature_branch, base_path, _ix = git_sandbox_feature
+    engine = _engine(base_path, fake_builder_factory({}), _NotesOnlySupervisor([]), repair=False)
+    task = await _run_one(engine, worktree)
+
+    assert task.outcome == "validation_failed", task.diagnostics
+    assert task.diagnostics == "task-tier validation failed: ai-parrot: pytest collected no tests (exit 5)"
+
+
 async def test_red_gate_repairs_on_same_seat_from_failed_branch(git_sandbox_feature):
     worktree, feature_branch, base_path, _ix = git_sandbox_feature
     builder = _recording_builder()

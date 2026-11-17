@@ -8,9 +8,13 @@ added without touching user content.
 
 from __future__ import annotations
 
+import os
+import shlex
 import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+from parrot.launcher import script_path
 
 if TYPE_CHECKING:
     from parrot.mcp.toolkit_config import ToolkitSection
@@ -84,6 +88,19 @@ MCP_JSON_ENTRY: dict = {
     "env": {},
 }
 
+#: Relative toolkit config used by portable toolkit entries (FEAT-633). Resolved by
+#: ``parrot mcp-local`` against ``$PARROT_PROJECT``, else the nearest ancestor of the process cwd
+#: that holds it, up to the nearest project marker (mcp/local_cli.py::_project_root_for).
+PORTABLE_TOOLKIT_CONFIG = ".parrot/mcp-toolkits.yaml"
+
+
+def _with_login_file(env: dict) -> dict:
+    """Pass PARROT_LOGIN_FILE through when set at install time (a path, never a token)."""
+    login_file = os.environ.get("PARROT_LOGIN_FILE")
+    if login_file and "PARROT_LOGIN_FILE" not in env:
+        env["PARROT_LOGIN_FILE"] = login_file
+    return env
+
 
 # --------------------------------------------------------------------------
 # Binary resolution — used by the installer to write absolute paths
@@ -95,14 +112,14 @@ def resolve_wikitoolkit_bin(root: Path) -> str:
 
     Resolution order:
 
-    1. ``<root>/.venv/bin/wikitoolkit`` — the project venv (most common
-       with ``uv`` / ``pip install -e .``).
+    1. ``<root>/.venv/bin/wikitoolkit`` (``Scripts\\wikitoolkit.exe`` on
+       Windows) — the project venv (most common with ``uv`` / ``pip install -e .``).
     2. ``shutil.which("wikitoolkit")`` — globally installed or on
        ``$PATH`` at install time.
     3. Bare ``"wikitoolkit"`` — fallback; works only when the venv is
        activated at hook-execution time.
     """
-    venv_bin = root / ".venv" / "bin" / "wikitoolkit"
+    venv_bin = script_path(root / ".venv", "wikitoolkit")
     if venv_bin.exists():
         return str(venv_bin)
     found = shutil.which("wikitoolkit")
@@ -111,13 +128,25 @@ def resolve_wikitoolkit_bin(root: Path) -> str:
     return "wikitoolkit"
 
 
-def hook_command(root: Path) -> str:
-    """Build the ``PreToolUse`` hook command with an absolute path."""
+def hook_command(root: Path, *, portable: bool = False) -> str:
+    """Build the ``PreToolUse`` hook command.
+
+    Args:
+        root: Project root used to resolve the ``wikitoolkit`` binary.
+        portable: Emit the bare ``wikitoolkit claude-hook`` (committable; relies on the
+            FEAT-633 launcher being on PATH) instead of the resolved absolute path.
+    """
+    if portable:
+        return HOOK_COMMAND
     return f"{resolve_wikitoolkit_bin(root)} claude-hook"
 
 
-def mcp_json_entry(root: Path) -> dict:
-    """Build the ``.mcp.json`` entry with an absolute path."""
+def mcp_json_entry(root: Path, *, portable: bool = False) -> dict:
+    """Build the ``.mcp.json`` entry (absolute path, or portable bare command)."""
+    if portable:
+        # Spike S3 (TASK-4069): no host expands a project variable in ``env``, so no
+        # PARROT_PROJECT pin is emitted; the host's cwd scopes the project.
+        return {"command": MCP_JSON_ENTRY["command"], "args": list(MCP_JSON_ENTRY["args"]), "env": {}}
     return {
         "command": resolve_wikitoolkit_bin(root),
         "args": ["mcp"],
@@ -147,7 +176,7 @@ def resolve_parrot_bin(root: Path) -> str:
        at invocation time (e.g. the MCP host activates it before spawning
        the process).
     """
-    venv_bin = root / ".venv" / "bin" / "parrot"
+    venv_bin = script_path(root / ".venv", "parrot")
     if venv_bin.exists():
         return str(venv_bin)
     found = shutil.which("parrot")
@@ -156,7 +185,7 @@ def resolve_parrot_bin(root: Path) -> str:
     return "parrot"
 
 
-def toolkit_mcp_json_entry(root: Path, name: str, section: ToolkitSection) -> dict:
+def toolkit_mcp_json_entry(root: Path, name: str, section: ToolkitSection, *, portable: bool = False) -> dict:
     """Build the ``.mcp.json`` entry for one exposed toolkit (FEAT-485).
 
     Args:
@@ -165,12 +194,22 @@ def toolkit_mcp_json_entry(root: Path, name: str, section: ToolkitSection) -> di
             ``.parrot/mcp-toolkits.yaml``'s ``toolkits:`` mapping.
         section: The toolkit's resolved config section, for its ``env``
             mapping.
+        portable: Emit ``{"command": "parrot", "args": ["mcp-local", name, "--config",
+            PORTABLE_TOOLKIT_CONFIG], "env": dict(section.env)}`` — no ``cwd``, no absolute path.
 
     Returns:
         ``{"command": <abs parrot bin>, "args": ["mcp-local", name,
         "--config", <abs path to mcp-toolkits.yaml>], "cwd": <abs root>,
         "env": dict(section.env)}``.
     """
+    if portable:
+        # No PARROT_PROJECT pin: spike S3 found no host expands a project variable in
+        # ``env``. ``mcp-local`` walks up from the host's cwd to the project root.
+        return {
+            "command": "parrot",
+            "args": ["mcp-local", name, "--config", PORTABLE_TOOLKIT_CONFIG],
+            "env": dict(section.env),
+        }
     return {
         "command": resolve_parrot_bin(root),
         # Pinned (FEAT-556): `parrot mcp-local` resolves its project root from
@@ -178,8 +217,13 @@ def toolkit_mcp_json_entry(root: Path, name: str, section: ToolkitSection) -> di
         # entry resolves no toolkit when the host starts it from a worktree.
         "args": ["mcp-local", name, "--config", str(root / ".parrot" / "mcp-toolkits.yaml")],
         "cwd": str(root),
-        "env": dict(section.env),
+        "env": _with_login_file(dict(section.env)),
     }
+
+
+def _sh_path(path: str) -> str:
+    """Return ``path`` safe to interpolate into a ``#!/bin/sh`` hook body (rev 0.5 C24 / D6)."""
+    return shlex.quote(path.replace("\\", "/"))
 
 
 def git_hook_block(root: Path) -> str:
@@ -194,7 +238,7 @@ def git_hook_block(root: Path) -> str:
     ``sh`` test, so the hook never has to invoke Python (and can't fail
     because the venv isn't on ``$PATH``) just to decide whether to run.
     """
-    wt_bin = resolve_wikitoolkit_bin(root)
+    wt_bin = _sh_path(resolve_wikitoolkit_bin(root))
     return (
         f"{GIT_HOOK_BEGIN}\n"
         f"# Keep the LLM-wiki knowledge graph in sync with the last commit.\n"
@@ -216,7 +260,7 @@ def git_hook_new_file(root: Path) -> str:
 
 
 def ledger_hook_block(root: Path, hook_name: str) -> str:
-    """Build the managed ledger-sync block for one hook event (no linked-worktree guard).
+    """Build the managed ledger block (import-only post hooks; no-op pre-commit).
 
     Args:
         root: Repository root (used to resolve the wikitoolkit binary).
@@ -227,13 +271,20 @@ def ledger_hook_block(root: Path, hook_name: str) -> str:
     """
     if hook_name not in LEDGER_HOOK_EVENTS:
         raise ValueError(f"unknown ledger hook event: {hook_name!r}")
-    wt_bin = resolve_wikitoolkit_bin(root)
-    sub = "ledger export-log --stage --quiet" if hook_name == "pre-commit" else "ledger import-log --quiet"
+    if hook_name == "pre-commit":
+        return (
+            f"{LEDGER_HOOK_BEGIN}\n"
+            f"# FEAT-758: ledger events no longer travel in commits. /sdd-done delivers them to\n"
+            f"# origin/dev with `wikitoolkit ledger outbox prepare|integrate`. Intentionally a no-op.\n"
+            f"# Installed by `parrot claude install`; remove with `parrot claude uninstall`.\n"
+            f"{LEDGER_HOOK_END}\n"
+        )
+    wt_bin = _sh_path(resolve_wikitoolkit_bin(root))
     return (
         f"{LEDGER_HOOK_BEGIN}\n"
         f"# Sync the shared SDD ledger event log (FEAT-694).\n"
         f"# Installed by `parrot claude install`; remove with `parrot claude uninstall`.\n"
-        f"{wt_bin} {sub} >/dev/null 2>&1 || true\n"
+        f"{wt_bin} ledger import-log --quiet >/dev/null 2>&1 || true\n"
         f"{LEDGER_HOOK_END}\n"
     )
 
@@ -243,13 +294,18 @@ def ledger_hook_new_file(root: Path, hook_name: str) -> str:
     return f"#!/bin/sh\n{ledger_hook_block(root, hook_name)}"
 
 
-def permission_rules(root: Path) -> tuple[str, ...]:
+def permission_rules(root: Path, *, portable: bool = False) -> tuple[str, ...]:
     """Return permission rules including absolute-path variants.
+
+    In portable mode the command is the bare ``wikitoolkit``, which the static
+    :data:`PERMISSION_RULES` already cover — no machine-specific rule is added.
 
     Extends the static :data:`PERMISSION_RULES` with rules that match
     the resolved binary path so wiki commands work in worktrees (where
     ``wikitoolkit`` is not on ``$PATH``).
     """
+    if portable:
+        return PERMISSION_RULES
     resolved = resolve_wikitoolkit_bin(root)
     if resolved == "wikitoolkit":
         return PERMISSION_RULES

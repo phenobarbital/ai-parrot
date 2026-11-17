@@ -1,0 +1,294 @@
+[
+ {
+  "id": "c277",
+  "kind": "absent",
+  "name": "performative",
+  "scope": "packages/ai-parrot/src/parrot"
+ },
+ {
+  "id": "c280",
+  "kind": "absent",
+  "name": "speech_act",
+  "scope": "packages/ai-parrot/src/parrot"
+ },
+ {
+  "id": "c281",
+  "kind": "absent",
+  "name": "not_understood",
+  "scope": "packages/ai-parrot/src/parrot"
+ },
+ {
+  "id": "c282",
+  "kind": "absent",
+  "name": "contract_net",
+  "scope": "packages/ai-parrot/src/parrot"
+ },
+ {
+  "id": "c283",
+  "kind": "absent",
+  "name": "FIPA",
+  "scope": "packages/ai-parrot/src/parrot"
+ },
+ {
+  "id": "c248",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/client.py",
+  "name": "A2AClient",
+  "expected": null,
+  "expected_line": 1
+ },
+ {
+  "id": "c249",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/client.py",
+  "name": "A2ARemoteAgentTool",
+  "expected": null,
+  "expected_line": 1
+ },
+ {
+  "id": "c250",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/client.py",
+  "name": "A2ARemoteSkillTool",
+  "expected": "class A2ARemoteSkillTool: Wraps a specific skill from a remote A2A agent as a tool.",
+  "expected_line": 1
+ },
+ {
+  "id": "c251",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/client.py",
+  "name": "_create_skill_input_model",
+  "expected": "def _create_skill_input_model(skill): Dynamically create a Pydantic model from an AgentSkill's input_schema.",
+  "expected_line": 1
+ },
+ {
+  "id": "c260",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/mesh.py",
+  "name": "A2AMeshDiscovery",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c252",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/mixin.py",
+  "name": "A2AClientMixin",
+  "expected": "class A2AClientMixin:",
+  "expected_line": 34
+ },
+ {
+  "id": "c253",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/mixin.py",
+  "name": "set_matrix_transport",
+  "expected": null,
+  "expected_line": 105
+ },
+ {
+  "id": "c254",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/mixin.py",
+  "name": "discover_from_mesh",
+  "expected": "async def discover_from_mesh(self, skill, tag, register_as_tools)",
+  "expected_line": 146
+ },
+ {
+  "id": "c255",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/mixin.py",
+  "name": "fan_out",
+  "expected": null,
+  "expected_line": 346
+ },
+ {
+  "id": "c256",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/mixin.py",
+  "name": "pipeline",
+  "expected": null,
+  "expected_line": 346
+ },
+ {
+  "id": "c257",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/mixin.py",
+  "name": "add_a2a_agent",
+  "expected": null,
+  "expected_line": 346
+ },
+ {
+  "id": "c258",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/mixin.py",
+  "name": "ask_remote_agent",
+  "expected": null,
+  "expected_line": 535
+ },
+ {
+  "id": "c259",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/mixin.py",
+  "name": "invoke_remote_skill",
+  "expected": null,
+  "expected_line": 535
+ },
+ {
+  "id": "c261",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/a2a/router.py",
+  "name": "A2AProxyRouter",
+  "expected": null,
+  "expected_line": null
+ },
+ {
+  "id": "c233",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/auth/agent_guard.py",
+  "name": "enforce_agent_access",
+  "expected": null,
+  "expected_line": 1
+ },
+ {
+  "id": "c234",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/auth/agent_guard.py",
+  "name": "AgentAccessDenied",
+  "expected": null,
+  "expected_line": 1
+ },
+ {
+  "id": "c235",
+  "kind": "anchor",
+  "path": "packages/ai-parrot/src/parrot/auth/agent_guard.py",
+  "anchor": "parse_bot_permissions: Validate and parse the JSONB shape stored in navigator.ai_bots.permissions",
+  "for": "parse_bot_permissions"
+ },
+ {
+  "id": "c186",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/auth/audit.py",
+  "line": null
+ },
+ {
+  "id": "c214",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/a2a_agent.py",
+  "name": "A2AAgent",
+  "expected": "class A2AAgent(BasicAgent, A2AEnabledMixin):",
+  "expected_line": 1
+ },
+ {
+  "id": "c229",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/bots/a2a_agent.py",
+  "line": null
+ },
+ {
+  "id": "c286",
+  "kind": "absent",
+  "name": "blackboard",
+  "scope": "packages/ai-parrot/src/parrot/bots/flows"
+ },
+ {
+  "id": "c287",
+  "kind": "absent",
+  "name": "single_writer",
+  "scope": "packages/ai-parrot/src/parrot/bots/flows"
+ },
+ {
+  "id": "c39",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/__init__.py",
+  "line": 1
+ },
+ {
+  "id": "c262",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/agents/a2a_orchestrator.py",
+  "line": null
+ },
+ {
+  "id": "c24",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/core/context.py",
+  "name": "FlowContext",
+  "expected": "class FlowContext:",
+  "expected_line": 55
+ },
+ {
+  "id": "c25",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/core/context.py",
+  "name": "resolve_agent",
+  "expected": null,
+  "expected_line": 123
+ },
+ {
+  "id": "c26",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/core/context.py",
+  "name": "get_input_for_node",
+  "expected": null,
+  "expected_line": 259
+ },
+ {
+  "id": "c27",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/core/context.py",
+  "name": "to_snapshot",
+  "expected": null,
+  "expected_line": 287
+ },
+ {
+  "id": "c29",
+  "kind": "anchor",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/core/context.py",
+  "anchor": "trace_context: Optional[\"TraceContext\"] = field(default=None)",
+  "for": "trace_context"
+ },
+ {
+  "id": "c30",
+  "kind": "file",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/core/context.py",
+  "line": 33
+ },
+ {
+  "id": "c34",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/core/context.py",
+  "name": "FlowContext",
+  "expected": "class FlowContext:  # Execution state tracker for a single flow/crew run.",
+  "expected_line": 56
+ },
+ {
+  "id": "c35",
+  "kind": "anchor",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/core/context.py",
+  "anchor": "shared_data: Dict[str, Any] = field(default_factory=dict)",
+  "for": "shared_data"
+ },
+ {
+  "id": "c36",
+  "kind": "anchor",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/core/context.py",
+  "anchor": "agent_registry: Optional[\"AgentRegistry\"] = field(default=None)",
+  "for": "agent_registry"
+ },
+ {
+  "id": "c37",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/core/context.py",
+  "name": "resolve_agent",
+  "expected": null,
+  "expected_line": 145
+ },
+ {
+  "id": "c38",
+  "kind": "symbol",
+  "path": "packages/ai-parrot/src/parrot/bots/flows/core/context.py",
+  "name": "mark_completed",
+  "expected": null,
+  "expected_line": 177
+ }
+]

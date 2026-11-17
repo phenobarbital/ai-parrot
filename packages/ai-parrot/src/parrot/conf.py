@@ -77,6 +77,9 @@ else:
     async_default_dsn = None
     sqlalchemy_url = None
 
+# Admin DSN for schema migrations; defaults to the runtime DSN, which is already read/write.
+PARROT_ADMIN_DSN = config.get("PARROT_ADMIN_DSN", fallback=default_dsn)
+
 # Redis:
 CACHE_HOST = config.get("CACHE_HOST", fallback="localhost")
 CACHE_PORT = config.get("CACHE_PORT", fallback=6379)
@@ -163,7 +166,7 @@ ONTOLOGY_CACHE_TTL = config.getint("ONTOLOGY_CACHE_TTL", fallback=86400)
 ONTOLOGY_MAX_TRAVERSAL_DEPTH = config.getint("ONTOLOGY_MAX_TRAVERSAL_DEPTH", fallback=4)
 
 # LLM model for dynamic AQL generation and intent detection.
-ONTOLOGY_AQL_MODEL = config.get("ONTOLOGY_AQL_MODEL", fallback="gemini-2.5-flash")
+ONTOLOGY_AQL_MODEL = config.get("ONTOLOGY_AQL_MODEL", fallback="gemini-3.8-flash")
 
 # Directory for review queue JSON files (ambiguous relation matches).
 # Defaults to {ONTOLOGY_DIR}/review/ at runtime when None.
@@ -171,11 +174,17 @@ ONTOLOGY_REVIEW_DIR = config.get("ONTOLOGY_REVIEW_DIR", fallback=None)
 if ONTOLOGY_REVIEW_DIR is not None:
     ONTOLOGY_REVIEW_DIR = Path(ONTOLOGY_REVIEW_DIR).resolve()
 
-# AgentStudio meta-agent (FEAT-467 TASK-2521): default LLM model for
-# AgentStudioAgent, overridable per-deployment. Per-user BYOK override
-# (when a stored Anthropic key exists) takes precedence at instance
-# build time — see parrot/bots/studio/agent.py.
-STUDIO_AGENT_MODEL = config.get("STUDIO_AGENT_MODEL", fallback="claude-opus-5")
+# AgentStudio meta-agent (FEAT-467 TASK-2521): which LLM provider drives
+# AgentStudioAgent (``STUDIO_AGENT_LLM``: ``anthropic`` (default), ``google``,
+# or any key registered in ``parrot.clients.factory.SUPPORTED_CLIENTS``) and
+# which model it uses (``STUDIO_AGENT_MODEL``). When the model is unset the
+# provider's own default applies (``anthropic`` -> ``claude-opus-5``,
+# ``google`` -> ``gemini-flash-latest``) — a Claude model is never sent to
+# another provider. Per-user BYOK override (when a stored key for the
+# configured provider exists) takes precedence at instance build time — see
+# parrot/bots/studio/agent.py.
+STUDIO_AGENT_LLM = config.get("STUDIO_AGENT_LLM", fallback="anthropic")
+STUDIO_AGENT_MODEL = config.get("STUDIO_AGENT_MODEL", fallback=None)
 
 # Agents Directory
 AGENTS_DIR = config.get("AGENTS_DIR", fallback=BASE_DIR.joinpath("agents"))
@@ -245,7 +254,9 @@ if not AGENTS_BOTS_PROMPT_DIR.exists():
     AGENTS_BOTS_PROMPT_DIR.mkdir(parents=True, exist_ok=True)
 
 # LLM Model
-DEFAULT_LLM_MODEL_NAME = config.get("LLM_MODEL_NAME", fallback="gemini-2.5-pro")
+# Opt-in global default for per-component LLM selection (FEAT-796), "provider:model".
+# Unset -> each component keeps its builtin default. Independent of LLM_MODEL below.
+DEFAULT_LLM: str | None = config.get("DEFAULT_LLM", fallback=None)
 
 
 ## MILVUS DB ##:
@@ -308,10 +319,15 @@ REDIS_DB = config.get("REDIS_DB", fallback=1)
 REDIS_URL = config.get("REDIS_URL", fallback=f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}")
 
 # Crew/flow execution result storage (FEAT-147)
-CREW_RESULT_STORAGE = config.get("CREW_RESULT_STORAGE", fallback="documentdb")
+CREW_RESULT_STORAGE = config.get("CREW_RESULT_STORAGE", fallback=None)  # FEAT-878: None → follows PARROT_USER_STORE
 CREW_RESULT_STORAGE_PG_DSN = config.get("CREW_RESULT_STORAGE_PG_DSN", fallback=default_dsn)
 CREW_RESULT_STORAGE_REDIS_URL = config.get("CREW_RESULT_STORAGE_REDIS_URL", fallback=REDIS_URL)
 CREW_RESULT_STORAGE_REDIS_TTL = int(config.get("CREW_RESULT_STORAGE_REDIS_TTL", fallback=604800))
+
+# Crew definition storage (FEAT-860)
+CREW_DEFINITION_STORAGE = config.get("CREW_DEFINITION_STORAGE", fallback="redis")
+CREW_DEFINITION_PG_DSN = config.get("CREW_DEFINITION_PG_DSN", fallback=default_dsn)
+CREW_DEFINITION_MIGRATION = config.getboolean("CREW_DEFINITION_MIGRATION", fallback=False)
 
 # AgentsFlow state checkpointing (FEAT-399)
 FLOW_CHECKPOINT_STORE = config.get("FLOW_CHECKPOINT_STORE", fallback="redis")
@@ -321,11 +337,18 @@ FLOW_CHECKPOINT_HISTORY = int(config.get("FLOW_CHECKPOINT_HISTORY", fallback=10)
 FLOW_CHECKPOINT_SHUTDOWN_DEADLINE = int(config.get("FLOW_CHECKPOINT_SHUTDOWN_DEADLINE", fallback=15))
 FLOW_CHECKPOINT_LEASE_TTL = int(config.get("FLOW_CHECKPOINT_LEASE_TTL", fallback=60))
 
+# FEAT-886: True only when the operator set REDIS_HISTORY_URL themselves. Captured BEFORE the host/port default
+# below is synthesized; REDIS_HISTORY_URL is the operator value when explicit, else the synthesized URL.
+_explicit_history_url = str(config.get("REDIS_HISTORY_URL", fallback="") or "").strip()
+REDIS_HISTORY_EXPLICIT: bool = bool(_explicit_history_url)
 REDIS_HISTORY_DB = config.get("REDIS_HISTORY_DB", fallback=3)
-REDIS_HISTORY_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_HISTORY_DB}"
+REDIS_HISTORY_URL = _explicit_history_url or f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_HISTORY_DB}"
 REDIS_SERVICES_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/4"
 REDIS_DATASET_DB = config.get("REDIS_DATASET_DB", fallback=3)
 REDIS_DATASET_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DATASET_DB}"
+
+# FEAT-886: hot-tier (ChatStorage Redis) history TTL in hours. 0 disables the TTL.
+CHAT_HOT_TTL_HOURS = int(config.get("CHAT_HOT_TTL_HOURS", fallback=48))
 
 
 def resolve_cert(crt):
@@ -595,6 +618,17 @@ PARROT_OVERFLOW_LOCAL_PATH = config.get(
 )
 PARROT_STORAGE_METRICS = config.get("PARROT_STORAGE_METRICS", fallback=None)
 
+# --- Durable conversation memory: turn bus (FEAT-886 M10) ---
+# Redis Streams bus that carries conversation.turn.completed to ChatStorage. Separate from the
+# observability fan-out bus. The outbox directory is REQUIRED (writable; one SQLite file per pod/pid).
+# PARROT_TURN_BUS_CHANNEL_PREFIX is the Redis STREAM prefix (a Streams EventBus ignores channel_prefix).
+# PARROT_TURN_BUS_DLQ_DSN is optional: without it, exhausted envelopes are retained as dead letters in a
+# local SQLite store next to the outbox (never dropped).
+PARROT_TURN_BUS_REDIS_URL = config.get("PARROT_TURN_BUS_REDIS_URL", fallback=None)
+PARROT_TURN_BUS_OUTBOX_DIR = config.get("PARROT_TURN_BUS_OUTBOX_DIR", fallback=None)
+PARROT_TURN_BUS_CHANNEL_PREFIX = config.get("PARROT_TURN_BUS_CHANNEL_PREFIX", fallback="parrot:turns:")
+PARROT_TURN_BUS_DLQ_DSN = config.get("PARROT_TURN_BUS_DLQ_DSN", fallback=None)
+
 ## Tools:
 OPENWEATHER_APPID = config.get("OPENWEATHER_APPID")
 
@@ -744,6 +778,11 @@ JIRA_API_TOKEN = config.get("JIRA_API_TOKEN", fallback="")
 JIRA_CLIENT_ID = config.get("JIRA_CLIENT_ID")
 JIRA_CLIENT_SECRET = config.get("JIRA_CLIENT_SECRET")
 JIRA_REDIRECT_URI = config.get("JIRA_REDIRECT_URI")
+# FEAT-773: legacy channel-scoped OAuth2 keys are read (and migrated) only until this ISO date/datetime.
+# Ops sets it to the S-1 prod deploy + 30 days; empty = window open.
+OAUTH2_LEGACY_KEYS_UNTIL = config.get("OAUTH2_LEGACY_KEYS_UNTIL", fallback="")
+# FEAT-773: YAML file of OAuth2ProviderDescriptor entries (client secrets come from OAUTH2_<PROVIDER>_*).
+OAUTH2_PROVIDERS_FILE = config.get("OAUTH2_PROVIDERS_FILE", fallback="")
 JIRA_OAUTH_REDIS_URL = config.get("JIRA_OAUTH_REDIS_URL", fallback="redis://localhost:6379/4")
 # OAuth2 web-channel origin allowlist — comma-separated string or list.
 # Used by IntegrationsHandler and jira_oauth_callback to validate that the
@@ -751,6 +790,11 @@ JIRA_OAUTH_REDIS_URL = config.get("JIRA_OAUTH_REDIS_URL", fallback="redis://loca
 WEB_OAUTH_ALLOWED_ORIGINS = config.get("WEB_OAUTH_ALLOWED_ORIGINS", fallback=[])
 if isinstance(WEB_OAUTH_ALLOWED_ORIGINS, str):
     WEB_OAUTH_ALLOWED_ORIGINS = [o.strip() for o in WEB_OAUTH_ALLOWED_ORIGINS.split(",") if o.strip()]
+# FEAT-777 (D5): base URL of the admin UI used in Slack /login account-link DMs. Required — no default;
+# when empty, Slack /login replies "account linking is not configured".
+CONNECTIONS_LINK_BASE_URL = config.get("CONNECTIONS_LINK_BASE_URL", fallback="")
+# FEAT-777: lifetime of a single-use channel-link nonce, in seconds.
+CHANNEL_LINK_TTL_SECONDS = config.getint("CHANNEL_LINK_TTL_SECONDS", fallback=600)
 JIRA_ALLOWED_REPORTERS: list[str] = config.getlist(
     "JIRA_ALLOWED_REPORTERS",
     fallback=[],
@@ -802,6 +846,14 @@ GITHUB_REVIEW_STALE_AFTER_HOURS: int = config.getint("GITHUB_REVIEW_STALE_AFTER_
 # Jira project key whose tickets the watched repository references. Drives
 # the `<PROJECT>-\d+` regex that extracts ticket keys from PR titles/bodies.
 GITHUB_REVIEW_JIRA_PROJECT: str = config.get("GITHUB_REVIEW_JIRA_PROJECT", fallback="NAV")
+# SDD feature identifier prefix used when a PR has no Jira ticket key.
+GITHUB_REVIEW_SDD_FEATURE_PREFIX: str = config.get("GITHUB_REVIEW_SDD_FEATURE_PREFIX", fallback="FEAT")
+# Enables the SDD acceptance-criteria fallback for configured reviewers.
+GITHUB_REVIEW_ENABLE_SDD_SPEC_FALLBACK: bool = config.getboolean(
+    "GITHUB_REVIEW_ENABLE_SDD_SPEC_FALLBACK", fallback=True
+)
+# Maximum number of candidate specification files read during a lookup.
+GITHUB_REVIEW_MAX_SPEC_SCAN_FILES: int = config.getint("GITHUB_REVIEW_MAX_SPEC_SCAN_FILES", fallback=500)
 # Per-prompt clamp on the diff fed to the reviewer LLM. Larger diffs are
 # truncated and the prompt notes the truncation so the model accounts for it.
 GITHUB_REVIEW_MAX_DIFF_BYTES: int = config.getint("GITHUB_REVIEW_MAX_DIFF_BYTES", fallback=50_000)
@@ -855,6 +907,8 @@ GITHUB_REVIEW_CACHE_MAX_BYTES: int = config.getint("GITHUB_REVIEW_CACHE_MAX_BYTE
 GITHUB_REVIEW_BUILD_TIMEOUT: int = config.getint("GITHUB_REVIEW_BUILD_TIMEOUT", fallback=900)
 GITHUB_REVIEW_WIKI_CONTEXT_TOKENS: int = config.getint("GITHUB_REVIEW_WIKI_CONTEXT_TOKENS", fallback=4000)
 GITHUB_REVIEW_WIKI_WAIT: int = config.getint("GITHUB_REVIEW_WIKI_WAIT", fallback=120)
+GITHUB_REVIEW_FULL_MAX_TOOL_CALLS: int = config.getint("GITHUB_REVIEW_FULL_MAX_TOOL_CALLS", fallback=15)
+GITHUB_REVIEW_COMMAND_MAX_RUNTIME: int = config.getint("GITHUB_REVIEW_COMMAND_MAX_RUNTIME", fallback=1800)
 
 ## Vector Store Handler:
 VECTOR_HANDLER_MAX_FILE_SIZE = config.getint("VECTOR_HANDLER_MAX_FILE_SIZE", fallback=25 * 1024 * 1024)  # 25MB
@@ -864,7 +918,7 @@ VECTOR_HANDLER_MAX_FILE_SIZE = config.getint("VECTOR_HANDLER_MAX_FILE_SIZE", fal
 ## POST /api/v1/agents/infographic/render (data-splice/jinja HTML sources —
 ## NOT the block-spec metadata registry `parrot.helpers.infographics` uses
 ## for the pre-render 404 check; the two are intentionally separate
-## registries, see docs/api/infographic_render.md's Known Limitation).
+## registries, see wiki/server/api/infographic_render.md's Known Limitation).
 ## Comma-separated list of directories; empty by default — the render
 ## route logs a loud warning and every render request fails with
 ## TEMPLATE_ENGINE_UNSET until this is configured for a deployment.
@@ -910,13 +964,12 @@ FLOW_MAX_CONCURRENT_RUNS: int = config.getint("FLOW_MAX_CONCURRENT_RUNS", fallba
 # comments / attachments / transitions. Empty string by default; downstream
 # code MUST tolerate the empty default (no error at import time).
 FLOW_BOT_JIRA_ACCOUNT_ID: str = config.get("FLOW_BOT_JIRA_ACCOUNT_ID", fallback="")
-# Absolute path under which feature worktrees are created.
-# Defaults to BASE_DIR/.claude/worktrees so the location is deterministic
-# regardless of the process's launch directory (FEAT-253 G1).
-# A relative value from the environment is joined onto BASE_DIR;
-# an absolute value is honored verbatim (R1 backward-compat).
-_wt: str = config.get("WORKTREE_BASE_PATH", fallback=str(BASE_DIR / ".claude/worktrees"))
-WORKTREE_BASE_PATH: str = os.path.normpath(_wt) if os.path.isabs(_wt) else os.path.normpath(str(BASE_DIR / _wt))
+# Absolute path under which feature worktrees are created (FEAT-802: one resolver,
+# parrot.sdd.config.worktree_root). Default BASE_DIR/.parrot/worktrees; a relative
+# WORKTREE_BASE_PATH joins BASE_DIR, an absolute one is honored verbatim (FEAT-253 G1).
+from parrot.sdd.config import worktree_root as _worktree_root  # noqa: E402 -- pydantic-only module, no cycle
+
+WORKTREE_BASE_PATH: str = str(_worktree_root(BASE_DIR, override=config.get("WORKTREE_BASE_PATH", fallback=None)))
 # FEAT-554: sdd-coder token telemetry. Master switch: False means no budget
 # scope is bound, no rows are written and no new payload is produced.
 DEV_LOOP_CODER_TELEMETRY: bool = config.getboolean("DEV_LOOP_CODER_TELEMETRY", fallback=False)
@@ -952,14 +1005,10 @@ DEV_LOOP_PLAN_LLM: str = config.get("DEV_LOOP_PLAN_LLM", fallback="")
 # must not import dev_loop). Each entry may be an "owner/name" slug or a JSON
 # object string; an empty list disables repo provisioning.
 DEV_LOOP_REPOS: list[str] = config.getlist("DEV_LOOP_REPOS", fallback=[]) or []
-# Absolute path for dev-loop clones (FEAT-253 G1).
-# Defaults to BASE_DIR/.claude/worktrees/repos (under WORKTREE_BASE_PATH) so
-# the dispatcher's cwd-safety guard (_enforce_cwd_under_worktree_base) passes.
+# Absolute path for dev-loop clones (FEAT-253 G1). Defaults to <WORKTREE_BASE_PATH>/repos so the
+# dispatcher's cwd-safety guard (_enforce_cwd_under_worktree_base) passes.
 # Same relative→join / absolute→verbatim rule as WORKTREE_BASE_PATH.
-_repos: str = config.get(
-    "DEV_LOOP_REPO_BASE_PATH",
-    fallback=str(BASE_DIR / ".claude/worktrees/repos"),
-)
+_repos: str = config.get("DEV_LOOP_REPO_BASE_PATH", fallback=f"{WORKTREE_BASE_PATH}/repos")
 DEV_LOOP_REPO_BASE_PATH: str = (
     os.path.normpath(_repos) if os.path.isabs(_repos) else os.path.normpath(str(BASE_DIR / _repos))
 )

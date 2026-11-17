@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-169 — FormDesigner Edit via Tool-Based Toolkit
 **Spec**: `sdd/specs/formdesigner-edition-parts.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: none

@@ -112,7 +112,7 @@ class GoogleGeneration(BaseView):
         data = await self.request.json()
         action = str(data.get("action", "")).lower().strip()
 
-        client = GoogleGenAIClient(model=data.get("model", "gemini-2.5-flash"))
+        client = GoogleGenAIClient(model=data.get("model", "gemini-3.8-flash"))
         try:
             if action == "video":
                 return await self._generate_video(client, data)

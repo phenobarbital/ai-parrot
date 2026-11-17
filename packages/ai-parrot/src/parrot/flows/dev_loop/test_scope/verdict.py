@@ -36,10 +36,13 @@ def build_verdict(
     notes: Sequence[str] = (),
     evidence: Sequence[str] = (),
 ) -> ValidationVerdict:
-    """Build a verdict with status precedence timed_out > failed > passed.
+    """Build a verdict with status precedence timed_out > failed > unavailable > passed.
 
     Pytest failures classified entirely as baseline-red are allowed to pass.
     Other runner failures are always unknown because no baseline applies.
+    A ``no_tests`` report (pytest exit 5, nothing collected) is never a failure; it only adds
+    a note. When every report is ``no_tests`` the gate has no signal at all, so the verdict
+    is ``unavailable`` -- still not ``passed`` -- with a note saying why (issue:8c423c5612c2).
     """
     baseline_by_node = {item.nodeid: item.status for item in baseline}
     summaries: list[RunnerSummary] = []
@@ -64,6 +67,10 @@ def build_verdict(
                 status=report.status,
             )
         )
+
+        if report.status == "no_tests":
+            verdict_notes.append(f"{report.suite}: pytest collected no tests (exit {report.exit_code})")
+            continue
 
         failed_nodes = [(nodeid, status) for nodeid, status in report.nodes if status in {"failed", "error"}]
         for nodeid, _node_status in failed_nodes:
@@ -100,6 +107,9 @@ def build_verdict(
         status = "timed_out"
     elif has_unclassified_failure or any(failure.verdict != "baseline_red" for failure in failures):
         status = "failed"
+    elif reports and all(report.status == "no_tests" for report in reports):
+        status = "unavailable"
+        verdict_notes.append("no runner collected any test; the gate has no signal")
     else:
         status = "passed"
 

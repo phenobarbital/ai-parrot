@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 def test_studio_api_doc_mentions_endpoints():
-    text = (ROOT / "docs/agent_studio_api.md").read_text(encoding="utf-8")
+    text = (ROOT / "wiki/bots/agent_studio_api.md").read_text(encoding="utf-8")
     for needle in (
         "/toolkits/{slug}/options/{param}",
         "/mcp-servers",
@@ -19,5 +19,5 @@ def test_studio_api_doc_mentions_endpoints():
 
 
 def test_yaml_doc_mentions_toolkit_entries():
-    text = (ROOT / "docs/agent_config_creation.md").read_text(encoding="utf-8")
+    text = (ROOT / "wiki/bots/agent_config_creation.md").read_text(encoding="utf-8")
     assert "user_overridable" in text and "vault" in text.lower()

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-631 — Scheduler multi-worker correctness
 **Spec**: `sdd/specs/scheduler-multiworker-correctness.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-4061, TASK-4062, TASK-4063

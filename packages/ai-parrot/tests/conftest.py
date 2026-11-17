@@ -16,6 +16,27 @@ import pandas as pd
 import pytest
 
 
+def _disable_observability_autoboot() -> None:
+    """Keep the env-driven observability auto-boot from starting real exporters.
+
+    When ``OBSERVABILITY_ENABLED=true`` is resolved from the developer's env
+    files, the first bot/client construction in any test boots a
+    ``BatchSpanProcessor`` pointed at an OTLP collector that is not running
+    under pytest. Its worker thread then retries for tens of seconds at
+    interpreter exit, so a green run is reported as timed out. Marking the
+    bootstrap as already done keeps it a no-op; tests that exercise the
+    bootstrap reset ``_BOOTSTRAPPED`` themselves via ``monkeypatch``.
+    """
+    try:
+        from parrot.observability import bootstrap  # noqa: PLC0415
+    except Exception:  # noqa: BLE001 - observability is optional for collection
+        return
+    bootstrap._BOOTSTRAPPED = True
+
+
+_disable_observability_autoboot()
+
+
 def pytest_collection_modifyitems(config, items):  # noqa: D401
     """Skip tests marked real_llm unless PARROT_TEST_REAL_LLM=1 is set."""
     if not os.environ.get("PARROT_TEST_REAL_LLM"):
@@ -80,11 +101,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-# Also add the tests directory so shared helper modules (e.g. _crew_test_helpers)
-# can be imported directly by test files.
-TESTS_DIR = Path(__file__).resolve().parent
-if str(TESTS_DIR) not in sys.path:
-    sys.path.insert(0, str(TESTS_DIR))
 
 
 def _stub_if_absent(name: str, module: types.ModuleType) -> bool:

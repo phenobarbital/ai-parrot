@@ -7,6 +7,7 @@ Cython extension) is exercised where available; the wire-contract regression che
 everywhere via source inspection.
 """
 
+import re
 from pathlib import Path
 
 import pytest
@@ -14,17 +15,25 @@ import pytest
 _AGENT_SRC = Path(__file__).resolve().parents[2] / "src" / "parrot" / "handlers" / "agent.py"
 _SRC = _AGENT_SRC.read_text(encoding="utf-8")
 
+# Quote-agnostic: ``black`` may rewrite the handler's quotes, which is not a contract change.
+_Q = r"[\"']"
+
+
+def _has(pattern: str) -> bool:
+    """Return True when ``pattern`` (with ``{q}`` standing for either quote) matches the source."""
+    return re.search(pattern.format(q=_Q), _SRC) is not None
+
 
 class TestA2UIStreamContract:
     def test_chunked_wire_contract_unchanged(self):
         # Header value and separator bytes are the public contract — must not change.
-        assert "'X-Parrot-Stream': 'chunked-aimessage'" in _SRC
-        assert r"separator = b'\n\x00'" in _SRC
+        assert _has(r"{q}X-Parrot-Stream{q}:\s*{q}chunked-aimessage{q}")
+        assert _has(r"separator = b{q}\\n\\x00{q}")
 
     def test_a2ui_envelope_added_to_final_stream_dict(self):
         # Envelope-complete per output: one extra key in the FINAL dict only.
-        assert "a2ui_envelope = getattr(ai_message, 'a2ui_envelope', None)" in _SRC
-        assert "envelope['a2ui_envelope'] = a2ui_envelope" in _SRC
+        assert _has(r"a2ui_envelope = getattr\(ai_message, {q}a2ui_envelope{q}, None\)")
+        assert _has(r"envelope\[{q}a2ui_envelope{q}\] = a2ui_envelope")
 
     def test_non_stream_response_carries_envelope(self):
         # Non-stream path surfaces the envelope for A2UI output_mode.

@@ -40,6 +40,7 @@ from parrot.knowledge.wiki.ledger.coder_reviews import (
     CoderReviewStore,
 )
 from parrot.knowledge.wiki.store import estimate_tokens
+from parrot.knowledge.wiki.experience.service import ExperienceService
 from parrot.flows.dev_loop.procs import git_env, run_bounded
 from parrot.flows.dev_loop.agent_builder import (
     DEFAULT_LLM_TURNS_PER_FILE,
@@ -55,7 +56,12 @@ from parrot.flows.dev_loop.models import (  # verified: models/base.py:412, :763
     TaskScopedBrief,
 )
 from parrot.flows.dev_loop.session_state import DispatchCompleted  # verified: session_state.py:476
-from parrot.flows.dev_loop.task_scheduler import TaskScheduler, iter_index_files  # verified: task_scheduler.py:53
+from parrot.flows.dev_loop.task_scheduler import (  # verified: task_scheduler.py:53
+    BRIEF_INDEX_DIR,
+    BRIEF_INDEX_SUFFIX,
+    TaskScheduler,
+    iter_index_files,
+)
 from parrot.flows.dev_loop.worktree_manager import (  # verified: worktree_manager.py:75, :41
     SubWorktreeManager,
     SubWorktreeMergeError,
@@ -68,6 +74,11 @@ from parrot.flows.dev_loop.sdd_coder.fidelity import (
 )
 from parrot.flows.dev_loop.test_scope.context import write_attempt_context
 from parrot.flows.dev_loop.test_scope.datatypes import AttemptContext, ValidationVerdict
+from parrot.flows.dev_loop.sdd_coder.effort import (
+    apply_effort_to_profile,
+    resolve_native_effort,
+    resolve_seat_effort_with_source,
+)
 from parrot.flows.dev_loop.sdd_coder.jobs import JobTable
 from parrot.flows.dev_loop.sdd_coder.lint import run_lint_pass
 from parrot.flows.dev_loop.sdd_coder.models import (
@@ -91,7 +102,9 @@ from parrot.flows.dev_loop.test_scope.runners.registry import load_registry
 from parrot.flows.dev_loop.sdd_coder.optimization_models import (
     BackgroundRegistration,
     BackgroundStatus,
+    CoderReviewReceipt,
     EvidenceRef,
+    ReviewArtifact,
     WorkflowEvent,
 )
 from parrot.flows.dev_loop.sdd_coder.evidence import (
@@ -127,6 +140,11 @@ from parrot.flows.dev_loop.sdd_coder.telemetry import (
     build_attempt_row,
     resolve_durable_root,
 )
+from parrot.core.events.lifecycle import EventRegistry, get_global_registry
+from parrot.observability.attribution import UsageAttribution
+from parrot.observability.context import usage_attribution
+from parrot.observability.recorders.spec_usage import SPEC_USAGE_SUBDIR, SpecUsageRecorder, read_spec_usage
+from parrot.observability.recorders.subscriber import UsageRecordingSubscriber
 from parrot.knowledge.wiki.ledger.coder_suspensions import (
     CoderSuspensionStore,
     ModelKey,
@@ -163,6 +181,28 @@ class CoderFailure(Exception):
 #: The task-tier gate's own wait expires this many seconds before the supervisor deadline, so it
 #: never reports a timeout at the very instant its children were about to settle (issue:3edabb9b953e).
 _GATE_WAIT_MARGIN_S = 5
+
+#: Highest sub-worktree attempt number `_free_attempt` hands out for one task+execution.
+_MAX_ATTEMPT_NUMBER = 20
+
+
+def _index_slug(index_path: str) -> str:
+    """The slug ``resolve_index_path`` maps to ``index_path`` (its inverse).
+
+    A per-spec index ``sdd/tasks/index/<slug>.json`` yields its file stem; a brief index
+    ``sdd/briefs/<slug>.index.json`` yields its name minus ``.index.json``. This, not the index header's
+    ``feature``, is the slug ``finalize_task`` matches a ``ReviewArtifact`` against (issue:b9ff30bf709e).
+
+    Args:
+        index_path: Path of a per-spec or brief index.
+
+    Returns:
+        The index slug.
+    """
+    path = Path(index_path)
+    if path.parent.name == BRIEF_INDEX_DIR.name and path.name.endswith(BRIEF_INDEX_SUFFIX):
+        return path.name[: -len(BRIEF_INDEX_SUFFIX)]
+    return path.stem
 
 
 async def _git(*args: str, cwd: str) -> Tuple[int, str, str]:
@@ -418,6 +458,9 @@ class _EngineValidationCapability:
         return verdict_to_json(verdict)
 
 
+_MAX_REVIEW_CHECK_IDS = 16
+
+
 class SddCoderEngine:
     """See spec §3 M4 for the method contracts.
 
@@ -497,6 +540,10 @@ class SddCoderEngine:
         self._feedback_sources: Dict[str, Tuple[str, str, str, str]] = {}
         self._feedback_contexts: Dict[str, str] = {}
         self._feedback_unknown_exposure: set[str] = set()
+        # A checked-pattern claim becomes usable only when this engine observed
+        # its attempt pass the task-tier gate with durable validation evidence.
+        # The caller never supplies these identifiers.
+        self._review_checks: Dict[str, Tuple[str, Tuple[str, ...]]] = {}
 
         # FEAT-559: execution pools (begin_execution/end_execution lifecycle)
         self._executions: Dict[str, ExecutionPool] = {}  # execution_id -> pool
@@ -506,11 +553,21 @@ class SddCoderEngine:
         # Telemetry setup (FEAT-554). `conf.DEV_LOOP_CODER_TELEMETRY` is the
         # master switch — mirrors the same conf-fallback pattern `redis_url`/
         # `worktree_base_path` already use above, so the documented env-var
-        # workflow (docs/dev_loop/sdd-coder-orchestrator.md) actually enables
+        # workflow (wiki/sdd-tooling/dev_loop/sdd-coder-orchestrator.md) actually enables
         # the sink, not just the observational ledger in llm.py. An explicit
         # `telemetry_dir` constructor kwarg (e.g. from a test, or a future
         # toolkit YAML override) still wins over conf either way.
         self._sink: Optional[CoderTelemetrySink] = None
+        # FEAT-783 M7: engine-scoped durable usage sink, lazily registered on the global
+        # registry the first time a dispatcher exposes `set_event_registry_resolver`.
+        self._usage_root: Optional[Path] = None
+        self._usage_recorder: Optional[SpecUsageRecorder] = None
+        self._usage_subscriber: Optional[UsageRecordingSubscriber] = None
+        self._usage_subscription_ids: List[str] = []
+        self._usage_sink_disabled = False
+        # Private per-engine registry: emit() has no local subscribers, and its
+        # forward_to_global() delivers each event to the global registry exactly once.
+        self._usage_registry: EventRegistry = EventRegistry(forward_to_global=False)
         # FEAT-584 M2/R3: durable, out-of-worktree evidence store for
         # `record_native_observation` (and, later, other M2/M4 consumers).
         # Bound to the SAME resolved root the telemetry sink uses (spec R3:
@@ -561,6 +618,8 @@ class SddCoderEngine:
             )
             if telemetry_dir is not None or conf.DEV_LOOP_CODER_TELEMETRY:
                 self._sink = CoderTelemetrySink(durable_root)
+                # A subdirectory: the attempt sink writes flat `<feature_id>.jsonl` files at the root.
+                self._usage_root = durable_root / SPEC_USAGE_SUBDIR
 
     def _resolve_durable_root(self, configured: Optional[str], *, strict: bool) -> Optional[Path]:
         """Resolve the out-of-worktree durable root, or `None` with a warning.
@@ -982,17 +1041,16 @@ class SddCoderEngine:
             # never a synthetic settlement.
             await self._assert_no_pending_validations(execution_id)
             # Check admitted attempts
+            # A native reservation is admitted through the pool too, so this one
+            # gate covers MCP attempts and native reservations alike.
             snapshot = pool.snapshot()
             if snapshot.admitted_attempts:
+                in_flight = self._in_flight_attempts(execution_id, pool, snapshot.admitted_attempts)
                 raise CoderFailure(
                     "execution_busy",
-                    f"execution {execution_id} has {len(snapshot.admitted_attempts)} admitted attempts still in flight",
-                )
-            # Check native reservations
-            if snapshot.native_reservations:
-                raise CoderFailure(
-                    "execution_busy",
-                    f"execution {execution_id} has {len(snapshot.native_reservations)} native reservations still in flight",
+                    f"execution {execution_id} has {len(in_flight)} admitted attempt(s) still in flight: "
+                    + "; ".join(self._describe_in_flight(row) for row in in_flight),
+                    in_flight=in_flight,
                 )
             # Check outstanding jobs -- from the JobTable, since the pool never tracks MCP jobs
             running_jobs = self._outstanding_job_ids(execution_id, pool.worktree_path)
@@ -1047,7 +1105,46 @@ class SddCoderEngine:
         if self._execution_owners.get(canonical_worktree) == execution_id:
             del self._execution_owners[canonical_worktree]
 
+        await self._release_usage_sink_if_idle()
         return pool.view()
+
+    def _in_flight_attempts(
+        self, execution_id: str, pool: ExecutionPool, admitted: Dict[str, str]
+    ) -> List[Dict[str, str]]:
+        """Describe every reservation still admitted to *pool*, for an ``execution_busy`` report.
+
+        Args:
+            execution_id: The execution being closed.
+            pool: Its execution pool.
+            admitted: ``attempt_uid -> task_id``, as `ExecutionPool.snapshot()` reports it.
+
+        Returns:
+            One row per reservation, ordered by task id: ``task_id``, ``attempt_uid``,
+            ``backend``, ``model`` and ``kind`` (``native_reservation`` or ``mcp_attempt``).
+        """
+        native_uids = {uid for (owner, _task), uid in self._native_reservations.items() if owner == execution_id}
+        rows: List[Dict[str, str]] = []
+        for attempt_uid, task_id in sorted(admitted.items(), key=lambda item: (item[1], item[0])):
+            admission = pool.resolve_admission(attempt_uid)
+            key = admission[1] if admission is not None else None
+            rows.append(
+                {
+                    "task_id": task_id,
+                    "attempt_uid": attempt_uid,
+                    "backend": key.backend if key is not None else "",
+                    "model": key.model if key is not None else "",
+                    "kind": "native_reservation" if attempt_uid in native_uids else "mcp_attempt",
+                }
+            )
+        return rows
+
+    @staticmethod
+    def _describe_in_flight(row: Dict[str, str]) -> str:
+        """One ``execution_busy`` clause naming a reservation and the call that settles it."""
+        seat = f"{row['backend']}/{row['model']}"
+        if row["kind"] == "native_reservation":
+            return f"{row['task_id']} (native reservation on {seat}; settle it with coder_merge)"
+        return f"{row['task_id']} (MCP attempt on {seat}; wait for its job with coder_wait)"
 
     async def _assert_no_pending_validations(self, execution_id: str) -> None:
         """Refuse while any admitted validation for *execution_id* has not settled (spec R8).
@@ -1373,16 +1470,22 @@ class SddCoderEngine:
             return profile
         return profile.model_copy(update={"max_turns": scaled})
 
-    def _profile_with_runner_binaries(self, profile: Any, path: str) -> Any:
+    def _profile_with_runner_binaries(self, profile: Any, path: str, *, ref: Optional[str] = None) -> Any:
         """Extend the attempt profile's ``allowed_commands`` with the registry's runner binaries (FEAT-709).
 
         A registry that cannot be loaded leaves the profile unchanged.
+
+        Args:
+            profile: The attempt dispatch profile.
+            path: The attempt sub-worktree.
+            ref: Git ref the runner TOML is read from (the attempt base). The working tree is
+                seat-writable, so the engine never reads it there (issue:29e8e7ad138f).
         """
         allowed = getattr(profile, "allowed_commands", None)
         if allowed is None:
             return profile
         try:
-            binaries = load_registry(Path(path)).binaries
+            binaries = load_registry(Path(path), ref=ref).binaries
         except Exception:  # noqa: BLE001 -- a broken runners TOML must not fail the attempt
             self.logger.warning("runner registry unavailable for %s; allowed_commands unchanged", path, exc_info=True)
             return profile
@@ -1670,7 +1773,7 @@ class SddCoderEngine:
 
         try:
             return await inspection.task_context(
-                feature=Path(ctx.index_path).stem,
+                feature=_index_slug(ctx.index_path),
                 worktree=Path(ctx.worktree),
                 task_id=task_id,
                 execution_id=execution_id,
@@ -1722,7 +1825,7 @@ class SddCoderEngine:
 
         try:
             return await inspection.delivery_report(
-                feature=Path(ctx.index_path).stem,
+                feature=_index_slug(ctx.index_path),
                 worktree=Path(ctx.worktree),
                 task_id=task_id,
                 execution_id=execution_id,
@@ -2187,6 +2290,51 @@ class SddCoderEngine:
             Path(self._base_path) / f"{ctx.feature_branch}--pool" / SubWorktreeManager._branch_suffix(worker_id)
         )  # noqa: SLF001
 
+    async def _free_attempt(self, ctx: _FeatureCtx, task_id: str, requested: int, execution_id: Optional[str]) -> int:
+        """First attempt number >= *requested* whose branch and sub-worktree are both free.
+
+        A failed attempt keeps its branch and sub-worktree (the orchestrator may inspect or
+        repair from it) and `_run_task` restarts numbering at 1, so re-dispatching a task in the
+        same execution used to collide on `git worktree add` (issue:3b913ffd77cd). When the
+        requested slot is taken the result is also above every slot already used, so numbers
+        stay monotonic per task+execution. Names come from `_branch_for`/`_path_for` (exact
+        matches, so `-a1` never matches `-a10`). Returns *requested* unchanged when nothing up
+        to `_MAX_ATTEMPT_NUMBER` is free -- the attempt then fails exactly as it did before.
+
+        Args:
+            ctx: The resolved feature context.
+            task_id: The task being dispatched.
+            requested: The attempt number the caller asked for.
+            execution_id: The calling execution, if any.
+
+        Returns:
+            The attempt number to use.
+        """
+        prefix = f"{ctx.feature_branch}--{task_id}-a"
+        rc, out, _err = await _git("branch", "--list", f"{prefix}*", "--format=%(refname:short)", cwd=ctx.worktree)
+        # Only what would make `git worktree add -b` fail counts: a live branch or directory.
+        # `_branch_attempts` is deliberately ignored -- it still lists merged attempts whose
+        # branch and sub-worktree were already reclaimed, and reusing those slots is safe.
+        existing = {line.strip() for line in out.splitlines()} if rc == 0 else set()
+
+        async def taken(n: int) -> bool:
+            if self._branch_for(ctx, task_id, n, execution_id) in existing:
+                return True
+            return await asyncio.to_thread(os.path.isdir, self._path_for(ctx, task_id, n, execution_id))
+
+        if requested > _MAX_ATTEMPT_NUMBER or not await taken(requested):
+            return requested
+        # `requested` is taken, so `used` is never empty.
+        used = [n for n in range(1, _MAX_ATTEMPT_NUMBER + 1) if await taken(n)]
+        free = max(used) + 1
+        if free <= _MAX_ATTEMPT_NUMBER:
+            self.logger.info(
+                "attempt %d of %s is still held by a kept sub-worktree; using attempt %d", requested, task_id, free
+            )
+            return free
+        self.logger.warning("no free attempt slot up to %d for %s", _MAX_ATTEMPT_NUMBER, task_id)
+        return requested
+
     async def _merged_attempt_branch(
         self, ctx: _FeatureCtx, task_id: str, execution_id: Optional[str]
     ) -> Optional[str]:
@@ -2361,6 +2509,12 @@ class SddCoderEngine:
         if red is not None:
             self._validation_reds.pop((execution_id or "", task_id), None)
             prep = prep.model_copy(update={"validation_verdict": verdict})
+        effort = resolve_native_effort(
+            seat, assessment.classification, self.roster.complexity.strong_models, logger=self.logger
+        )
+        if effort is not None:
+            self.logger.info("native seat %r: Agent effort=%s for %s", seat.label, effort, task_id)
+            prep = prep.model_copy(update={"effort": effort})
         return prep
 
     async def _reserve_native_attempt(
@@ -2418,15 +2572,24 @@ class SddCoderEngine:
             worker_id = self._worker_id(task.task_id, attempt, execution_id)
             manager = self._manager_for(ctx, task.task_id, attempt, execution_id)
             path = self._path_for(ctx, task.task_id, attempt, execution_id)
-            if reused_reservation and await asyncio.to_thread(os.path.isdir, path):
-                # Duplicate `prepare_native` for a task that already holds its reservation:
-                # the sub-worktree (and its branch) exist from the first call, so a second
-                # `git worktree add -b` would fail on the existing branch. Reuse them.
-                self.logger.info("prepare_native: reusing existing sub-worktree %s for %s", path, task.task_id)
-            elif repair_from:
-                path = await manager.create(worker_id, base=repair_from)
-            else:
-                path = await manager.create(worker_id)
+            try:
+                if reused_reservation and await asyncio.to_thread(os.path.isdir, path):
+                    # Duplicate `prepare_native` for a task that already holds its reservation:
+                    # the sub-worktree (and its branch) exist from the first call, so a second
+                    # `git worktree add -b` would fail on the existing branch. Reuse them.
+                    self.logger.info("prepare_native: reusing existing sub-worktree %s for %s", path, task.task_id)
+                elif repair_from:
+                    path = await manager.create(worker_id, base=repair_from)
+                else:
+                    path = await manager.create(worker_id)
+            except BaseException:
+                # No sub-worktree means no coder was handed anything, so no later
+                # `coder_merge` can settle a reservation admitted just above: give
+                # the seat back now instead of holding the execution open forever.
+                if pool is not None and not reused_reservation:
+                    self._native_reservations.pop(reservation_key, None)
+                    await pool.release(attempt_uid)
+                raise
             await self._write_attempt_scope(path, task.task_id, task.task_file, ctx.feature_branch)
             self._native_inflight.add(worker_id)
             branch = self._branch_for(ctx, task.task_id, attempt, execution_id)
@@ -2434,6 +2597,14 @@ class SddCoderEngine:
             self._feedback_sources[attempt_uid] = (ctx.worktree, task.task_id, "native", model)
             feedback_context = await self._feedback_for(ctx, task, "native", model)
             self._feedback_contexts[attempt_uid] = feedback_context
+            experience_briefing = "\n\n".join(
+                block
+                for block in (
+                    await self._experience_briefing_for(ctx, task),
+                    await self._procedure_briefing_for(ctx, task),
+                )
+                if block
+            )
 
             # FEAT-584 M8/R8: register a `pending` handle for this native reservation --
             # `native_observation` (below) is the ONLY authority that later links it to
@@ -2473,6 +2644,7 @@ class SddCoderEngine:
                 model=model,
                 attempt_uid=attempt_uid,
                 coder_feedback=feedback_context,
+                experience_briefing=experience_briefing,
                 assessment_id=assessment_id,
                 execution_id=execution_id or "",
                 bg_handle=bg_handle,
@@ -2610,7 +2782,7 @@ class SddCoderEngine:
 
     async def record_review(
         self, feature: str, worktree: str, review: CoderReview, execution_id: Optional[str] = None
-    ) -> CoderFeedbackReceipt:
+    ) -> CoderReviewReceipt:
         """Measure a reviewed delivery and validate its review-fix commits.
 
         FEAT-559: when `execution_id` is given, it is attached to `review` (rejecting a
@@ -2626,6 +2798,7 @@ class SddCoderEngine:
             if review.execution_id and review.execution_id != execution_id:
                 raise CoderFailure("invalid_arguments", "review execution_id does not match the calling execution")
             review = review.model_copy(update={"execution_id": execution_id})
+        passed_check_ids = self._verified_review_checks(review, execution_id)
         for sha in set(review.fix_commits):
             rc, subject, _err = await _git("show", "-s", "--format=%s", sha, cwd=ctx.worktree)
             ancestor_rc, _out, _err = await _git("merge-base", "--is-ancestor", sha, "HEAD", cwd=ctx.worktree)
@@ -2639,6 +2812,39 @@ class SddCoderEngine:
                 raise CoderFailure(
                     "invalid_arguments", f"{sha} must be a reachable fix(...) {review.task_id} review fixes commit"
                 )
+        review_ref = None
+        if execution_id is not None:
+            if self._evidence_store is None:
+                raise CoderFailure(
+                    "evidence_persistence_failed", "durable evidence store is unavailable; review was not recorded"
+                )
+            rc, head_sha, error = await _git("rev-parse", "HEAD", cwd=ctx.worktree)
+            if rc:
+                raise CoderFailure(
+                    "evidence_persistence_failed", f"could not read feature worktree HEAD: {error.strip()}"
+                )
+            try:
+                artifact = ReviewArtifact(
+                    source="coder_review",
+                    feature_slug=_index_slug(ctx.index_path),
+                    task_id=review.task_id,
+                    execution_id=execution_id,
+                    summary=review.review_evidence,
+                    fix_commits=review.fix_commits,
+                    head_sha=head_sha.strip(),
+                    recorded_at=datetime.now(timezone.utc),
+                    attempt_uid=review.attempt_uid,
+                    backend=review.backend,
+                    model=review.model,
+                )
+            except PydanticValidationError as exc:
+                raise CoderFailure(
+                    "invalid_arguments", f"review cannot be recorded as durable evidence: {exc}"
+                ) from exc
+            try:
+                review_ref = await self._evidence_store.put_artifact(execution_id, artifact)
+            except (ValueError, OSError, EvidenceCorruptionError) as exc:
+                raise CoderFailure("evidence_persistence_failed", str(exc)) from exc
         context = self._feedback_contexts.get(review.attempt_uid, "Feedback unavailable")
         exposure = (
             "unavailable"
@@ -2646,10 +2852,61 @@ class SddCoderEngine:
             else "with_feedback" if "[coder-feedback:" in context else "without_feedback"
         )
         measurement = CoderReviewMeasurement(
-            **review.model_dump(), exposure=exposure, feedback_tokens=estimate_tokens(context)
+            **review.model_dump(),
+            exposure=exposure,
+            feedback_tokens=estimate_tokens(context),
+            review_ref=(
+                f"coder-review/v1/{review.execution_id}/{review.task_id}/{review.attempt_uid}"
+                if review.execution_id
+                else ""
+            ),
+            passed_check_ids=passed_check_ids,
         )
         store = await asyncio.to_thread(CoderFeedbackStore.from_root, Path(ctx.worktree))
-        return await CoderReviewStore(store.log).record(measurement)
+        ledger_receipt = await CoderReviewStore(store.log).record(measurement)
+        return CoderReviewReceipt(feedback_id=ledger_receipt.feedback_id, review_ref=review_ref)
+
+    def _verified_review_checks(self, review: CoderReview, execution_id: Optional[str]) -> Tuple[str, ...]:
+        """Return engine-owned checks after validating checked-pattern claims.
+
+        Claims without patterns retain historical review behavior. A claim is
+        eligible only when the engine-issued attempt, its execution, and its
+        final exposure all match, and the claim names a passed check from the
+        task-tier validation receipt. This deliberately keeps caller-provided
+        checks, grades, and prose out of the trusted outcome path.
+
+        Known limit: ``claim.ref`` / ``claim.ref.content_version`` are NOT checked
+        against what was delivered to the attempt. The engine keeps no per-attempt
+        record of delivered memory versions (that exposure data lives in the dynamics
+        layer and is never handed to the engine), so a claim can cite a version the
+        attempt never received. The worker prompts say to cite delivered versions only;
+        that is guidance, not enforcement.
+        """
+        if not review.checked_patterns:
+            return ()
+        if execution_id is None or review.execution_id != execution_id:
+            raise CoderFailure("invalid_arguments", "checked patterns require the calling execution identity")
+        verified = self._review_checks.get(review.attempt_uid)
+        if verified is None:
+            raise CoderFailure(
+                "invalid_arguments", "checked patterns require a passed engine validation receipt for this attempt"
+            )
+        verified_execution_id, passed_check_ids = verified
+        if verified_execution_id != execution_id:
+            raise CoderFailure("invalid_arguments", "checked patterns do not belong to the calling execution")
+        passed = set(passed_check_ids)
+        cited: list[str] = []
+        for claim in review.checked_patterns:
+            if claim.exposure_id != review.attempt_uid:
+                raise CoderFailure("invalid_arguments", "checked pattern exposure must match the engine-issued attempt")
+            claim_checks = [reference for reference in claim.evidence_refs if reference in passed]
+            if not claim_checks:
+                raise CoderFailure("invalid_arguments", "checked pattern must cite an engine-owned passed check")
+            cited.extend(claim_checks)
+        # Record only the engine-owned checks the claims cite, bounded like CoderReviewMeasurement.passed_check_ids
+        # (max 16): a verdict may carry more evidence ids, and the measurement must never fail after the durable
+        # review artifact was written.
+        return tuple(dict.fromkeys(cited))[:_MAX_REVIEW_CHECK_IDS]
 
     async def feedback_report(self, feature: str, worktree: str) -> CoderReviewReport:
         """Return repository-wide review-fix rates by model and exposure cohort."""
@@ -2762,6 +3019,15 @@ class SddCoderEngine:
             f"empty_delivery: seat {seat.label} ({seat.backend}/{rec.resolved_model or rec.model or seat.model}) "
             f"delivered no file change for {task.task_id}"
         )
+        if rec.development_output is not None:
+            # A successful CLI exit can carry an explicit task-contract blocker.
+            # Keep the full response on the attempt; bound only the diagnostic
+            # excerpt and label it as the coder's report, not an engine verdict.
+            reported = rec.development_output
+            if reported.summary.strip():
+                err += f"\nCoder-reported summary: {reported.summary[:4000]}"
+            if reported.incomplete_tasks:
+                err += f"\nCoder-reported incomplete_tasks: {str(reported.incomplete_tasks)[:1000]}"
         self.logger.warning("%s: %s", task.task_id, err)
         return rec.model_copy(update={"error": err, "terminal": "failed", "error_class": "EmptyDelivery"}), err
 
@@ -3034,7 +3300,7 @@ class SddCoderEngine:
                 validation=ValidationVerdictModel.from_kernel(verdict),
                 diagnostics=(
                     f"task-tier validation {verdict.status}: " + "; ".join(verdict.notes)
-                    if verdict.status == "unavailable" and verdict.notes
+                    if not verdict.failures and verdict.notes
                     else f"task-tier validation {verdict.status}: {len(verdict.failures)} failure(s)"
                 ),
             )
@@ -3079,6 +3345,19 @@ class SddCoderEngine:
                 ),
                 lint=lint_report,
             )
+        passed_check_ids = tuple(
+            dict.fromkeys(
+                evidence
+                for evidence in verdict.evidence
+                if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/@+=-]{0,255}", evidence)
+            )
+        )
+        review_execution_id = self._execution_for(branch)
+        if review_execution_id is not None and passed_check_ids:
+            if len(self._review_checks) >= 1024:
+                # Bounded: only recent attempts are ever reviewed, so drop the oldest entry.
+                self._review_checks.pop(next(iter(self._review_checks)))
+            self._review_checks[self._attempt_uid_for(task.task_id, branch)] = (review_execution_id, passed_check_ids)
         return TaskResult(task_id=task.task_id, outcome="merged", branch=branch, worktree_path=path, lint=lint_report)
 
     @staticmethod
@@ -3386,6 +3665,89 @@ class SddCoderEngine:
             attempt=attempt,
         )
 
+    def _usage_attribution_for(
+        self, ctx: Any, task: PlannedTask, seat: RosterSeat, *, attempt_uid: str, execution_id: str
+    ) -> UsageAttribution:
+        """FEAT-783 M7: the one place an attempt's SDD attribution is built (never inferred from cwd)."""
+        backend = (seat.backend or "").lower()
+        # RosterSeat.backend spells the Claude SDK seat "claude-code".
+        dispatch_kind = "sdk" if backend in ("claude", "claude-code") else "cli" if backend == "codex" else "in-process"
+        return UsageAttribution(
+            feat_id=ctx.feature_id,
+            task_id=task.task_id,
+            attempt_uid=attempt_uid or None,
+            execution_id=execution_id or None,
+            dispatch_kind=dispatch_kind,
+            roster_seat=seat.label,
+            accounting_seat=f"development.sdd-coder-{seat.label}",
+        )
+
+    def _ensure_usage_sink(self) -> bool:
+        """Lazily register ONE engine-scoped durable usage subscriber (FEAT-783 M7).
+
+        Gated by the same switch as `CoderTelemetrySink`; idempotent; fail-open.
+
+        Returns:
+            True when the sink is registered on the global registry.
+        """
+        if self._usage_subscriber is not None:
+            return True
+        if self._usage_root is None or self._usage_sink_disabled:
+            return False
+        try:
+            recorder = SpecUsageRecorder(self._usage_root, worktree_base_path=self._base_path)
+        except ValueError as exc:
+            self._usage_sink_disabled = True
+            self.logger.warning("spec usage sink disabled: %s", exc)
+            return False
+        try:
+            subscriber = UsageRecordingSubscriber(recorders=[recorder])
+            self._usage_subscription_ids = list(get_global_registry().add_provider(subscriber))
+        except Exception:  # noqa: BLE001 - telemetry must never change a dispatch outcome
+            self._usage_sink_disabled = True
+            self.logger.warning("spec usage sink registration failed", exc_info=True)
+            return False
+        self._usage_recorder = recorder
+        self._usage_subscriber = subscriber
+        return True
+
+    async def _spec_rows_for(self, feature_id: str) -> Optional[list]:
+        """Flush pending durable usage writes and read the feature's rows off the loop."""
+        if self._usage_recorder is None:
+            return None
+        try:
+            await self._usage_recorder.aclose()  # awaits in-flight writes; the recorder stays usable
+            return await asyncio.to_thread(read_spec_usage, self._usage_recorder.root, feature_id)
+        except Exception:  # noqa: BLE001 - fail-open
+            self.logger.warning("spec usage read failed for %s", feature_id, exc_info=True)
+            return None
+
+    async def _release_usage_sink_if_idle(self) -> None:
+        """Unregister the usage sink once no execution owns a worktree (FEAT-783 M7).
+
+        The sink is re-registered lazily by ``_ensure_usage_sink`` on the next attempt, so a long-lived
+        server does not keep a process-wide global-registry subscription between features.
+        """
+        if self._usage_subscriber is not None and not self._execution_owners:
+            await self.aclose()
+
+    async def aclose(self) -> None:
+        """Unregister and flush the engine-scoped usage sink (FEAT-783 M7). Fail-open, idempotent."""
+        subscriber, self._usage_subscriber = self._usage_subscriber, None
+        self._usage_recorder = None
+        ids, self._usage_subscription_ids = self._usage_subscription_ids, []
+        registry = get_global_registry()
+        for sub_id in ids:
+            try:
+                registry.unsubscribe(sub_id)
+            except Exception:  # noqa: BLE001
+                self.logger.warning("failed to unsubscribe usage sink %s", sub_id, exc_info=True)
+        if subscriber is not None:
+            try:
+                await subscriber.aclose()
+            except Exception:  # noqa: BLE001
+                self.logger.warning("usage sink aclose failed", exc_info=True)
+
     async def _run_attempt(
         self,
         ctx: _FeatureCtx,
@@ -3410,6 +3772,7 @@ class SddCoderEngine:
         returns immediately with a not_dispatched error without creating a worktree.
         """
         assert seat.backend is not None, "_run_attempt is only called for mcp seats; native tasks use prepare_native"
+        attempt = await self._free_attempt(ctx, task.task_id, attempt, execution_id)
         manager = self._manager_for(ctx, task.task_id, attempt, execution_id)
         # `_branch_for`/`_path_for` derive from the SAME `_worker_id` passed to
         # `manager.create()` below (spec: "centralize derived names; remove
@@ -3543,48 +3906,84 @@ class SddCoderEngine:
                 stream_ttl_seconds=self._stream_ttl,
             )
             profile = profile.model_copy(update={"subagent": "sdd-coder"})  # S7 — every profile defaults to sdd-worker
-            profile = self._profile_with_runner_binaries(profile, path)
+            effort, effort_source = resolve_seat_effort_with_source(
+                seat,
+                assessment.classification if assessment is not None else None,
+                self.roster.complexity.strong_models,
+            )
+            profile = apply_effort_to_profile(
+                profile, seat.backend or "", effort, seat_label=seat.label, logger=self.logger
+            )
+            if effort is not None:
+                self.logger.info(
+                    "seat %r backend %r effort=%r source=%s", seat.label, seat.backend, effort, effort_source
+                )
+            profile = self._profile_with_runner_binaries(profile, path, ref=ctx.feature_branch)
             profile = self._profile_with_scaled_turns(
                 profile, collector.declared_files if collector.declared_files_known else None
             )
             feedback_context = await self._feedback_for(ctx, task, seat.backend, seat.model)
             self._feedback_contexts[attempt_uid] = feedback_context
+            experience_briefing = "\n\n".join(
+                block
+                for block in (
+                    await self._experience_briefing_for(ctx, task),
+                    await self._procedure_briefing_for(ctx, task),
+                )
+                if block
+            )
             capability = self._validation_capability(
                 ctx, task, path=path, attempt_uid=attempt_uid, execution_id=execution_id or ""
             )
             binder = getattr(dispatcher, "set_validation_runner", None)
             if callable(binder):
                 binder(capability)
+            resolver_setter = getattr(dispatcher, "set_event_registry_resolver", None)
+            if callable(resolver_setter):
+                try:
+                    if self._ensure_usage_sink():
+                        usage_registry = self._usage_registry
+                        resolver_setter(lambda _run_id: usage_registry)
+                except Exception:  # noqa: BLE001 - telemetry wiring is fail-open
+                    self.logger.warning("usage resolver wiring failed", exc_info=True)
             try:
-                output = await dispatcher.dispatch(
-                    brief=TaskScopedBrief(
-                        research=self._research_for(ctx, worktree_path=path),
-                        task_id=task.task_id,
-                        task_file=task.task_file,
-                        coder_feedback=feedback_context,
-                        validation_verdict=verdict or "",
+                with usage_attribution(
+                    job_id,
+                    seat=f"development.sdd-coder-{seat.label}",
+                    attribution=self._usage_attribution_for(
+                        ctx, task, seat, attempt_uid=attempt_uid, execution_id=execution_id or ""
                     ),
-                    profile=profile,
-                    output_model=DevelopmentOutput,
-                    run_id=job_id,
-                    # NOT f"sdd-coder.{seat.label}" (spec's literal wording): `_publish_event` rolls
-                    # `node_id` up via `_owning_node_id` (splits on the first '.') and hands it to
-                    # `action_from_dispatch_event`, which constructs a `DevLoopAction` typed with the
-                    # CLOSED `NodeId` Literal (session_state.py:140-158) — "sdd-coder" is not a member,
-                    # so that construction would raise and `_apply_to_session_host` silently swallows
-                    # it (by design — "the shim must never break a dispatch"), meaning
-                    # `AttemptTelemetryCollector.apply()` would NEVER fire and AC-10's usage capture
-                    # would silently no-op for every real dispatch. "development" IS a valid NodeId
-                    # (the same one the interactive DevAgentPool dispatches under) and is not touched
-                    # by this feature; per-seat identity for downstream consumers still flows through
-                    # `labels.seat` ("sdd-coder.<label>"), which `action_from_dispatch_event` reads
-                    # from `payload["seat"]` (stamped by `DispatchLabels.as_payload()`) in preference to
-                    # `node_id` — verified: dispatchers/_shared.py:92-117, session_state.py:1457-1489.
-                    node_id=f"development.sdd-coder-{seat.label}",
-                    cwd=path,
-                    session_host=collector,
-                    labels=self._labels_for(task, seat, attempt),
-                )
+                ):
+                    output = await dispatcher.dispatch(
+                        brief=TaskScopedBrief(
+                            research=self._research_for(ctx, worktree_path=path),
+                            task_id=task.task_id,
+                            task_file=task.task_file,
+                            coder_feedback=feedback_context,
+                            validation_verdict=verdict or "",
+                            experience_briefing=experience_briefing,
+                        ),
+                        profile=profile,
+                        output_model=DevelopmentOutput,
+                        run_id=job_id,
+                        # NOT f"sdd-coder.{seat.label}" (spec's literal wording): `_publish_event` rolls
+                        # `node_id` up via `_owning_node_id` (splits on the first '.') and hands it to
+                        # `action_from_dispatch_event`, which constructs a `DevLoopAction` typed with the
+                        # CLOSED `NodeId` Literal (session_state.py:140-158) — "sdd-coder" is not a member,
+                        # so that construction would raise and `_apply_to_session_host` silently swallows
+                        # it (by design — "the shim must never break a dispatch"), meaning
+                        # `AttemptTelemetryCollector.apply()` would NEVER fire and AC-10's usage capture
+                        # would silently no-op for every real dispatch. "development" IS a valid NodeId
+                        # (the same one the interactive DevAgentPool dispatches under) and is not touched
+                        # by this feature; per-seat identity for downstream consumers still flows through
+                        # `labels.seat` ("sdd-coder.<label>"), which `action_from_dispatch_event` reads
+                        # from `payload["seat"]` (stamped by `DispatchLabels.as_payload()`) in preference to
+                        # `node_id` — verified: dispatchers/_shared.py:92-117, session_state.py:1457-1489.
+                        node_id=f"development.sdd-coder-{seat.label}",
+                        cwd=path,
+                        session_host=collector,
+                        labels=self._labels_for(task, seat, attempt),
+                    )
             finally:
                 if callable(binder):
                     binder(None)
@@ -3604,7 +4003,7 @@ class SddCoderEngine:
             collector.error_class = type(exc).__name__
             self.logger.warning("attempt %d of %s on %s failed: %s", attempt, task.task_id, seat.label, error)
 
-        record = collector.record()
+        record = collector.record().model_copy(update={"development_output": output})
         if record.resolved_model and record.resolved_model != seat.model:
             self._feedback_unknown_exposure.add(attempt_uid)
 
@@ -3662,6 +4061,7 @@ class SddCoderEngine:
                         job_id=job_id,
                         task_id=task.task_id,
                         declared_files=record.declared_files,
+                        spec_rows=await self._spec_rows_for(ctx.feature_id),
                     )
                 )
             except Exception:
@@ -3671,7 +4071,84 @@ class SddCoderEngine:
                 self.logger.warning(
                     "telemetry attempt-row write failed for %s attempt %d", task.task_id, attempt, exc_info=True
                 )
+        if output is not None and not error:
+            await self._record_lessons(ctx, task, output, session=attempt_uid, seat=seat.label)
         return record, output, error, manager, branch, path
+
+    async def _experience_briefing_for(self, ctx: _FeatureCtx, task: PlannedTask) -> str:
+        """Return task-scoped known pitfalls, or empty text on disabled/error paths."""
+        try:
+            root = await asyncio.to_thread(Path(ctx.worktree).resolve)
+            files: List[str] = []
+            try:
+                task_path = await asyncio.to_thread((root / task.task_file).resolve)
+                if task_path.is_relative_to(root):
+                    task_md = await asyncio.to_thread(task_path.read_text, encoding="utf-8")
+                    files = list(parse_task_files(task_md))
+            except Exception:  # noqa: BLE001 - unreadable task file only narrows the query
+                self.logger.debug("experience briefing could not read %s", task.task_file, exc_info=True)
+            service = await asyncio.to_thread(ExperienceService.from_root, root)
+            await service.refresh()
+            return await service.brief(task.title or task.task_id, files)
+        except Exception:  # noqa: BLE001 - experience is advisory and must never break dispatch
+            self.logger.warning("experience briefing unavailable for %s", task.task_id, exc_info=True)
+            return ""
+
+    async def _procedure_briefing_for(self, ctx: _FeatureCtx, task: PlannedTask) -> str:
+        """Return local procedure guidance; absent, stale, disabled or failed planes are silent."""
+        try:
+            from parrot.knowledge.wiki.procedure.index import is_stale, read_index
+            from parrot.knowledge.wiki.procedure.plane import ProcedurePlane
+            from parrot.knowledge.wiki.procedure.resolver import resolve
+            from parrot.sdd.config import ProcedureSettings, load_sdd_config
+            from parrot.sdd.scripts.procedure import render_brief
+            from parrot.sdd.scripts.procedure_probes import SddProbeRunner, scope_for
+
+            root = Path(ctx.worktree)
+            config = await asyncio.to_thread(load_sdd_config, root)
+            settings = config.procedure or ProcedureSettings()
+            if not settings.enabled:
+                return ""
+            plane = await asyncio.to_thread(ProcedurePlane.for_root, root)
+            if plane is None:
+                return ""
+            document = await asyncio.to_thread(read_index, plane.plane_dir)
+            shared = plane.plane_dir.parent.parent
+            if await asyncio.to_thread(is_stale, document, root=shared):
+                return ""
+            specs = await plane.specs()
+
+            def local_brief() -> str:
+                """Read task-worktree state off the event loop, without remote probes."""
+                scope = scope_for(root, feature=ctx.feature, task=task.task_id)
+                resolution = resolve(specs, scope, SddProbeRunner(root), allow_remote=False)
+                return render_brief(resolution, max_lines=settings.brief_max_lines)
+
+            return await asyncio.to_thread(local_brief)
+        except Exception:  # noqa: BLE001 — advisory context must never break dispatch
+            self.logger.debug("procedure briefing skipped for %s", task.task_id, exc_info=True)
+            return ""
+
+    async def _record_lessons(
+        self, ctx: _FeatureCtx, task: PlannedTask, output: DevelopmentOutput, *, session: str, seat: str
+    ) -> int:
+        """Persist authored candidate drafts from an attempt; return stored count."""
+        try:
+            drafts = list(getattr(output, "lessons", None) or [])
+            if not drafts:
+                return 0
+            service = await asyncio.to_thread(ExperienceService.from_root, Path(ctx.worktree))
+            stored = 0
+            for draft in drafts:
+                try:
+                    if await service.record(draft, session=session, source="authored", seat=seat):
+                        stored += 1
+                except Exception:  # noqa: BLE001 - one bad draft must not drop the others
+                    self.logger.warning("experience lesson record failed for %s", task.task_id, exc_info=True)
+            return stored
+        except Exception:  # noqa: BLE001 - never mask the attempt's own result
+            self.logger.warning("experience lesson capture failed for %s", task.task_id, exc_info=True)
+            return 0
 
     async def _emit_outcome(
         self,
@@ -4178,6 +4655,7 @@ class SddCoderEngine:
                         attempts=attempts,
                         native_retry=native_retry,
                         diagnostics=rec.error,
+                        development_output=out,
                     )
                 # Restricted task, no eligible retry seat left: make the block
                 # explicit rather than silently falling through with attempt
@@ -4266,6 +4744,7 @@ class SddCoderEngine:
                 worktree_path=path,
                 attempts=attempts,
                 diagnostics="\n".join(a.error for a in attempts if a.error),
+                development_output=out,
                 validation=last_red_validation if validation_red else None,
             )
 

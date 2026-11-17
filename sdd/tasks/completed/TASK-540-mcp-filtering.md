@@ -2,7 +2,7 @@
 
 **Feature**: policy-based-access-control
 **Spec**: `sdd/specs/policy-based-access-control.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-535, TASK-538

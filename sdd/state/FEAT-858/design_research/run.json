@@ -1,0 +1,10 @@
+{
+  "host": "codex",
+  "reviewer": "/root/design_review",
+  "model": "inherited session model; exact identifier not exposed",
+  "date": "2026-11-09",
+  "status": "completed",
+  "input": "sdd/proposals/bookstore-agentic-retrieval.brainstorm.md",
+  "owner_amendments": "accepted in conversation 2026-11-09",
+  "cli_probe": "not applicable: native read-only reviewer"
+}

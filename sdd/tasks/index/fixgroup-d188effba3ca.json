@@ -1,0 +1,118 @@
+{
+  "feature": "fixgroup-d188effba3ca",
+  "feature_id": "FEAT-820",
+  "spec": "sdd/specs/fixgroup-d188effba3ca.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-06T03:20:00+00:00",
+  "completed_at": "2026-11-06T02:06:57+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "tests/sdd_scripts/test_worktree_sync.py",
+          "tests/sdd_scripts/test_sync_process_exclusions.py",
+          "packages/ai-parrot/tests/sdd/test_sdd_cli.py",
+          "packages/ai-parrot/tests/sdd/test_sdd_launch.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:eac218d747ce46bf181fbb4feb5e8c711ceec0a97949c95859518f9d777996d6"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5235",
+      "slug": "target-base-resolution-tests",
+      "title": "Cover resolve_target and resolve_base_branch against real worktrees",
+      "feature_id": "FEAT-820",
+      "feature": "fixgroup-d188effba3ca",
+      "spec": "sdd/specs/fixgroup-d188effba3ca.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "First writer of tests/sdd_scripts/test_worktree_sync.py in this feature; creates the _as_primary helper and the remove_worktree import that TASK-5236 and TASK-5238 consume.",
+      "assigned_to": null,
+      "started_at": "2026-11-06T01:59:15.751107+00:00",
+      "completed_at": "2026-11-06T02:00:56+00:00",
+      "file": "sdd/tasks/completed/TASK-5235-target-base-resolution-tests.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5236",
+      "slug": "guards-never-pushes-advisory-tests",
+      "title": "Cover live-process guards, the never-pushes invariant and the up-to-date advisory",
+      "feature_id": "FEAT-820",
+      "feature": "fixgroup-d188effba3ca",
+      "spec": "sdd/specs/fixgroup-d188effba3ca.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5235"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Uses _as_primary from TASK-5235 (tests/sdd_scripts/test_worktree_sync.py) and modifies that same file, so it must follow TASK-5235.",
+      "assigned_to": null,
+      "started_at": "2026-11-06T02:01:22.394402+00:00",
+      "completed_at": "2026-11-06T02:02:44+00:00",
+      "file": "sdd/tasks/completed/TASK-5236-guards-never-pushes-advisory-tests.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5237",
+      "slug": "sandbox-push-protection-gh-failure-tests",
+      "title": "Cover the push-protection truth table and a failing gh",
+      "feature_id": "FEAT-820",
+      "feature": "fixgroup-d188effba3ca",
+      "spec": "sdd/specs/fixgroup-d188effba3ca.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5236"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Modifies the same file as TASK-5236 (tests/sdd_scripts/test_worktree_sync.py) and appends after its section, so the two are serialized.",
+      "assigned_to": null,
+      "started_at": "2026-11-06T02:03:02.137420+00:00",
+      "completed_at": "2026-11-06T02:03:50+00:00",
+      "file": "sdd/tasks/completed/TASK-5237-sandbox-push-protection-gh-failure-tests.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5238",
+      "slug": "abort-failure-cli-exit-mapping-tests",
+      "title": "Cover the unrecovered-abort branch and main()'s exit-code mapping",
+      "feature_id": "FEAT-820",
+      "feature": "fixgroup-d188effba3ca",
+      "spec": "sdd/specs/fixgroup-d188effba3ca.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5237"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Modifies the same file as TASK-5237 (tests/sdd_scripts/test_worktree_sync.py); also calls _as_primary from TASK-5235, reached transitively through TASK-5236.",
+      "assigned_to": null,
+      "started_at": "2026-11-06T02:04:08.061217+00:00",
+      "completed_at": "2026-11-06T02:05:00+00:00",
+      "file": "sdd/tasks/completed/TASK-5238-abort-failure-cli-exit-mapping-tests.md",
+      "verification": "verified"
+    }
+  ]
+}

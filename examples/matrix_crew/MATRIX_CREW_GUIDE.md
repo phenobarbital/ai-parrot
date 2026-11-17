@@ -1634,7 +1634,7 @@ session manager.
 ### 14.4 Bridged users
 
 Humans connected through Slack/Signal/Discord puppets (via the bridges
-in `docker-compose.matrix.yml` — see `docs/integrations/matrix/BRIDGES.md`)
+in `docker-compose.matrix.yml` — see `wiki/integrations/matrix/BRIDGES.md`)
 are treated **exactly like native Matrix humans**: mentions and
 `swarm`-policy channels behave identically. Classification is via
 `MatrixCrewRegistry.is_human(mxid)` — any MXID that isn't a registered
@@ -1677,7 +1677,7 @@ python swarm_example.py --config swarm_crew.yaml
 ```
 
 Then open Element Web at `http://localhost:8080` (or any client from
-`docs/integrations/matrix/CLIENTS.md`), log in as the coordinator user
+`wiki/integrations/matrix/CLIENTS.md`), log in as the coordinator user
 printed by `bootstrap.sh`, join the `general` channel, and send a plain
 question (no `@mention`) to see a swarm session start.
 
@@ -1702,7 +1702,7 @@ docker compose -f docker-compose.matrix.yml restart synapse
 container on `:8448`) and Synapse ≥1.114 for native sliding sync — both
 are already satisfied by the pinned dev-stack image, but a mobile device
 must be able to reach that well-known endpoint over the network (not just
-`localhost`) — see `docs/integrations/matrix/CLIENTS.md` for the full
+`localhost`) — see `wiki/integrations/matrix/CLIENTS.md` for the full
 login walkthrough.
 
 **A channel with `answer_policy: swarm` never starts a session.** Confirm

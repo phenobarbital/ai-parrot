@@ -6,6 +6,7 @@
   import { config } from "$lib/config";
   import { router } from "$lib/router.svelte";
   import { Button } from "$lib/ui/internal/shadcn/ui/button/index.js";
+  import { Badge } from "$lib/ui/internal/shadcn/ui/badge/index.js";
   import { authStore } from "$lib/stores/auth.svelte";
   import ThemeSwitcher from "./ThemeSwitcher.svelte";
 
@@ -29,7 +30,20 @@
   <span class="text-sm font-semibold">AI-Parrot</span>
 
   <div class="flex items-center gap-3">
-    <span class="text-muted-foreground text-sm" data-testid="topbar-identity">{identity}</span>
+    <a
+      href={config.accountSecurityPath}
+      class="text-muted-foreground hover:text-foreground text-sm"
+      data-testid="topbar-identity"
+      onclick={(event) => {
+        event.preventDefault();
+        router.navigate(config.accountSecurityPath);
+      }}
+    >
+      {identity}
+    </a>
+    {#if authStore.authMethod === "passkey"}
+      <Badge variant="secondary" data-testid="topbar-auth-badge">Passkey</Badge>
+    {/if}
     <ThemeSwitcher />
     <Button variant="outline" size="sm" onclick={handleLogout}>Sign out</Button>
   </div>

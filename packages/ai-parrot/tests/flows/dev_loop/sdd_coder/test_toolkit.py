@@ -216,6 +216,36 @@ def test_registered_schemas_require_execution_identity(three_seat_roster):
             assert "execution_id" not in parameters.get("properties", {}), f"{tool.name} must not expose execution_id"
 
 
+def test_execution_id_schema_is_advertised(three_seat_roster):
+    """Every tool taking execution_id advertises the canonical pattern and a non-generic description."""
+    from parrot.flows.dev_loop.sdd_coder.models import EXECUTION_ID_PATTERN
+
+    toolkit = _toolkit(three_seat_roster)
+    seen = 0
+    for tool in toolkit.get_tools():
+        prop = tool.get_schema()["parameters"].get("properties", {}).get("execution_id")
+        if prop is None:
+            continue
+        seen += 1
+        assert prop["pattern"] == EXECUTION_ID_PATTERN, tool.name
+        assert "uuid" in prop["description"].lower(), tool.name
+    assert seen >= 15
+
+
+async def test_non_hex_execution_id_error_names_the_field(three_seat_roster):
+    """A hand-written mnemonic UUID yields an `invalid_arguments` message naming `execution_id`."""
+    toolkit = _toolkit(three_seat_roster)
+    with pytest.raises(CoderFailure) as excinfo:
+        await toolkit._pre_execute(
+            "coder_begin_execution",
+            feature="FEAT-184",
+            worktree="/abs",
+            execution_id="7b1c2f0e-4d3a-4e55-9a61-184pbac00001",
+        )
+    assert excinfo.value.code == "invalid_arguments"
+    assert "execution_id" in excinfo.value.message
+
+
 VALID_OBSERVATION = {
     "event_id": "evt-toolkit-1",
     "task_id": "TASK-1",

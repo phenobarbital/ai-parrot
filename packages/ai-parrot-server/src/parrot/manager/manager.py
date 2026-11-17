@@ -4,10 +4,13 @@ Chatbot Manager.
 Tool for instanciate, managing and interacting with Chatbot through APIs.
 """
 
-from typing import Any, Dict, Type, Optional, Tuple, List, TYPE_CHECKING
+from dataclasses import dataclass
+from typing import Any, Awaitable, Callable, Dict, Type, Optional, Tuple, List, TYPE_CHECKING
+import importlib.util
 from importlib import import_module
 from pathlib import Path
 import contextlib
+import weakref
 import os
 import time
 import asyncio
@@ -37,6 +40,9 @@ from ..bots.agent import BasicAgent
 from ..handlers.chat import ChatHandler, BotHandler
 from ..handlers.agent import AgentTalk
 from ..handlers.a2ui import A2UIHandler
+from ..handlers.connection_events import ConnectionEventsHandler
+from ..handlers.channel_links import ChannelLinksHandler
+from ..handlers.connections import ConnectionsHandler
 from ..handlers.integrations import IntegrationsHandler
 from ..handlers.infographic import InfographicTalk
 from ..handlers.agents.data import DataAnalystHandler
@@ -45,6 +51,7 @@ from ..handlers.print_pdf import PrintPDFHandler
 from ..handlers.datasets import DatasetManagerHandler
 from ..handlers.infographic_recipes import RecipeHandler
 from ..handlers.ui_surfaces import UISurfacesHandler
+from ..handlers.metric_definitions import MetricDefinitionsHandler
 from ..handlers.database import (
     DatabaseDriversHandler,
     DatabaseFormatsHandler,
@@ -59,6 +66,9 @@ from ..storage import (
     build_conversation_backend,
     build_overflow_store,
 )
+from ..storage.turn_bus import TurnPersistence, setup_turn_persistence, shutdown_turn_persistence
+from ..storage.hydration import ChatStorageHydrationSource
+from ..memory.hydration import LocalSequenceAllocator, RedisSequenceAllocator
 from ..handlers import ChatbotHandler
 from ..handlers.bots import ToolList
 from ..handlers.config_handler import BotConfigHandler
@@ -91,11 +101,15 @@ from ..handlers.crew.execution_history_handler import CrewExecutionHistoryHandle
 from ..handlers.crew.tool_catalog import CrewToolCatalogHandler
 from ..handlers.crew.special_nodes import CrewSpecialNodeCatalogHandler
 from ..handlers.crew.redis_persistence import CrewRedis
+from ..handlers.crew.postgres_persistence import CrewPostgres
+from ..handlers.crew.definition_storage import CrewDefinitionStorage, CrewStorageConflict, CrewStorageUnavailable
 from ..handlers.flows.checkpoints import FlowCheckpointHandler
 from parrot.bots.flows.core.checkpoint.recovery import get_recovery_service
 from ..openapi.config import setup_swagger
 from ..conf import (
     BOT_CLEANUP_TIMEOUT,
+    CREW_DEFINITION_MIGRATION,
+    CREW_DEFINITION_STORAGE,
     ENABLE_CREWS,
     ENABLE_DATABASE_BOTS,
     ENABLE_DASHBOARDS,
@@ -104,6 +118,7 @@ from ..conf import (
     ENABLE_SWAGGER,
     PARROT_PBAC_POLICY_DIR,
     REDIS_URL,
+    default_dsn,
 )
 
 # Credentials handler
@@ -186,6 +201,17 @@ class ReloadResult(BaseModel):
 
 _REGISTRY_ONLY_APP_KEY = "_bot_manager_registry_only"
 
+
+@dataclass(frozen=True)
+class _DurableMemory:
+    """Collaborators every managed bot receives once turn persistence is running (FEAT-886)."""
+
+    chat_storage: ChatStorage
+    handle: TurnPersistence
+    hydration_source: Optional[ChatStorageHydrationSource]
+    sequence_allocator: Any
+
+
 _STUDIO_PREFIXES = ("studio:", "studio-agent:")
 _cleanup_logger = logging.getLogger("Parrot.Manager")
 
@@ -224,7 +250,10 @@ class BotManager:
         enable_database_bots: bool = ENABLE_DATABASE_BOTS,
         enable_crews: bool = ENABLE_CREWS,
         enable_registry_bots: bool = ENABLE_REGISTRY_BOTS,
+        enable_experts: bool = True,
         enable_swagger_api: bool = ENABLE_SWAGGER,
+        crew_storage_backend: Optional[str] = None,
+        crew_migration: Optional[bool] = None,
     ) -> None:
         """Initialize BotManager.
 
@@ -238,11 +267,16 @@ class BotManager:
                 pipeline (load_modules, discover_config_agents,
                 load_agent_definitions, instantiate_startup_agents). Defaults
                 to ``ENABLE_REGISTRY_BOTS`` (True).
+            enable_experts: When True, load domain experts during registry
+                discovery. Defaults to ``True``.
             enable_swagger_api: When True, register the OpenAPI/Swagger routes
                 via ``setup_swagger()``. Defaults to ``ENABLE_SWAGGER``.
+            crew_storage_backend: Optional crew definition backend override.
+            crew_migration: Optional crew definition migration override.
         """
         self.app = None
         self._bots: Dict[str, AbstractBot] = {}
+        self._durable_bots = weakref.WeakSet()
         self._botdef: Dict[str, Type] = {}  # Store class definitions for each bot
         self._bot_expiration: Dict[str, float] = {}  # Track expiration timestamps for temporary bots
         self._cleanup_task: Optional[asyncio.Task] = None  # Background cleanup task
@@ -257,9 +291,29 @@ class BotManager:
         self.enable_database_bots: bool = enable_database_bots
         self.enable_crews: bool = enable_crews
         self.enable_registry_bots: bool = enable_registry_bots
+        self.enable_experts: bool = enable_experts
         self.enable_swagger_api: bool = enable_swagger_api
-        # Initialize Redis persistence for crews — keyed off instance attr
+        # Initialize crew persistence only when the feature is enabled.
         self.crew_redis = CrewRedis() if self.enable_crews else None
+        configured_backend = crew_storage_backend if crew_storage_backend is not None else CREW_DEFINITION_STORAGE
+        self.crew_storage_backend = configured_backend.lower()
+        self.crew_migration = CREW_DEFINITION_MIGRATION if crew_migration is None else crew_migration
+        self.crew_storage: Optional[CrewDefinitionStorage] = None
+        if self.enable_crews:
+            postgres = None
+            if self.crew_storage_backend == "postgres":
+                postgres = CrewPostgres()
+            elif self.crew_storage_backend != "redis":
+                self.logger.warning(
+                    "Unknown crew definition storage backend %r; using Redis for backward compatibility",
+                    configured_backend,
+                )
+                self.crew_storage_backend = "redis"
+            self.crew_storage = CrewDefinitionStorage(
+                self.crew_redis,
+                postgres,
+                migration=self.crew_migration,
+            )
         # Integration manager
         self._integration_manager: Optional["IntegrationBotManager"] = None
         # Shared Redis client published at app['redis'] during setup(). True
@@ -421,6 +475,7 @@ class BotManager:
             if result["status"] == "success":
                 if instance := result.get("instance"):
                     self._bots[agent_name] = instance
+                    self._attach_durable_memory(instance)
                     self.logger.info(f"Added startup agent to active bots: {agent_name}")
             else:
                 self.logger.error(f"Startup agent {agent_name} failed: {result['error']}")
@@ -452,6 +507,11 @@ class BotManager:
                 def_count = self.registry.load_agent_definitions(definitions_dir)
                 self.logger.info(f"Loaded {def_count} agents from YAML definitions")
 
+            # Step 2c: domain experts (FEAT-778) — fail-open
+            from parrot.experts.bootstrap import load_experts  # noqa: PLC0415
+
+            await load_experts(self.registry, enabled=self.enable_experts)
+
             # Step 3: Instantiate startup agents
             startup_results = await self.registry.instantiate_startup_agents(app)
             await self._process_startup_results(startup_results)
@@ -460,6 +520,9 @@ class BotManager:
 
         # Step 4: Load database bots
         if self.enable_database_bots:
+            from parrot.migrations.startup import warn_pending_migrations
+
+            await warn_pending_migrations(default_dsn, logger=self.logger)
             await self._load_database_bots(app)
         else:
             self.logger.debug("Database bot loading skipped (enable_database_bots=False)")
@@ -567,6 +630,12 @@ class BotManager:
             memory_config=bot_model.memory_config,
             max_context_turns=bot_model.max_context_turns,
             use_conversation_history=bot_model.use_conversation_history,
+            # Follow-up suggestion chips (FEAT-752)
+            enable_suggestions=getattr(bot_model, "enable_suggestions", False),
+            suggest_followups=getattr(bot_model, "suggest_followups", False),
+            suggestion_timeout_s=getattr(bot_model, "suggestion_timeout_s", 4.0),
+            max_suggestions=getattr(bot_model, "max_suggestions", 6),
+            suggestion_model=getattr(bot_model, "suggestion_model", None),
             # Security and permissions
             permissions=bot_permissions,
             # Metadata
@@ -778,6 +847,7 @@ class BotManager:
         self._bots[bot.name] = bot
         # Store the class definition for future instance creation
         self._botdef[bot.name] = bot.__class__
+        self._attach_durable_memory(bot)
 
     async def get_bot(
         self, name: str, new: bool = False, session_id: str = "", request: Optional[web.Request] = None, **kwargs
@@ -875,6 +945,7 @@ class BotManager:
 
             # Add to bots dictionary
             self._bots[new_name] = bot
+            self._attach_durable_memory(bot)
 
             # Set expiration time (1 hour from now)
             self._bot_expiration[new_name] = time.time() + 3600
@@ -1009,6 +1080,7 @@ class BotManager:
         # --- Rebuild succeeded: only now do we touch live state ---
         old_instance = self._bots.pop(name, None)
         self._bots[name] = new_instance
+        self._attach_durable_memory(new_instance)
         self._botdef[name] = type(new_instance)
 
         closed = False
@@ -1189,6 +1261,7 @@ class BotManager:
         with contextlib.suppress(Exception):
             self._apply_prompt_config(bot, prompt_config_dict)
         await bot.configure(self.app)
+        self._attach_durable_memory(bot)
         return bot
 
     async def get_user_bot(
@@ -1225,6 +1298,7 @@ class BotManager:
         cid = str(chatbot_id)
         cached = cache.get(cid)
         if cached is not None:
+            self._attach_durable_memory(cached)  # a bot cached before the bus started
             return cached
 
         bot_model = await self._fetch_user_bot_model(user_id, cid)
@@ -1266,6 +1340,7 @@ class BotManager:
     def add_agent(self, agent: AbstractBot) -> None:
         """Add a Agent to the manager."""
         self._bots[str(agent.chatbot_id)] = agent
+        self._attach_durable_memory(agent)
 
     def remove_agent(self, agent: AbstractBot) -> None:
         """Remove a Bot by name."""
@@ -2373,10 +2448,23 @@ class BotManager:
         # FEAT-108 VaultTokenSync, Jira OAuth state, etc.) finds one. If a
         # prior component already set the key, respect it.
         self._register_shared_redis()
+        # FEAT-878: validate user-store switches (fail closed) + Redis diagnostics/cleanup hooks.
+        from parrot.userstore.checks import install_user_store_hooks
+
+        install_user_store_hooks(self.app)
         # Add Manager to main Application:
         self.app["bot_manager"] = self
         # Register OAuth2 providers after startup (FEAT-144)
         # Uses a deferred callback so app["jira_oauth_manager"] is available.
+        # Descriptor managers must be wired before aiohttp freezes the router
+        # and startup signal; their setup adds both routes and lifecycle hooks.
+        # FEAT-777 M1: shared connection-event publisher + per-principal Redis push sink (SSE).
+        self._setup_connection_push(self.app)
+        # FEAT-777 M2: Slack account-link issuer + request-independent connection authorizer.
+        self._setup_channel_links(self.app)
+        self._register_descriptor_oauth2_providers(self.app)
+        self._register_o365_oauth2_provider(self.app)
+        self._register_jira_oauth2_provider(self.app)
         self.app.on_startup.append(self._register_oauth2_providers)
         # FEAT-598 (TASK-3805): default data-plane guard wiring, in two phases.
         # 1. Build PBAC + the guard NOW, while the app is still mutable:
@@ -2424,6 +2512,10 @@ class BotManager:
         router.add_view("/api/v1/ui/surfaces/{surface_id}/sources/{key}/data", UISurfacesHandler)
         router.add_view("/api/v1/ui/surfaces/{surface_id}/share", UISurfacesHandler)
         router.add_view("/api/v1/ui/surfaces/{surface_id}/share/{token}", UISurfacesHandler)
+        # FEAT-756: metric definition registry REST lane — /schema before /{metric_id}.
+        router.add_view("/api/v1/metrics", MetricDefinitionsHandler)
+        router.add_view("/api/v1/metrics/schema", MetricDefinitionsHandler)
+        router.add_view("/api/v1/metrics/{metric_id}", MetricDefinitionsHandler)
         # Agent knowledge index (PageIndex / GraphIndex) management.
         # Literal action sub-route ({action}: search|ask) MUST be registered
         # before the bare {agent_id} route so aiohttp resolves /search and /ask
@@ -2452,13 +2544,23 @@ class BotManager:
             IntegrationsHandler,
         )
         router.add_view(
-            "/api/v1/agents/integrations/{agent_id}/{provider}/enable",
-            IntegrationsHandler,
-        )
-        router.add_view(
             "/api/v1/agents/integrations/{agent_id}/{provider}",
             IntegrationsHandler,
         )
+        # Principal-level OAuth connection routes (FEAT-773).
+        router.add_view("/api/v1/connections", ConnectionsHandler)
+        # FEAT-777 M1: register before /{provider} so "events" is not captured as a provider id.
+        router.add_view("/api/v1/connections/events", ConnectionEventsHandler)
+        router.add_view("/api/v1/connections/me", ConnectionsHandler)
+        router.add_view("/api/v1/connections/{provider}", ConnectionsHandler)
+        router.add_view("/api/v1/connections/{provider}/start", ConnectionsHandler)
+        router.add_view("/api/v1/connections/{provider}/token", ConnectionsHandler)
+        router.add_view("/api/v1/connections/{provider}/complete", ConnectionsHandler)
+        router.add_view("/api/v1/connections/{provider}/device/start", ConnectionsHandler)
+        router.add_view("/api/v1/connections/{provider}/device/poll", ConnectionsHandler)
+        # FEAT-777 M2: Slack account-link preview + explicit confirm (session principal only).
+        router.add_view("/api/v1/channel-links/{nonce}", ChannelLinksHandler)
+        router.add_view("/api/v1/channel-links/{nonce}/confirm", ChannelLinksHandler)
         # User-defined bots: PUT/PATCH/GET/DELETE
         router.add_view("/api/v1/user_agents", UserAgentHandler)
         router.add_view("/api/v1/user_agents/{chatbot_id}", UserAgentHandler)
@@ -2570,6 +2672,11 @@ class BotManager:
         # Dataset Manager for agents:
         router.add_view("/api/v1/agents/datasets/{agent_id}", DatasetManagerHandler)
         router.add_view("/api/v1/agents/datasets/{agent_id}/{dataset_id}", DatasetManagerHandler)
+        if importlib.util.find_spec("parrot.semantic") is not None:
+            from ..handlers.semantic import SemanticLayerHandler
+
+            router.add_view("/api/v1/agents/semantic/{agent_id}", SemanticLayerHandler)
+            router.add_view("/api/v1/agents/semantic/{agent_id}/{tail:.*}", SemanticLayerHandler)
         # Infographic Recipes (FEAT-324): CRUD + on-demand replay. Unlike
         # DatasetManagerHandler, the recipe store/runner have no per-request
         # cloning path — configure them via
@@ -2769,6 +2876,191 @@ Available documentation UIs:
                 self.logger.error(f"Error in cleanup task: {e}", exc_info=True)
                 # Continue running even if there's an error
 
+    def _setup_connection_push(self, app: web.Application) -> None:
+        """Attach the shared connection publisher to the Redis-backed SSE sink."""
+        if app.get("connection_push") is not None:
+            return
+
+        try:
+            from parrot.auth.oauth2.events import (
+                ChannelNotifierRegistry,
+                ConnectionEventPublisher,
+                setup_connection_fanout,
+            )
+            from parrot.observability.fanout import get_event_fanout_bus
+            from parrot.security.audit_ledger import AuditLedger
+            from parrot.services.connection_push import RedisConnectionPush
+
+            publisher = app.get("connection_event_publisher")
+            if publisher is None:
+                audit_ledger = app.get("connection_audit_ledger")
+                if audit_ledger is None:
+                    audit_ledger = AuditLedger()
+                    app["connection_audit_ledger"] = audit_ledger
+                publisher = ConnectionEventPublisher(
+                    notifiers=ChannelNotifierRegistry(),
+                    audit_ledger=audit_ledger,
+                )
+                try:
+                    bus = get_event_fanout_bus()
+                    if bus is not None:
+                        setup_connection_fanout(bus, publisher)
+                except Exception:  # noqa: BLE001 - observability fan-out is additive
+                    self.logger.warning("Connection event fan-out bus not attached", exc_info=True)
+                app["connection_event_publisher"] = publisher
+
+            push = RedisConnectionPush(REDIS_URL)
+            publisher.add_sink(push)
+            app["connection_push"] = push
+
+            async def _start_push(_app: web.Application) -> None:
+                await push.start()
+
+            async def _close_push(_app: web.Application) -> None:
+                await push.close()
+
+            app.on_startup.append(_start_push)
+            app.on_cleanup.append(_close_push)
+        except Exception:  # noqa: BLE001 - SSE is additive; never block server setup
+            self.logger.exception("Connection event push not configured; /api/v1/connections/events will return 503")
+
+    def _setup_channel_links(self, app: web.Application) -> None:
+        """Wire the channel-link issuer and request-independent connection authorizer."""
+        from parrot.conf import CHANNEL_LINK_TTL_SECONDS, CONNECTIONS_LINK_BASE_URL
+
+        if app.get("channel_link_issuer") is None:
+            if CONNECTIONS_LINK_BASE_URL:
+                from parrot.auth.channel_link import ChannelLinkIssuer
+
+                app["channel_link_issuer"] = ChannelLinkIssuer(
+                    app["redis"], base_url=CONNECTIONS_LINK_BASE_URL, ttl_seconds=CHANNEL_LINK_TTL_SECONDS
+                )
+            else:
+                self.logger.warning("CONNECTIONS_LINK_BASE_URL is not set — Slack account linking is disabled (D5)")
+        if app.get("connection_authorizer") is None:
+            try:
+                from parrot.services.connection_authorization import NavigatorConnectionAuthorizer
+
+                app["connection_authorizer"] = NavigatorConnectionAuthorizer(app)
+            except Exception:  # noqa: BLE001 - Slack operations fail closed without the adapter
+                self.logger.exception("Connection authorizer not configured; Slack operations will fail closed")
+
+    def _register_descriptor_oauth2_providers(
+        self, app: web.Application, *, credential_store: Any = None
+    ) -> None:
+        """Register configured descriptor providers while the app is mutable.
+
+        Args:
+            app: The aiohttp application.
+            credential_store: An Identity Vault store the caller already built.
+                When omitted, one is constructed here — the ``setup()`` call
+                site has none to share.
+        """
+        from parrot.conf import OAUTH2_PROVIDERS_FILE
+
+        if not OAUTH2_PROVIDERS_FILE or app.get("_descriptor_oauth2_providers_registered"):
+            return
+
+        try:
+            from parrot.auth.oauth2.descriptor import load_provider_descriptors, register_descriptor_providers
+            from parrot.services.identity_credential_sink import IdentityVaultCredentialStore
+
+            descriptors = load_provider_descriptors(OAUTH2_PROVIDERS_FILE)
+            authdb = app.get("authdb")
+            if credential_store is None:
+                credential_store = IdentityVaultCredentialStore(authdb) if authdb is not None else None
+            providers = register_descriptor_providers(
+                descriptors,
+                app=app,
+                credential_store=credential_store,
+                event_publisher=app.get("connection_event_publisher"),
+            )
+            app["_descriptor_oauth2_providers_registered"] = True
+            self.logger.info("Registered %d descriptor OAuth2 providers", len(providers))
+        except Exception:  # noqa: BLE001
+            self.logger.exception("Failed to register descriptor OAuth2 providers")
+
+    def _register_jira_oauth2_provider(self, app: web.Application) -> None:
+        """Wire the shared Jira manager and provider while the app is mutable.
+
+        Mirrors :meth:`_register_o365_oauth2_provider`.  Without this, a plain
+        web deployment never gets a ``JiraOAuthManager``: only the Slack/MS
+        Teams path (per-bot ``{BOTNAME}_JIRA_*`` keys) builds one, so
+        :meth:`_register_oauth2_providers` finds ``app['jira_oauth_manager']``
+        unset and the Connections panel lists no Jira provider.
+
+        No-op when ``JIRA_CLIENT_ID`` is unset or the provider was already
+        registered.  Never raises: a misconfigured Jira must not block startup.
+
+        Args:
+            app: The aiohttp application, still mutable at ``setup()`` time.
+        """
+        from parrot.conf import JIRA_CLIENT_ID, JIRA_CLIENT_SECRET, JIRA_REDIRECT_URI
+
+        if not JIRA_CLIENT_ID or app.get("_jira_oauth2_provider_registered"):
+            return
+
+        try:
+            from parrot.auth.jira_oauth import JiraOAuthManager
+            from parrot.auth.oauth2.jira_provider import JiraOAuth2Provider
+            from parrot.auth.oauth2.registry import register_oauth2_provider
+            from parrot.services.identity_credential_sink import IdentityVaultCredentialStore
+
+            # Inspect BOTH keys before constructing: JiraOAuthManager.setup()
+            # sets each of them and raises RuntimeError when either already
+            # holds a different instance.
+            manager = app.get("jira_oauth_manager") or app.get("oauth2_manager_jira")
+            if manager is None:
+                authdb = app.get("authdb")
+                manager = JiraOAuthManager(
+                    JIRA_CLIENT_ID,
+                    JIRA_CLIENT_SECRET,
+                    JIRA_REDIRECT_URI,
+                    app=app,
+                    credential_store=IdentityVaultCredentialStore(authdb) if authdb is not None else None,
+                    event_publisher=app.get("connection_event_publisher"),
+                )
+                manager.setup()
+
+            register_oauth2_provider(JiraOAuth2Provider(manager=manager))
+            app["_jira_oauth2_provider_registered"] = True
+            self.logger.info("Registered JiraOAuth2Provider with the global OAuth2ProviderRegistry")
+        except Exception:  # noqa: BLE001
+            self.logger.exception("Failed to register the Jira OAuth2 provider")
+
+    def _register_o365_oauth2_provider(self, app: web.Application) -> None:
+        """Wire the shared O365 manager and provider while the app is mutable."""
+        from parrot.conf import O365_CLIENT_ID, O365_CLIENT_SECRET, O365_REDIRECT_URI, O365_TENANT_ID
+
+        if not O365_CLIENT_ID or app.get("_o365_oauth2_provider_registered"):
+            return
+
+        try:
+            from parrot.auth.o365_oauth import O365OAuthManager
+            from parrot.auth.oauth2.o365_provider import O365OAuth2Provider
+            from parrot.auth.oauth2.registry import register_oauth2_provider
+            from parrot.services.identity_credential_sink import IdentityVaultCredentialStore
+
+            manager = app.get(f"oauth2_manager_{O365OAuthManager.provider_id}")
+            if manager is None:
+                authdb = app.get("authdb")
+                manager = O365OAuthManager(
+                    O365_CLIENT_ID,
+                    O365_CLIENT_SECRET,
+                    O365_REDIRECT_URI,
+                    tenant_id=O365_TENANT_ID or "common",
+                    app=app,
+                    credential_store=IdentityVaultCredentialStore(authdb) if authdb is not None else None,
+                    event_publisher=app.get("connection_event_publisher"),
+                )
+                manager.setup()
+
+            register_oauth2_provider(O365OAuth2Provider(manager=manager))
+            app["_o365_oauth2_provider_registered"] = True
+            self.logger.info("Registered O365OAuth2Provider with the global OAuth2ProviderRegistry")
+        except Exception:  # noqa: BLE001
+            self.logger.exception("Failed to register the O365 OAuth2 provider")
+
     async def _register_oauth2_providers(self, app: web.Application) -> None:
         """Register OAuth2 providers with the global registry (FEAT-144).
 
@@ -2789,6 +3081,47 @@ Available documentation UIs:
                     "JiraOAuth2Provider not registered.  "
                     "Ensure JiraOAuthManager.setup(app) is called before startup."
                 )
+
+            o365_manager = app.get("oauth2_manager_o365")
+            connection_event_publisher = app.get("connection_event_publisher")
+            if (
+                o365_manager is not None
+                and getattr(o365_manager, "_events", None) is None
+                and connection_event_publisher is not None
+            ):
+                o365_manager._events = connection_event_publisher
+
+            identity_store = None
+            authdb = app.get("authdb")
+            if authdb is not None:
+                from parrot.auth.principal import set_principal_resolver
+                from parrot.services.identity_principal import IdentityPrincipalResolver
+
+                from parrot.services.identity_credential_sink import IdentityVaultCredentialStore
+
+                set_principal_resolver(IdentityPrincipalResolver(authdb))
+
+                identity_store = IdentityVaultCredentialStore(authdb)
+                seen: set = set()
+                candidates = [app.get("jira_oauth_manager")]
+                candidates.extend(
+                    value for key, value in list(app.items())
+                    if isinstance(key, str) and key.startswith("oauth2_manager_")
+                )
+                for candidate in candidates:
+                    if candidate is None or id(candidate) in seen:
+                        continue
+                    seen.add(id(candidate))
+                    bind = getattr(candidate, "bind_credential_store", None)
+                    if bind is not None:
+                        bind(identity_store)
+            else:
+                self.logger.info(
+                    "app['authdb'] unavailable — Identity Vault not bound; "
+                    "OAuth2 managers keep their default credential store"
+                )
+
+            self._register_descriptor_oauth2_providers(app, credential_store=identity_store)
         except Exception:  # noqa: BLE001
             self.logger.exception(
                 "Failed to register OAuth2 providers — integrations endpoints " "will return empty provider lists."
@@ -2823,7 +3156,12 @@ Available documentation UIs:
                 bot._dataplane_guard = guard  # noqa: SLF001
 
     def setup_registry_only(
-        self, app: web.Application, *, import_modules: bool = False, load_definitions: bool = False
+        self,
+        app: web.Application,
+        *,
+        import_modules: bool = False,
+        load_definitions: bool = False,
+        turn_persistence: bool = False,
     ) -> None:
         """Mount the agent registry without ``setup()`` (no routes, no startup agents).
 
@@ -2835,6 +3173,7 @@ Available documentation UIs:
             app: The aiohttp application.
             import_modules: Import ``AGENTS_DIR`` modules at startup.
             load_definitions: Load YAML agent definitions at startup.
+            turn_persistence: Also initialize ChatStorage and the turn bus at startup (FEAT-886).
 
         Raises:
             RuntimeError: When a scope resolver is installed on ``app`` and
@@ -2846,7 +3185,11 @@ Available documentation UIs:
         if app.get(_REGISTRY_ONLY_APP_KEY):
             self.logger.info("setup_registry_only: already installed on this app")
             return
-        app[_REGISTRY_ONLY_APP_KEY] = {"import_modules": import_modules, "load_definitions": load_definitions}
+        app[_REGISTRY_ONLY_APP_KEY] = {
+            "import_modules": import_modules,
+            "load_definitions": load_definitions,
+            "turn_persistence": turn_persistence,
+        }
         self.app = app
         app["bot_manager"] = self
         app.on_startup.append(self._registry_only_startup)
@@ -2855,6 +3198,132 @@ Available documentation UIs:
         from .studio_runtime import add_studio_runtime_hooks
 
         add_studio_runtime_hooks(app)
+        from parrot.userstore.checks import install_user_store_hooks
+
+        install_user_store_hooks(app)
+
+    _durable_memory: Optional[_DurableMemory] = None
+    #: Live bots wired to the turn bus (weak: an evicted per-user / temporary bot is collectable).
+    _durable_bots: "weakref.WeakSet[AbstractBot]"
+    _registry_only_chat_storage: Optional[ChatStorage] = None
+
+    def _build_durable_memory(self, chat_storage: ChatStorage, handle: TurnPersistence) -> _DurableMemory:
+        """Build the shared hydration source and sequence allocator from the running ChatStorage."""
+        cold = chat_storage.cold_backend
+        hot_client = chat_storage.hot_redis_client
+        return _DurableMemory(
+            chat_storage=chat_storage,
+            handle=handle,
+            hydration_source=ChatStorageHydrationSource(cold) if cold is not None else None,
+            sequence_allocator=RedisSequenceAllocator(hot_client) if hot_client is not None else LocalSequenceAllocator(),
+        )
+
+    async def _start_turn_persistence(self, app: web.Application, chat_storage: ChatStorage) -> None:
+        """Start the turn bus; on failure log ERROR and leave the server running (Q16)."""
+        try:
+            handle = await setup_turn_persistence(chat_storage)
+        except Exception as exc:  # noqa: BLE001 - startup must never be blocked by the audit bus
+            self.logger.error("Turn persistence not started, agents run without ChatStorage: %s", exc, exc_info=True)
+            return
+        app["turn_persistence"] = handle
+        self._durable_memory = self._build_durable_memory(chat_storage, handle)
+        # ONE working-memory cleaner for the whole manager; it resolves the bots by agent name at call time
+        chat_storage.register_memory_cleaner(self._clean_working_memory)
+        chat_storage.register_turn_memory_cleaner(self._clean_working_memory_turn)
+        for bot in list(self._bots.values()):  # bots loaded before the bus existed
+            self._attach_durable_memory(bot)
+        self.logger.info("Turn persistence started")
+
+    async def _stop_turn_persistence(self, app: web.Application) -> None:
+        """Detach and stop the turn bus BEFORE ChatStorage closes (preserves the outbox)."""
+        handle = app.pop("turn_persistence", None)
+        self._durable_memory = None
+        if handle is None:
+            return
+        try:
+            await shutdown_turn_persistence(handle)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning("Turn persistence shutdown failed: %s", exc)
+
+    def _attach_durable_memory(self, bot: "AbstractBot") -> None:
+        """Set ``turn_publisher`` / ``hydration_source`` / ``sequence_allocator`` on ``bot`` (FEAT-886 M17).
+
+        No-op when turn persistence is not running. A collaborator the bot already carries is kept.
+        Registers one working-memory cleaner per bot with ChatStorage.
+        """
+        durable = self._durable_memory
+        if durable is None or getattr(bot, "_durable_memory_attached", False):
+            return
+        if bot.turn_publisher is None:
+            bot.turn_publisher = durable.handle.publisher
+        if bot.hydration_source is None:
+            bot.hydration_source = durable.hydration_source
+        if bot.sequence_allocator is None:
+            bot.sequence_allocator = durable.sequence_allocator
+        self._durable_bots.add(bot)
+        bot._durable_memory_attached = True  # noqa: SLF001 - idempotency marker
+
+    def _bots_named(self, agent_id: str) -> List["AbstractBot"]:
+        """Live durable bots named ``agent_id`` that own a conversation memory (resolved at call time)."""
+        return [
+            bot for bot in list(self._durable_bots)
+            if getattr(bot, "conversation_memory", None) is not None and getattr(bot, "name", None) == agent_id
+        ]
+
+    async def _clean_each_bot(self, agent_id: str, what: str, clean: Callable[["AbstractBot"], Awaitable[None]]) -> None:
+        """Run ``clean`` on every matching bot; one failing bot never stops the rest.
+
+        Raises:
+            RuntimeError: at the END, aggregating every failure, so ChatStorage's cleanup retry still happens.
+        """
+        errors: List[BaseException] = []
+        for bot in self._bots_named(agent_id):
+            try:
+                await clean(bot)
+            except Exception as exc:  # noqa: BLE001 - isolate the bot, keep cleaning the others
+                self.logger.error("working-memory cleanup (%s) failed for a bot named %s: %s", what, agent_id, exc)
+                errors.append(exc)
+        if errors:
+            raise RuntimeError(
+                f"working-memory cleanup ({what}) failed for {len(errors)} bot(s) named {agent_id}: "
+                + "; ".join(type(e).__name__ for e in errors)
+            ) from errors[0]
+
+    async def _clean_working_memory(self, user_id: str, agent_id: str, session_id: str) -> None:
+        """The single ``ChatStorage`` memory cleaner: clear the history of every live bot named ``agent_id``.
+
+        Resolves the bots at call time (shared bots, cached per-user bots, temporary bots) through a weak set,
+        so an evicted bot is neither kept alive nor awaited. Each bot is isolated (see ``_clean_each_bot``).
+        """
+        async def clean(bot: "AbstractBot") -> None:
+            await bot.conversation_memory.delete_history(user_id, session_id, chatbot_id=bot.memory_key_id)
+
+        await self._clean_each_bot(agent_id, f"session {session_id}", clean)
+
+    async def _clean_working_memory_turn(self, user_id: str, agent_id: str, session_id: str, turn_id: str) -> None:
+        """Drop ONE deleted turn from the working memory of every live bot named ``agent_id``.
+
+        Without this a bot keeps feeding the deleted turn to the LLM until the history's TTL
+        (``_load_or_hydrate_history`` returns an existing history untouched). Each bot is isolated.
+        The removal is the memory's own atomic ``remove_turn`` (compare-and-swap on Redis), so a turn the bot
+        appends concurrently is never overwritten.
+        """
+        async def clean(bot: "AbstractBot") -> None:
+            await bot.conversation_memory.remove_turn(user_id, session_id, turn_id, chatbot_id=bot.memory_key_id)
+
+        await self._clean_each_bot(agent_id, f"turn {turn_id}", clean)
+
+    async def _start_registry_only_persistence(self, app: web.Application) -> None:
+        """Registry-only hosts have no on_startup: create + initialize ChatStorage, then start the bus."""
+        chat_storage = ChatStorage()
+        try:
+            await chat_storage.initialize()
+        except Exception as exc:  # noqa: BLE001
+            self.logger.error("ChatStorage initialization failed, turn persistence disabled: %s", exc)
+            return
+        app["chat_storage"] = chat_storage
+        self._registry_only_chat_storage = chat_storage
+        await self._start_turn_persistence(app, chat_storage)
 
     async def _registry_only_startup(self, app: web.Application) -> None:
         """registry.setup(app) (+ opt-in imports), then start the legacy expiry loop."""
@@ -2870,9 +3339,15 @@ Available documentation UIs:
                 if definitions_dir.is_dir():
                     self.registry.load_agent_definitions(definitions_dir)
         self._cleanup_task = asyncio.create_task(self._cleanup_expired_bots())
+        if opts.get("turn_persistence"):
+            await self._start_registry_only_persistence(app)
 
     async def _registry_only_shutdown(self, app: web.Application) -> None:
         """Cancel the legacy expiry loop (mirrors ``on_shutdown``)."""
+        await self._stop_turn_persistence(app)
+        owned_storage, self._registry_only_chat_storage = self._registry_only_chat_storage, None
+        if owned_storage is not None:
+            await owned_storage.close()
         task = self._cleanup_task
         self._cleanup_task = None
         if task:
@@ -2915,8 +3390,12 @@ Available documentation UIs:
         # Initialize BotConfigStorage and attach to app
         if self.enable_registry_bots:
             app["bot_config_storage"] = BotConfigStorage()
-        # Load crews from Redis
+        # Initialize the configured store before loading crews from it.
         if self.enable_crews:
+            if self.crew_storage is not None:
+                report = await self.crew_storage.initialize()
+                if report is not None:
+                    self._log_crew_migration_report(report)
             await self.load_crews()
         # Start background cleanup task for expired bots
         self._cleanup_task = asyncio.create_task(self._cleanup_expired_bots())
@@ -2926,6 +3405,7 @@ Available documentation UIs:
         try:
             await chat_storage.initialize()
             self.logger.info("ChatStorage initialized (Redis + DocumentDB)")
+            await self._start_turn_persistence(app, chat_storage)
         except Exception as exc:
             self.logger.warning("ChatStorage initialization failed: %s", exc)
         # Initialize Dashboard indexes
@@ -2962,6 +3442,7 @@ Available documentation UIs:
         # Stop Integration bots
         if self._integration_manager:
             await self._integration_manager.shutdown()
+        await self._stop_turn_persistence(app)
         # Close ChatStorage
         chat_storage = app.get("chat_storage")
         if chat_storage:
@@ -2995,16 +3476,23 @@ Available documentation UIs:
         if crew_key in self._crews:
             raise ValueError(f"Crew '{name}' already exists")
 
-        # Add to memory
-        self._crews[crew_key] = (crew, crew_def)
-
-        # Persist to Redis (only when Redis-backed persistence is enabled)
+        # Preserve Redis mode's historic best-effort cache-first behavior.
         if self.crew_redis is None:
+            self._crews[crew_key] = (crew, crew_def)
             self.logger.debug(
                 "Crew persistence disabled (ENABLE_CREWS is False); " "crew '%s' registered in memory only",
                 name,
             )
             return
+
+        if self.crew_storage is not None and self.crew_storage_backend == "postgres":
+            # A create must never replace a live same-name crew another worker already persisted.
+            await self.crew_storage.create_crew(crew_def)
+            self._crews[crew_key] = (crew, crew_def)
+            self.logger.info("Registered crew '%s' after PostgreSQL persistence", name)
+            return
+
+        self._crews[crew_key] = (crew, crew_def)
 
         try:
             await self.crew_redis.save_crew(crew_def)
@@ -3064,11 +3552,12 @@ Available documentation UIs:
             return (None, None)
 
         try:
+            storage = self.crew_storage or self.crew_redis
             # Try to load by name first
-            crew_def = await self.crew_redis.load_crew(identifier, tenant)
+            crew_def = await storage.load_crew(identifier, tenant)
             # If not found by name, try by ID
             if not crew_def:
-                crew_def = await self.crew_redis.load_crew_by_id(identifier, tenant)
+                crew_def = await storage.load_crew_by_id(identifier, tenant)
 
             if crew_def:
                 # We found it in Redis!
@@ -3086,6 +3575,8 @@ Available documentation UIs:
                 else:
                     return (base_crew, crew_def)
 
+        except (CrewStorageUnavailable, CrewStorageConflict):
+            raise
         except Exception as e:
             self.logger.error(f"Error loading crew '{identifier}' from Redis: {e}")
             return (None, None)
@@ -3121,6 +3612,35 @@ Available documentation UIs:
         crew_def = None
         tenant = self._normalize_tenant(tenant)
 
+        if self.crew_storage is not None and self.crew_storage_backend == "postgres":
+            resolution = await self.crew_storage.resolve_for_delete(identifier, tenant)
+            if resolution.state == "absent":
+                return False
+            if resolution.state == "deleted":
+                if resolution.definition is not None:
+                    self._crews.pop(self._get_crew_key(tenant, resolution.definition.name), None)
+                return True
+
+            resolved = resolution.definition
+            if resolved is None:
+                # A malformed authoritative row keeps its identity; tombstone it without a decodable document.
+                if resolution.name is None or resolution.crew_id is None:
+                    raise CrewStorageUnavailable("Crew deletion resolution had no definition")
+                cached = self._crews.get(self._get_crew_key(tenant, resolution.name))
+                if cached is not None and cached[1].crew_id != resolution.crew_id:
+                    raise CrewStorageConflict("Crew definition delete conflicts with the current identity")
+                await self.crew_storage.tombstone_resolution(resolution)
+                self._crews.pop(self._get_crew_key(tenant, resolution.name), None)
+                self.logger.info("Removed malformed crew '%s' after PostgreSQL tombstone persistence", resolution.name)
+                return True
+            cached = self._crews.get(self._get_crew_key(tenant, resolved.name))
+            if cached is not None and cached[1].crew_id != resolved.crew_id:
+                raise CrewStorageConflict("Crew definition delete conflicts with the current identity")
+            await self.crew_storage.delete_crew(resolved)
+            self._crews.pop(self._get_crew_key(tenant, resolved.name), None)
+            self.logger.info("Removed crew '%s' after PostgreSQL tombstone persistence", resolved.name)
+            return True
+
         # Try by name first
         crew_key = self._get_crew_key(tenant, identifier)
         if crew_key in self._crews:
@@ -3153,6 +3673,66 @@ Available documentation UIs:
             return True
 
         return False
+
+    def _log_crew_migration_report(self, report: Any) -> None:
+        """Log the outcome of the startup crew-definition migration.
+
+        Args:
+            report: ``CrewMigrationReport`` returned by ``CrewDefinitionStorage.initialize``.
+        """
+        if report.skipped_reason:
+            self.logger.warning("Crew definition migration skipped: %s", report.skipped_reason)
+        self.logger.info(
+            "Crew definition migration: %d migrated, %d already present, %d deleted sources, "
+            "%d conflicts, %d failed, %d Redis cleanups failed%s",
+            len(report.migrated),
+            len(report.already_present),
+            len(report.deleted_sources),
+            len(report.conflicts),
+            len(report.failed),
+            len(report.redis_cleanup_failed),
+            " (dry run)" if report.dry_run else "",
+        )
+        for key in report.conflicts:
+            self.logger.warning("Crew definition migration conflict retained in Redis for reconciliation: %s", key)
+        for key, reason in report.failed.items():
+            self.logger.warning("Crew definition migration kept source %s: %s", key, reason)
+        for key in report.redis_cleanup_failed:
+            self.logger.warning("Crew definition migration could not remove verified Redis source: %s", key)
+
+    async def persist_crew_update(self, identifier: str, crew: AgentCrew, crew_def: CrewDefinition) -> None:
+        """Persist a same-name update once before replacing its cache entry.
+
+        Args:
+            identifier: Existing crew name or identifier.
+            crew: Rebuilt crew instance for the updated definition.
+            crew_def: Requested updated definition.
+
+        Raises:
+            CrewStorageConflict: If the requested update renames or conflicts.
+            CrewStorageUnavailable: If the configured store cannot persist it.
+        """
+        if self.crew_storage is None:
+            raise CrewStorageUnavailable("Crew persistence is disabled")
+
+        tenant = self._normalize_tenant(crew_def.tenant)
+        existing = await self.crew_storage.load_crew(identifier, tenant)
+        if existing is None:
+            existing = await self.crew_storage.load_crew_by_id(identifier, tenant)
+        if existing is None:
+            raise CrewStorageConflict("Crew definition update conflicts with an absent crew")
+        if crew_def.name != existing.name:
+            raise CrewStorageConflict("Crew definition updates cannot rename a crew")
+
+        persisted_def = crew_def.model_copy(
+            update={
+                "crew_id": existing.crew_id,
+                "tenant": existing.tenant,
+                "created_at": existing.created_at,
+            }
+        )
+        await self.crew_storage.save_crew(persisted_def)
+        self._crews[self._get_crew_key(existing.tenant, existing.name)] = (crew, persisted_def)
 
     def update_crew(self, identifier: str, crew: AgentCrew, crew_def: CrewDefinition) -> bool:
         """
@@ -3191,13 +3771,12 @@ Available documentation UIs:
             self.logger.debug("Crew persistence disabled (ENABLE_CREWS is False); " "skipping crew loading from Redis")
             return
         try:
-            # Check Redis connection
-            if not await self.crew_redis.ping():
-                self.logger.warning("Redis connection failed, skipping crew loading")
+            storage = self.crew_storage or self.crew_redis
+            if not await storage.ping():
+                self.logger.warning("Crew definition storage connection failed, skipping crew loading")
                 return
 
-            # Get all crew definitions from Redis
-            crew_defs = await self.crew_redis.get_all_crews()
+            crew_defs = await storage.get_all_crews()
 
             if not crew_defs:
                 self.logger.info("No crews found in Redis")
@@ -3239,8 +3818,8 @@ Available documentation UIs:
             # Redis-backed persistence disabled; nothing to sync (in-memory only)
             return
         try:
-            # Get all crew names from Redis
-            remote_entries = await self.crew_redis.list_all_crews()
+            storage = self.crew_storage or self.crew_redis
+            remote_entries = await storage.list_all_crews()
             remote_names = {self._get_crew_key(entry["tenant"], entry["name"]) for entry in remote_entries}
             local_names = set(self._crews.keys())
 
@@ -3257,7 +3836,7 @@ Available documentation UIs:
             for key in added:
                 try:
                     tenant, name = self._split_crew_key(key)
-                    crew_def = await self.crew_redis.load_crew(name, tenant)
+                    crew_def = await storage.load_crew(name, tenant)
                     if crew_def:
                         crew = await self._create_crew_from_definition(crew_def)
                         self._crews[key] = (crew, crew_def)

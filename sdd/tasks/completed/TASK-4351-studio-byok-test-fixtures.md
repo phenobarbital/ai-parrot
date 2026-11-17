@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-677 — Studio BYOK test fixtures follow the vault KeyRing API
 **Spec**: `sdd/specs/studio-byok-test-fix.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

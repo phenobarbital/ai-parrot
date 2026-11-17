@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-615 — Bookstore re-index via staging tree + atomic PageIndex rename
 **Spec**: `sdd/specs/bookstore-reindex-atomic-swap.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: none

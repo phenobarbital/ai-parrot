@@ -1,52 +1,38 @@
-document.addEventListener('DOMContentLoaded', function () {
-    // Initialize Mermaid
-    mermaid.initialize({
-        startOnLoad: true,
-        theme: 'dark',
-        securityLevel: 'loose',
-        logLevel: 'error',
+/** Handles navigation, theme, copy, and Mermaid interactions for the static landing page. */
+document.addEventListener("DOMContentLoaded", () => {
+  const root = document.documentElement;
+  const navToggle = document.querySelector(".nav-toggle");
+  const navLinks = document.querySelector(".nav-links");
+  const themeToggle = document.querySelector(".theme-toggle");
+  const applyTheme = (theme) => {
+    root.dataset.theme = theme;
+    themeToggle?.setAttribute("aria-label", `Use ${theme === "dark" ? "light" : "dark"} theme`);
+    const icon = themeToggle?.querySelector("i");
+    icon?.classList.replace(theme === "dark" ? "fa-moon" : "fa-sun", theme === "dark" ? "fa-sun" : "fa-moon");
+  };
+  const savedTheme = localStorage.getItem("ai-parrot-theme");
+  if (savedTheme === "dark" || savedTheme === "light") applyTheme(savedTheme);
+  themeToggle?.addEventListener("click", () => {
+    const theme = root.dataset.theme === "dark" ? "light" : "dark";
+    localStorage.setItem("ai-parrot-theme", theme);
+    applyTheme(theme);
+  });
+  navToggle?.addEventListener("click", () => {
+    const isOpen = navLinks?.classList.toggle("is-open") ?? false;
+    navToggle.setAttribute("aria-expanded", String(isOpen));
+  });
+  navLinks?.querySelectorAll("a").forEach((link) => link.addEventListener("click", () => {
+    navLinks.classList.remove("is-open");
+    navToggle?.setAttribute("aria-expanded", "false");
+  }));
+  document.querySelectorAll(".copy-button").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const target = document.getElementById(button.dataset.copyTarget || "");
+      if (!target) return;
+      await navigator.clipboard.writeText(target.textContent || "");
+      button.textContent = "Copied";
+      window.setTimeout(() => { button.textContent = "Copy"; }, 1600);
     });
-
-    // Smooth Scroll for anchor links
-    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-        anchor.addEventListener('click', function (e) {
-            e.preventDefault();
-            document.querySelector(this.getAttribute('href')).scrollIntoView({
-                behavior: 'smooth'
-            });
-        });
-    });
-
-    // Simple Intersection Observer to fade in elements
-    const observerOptions = {
-        threshold: 0.1
-    };
-
-    const observer = new IntersectionObserver((entries) => {
-        entries.forEach(entry => {
-            if (entry.isIntersecting) {
-                entry.target.classList.add('visible');
-                observer.unobserve(entry.target);
-            }
-        });
-    }, observerOptions);
-
-    document.querySelectorAll('.feature-card, .code-wrapper, .table-wrapper').forEach(el => {
-        el.style.opacity = '0';
-        el.style.transform = 'translateY(20px)';
-        el.style.transition = 'opacity 0.6s ease-out, transform 0.6s ease-out';
-        observer.observe(el);
-    });
-});
-
-// Helper for Fade In class
-document.addEventListener('DOMContentLoaded', () => {
-    const style = document.createElement('style');
-    style.innerHTML = `
-        .visible {
-            opacity: 1 !important;
-            transform: translateY(0) !important;
-        }
-    `;
-    document.head.appendChild(style);
+  });
+  if (window.mermaid) window.mermaid.initialize({ startOnLoad: true, theme: root.dataset.theme === "dark" ? "dark" : "default" });
 });

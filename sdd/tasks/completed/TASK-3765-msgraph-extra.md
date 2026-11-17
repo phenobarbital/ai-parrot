@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-603 — SharePoint & OneDrive FileManager
 **Spec**: `sdd/specs/sharepoint-filemanager.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

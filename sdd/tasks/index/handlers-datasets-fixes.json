@@ -1,0 +1,78 @@
+{
+  "feature": "handlers-datasets-fixes",
+  "feature_id": "FEAT-738",
+  "spec": "sdd/specs/handlers-datasets-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-24T00:10:19.526069+00:00",
+  "completed_at": "2026-10-24T00:18:27+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/auth/test_authorizing_data_source.py",
+          "packages/ai-parrot/tests/auth/test_datasetmanager_authz_integration.py",
+          "packages/ai-parrot/tests/outputs/a2ui/linked/test_epson_dashboard_golden.py",
+          "packages/ai-parrot/tests/outputs/a2ui/linked/test_derived_sources.py",
+          "packages/ai-parrot-server/tests/handlers/test_datasets_clone.py",
+          "packages/ai-parrot-server/tests/handlers/test_agent_uploads.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:d080c542e47f1aa012c15029d8c98551259ac8ad70bad5a6a92689e5f2fe293b"
+  },
+  "tasks": [
+    {
+      "id": "TASK-4678",
+      "slug": "request-scoped-rls-injection",
+      "title": "Shared request_scoped_copy helper + request-scoped RLS injection",
+      "feature_id": "FEAT-738",
+      "feature": "handlers-datasets-fixes",
+      "spec": "sdd/specs/handlers-datasets-fixes.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies; owns sources/scoped_copy.py, sources/__init__.py, sources/authorizing.py and tests/auth/test_authorizing_data_source.py exclusively.",
+      "assigned_to": null,
+      "started_at": "2026-10-24T00:11:46.845454+00:00",
+      "completed_at": "2026-10-24T00:15:53+00:00",
+      "file": "sdd/tasks/completed/TASK-4678-request-scoped-rls-injection.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4679",
+      "slug": "clone-agent-dm-isolated-source",
+      "title": "_clone_agent_dm must not share DataSource objects across user managers",
+      "feature_id": "FEAT-738",
+      "feature": "handlers-datasets-fixes",
+      "spec": "sdd/specs/handlers-datasets-fixes.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4678"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Imports request_scoped_copy created by TASK-4678 (packages/ai-parrot/src/parrot/tools/dataset_manager/sources/scoped_copy.py); no file overlap with it.",
+      "assigned_to": null,
+      "started_at": "2026-10-24T00:16:22.067112+00:00",
+      "completed_at": "2026-10-24T00:18:27+00:00",
+      "file": "sdd/tasks/completed/TASK-4679-clone-agent-dm-isolated-source.md",
+      "verification": "verified"
+    }
+  ]
+}

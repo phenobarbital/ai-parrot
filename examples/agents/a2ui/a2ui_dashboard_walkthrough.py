@@ -40,7 +40,7 @@ Output lands in ``artifacts/a2ui_dashboard/``.
    so ``--open`` serves the directory over HTTP rather than opening the file
    directly.
 
-Related: ``docs/outputs/a2ui-v1.md`` (the wire), ``docs/toolkits/
+Related: ``wiki/outputs/a2ui-v1.md`` (the wire), ``docs/toolkits/
 infographic_toolkit.md`` (the toolkit), ``examples/simple_infographic_agent.py``
 (the recipe/replay lane this example deliberately does not cover).
 """

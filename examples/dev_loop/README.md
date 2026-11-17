@@ -654,7 +654,7 @@ Two behaviours worth knowing:
 >    drop the judge panel and let the plan assemble its review pair
 >    (primary + Mantle counter-reviewer) as the active QA reviewer.
 
-See `docs/dev_loop/dev-flow-model-plan.md` for the full reference.
+See `wiki/sdd-tooling/dev_loop/dev-flow-model-plan.md` for the full reference.
 
 ### New configuration keys
 
@@ -805,7 +805,7 @@ the UI consumes verbatim:
 A Slack bot can dispatch the same flows with `/devloop --type feature|bug …`;
 each run executes as a headless child (`parrot devloop run --headless …`)
 and Open Questions are answered in the run thread. See
-[`docs/integrations/slack-devloop.md`](../../docs/integrations/slack-devloop.md)
+[`wiki/integrations/slack-devloop.md`](https://github.com/phenobarbital/ai-parrot/wiki/Integrations-Dev-loop-kick-off-from-Slack-%28FEAT-555%29)
 for the Slack app manifest, YAML config, command syntax and limitations.
 
 ## Troubleshooting

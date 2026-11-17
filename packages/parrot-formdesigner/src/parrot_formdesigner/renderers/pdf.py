@@ -96,6 +96,27 @@ def _extract_display_name(value: Any) -> str:
     return str(value) if value else ""
 
 
+def _boolean_selected(raw: Any) -> str:
+    """Return the radio value a raw (unstringified) boolean prefill selects.
+
+    Args:
+        raw: Raw prefilled value (bool, int or string), or ``None``.
+
+    Returns:
+        ``"true"`` for True/"true"/"True"/1/"1", ``"false"`` for
+        False/"false"/"False"/0/"0", otherwise ``""``.
+    """
+    if raw is None:
+        return ""
+    if isinstance(raw, bool):
+        return "true" if raw else "false"
+    if raw in (1, "1", "true", "True"):
+        return "true"
+    if raw in (0, "0", "false", "False"):
+        return "false"
+    return ""
+
+
 def _localize(value: LocalizedString | None, locale: str, default: str = "") -> str:
     """Resolve a ``LocalizedString`` to a plain string."""
     if value is None:
@@ -392,14 +413,26 @@ class PdfRenderer(AbstractFormRenderer):
                 value=prefilled_value or "",
             )
         elif field.field_type == FieldType.BOOLEAN:
-            form.checkbox(
-                name=field.field_id,
-                tooltip=label,
-                x=x,
-                y=y,
-                size=4 * mm,
-                checked=bool(prefilled_value),
-            )
+            # Yes / No radios of ONE group. Prefill uses the raw value: the stringified
+            # ``prefilled_value`` would make bool("False") True.
+            raw = prefilled[field.field_id] if _has_prefilled else None
+            selected = _boolean_selected(raw)
+            size = 4 * mm
+            choice_x = x
+            for value, text in (("true", "Yes"), ("false", "No")):
+                form.radio(
+                    name=field.field_id,
+                    value=value,
+                    selected=selected == value,
+                    x=choice_x,
+                    y=y,
+                    size=size,
+                    tooltip=f"{label}: {text}",
+                    fieldFlags="noToggleToOff radio" + (" required" if field.required else ""),
+                )
+                c.setFont("Helvetica", 10)
+                c.drawString(choice_x + size + 2 * mm, y, text)
+                choice_x += size + 2 * mm + c.stringWidth(text, "Helvetica", 10) + 6 * mm
         elif field.field_type == FieldType.SELECT:
             # ReportLab's _textfield only initializes `lbextras` inside the
             # `if value:` branch — passing an empty value crashes with

@@ -1,0 +1,14 @@
+# Technical Reference
+
+{% if report.release %}Release: `{{ report.release }}`
+{% endif %}{% if report.commit %}Commit: `{{ report.commit }}`
+{% endif %}{% if site_url %}[Informative site]({{ site_url }})
+{% endif %}
+{% for section in sections %}
+## {{ section.name }}
+
+{{ section.count }} page(s)
+
+{% for page in section.pages %}- [{{ page.title }}]({{ page.href }})
+{% endfor %}
+{% endfor %}
