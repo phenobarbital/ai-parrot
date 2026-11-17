@@ -47,7 +47,12 @@ returns, using the same elapsed time the method passes as `duration_ms` to `_emi
 
 | File | Action | Description |
 |---|---|---|
-| the six client files in the table above | MODIFY | Set `response_time` on the returned `AIMessage` in `ask()` |
+| `packages/ai-parrot-client-google/src/parrot/clients/google/client.py` | MODIFY | Set `response_time` on the returned `AIMessage` in `ask()` |
+| `packages/ai-parrot-client-anthropic/src/parrot/clients/anthropic/client.py` | MODIFY | Set `response_time` on the returned `AIMessage` in `ask()` |
+| `packages/ai-parrot/src/parrot/clients/openai_base.py` | MODIFY | Set `response_time` on the returned `AIMessage` in `ask()` |
+| `packages/ai-parrot-client-openai/src/parrot/clients/openai/client.py` | MODIFY | Set `response_time` on the returned `AIMessage` in `ask()` |
+| `packages/ai-parrot-client-groq/src/parrot/clients/groq/client.py` | MODIFY | Set `response_time` on the returned `AIMessage` in `ask()` |
+| `packages/ai-parrot-client-amazon/src/parrot/clients/amazon/bedrock.py` | MODIFY | Set `response_time` on the returned `AIMessage` in `ask()` |
 | `packages/ai-parrot/tests/unit/clients/test_client_response_time.py` | CREATE | Regression tests |
 
 ## Codebase Contract (Anti-Hallucination)
