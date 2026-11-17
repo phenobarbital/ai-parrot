@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-908 — Necessity Ladder — least-new-code gate in the SDD flow
 **Spec**: `sdd/specs/ponytail-like-stairway.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -194,10 +194,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (native sonnet seat, attempt a1; merged by coder_merge)
+**Date**: 2026-11-17
+**Notes**: Added a "Reuse first" section to the three conventions copies and a placeholder section to sdd/CONVENTIONS.md; packaged copy regenerated. Checks: asset sync --check rc=0; conventions tests 33 passed; orchestrator also ran every tests-tree module referencing the conventions files: 247 passed, 7 failed (test_llm_code_dispatcher path_guard x2, test_installer foreign_repo x3, 2 more) in code unrelated to markdown (e.g. experts/triage CLI scenario) — not caused by this task; the engine merge tier reported no new red.
+Seat: sonnet · Backend: native · Attempts: 1
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

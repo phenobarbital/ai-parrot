@@ -164,7 +164,7 @@
       "feature_id": "FEAT-908",
       "feature": "ponytail-like-stairway",
       "spec": "sdd/specs/ponytail-like-stairway.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -172,8 +172,9 @@
       "parallelism_notes": "independent: edits only sdd/CONVENTIONS.md, the three codebase-conventions copies and the packaged seed",
       "assigned_to": null,
       "started_at": "2026-11-17T16:26:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5747-conventions-reuse-first.md"
+      "completed_at": "2026-11-17T16:48:55+00:00",
+      "file": "sdd/tasks/completed/TASK-5747-conventions-reuse-first.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5748",
