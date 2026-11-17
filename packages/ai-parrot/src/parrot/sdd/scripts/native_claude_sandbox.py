@@ -282,8 +282,10 @@ def _denied_write_paths(root: Path, git_dir: Path) -> list[str]:
         root / ".claude" / "settings.local.json",
         root / ".claude" / "agents",
         git_dir / "hooks",
+        # config is ro-bound, so a rename of config.lock onto it fails EBUSY. Do NOT list config.lock: the
+        # sandbox runtime materialises every nonexistent deny path as a 0-byte 0444 host stub that git then
+        # treats as a held lock, blocking every host-side `git config` write.
         git_dir / "config",
-        git_dir / "config.lock",
         admin_dir / "config.worktree",
         admin_dir / "hooks",
     ]
