@@ -72,7 +72,7 @@
       "feature_id": "FEAT-908",
       "feature": "ponytail-like-stairway",
       "spec": "sdd/specs/ponytail-like-stairway.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -80,8 +80,9 @@
       "parallelism_notes": "independent: edits only the three sdd-spec twins and their packaged copies; names template headings fixed by the spec, not by TASK-5741's file",
       "assigned_to": null,
       "started_at": "2026-11-17T16:26:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5742-sdd-spec-ladder-gate.md"
+      "completed_at": "2026-11-17T17:24:21+00:00",
+      "file": "sdd/tasks/completed/TASK-5742-sdd-spec-ladder-gate.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5743",

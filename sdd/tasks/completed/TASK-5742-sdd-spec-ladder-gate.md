@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-908 — Necessity Ladder — least-new-code gate in the SDD flow
 **Spec**: `sdd/specs/ponytail-like-stairway.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -230,10 +230,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: host Claude Code session (Opus 5.5), applied by hand after the sdd-worker seats were blocked
+**Date**: 2026-11-17
+**Notes**: Applied `sdd/state/FEAT-908/inputs/sdd-spec.command.patch` (git apply --check clean), rebuilt the google twin with the step-2 command, inserted the three codex skill bullets at their anchors (each count 1), and regenerated the packaged copies with `check_asset_sync.py --write`; `git diff --name-only` listed exactly the six task files and `--check` exits 0. Validation commands: 123 passed. AC spot-checks: `## Usage` unchanged, no escaped `future\|later` in either twin. The worker seats could not do it: codex mounts `.agents/` read-only and the native sandbox refused writes to `.claude/commands/`, so this was done from a host session. Closed via `scripts/sdd/close_task.sh`.
+Seat: host · Backend: manual · Attempts: 3 (a1/a2 by worker seats, blocked by read-only mounts)
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
