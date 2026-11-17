@@ -84,7 +84,7 @@ that draft left open.
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:431c075c8c856e94eee27a0c8e8a6de6a37ca4bcd8d788ad42c254db9faa6e04 evaluation_digest=sha256:4d458027f95985fe314957e530d2c5377a98dd4309d0ee19360fc20465645c53 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:d34a318fbae01f33b0ae179a7e6d28c194f0c698d256d2f83d9b3f2492f29a6c evaluation_digest=sha256:8a10b47d094e901b0e404cda718c32f3fcc759d846b3468cdef88d8d377ed9e9 rules_version=1 status=pass -->
 
 ## 2. Architectural Design
 
@@ -489,6 +489,13 @@ tests:
 - tests/sdd_scripts/test_decision_audit_entry_points.py
 - packages/ai-parrot/tests/sdd/test_consult_step_twins.py
 - packages/ai-parrot/tests/flows/test_conventions.py
+- tests/sdd_scripts/test_command_twin_parity.py
+- tests/sdd/test_codex_sdd_sync.py
+- tests/sdd_scripts/test_brainstorm_intake_contract.py
+- tests/sdd_scripts/test_proposal_parallel.py
+- tests/sdd_scripts/test_intake_procedure.py
+- packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_review_handoff_contract.py
+- packages/ai-parrot/tests/sdd/test_agy_agents.py
 markers: none
 
 ### Test Data / Fixtures
@@ -676,8 +683,12 @@ Verified against: `6c2c601490`
   flag asks for an explanation and is not a failing criterion.
 - **Unattended runs.** `sdd-planner` runs `/sdd-spec` with no one to ask. §4c and §5a never ask:
   anything needing a person becomes a `[ ]` in §8.
-- **Asset regeneration is an exclusive step.** `--write` rewrites `manifest.json`; run it once,
-  last, after M1–M5 are merged into the feature branch.
+- **Asset regeneration is per task, not exclusive.** `manifest.json` holds only entries (source,
+  target, hosts) and no hashes, and this feature adds no entry, so `--write` leaves it
+  byte-identical (verified at `8aa39051a6`). Each task therefore runs `--write` for its own
+  sources and declares the packaged copies it changes; that keeps `test_repo_assets_in_sync`
+  green after every merge instead of red until a final regeneration step. The last task re-runs
+  `--check`.
 
 ### External Dependencies
 
@@ -687,7 +698,7 @@ None. No package is added or upgraded.
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:431c075c8c856e94eee27a0c8e8a6de6a37ca4bcd8d788ad42c254db9faa6e04 evaluation_digest=sha256:4d458027f95985fe314957e530d2c5377a98dd4309d0ee19360fc20465645c53 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:d34a318fbae01f33b0ae179a7e6d28c194f0c698d256d2f83d9b3f2492f29a6c evaluation_digest=sha256:8a10b47d094e901b0e404cda718c32f3fcc759d846b3468cdef88d8d377ed9e9 rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -742,10 +753,10 @@ Coverage:
       "path": "/home/jesuslara/proyectos/ai-parrot/sdd/specs/ponytail-like-stairway.spec.md"
     }
   ],
-  "evaluation_digest": "sha256:4d458027f95985fe314957e530d2c5377a98dd4309d0ee19360fc20465645c53",
+  "evaluation_digest": "sha256:8a10b47d094e901b0e404cda718c32f3fcc759d846b3468cdef88d8d377ed9e9",
   "exit_code": 0,
   "findings": [],
-  "input_digest": "sha256:431c075c8c856e94eee27a0c8e8a6de6a37ca4bcd8d788ad42c254db9faa6e04",
+  "input_digest": "sha256:d34a318fbae01f33b0ae179a7e6d28c194f0c698d256d2f83d9b3f2492f29a6c",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
@@ -810,9 +821,9 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
   modify disjoint files and none reads another's output, so they run concurrently.
 - **Shared files**: none between modules. Within M2, M3 and M4 the twins of one command belong to
   the same task.
-- **Exclusive resources**: `python scripts/sdd/check_asset_sync.py --write` rewrites
-  `packages/ai-parrot/src/parrot/sdd/_assets/manifest.json` — the M6 task is `parallel: false`.
-  The `.claude/agents/code-reviewer.md` edit in M4 needs a host-side (non-sandboxed) write.
+- **Exclusive resources**: none. Asset regeneration is per task (see §7): each task's `--write`
+  changes only the packaged copies of its own sources, and `manifest.json` does not change. The
+  `.claude/agents/code-reviewer.md` edit in M4 needs a host-side (non-sandboxed) write.
 - **Cross-feature dependencies**: none. Any open branch that edits the same command twins will
   conflict textually; rebase this feature last if one lands first.
 
@@ -835,3 +846,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 |---|---|---|---|
 | 0.1 | 2026-11-17 | Jesus Lara (with Claude) | Initial draft |
 | 0.2 | 2026-11-17 | Jesus Lara (with Claude) | Open questions resolved: `/sdd-brainstorm` added to M3 (A3), the ladder script moved to a follow-up spec, LOC rule confirmed as non-blocking |
+| 0.3 | 2026-11-17 | Jesus Lara (with Claude) | At decomposition: Validation Contract extended with the twin-parity, codex-sync, proposal/brainstorm and reviewer tests the tasks validate with; asset regeneration made per task (manifest has no hashes) |
