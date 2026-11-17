@@ -39,9 +39,31 @@ def test_worktree_env_without_packages_layout_is_unchanged(tmp_path, monkeypatch
     assert "PYTHONPATH" not in select_tests._worktree_env(tmp_path)
 
 
-def test_run_sites_pass_worktree_env(tmp_path, monkeypatch) -> None:
-    """Both subprocess.run call sites must pass env=_worktree_env(...) (mutation guard)."""
-    import inspect
+def test_child_resolves_symbol_from_worktree_not_main_checkout(tmp_path) -> None:
+    """issue:f241f38501c9 — the real child-process path imports the worktree's copy.
 
-    src = inspect.getsource(select_tests)
-    assert src.count("env=_worktree_env(worktree)") == 2
+    The sentinel module exists only inside the tmp "worktree"; no installed copy has it, so the
+    import succeeds only if the child's PYTHONPATH points at the worktree's ``packages/*/src``.
+    """
+    import subprocess
+    import sys
+
+    src = tmp_path / "packages" / "sentinel-pkg" / "src"
+    src.mkdir(parents=True)
+    (src / "f241_sentinel_mod.py").write_text("SENTINEL = 'from-worktree'\n")
+
+    result = select_tests._run_in_worktree(
+        [sys.executable, "-c", "import f241_sentinel_mod as m; print(m.SENTINEL, m.__file__)"],
+        tmp_path,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.startswith("from-worktree")
+    assert str(tmp_path) in result.stdout
+
+    # Control: a plain child without the wiring cannot see the sentinel.
+    bare = subprocess.run(
+        [sys.executable, "-c", "import f241_sentinel_mod"], cwd=tmp_path, capture_output=True, text=True
+    )
+    assert bare.returncode != 0

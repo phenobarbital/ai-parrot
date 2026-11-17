@@ -221,6 +221,23 @@ def _worktree_env(worktree: Path) -> dict[str, str]:
     return env
 
 
+def _run_in_worktree(
+    argv: Sequence[str], worktree: Path, *, cwd: Path | None = None, **kwargs: object
+) -> subprocess.CompletedProcess:
+    """Run a test-runner child so it imports the worktree's code (see ``_worktree_env``).
+
+    Args:
+        argv: Command line to execute.
+        worktree: Root of the tree the tests run in; sources the child's ``PYTHONPATH``.
+        cwd: Working directory (default: ``worktree``).
+        **kwargs: Forwarded to ``subprocess.run``.
+
+    Returns:
+        The completed process.
+    """
+    return subprocess.run(list(argv), cwd=cwd or worktree, env=_worktree_env(worktree), **kwargs)  # type: ignore[arg-type]
+
+
 def _safe_report_name(value: str) -> str:
     """Make a runner or suite label safe for a report filename."""
     return "".join(character if character.isalnum() or character in {"-", "_"} else "-" for character in value)
@@ -308,10 +325,10 @@ def _run_verdict_mode(
         started = time.monotonic()
         timed_out = False
         try:
-            result = subprocess.run(
+            result = _run_in_worktree(
                 argv,
+                worktree,
                 cwd=run_cwd,
-                env=_worktree_env(worktree),
                 capture_output=True,
                 text=True,
                 check=False,
@@ -553,7 +570,7 @@ def main(argv: list[str] | None = None) -> int:
                 junit = None
         started = time.monotonic()
         try:
-            result = subprocess.run(argv, cwd=worktree, env=_worktree_env(worktree))
+            result = _run_in_worktree(argv, worktree)
         except OSError as exc:
             # A repo without the planned runner (no pytest in a foreign repo's environment) must
             # stop with one line per runner, never a traceback (FEAT-633 rev 0.5 D2 / C21).
