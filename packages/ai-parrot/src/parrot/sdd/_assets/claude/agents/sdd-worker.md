@@ -503,7 +503,7 @@ The call returns `review_ref` for `finalize`. The engine attaches whether feedba
 exposure yourself. Record each review before that task's `finalize`. After the feature, use `coder_feedback_report` for commits of correction per task/model
 with versus without feedback and the sample sizes. Missing history is not a zero baseline or proof of improvement.
 
-Require checked_patterns to cite engine-verifiable checks. The engine verifies only the attempt/exposure id and that each claim cites a passed engine-owned check; it does NOT verify that `ref`/`content_version` was delivered to this attempt (it keeps no delivery record), so cite only versions you were actually given.
+Require checked_patterns to reference actually delivered versions and engine-verifiable checks. The engine verifies only the attempt/exposure id and that each claim cites a passed engine-owned check; it does NOT verify that `ref`/`content_version` was delivered to this attempt (it keeps no delivery record), so this is guidance, not enforcement.
 Keep citations in the structured channel; do not render them into the user-visible answer.
 An independently verified zero-fix delivery may be successful without a fabricated fix commit.
 Keep coder_record_feedback, coder_record_review, execution_id and review_ref contracts intact.
