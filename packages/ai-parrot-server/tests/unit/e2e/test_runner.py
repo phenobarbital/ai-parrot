@@ -50,7 +50,7 @@ def _scenario(**changes: object) -> ScenarioSpec:
         ("xpassed", ("FAIL", 1, False)),
         ("skipped", ("FAIL", 1, False)),
         ("blocked", ("BLOCKED", 3, False)),
-        ("missing", ("BLOCKED", 3, False)),
+        ("missing", ("FAIL", 1, False)),
         (None, ("BLOCKED", 3, False)),
     ],
 )
