@@ -1,0 +1,76 @@
+{
+  "feature": "agent-memory-factory-fixes",
+  "feature_id": "FEAT-907",
+  "spec": "sdd/specs/agent-memory-factory-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-17T13:17:45.433709+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/memory/agent_memory/test_config_contract.py",
+          "packages/ai-parrot/tests/memory/agent_memory/test_factory.py",
+          "packages/ai-parrot/tests/memory/agent_memory/test_review_fixes.py",
+          "packages/ai-parrot/tests/memory/agent_memory/test_facade.py",
+          "packages/ai-parrot/tests/memory/agent_memory/test_config.py",
+          "packages/ai-parrot/tests/memory/agent_memory/test_documentation.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:8ba6c18bcc5bd4823e24bc125ea6956582c61c05c9677d97d877cd829f3963e9"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5739",
+      "slug": "config-contract",
+      "title": "Wire and verify agent memory configuration",
+      "feature_id": "FEAT-907",
+      "feature": "agent-memory-factory-fixes",
+      "spec": "sdd/specs/agent-memory-factory-fixes.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No task dependencies; owns the factory, facade, configuration schema and new regression tests.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5739-config-contract.md"
+    },
+    {
+      "id": "TASK-5740",
+      "slug": "config-documentation",
+      "title": "Documentation — agent memory option contracts",
+      "feature_id": "FEAT-907",
+      "feature": "agent-memory-factory-fixes",
+      "spec": "sdd/specs/agent-memory-factory-fixes.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5739"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-5739 for the new create_memory_manager skill_registry argument and first-turn preparation behavior documented by this page.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5740-config-documentation.md"
+    }
+  ]
+}

@@ -25,7 +25,7 @@ Non-goals: implement reflection, tool suppression, startup flushing, change dyna
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:6cfd8cdb50d9fde6bb9edf4a343d347e2ac69eb61a2bb3188034bfb079944ae0 evaluation_digest=sha256:90e115e2fedd252608984aef8641d3c3078f0480e4681f7eb02432e1d2a606d6 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:77b2770dad00103ae30a2803a5c7c65e8039f3d73e9a981211140d3c12f5cbfa evaluation_digest=sha256:d5db5c6e56b6a6f9053c787d72476d468722b072d70dd9d558b8248116504c4e rules_version=1 status=pass -->
 
 ## 2. Architectural Design
 
@@ -70,7 +70,6 @@ Exercise factory registry injection with and without persistent storage, disable
 
 ### Validation Contract
 
-```yaml
 tests:
   - packages/ai-parrot/tests/memory/agent_memory/test_config_contract.py
   - packages/ai-parrot/tests/memory/agent_memory/test_factory.py
@@ -78,8 +77,7 @@ tests:
   - packages/ai-parrot/tests/memory/agent_memory/test_facade.py
   - packages/ai-parrot/tests/memory/agent_memory/test_config.py
   - packages/ai-parrot/tests/memory/agent_memory/test_documentation.py
-markers: []
-```
+markers:
 
 ## 5. Acceptance Criteria
 
@@ -139,7 +137,7 @@ Worktree strategy: one feature worktree provisioned with `parrot sdd worktree en
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:6cfd8cdb50d9fde6bb9edf4a343d347e2ac69eb61a2bb3188034bfb079944ae0 evaluation_digest=sha256:90e115e2fedd252608984aef8641d3c3078f0480e4681f7eb02432e1d2a606d6 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:77b2770dad00103ae30a2803a5c7c65e8039f3d73e9a981211140d3c12f5cbfa evaluation_digest=sha256:d5db5c6e56b6a6f9053c787d72476d468722b072d70dd9d558b8248116504c4e rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -180,10 +178,10 @@ Coverage:
       "path": "/home/jesuslara/proyectos/ai-parrot/sdd/specs/agent-memory-factory-fixes.spec.md"
     }
   ],
-  "evaluation_digest": "sha256:90e115e2fedd252608984aef8641d3c3078f0480e4681f7eb02432e1d2a606d6",
+  "evaluation_digest": "sha256:d5db5c6e56b6a6f9053c787d72476d468722b072d70dd9d558b8248116504c4e",
   "exit_code": 0,
   "findings": [],
-  "input_digest": "sha256:6cfd8cdb50d9fde6bb9edf4a343d347e2ac69eb61a2bb3188034bfb079944ae0",
+  "input_digest": "sha256:77b2770dad00103ae30a2803a5c7c65e8039f3d73e9a981211140d3c12f5cbfa",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
