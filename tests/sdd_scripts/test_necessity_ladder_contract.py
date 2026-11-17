@@ -222,3 +222,9 @@ class TestNecessityLadderContract:
         for package in REUSE_PACKAGES:
             assert f"`{package}`" in reuse, f"{CONVENTIONS_COPIES[0]}: ## Reuse first lacks `{package}`"
         _assert_order(first, ("## Reuse first", "## Repository layout"), CONVENTIONS_COPIES[0])
+
+    def test_wiki_page_documents_the_ladder(self) -> None:
+        """The wiki page exists and names the rungs R1–R7, the Lean Review and the binding rule."""
+        text = _read("wiki/sdd-tooling/sdd/necessity-ladder.md")
+        for marker in ("| R1 |", "| R7 |", "Lean Review", "**Ladder**:", "# shortcut:", "Reuse first"):
+            assert marker in text, marker
