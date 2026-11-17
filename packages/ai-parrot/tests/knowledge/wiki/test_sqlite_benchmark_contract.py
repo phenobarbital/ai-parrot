@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import subprocess
@@ -171,3 +172,95 @@ def test_minimal_spawned_claim_race(tmp_path: Path) -> None:
 
 # Later measurement task appends test_committed_measurement_evidence here.
 # Preserve the unique benchmark report schema attachment anchor.
+
+
+# --- FEAT-902 committed measurement evidence ---------------------------------
+
+EVIDENCE_ROOT = Path(__file__).resolve().parents[5] / "sdd" / "state" / "FEAT-902" / "benchmarks"
+BASELINE_REVISION = "e5f3f7534876f9b4f56ad1cedc7b4e56176ee568"
+MATRIX_PROCESSES = [1, 4, 8]
+MATRIX_LIFECYCLES = ["resident", "ephemeral"]
+MATRIX_WORKLOADS = ["idle-ledger", "mixed-ledger", "claim-race", "wiki"]
+MATRIX_ARMS = ["baseline", "candidate"]
+EVIDENCE_TRIALS = 3
+
+
+def _load_manifest() -> dict[str, Any]:
+    """Load the committed FEAT-902 measurement manifest."""
+    return json.loads((EVIDENCE_ROOT / "manifest.json").read_text(encoding="utf-8"))
+
+
+def test_committed_measurement_evidence() -> None:
+    """Committed FEAT-902 evidence covers the complete approved matrix."""
+    manifest = _load_manifest()
+    assert manifest["schema_version"] == 1
+    assert manifest["feature_id"] == "FEAT-902"
+    assert manifest["baseline_revision"] == BASELINE_REVISION
+    candidate = manifest["candidate_revision"]
+    assert isinstance(candidate, str) and len(candidate) == 40
+    matrix = manifest["matrix"]
+    assert matrix["processes"] == MATRIX_PROCESSES
+    assert matrix["lifecycles"] == MATRIX_LIFECYCLES
+    assert matrix["workloads"] == MATRIX_WORKLOADS
+    assert matrix["arms"] == MATRIX_ARMS
+    cells = manifest["cells"]
+    expected = {
+        (arm, procs, lifecycle, workload)
+        for arm in MATRIX_ARMS
+        for procs in MATRIX_PROCESSES
+        for lifecycle in MATRIX_LIFECYCLES
+        for workload in MATRIX_WORKLOADS
+    }
+    observed = {(c["arm"], c["processes"], c["lifecycle"], c["workload"]) for c in cells}
+    assert observed == expected
+    assert len(cells) == len(expected) == 48
+    for cell in cells:
+        assert cell["exit_code"] == 0
+        assert cell["complete"] is True
+        assert all(cell["invariants"].values())
+        assert cell["settings"] == {"trials": 3, "warmup": 100, "operations": 1000, "seed": 902}
+        assert len(cell["trials"]) == EVIDENCE_TRIALS
+        for trial in cell["trials"]:
+            assert trial["complete"] is True
+            assert all(trial["invariants"].values())
+            assert trial["errors"] == 0
+            assert trial["busy_outcomes"] == 0
+    assert {c["revision"] for c in cells if c["arm"] == "candidate"} == {candidate}
+    assert {c["revision"] for c in cells if c["arm"] == "baseline"} == {BASELINE_REVISION}
+
+
+def test_committed_raw_file_hashes() -> None:
+    """Raw files listed in the manifest match their hashes when present locally."""
+    manifest = _load_manifest()
+    repo_root = EVIDENCE_ROOT.parents[3]
+    artifacts_present = (repo_root / "artifacts" / "logs" / "FEAT-902" / "sqlite-hardening").is_dir()
+    for entry in manifest["raw_files"]:
+        path = repo_root / entry["path"]
+        if not path.is_file():
+            # Fresh checkouts lack gitignored artifacts; the committed hashes stand in for them.
+            assert not artifacts_present, f"raw file missing during execution: {entry['path']}"
+            continue
+        assert path.stat().st_size == entry["size_bytes"], entry["path"]
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == entry["sha256"], entry["path"]
+
+
+def test_measurement_report_is_filled_and_defers_reuse() -> None:
+    """Report and follow-up contain measured content and the recorded defer disposition."""
+    report = (EVIDENCE_ROOT / "report.md").read_text(encoding="utf-8")
+    followup = (EVIDENCE_ROOT / "persistent-connections-followup.md").read_text(encoding="utf-8")
+    assert "FILL IN" not in report
+    assert "FILL IN" not in followup
+    assert "## Matrix and results" in report
+    assert "## Correctness and failures" in report
+    assert "## Disposition\n**Defer.**" in followup
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="DEBUG-off overhead pass not run: the driver always captures DEBUG and has no switch to disable it",
+)
+def test_debug_off_overhead_pass_recorded() -> None:
+    """The DEBUG-off overhead pass required by the spec is recorded as complete."""
+    manifest = _load_manifest()
+    assert manifest["missing"] == []
+    assert manifest["complete"] is True
