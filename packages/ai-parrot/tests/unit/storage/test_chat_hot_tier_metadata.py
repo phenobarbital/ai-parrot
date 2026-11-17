@@ -58,9 +58,7 @@ async def test_hot_read_matches_cold_message_shape() -> None:
         user_message="Hello",
         assistant_response="Hi there",
         tools_used=["weather"],
-        tool_invocations=[
-            ToolInvocation(tool_name="weather", input={"city": "Madrid"}, output="sunny").to_dict()
-        ],
+        tool_invocations=[ToolInvocation(tool_name="weather", input={"city": "Madrid"}, output="sunny").to_dict()],
         presentation=TurnPresentation(
             model="gpt-test",
             provider="test-provider",
