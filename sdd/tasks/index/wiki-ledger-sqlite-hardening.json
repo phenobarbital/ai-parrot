@@ -171,7 +171,7 @@
       "feature_id": "FEAT-902",
       "feature": "wiki-ledger-sqlite-hardening",
       "spec": "sdd/specs/wiki-ledger-sqlite-hardening.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -186,8 +186,9 @@
       "parallelism_notes": "Consumes TASK-5713's read_cursor_in/LedgerCursorInvalid, TASK-5714's probe_cursor/sync behavior, TASK-5715's durable cancellation helper, TASK-5716's timing events, TASK-5717's benchmark CLI/schema and TASK-5718's measured report/follow-up. Writes only its page and documentation example smoke test.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5719-sqlite-ledger-documentation.md"
+      "completed_at": "2026-11-17T11:33:10+00:00",
+      "file": "sdd/tasks/completed/TASK-5719-sqlite-ledger-documentation.md",
+      "verification": "verified"
     }
   ]
 }
