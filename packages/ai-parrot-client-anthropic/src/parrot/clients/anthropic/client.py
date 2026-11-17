@@ -798,11 +798,14 @@ class AnthropicClient(AbstractClient):
 
         # FEAT-176: lifecycle event — AfterClientCallEvent
         _lc_usage = getattr(ai_message, "usage", None)
+        _lc_duration_ms = (_lc_time.perf_counter() - _lc_t0) * 1000
+        if ai_message.response_time is None:
+            ai_message.response_time = _lc_duration_ms / 1000
         await self._emit_after_call(
             _lc_tc,
             client_name=self._telemetry_client_name,
             model=model,
-            duration_ms=(_lc_time.perf_counter() - _lc_t0) * 1000,
+            duration_ms=_lc_duration_ms,
             input_tokens=getattr(_lc_usage, "input_tokens", None) if _lc_usage else None,
             output_tokens=getattr(_lc_usage, "output_tokens", None) if _lc_usage else None,
             finish_reason=getattr(ai_message, "stop_reason", None),
