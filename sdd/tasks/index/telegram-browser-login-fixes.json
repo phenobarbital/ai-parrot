@@ -1,0 +1,98 @@
+{
+  "feature": "telegram-browser-login-fixes",
+  "feature_id": "FEAT-906",
+  "spec": "sdd/specs/telegram-browser-login-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-17T12:24:50.792658+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot-integrations/tests/integrations/telegram/test_browser_login.py",
+          "packages/ai-parrot-integrations/tests/integrations/telegram/test_browser_login_confirmation.py",
+          "packages/ai-parrot-integrations/tests/integrations/telegram/test_browser_identity_verification.py",
+          "packages/ai-parrot-integrations/tests/integrations/telegram/test_oauth2_integration.py",
+          "packages/ai-parrot-integrations/tests/integrations/telegram/test_oauth2_callback.py",
+          "packages/ai-parrot-integrations/tests/integrations/telegram/test_login_pages_browser_mode.py",
+          "packages/ai-parrot-integrations/tests/integrations/telegram/test_post_auth_connection.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:3028a4e89232d73f18e27b18affe31d529ffa81033b998278ae899020b5a96a3"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5736",
+      "slug": "browser-confirmation-security",
+      "title": "Stage browser identities until Telegram code confirmation",
+      "feature_id": "FEAT-906",
+      "feature": "telegram-browser-login-fixes",
+      "spec": "sdd/specs/telegram-browser-login-fixes.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Independent security implementation; owns registry, wrapper and callback files plus their regression tests.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5736-browser-confirmation-security.md"
+    },
+    {
+      "id": "TASK-5737",
+      "slug": "browser-confirmation-pages",
+      "title": "Display pending confirmation commands in all login pages",
+      "feature_id": "FEAT-906",
+      "feature": "telegram-browser-login-fixes",
+      "spec": "sdd/specs/telegram-browser-login-fixes.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5736"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Consumes TASK-5736 pending_confirmation, confirmation_code and redirect_url response fields.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5737-browser-confirmation-pages.md"
+    },
+    {
+      "id": "TASK-5738",
+      "slug": "browser-confirmation-documentation",
+      "title": "Documentation — Telegram browser login confirmation",
+      "feature_id": "FEAT-906",
+      "feature": "telegram-browser-login-fixes",
+      "spec": "sdd/specs/telegram-browser-login-fixes.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5736",
+        "TASK-5737"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Documents TASK-5736 registry/wrapper/callback interfaces and TASK-5737 shipped-page confirmation UI.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5738-browser-confirmation-documentation.md"
+    }
+  ]
+}
