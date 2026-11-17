@@ -14,7 +14,7 @@ docs:
 **Feature ID**: FEAT-908
 **Date**: 2026-11-17
 **Author**: Jesus Lara (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: 2.1.4
 
 ---
@@ -47,9 +47,9 @@ that draft left open.
 
 ### Goals
 
-- **G1 — Cut at research time.** `/sdd-proposal` states, for every new capability it proposes,
-  what happens if it is not built; a capability with no such justification is listed as
-  `Deferred:` instead of proposed.
+- **G1 — Cut at exploration time.** `/sdd-proposal` and `/sdd-brainstorm` state, for every new
+  capability they propose, what happens if it is not built; a capability with no such
+  justification is listed as deferred instead of proposed.
 - **G2 — Reuse analysis is mandatory in the spec.** Every §3 module has one row in a
   `#### Necessity Ladder` table: the rung where it stopped (R2–R7), the evidence, the Goal or
   criterion it serves, and an estimate of new non-test lines. A module is new code (R7) only when
@@ -72,21 +72,19 @@ that draft left open.
   what the task names; the binding in G4 reaches them through the task file.
 - Rewriting existing specs. A spec without the table decomposes and reviews as before.
 - Deferred: a `parrot sdd spec ladder` script for the mechanical checks (L1–L5, L9) with exit
-  codes like `parrot sdd spec consequences` — justified once Lean Review failures are seen to slip
-  past the prompt-level check in real specs (see §8 Q1).
+  codes like `parrot sdd spec consequences` — it is specified separately, in a follow-up spec that
+  depends on this one (§8 Q1). Here the checks stay in the prompt.
 - Deferred: a `--no-ladder` (or similar) opt-out flag — justified only if a class of specs is
   found where the ladder has nothing to check.
-- Deferred: the same R1 cut in `/sdd-brainstorm` (its "Capabilities" section) — justified if
-  brainstorm-sourced specs keep arriving with capabilities the ladder then has to question in §8
-  (see §8 Q2).
 - Deferred: a deterministic comparison of `git diff --numstat` against "Est. LOC" in `/sdd-done` —
-  justified if reviewers do not apply the "around twice" rule consistently.
+  exceeding the estimate is a review finding to explain and never blocks `/sdd-done` (§8 Q3);
+  justified only if reviewers do not apply the "around twice" rule consistently.
 
 ---
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:52c9702854bf6eeaffd4a8c710f72ffa1a4abf5420b1f9d2b7bb9a7ee8d50263 evaluation_digest=sha256:15a976bddd9d644664bb13d5de60a1f7c44098ab8087dc13c50f650657cdafce rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:431c075c8c856e94eee27a0c8e8a6de6a37ca4bcd8d788ad42c254db9faa6e04 evaluation_digest=sha256:4d458027f95985fe314957e530d2c5377a98dd4309d0ee19360fc20465645c53 rules_version=1 status=pass -->
 
 ## 2. Architectural Design
 
@@ -110,7 +108,9 @@ that fully covers it:
 
 The three points of application:
 
-1. **`/sdd-proposal` (R1).** The synthesis prompt asks for an `if_not_built` clause on every new
+1. **`/sdd-proposal` and `/sdd-brainstorm` (R1).** A brainstorm states *If not built* on every
+   new capability and lists the rest under `### Deferred Capabilities`, which `/sdd-spec` carries
+   into §1 Non-Goals. For proposals, the synthesis prompt asks for an `if_not_built` clause on every new
    item of an enrichment scope and moves items without one to a deferred list. The proposal
    template shows both. The synthesis lint gains one rule that enforces it.
 2. **`/sdd-spec` (R1–R7).** Four additions to the command — a "Least new code" guardrail, §4c
@@ -141,6 +141,9 @@ contain them):
   cell with `\|` escapes. Copied as written into `grep -E`, `\|` matches a literal `|`, so the
   scan finds nothing and the check passes silently (verified: `printf 'x later\n' | grep -cE
   'future\|later'` prints `0`). The command now sits in a fenced block below the table.
+- **A3 — one row added to the §2a brainstorm mapping table of `/sdd-spec`**: "Deferred
+  Capabilities → §1 Non-Goals (`Deferred:` lines, verbatim)", so what a brainstorm cut at R1
+  reaches the spec.
 - **A2 — rule 1 of §4c points at the conventions' reuse list** (G5): "check the in-house and
   preferred packages your repository's conventions name (`sdd/CONVENTIONS.md` § Reuse first)
   before any other dependency". Package names cannot appear in the command itself because it
@@ -194,13 +197,13 @@ None in code. The new text interfaces are the headings and line formats in §3.
 | Module | Rung | Reuses (evidence) | Serves | New code | Est. LOC |
 |---|---|---|---|---|---|
 | M1: Spec template | R7 | Template structure — verified: `sdd/templates/spec.md:51`, `:106`, `:154`, `:250`, `:333`. Nothing covers it: Does NOT Exist `#### Necessity Ladder` (query: `git grep -l -F "Necessity Ladder" -- sdd/templates .claude .agent .agents` → 0 files) | G2 | 5 insertions, applied from a committed patch | ~40 |
-| M2: `/sdd-spec` command and twins | R7 | §4 research, §6 "Does NOT Exist", §5b gate — verified: `.claude/commands/sdd-spec.md:22`, `:414`, `:471`, `:612`, `:714`. Nothing covers it: Does NOT Exist `### 4c. Necessity Ladder` / `### 5a. Lean Review` (query: `git grep -l -F "Lean Review"` → 0 files) | G2, G3, G6 | 5 hunks × 2 byte-identical files + a short codex summary | ~210 |
-| M3: `/sdd-proposal` R1 | R7 | Enrichment scope and synthesis lint — verified: `sdd/templates/synthesis.prompt.md:126`, `sdd/templates/proposal.md:141`, `:149`, `.claude/commands/sdd-proposal.md:428`, `:651`. Nothing covers it: Does NOT Exist `If not built` (query: `git grep -l -F "If not built"` → 0 files) | G1 | 2 template edits, 2 command edits × 2 twins, 1 codex line | ~30 |
+| M2: `/sdd-spec` command and twins | R7 | §4 research, §6 "Does NOT Exist", §5b gate — verified: `.claude/commands/sdd-spec.md:22`, `:414`, `:471`, `:612`, `:714`. Nothing covers it: Does NOT Exist `### 4c. Necessity Ladder` / `### 5a. Lean Review` (query: `git grep -l -F "Lean Review"` → 0 files) | G2, G3, G6 | 6 hunks × 2 byte-identical files + a short codex summary | ~210 |
+| M3: Exploration R1 (`/sdd-proposal`, `/sdd-brainstorm`) | R7 | Enrichment scope and synthesis lint — verified: `sdd/templates/synthesis.prompt.md:126`, `sdd/templates/proposal.md:141`, `:149`, `.claude/commands/sdd-proposal.md:428`, `:651`; brainstorm Capabilities — verified: `sdd/templates/brainstorm.md:140`, `:142`, `.claude/commands/sdd-brainstorm.md:188`, `:265`. Nothing covers it: Does NOT Exist `If not built` (query: `git grep -l -F "If not built"` → 0 files) | G1 | 3 template edits, 2 command edits × 2 twins per command, 2 codex lines | ~50 |
 | M4: Downstream binding | R7 | Task Scope and reviewer red-flag table — verified: `.claude/commands/sdd-task.md:104`, `:119`, `sdd/templates/task.md:20`, `.claude/agents/code-reviewer.md:89`. Nothing covers it: Does NOT Exist a `**Ladder**:` task line (query: `git grep -l -F "Necessity Ladder"` → 0 files) | G4 | 2 command edits × 2 twins, 1 codex line, 1 template line, 3 table rows × 3 copies | ~40 |
 | M5: Reuse-first list | R7 | Conventions files — verified: `sdd/CONVENTIONS.md:26`, `.claude/rules/codebase-conventions.md:18`; packages declared at `packages/ai-parrot/pyproject.toml:108`, `:116`, `:137`, `:201`. Nothing covers it: Does NOT Exist a `Reuse first` section (query: `git grep -l -F "Reuse first"` → 0 files) | G5 | 1 seed section + 1 table × 3 identical copies | ~35 |
 | M6: Contract test, wiki page, packaged assets | R7 | Contract-test pattern — verified: `tests/sdd_scripts/test_feat801_doc_contract.py:8`; asset regeneration — verified: `scripts/sdd/check_asset_sync.py:26`. Nothing covers it: Does NOT Exist `tests/sdd_scripts/test_necessity_ladder_contract.py`, `wiki/sdd-tooling/sdd/necessity-ladder.md` (query: `ls` → no such file) | G2–G5, AC 11 | 1 wiki page; `_assets/` regenerated by the existing script | ~80 |
 
-Totals: 6 modules — reuse 0 · stdlib/platform 0 · dependency 0 · single change 0 · new 6 · deferred 4 · est. new LOC ~435 (text; 0 lines of runtime code)
+Totals: 6 modules — reuse 0 · stdlib/platform 0 · dependency 0 · single change 0 · new 6 · deferred 3 · est. new LOC ~455 (text; 0 lines of runtime code)
 
 - This table is binding downstream. A task that needs a file or a dependency that is not here
   goes back to the spec; it is not added during implementation.
@@ -213,7 +216,7 @@ Totals: 6 modules — reuse 0 · stdlib/platform 0 · dependency 0 · single cha
 |---|---|---|---|
 | M1: Spec template | yes | Apply `sdd/state/FEAT-908/inputs/spec.template.patch` verbatim | — |
 | M2: `/sdd-spec` command and twins | yes | Apply `sdd/state/FEAT-908/inputs/sdd-spec.command.patch` to both full twins; codex text fixed below | — |
-| M3: `/sdd-proposal` R1 | yes | Exact text and anchors fixed below | — |
+| M3: Exploration R1 | yes | Exact text and anchors fixed below | — |
 | M4: Downstream binding | yes | Exact text and anchors fixed below | — |
 | M5: Reuse-first list | yes | Exact text and anchors fixed below | — |
 | M6: Contract test, wiki page, packaged assets | yes | Test names in §4; page sections from `sdd/templates/techwiki-page.md` | — |
@@ -276,10 +279,10 @@ Totals: 6 modules — reuse 0 · stdlib/platform 0 · dependency 0 · single cha
         set `**Status**: approved` while a check fails. Print the `Ladder:` line in the output.
   ```
 
-### Module 3: `/sdd-proposal` R1
+### Module 3: Exploration R1 (`/sdd-proposal`, `/sdd-brainstorm`)
 
-- **Path**: `sdd/templates/synthesis.prompt.md`, `sdd/templates/proposal.md`, `.claude/commands/sdd-proposal.md`, `.agent/workflows/sdd-proposal.md`, `.agents/skills/sdd-proposal/SKILL.md`
-- **Responsibility**: Make every proposed capability state what happens without it; list the rest as deferred.
+- **Path**: `sdd/templates/synthesis.prompt.md`, `sdd/templates/proposal.md`, `.claude/commands/sdd-proposal.md`, `.agent/workflows/sdd-proposal.md`, `.agents/skills/sdd-proposal/SKILL.md`, `sdd/templates/brainstorm.md`, `.claude/commands/sdd-brainstorm.md`, `.agent/workflows/sdd-brainstorm.md`, `.agents/skills/sdd-brainstorm/SKILL.md`
+- **Responsibility**: Make every proposed capability state what happens without it; list the rest as deferred. The two commands share no file, so they may be two tasks.
 - **Depends on**: nothing.
 - **Interface Skeleton**:
   ```text
@@ -307,6 +310,27 @@ Totals: 6 modules — reuse 0 · stdlib/platform 0 · dependency 0 · single cha
   #   verified: .agents/skills/sdd-proposal/SKILL.md:119
   - Enrichment scope: every new item states what happens if it is not built; items without that
     justification are listed as `Deferred:` under Non-Goals.
+
+  # sdd/templates/brainstorm.md
+  under "### New Capabilities", replace the bullet                      # verified: sdd/templates/brainstorm.md:140
+  - `<name>`: <brief description>. *If not built*: <requirement left unmet>
+  new subsection after the "### Modified Capabilities" block, before the "---" rule   # verified: sdd/templates/brainstorm.md:142-146
+  ### Deferred Capabilities
+  <!-- Capabilities considered and not proposed because nothing in the Problem Statement or the
+       Constraints needs them. `/sdd-spec` carries each line into the spec's §1 Non-Goals. -->
+  - Deferred: `<name>` — <what would justify building it>
+
+  # .claude/commands/sdd-brainstorm.md and .agent/workflows/sdd-brainstorm.md (same lines in both)
+  replace the "- **Capabilities**:" bullet                              # verified: .claude/commands/sdd-brainstorm.md:188
+  - **Capabilities**: new and modified (kebab-case identifiers). Every new capability states what
+    happens if it is not built; one that nothing in the Problem Statement or the Constraints needs
+    goes under "Deferred Capabilities" instead.
+  new line after "- **Capabilities** → Spec Section 3 (Module Breakdown)"   # verified: .claude/commands/sdd-brainstorm.md:265
+  - **Deferred Capabilities** → Spec Section 1 (Non-Goals, `Deferred:` lines)
+
+  # .agents/skills/sdd-brainstorm/SKILL.md — one bullet under "## Guardrails"   # verified: .agents/skills/sdd-brainstorm/SKILL.md:33
+  - Every new capability states what happens if it is not built; capabilities without that
+    justification are listed under "Deferred Capabilities", not proposed.
   ```
 
 ### Module 4: Downstream binding
@@ -403,7 +427,7 @@ Totals: 6 modules — reuse 0 · stdlib/platform 0 · dependency 0 · single cha
           """No sdd-spec twin contains the `\\|`-escaped scan; each contains the plain alternation in a fenced block."""
 
       def test_proposal_states_if_not_built(self) -> None:
-          """Synthesis prompt, proposal template and both sdd-proposal twins carry `if_not_built` / `Deferred:`."""
+          """Synthesis prompt, proposal and brainstorm templates, and the sdd-proposal and sdd-brainstorm twins carry the if-not-built clause and the deferred list."""
 
       def test_task_and_reviewer_bind_the_ladder(self) -> None:
           """sdd-task twins and the task template carry the `**Ladder**:` line; the three code-reviewer copies carry the three red flags."""
@@ -432,7 +456,7 @@ Totals: 6 modules — reuse 0 · stdlib/platform 0 · dependency 0 · single cha
 | `test_spec_template_has_ladder_sections` | M1 | The five template additions are present |
 | `test_sdd_spec_twins_carry_the_gate` | M2 | Guardrail, §4c, §5a and the `Ladder:` line in every twin; full twins identical |
 | `test_l7_scan_is_not_table_escaped` | M2 | Amendment A1 holds |
-| `test_proposal_states_if_not_built` | M3 | `if_not_built` and `Deferred:` in prompt, template and twins |
+| `test_proposal_states_if_not_built` | M3 | If-not-built clause and deferred list in the prompt, both exploration templates and their command twins |
 | `test_task_and_reviewer_bind_the_ladder` | M4 | `**Ladder**:` line and the three red flags in every copy |
 | `test_conventions_name_reuse_first` | M5 | Seed section empty of package names; three copies identical and complete |
 | `test_wiki_page_documents_the_ladder` | M6 | Wiki page content |
@@ -482,7 +506,7 @@ None. Every test reads tracked files from `REPO_ROOT`.
 - [ ] AC 3 — `.agent/workflows/sdd-spec.md` is byte-identical to `.claude/commands/sdd-spec.md` below its frontmatter; `.agents/skills/sdd-spec/SKILL.md` names the Necessity Ladder and the Lean Review.
 - [ ] AC 4 — No `/sdd-spec` twin contains the string `future\|later`; each contains `grep -niE 'future|later|extensib|pluggable|generic|just in case'` inside a fenced block (A1).
 - [ ] AC 5 — `/sdd-spec` gains no new flag: its `## Usage` line is unchanged.
-- [ ] AC 6 — `sdd/templates/synthesis.prompt.md` asks for `if_not_built` on every NEW item and for a DEFERRED list; `sdd/templates/proposal.md` shows `*If not built*:` and `- Deferred:`; both `/sdd-proposal` full twins carry lint rule 6 and the `Deferred:` consumption row.
+- [ ] AC 6 — `sdd/templates/synthesis.prompt.md` asks for `if_not_built` on every NEW item and for a DEFERRED list; `sdd/templates/proposal.md` shows `*If not built*:` and `- Deferred:`; both `/sdd-proposal` full twins carry lint rule 6 and the `Deferred:` consumption row; `sdd/templates/brainstorm.md` shows `*If not built*:` and `### Deferred Capabilities`, and both `/sdd-brainstorm` full twins carry the two matching lines.
 - [ ] AC 7 — Both `/sdd-task` full twins carry the "Necessity Ladder is binding" paragraph; `sdd/templates/task.md` carries the `**Ladder**:` line in `## Scope`; the task `## Complexity Contract` JSON is unchanged.
 - [ ] AC 8 — The three `code-reviewer` copies carry the three new red-flag rows, and `.claude/agents/code-reviewer.md` stays byte-identical to its packaged copy.
 - [ ] AC 9 — `sdd/CONVENTIONS.md` has a `## Reuse first` section with no package name in it; the three `codebase-conventions.md` copies are byte-identical and name `asyncdb`, `navconfig`, `navigator-auth` and `navigator-eventbus`.
@@ -552,7 +576,7 @@ sdd/state/FEAT-908/inputs/spec.template.patch      — `git apply --check` passe
 ### Does NOT Exist (Anti-Hallucination)
 
 - ~~`#### Necessity Ladder`, `### Known Shortcuts`, `### 4c.`, `### 5a. Lean Review`, "Least new code"~~ — absent from every tracked command, twin, template and packaged asset (`git grep -l -F` over `.claude .agent .agents sdd/templates sdd/CONVENTIONS.md packages/ai-parrot/src/parrot/sdd docs/sdd wiki/sdd-tooling` → 0 files for each)
-- ~~`If not built` / `if_not_built` in the proposal template or synthesis prompt~~ — absent (same query → 0 files)
+- ~~`If not built` / `if_not_built` / `Deferred Capabilities` in the proposal or brainstorm templates, their commands, or the synthesis prompt~~ — absent (same query → 0 files)
 - ~~`## Reuse first` in `sdd/CONVENTIONS.md` or any `codebase-conventions.md`~~ — absent (same query → 0 files)
 - ~~`# shortcut:` convention anywhere in the SDD assets~~ — absent (same query → 0 files)
 - ~~`parrot sdd spec ladder`~~ — not a command (`parrot sdd spec --help` lists `consequences`, no `ladder`); this feature does not add it
@@ -569,7 +593,7 @@ Verified against: `6c2c601490`
 | File | Action | Verbatim anchor line | Verified at | Occurrences |
 |---|---|---|---|---|
 | `sdd/templates/spec.md` | MODIFY | `#### Delegation-eligible modules` (first of 5 hunks; apply the patch) | `spec.md:106` | 1 |
-| `.claude/commands/sdd-spec.md` | MODIFY | `### 5. Scaffold the Spec` (one of 5 hunks; apply the patch) | `sdd-spec.md:471` | 1 |
+| `.claude/commands/sdd-spec.md` | MODIFY | `### 5. Scaffold the Spec` (one of 6 hunks; apply the patch) | `sdd-spec.md:471` | 1 |
 | `.agent/workflows/sdd-spec.md` | MODIFY | `### 5. Scaffold the Spec` (same patch, offset 4) | `sdd-spec.md:475` | 1 |
 | `.agents/skills/sdd-spec/SKILL.md` | MODIFY | `## Guardrails` | `SKILL.md:27` | 1 |
 | `.agents/skills/sdd-spec/SKILL.md` | MODIFY | `8. Research codebase:` | `SKILL.md:102` | 1 |
@@ -582,6 +606,13 @@ Verified against: `6c2c601490`
 | `.agent/workflows/sdd-proposal.md` | MODIFY | `#### 5c. Lint the synthesis` | `sdd-proposal.md:428` | 1 |
 | `.agent/workflows/sdd-proposal.md` | MODIFY | `\| §3 Hypothesis / Scope         \| Spec §2 Architectural Design           \|` | `sdd-proposal.md:651` | 1 |
 | `.agents/skills/sdd-proposal/SKILL.md` | MODIFY | `   - Lint the synthesis:` | `SKILL.md:119` | 1 |
+| `sdd/templates/brainstorm.md` | MODIFY | ``- `<name>`: <brief description>`` | `brainstorm.md:140` | 1 |
+| `sdd/templates/brainstorm.md` | MODIFY | `### Modified Capabilities` | `brainstorm.md:142` | 1 |
+| `.claude/commands/sdd-brainstorm.md` | MODIFY | `- **Capabilities**: new and modified (kebab-case identifiers).` | `sdd-brainstorm.md:188` | 1 |
+| `.claude/commands/sdd-brainstorm.md` | MODIFY | `- **Capabilities** → Spec Section 3 (Module Breakdown)` | `sdd-brainstorm.md:265` | 1 |
+| `.agent/workflows/sdd-brainstorm.md` | MODIFY | `- **Capabilities**: new and modified (kebab-case identifiers).` | `sdd-brainstorm.md:188` | 1 |
+| `.agent/workflows/sdd-brainstorm.md` | MODIFY | `- **Capabilities** → Spec Section 3 (Module Breakdown)` | `sdd-brainstorm.md:265` | 1 |
+| `.agents/skills/sdd-brainstorm/SKILL.md` | MODIFY | `## Guardrails` | `SKILL.md:33` | 1 |
 | `.claude/commands/sdd-task.md` | MODIFY | `- Extract: Feature ID, title, module breakdown, acceptance criteria, dependencies.` | `sdd-task.md:104` | 1 |
 | `.claude/commands/sdd-task.md` | MODIFY | `- One task per module, class, or distinct deliverable.` | `sdd-task.md:119` | 1 |
 | `.agent/workflows/sdd-task.md` | MODIFY | `- Extract: Feature ID, title, module breakdown, acceptance criteria, dependencies.` | `sdd-task.md:100` | 1 |
@@ -656,7 +687,7 @@ None. No package is added or upgraded.
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:52c9702854bf6eeaffd4a8c710f72ffa1a4abf5420b1f9d2b7bb9a7ee8d50263 evaluation_digest=sha256:15a976bddd9d644664bb13d5de60a1f7c44098ab8087dc13c50f650657cdafce rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:431c075c8c856e94eee27a0c8e8a6de6a37ca4bcd8d788ad42c254db9faa6e04 evaluation_digest=sha256:4d458027f95985fe314957e530d2c5377a98dd4309d0ee19360fc20465645c53 rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -711,10 +742,10 @@ Coverage:
       "path": "/home/jesuslara/proyectos/ai-parrot/sdd/specs/ponytail-like-stairway.spec.md"
     }
   ],
-  "evaluation_digest": "sha256:15a976bddd9d644664bb13d5de60a1f7c44098ab8087dc13c50f650657cdafce",
+  "evaluation_digest": "sha256:4d458027f95985fe314957e530d2c5377a98dd4309d0ee19360fc20465645c53",
   "exit_code": 0,
   "findings": [],
-  "input_digest": "sha256:52c9702854bf6eeaffd4a8c710f72ffa1a4abf5420b1f9d2b7bb9a7ee8d50263",
+  "input_digest": "sha256:431c075c8c856e94eee27a0c8e8a6de6a37ca4bcd8d788ad42c254db9faa6e04",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
@@ -739,13 +770,15 @@ Coverage:
 
 ## 8. Open Questions
 
-- [ ] Q1 — Should the mechanical Lean Review checks (L1–L5, L9) become a `parrot sdd spec ladder`
-  command with exit codes like `consequences`? This spec defers it and keeps the checks in the
-  prompt. — *Owner: Jesus Lara*
-- [ ] Q2 — Should `/sdd-brainstorm` get the same R1 cut on its "Capabilities" section? Deferred
-  here because only `/sdd-proposal` was named. — *Owner: Jesus Lara*
-- [ ] Q3 — The reviewer flag for code around twice the estimate is a finding to explain, not a
-  failure (as the drafted template says). Confirm it should not block `/sdd-done`. — *Owner: Jesus Lara*
+- [x] Q1 — Should the mechanical Lean Review checks (L1–L5, L9) become a `parrot sdd spec ladder`
+  command with exit codes like `consequences`? — *Resolved by Jesus Lara (2026-11-17)*: yes, in a
+  separate spec written now that depends on this one. FEAT-908 stays text-only and keeps the
+  checks in the prompt.
+- [x] Q2 — Should `/sdd-brainstorm` get the same R1 cut on its "Capabilities" section? —
+  *Resolved by Jesus Lara (2026-11-17)*: yes, included in M3 (and amendment A3 carries the
+  deferred capabilities into the spec's Non-Goals).
+- [x] Q3 — Does new code around twice the estimate block `/sdd-done`? — *Resolved by Jesus Lara
+  (2026-11-17)*: no. It is a review finding to explain; the estimate is a reference, not a quota.
 - [x] Is a new flag needed? — *Resolved in the request*: no; `--budget` and `--no-gate` already
   exist for intake, so the ladder always runs.
 - [x] Do the template parsers break on `#### Necessity Ladder` (§3) or `### Known Shortcuts` (§7)?
@@ -801,3 +834,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-11-17 | Jesus Lara (with Claude) | Initial draft |
+| 0.2 | 2026-11-17 | Jesus Lara (with Claude) | Open questions resolved: `/sdd-brainstorm` added to M3 (A3), the ladder script moved to a follow-up spec, LOC rule confirmed as non-blocking |

@@ -10,7 +10,15 @@
  - **Feature IDs are unique by construction**: new `FEAT-<NNN>` numbers are
    reserved via `parrot.sdd.scripts.reserve_ids` (FEAT-387) — a git-native
    compare-and-swap ledger, not a manual "check existing specs" scan — so
-@@ -411,7 +414,8 @@
+@@ -87,6 +90,7 @@
+ | Feature Description → Internal Behavior | §2 Component Diagram + Integration Points |
+ | Feature Description → Edge Cases & Error Handling | §7 Known Risks / Gotchas |
+ | Capabilities (New + Modified) | §3 Module Breakdown (one module per capability as a starting point) |
++| Deferred Capabilities | §1 Non-Goals (`Deferred:` lines, verbatim) |
+ | Impact & Integration table | §2 Integration Points |
+ | Code Context (entire section) | §6 Codebase Contract (re-verify every reference — code may have shifted) |
+ | Libraries / Tools table | §7 External Dependencies |
+@@ -411,7 +415,8 @@
  Before writing the spec:
  - Read existing specs in `sdd/specs/` directory.
  - Identify related existing components (AbstractClient, AgentCrew, BaseLoader, etc.).
@@ -20,7 +28,7 @@
  
  **CRITICAL — Codebase Contract Construction:**
  This step prevents AI hallucinations during implementation. You MUST:
-@@ -468,6 +472,67 @@
+@@ -468,6 +473,67 @@
  `contradicts:` — never silently. When the command prints `decision audit not configured in this
  repository`, skip this step.
  
@@ -88,7 +96,7 @@
  ### 5. Scaffold the Spec
  1. Read the template at `sdd/templates/spec.md`. The template already contains
     a YAML frontmatter block at the top (FEAT-145).
-@@ -609,6 +674,33 @@
+@@ -609,6 +675,33 @@
  For `type: hotfix` and `/sdd-brief`, set `policy: none` (or omit the key). The chapter is informational
  and never blocks closeout.
  
@@ -122,7 +130,7 @@
  ### 5b. Consequence Gate
  
  Render, then check (read-only):
-@@ -712,6 +804,7 @@
+@@ -712,6 +805,7 @@
  
     Feature ID: FEAT-<ID>
     Module graph: <M> modules, <E> dependency edges, exclusive: <modules or "none">
