@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-908 — Necessity Ladder — least-new-code gate in the SDD flow
 **Spec**: `sdd/specs/ponytail-like-stairway.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -177,10 +177,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (native sonnet seat, attempt a1; merged by coder_merge)
+**Date**: 2026-11-17
+**Notes**: Three Necessity Ladder rows added to the four code-reviewer files. The coder could not run checks (auto-mode hook), so the orchestrator ran them: `cmp` of the claude copies identical, `check_asset_sync.py --check` rc=0, task validation commands 45 passed. The packaged google copy was hand-edited by the coder; asset sync confirms it matches. Closed via `scripts/sdd/close_task.sh` (finalize refuses with prior SDD commits at HEAD).
+Seat: sonnet · Backend: native · Attempts: 1
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
