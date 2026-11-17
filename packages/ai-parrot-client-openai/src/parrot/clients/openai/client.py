@@ -1002,11 +1002,14 @@ class OpenAIClient(OpenAIBaseClient):
             ai_message.metadata["fallback_model"] = self._fallback_model
         # FEAT-176: lifecycle event — AfterClientCallEvent
         _lc_gpt_usage = getattr(ai_message, "usage", None)
+        _lc_gpt_duration_ms = (_lc_time_gpt.perf_counter() - _lc_t0_gpt) * 1000
+        if ai_message.response_time is None:
+            ai_message.response_time = _lc_gpt_duration_ms / 1000
         await self._emit_after_call(
             _lc_tc_gpt,
             client_name="openai",
             model=model_str,
-            duration_ms=(_lc_time_gpt.perf_counter() - _lc_t0_gpt) * 1000,
+            duration_ms=_lc_gpt_duration_ms,
             input_tokens=getattr(_lc_gpt_usage, "prompt_tokens", None) if _lc_gpt_usage else None,
             output_tokens=getattr(_lc_gpt_usage, "completion_tokens", None) if _lc_gpt_usage else None,
             finish_reason=getattr(ai_message, "stop_reason", None),
