@@ -101,7 +101,8 @@ stabilization fixes for a frozen release candidate.
 ### 2. Read the Spec
 Read the spec file provided by the user (e.g., `sdd/specs/<feature>.spec.md`).
 - If spec is not `status: approved`, warn and ask to confirm.
-- Extract: Feature ID, title, module breakdown, acceptance criteria, dependencies.
+- Extract: Feature ID, title, module breakdown, acceptance criteria, dependencies, and the §3
+  `#### Necessity Ladder` table when the spec has one.
 
 ### 2b. Advisory Decision-Audit Check
 
@@ -119,6 +120,14 @@ Analyze the spec and identify atomic tasks:
 - One task per module, class, or distinct deliverable.
 - Order tasks to respect implementation dependencies.
 - Aim for tasks completable in 1–4 hours each.
+
+**Necessity Ladder is binding (FEAT-908).** When the spec has a §3 `#### Necessity Ladder`
+table, each task's `## Scope` opens with its module's row as
+`**Ladder**: <rung> · reuses <evidence> · est. <n> LOC`. A task never adds a public symbol, a
+file or a dependency that the spec's Interface Skeletons, §6 Edit Sites and §7 External
+Dependencies do not declare: stop and report it in the §6 output as a spec gap instead of
+decomposing around it. A module at R2–R6 gets no CREATE row in "Files to Create / Modify".
+A spec without the table decomposes as before.
 
 **Documentation task (FEAT-801).** When the spec's `docs.policy` is `required`, emit exactly one
 task *Documentation — <pages>* that creates/updates the listed `wiki/` pages from

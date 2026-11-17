@@ -40,6 +40,9 @@ them to the spec's base branch. This command creates no worktree (FEAT-552);
 - Use per-spec indexes under `sdd/tasks/index/`; ignore the historical
   monolithic `sdd/tasks/.index.json`.
 - Commit only the task files and the per-spec index.
+- When the spec has a §3 `#### Necessity Ladder` table it is binding: copy each module's row
+  into its task's `## Scope` as a `**Ladder**:` line and never add a public symbol, file or
+  dependency the spec does not declare — report the gap instead.
 
 ## Workflow
 
