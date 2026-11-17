@@ -15,6 +15,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import time
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
@@ -27,6 +29,7 @@ from parrot.knowledge.wiki.ledger.events import (
     LedgerEvent,
 )
 from parrot.knowledge.wiki.ledger.log import LedgerLog
+from parrot.knowledge.wiki.ledger.store import LedgerCursorInvalid
 from parrot.knowledge.wiki.store import WikiPageRecord
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -35,6 +38,33 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from parrot.knowledge.wiki.ledger.store import LedgerStore
 
 logger = logging.getLogger(__name__)
+
+
+def _timing_outcome(exc: BaseException) -> str:
+    """Classify an index exception for timing telemetry."""
+    return "cancelled" if isinstance(exc, asyncio.CancelledError) else "error"
+
+
+def _emit_timing(store: "LedgerStore", phase: str, started: float, outcome: str, **counts: int | bool) -> None:
+    """Emit guarded index timings without exposing ledger content."""
+    if not logger.isEnabledFor(logging.DEBUG):
+        return
+    try:
+        logger.debug(
+            "wiki.sqlite.timing",
+            extra={
+                "event": "wiki.sqlite.timing",
+                "operation": "ledger.sync",
+                "phase": phase,
+                "duration_ms": (time.perf_counter() - started) * 1000,
+                "outcome": outcome,
+                "pid": os.getpid(),
+                "db_name": store.db_path.name,
+                **counts,
+            },
+        )
+    except BaseException:
+        pass
 
 
 class ClaimHeldByOther(Exception):
@@ -304,7 +334,7 @@ class LedgerIndex:
         )
 
     async def sync(self, conn: "aiosqlite.Connection | None" = None) -> int:
-        """Apply events after the persisted cursor up to the log tip; advance the cursor.
+        """Skip writer acquisition only for a validated standalone no-op.
 
         Args:
             conn: An already-open write connection (reused by ``claim_issue``);
@@ -316,12 +346,36 @@ class LedgerIndex:
         if conn is not None:
             applied, _offset, _event_id = await self._sync_locked(conn)
             return applied
+
+        probe_started = time.perf_counter()
+        try:
+            try:
+                first_cursor = await self.store.read_cursor()
+            except LedgerCursorInvalid:
+                pass
+            else:
+                probe_result = await asyncio.to_thread(self.log.probe_cursor, *first_cursor)
+                if probe_result == "current":
+                    try:
+                        if first_cursor == await self.store.read_cursor():
+                            _emit_timing(self.store, "sync_probe", probe_started, "success", fast_path=True)
+                            return 0
+                    except LedgerCursorInvalid:
+                        pass
+        except BaseException as exc:
+            _emit_timing(self.store, "sync_probe", probe_started, _timing_outcome(exc), fast_path=False)
+            raise
+        _emit_timing(self.store, "sync_probe", probe_started, "success", fast_path=False)
+
         async with self.store.ledger_transaction("ledger.sync") as new_conn:
             applied, _offset, _event_id = await self._sync_locked(new_conn)
             return applied
 
     async def _sync_locked(self, conn: "aiosqlite.Connection") -> tuple[int, int, str | None]:
-        """Read the persisted cursor and apply forward from it to the log tip.
+        """Read this transaction's cursor and explicitly rebuild malformed state.
+
+        The ``replay`` timing record is inclusive of this locked reduction only.
+        Chained claim replay remains outside this method, so it is not counted twice.
 
         Returns:
             ``(applied_count, cursor_offset, cursor_event_id)`` reflecting
@@ -330,8 +384,23 @@ class LedgerIndex:
             new was found). The cursor is already persisted for this
             connection's transaction when ``applied_count > 0``.
         """
-        offset, last_event_id = await self.store.read_cursor()
-        return await self._apply_from(conn, offset, last_event_id)
+        replay_started = time.perf_counter()
+        try:
+            try:
+                offset, last_event_id = await self.store.read_cursor_in(conn)
+            except LedgerCursorInvalid:
+                try:
+                    logger.warning("Ledger cursor is invalid; rebuilding the materialized ledger projection.")
+                except BaseException:
+                    pass
+                result = await self._rebuild_locked_with_cursor(conn)
+            else:
+                result = await self._apply_from(conn, offset, last_event_id)
+        except BaseException as exc:
+            _emit_timing(self.store, "replay", replay_started, _timing_outcome(exc))
+            raise
+        _emit_timing(self.store, "replay", replay_started, "success", applied_events=result[0])
+        return result
 
     async def _apply_from(
         self, conn: "aiosqlite.Connection", offset: int, last_event_id: str | None
@@ -340,9 +409,8 @@ class LedgerIndex:
 
         Never re-reads the cursor from storage — callers (like
         :meth:`claim_issue`) that need to continue a scan from a position
-        established earlier IN THE SAME transaction pass it in directly,
-        since ``read_cursor()`` uses a separate connection that cannot see
-        this transaction's own uncommitted cursor advance.
+        established earlier IN THE SAME transaction pass it in directly so
+        the cursor remains visible within the caller's transaction.
 
         Returns:
             ``(applied_count, cursor_offset, cursor_event_id)``. The
@@ -370,10 +438,8 @@ class LedgerIndex:
             if first_event is None or first_event.event_id != last_event_id:
                 # The event the cursor points at is gone or changed — the log
                 # is no longer contiguous with what we last saw. Full rebuild.
-                # `_rebuild_locked` returns its own resulting cursor directly
-                # rather than this reading it back via `read_cursor()`, which
-                # uses a separate connection and cannot see `conn`'s own
-                # still-uncommitted write.
+                # `_rebuild_locked` returns its own resulting cursor directly,
+                # preserving this transaction's uncommitted state.
                 return await self._rebuild_locked_with_cursor(conn)
             # first_event matches what we last applied; it is not reapplied.
         elif offset != 0:
@@ -411,9 +477,8 @@ class LedgerIndex:
         """Do the rebuild work and return the resulting cursor directly.
 
         Used by :meth:`_apply_from` so a caller chaining a second pass in
-        the same transaction (``claim_issue``) never has to read the
-        cursor back through a separate connection, which cannot see this
-        transaction's own still-uncommitted write.
+        the same transaction (``claim_issue``) keeps its resulting cursor
+        without a redundant read.
         """
         await conn.execute("DELETE FROM pages")
         await conn.execute("DELETE FROM edges")
@@ -437,6 +502,38 @@ class LedgerIndex:
         if applied:
             await self._write_cursor(conn, cursor_line_start, cursor_event_id)
         return applied, cursor_line_start, cursor_event_id
+
+    async def _append_durably(self, event: LedgerEvent) -> tuple[str, int]:
+        """Drain a dispatched append/fsync before propagating cancellation.
+
+        Args:
+            event: The event to durably append to the ledger log.
+
+        Returns:
+            The event id and informational byte offset returned by the log.
+
+        Raises:
+            asyncio.CancelledError: If the caller is cancelled after the append
+                is dispatched. The append is still drained before cancellation
+                is re-raised.
+        """
+        append_task = asyncio.create_task(asyncio.to_thread(self.log.append, event))
+        try:
+            return await asyncio.shield(append_task)
+        except asyncio.CancelledError as cancellation:
+            while not append_task.done():
+                try:
+                    await asyncio.shield(append_task)
+                except asyncio.CancelledError:
+                    continue
+                except BaseException as append_error:
+                    raise cancellation from append_error
+
+            try:
+                append_task.result()
+            except BaseException as append_error:
+                raise cancellation from append_error
+            raise
 
     # ------------------------------------------------------------------
     # Atomic claim
@@ -496,7 +593,7 @@ class LedgerIndex:
             # LedgerLog.append() is a blocking syscall sequence
             # (open/lseek/write/fsync) — off-thread so it never blocks the
             # event loop while this transaction is held open.
-            await asyncio.to_thread(self.log.append, event)
+            await self._append_durably(event)
             await self._apply_from(conn, offset, last_event_id)
             return True
 
@@ -543,7 +640,7 @@ class LedgerIndex:
             if resolved_by is not None:
                 payload["resolved_by"] = resolved_by
             event = LedgerEvent(kind="issue.closed", subject=issue_id, actor=actor, payload=payload)
-            await asyncio.to_thread(self.log.append, event)
+            await self._append_durably(event)
             await self._apply_from(conn, offset, last_event_id)
             return True
 
@@ -580,7 +677,7 @@ class LedgerIndex:
                 actor=actor,
                 payload={"unclaimed_by": actor, "reason": reason},
             )
-            await asyncio.to_thread(self.log.append, event)
+            await self._append_durably(event)
             await self._apply_from(conn, offset, last_event_id)
             return True
 

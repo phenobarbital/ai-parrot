@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-902 - Wiki and ledger SQLite hardening
 **Spec**: `sdd/specs/wiki-ledger-sqlite-hardening.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5714
@@ -215,3 +215,17 @@ Run the task-specific commands above. The feature-wide regression contract is ca
 2. Verify predecessors are done in `sdd/tasks/index/wiki-ledger-sqlite-hardening.json` and recheck this task's contracts.
 3. Implement only the declared files, preserve other agents' changes, and complete every acceptance gate. Store execution logs under `artifacts/logs/`.
 4. Use `parrot sdd task finalize` with real TaskCompletionEvidence and the exact implementation HEAD. The finalizer owns the completion note and active-to-completed move; do not hand-edit them.
+
+## Completion Note
+
+- Task: TASK-5715
+- Feature: wiki-ledger-sqlite-hardening
+- Implementation SHA: b2a10e0056437cfd184224085d0bdb0d94065b85
+- Closed at (UTC): 2026-11-16T22:12:03+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 754s · Tokens: n/a |

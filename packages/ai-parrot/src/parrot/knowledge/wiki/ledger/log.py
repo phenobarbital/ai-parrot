@@ -1,10 +1,38 @@
-import os
+import asyncio
 import json
 import logging
-from typing import Iterator
+import os
+import time
+from typing import Iterator, Literal
 from parrot.knowledge.wiki.ledger.events import LedgerEvent
 
 logger = logging.getLogger(__name__)
+
+
+def _timing_outcome(exc: BaseException) -> str:
+    """Classify an append exception for timing telemetry."""
+    return "cancelled" if isinstance(exc, asyncio.CancelledError) else "error"
+
+
+def _emit_timing(operation: str, phase: str, started: float, outcome: str) -> None:
+    """Emit one guarded ledger-log timing record."""
+    if not logger.isEnabledFor(logging.DEBUG):
+        return
+    try:
+        logger.debug(
+            "wiki.sqlite.timing",
+            extra={
+                "event": "wiki.sqlite.timing",
+                "operation": operation,
+                "phase": phase,
+                "duration_ms": (time.perf_counter() - started) * 1000,
+                "outcome": outcome,
+                "pid": os.getpid(),
+                "db_name": "ledger.db",
+            },
+        )
+    except BaseException:
+        pass
 
 
 class LedgerLog:
@@ -56,9 +84,10 @@ class LedgerLog:
         if len(encoded) > 4096:
             raise ValueError(f"Serialized event size ({len(encoded)} bytes) exceeds the 4 KiB limit.")
 
-        # Open with O_APPEND | O_WRONLY | O_CREAT
-        fd = os.open(self.path, os.O_APPEND | os.O_WRONLY | os.O_CREAT)
+        append_started = time.perf_counter()
         try:
+            # Open with O_APPEND | O_WRONLY | O_CREAT
+            fd = os.open(self.path, os.O_APPEND | os.O_WRONLY | os.O_CREAT)
             # To get the start offset of the append, we can seek to the end or use fstat.
             # Since we opened with O_APPEND, writes always go to the end, but we want to know
             # the exact byte offset where this write starts.
@@ -74,9 +103,21 @@ class LedgerLog:
             # Force the write to durable storage before returning — a
             # crash-only-safe (page-cache-only) append is not enough for
             # the log this feature bills as its durable source of truth.
-            os.fsync(fd)
+            fsync_started = time.perf_counter()
+            try:
+                os.fsync(fd)
+            except BaseException as exc:
+                _emit_timing("ledger.append", "log_fsync", fsync_started, _timing_outcome(exc))
+                raise
+            _emit_timing("ledger.append", "log_fsync", fsync_started, "success")
+        except BaseException as exc:
+            _emit_timing("ledger.append", "log_append", append_started, _timing_outcome(exc))
+            raise
         finally:
-            os.close(fd)
+            if "fd" in locals():
+                os.close(fd)
+
+        _emit_timing("ledger.append", "log_append", append_started, "success")
 
         return event.event_id, start_offset
 
@@ -96,17 +137,123 @@ class LedgerLog:
         if len(encoded) > 4096:
             raise ValueError(f"Serialized event size ({len(encoded)} bytes) exceeds the 4 KiB limit.")
 
-        fd = os.open(self.path, os.O_APPEND | os.O_WRONLY | os.O_CREAT)
+        append_started = time.perf_counter()
         try:
+            fd = os.open(self.path, os.O_APPEND | os.O_WRONLY | os.O_CREAT)
             start_offset = os.lseek(fd, 0, os.SEEK_END)
             written = os.write(fd, encoded)
             if written != len(encoded):
                 raise OSError("Failed to write the complete event line atomically.")
-            os.fsync(fd)
+            fsync_started = time.perf_counter()
+            try:
+                os.fsync(fd)
+            except BaseException as exc:
+                _emit_timing("ledger.append_line", "log_fsync", fsync_started, _timing_outcome(exc))
+                raise
+            _emit_timing("ledger.append_line", "log_fsync", fsync_started, "success")
+        except BaseException as exc:
+            _emit_timing("ledger.append_line", "log_append", append_started, _timing_outcome(exc))
+            raise
         finally:
-            os.close(fd)
+            if "fd" in locals():
+                os.close(fd)
+
+        _emit_timing("ledger.append_line", "log_append", append_started, "success")
 
         return start_offset
+
+    def probe_cursor(self, offset: int, last_event_id: str | None) -> Literal["current", "replay", "uncertain"]:
+        """Validate the exact cursor anchor and EOF with bounded read-only I/O.
+
+        The result is only an observation for ``LedgerIndex.sync``.  It never
+        grants ownership of the log: a caller must still re-read its cursor
+        before treating ``"current"`` as a no-op.
+
+        Args:
+            offset: Byte offset of the last applied event's line.
+            last_event_id: Identifier of the event at ``offset``, or ``None``
+                for an empty cursor.
+
+        Returns:
+            ``"current"`` for a stable exact anchor at EOF, ``"replay"``
+            when a stable suffix exists, or ``"uncertain"`` when the cursor
+            or file identity cannot be safely validated.
+
+        Raises:
+            OSError: For real file I/O failures other than a missing log race.
+        """
+        if last_event_id is None:
+            if offset != 0:
+                return "uncertain"
+            try:
+                before_path = os.stat(self.path)
+            except FileNotFoundError:
+                try:
+                    os.stat(self.path)
+                except FileNotFoundError:
+                    return "current"
+                return "uncertain"
+            if before_path.st_size != 0:
+                return "replay"
+
+        try:
+            fd = os.open(self.path, os.O_RDONLY)
+        except FileNotFoundError:
+            return "uncertain"
+
+        try:
+            before = os.fstat(fd)
+            before_metadata = (
+                before.st_dev,
+                before.st_ino,
+                before.st_size,
+                before.st_mtime_ns,
+                before.st_ctime_ns,
+            )
+
+            if last_event_id is None:
+                result: Literal["current", "replay", "uncertain"] = "current"
+            else:
+                if offset < 0:
+                    return "uncertain"
+                os.lseek(fd, offset, os.SEEK_SET)
+                anchor_bytes = os.read(fd, 4097)
+                newline = anchor_bytes.find(b"\n")
+                if newline < 0 or newline >= 4096:
+                    return "uncertain"
+                try:
+                    anchor = LedgerEvent(**json.loads(anchor_bytes[: newline + 1].decode("utf-8")))
+                except (UnicodeDecodeError, json.JSONDecodeError, ValueError, TypeError):
+                    return "uncertain"
+                if anchor.event_id != last_event_id:
+                    return "uncertain"
+                os.lseek(fd, offset + newline + 1, os.SEEK_SET)
+                result = "current" if os.read(fd, 1) == b"" else "replay"
+
+            after = os.fstat(fd)
+            after_metadata = (
+                after.st_dev,
+                after.st_ino,
+                after.st_size,
+                after.st_mtime_ns,
+                after.st_ctime_ns,
+            )
+            try:
+                pathname = os.stat(self.path)
+            except FileNotFoundError:
+                return "uncertain"
+            pathname_metadata = (
+                pathname.st_dev,
+                pathname.st_ino,
+                pathname.st_size,
+                pathname.st_mtime_ns,
+                pathname.st_ctime_ns,
+            )
+            if before_metadata != after_metadata or pathname_metadata != after_metadata:
+                return "uncertain"
+            return result
+        finally:
+            os.close(fd)
 
     def iter_events(self, from_offset: int = 0) -> Iterator[tuple[LedgerEvent, int]]:
         """Stream events from the log starting at a given byte offset.
