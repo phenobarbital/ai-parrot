@@ -10,6 +10,7 @@ Never import ``auth.py`` or ``wrapper.py`` here: ``auth.py`` imports
 
 from __future__ import annotations
 
+import hashlib
 import html as html_mod
 import re
 import secrets
@@ -19,7 +20,7 @@ from typing import Any, Dict, MutableMapping, Optional, Protocol, runtime_checka
 
 from aiohttp import web
 from navconfig.logging import logging
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
 
@@ -55,46 +56,110 @@ class BrowserLoginEntry:
     created_at: float  # time.monotonic()
 
 
+class PendingBrowserConfirmation(BaseModel):
+    """Verified candidate awaiting Telegram proof; excluded from public serialization."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
+
+    entry: BrowserLoginEntry = Field(repr=False, exclude=True)
+    candidate: Any = Field(repr=False, exclude=True)
+    requires_post_auth: bool = False
+
+
 class BrowserLoginRegistry:
-    """In-process, TTL-bound state -> chat correlation for browser-mode logins."""
+    """Process-local login attempts and browser-only confirmation secrets with a shared TTL."""
 
     def __init__(self, ttl_seconds: float = _REGISTRY_TTL_SECONDS) -> None:
         self._ttl = ttl_seconds
         self._entries: Dict[str, BrowserLoginEntry] = {}
+        self._attempts: Dict[str, BrowserLoginEntry] = {}
+        self._confirmations: Dict[str, PendingBrowserConfirmation] = {}
 
     def _expired(self, entry: BrowserLoginEntry, now: float) -> bool:
-        return (now - entry.created_at) > self._ttl
+        return (now - entry.created_at) >= self._ttl
+
+    def _discard(self, state: str) -> None:
+        """Drop all phases of one attempt, including its credential-bearing candidate."""
+        self._entries.pop(state, None)
+        self._attempts.pop(state, None)
+        for digest in [key for key, pending in self._confirmations.items() if pending.entry.state == state]:
+            del self._confirmations[digest]
 
     def _sweep(self) -> None:
         now = time.monotonic()
-        for state in [state for state, entry in self._entries.items() if self._expired(entry, now)]:
-            del self._entries[state]
+        for state in [state for state, entry in self._attempts.items() if self._expired(entry, now)]:
+            self._discard(state)
+
+    def cancel(self, *, bot_id: str, telegram_id: int) -> None:
+        """Invalidate pending and in-flight attempts for this bot and sender."""
+        self._sweep()
+        for state in [
+            state
+            for state, entry in self._attempts.items()
+            if entry.bot_id == bot_id and entry.telegram_id == telegram_id
+        ]:
+            self._discard(state)
 
     def register(self, entry: BrowserLoginEntry) -> None:
-        """Store a pending login; sweeps expired entries first."""
+        """Register an attempt, superseding prior logins for this bot/user or bot/chat."""
         if _STATE_RE.fullmatch(entry.state) is None:
             raise ValueError("Browser login state must use the browser namespace and contain 32 random bytes")
-        self._sweep()
-        # A new /login supersedes any earlier pending link for the same chat.
-        for stale in [
-            key for key, old in self._entries.items() if old.chat_id == entry.chat_id and old.bot_id == entry.bot_id
+        self.cancel(bot_id=entry.bot_id, telegram_id=entry.telegram_id)
+        for state in [
+            state
+            for state, old in self._attempts.items()
+            if old.bot_id == entry.bot_id and old.chat_id == entry.chat_id
         ]:
-            del self._entries[stale]
+            self._discard(state)
+        self._attempts[entry.state] = entry
         self._entries[entry.state] = entry
 
     def consume(self, state: str) -> Optional[BrowserLoginEntry]:
-        """Pop and return the entry (single-use); None if unknown or expired. Never awaits."""
-        entry = self._entries.pop(state, None)
-        if entry is None or self._expired(entry, time.monotonic()):
-            return None
-        return entry
+        """Consume the callback state once; retain its generation until confirmation or cancellation."""
+        self._sweep()
+        return self._entries.pop(state, None)
 
     def peek(self, state: str) -> Optional[BrowserLoginEntry]:
-        """Non-destructive lookup; never use a miss to select legacy routing."""
-        entry = self._entries.get(state)
-        if entry is None or self._expired(entry, time.monotonic()):
+        """Return a pending callback entry, never a confirmation candidate."""
+        self._sweep()
+        return self._entries.get(state)
+
+    def stage(self, entry: BrowserLoginEntry, candidate: Any, *, requires_post_auth: bool) -> str:
+        """Return a fresh confirmation code for a consumed, current, unexpired attempt.
+
+        Raises:
+            BrowserVerificationError: The attempt expired, was replaced, or was already staged.
+        """
+        self._sweep()
+        if (
+            self._attempts.get(entry.state) is not entry
+            or entry.state in self._entries
+            or any(pending.entry.state == entry.state for pending in self._confirmations.values())
+        ):
+            raise BrowserVerificationError("Browser login attempt is no longer current")
+        code = secrets.token_urlsafe(16)
+        digest = hashlib.sha256(code.encode("ascii")).hexdigest()
+        self._confirmations[digest] = PendingBrowserConfirmation(
+            entry=entry, candidate=candidate, requires_post_auth=requires_post_auth
+        )
+        return code
+
+    def confirm(
+        self, code: str, *, bot_id: str, telegram_id: int, chat_id: int
+    ) -> Optional[PendingBrowserConfirmation]:
+        """Atomically consume a code only when its bot, sender and chat match."""
+        self._sweep()
+        if not isinstance(code, str) or re.fullmatch(r"[A-Za-z0-9_-]{22}", code) is None:
             return None
-        return entry
+        digest = hashlib.sha256(code.encode("ascii")).hexdigest()
+        pending = self._confirmations.get(digest)
+        if pending is None:
+            return None
+        entry = pending.entry
+        if (entry.bot_id, entry.telegram_id, entry.chat_id) != (bot_id, telegram_id, chat_id):
+            return None
+        self._discard(entry.state)
+        return pending
 
     def __len__(self) -> int:
         return len(self._entries)
@@ -239,6 +304,21 @@ def render_browser_success(bot_username: Optional[str], display_name: str) -> st
     return _render_page(title="Authentication Complete", heading="Authentication complete", body=body)
 
 
+def render_browser_confirmation(bot_username: Optional[str], code: str) -> str:
+    """Render the escaped browser-only command and safe return link."""
+    command = html_mod.escape(f"/login {code}")
+    link = telegram_deep_link(bot_username)
+    return_link = f'<p><a href="{link}">Return to Telegram</a></p>' if link else ""
+    body = (
+        "<p>To finish signing in, send this command in the Telegram chat where you started login:</p>"
+        f"<p><code>{command}</code></p>"
+        "<p>Only use a login you started yourself. Do not share this code. "
+        "If someone sent you the login link, close this page.</p>"
+        f"{return_link}"
+    )
+    return _render_page(title="Confirm Telegram Login", heading="Confirm your login in Telegram", body=body)
+
+
 def render_browser_error(message: str) -> str:
     """HTML error page (no auth data echoed back)."""
     safe_message = html_mod.escape(message)
@@ -251,7 +331,9 @@ _RESERVED_PAYLOAD_KEYS = frozenset({"state", "browser_entry", "bot_id", "chat_id
 
 def _json(status: int, **body: Any) -> web.Response:
     """Return a JSON response with the supplied status and body."""
-    return web.json_response(body, status=status)
+    return web.json_response(
+        body, status=status, headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
+    )
 
 
 async def browser_complete_handler(request: web.Request) -> web.Response:
@@ -259,7 +341,7 @@ async def browser_complete_handler(request: web.Request) -> web.Response:
 
     400 on malformed JSON / missing state; 410 on unknown or expired state;
     401 on rejected credentials/identity mismatch; 503 on verifier unavailability;
-    200 {ok: true, redirect_url: "https://t.me/<bot>"} on success.
+    202 with a browser-only confirmation code after verification; Telegram identity is still pending.
     Never echoes tokens back in the response body.
     """
     try:
@@ -287,19 +369,18 @@ async def browser_complete_handler(request: web.Request) -> web.Response:
         return _json(503, ok=False, error="unavailable")
     data = {key: value for key, value in body.items() if key not in _RESERVED_PAYLOAD_KEYS}
     try:
-        authenticated = await wrapper._complete_auth_payload(
-            data,
-            telegram_id=entry.telegram_id,
-            chat_id=entry.chat_id,
-            browser_entry=entry,
-        )
+        code = await wrapper._prepare_browser_login(data, browser_entry=entry)
     except BrowserVerificationError:
         return _json(401, ok=False, error="rejected")
     except BrowserVerifierUnavailableError:
         return _json(503, ok=False, error="unavailable")
-    if not authenticated:
-        return _json(401, ok=False, error="rejected")
-    return _json(200, ok=True, redirect_url=telegram_deep_link(entry.bot_username))
+    return _json(
+        202,
+        ok=True,
+        pending_confirmation=True,
+        confirmation_code=code,
+        redirect_url=telegram_deep_link(entry.bot_username),
+    )
 
 
 def setup_browser_auth_routes(app: web.Application) -> None:

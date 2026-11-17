@@ -8,6 +8,7 @@ All HTTP calls to external providers are mocked.
 import asyncio
 import json
 import time
+import re
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
@@ -44,13 +45,12 @@ def _make_wrapper(config: TelegramAgentConfig, *, app: web.Application | None = 
     mock_bot.get_me = AsyncMock(return_value=MagicMock(username="browser_bot"))
     mock_bot.send_message = AsyncMock()
 
-    with patch(
-        "parrot.integrations.telegram.wrapper.CallbackRegistry"
-    ) as mock_cb:
+    with patch("parrot.integrations.telegram.wrapper.CallbackRegistry") as mock_cb:
         mock_cb.return_value.discover_from_agent.return_value = 0
         mock_cb.return_value.prefixes = []
 
         from parrot.integrations.telegram.wrapper import TelegramAgentWrapper
+
         wrapper = TelegramAgentWrapper(
             agent=mock_agent,
             bot=mock_bot,
@@ -142,6 +142,7 @@ MOCK_GOOGLE_USERINFO = {
 # Tests
 # ---------------------------------------------------------------------------
 
+
 class TestOAuth2FullFlow:
     """Test the complete OAuth2 flow: login → callback → exchange → session."""
 
@@ -172,6 +173,7 @@ class TestOAuth2FullFlow:
 
         # Extract state from the URL
         from urllib.parse import urlparse, parse_qs
+
         parsed = urlparse(url)
         qs = parse_qs(parsed.query)
         state = qs["state"][0]
@@ -314,11 +316,13 @@ class TestHandleWebAppDataRoutes:
 
         oauth_msg = _make_message()
         oauth_msg.web_app_data = MagicMock()
-        oauth_msg.web_app_data.data = json.dumps({
-            "provider": "google",
-            "code": "auth-code-456",
-            "state": "test-state-xyz",
-        })
+        oauth_msg.web_app_data.data = json.dumps(
+            {
+                "provider": "google",
+                "code": "auth-code-456",
+                "state": "test-state-xyz",
+            }
+        )
 
         # Mock HTTP for token exchange + userinfo
         mock_token_resp = MagicMock()
@@ -352,11 +356,13 @@ class TestHandleWebAppDataRoutes:
         basic_wrapper = _make_wrapper(_basic_config())
         basic_msg = _make_message()
         basic_msg.web_app_data = MagicMock()
-        basic_msg.web_app_data.data = json.dumps({
-            "user_id": "nav-99",
-            "token": "tok",
-            "display_name": "NavUser",
-        })
+        basic_msg.web_app_data.data = json.dumps(
+            {
+                "user_id": "nav-99",
+                "token": "tok",
+                "display_name": "NavUser",
+            }
+        )
 
         await basic_wrapper.handle_web_app_data(basic_msg)
         basic_msg.answer.assert_called_once()
@@ -421,9 +427,7 @@ class TestOAuth2CallbackEndpoint:
     @pytest.mark.asyncio
     async def test_oauth2_callback_endpoint(self, client):
         """GET /oauth2/callback with code and state returns HTML with sendData."""
-        resp = await client.get(
-            "/oauth2/callback?code=auth-code-abc&state=state-xyz-123"
-        )
+        resp = await client.get("/oauth2/callback?code=auth-code-abc&state=state-xyz-123")
         assert resp.status == 200
         text = await resp.text()
         assert "sendData" in text
@@ -533,12 +537,12 @@ class TestOAuth2BrowserBranch:
 
     @staticmethod
     def _register_attempt(
-        wrapper, state: str, *, created_at: float | None = None, chat_id: int = 54321
+        wrapper, state: str, *, created_at: float | None = None, chat_id: int = 54321, telegram_id: int = 12345
     ) -> BrowserLoginEntry:
         """Register a browser correlation and matching OAuth2 PKCE state."""
         entry = BrowserLoginEntry(
             state=state,
-            telegram_id=12345,
+            telegram_id=telegram_id,
             chat_id=chat_id,
             bot_id="7001",
             bot_username="browser_bot",
@@ -565,6 +569,15 @@ class TestOAuth2BrowserBranch:
         return next(iter(strategy._pending_states))
 
     @staticmethod
+    async def _confirm(wrapper, response):
+        """Redeem the browser-only command through the initiating Telegram user/chat."""
+        match = re.search(r"/login ([A-Za-z0-9_-]{22})", response.text)
+        assert match is not None
+        assert not wrapper._user_sessions.get(12345, TelegramUserSession(telegram_id=12345)).authenticated
+        wrapper._persist_principal_link.assert_not_awaited()
+        await wrapper.handle_login(_make_message(chat_id=54321, text=match.group(0)))
+
+    @staticmethod
     async def _request(app: web.Application, query: str) -> web.Response:
         """Invoke the callback through an aiohttp request without opening a test socket."""
         request = make_mocked_request("GET", f"/oauth2/callback?{query}", app=app)
@@ -583,6 +596,7 @@ class TestOAuth2BrowserBranch:
         text = response.text
         assert "sendData" not in text
         assert "https://t.me/browser_bot" in text
+        await self._confirm(wrapper, response)
         assert wrapper._user_sessions[12345].authenticated is True
         assert wrapper._user_sessions[12345].display_name == "Test GoogleUser"
         strategy.exchange_code.assert_awaited_once_with("auth-code", ANY)
@@ -648,6 +662,7 @@ class TestOAuth2BrowserBranch:
             strategy.exchange_code.assert_awaited_once()
             strategy.fetch_userinfo.assert_awaited_once()
             consume_state.assert_called_once_with(state)
+            await self._confirm(wrapper, response)
             wrapper._persist_principal_link.assert_awaited_once()
             wrapper._initialize_user_context.assert_awaited_once()
 
@@ -675,7 +690,7 @@ class TestOAuth2BrowserBranch:
         error_state = new_browser_state()
         missing_code_state = new_browser_state()
         self._register_attempt(wrapper, error_state)
-        self._register_attempt(wrapper, missing_code_state, chat_id=54322)
+        self._register_attempt(wrapper, missing_code_state, chat_id=54322, telegram_id=12346)
 
         provider_error = await self._request(app, f"error=access_denied&state={error_state}")
         missing_code = await self._request(app, f"state={missing_code_state}")
@@ -699,6 +714,7 @@ class TestOAuth2BrowserBranch:
         response = await self._request(app, f"code=full-flow-code&state={state}")
 
         assert response.status == 200
+        await self._confirm(wrapper, response)
         session = wrapper._user_sessions[12345]
         assert session.authenticated is True
         assert session.nav_user_id == "google-user-123456"
