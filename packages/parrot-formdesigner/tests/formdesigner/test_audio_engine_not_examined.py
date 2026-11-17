@@ -1,18 +1,29 @@
 """Ledger a80ba017766e: the voice engine honours ``PlausibilityReport.not_examined`` (FEAT-737 follow-up).
 
-The session is real; only the plausibility checker (an LLM boundary) is faked, by handing crafted reports in.
+Sessions are real. Merge tests use crafted reports; batching tests use the real checker with a fake LLM client.
 """
 
 from __future__ import annotations
 
+import asyncio
+import json
+from types import SimpleNamespace
+from typing import Literal
+from unittest.mock import AsyncMock
+
+import pytest
+
+from parrot_formdesigner.audio.engine import AudioFormSession
 from parrot_formdesigner.audio.events import (
     AnswerText,
+    Outbound,
     PlausibilityDone,
     ReviewConfirm,
     ReviewEdit,
     RunPlausibility,
     Submit,
 )
+from parrot_formdesigner.audio.models import Phase
 from parrot_formdesigner.core.llm_validation import (
     NOT_EXAMINED_MAX_FIELDS,
     NOT_EXAMINED_UNRENDERABLE,
@@ -20,8 +31,10 @@ from parrot_formdesigner.core.llm_validation import (
     PlausibilityReport,
     PlausibilityVerdict,
 )
+from parrot_formdesigner.core.voice import VoiceFormConfig
+from parrot_formdesigner.services.plausibility import AnswerPlausibilityChecker, PlausibilityBlocked
 
-from .test_audio_engine_review_resume import _advance, _answer_all, _form, _make
+from .test_audio_engine_review_resume import _advance, _answer_all, _form, _make, _start
 
 CAP = NOT_EXAMINED_MAX_FIELDS
 UNR = NOT_EXAMINED_UNRENDERABLE
@@ -106,3 +119,99 @@ def test_delta_new_report_wins_for_requested_fields():
     _done(s, _rep([], {"agree": UNR}))  # capped before, now unrenderable
     assert s.state.plausibility.not_examined == {"agree": UNR}
     assert "agree" not in s._pl_unchecked
+
+
+def _capped_session(
+    on_error: Literal["skip", "block"], review: Literal["always", "never"], protocol: int
+) -> tuple[AudioFormSession, list[Outbound]]:
+    """Answer a form with three eligible fields and a one-field batch cap."""
+    form = _form()
+    form.llm_validation = LLMValidationConfig(enabled=True, on_error=on_error, max_fields=1)
+    session = _make(form, cfg=VoiceFormConfig(max_questions=None, review=review))
+    _start(session, protocol=protocol)
+    _advance(session)
+    for field_id, value in (("name", "Ana"), ("color", "r"), ("agree", "yes"), ("pw", "x")):
+        session.handle(AnswerText(type="answer_text", field_id=field_id, value=value))
+        output = _advance(session)
+    return session, output
+
+
+def _response(field_id: str) -> SimpleNamespace:
+    """An attributed, plausible LLM response for one field."""
+    return SimpleNamespace(
+        model="test-model",
+        structured_output={"items": [{"field_id": field_id, "plausible": True, "confidence": 0.9}]},
+    )
+
+
+def _run_batch(session: AudioFormSession, checker: AnswerPlausibilityChecker, output: list[Outbound]) -> list[Outbound]:
+    """Execute the real checker, mapping blocked errors as the WebSocket adapter does."""
+    assert not any(isinstance(item, Submit) for item in output)
+    request = next(item for item in output if isinstance(item, RunPlausibility))
+    try:
+        report = asyncio.run(
+            checker.check(
+                session.form,
+                {fid: answer.value for fid, answer in session.state.answers.items()},
+                locale="es",
+                fields=request.fields,
+            )
+        )
+    except PlausibilityBlocked as exc:
+        report = PlausibilityReport(status="blocked", reason=exc.reason, threshold=checker.config.threshold)
+    return session.handle(PlausibilityDone(type="_plausibility_done", report=report))
+
+
+@pytest.mark.parametrize("on_error", ["skip", "block"])
+@pytest.mark.parametrize("review,protocol", [("always", 2), ("never", 2), ("always", 1)])
+def test_real_checker_drains_capped_batches_before_submit(
+    on_error: Literal["skip", "block"], review: Literal["always", "never"], protocol: int
+) -> None:
+    """Every eligible answer is checked once across all review and error policies."""
+    session, output = _capped_session(on_error, review, protocol)
+    ask = AsyncMock(side_effect=[_response(fid) for fid in ("name", "color", "agree")])
+    checker = AnswerPlausibilityChecker(SimpleNamespace(ask=ask), config=session.form.llm_validation)
+    for _ in range(3):
+        output = _run_batch(session, checker, output)
+        if review == "always" and protocol == 2:
+            assert not any(isinstance(item, Submit) for item in output)
+            output = _confirm(session)
+    submit = next(item for item in output if isinstance(item, Submit))
+    report = submit.context["llm_validation"]
+    assert set(report["items"]) == {"name", "color", "agree"}
+    assert report["not_examined"] == {}
+    assert [[item["field_id"] for item in json.loads(call.args[0])["items"]] for call in ask.await_args_list] == [
+        ["name"],
+        ["color"],
+        ["agree"],
+    ]
+
+
+@pytest.mark.parametrize("on_error", ["skip", "block"])
+@pytest.mark.parametrize("review,protocol", [("always", 2), ("never", 2), ("always", 1)])
+def test_later_batch_failure_preserves_error_policy(
+    on_error: Literal["skip", "block"], review: Literal["always", "never"], protocol: int
+) -> None:
+    """A failed follow-up permits skip-mode submission and keeps block mode retryable."""
+    session, output = _capped_session(on_error, review, protocol)
+    ask = AsyncMock(side_effect=[_response("name"), RuntimeError("unavailable")])
+    checker = AnswerPlausibilityChecker(SimpleNamespace(ask=ask), config=session.form.llm_validation)
+    output = _run_batch(session, checker, output)
+    if review == "always" and protocol == 2:
+        output = _confirm(session)
+    output = _run_batch(session, checker, output)
+    assert ask.await_count == 2
+    if on_error == "skip":
+        if review == "always" and protocol == 2:
+            output = _confirm(session)
+        submit = next(item for item in output if isinstance(item, Submit))
+        assert submit.context["llm_validation"]["status"] == "skipped"
+        assert not any(isinstance(item, RunPlausibility) for item in output)
+    else:
+        assert not any(isinstance(item, Submit) for item in output)
+        assert any(getattr(item, "code", None) == "PLAUSIBILITY_UNAVAILABLE" for item in output)
+        if review == "always" and protocol == 2:
+            retry = next(item for item in _confirm(session) if isinstance(item, RunPlausibility))
+            assert retry.fields == {"color", "agree"}
+        else:
+            assert session.state.phase == Phase.ASKING

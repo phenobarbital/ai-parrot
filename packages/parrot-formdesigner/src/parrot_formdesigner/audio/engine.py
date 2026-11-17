@@ -152,7 +152,7 @@ class AudioFormSession:
         self._last_audio: tuple[str, bytes, str | None] | None = None  # (field_id, bytes, mime) — never snapshotted
         self._skipped: set[str] = set()  # optional fields the user skipped (persisted via answer_meta)
         self._pl_requested: set[str] | None = None  # fields of the in-flight plausibility batch
-        self._pl_unchecked: set[str] = set()  # fields whose last plausibility batch was blocked (on_error=block)
+        self._pl_unchecked: set[str] = set()  # fields whose last plausibility batch was blocked or capped
         self._stop_prev_phase: Phase | None = None  # set while a spoken STOP awaits yes/no confirmation
         self._resume_snap: AudioSnapshot | None = None
         self._refining: _PendingRefine | None = None
@@ -993,6 +993,11 @@ class AudioFormSession:
                     self.state.flagged[fid] = answer.version
         self.state.plausibility = merged
         if not self._review_enabled():
+            # No review confirmation will arrive to request the next capped batch.
+            pending = self._plausibility_fields(capped)
+            if pending:
+                self._pl_requested = set(pending)
+                return [RunPlausibility(fields=pending), self._save()]
             return self._submit()
         return self._start_review(report=report)
 
@@ -1082,14 +1087,19 @@ class AudioFormSession:
             return [Error(code="WRONG_PHASE", message="Nothing to review right now")]
         if not ev.confirmed:
             return self._start_review(report=None)
+        fields = self._plausibility_fields(set(self.state.answers))
+        # The cap limits each batch, regardless of how LLM failures are handled.
+        report = self.state.plausibility
+        pending = {
+            fid for fid in fields if report is not None and report.not_examined.get(fid) == NOT_EXAMINED_MAX_FIELDS
+        }
         if self._llm.on_error == "block":
             # AC13: a blocked (or never-run, e.g. after a resume) check must pass before anything is stored.
-            fields = self._plausibility_fields(set(self.state.answers))
-            pending = (self._pl_unchecked & fields) or (fields if self.state.plausibility is None else set())
-            if pending:
-                self._pl_requested = set(pending)
-                self.state.phase = Phase.PLAUSIBILITY
-                return [RunPlausibility(fields=pending), self._save()]
+            pending |= (self._pl_unchecked & fields) or (fields if report is None else set())
+        if pending:
+            self._pl_requested = set(pending)
+            self.state.phase = Phase.PLAUSIBILITY
+            return [RunPlausibility(fields=pending), self._save()]
         # The snapshot goes BEFORE the Submit: FormComplete deletes it, so a later save would lose its CAS.
         submit = self._submit()
         return [self._save(), *submit]
