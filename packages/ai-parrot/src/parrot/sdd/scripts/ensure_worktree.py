@@ -13,6 +13,7 @@ import importlib.util
 import json
 import logging
 import shutil
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -70,6 +71,40 @@ def _git(*args: str, cwd: Path) -> str:
     return res.stdout
 
 
+def _clear_sandbox_config_lock(repo_root: Path) -> bool:
+    """Remove a sandbox-created ``config.lock`` stub from the common git directory.
+
+    The native sandbox runtime leaves a 0-byte, read-only placeholder where a denied path did not exist.
+    Git creates real locks writable and writes into them, so an empty file with no write bits is never a
+    live lock; anything else is left untouched.
+
+    Args:
+        repo_root: Path of the main clone (or any worktree of it).
+
+    Returns:
+        True when a stub was removed.
+    """
+    probe = subprocess.run(
+        ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if probe.returncode != 0 or not probe.stdout.strip():
+        return False
+    lock = Path(probe.stdout.strip()) / "config.lock"
+    try:
+        info = lock.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_size != 0 or info.st_mode & 0o222:
+            return False
+        lock.unlink()
+    except OSError:
+        return False
+    logger.warning("Removed sandbox config.lock stub (0 bytes, read-only): %s", lock)
+    return True
+
+
 def ensure(
     plan: WorktreePlan,
     *,
@@ -123,6 +158,8 @@ def ensure(
 
     if dry_run:
         return target_path, True
+
+    _clear_sandbox_config_lock(repo_root)
 
     # Step 2: Sync — base_ref is origin/<base_branch>
     if sync:

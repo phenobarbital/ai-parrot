@@ -2874,6 +2874,13 @@ class SddCoderEngine:
         final exposure all match, and the claim names a passed check from the
         task-tier validation receipt. This deliberately keeps caller-provided
         checks, grades, and prose out of the trusted outcome path.
+
+        Known limit: ``claim.ref`` / ``claim.ref.content_version`` are NOT checked
+        against what was delivered to the attempt. The engine keeps no per-attempt
+        record of delivered memory versions (that exposure data lives in the dynamics
+        layer and is never handed to the engine), so a claim can cite a version the
+        attempt never received. The worker prompts say to cite delivered versions only;
+        that is guidance, not enforcement.
         """
         if not review.checked_patterns:
             return ()

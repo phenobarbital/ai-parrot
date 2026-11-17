@@ -61,7 +61,9 @@ async def test_explicit_vs_inferred_and_temporary() -> None:
         ]
     )
     client = FakeClient(reply)
-    result = await extract_user_knowledge(_event(), client=client)
+    result = await extract_user_knowledge(
+        _event(user_message="I prefer metric units. I want to ship beta. Maybe I like hiking?"), client=client
+    )
     assert [c.initial_status for c in result] == ["active", "pending", "active"]
     assert result[2].context == {"project": "apollo"}
     assert result[2].expires_at == datetime(2026, 2, 1, 0, 0, tzinfo=timezone.utc)
