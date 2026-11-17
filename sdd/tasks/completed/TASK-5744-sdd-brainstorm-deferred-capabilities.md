@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-908 — Necessity Ladder — least-new-code gate in the SDD flow
 **Spec**: `sdd/specs/ponytail-like-stairway.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -204,10 +204,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: host Claude Code session (Opus 5.5), applied by hand after the sdd-worker seats were blocked
+**Date**: 2026-11-17
+**Notes**: Made the five text edits at their verified anchors (each count 1): brainstorm template *If not built* + `### Deferred Capabilities` subsection (inside `## Capabilities`, before the closing `---`), the Capabilities instruction and the `Deferred Capabilities` → §1 Non-Goals mapping line in `/sdd-brainstorm`, and the codex skill guardrail. Rebuilt the google twin with the step-2 command and regenerated the packaged copies; `git diff --name-only` listed exactly the eight task files and `check_asset_sync.py --check` exits 0. Validation commands: 38 passed. Worker attempts a1/a2 were blocked (codex mounts `.agents/` read-only; a2 failed task-tier validation), so this was done from a host session. Closed via `scripts/sdd/close_task.sh`.
+Seat: host · Backend: manual · Attempts: 3 (a1/a2 by worker seats, blocked by read-only mounts)
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
