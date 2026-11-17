@@ -52,8 +52,6 @@ def test_turn_from_message_carries_response_time() -> None:
         usage=CompletionUsage(),
         response_time=0.25,
     )
-    turn = ConversationTurn.from_ai_message(
-        user_message="hi", response=message, user_id="u", chatbot_id="bot"
-    )
+    turn = ConversationTurn.from_ai_message(user_message="hi", response=message, user_id="u", chatbot_id="bot")
     assert turn.metadata["response_time"] == pytest.approx(0.25)
     assert message.response_time >= 0
