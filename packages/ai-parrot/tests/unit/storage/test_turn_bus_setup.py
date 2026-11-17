@@ -292,6 +292,67 @@ async def _dead_outbox(tmp_path, pid, ids, *, nack_future=False):
     return path
 
 
+async def _outbox_file(path, ids):
+    from navigator_eventbus.outbox import SqliteOutbox
+
+    outbox = SqliteOutbox(path)
+    for tid in ids:
+        await outbox.append(EventEnvelope(topic=TURN_COMPLETED_TOPIC, event_id=tid, payload=_event(tid).to_dict()))
+    return outbox
+
+
+async def test_another_hostnames_outbox_is_drained_and_removed(backend, chat_storage, tmp_path):
+    from parrot.storage.turn_bus import recover_abandoned_outboxes
+
+    path = tmp_path / "replaced-pod-abc-4242.db"
+    await (await _outbox_file(path, ["h1", "h2"])).close()
+    handle = await setup_turn_persistence(chat_storage, bus=_memory_bus(tmp_path))
+    try:
+        assert await recover_abandoned_outboxes(handle.bus, tmp_path, own_pid=os.getpid()) == 2
+
+        async def stored():
+            return len(await backend.query_turns(USER, AGENT, "s1")) == 2
+
+        assert await _eventually(stored)
+        assert not path.exists()
+    finally:
+        await shutdown_turn_persistence(handle)
+
+
+async def test_a_live_owners_outbox_under_another_hostname_is_skipped(chat_storage, tmp_path):
+    from parrot.storage.turn_bus import recover_abandoned_outboxes
+
+    path = tmp_path / "other-host-5555.db"
+    live = await _outbox_file(path, ["live1"])  # holds the exclusive flock
+    handle = await setup_turn_persistence(chat_storage, bus=_memory_bus(tmp_path))
+    try:
+        assert await recover_abandoned_outboxes(handle.bus, tmp_path, own_pid=os.getpid()) == 0
+        assert path.exists()
+    finally:
+        await shutdown_turn_persistence(handle)
+        await live.close()
+    from parrot.storage.turn_bus import _count_outbox_rows
+
+    assert _count_outbox_rows(path) == 1  # untouched
+
+
+async def test_own_exact_file_is_skipped_but_same_pid_other_hostname_is_drained(backend, chat_storage, tmp_path):
+    from parrot.storage.turn_bus import recover_abandoned_outboxes
+
+    own = _host_file(tmp_path, 31337)
+    foreign = tmp_path / "another-host-31337.db"  # same pid, different hostname
+    own_box = await _outbox_file(own, ["mine"])
+    await own_box.close()  # unlocked, so only the exact-name rule can protect it
+    await (await _outbox_file(foreign, ["theirs"])).close()
+    handle = await setup_turn_persistence(chat_storage, bus=_memory_bus(tmp_path))
+    try:
+        assert await recover_abandoned_outboxes(handle.bus, tmp_path, own_pid=31337) == 1
+        assert own.exists()
+        assert not foreign.exists()
+    finally:
+        await shutdown_turn_persistence(handle)
+
+
 async def test_rows_in_retry_backoff_are_delivered_and_the_file_removed(backend, chat_storage, tmp_path):
     from parrot.storage.turn_bus import recover_abandoned_outboxes
 

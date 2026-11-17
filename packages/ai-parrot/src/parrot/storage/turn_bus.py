@@ -248,11 +248,15 @@ async def _drain_one_outbox(bus: Any, old: SqliteOutbox, path: Path) -> Tuple[in
 
 
 async def recover_abandoned_outboxes(bus: Any, directory: Path, *, own_pid: Optional[int] = None) -> int:
-    """Drain the outboxes of dead workers of this host into ``bus`` (a replacement pod has a new PID).
+    """Drain the outboxes of dead workers into ``bus`` (a replacement pod has a new hostname and PID).
 
-    Every ``<hostname>-<pid>.db`` in ``directory`` other than this process's own is opened through
-    ``SqliteOutbox``, which takes the exclusive file lock: a file whose owner is still alive raises
-    ``OutboxLockedError`` and is skipped, so two relays never share one file. EVERY pending row is
+    Every ``<any-hostname>-<pid>.db`` in ``directory`` is a candidate, except this process's own file
+    (``<own hostname>-<own pid>.db``, skipped by exact name: PIDs repeat across hosts) and dead-letter files.
+    Each candidate is opened through ``SqliteOutbox``, which takes the exclusive non-blocking ``flock``: a file
+    whose owner is still alive raises ``OutboxLockedError`` and is skipped, so two relays never share one file.
+    This relies on ``flock`` working across hosts on the shared volume (Linux NFSv4/EFS emulates it with POSIX
+    locks); if it did not, the worst case is a duplicate delivery, which the bus dedup and the
+    upsert-by-turn-id handlers already tolerate. EVERY pending row is
     re-published through ``bus.core.publish`` (including rows still in retry backoff; the bus dedups on
     ``event_id`` and the handlers upsert by turn id, so a crash between publish and ack only duplicates a
     delivery that is already idempotent) and acknowledged in the old file only after its publish succeeded.
@@ -262,12 +266,11 @@ async def recover_abandoned_outboxes(bus: Any, directory: Path, *, own_pid: Opti
     Returns:
         The number of envelopes re-published.
     """
-    own = own_pid if own_pid is not None else os.getpid()
-    pattern = re.compile(rf"^{re.escape(socket.gethostname())}-(\d+)\.db$")
+    own_name = f"{socket.gethostname()}-{own_pid if own_pid is not None else os.getpid()}.db"
+    pattern = re.compile(r"^.+-\d+\.db$")
     recovered = 0
     for path in sorted(directory.glob("*.db")):
-        match = pattern.match(path.name)
-        if not match or int(match.group(1)) == own:
+        if not pattern.match(path.name) or path.name == own_name:
             continue
         try:
             old = SqliteOutbox(path)
