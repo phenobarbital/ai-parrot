@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ai-parrot-squawk"
 dynamic = ["version"]
-requires-python = ">=3.11,<3.14"
+requires-python = ">=3.11.4,<3.14"
 description = "Squawk — typed binary inter-agent protocol for AI-Parrot (Cap'n Proto RPC + event-bus carrier, contract catalog, handles, capability policy gate)"
 readme = "README.md"
 authors = [{name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}]
