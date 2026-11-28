@@ -1,0 +1,5 @@
+data/
+logs/
+opt/
+README.md
+docker-compose.yml

@@ -15,7 +15,7 @@ authors = [
 ]
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.11,<3.14"
+requires-python = ">=3.11.4,<3.14"
 keywords = ["asyncio", "asyncpg", "aioredis", "aiomcache", "artificial intelligence", "ai", "chatbot", "agents"]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -280,7 +280,7 @@ finance = [
 # 5.12.14 loosens azure-identity (==1.20.0 -> >=1.20.0,<2) and
 # msal (>=1.30.0 -> >=1.30.0,<2), unblocking async-notify>=1.6.0.
 flowtask = [
-    "flowtask>=5.12.14",
+    "flowtask>=5.13.10",
 ]
 
 # GraphIndex knowledge graph indexing (FEAT-187)
@@ -658,7 +658,7 @@ google = [
     # (parrot.interfaces.http's googleapiclient usage, plus reserved
     # TTS/Vertex support), so they stay pinned here rather than moving to
     # the satellite.
-    "google-api-python-client>=2.166.0,<=2.177.0",
+    "google-api-python-client>=2.198.0",
     "google-cloud-texttospeech==2.27.0",
     "google-cloud-aiplatform>=1.153.0",
 ]

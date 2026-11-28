@@ -1,7 +1,7 @@
 # AI-Parrot Makefile
 # This Makefile provides a set of commands to manage the AI-Parrot project.
 
-.PHONY: venv install install-core install-tools install-loaders install-codex-sdk-editable \
+.PHONY: venv install install-os-deps install-rust install-core install-tools install-loaders install-codex-sdk-editable \
 		develop develop-fast develop-ml setup dev release format lint test clean distclean lock sync \
 		generate-registry check-registry build-codec-rs build-navrules-rs build-rust build-server-ui \
 		run-server serve-gunicorn \
@@ -133,6 +133,54 @@ endif
 else
 	@echo "Unsupported OS. Please install FFmpeg and CUDA/cuDNN manually."
 endif
+
+# Install the OS-level build dependencies needed by `uv sync` / `make develop`
+# on a fresh machine (Debian/Ubuntu/Mint via apt, macOS via brew): compiler
+# toolchain, Python headers (Python.h — required by sdists such as pytomlpp
+# and by `build-inplace` Cython extensions) and the C libraries that common
+# native wheels link against. Rust (for `build-rust`) is a separate opt-in
+# target: `make install-rust`.
+install-os-deps:
+ifeq ($(OS_TYPE),Linux)
+	@command -v apt-get >/dev/null 2>&1 || { echo "❌ apt-get not found — install the equivalent packages with your distro's package manager."; exit 1; }
+	@echo "Installing OS build dependencies (apt)..."
+	sudo apt-get update
+	sudo apt-get install -y \
+		build-essential \
+		pkg-config \
+		cmake \
+		git \
+		curl \
+		python$(PYTHON_VERSION)-dev \
+		python$(PYTHON_VERSION)-venv \
+		libpq-dev \
+		libssl-dev \
+		libffi-dev \
+		libxml2-dev \
+		libxslt1-dev \
+		zlib1g-dev \
+		libjpeg-dev \
+		libmagic1
+	@echo "✅ OS build dependencies installed. Optional: 'make install-rust' for the Rust extensions."
+else ifeq ($(OS_TYPE),MacOS)
+	@echo "Installing OS build dependencies (brew)..."
+	xcode-select --install 2>/dev/null || true
+	brew install pkg-config cmake libpq openssl libffi libxml2 libxslt libmagic
+	@echo "✅ OS build dependencies installed. Optional: 'make install-rust' for the Rust extensions."
+else
+	@echo "Unsupported OS. Install a C/C++ toolchain, Python $(PYTHON_VERSION) headers, libpq, OpenSSL and libffi manually."
+endif
+
+# Rust toolchain + maturin for `build-rust` (parrot_codec, navrules).
+install-rust:
+	@if command -v cargo >/dev/null 2>&1; then \
+		echo "Rust already installed: $$(rustc --version)"; \
+	else \
+		curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; \
+		echo "Rust installed — run 'source $$HOME/.cargo/env' or restart your shell."; \
+	fi
+	uv tool install maturin
+	@echo "✅ Rust + maturin ready."
 
 # Install WhisperX with all dependencies
 install-whisperx: install-system-deps

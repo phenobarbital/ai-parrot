@@ -1,0 +1,30 @@
+services:
+  postgres:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ai-parrot-postgres:19
+    container_name: parrot-postgres
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${PG_PORT:-5432}:5432"
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:-postgres}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-postgres}"
+      # Application role/database (match DBUSER / DBPWD / DBNAME in AI-Parrot's env).
+      PARROT_DB_USER: "${DBUSER:-navigator}"
+      PARROT_DB_PASSWORD: "${DBPWD:-navigator}"
+      PARROT_DB_NAME: "${DBNAME:-navigator}"
+    shm_size: 256mb
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -h 127.0.0.1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  postgres-data:
+    name: parrot-postgres-data

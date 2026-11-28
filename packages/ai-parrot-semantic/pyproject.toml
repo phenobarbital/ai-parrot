@@ -7,7 +7,7 @@ name = "ai-parrot-semantic"
 dynamic = ["version"]
 description = "Governed semantic metric queries for AI-Parrot"
 readme = "README.md"
-requires-python = ">=3.11,<3.14"
+requires-python = ">=3.11.4,<3.14"
 license = "MIT"
 dependencies = ["ai-parrot", "sqlglot>=30.1,<31", "jsonschema>=4.20", "pyyaml>=6"]
 

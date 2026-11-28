@@ -8,7 +8,7 @@
 [project]
 name = "ai-parrot-workspace"
 version = "0.0.0"
-requires-python = ">=3.11,<3.14"
+requires-python = ">=3.11.4,<3.14"
 description = "AI-Parrot monorepo workspace"
 dependencies = [
     "ai-parrot",
@@ -109,6 +109,10 @@ conflicts = [
     # OOM on the 15+ otel-instrumentation sub-packages.
 ]
 override-dependencies = [
+    # asyncdb (<=2.16.4) pins pgvector==0.4.1, but flowtask>=5.13.10 pins
+    # pgvector==0.5.1. flowtask>=5.13.10 is needed for pytomlpp>=1.1.0 (1.0.13
+    # has no cp312+ wheels). Remove once asyncdb relaxes its pgvector pin.
+    "pgvector>=0.5.1",
     # asyncdb[uvloop] 2.16.2 pins uvloop==0.21.0, but navconfig[uvloop] 2.5.2
     # requires uvloop>=0.22.1 (flowtask pulls both extras). Remove once
     # asyncdb relaxes its exact pin.
@@ -296,6 +300,7 @@ warn_return_any = true
 warn_unused_configs = true
 
 [tool.parrot.sdd]
+sandbox = "required"
 # sdd-worker native sandbox: GitHub only through `gh` (api.github.com), never git/SSH to github.com.
 # Read from the PRIMARY checkout only. See wiki/sdd-tooling/dev_loop/claude-native-sandbox.md.
 sandbox_allowed_domains = ["api.github.com"]
